@@ -1,7 +1,7 @@
 :root {
   /* Adobe Dark Theme Colors */
   --bg-app: #323232;
-  --bg-panel: #383838; /* 面板背景稍亮 */
+  --bg-panel: #383838;
   --bg-input: #262626;
   --bg-hover: #464646;
   --border-color: #1E1E1E;
@@ -20,7 +20,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: var(--font-size-sm);
   margin: 0; padding: 0;
-  overflow: hidden; /* PS 插件通常不需要 body 滚动 */
+  overflow: hidden;
 }
 
 /* === 1. 顶部导航 Tabs === */
@@ -166,38 +166,152 @@ textarea { resize: vertical; min-height: 40px; }
 .app-select-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
-  padding: 8px;
+  padding: 10px 12px; /* 稍微增加内边距 */
   border-radius: 4px;
   margin-bottom: 12px;
 }
+
+/* --- [修改] 头部布局优化 --- */
 .card-title-row {
   display: flex;
+  align-items: center; /* 垂直居中 */
   justify-content: space-between;
+  gap: 12px;
+  height: 32px; /* 固定高度，看起来更整齐 */
+}
+
+.card-title, .card-title-tools {
+  flex-shrink: 0; /* 防止标题和按钮被压缩 */
+}
+
+.card-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+
+.card-title-tools {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- [修改] 中间的应用名称区域 (自适应宽度) --- */
+.app-picker-meta {
+  flex: 1; /* 占据剩余所有空间 */
+  min-width: 0; /* 防止内容过长撑破容器 */
+  text-align: center;
+  font-size: 14px; /* 字体加大 */
+  font-weight: bold;
+  color: var(--accent-color);
+  
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* 可选：给个淡背景 */
+  background: rgba(0,0,0,0.2);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.app-picker-meta .placeholder-text {
+  color: #666;
+  font-weight: normal;
+  font-size: 12px;
+}
+
+/* === 6. 动态参数生成区域 === */
+.dynamic-input-container { margin-top: 10px; }
+.image-input-container { margin-bottom: 10px; }
+
+/* --- [修改] 图片上传样式 (大尺寸 Overlay 风格) --- */
+.image-input-wrapper {
+  position: relative; /* 关键 */
+  width: 100%;
+  height: 240px; /* 大高度 */
+  background: #181818; /* 深色凹槽背景 */
+  border: 2px dashed #3a3a3a;
+  border-radius: 6px;
+  overflow: hidden;
+  
+  /* 内容居中 */
+  display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  
+  transition: all 0.2s;
+  cursor: pointer;
   margin-bottom: 4px;
 }
-.card-title { font-weight: bold; font-size: var(--font-size-sm); }
-.app-picker-meta { font-size: var(--font-size-xs); color: var(--text-sub); }
 
-/* === 6. 动态参数生成区域 (High Density) === */
-.dynamic-input-container { margin-top: 10px; }
-
-/* 强制让动态生成的 input-field 变为 Grid Item */
-.dynamic-input-grid-wrapper {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 10px;
+.image-input-wrapper:hover {
+  border-color: var(--accent-color);
+  background: #202020;
 }
 
+/* 预览图：铺满 */
+.image-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 保持比例 */
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.image-preview.has-image {
+  opacity: 1;
+  background: #000;
+}
+
+/* 浮层文字 */
+.image-input-overlay-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.image-input-icon {
+  font-size: 32px;
+  opacity: 0.7;
+}
+
+.image-input-text {
+  font-size: 13px;
+  color: #bbb;
+  font-weight: 500;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+
+/* 有图时隐藏文字，悬停显示 */
+.image-input-wrapper.has-image .image-input-overlay-content {
+  opacity: 0;
+  transition: opacity 0.2s;
+  background: rgba(0,0,0,0.6);
+  padding: 10px 20px;
+  border-radius: 30px;
+  backdrop-filter: blur(4px);
+}
+.image-input-wrapper.has-image:hover .image-input-overlay-content {
+  opacity: 1;
+}
+
+/* --- 其他参数样式 --- */
 .dynamic-input-field {
-  margin-bottom: 0; /* 在 Grid 里不需要 margin */
+  margin-bottom: 0;
 }
-/* 全宽参数（如 Prompt） */
 .dynamic-input-field.full-width {
   grid-column: span 2;
 }
-
 .dynamic-input-label {
   font-size: var(--font-size-xs);
   color: #aaa;
@@ -208,32 +322,6 @@ textarea { resize: vertical; min-height: 40px; }
 }
 .dynamic-input-required { color: #ff6b6b; margin-left: 2px; }
 
-/* 图片上传控件 */
-.image-input-container { margin-bottom: 10px; }
-.image-input-wrapper {
-  border: 1px dashed #444;
-  padding: 4px;
-  text-align: center;
-  border-radius: 4px;
-  background: #2a2a2a;
-}
-.image-input-button {
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: var(--accent-color);
-  cursor: pointer;
-  padding: 4px 0;
-  font-size: var(--font-size-xs);
-}
-.image-preview {
-  max-width: 100%;
-  max-height: 100px;
-  margin-top: 4px;
-  border-radius: 2px;
-  display: none;
-}
-.image-preview.has-image { display: block; }
 
 /* === 7. 模态框 (Modal) === */
 .modal-overlay {
@@ -295,3 +383,32 @@ textarea { resize: vertical; min-height: 40px; }
   color: var(--text-dim);
 }
 .empty-state-icon { font-size: 24px; margin-bottom: 8px; opacity: 0.5; }
+
+/* === 9. Settings Page Layout === */
+.setting-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.setting-section-title {
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--text-main);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.setting-section-compact { padding: 8px 12px; }
+.setting-section-toggle { cursor: pointer; margin-bottom: 0; }
+.setting-section-toggle-btn { background: none; border: none; color: var(--accent-color); font-size: 10px; cursor: pointer; }
+.setting-section-body { margin-top: 10px; }
+.setting-section-collapsible.is-collapsed .setting-section-body { display: none; }
+
+.inline-input { display: flex; gap: 6px; }
+.inline-row { display: flex; gap: 8px; margin-top: 8px; }
+.control-group { margin-bottom: 10px; }
+.setting-hint { font-size: 9px; color: #666; margin-top: 6px; }
+.saved-list { margin-top: 10px; max-height: 150px; overflow-y: auto; }

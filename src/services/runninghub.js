@@ -645,16 +645,36 @@ function base64ToArrayBuffer(base64) {
   return bytes.buffer;
 }
 
+function normalizeUploadBuffer(imageValue) {
+  if (imageValue instanceof ArrayBuffer) return imageValue;
+  if (ArrayBuffer.isView(imageValue)) {
+    const view = imageValue;
+    return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+  }
+  if (imageValue && typeof imageValue === "object") {
+    if (imageValue.arrayBuffer instanceof ArrayBuffer) return imageValue.arrayBuffer;
+    if (ArrayBuffer.isView(imageValue.arrayBuffer)) {
+      const view = imageValue.arrayBuffer;
+      return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+    }
+    if (typeof imageValue.base64 === "string" && imageValue.base64.trim()) {
+      return base64ToArrayBuffer(imageValue.base64.trim());
+    }
+  }
+  if (typeof imageValue === "string" && imageValue.trim()) return base64ToArrayBuffer(imageValue.trim());
+  throw new Error("鍥剧墖杈撳叆鏃犳晥");
+}
+
 function pickUploadedValue(data) {
   const token = data.fileName || data.filename || data.fileKey || data.key || "";
   const url = data.url || data.fileUrl || data.download_url || data.downloadUrl || "";
   return { value: token || url, token: token || "", url: url || "" };
 }
 
-async function uploadImage(apiKey, base64Image, options = {}) {
+async function uploadImage(apiKey, imageValue, options = {}) {
   const log = options.log || (() => {});
   const endpoints = [API.ENDPOINTS.UPLOAD_V2, API.ENDPOINTS.UPLOAD_LEGACY];
-  const buffer = base64ToArrayBuffer(base64Image);
+  const buffer = normalizeUploadBuffer(imageValue);
   const blob = new Blob([buffer], { type: "image/png" });
   const reasons = [];
 
@@ -667,7 +687,8 @@ async function uploadImage(apiKey, base64Image, options = {}) {
       const response = await fetch(`${API.BASE_URL}${endpoint}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
-        body: formData
+        body: formData,
+        signal: options.signal 
       });
       throwIfCancelled(options);
       const result = await parseJsonResponse(response);
@@ -740,7 +761,8 @@ async function createAiAppTask(apiKey, appId, nodeInfoList, options = {}) {
       const response = await fetch(`${API.BASE_URL}${API.ENDPOINTS.AI_APP_RUN}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: options.signal
       });
       throwIfCancelled(options);
       const result = await parseJsonResponse(response);
@@ -766,7 +788,8 @@ async function createLegacyTask(apiKey, appId, nodeParams, options = {}) {
   const response = await fetch(`${API.BASE_URL}${API.ENDPOINTS.LEGACY_CREATE_TASK}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ apiKey, workflowId: normalizeAppId(appId), nodeParams })
+    body: JSON.stringify({ apiKey, workflowId: normalizeAppId(appId), nodeParams }),
+    signal: options.signal
   });
   throwIfCancelled(options);
   const result = await parseJsonResponse(response);
@@ -835,8 +858,13 @@ function makeRunCancelledError(message = "用户取消运行") {
 }
 
 function throwIfCancelled(options = {}) {
+  // 1. 支持函数式取消
   if (typeof options.shouldCancel === "function" && options.shouldCancel()) {
     throw makeRunCancelledError();
+  }
+  // 2. 支持 Signal 信号取消 (新增)
+  if (options.signal && options.signal.aborted) {
+    throw makeRunCancelledError("用户中止");
   }
 }
 
@@ -852,7 +880,8 @@ async function pollTaskOutput(apiKey, taskId, settings, options = {}) {
       const response = await fetch(`${API.BASE_URL}${API.ENDPOINTS.TASK_OUTPUTS}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey, taskId })
+        body: JSON.stringify({ apiKey, taskId }),
+        signal: options.signal
       });
       throwIfCancelled(options);
       const result = await parseJsonResponse(response);
@@ -959,7 +988,9 @@ async function runAppTask(apiKey, appItem, inputValues, options = {}) {
 
 async function downloadResultBinary(url, options = {}) {
   throwIfCancelled(options);
-  const response = await fetch(url);
+  // 加入 signal
+  const response = await fetch(url, { signal: options.signal }); 
+  
   throwIfCancelled(options);
   if (!response.ok) throw new Error(`下载结果失败 (HTTP ${response.status})`);
   return response.arrayBuffer();

@@ -27,21 +27,11 @@ function normalizeAppId(rawValue) {
 
   try {
     const url = new URL(decoded);
-    const keys = [
-      "webappId",
-      "webappid",
-      "appId",
-      "appid",
-      "workflowId",
-      "workflowid",
-      "id",
-      "code"
-    ];
+    const keys = ["webappId", "webappid", "appId", "appid", "workflowId", "workflowid", "id", "code"];
     for (const key of keys) {
       const v = url.searchParams.get(key);
       if (v && v.trim()) return v.trim();
     }
-
     const segments = url.pathname.split("/").filter(Boolean);
     if (segments.length > 0) {
       for (let i = 0; i < segments.length; i++) {
@@ -53,7 +43,6 @@ function normalizeAppId(rawValue) {
       return segments[segments.length - 1].trim();
     }
   } catch (_) {}
-
   const numeric = decoded.match(/\d{5,}/);
   return numeric ? numeric[0] : value;
 }
@@ -66,6 +55,15 @@ function inferInputType(rawType) {
   if (t.includes("select") || t.includes("enum") || t.includes("option")) return "select";
   if (t.includes("bool") || t.includes("switch") || t.includes("checkbox")) return "boolean";
   return "text";
+}
+
+// ✅ 新增：判断参数是否像提示词
+function isPromptLikeInput(input) {
+  if (!input) return false;
+  const key = String(input.key || "").toLowerCase();
+  const label = String(input.label || input.name || "").toLowerCase();
+  // 关键词匹配：prompt, 提示词, negative, 正向, 负向
+  return /prompt|提示词|negative|正向|负向/.test(key) || /prompt|提示词|negative|正向|负向/.test(label);
 }
 
 function isEmptyValue(value) {
@@ -86,14 +84,15 @@ function toFiniteNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// 记得导出新函数
 module.exports = {
   sleep,
   generateId,
   safeJsonParse,
   normalizeAppId,
   inferInputType,
+  isPromptLikeInput, // ✅ 必须导出
   isEmptyValue,
   escapeHtml,
   toFiniteNumber
 };
-

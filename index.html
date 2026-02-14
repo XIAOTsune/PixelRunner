@@ -46,16 +46,18 @@
 
     <div class="card app-select-card">
       <div class="card-title-row">
-        <div class="card-title">选择 AI 应用</div>
+        <div class="card-title">选择应用</div>
+        
+        <div id="appPickerMeta" class="app-picker-meta">
+          <span class="placeholder-text">请先点击右侧切换应用</span>
+        </div>
+
         <div class="card-title-tools">
           <button id="btnOpenAppPicker" class="tiny-btn tiny-btn-compact" type="button">切换</button>
           <button id="btnRefreshWorkspaceApps" class="tiny-btn tiny-btn-compact" type="button">刷新</button>
         </div>
       </div>
-      <div id="appPickerMeta" class="app-picker-meta">
-        暂无应用，请在设置页解析并保存
       </div>
-    </div>
 
     <div id="workspaceInputArea" class="workspace-input-area">
       <div id="imageInputContainer" class="image-input-container"></div>

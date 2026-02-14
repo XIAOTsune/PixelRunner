@@ -4,13 +4,6 @@ const { storage } = require("uxp");
 const fs = storage.localFileSystem;
 const formats = storage.formats;
 
-function arrayBufferToBase64(buffer) {
-  let binary = "";
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
 function toPixelNumber(value, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -76,6 +69,36 @@ async function closeDocNoSave(docRef) {
   }], {});
 }
 
+async function exportDocPngToArrayBuffer(docId, fileName = "capture.png") {
+  const tempFolder = await fs.getTemporaryFolder();
+  const tempFile = await tempFolder.createFile(fileName, { overwrite: true });
+  const sessionToken = await fs.createSessionToken(tempFile);
+
+  await action.batchPlay([{
+    _obj: "save",
+    as: { _obj: "PNGFormat", method: { _enum: "PNGMethod", _value: "quick" } },
+    in: { _path: sessionToken, _kind: "local" },
+    documentID: docId,
+    copy: true,
+    lowerCase: true,
+    saveStage: { _enum: "saveStageType", _value: "saveStageOS" }
+  }], {});
+
+  return tempFile.read({ format: formats.binary });
+}
+
+function isNearlyFullBounds(bounds, doc) {
+  if (!bounds || !doc) return false;
+  const docSize = getDocSizePx(doc);
+  const clamped = buildCropBounds(bounds, doc);
+  return (
+    Math.abs(clamped.left) <= 1 &&
+    Math.abs(clamped.top) <= 1 &&
+    Math.abs(clamped.right - docSize.width) <= 1 &&
+    Math.abs(clamped.bottom - docSize.height) <= 1
+  );
+}
+
 async function captureSelection(options = {}) {
   const log = options.log || (() => {});
   try {
@@ -85,7 +108,7 @@ async function captureSelection(options = {}) {
       return null;
     }
 
-    let base64 = null;
+    let capturedBuffer = null;
     let selectionBounds = null;
     let originalSelectionBounds = null;
     try {
@@ -93,6 +116,14 @@ async function captureSelection(options = {}) {
     } catch (_) {}
 
     await core.executeAsModal(async () => {
+      const rawSelection = parseRawBounds(originalSelectionBounds);
+      const useFullDocFastPath = !rawSelection || isNearlyFullBounds(rawSelection, doc);
+      if (useFullDocFastPath) {
+        selectionBounds = buildCropBounds(null, doc);
+        capturedBuffer = await exportDocPngToArrayBuffer(doc.id, "capture_full.png");
+        return;
+      }
+
       let tempDoc = null;
       try {
         tempDoc = await doc.duplicate("rh_capture_temp");
@@ -108,30 +139,14 @@ async function captureSelection(options = {}) {
         const cropBounds = buildCropBounds(originalSelectionBounds || tempSelectionBounds, tempDoc);
         selectionBounds = { ...cropBounds };
         await tempDoc.crop(cropBounds);
-
-        const tempFolder = await fs.getTemporaryFolder();
-        const tempFile = await tempFolder.createFile("capture.png", { overwrite: true });
-        const sessionToken = await fs.createSessionToken(tempFile);
-
-        await action.batchPlay([{
-          _obj: "save",
-          as: { _obj: "PNGFormat", method: { _enum: "PNGMethod", _value: "quick" } },
-          in: { _path: sessionToken, _kind: "local" },
-          documentID: tempDoc.id,
-          copy: true,
-          lowerCase: true,
-          saveStage: { _enum: "saveStageType", _value: "saveStageOS" }
-        }], {});
-
-        const arrayBuffer = await tempFile.read({ format: formats.binary });
-        base64 = arrayBufferToBase64(arrayBuffer);
+        capturedBuffer = await exportDocPngToArrayBuffer(tempDoc.id, "capture_selection.png");
       } finally {
         await closeDocNoSave(tempDoc);
       }
     }, { commandName: "Capture Selection" });
 
-    if (!base64) return null;
-    return { base64, selectionBounds };
+    if (!capturedBuffer) return null;
+    return { arrayBuffer: capturedBuffer, selectionBounds };
   } catch (e) {
     log(`捕获选区失败: ${e.message}`, "error");
     return null;
