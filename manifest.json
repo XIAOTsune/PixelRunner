@@ -1,0 +1,82 @@
+{
+  "id": "my.runninghub.plugin",
+  "name": "小T修图助手",
+  "version": "3.0.3",
+  "main": "index.html",
+  "manifestVersion": 5,
+  "entryPoints": [
+    {
+      "type": "panel",
+      "id": "mainPanel",
+      "label": {
+        "default": "小T修图助手"
+      },
+      "minimumSize": {
+        "width": 280,
+        "height": 420
+      },
+      "maximumSize": {
+        "width": 900,
+        "height": 1400
+      },
+      "preferredDockedSize": {
+        "width": 340,
+        "height": 700
+      },
+      "preferredFloatingSize": {
+        "width": 380,
+        "height": 760
+      },
+      "icons": [
+        {
+          "width": 23,
+          "height": 23,
+          "path": "icons/icon.png",
+          "scale": [
+            1
+          ]
+        },
+        {
+          "width": 46,
+          "height": 46,
+          "path": "icons/icon@2x.png",
+          "scale": [
+            2
+          ]
+        }
+      ]
+    }
+  ],
+  "host": {
+    "app": "PS",
+    "minVersion": "23.0.0"
+  },
+  "icons": [
+    {
+      "width": 23,
+      "height": 23,
+      "path": "icons/icon.png",
+      "scale": [
+        1
+      ]
+    },
+    {
+      "width": 46,
+      "height": 46,
+      "path": "icons/icon@2x.png",
+      "scale": [
+        2
+      ]
+    }
+  ],
+  "requiredPermissions": {
+    "localFileSystem": "fullAccess",
+    "network": {
+      "domains": [
+        "https://www.runninghub.cn",
+        "https://runninghub.cn",
+        "https://rh-images.xiaoyaoyou.com"
+      ]
+    }
+  }
+}

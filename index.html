@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RunningHub Photoshop 插件</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="nav-tabs">
+      <button id="tabWorkspace" class="nav-item active" type="button">RH 工作台</button>
+      <button id="tabTools" class="nav-item" type="button">工具箱</button>
+      <button id="tabSettings" class="nav-item" type="button">设置</button>
+  </div>
+  
+  <section id="viewTools" class="tab-content">
+    <div class="section-header">图层辅助</div>
+    <div class="input-grid">
+        <button id="btnNeutralGray" class="main-btn" type="button">新建中性灰 (D&B)</button>
+        <button id="btnObserver" class="main-btn" type="button">创建观察层</button>
+    </div>
+    
+    <div class="section-header">合并操作</div>
+    <div class="input-grid full-width">
+        <button id="btnStamp" class="main-btn" type="button">盖印图层 (Ctrl+Alt+Shift+E)</button>
+    </div>
+</section>
+
+  <section id="viewWorkspace" class="tab-content active">
+    <header class="header">
+      <div class="header-main">
+        <h3>RunningHub AI 助手</h3>
+        <div id="accountSummary" class="account-summary is-empty" title="请先设置 API Key">
+          <span class="account-pill">
+            <span class="account-pill-label">余额</span>
+            <span id="accountBalanceValue" class="account-pill-value">--</span>
+          </span>
+          <span class="account-pill">
+            <span class="account-pill-label">RH币</span>
+            <span id="accountCoinsValue" class="account-pill-value">--</span>
+          </span>
+        </div>
+      </div>
+      <span class="version">v3.2.0</span>
+    </header>
+
+    <div class="card app-select-card">
+      <div class="card-title-row">
+        <div class="card-title">选择 AI 应用</div>
+        <div class="card-title-tools">
+          <button id="btnOpenAppPicker" class="tiny-btn tiny-btn-compact" type="button">切换</button>
+          <button id="btnRefreshWorkspaceApps" class="tiny-btn tiny-btn-compact" type="button">刷新</button>
+        </div>
+      </div>
+      <div id="appPickerMeta" class="app-picker-meta">
+        暂无应用，请在设置页解析并保存
+      </div>
+    </div>
+
+    <div id="workspaceInputArea" class="workspace-input-area">
+      <div id="imageInputContainer" class="image-input-container"></div>
+      <div id="dynamicInputContainer" class="dynamic-input-container">
+        <div class="empty-state">
+          <div class="empty-state-icon">📝</div>
+          <div>请先选择一个应用</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="btnRun" class="main-btn main-btn-primary" type="button" disabled>开始运行</button>
+
+    <div id="logWindow">
+      <div class="log-info">[系统] 插件已加载，等待操作...</div>
+    </div>
+  </section>
+
+  <section id="viewSettings" class="tab-content">
+    <header class="header">
+      <h3>系统设置</h3>
+      <span class="version">v3.2.0</span>
+    </header>
+
+    <div class="setting-section">
+      <div class="setting-section-title">API Key</div>
+      <div class="control-group">
+        <label for="apiKeyInput">RunningHub API Key</label>
+        <div class="inline-input">
+          <input id="apiKeyInput" type="password" placeholder="请输入 API Key" />
+          <button id="toggleApiKey" type="button" class="tiny-btn">显示</button>
+        </div>
+      </div>
+      <div class="inline-row">
+        <button id="btnSaveApiKey" class="main-btn main-btn-primary" type="button">保存设置</button>
+        <button id="btnTestApiKey" class="main-btn main-btn-secondary" type="button">测试连接</button>
+      </div>
+      <div class="setting-hint">API Key 仅保存在本地，不会上传到第三方。</div>
+    </div>
+
+    <div class="setting-section">
+      <div class="setting-section-title">AI 应用管理</div>
+      <div class="control-group">
+        <label for="appIdInput">应用 ID / URL</label>
+        <div class="inline-row">
+          <input id="appIdInput" type="text" placeholder="例如: 123456 或 RunningHub 应用链接" />
+          <button id="btnParseApp" class="main-btn main-btn-secondary parse-btn" type="button">解析</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <label for="appNameInput">应用名称</label>
+        <input id="appNameInput" type="text" placeholder="例如: SDXL 风格化" />
+      </div>
+
+      <div id="parseResultContainer"></div>
+
+      <div id="manualConfigArea" class="manual-config" style="display:none;">
+        <div class="manual-config-title">自动解析失败，请手动配置参数</div>
+        <div id="manualParamsList"></div>
+        <div class="inline-row">
+          <button id="btnAddParam" type="button" class="main-btn main-btn-secondary">添加参数</button>
+          <button id="btnSaveManualApp" type="button" class="main-btn main-btn-primary">保存应用</button>
+        </div>
+      </div>
+
+      <div id="savedAppsList" class="saved-list"></div>
+    </div>
+
+    <div class="setting-section">
+      <div class="setting-section-title">提示词模板</div>
+      <div class="control-group">
+        <label for="templateTitleInput">模板标题</label>
+        <input id="templateTitleInput" type="text" placeholder="例如: 高质量二次元" />
+      </div>
+      <div class="control-group">
+        <label for="templateContentInput">模板内容</label>
+        <textarea id="templateContentInput" rows="3" placeholder="输入模板文本"></textarea>
+      </div>
+      <button id="btnSaveTemplate" type="button" class="main-btn main-btn-primary">保存模板</button>
+      <div id="savedTemplatesList" class="saved-list"></div>
+    </div>
+
+    <div id="advancedSettingsSection" class="setting-section setting-section-collapsible setting-section-compact is-collapsed">
+      <div id="advancedSettingsHeader" class="setting-section-title setting-section-toggle" role="button" tabindex="0" aria-expanded="false">
+        <span>高级设置</span>
+        <button id="advancedSettingsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
+      </div>
+      <div class="setting-section-body">
+        <div class="control-group">
+          <label for="pollIntervalInput">轮询间隔（秒）</label>
+          <input id="pollIntervalInput" type="number" min="1" max="15" value="2" />
+        </div>
+        <div class="control-group">
+          <label for="timeoutInput">超时时间（秒）</label>
+          <input id="timeoutInput" type="number" min="10" max="600" value="90" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="templateModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        选择提示词模板
+        <button id="templateModalClose" class="modal-close" type="button">&times;</button>
+      </div>
+      <div id="templateList" class="template-list"></div>
+    </div>
+  </div>
+
+  <div id="appPickerModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        选择 AI 应用
+        <button id="appPickerModalClose" class="modal-close" type="button">&times;</button>
+      </div>
+      <div class="app-picker-search-row">
+        <input id="appPickerSearchInput" type="text" placeholder="搜索应用名称..." />
+        <div id="appPickerStats" class="app-picker-stats">0 / 0</div>
+      </div>
+      <div id="appPickerList" class="app-picker-modal-list"></div>
+    </div>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>
