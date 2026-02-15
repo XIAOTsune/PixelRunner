@@ -1,8 +1,8 @@
 const store = require("../services/store");
 const runninghub = require("../services/runninghub");
 const ps = require("../services/ps");
-// 再次确认这里引入了 isPromptLikeInput，如果没有 utils.js 里没导出也会报错
 const { inferInputType, escapeHtml, isPromptLikeInput, isEmptyValue } = require("../utils");
+const { APP_EVENTS } = require("../events");
 
 const dom = {};
 const state = {
@@ -11,17 +11,23 @@ const state = {
     imageBounds: {},
     isRunning: false,
     abortController: null,
-    timerId: null
+    timerId: null,
+    runStartedAt: 0,
+    appPickerKeyword: "",
+    templateSelectCallback: null
 };
 
-function byId(id) { return document.getElementById(id); }
+function byId(id) {
+    return document.getElementById(id);
+}
 
 function revokePreviewUrl(value) {
     if (!value || typeof value !== "object") return;
     const url = String(value.previewUrl || "");
-    if (url.startsWith("blob:")) {
-        try { URL.revokeObjectURL(url); } catch (_) {}
-    }
+    if (!url.startsWith("blob:")) return;
+    try {
+        URL.revokeObjectURL(url);
+    } catch (_) {}
 }
 
 function createPreviewUrlFromBuffer(arrayBuffer) {
@@ -44,31 +50,80 @@ function createPreviewUrlFromBuffer(arrayBuffer) {
     }
 }
 
-// 日志辅助
 function log(msg, type = "info") {
     console.log(`[Workspace][${type}] ${msg}`);
-    const logDiv = byId("logWindow");
-    // 兼容旧版日志窗口，如果有的话
-    if (logDiv) {
-        // 如果是清空指令
-        if (msg === "CLEAR") {
-            logDiv.innerHTML = "";
-            return;
-        }
-        const time = new Date().toLocaleTimeString();
-        const color = type === "error" ? "#ff6b6b" : (type === "success" ? "#4caf50" : "#bbb");
-        logDiv.innerHTML += `<div style="color:${color}; margin-top:4px;">[${time}] ${msg}</div>`;
-        // 自动滚动到底部
-        logDiv.scrollTop = logDiv.scrollHeight;
+    const logDiv = dom.logWindow || byId("logWindow");
+    if (!logDiv) return;
+    if (msg === "CLEAR") {
+        logDiv.innerHTML = "";
+        return;
+    }
+
+    const time = new Date().toLocaleTimeString();
+    const color = type === "error" ? "#ff6b6b" : type === "success" ? "#4caf50" : "#bbb";
+    logDiv.innerHTML += `<div style="color:${color}; margin-top:4px;">[${time}] ${escapeHtml(msg)}</div>`;
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+function getApps() {
+    return store.getAiApps().filter((app) => app && typeof app === "object");
+}
+
+function decodeDataId(encodedId) {
+    if (!encodedId) return "";
+    try {
+        return decodeURIComponent(encodedId);
+    } catch (_) {
+        return String(encodedId);
     }
 }
 
-// === 1. 账户信息逻辑 ===
+function encodeDataId(id) {
+    return encodeURIComponent(String(id || ""));
+}
+
+function updateRunButtonUI() {
+    const btn = dom.btnRun || byId("btnRun");
+    if (!btn) return;
+
+    if (state.isRunning) {
+        const elapsed = ((Date.now() - state.runStartedAt) / 1000).toFixed(2);
+        btn.classList.add("running");
+        btn.disabled = false;
+        btn.textContent = `中止 (${elapsed}s)`;
+        return;
+    }
+
+    btn.classList.remove("running");
+    if (!state.currentApp) {
+        btn.disabled = true;
+        btn.textContent = "开始运行";
+        return;
+    }
+
+    btn.disabled = false;
+    btn.textContent = `运行: ${state.currentApp.name}`;
+}
+
+function updateCurrentAppMeta() {
+    const metaEl = dom.appPickerMeta || byId("appPickerMeta");
+    if (!metaEl) return;
+
+    if (!state.currentApp) {
+        metaEl.innerHTML = `<span class="placeholder-text">请选择应用</span>`;
+        metaEl.title = "";
+        return;
+    }
+
+    metaEl.innerHTML = escapeHtml(state.currentApp.name || "未命名应用");
+    metaEl.title = String(state.currentApp.name || "");
+}
+
 async function updateAccountStatus() {
     const apiKey = store.getApiKey();
-    const balanceEl = byId("accountBalanceValue");
-    const coinsEl = byId("accountCoinsValue");
-    const summaryEl = byId("accountSummary");
+    const balanceEl = dom.accountBalanceValue || byId("accountBalanceValue");
+    const coinsEl = dom.accountCoinsValue || byId("accountCoinsValue");
+    const summaryEl = dom.accountSummary || byId("accountSummary");
 
     if (!balanceEl || !coinsEl) return;
 
@@ -82,70 +137,43 @@ async function updateAccountStatus() {
     try {
         if (summaryEl) summaryEl.classList.remove("is-empty");
         balanceEl.textContent = "...";
-        
         const status = await runninghub.fetchAccountStatus(apiKey);
         balanceEl.textContent = status.remainMoney || "0";
         coinsEl.textContent = status.remainCoins || "0";
     } catch (e) {
         console.error("获取账户信息失败", e);
-        // 不弹窗打扰用户，只在控制台显示
     }
 }
 
-// === 2. 动态参数渲染 (核心修复) ===
 function renderDynamicInputs(appItem) {
     Object.values(state.inputValues || {}).forEach(revokePreviewUrl);
-    state.currentApp = appItem;
+    state.currentApp = appItem || null;
     state.inputValues = {};
     state.imageBounds = {};
-    
-    // 获取 DOM 元素
-    const container = byId("dynamicInputContainer");
-    const imgContainer = byId("imageInputContainer");
-    const btnRun = byId("btnRun");
-    const metaEl = byId("appPickerMeta");
 
-    // 更新顶部元数据
-    if (metaEl) {
-        if (appItem) {
-            // 直接显示应用名称，不再显示 "当前：" 前缀，显得更简洁
-            metaEl.innerHTML = escapeHtml(appItem.name);
-            metaEl.title = appItem.name; // 鼠标悬停显示全名
-        } else {
-            metaEl.innerHTML = `<span class="placeholder-text">请选择应用</span>`;
-        }
-    }
+    const container = dom.dynamicInputContainer || byId("dynamicInputContainer");
+    const imgContainer = dom.imageInputContainer || byId("imageInputContainer");
 
-    // 清空旧内容
+    updateCurrentAppMeta();
+
     if (container) container.innerHTML = "";
     if (imgContainer) {
         imgContainer.innerHTML = "";
         imgContainer.style.display = "none";
     }
 
-    // === 关键修复：解锁按钮 ===
     if (!appItem) {
-        if (container) container.innerHTML = `<div class="empty-state">请点击上方“切换”选择应用</div>`;
-        if (btnRun) {
-            btnRun.disabled = true; // 没选应用时禁用
-            btnRun.textContent = "开始运行";
+        if (container) {
+            container.innerHTML = `<div class="empty-state">请点击上方“切换”选择应用</div>`;
         }
+        updateRunButtonUI();
         return;
     }
 
-    // 既然选了应用，就启用按钮
-    if (btnRun) {
-        btnRun.disabled = false;
-        btnRun.textContent = `运行: ${appItem.name}`;
-    }
+    const inputs = Array.isArray(appItem.inputs) ? appItem.inputs : [];
+    const imageInputs = inputs.filter((input) => inferInputType(input.type || input.fieldType) === "image");
+    const otherInputs = inputs.filter((input) => inferInputType(input.type || input.fieldType) !== "image");
 
-    const inputs = appItem.inputs || [];
-    
-    // 分类参数
-    const imageInputs = inputs.filter(i => inferInputType(i.type) === "image");
-    const otherInputs = inputs.filter(i => inferInputType(i.type) !== "image");
-
-    // 渲染图片参数
     if (imageInputs.length > 0 && imgContainer) {
         imgContainer.style.display = "block";
         imageInputs.forEach((input, idx) => {
@@ -154,367 +182,593 @@ function renderDynamicInputs(appItem) {
         });
     }
 
-    // 渲染普通参数
     if (otherInputs.length > 0 && container) {
         const grid = document.createElement("div");
-        grid.className = "input-grid"; // 使用 style.css 里的 grid
-        
+        grid.className = "input-grid";
+
         otherInputs.forEach((input, idx) => {
             const field = createInputField(input, idx);
-            const type = inferInputType(input.type);
-            const isLong = type === "text" && (!input.options || input.options.length === 0);
-            
-            // 安全检查 isPromptLikeInput
+            const inputType = inferInputType(input.type || input.fieldType);
+            const isLongText = inputType === "text" && (!input.options || input.options.length === 0);
             let isPrompt = false;
-            try { isPrompt = isPromptLikeInput(input); } catch(e) { console.warn("utils.isPromptLikeInput missing?"); }
-
-            if (isLong || isPrompt) {
+            try {
+                isPrompt = isPromptLikeInput(input);
+            } catch (_) {
+                isPrompt = false;
+            }
+            if (isLongText || isPrompt) {
                 field.classList.add("full-width");
-                field.style.gridColumn = "span 2"; 
+                field.style.gridColumn = "span 2";
             }
             grid.appendChild(field);
         });
+
         container.appendChild(grid);
     } else if (imageInputs.length === 0 && container) {
         container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">该应用没有可配置参数，请直接运行</div>`;
     }
+
+    updateRunButtonUI();
 }
 
 function createInputField(input, idx) {
-    const key = input.key || `param_${idx}`;
-    const type = inferInputType(input.type);
-    const label = input.label || input.name || key;
-    
-    // 注意：原来的 wrapper 只是个 div，现在如果是图片，我们不用 dynamic-input-field 类
-    // 而是单独处理
-    
+    const key = String(input.key || `param_${idx}`);
+    const type = inferInputType(input.type || input.fieldType);
+    const labelText = input.label || input.name || key;
+
     if (type === "image") {
-        //创建外层容器（包括label和wrapper）
         const container = document.createElement("div");
         container.style.marginBottom = "12px";
+        container.className = "full-width";
 
-        // 1. 创建 Label (显示在图片框上方)
         const labelEl = document.createElement("div");
         labelEl.className = "dynamic-input-label";
-        labelEl.innerHTML = `${escapeHtml(label)} ${input.required ? '<span class="dynamic-input-required">*</span>' : ''}`;
-        
-        // 2. 创建图片点击区域 wrapper
+        labelEl.innerHTML = `${escapeHtml(labelText)} ${input.required ? '<span style="color:#ff6b6b">*</span>' : ""}`;
+
         const wrapper = document.createElement("div");
         wrapper.className = "image-input-wrapper";
-        
-        // 我们直接用 innerHTML 来构建结构，比 createElment 更直观
         wrapper.innerHTML = `
-            <img class="image-preview" alt="Preview" />
+            <img class="image-preview" />
             <div class="image-input-overlay-content">
-                <div class="image-input-icon">📸</div>
-                <div class="image-input-text">点击从 PS 选区获取</div>
+                <div class="image-input-icon">📷</div>
+                <div class="image-input-text">点击从 PS 获取</div>
             </div>
         `;
 
-        // 绑定点击事件到整个 wrapper（大方框）
-        wrapper.onclick = async () => {
+        wrapper.addEventListener("click", async () => {
             const statusText = wrapper.querySelector(".image-input-text");
             const previewImg = wrapper.querySelector(".image-preview");
             if (!statusText || !previewImg) return;
-            
-            // 简单防抖，防止连点
-            if(statusText.textContent === "获取中...") return;
-            
+
             statusText.textContent = "获取中...";
-            
             try {
-                // 调用 PS 服务
                 const capture = await ps.captureSelection({ log });
-                
-                if (capture && capture.arrayBuffer) {
-                    revokePreviewUrl(state.inputValues[key]);
-                    const previewUrl = createPreviewUrlFromBuffer(capture.arrayBuffer);
-                    
-                    state.inputValues[key] = { arrayBuffer: capture.arrayBuffer, previewUrl };
-                    if (capture.selectionBounds) {
-                        state.imageBounds[key] = capture.selectionBounds;
-                    }
-                    
-                    // 更新 UI 状态
-                    previewImg.src = previewUrl;
-                    previewImg.classList.add("has-image"); // 显示图片
-                    wrapper.classList.add("has-image");    // 改变容器样式
-                    
-                    statusText.textContent = "✅ 点击可重新获取";
-                    statusText.style.color = "#4caf50";
-                } else {
-                    statusText.textContent = "⚠️ 未获取到图片";
-                    statusText.style.color = "#ff6b6b";
-                    setTimeout(() => {
-                        statusText.textContent = "点击从 PS 选区获取";
-                        statusText.style.color = "#ccc";
-                    }, 2000);
+                if (!capture || !capture.arrayBuffer) {
+                    statusText.textContent = "获取失败";
+                    return;
                 }
+
+                revokePreviewUrl(state.inputValues[key]);
+                const previewUrl = createPreviewUrlFromBuffer(capture.arrayBuffer);
+                state.inputValues[key] = { arrayBuffer: capture.arrayBuffer, previewUrl };
+                if (capture.selectionBounds) {
+                    state.imageBounds[key] = capture.selectionBounds;
+                }
+
+                previewImg.src = previewUrl;
+                previewImg.classList.add("has-image");
+                statusText.textContent = "已捕获，点击重新获取";
             } catch (e) {
                 console.error(e);
-                statusText.textContent = "❌ 获取失败";
+                statusText.textContent = "获取失败";
             }
-        };
-        
-        // 如果需要加标签（Label），可以在 wrapper 外面再包一层，
-        // 但既然你想要大图效果，标签可以是图片上方的一个小标题，或者利用 tooltip
-        // 这里为了配合你的 grid 布局，我建议直接返回 wrapper
-        // 如果你的 createDynamicInputs 里有 labelEl 的逻辑，记得那里可能要调整
-        // 按照你之前的逻辑，wrapper 里面包含了 labelEl。
-        // 为了布局美观，我们可以把 label 放在 wrapper 外部上方
-    
+        });
+
         container.appendChild(labelEl);
         container.appendChild(wrapper);
-        
         return container;
-    } 
+    }
 
-    // === 以下是其他类型的输入框 (Select, Text, etc.)，保持原样或微调 ===
     const wrapper = document.createElement("div");
-    wrapper.className = "dynamic-input-field"; 
+    wrapper.className = "dynamic-input-field";
 
-    const labelEl = document.createElement("div");
+    const headerRow = document.createElement("div");
+    headerRow.className = "input-label-row";
+
+    const labelEl = document.createElement("span");
     labelEl.className = "dynamic-input-label";
-    labelEl.innerHTML = `${escapeHtml(label)} ${input.required ? '<span class="dynamic-input-required">*</span>' : ''}`;
-    wrapper.appendChild(labelEl);
+    labelEl.innerHTML = escapeHtml(labelText);
+    headerRow.appendChild(labelEl);
 
+    const promptLike = isPromptLikeInput(input) || (type === "text" && (key.toLowerCase().includes("prompt") || String(labelText).includes("提示")));
     let inputEl;
-    // ... (后续 select / boolean / text 逻辑保持原来的代码不变) ...
-    // ... 这里把原来代码里 else if (type === "select") 及其后面的部分粘回来即可 ...
-    
-    // 为了代码完整性，这里简写示意，你需要保留原来的其他输入框逻辑
-    if (type === "select") { 
-        /* 原有代码 */ 
+
+    if (type === "select") {
         inputEl = document.createElement("select");
-        (input.options || []).forEach(opt => {
+        (input.options || []).forEach((opt) => {
             const option = document.createElement("option");
             option.value = opt;
             option.textContent = opt;
             inputEl.appendChild(option);
         });
-        const defVal = input.default || (input.options && input.options[0]);
-        if (defVal) {
-            inputEl.value = defVal;
-            state.inputValues[key] = defVal;
+
+        const defaultValue = input.default || (Array.isArray(input.options) ? input.options[0] : "");
+        if (!isEmptyValue(defaultValue)) {
+            inputEl.value = defaultValue;
+            state.inputValues[key] = defaultValue;
         }
-        inputEl.onchange = (e) => state.inputValues[key] = e.target.value;
-    } 
-    else if (type === "boolean") { /* 原有代码 */ 
+        inputEl.addEventListener("change", (event) => {
+            state.inputValues[key] = event.target.value;
+        });
+    } else if (type === "boolean") {
         inputEl = document.createElement("select");
         inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
         inputEl.value = String(input.default) === "true" ? "true" : "false";
         state.inputValues[key] = inputEl.value === "true";
-        inputEl.onchange = (e) => state.inputValues[key] = e.target.value === "true";
-    }
-    else { /* 原有代码 */ 
-        inputEl = input.type === "text" ? document.createElement("textarea") : document.createElement("input");
-        if (input.type !== "text") inputEl.type = type === "number" ? "number" : "text";
-        inputEl.placeholder = input.default || "";
-        inputEl.value = input.default || "";
+        inputEl.addEventListener("change", (event) => {
+            state.inputValues[key] = event.target.value === "true";
+        });
+    } else {
+        const isLongText = promptLike || (type === "text" && !input.options);
+        if (isLongText) {
+            inputEl = document.createElement("textarea");
+            inputEl.rows = promptLike ? 3 : 1;
+            inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
+            wrapper.classList.add("full-width");
+
+            if (promptLike) {
+                const btnTemplate = document.createElement("button");
+                btnTemplate.className = "template-btn";
+                btnTemplate.type = "button";
+                btnTemplate.textContent = "预设";
+                btnTemplate.addEventListener("click", () => {
+                    openTemplatePicker((content) => {
+                        inputEl.value = content;
+                        state.inputValues[key] = content;
+                        inputEl.style.borderColor = "#4caf50";
+                        setTimeout(() => {
+                            inputEl.style.borderColor = "";
+                        }, 300);
+                    });
+                });
+                headerRow.appendChild(btnTemplate);
+            }
+        } else {
+            inputEl = document.createElement("input");
+            inputEl.type = type === "number" ? "number" : "text";
+            inputEl.placeholder = String(input.default || "");
+        }
+
+        inputEl.value = String(input.default || "");
         state.inputValues[key] = inputEl.value;
-        try { if (isPromptLikeInput(input)) { inputEl.placeholder = "在此输入提示词..."; inputEl.rows = 2; } } catch(e) {}
-        inputEl.oninput = (e) => state.inputValues[key] = e.target.value;
+        inputEl.addEventListener("input", (event) => {
+            state.inputValues[key] = event.target.value;
+        });
     }
 
+    wrapper.appendChild(headerRow);
     wrapper.appendChild(inputEl);
     return wrapper;
-}
-
-// === 3. 运行任务逻辑 ===
-// 辅助函数：格式化时间 (0.00s)
-function formatTime(startTime) {
-    const now = Date.now();
-    const seconds = (now - startTime) / 1000;
-    return seconds.toFixed(2) + "s";
 }
 
 function resolveTargetBounds() {
     if (!state.currentApp) return null;
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
+
     for (const input of inputs) {
-        const type = inferInputType(input.type || input.fieldType);
-        if (type !== "image") continue;
+        if (inferInputType(input.type || input.fieldType) !== "image") continue;
         const key = String(input.key || "").trim();
         if (!key) continue;
         if (isEmptyValue(state.inputValues[key])) continue;
         if (state.imageBounds[key]) return state.imageBounds[key];
     }
+
     return null;
 }
 
-async function handleRun() {
-    const btn = byId("btnRun");
+function setRunState(running) {
+    state.isRunning = running;
+    if (running) {
+        state.runStartedAt = Date.now();
+        if (state.timerId) clearInterval(state.timerId);
+        state.timerId = setInterval(updateRunButtonUI, 100);
+    } else {
+        if (state.timerId) {
+            clearInterval(state.timerId);
+            state.timerId = null;
+        }
+        state.runStartedAt = 0;
+        state.abortController = null;
+    }
+    updateRunButtonUI();
+}
 
-    // === 逻辑 A: 如果正在运行，点击按钮意味着“中止” ===
+async function handleRun() {
     if (state.isRunning) {
         if (state.abortController) {
-            state.abortController.abort(); // 发送中止信号
-            log("🛑 用户请求中止任务...", "warn");
+            state.abortController.abort();
+            log("用户请求中止任务", "warn");
         }
         return;
     }
-    
-    // === 逻辑 B: 开始新任务 ===
+
     const apiKey = store.getApiKey();
-    if (!apiKey) return alert("请先在设置页配置 API Key");
-    if (!state.currentApp) return alert("请先选择一个应用");
+    if (!apiKey) {
+        alert("请先在设置页配置 API Key");
+        return;
+    }
+    if (!state.currentApp) {
+        alert("请先选择一个应用");
+        return;
+    }
 
-    // 1. 初始化状态
-    state.isRunning = true;
-    state.abortController = new AbortController(); // 创建控制器
-    const signal = state.abortController.signal;   // 获取信号对象
-    
-    // 2. 启动计时器
-    const startTime = Date.now();
-    btn.classList.add("running"); // 可以去 css 加个红色样式
-    
-    state.timerId = setInterval(() => {
-        btn.textContent = `⏹ 中止 (${formatTime(startTime)})`;
-    }, 50); // 每50ms刷新一次 UI
+    state.abortController = new AbortController();
+    const signal = state.abortController.signal;
+    setRunState(true);
 
-    // 清空日志
     log("CLEAR");
-    log("🚀 开始任务...", "info");
+    log("开始执行任务", "info");
 
     try {
-        // 注意：我们需要把 signal 传给 service 层
         const runOptions = { log, signal };
-
-        // 1. 提交任务
         const taskId = await runninghub.runAppTask(apiKey, state.currentApp, state.inputValues, runOptions);
-        log(`✅ 任务提交 ID: ${taskId}`, "success");
-        
-        // 2. 轮询结果
+        log(`任务已提交: ${taskId}`, "success");
+
         const settings = store.getSettings();
         const resultUrl = await runninghub.pollTaskOutput(apiKey, taskId, settings, runOptions);
-        log("📥 任务完成，下载中...", "info");
+        log("任务完成，下载结果中", "info");
 
-        // 3. 下载并回贴
-        // 获取回贴坐标（结合第一步的代码）
-        const targetBounds = resolveTargetBounds();
-
-        // 此时不再需要检查 signal，因为 fetch 内部会处理，但最好在下载前判断一下
         if (signal.aborted) throw new Error("用户中止");
-
+        const targetBounds = resolveTargetBounds();
         const buffer = await runninghub.downloadResultBinary(resultUrl, runOptions);
         await ps.placeImage(buffer, { log, targetBounds });
-        
-        log(`✨ 全部完成，耗时 ${formatTime(startTime)}`, "success");
-        updateAccountStatus();
 
+        log("处理完成，结果已回贴", "success");
+        updateAccountStatus();
     } catch (e) {
-        // 判断是否是用户主动取消
-        if (e.name === 'AbortError' || (e.message && e.message.includes("用户中止"))) {
-            log("🛑 任务已中止", "warn");
+        if (e && (e.name === "AbortError" || String(e.message || "").includes("中止"))) {
+            log("任务已中止", "warn");
         } else {
             console.error(e);
-            log(`❌ 运行失败: ${e.message}`, "error");
-            alert("运行失败: " + e.message);
+            log(`运行失败: ${e.message}`, "error");
+            alert(`运行失败: ${e.message}`);
         }
     } finally {
-        // === 清理工作 ===
-        state.isRunning = false;
-        state.abortController = null;
-        if (state.timerId) clearInterval(state.timerId);
-        
-        // 恢复按钮状态
-        btn.classList.remove("running");
-        btn.textContent = `运行: ${state.currentApp.name}`;
-        btn.disabled = false;
+        setRunState(false);
     }
 }
 
-// === 4. App Picker 交互 ===
-function setupAppPicker() {
-    const btn = byId("btnOpenAppPicker");
-    const modal = byId("appPickerModal");
-    const closeBtn = byId("appPickerModalClose");
-    const list = byId("appPickerList");
+function renderAppPickerList() {
+    if (!dom.appPickerList) return;
 
-    if (!btn || !modal) return;
+    const apps = getApps();
+    const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
+    const visibleApps = keyword
+        ? apps.filter((app) => String(app.name || "").toLowerCase().includes(keyword))
+        : apps;
 
-    btn.onclick = () => {
-        const list = byId("appPickerList");
-        const apps = store.getAiApps();
-        
-        modal.classList.add("active");
+    if (dom.appPickerStats) {
+        dom.appPickerStats.textContent = `${visibleApps.length} / ${apps.length}`;
+    }
 
+    if (visibleApps.length === 0) {
         if (apps.length === 0) {
-            list.innerHTML = `<div class="empty-state">
-                <div style="margin-bottom:10px;">暂无已保存的应用</div>
-                <button class="main-btn" onclick="document.getElementById('appPickerModalClose').click(); document.getElementById('tabSettings').click();">去设置页解析</button>
-            </div>`;
-            return;
-        }
-
-        list.innerHTML = apps.map(app => `
-            <div class="app-picker-item" data-id="${app.id}">
-                <div>
-                    <div style="font-weight:bold; font-size:12px;">${escapeHtml(app.name)}</div>
-                    <div style="font-size:10px; opacity:0.6">${app.appId}</div>
+            dom.appPickerList.innerHTML = `
+                <div class="empty-state">
+                    <div style="margin-bottom:10px;">暂无已保存应用</div>
+                    <button class="main-btn" type="button" data-action="goto-settings">去设置页解析</button>
                 </div>
-                <div style="font-size:16px; color:#aaa;">›</div>
-            </div>
-        `).join("");
-    };
-
-    if (closeBtn) closeBtn.onclick = () => modal.classList.remove("active");
-
-    // --- 新增：事件委托监听列表点击 ---
-    // 类似于 Python GUI 里的 bind event
-    list.onclick = (e) => {
-        // 向上寻找最近的 .app-picker-item 元素
-        const item = e.target.closest(".app-picker-item");
-        if (item) {
-            const appId = item.dataset.id; // 获取 data-id
-            selectAppInternal(appId);      // 调用内部函数
+            `;
+        } else {
+            dom.appPickerList.innerHTML = `<div class="empty-state">没有匹配的应用</div>`;
         }
-    };
+        return;
+    }
+
+    dom.appPickerList.innerHTML = visibleApps.map((app) => {
+        const active = state.currentApp && state.currentApp.id === app.id;
+        return `
+            <button type="button" class="app-picker-item ${active ? "active" : ""}" data-id="${encodeDataId(app.id)}">
+                <div>
+                    <div style="font-weight:bold; font-size:12px;">${escapeHtml(app.name || "未命名应用")}</div>
+                    <div style="font-size:10px; opacity:0.6;">${escapeHtml(app.appId || "-")}</div>
+                </div>
+                <div style="font-size:12px; color:#aaa;">${Array.isArray(app.inputs) ? app.inputs.length : 0} 参数</div>
+            </button>
+        `;
+    }).join("");
 }
 
-// === 5. 全局选择函数 (关键修复：增加 try-catch 防止报错卡死弹窗) ===
-// 把原来的 window.selectApp 改名为内部函数 selectAppInternal
-// 并不再挂载到 window 上，避免全局污染
-function selectAppInternal(id) {
+function closeAppPickerModal() {
+    if (dom.appPickerModal) {
+        dom.appPickerModal.classList.remove("active");
+    }
+}
+
+function openAppPickerModal() {
+    state.appPickerKeyword = "";
+    if (dom.appPickerSearchInput) {
+        dom.appPickerSearchInput.value = "";
+    }
+    renderAppPickerList();
+    if (dom.appPickerModal) {
+        dom.appPickerModal.classList.add("active");
+    }
+}
+
+function selectAppInternal(id, options = {}) {
+    const quiet = !!options.quiet;
+    const closeModal = options.closeModal !== false;
+
     try {
-        console.log("正在选择应用:", id);
-        const app = store.getAiApps().find(a => a.id === id);
-        if (app) {
-            renderDynamicInputs(app);
-            // 关闭弹窗
-            const modal = byId("appPickerModal");
-            if (modal) modal.classList.remove("active");
-        } else {
-            alert("应用不存在，请刷新");
+        const app = getApps().find((item) => String(item.id) === String(id));
+        if (!app) {
+            if (!quiet) alert("应用不存在，请刷新后重试");
+            return false;
         }
+
+        renderDynamicInputs(app);
+        if (closeModal) closeAppPickerModal();
+        return true;
     } catch (e) {
         console.error(e);
-        alert("加载应用失败: " + e.message);
+        if (!quiet) alert(`加载应用失败: ${e.message}`);
+        return false;
     }
 }
 
-// === 6. 初始化入口 ===
-function initWorkspaceController() {
-    setupAppPicker();
-    
-    const btnRun = byId("btnRun");
-    if (btnRun) btnRun.addEventListener("click", handleRun);
-    
-    const btnRefresh = byId("btnRefreshWorkspaceApps");
-    if (btnRefresh) {
-        btnRefresh.onclick = () => {
-            updateAccountStatus();
-            alert("余额已刷新");
-        };
+function syncWorkspaceApps(options = {}) {
+    const forceRerender = !!options.forceRerender;
+    const apps = getApps();
+
+    if (apps.length === 0) {
+        if (state.currentApp || forceRerender) {
+            renderDynamicInputs(null);
+        } else {
+            updateCurrentAppMeta();
+            updateRunButtonUI();
+        }
+        renderAppPickerList();
+        return;
     }
 
-    updateAccountStatus();
-    
-    // 自动加载第一个应用
-    const apps = store.getAiApps();
-    if (apps.length > 0) {
-        selectAppInternal(apps[0].id);
+    const currentId = state.currentApp && state.currentApp.id;
+    if (!currentId) {
+        selectAppInternal(apps[0].id, { quiet: true, closeModal: false });
+        renderAppPickerList();
+        return;
     }
+
+    const matched = apps.find((item) => item.id === currentId);
+    if (!matched) {
+        selectAppInternal(apps[0].id, { quiet: true, closeModal: false });
+        renderAppPickerList();
+        return;
+    }
+
+    state.currentApp = matched;
+    if (forceRerender) {
+        renderDynamicInputs(matched);
+    } else {
+        updateCurrentAppMeta();
+        updateRunButtonUI();
+    }
+    renderAppPickerList();
+}
+
+function handleAppPickerListClick(event) {
+    const gotoSettingsBtn = event.target.closest("button[data-action='goto-settings']");
+    if (gotoSettingsBtn) {
+        closeAppPickerModal();
+        const tabSettings = byId("tabSettings");
+        if (tabSettings) tabSettings.click();
+        return;
+    }
+
+    const item = event.target.closest(".app-picker-item[data-id]");
+    if (!item || !dom.appPickerList.contains(item)) return;
+
+    const id = decodeDataId(item.dataset.id || "");
+    if (!id) return;
+
+    selectAppInternal(id);
+}
+
+function renderTemplatePickerList() {
+    if (!dom.templateList) return;
+
+    const templates = store.getPromptTemplates();
+    if (!templates.length) {
+        dom.templateList.innerHTML = `
+            <div class="empty-state">
+                暂无模板，请前往设置页添加
+                <br><button class="tiny-btn" style="margin-top:8px" type="button" data-action="goto-settings">去添加</button>
+            </div>
+        `;
+        return;
+    }
+
+    dom.templateList.innerHTML = templates.map((template) => `
+        <button type="button" class="app-picker-item" data-template-id="${encodeDataId(template.id)}">
+            <div>
+                <div style="font-weight:bold;font-size:12px">${escapeHtml(template.title)}</div>
+                <div style="font-size:10px;color:#777; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${escapeHtml(template.content)}</div>
+            </div>
+            <div style="font-size:12px;color:var(--accent-color)">选择</div>
+        </button>
+    `).join("");
+}
+
+function closeTemplatePicker() {
+    if (dom.templateModal) {
+        dom.templateModal.classList.remove("active");
+    }
+    state.templateSelectCallback = null;
+}
+
+function openTemplatePicker(onSelectCallback) {
+    state.templateSelectCallback = typeof onSelectCallback === "function" ? onSelectCallback : null;
+    renderTemplatePickerList();
+    if (dom.templateModal) {
+        dom.templateModal.classList.add("active");
+    }
+}
+
+function handleTemplateListClick(event) {
+    const gotoSettingsBtn = event.target.closest("button[data-action='goto-settings']");
+    if (gotoSettingsBtn) {
+        closeTemplatePicker();
+        const tabSettings = byId("tabSettings");
+        if (tabSettings) tabSettings.click();
+        return;
+    }
+
+    const item = event.target.closest(".app-picker-item[data-template-id]");
+    if (!item || !dom.templateList.contains(item)) return;
+
+    const id = decodeDataId(item.dataset.templateId || "");
+    if (!id) return;
+
+    const template = store.getPromptTemplates().find((tpl) => String(tpl.id) === String(id));
+    if (!template) return;
+
+    if (state.templateSelectCallback) {
+        state.templateSelectCallback(template.content);
+    }
+
+    closeTemplatePicker();
+}
+
+function onAppPickerSearchInput() {
+    state.appPickerKeyword = String(dom.appPickerSearchInput.value || "");
+    renderAppPickerList();
+}
+
+function onAppPickerModalClick(event) {
+    if (event.target === dom.appPickerModal) {
+        closeAppPickerModal();
+    }
+}
+
+function onTemplateModalClick(event) {
+    if (event.target === dom.templateModal) {
+        closeTemplatePicker();
+    }
+}
+
+function onRefreshWorkspaceClick() {
+    syncWorkspaceApps({ forceRerender: false });
+    updateAccountStatus();
+    log("应用列表已刷新", "info");
+}
+
+function bindWorkspaceEvents() {
+    if (dom.btnRun) {
+        dom.btnRun.removeEventListener("click", handleRun);
+        dom.btnRun.addEventListener("click", handleRun);
+    }
+
+    if (dom.btnOpenAppPicker) {
+        dom.btnOpenAppPicker.removeEventListener("click", openAppPickerModal);
+        dom.btnOpenAppPicker.addEventListener("click", openAppPickerModal);
+    }
+
+    if (dom.appPickerModalClose) {
+        dom.appPickerModalClose.addEventListener("click", closeAppPickerModal);
+    }
+
+    if (dom.appPickerModal) {
+        dom.appPickerModal.removeEventListener("click", onAppPickerModalClick);
+        dom.appPickerModal.addEventListener("click", onAppPickerModalClick);
+    }
+
+    if (dom.appPickerList) {
+        dom.appPickerList.removeEventListener("click", handleAppPickerListClick);
+        dom.appPickerList.addEventListener("click", handleAppPickerListClick);
+    }
+
+    if (dom.appPickerSearchInput) {
+        dom.appPickerSearchInput.removeEventListener("input", onAppPickerSearchInput);
+        dom.appPickerSearchInput.addEventListener("input", onAppPickerSearchInput);
+    }
+
+    if (dom.btnRefreshWorkspaceApps) {
+        dom.btnRefreshWorkspaceApps.removeEventListener("click", onRefreshWorkspaceClick);
+        dom.btnRefreshWorkspaceApps.addEventListener("click", onRefreshWorkspaceClick);
+    }
+
+    if (dom.templateModalClose) {
+        dom.templateModalClose.addEventListener("click", closeTemplatePicker);
+    }
+
+    if (dom.templateModal) {
+        dom.templateModal.removeEventListener("click", onTemplateModalClick);
+        dom.templateModal.addEventListener("click", onTemplateModalClick);
+    }
+
+    if (dom.templateList) {
+        dom.templateList.removeEventListener("click", handleTemplateListClick);
+        dom.templateList.addEventListener("click", handleTemplateListClick);
+    }
+
+    document.removeEventListener(APP_EVENTS.APPS_CHANGED, onAppsChanged);
+    document.addEventListener(APP_EVENTS.APPS_CHANGED, onAppsChanged);
+
+    document.removeEventListener(APP_EVENTS.TEMPLATES_CHANGED, onTemplatesChanged);
+    document.addEventListener(APP_EVENTS.TEMPLATES_CHANGED, onTemplatesChanged);
+
+    document.removeEventListener(APP_EVENTS.SETTINGS_CHANGED, onSettingsChanged);
+    document.addEventListener(APP_EVENTS.SETTINGS_CHANGED, onSettingsChanged);
+}
+
+function onAppsChanged() {
+    syncWorkspaceApps({ forceRerender: false });
+}
+
+function onTemplatesChanged() {
+    if (dom.templateModal && dom.templateModal.classList.contains("active")) {
+        renderTemplatePickerList();
+    }
+}
+
+function onSettingsChanged() {
+    updateAccountStatus();
+}
+
+function cacheDomRefs() {
+    const ids = [
+        "btnRun",
+        "btnOpenAppPicker",
+        "btnRefreshWorkspaceApps",
+        "appPickerMeta",
+        "dynamicInputContainer",
+        "imageInputContainer",
+        "logWindow",
+        "appPickerModal",
+        "appPickerModalClose",
+        "appPickerSearchInput",
+        "appPickerStats",
+        "appPickerList",
+        "templateModal",
+        "templateList",
+        "templateModalClose",
+        "accountSummary",
+        "accountBalanceValue",
+        "accountCoinsValue"
+    ];
+
+    ids.forEach((id) => {
+        dom[id] = byId(id);
+    });
+}
+
+function initWorkspaceController() {
+    cacheDomRefs();
+    bindWorkspaceEvents();
+
+    updateAccountStatus();
+    syncWorkspaceApps({ forceRerender: true });
+    updateRunButtonUI();
 }
 
 module.exports = { initWorkspaceController };

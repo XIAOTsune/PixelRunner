@@ -1,27 +1,35 @@
-// 引入三个独立的控制器
 const { initWorkspaceController } = require("./src/controllers/workspace-controller");
 const { initSettingsController } = require("./src/controllers/settings-controller");
 const { initToolsController } = require("./src/controllers/tools-controller");
+const { runPsEnvironmentDoctor } = require("./src/diagnostics/ps-env-doctor");
 
 document.addEventListener("DOMContentLoaded", () => {
   console.log("Plugin Loaded. Initializing Controllers...");
 
+  let initError = null;
   try {
-      // 1. 初始化工作台 (AI 运行)
-      initWorkspaceController();
-      
-      // 2. 初始化设置页 (API Key, Parsing)
-      initSettingsController();
-      
-      // 3. 初始化工具箱 (中性灰, 盖印)
-      initToolsController();
-      
-      // 4. 设置 Tab 切换逻辑
-      setupTabs();
-      
-  } catch (e) {
-      console.error("Initialization Failed:", e);
+    initWorkspaceController();
+    initSettingsController();
+    initToolsController();
+    setupTabs();
+  } catch (error) {
+    initError = error;
+    console.error("Initialization Failed:", error);
   }
+
+  runPsEnvironmentDoctor({ stage: "startup", initError })
+    .then((report) => {
+      console.log(`[Diag] Startup report generated: ${report.runId}`);
+      if (report && report.persisted) {
+        const { jsonPath, textPath } = report.persisted;
+        if (jsonPath || textPath) {
+          console.log(`[Diag] Report paths => json: ${jsonPath || "n/a"}, txt: ${textPath || "n/a"}`);
+        }
+      }
+    })
+    .catch((error) => {
+      console.error("[Diag] Failed to run startup diagnostics:", error);
+    });
 });
 
 function setupTabs() {
@@ -31,16 +39,14 @@ function setupTabs() {
     tabSettings: "viewSettings"
   };
 
-  Object.keys(tabs).forEach(tabId => {
+  Object.keys(tabs).forEach((tabId) => {
     const btn = document.getElementById(tabId);
     if (!btn) return;
 
     btn.addEventListener("click", () => {
-      // 移除所有激活状态
-      document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".nav-item").forEach((el) => el.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach((el) => el.classList.remove("active"));
 
-      // 激活当前
       btn.classList.add("active");
       const viewId = tabs[tabId];
       const view = document.getElementById(viewId);

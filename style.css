@@ -412,3 +412,88 @@ textarea { resize: vertical; min-height: 40px; }
 .control-group { margin-bottom: 10px; }
 .setting-hint { font-size: 9px; color: #666; margin-top: 6px; }
 .saved-list { margin-top: 10px; max-height: 150px; overflow-y: auto; }
+
+/* === 新增：紧凑参数区样式 === */
+
+/* 1. 参数网格布局：默认双列，更紧凑 */
+.input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* 两列等宽 */
+  gap: 8px; /* 间距更小，节省空间 */
+  padding: 0 2px;
+}
+
+/* 2. 跨列样式：用于提示词或长文本 */
+.input-grid .full-width {
+  grid-column: span 2;
+}
+
+/* 3. 动态表单项容器 */
+.dynamic-input-field {
+  margin-bottom: 0; /*去掉多余边距，由 grid gap 控制 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 4. 标签行：包含 Label 和 功能按钮（如模版） */
+.input-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.dynamic-input-label {
+  font-size: 11px;
+  color: #bbb;
+  white-space: nowrap;
+}
+
+/* 5. 模版按钮：做成小巧的图标或文字按钮 */
+.template-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: var(--accent-color);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.template-btn:hover {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+/* 6. 输入框微调：更像 IDE 风格 */
+.dynamic-input-field textarea {
+  font-family: "Consolas", "Monaco", monospace; /* 代码字体，更易读 */
+  font-size: 11px;
+  background: #222;
+  border: 1px solid #444;
+  padding: 6px;
+  min-height: 50px; /* 默认高度减小 */
+  line-height: 1.4;
+}
+
+.dynamic-input-field input[type="number"],
+.dynamic-input-field select {
+  background: #2b2b2b;
+  height: 28px; /* 固定高度，看起来整齐 */
+}
+
+/* 7. 滑块+数字 组合样式 (可选优化) */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.slider-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+}
+.slider-row input[type="number"] {
+  width: 50px;
+  text-align: center;
+}
