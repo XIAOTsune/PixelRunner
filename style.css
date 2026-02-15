@@ -281,8 +281,14 @@ textarea { resize: vertical; min-height: 40px; }
 }
 
 .image-input-icon {
+  font-size: 0;
+  opacity: 0.85;
+}
+
+.image-input-icon::before {
+  content: "📷";
   font-size: 32px;
-  opacity: 0.7;
+  line-height: 1;
 }
 
 .image-input-text {

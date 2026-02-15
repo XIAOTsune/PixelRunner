@@ -1,8 +1,9 @@
-const store = require("../services/store");
+﻿const store = require("../services/store");
 const runninghub = require("../services/runninghub");
 const { normalizeAppId, escapeHtml } = require("../utils");
 const { APP_EVENTS, emitAppEvent } = require("../events");
 const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
+const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 
 const dom = {};
 
@@ -48,7 +49,7 @@ function toPrettyJson(value) {
 }
 
 function summarizeDiagnostic(report) {
-    if (!report || typeof report !== "object") return "诊断报告不可用";
+    if (!report || typeof report !== "object") return "诊断报告不可用。";
     const lines = [];
     lines.push(`Run ID: ${report.runId || "-"}`);
     lines.push(`Time: ${report.generatedAt || "-"}`);
@@ -121,11 +122,63 @@ function loadLatestDiagnosticReport() {
     }
 
     if (!report) {
-        setEnvDoctorOutput("未找到最近报告。请先点击“运行环境检测”。");
+        setEnvDoctorOutput("未找到最近报告，请先点击“运行环境检测”。");
         return;
     }
 
     setEnvDoctorOutput(summarizeDiagnostic(report));
+}
+
+function summarizeParseDebug(debug) {
+    if (!debug || typeof debug !== "object") return "Parse debug is not available.";
+    const lines = [];
+    lines.push(`Time: ${debug.generatedAt || "-"}`);
+    lines.push(`Endpoint: ${debug.endpoint || "-"}`);
+    lines.push(`App ID: ${debug.appId || "-"}`);
+    lines.push("");
+    lines.push(`Top-level keys: ${Array.isArray(debug.topLevelKeys) ? debug.topLevelKeys.join(", ") : "-"}`);
+    lines.push(`Data keys: ${Array.isArray(debug.dataKeys) ? debug.dataKeys.join(", ") : "-"}`);
+    lines.push(`Result keys: ${Array.isArray(debug.resultKeys) ? debug.resultKeys.join(", ") : "-"}`);
+    lines.push("");
+    lines.push(`Selected candidate: ${debug.selectedCandidatePath || "-"}`);
+    lines.push(`Selected raw count: ${Number(debug.selectedRawCount) || 0}`);
+    lines.push("");
+    lines.push("Candidate arrays:");
+    const candidates = Array.isArray(debug.candidateInputArrays) ? debug.candidateInputArrays : [];
+    if (candidates.length === 0) {
+        lines.push("1. (none)");
+    } else {
+        candidates.slice(0, 20).forEach((item, idx) => {
+            lines.push(`${idx + 1}. ${item.path || "-"} | count=${Number(item.count) || 0}, inputLike=${Number(item.inputLikeCount) || 0}`);
+        });
+    }
+    lines.push("");
+    lines.push("First raw entries:");
+    lines.push(toPrettyJson(Array.isArray(debug.firstRawEntries) ? debug.firstRawEntries : []));
+    lines.push("");
+    lines.push("Normalized inputs:");
+    lines.push(toPrettyJson(Array.isArray(debug.normalizedInputs) ? debug.normalizedInputs : []));
+    lines.push("");
+    lines.push("Curl:");
+    lines.push(toPrettyJson(debug.curl || {}));
+    return lines.join("\n");
+}
+
+function loadParseDebugReport() {
+    let report = null;
+    try {
+        const raw = localStorage.getItem(PARSE_DEBUG_STORAGE_KEY);
+        report = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+        report = null;
+    }
+
+    if (!report) {
+        setEnvDoctorOutput("No parse debug found. Parse and save an app first, then click this button again.");
+        return;
+    }
+
+    setEnvDoctorOutput(summarizeParseDebug(report));
 }
 
 function getDuplicateMeta(list) {
@@ -222,6 +275,9 @@ async function parseApp() {
     try {
         dom.appIdInput.value = appId;
         const data = await runninghub.fetchAppInfo(appId, apiKey, { log });
+        if (!data || !Array.isArray(data.inputs) || data.inputs.length === 0) {
+            throw new Error("未识别到可用输入参数，请先点击“Load Parse Debug”检查解析详情。");
+        }
 
         state.parsedAppData = {
             appId,
@@ -264,8 +320,22 @@ function renderParseResult(data) {
 function saveParsedApp() {
     if (!state.parsedAppData) return;
 
-    store.addAiApp(state.parsedAppData);
-    emitAppEvent(APP_EVENTS.APPS_CHANGED, { reason: "saved" });
+    const normalizedTargetAppId = normalizeAppId(state.parsedAppData.appId);
+    const existing = store.getAiApps().find((item) => normalizeAppId(item && item.appId) === normalizedTargetAppId);
+    let targetAppRecordId = "";
+
+    if (existing && existing.id) {
+        store.updateAiApp(existing.id, state.parsedAppData);
+        targetAppRecordId = String(existing.id);
+    } else {
+        targetAppRecordId = store.addAiApp(state.parsedAppData);
+    }
+
+    emitAppEvent(APP_EVENTS.APPS_CHANGED, {
+        reason: existing ? "updated" : "saved",
+        targetAppId: targetAppRecordId,
+        targetWorkflowId: normalizedTargetAppId
+    });
     alert("应用已保存");
 
     clearAppEditorUI();
@@ -353,7 +423,7 @@ function renderSavedTemplates() {
 }
 
 function onSavedAppsListClick(event) {
-    const button = findClosestButtonWithAction(event.target);
+    const button = event.target && event.target.closest ? event.target.closest("button[data-action]") : null;
     if (!button || button.dataset.action !== "delete-app") return;
     if (!dom.savedAppsList.contains(button)) return;
 
@@ -382,7 +452,7 @@ function onSavedAppsListClick(event) {
 }
 
 function onSavedTemplatesListClick(event) {
-    const button = findClosestButtonWithAction(event.target);
+    const button = event.target && event.target.closest ? event.target.closest("button[data-action]") : null;
     if (!button || button.dataset.action !== "delete-template") return;
     if (!dom.savedTemplatesList.contains(button)) return;
 
@@ -451,6 +521,7 @@ function initSettingsController() {
         "savedTemplatesList",
         "btnRunEnvDoctor",
         "btnLoadLatestDiag",
+        "btnLoadParseDebug",
         "envDoctorOutput",
         "advancedSettingsHeader",
         "advancedSettingsToggle",
@@ -482,6 +553,9 @@ function initSettingsController() {
     }
     if (dom.btnLoadLatestDiag) {
         dom.btnLoadLatestDiag.addEventListener("click", loadLatestDiagnosticReport);
+    }
+    if (dom.btnLoadParseDebug) {
+        dom.btnLoadParseDebug.addEventListener("click", loadParseDebugReport);
     }
 
     if (dom.savedAppsList) {

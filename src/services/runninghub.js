@@ -1,5 +1,6 @@
 const { API } = require("../config");
 const { normalizeAppId, inferInputType, sleep, isEmptyValue } = require("../utils");
+const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 
 function toMessage(result, fallback = "请求失败") {
   if (!result || typeof result !== "object") return fallback;
@@ -266,7 +267,6 @@ function sanitizeOptionList(list) {
     if (OPTION_IGNORE_MARKERS.has(marker)) continue;
     if (OPTION_META_KEYS.has(marker)) continue;
     if (OPTION_NOISE_MARKERS.has(marker)) continue;
-    if (/^\d+$/.test(marker)) continue;
     if (/^(?:fast)?index$/i.test(text)) continue;
     if (/^description(?:en|cn)?$/i.test(text)) continue;
     seen.add(marker);
@@ -385,6 +385,10 @@ function extractNodeInfoListFromCurl(curlText) {
       break;
     }
   }
+  if (!bodyRaw) {
+    const bodyMatch = raw.match(/\{[\s\S]*\}/);
+    bodyRaw = bodyMatch ? bodyMatch[0] : "";
+  }
   if (!bodyRaw) return [];
 
   const direct = tryParseJsonText(bodyRaw);
@@ -397,16 +401,79 @@ function extractNodeInfoListFromCurl(curlText) {
     .trim();
   const parsed = tryParseJsonText(repaired);
   if (parsed && Array.isArray(parsed.nodeInfoList)) return parsed.nodeInfoList;
+  const fragment = repaired.match(/"nodeInfoList"\s*:\s*(\[[\s\S]*?\])\s*(?:,|\})/);
+  if (fragment && fragment[1]) {
+    const list = tryParseJsonText(fragment[1]);
+    if (Array.isArray(list)) return list;
+  }
   return [];
 }
 
-function findCurlDemoText(data) {
-  if (!data || typeof data !== "object") return "";
-  const keys = ["curl", "curlCmd", "curlCommand", "requestDemo", "requestExample", "demo", "example"];
+function findCurlDemoText(data, depth = 0) {
+  if (!data || typeof data !== "object" || depth > 8) return "";
+  const keys = ["curl", "curlCmd", "curlCommand", "apiCallDemo", "requestDemo", "requestExample", "demo", "example"];
   for (const key of keys) {
     if (typeof data[key] === "string" && data[key].trim()) return data[key];
   }
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const found = findCurlDemoText(item, depth + 1);
+      if (found) return found;
+    }
+    return "";
+  }
+
+  for (const value of Object.values(data)) {
+    if (!value || typeof value !== "object") continue;
+    const found = findCurlDemoText(value, depth + 1);
+    if (found) return found;
+  }
   return "";
+}
+
+function isLikelyInputRecord(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+  if (String(item.key || item.paramKey || "").trim()) return true;
+  if (String(item.fieldName || "").trim()) return true;
+  if (String(item.nodeId || item.nodeID || "").trim() && String(item.fieldName || "").trim()) return true;
+  const marker = String(item.type || item.fieldType || item.inputType || item.widget || item.valueType || "").trim();
+  return Boolean(marker);
+}
+
+function collectInputArrayCandidates(source, depth = 0, path = "root", out = []) {
+  if (!source || depth > 8) return out;
+
+  if (Array.isArray(source)) {
+    const inputLikeCount = source.filter(isLikelyInputRecord).length;
+    if (source.length > 0 && inputLikeCount > 0) {
+      out.push({ path, list: source, inputLikeCount });
+    }
+    source.forEach((item, idx) => collectInputArrayCandidates(item, depth + 1, `${path}[${idx}]`, out));
+    return out;
+  }
+
+  if (typeof source !== "object") return out;
+  for (const [key, value] of Object.entries(source)) {
+    collectInputArrayCandidates(value, depth + 1, `${path}.${key}`, out);
+  }
+  return out;
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set();
+  const deduped = [];
+  for (const item of candidates || []) {
+    if (!item || !Array.isArray(item.list) || item.list.length === 0) continue;
+    const marker = `${item.path}|${item.list.length}|${item.inputLikeCount || 0}`;
+    if (seen.has(marker)) continue;
+    seen.add(marker);
+    deduped.push(item);
+  }
+  return deduped.sort((a, b) => {
+    if ((b.inputLikeCount || 0) !== (a.inputLikeCount || 0)) return (b.inputLikeCount || 0) - (a.inputLikeCount || 0);
+    return b.list.length - a.list.length;
+  });
 }
 
 function buildInputMergeKey(input) {
@@ -433,13 +500,13 @@ function mergeInputsWithFallback(primaryInputs, fallbackInputs) {
     backupMap.set(marker, item);
   }
 
-  return base.map((input) => {
+  const merged = base.map((input) => {
     const marker = buildInputMergeKey(input);
     if (!marker) return input;
     const alt = backupMap.get(marker);
     if (!alt) return input;
 
-    const type = inferInputType(input.type || input.fieldType);
+    const type = resolveRuntimeInputType(input);
     const needsSelectOptions =
       type === "select" && (!Array.isArray(input.options) || input.options.length <= 1) && Array.isArray(alt.options) && alt.options.length > 1;
     if (!needsSelectOptions) return input;
@@ -449,11 +516,51 @@ function mergeInputsWithFallback(primaryInputs, fallbackInputs) {
       options: alt.options
     };
   });
+
+  const mergedMarkers = new Set(merged.map((item) => buildInputMergeKey(item)).filter(Boolean));
+  for (const item of backup) {
+    const marker = buildInputMergeKey(item);
+    if (!marker || mergedMarkers.has(marker)) continue;
+    merged.push(item);
+    mergedMarkers.add(marker);
+  }
+  return merged;
 }
 
 function isPromptLikeText(text) {
   const hint = String(text || "").toLowerCase();
   return /prompt|提示词|negative|正向|负向/.test(hint);
+}
+
+function isLikelyNumericField(raw) {
+  const marker = `${raw && raw.type ? raw.type : ""} ${raw && raw.valueType ? raw.valueType : ""} ${raw && raw.fieldType ? raw.fieldType : ""} ${raw && raw.inputType ? raw.inputType : ""}`.toLowerCase();
+  if (/(^|[^a-z])(int|integer|float|double|decimal|number)([^a-z]|$)/.test(marker)) return true;
+
+  const defaultValue = raw ? raw.default ?? raw.fieldValue : undefined;
+  if (typeof defaultValue === "number" && Number.isFinite(defaultValue)) return true;
+  if (typeof defaultValue === "string" && /^-?\d+(?:\.\d+)?$/.test(defaultValue.trim())) return true;
+
+  const fieldDataText = stringifyLoose(raw ? raw.fieldData : "");
+  return /"(?:INT|FLOAT|DOUBLE|NUMBER)"/i.test(fieldDataText);
+}
+
+function normalizeDefaultValueByType(value, type) {
+  if (type === "number" && value !== undefined && value !== null && String(value).trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  if (type === "boolean") {
+    if (value === true || value === false) return value;
+    const marker = String(value || "").trim().toLowerCase();
+    if (marker === "true" || marker === "1") return true;
+    if (marker === "false" || marker === "0") return false;
+  }
+  return value;
+}
+
+function hasSelectHint(raw) {
+  const marker = `${raw && raw.type ? raw.type : ""} ${raw && raw.valueType ? raw.valueType : ""} ${raw && raw.widget ? raw.widget : ""} ${raw && raw.inputType ? raw.inputType : ""} ${raw && raw.fieldType ? raw.fieldType : ""}`.toLowerCase();
+  return /(select|enum|option|list)/.test(marker);
 }
 
 function isGhostSchemaInput(raw, input) {
@@ -508,7 +615,8 @@ function normalizeInput(raw, index = 0) {
   const keyHint = `${key} ${raw.fieldName || ""} ${raw.label || ""} ${raw.name || ""}`.toLowerCase();
   const looksPromptLike = isPromptLikeText(keyHint);
   let normalizedType = inferredType;
-  if (inferredType === "text" && Array.isArray(options) && options.length > 1) normalizedType = "select";
+  if (inferredType === "text" && Array.isArray(options) && options.length > 1 && hasSelectHint(raw)) normalizedType = "select";
+  if ((inferredType === "boolean" || inferredType === "text") && isLikelyNumericField(raw)) normalizedType = "number";
   if (inferredType === "select" && looksPromptLike && (!Array.isArray(options) || options.length <= 1)) {
     normalizedType = "text";
   }
@@ -517,13 +625,15 @@ function normalizeInput(raw, index = 0) {
   const baseLabel = String(raw.label || raw.name || raw.title || fieldName || key).trim();
   const displayLabel = resolveDisplayLabel(key, fieldName, baseLabel, baseName);
 
+  const normalizedDefault = normalizeDefaultValueByType(raw.default ?? raw.fieldValue, normalizedType);
+
   return {
     key,
     name: baseName,
     label: displayLabel || baseLabel || baseName || key,
     type: normalizedType,
     required: raw.required !== false && raw.required !== 0 && raw.required !== "false",
-    default: raw.default ?? raw.fieldValue,
+    default: normalizedDefault,
     options: Array.isArray(options) ? options : undefined,
     min: typeof raw.min === "number" ? raw.min : undefined,
     max: typeof raw.max === "number" ? raw.max : undefined,
@@ -535,23 +645,59 @@ function normalizeInput(raw, index = 0) {
   };
 }
 
+function sanitizeDebugRawEntry(raw) {
+  if (!raw || typeof raw !== "object") return raw;
+  return {
+    key: raw.key || raw.paramKey || "",
+    name: raw.name || raw.label || raw.title || "",
+    nodeId: raw.nodeId || raw.nodeID || "",
+    fieldName: raw.fieldName || "",
+    type: raw.type || raw.fieldType || raw.inputType || raw.widget || raw.valueType || "",
+    required: raw.required,
+    default: raw.default ?? raw.fieldValue,
+    hasFieldData: raw.fieldData !== undefined,
+    optionsCount: Array.isArray(raw.options) ? raw.options.length : undefined
+  };
+}
+
 function extractAppInfoPayload(data) {
   if (!data || typeof data !== "object") {
-    return { name: "未命名应用", description: "", inputs: [] };
+    return {
+      payload: { name: "Unknown App", description: "", inputs: [] },
+      debug: { candidates: [], selectedPath: "", selectedRawCount: 0, selectedRawPreview: [], curlFound: false, curlNodeInfoCount: 0 }
+    };
   }
 
-  let rawInputs = [];
-  if (Array.isArray(data.nodeInfoList)) rawInputs = data.nodeInfoList;
-  else if (Array.isArray(data.inputs)) rawInputs = data.inputs;
-  else if (Array.isArray(data.params)) rawInputs = data.params;
-  else if (Array.isArray(data.inputParams)) rawInputs = data.inputParams;
-  else if (Array.isArray(data.nodeList)) rawInputs = data.nodeList;
-  else if (data.workflow && Array.isArray(data.workflow.inputs)) rawInputs = data.workflow.inputs;
+  const legacyCandidates = [
+    data.nodeInfoList,
+    data.inputs,
+    data.params,
+    data.inputParams,
+    data.nodeList,
+    data.workflow && data.workflow.inputs,
+    data.workflow && data.workflow.nodeInfoList,
+    data.appInfo && data.appInfo.nodeInfoList,
+    data.webappInfo && data.webappInfo.nodeInfoList,
+    data.data && data.data.nodeInfoList,
+    data.data && data.data.inputs,
+    data.result && data.result.nodeInfoList,
+    data.result && data.result.inputs
+  ]
+    .map((list, idx) => ({
+      path: `legacyCandidate[${idx}]`,
+      list,
+      inputLikeCount: Array.isArray(list) ? list.filter(isLikelyInputRecord).length : 0
+    }))
+    .filter((item) => Array.isArray(item.list) && item.list.length > 0);
+
+  const deepCandidates = collectInputArrayCandidates(data, 0, "root", []);
+  const candidateList = dedupeCandidates([...legacyCandidates, ...deepCandidates]);
+  const selected = candidateList[0] || { path: "", list: [] };
+  const rawInputs = Array.isArray(selected.list) ? selected.list : [];
 
   const primaryInputs = rawInputs
     .map((x, idx) => ({ raw: x, input: normalizeInput(x, idx) }))
     .filter((item) => item && item.input && item.input.key)
-    .filter((item) => !isGhostSchemaInput(item.raw, item.input))
     .map((item) => item.input);
   const curlDemoText = findCurlDemoText(data);
   const curlNodeInfoList = extractNodeInfoListFromCurl(curlDemoText);
@@ -559,12 +705,55 @@ function extractAppInfoPayload(data) {
   const inputs = mergeInputsWithFallback(primaryInputs, fallbackInputs);
 
   return {
-    name: data.webappName || data.name || data.title || data.appName || data.workflowName || "未命名应用",
-    description: data.description || data.desc || data.summary || "",
-    inputs
+    payload: {
+      name: data.webappName || data.name || data.title || data.appName || data.workflowName || "Unknown App",
+      description: data.description || data.desc || data.summary || "",
+      inputs
+    },
+    debug: {
+      candidates: candidateList.map((item) => ({
+        path: item.path,
+        count: Array.isArray(item.list) ? item.list.length : 0,
+        inputLikeCount: item.inputLikeCount || 0
+      })),
+      selectedPath: selected.path || "",
+      selectedRawCount: rawInputs.length,
+      selectedRawPreview: rawInputs.slice(0, 5).map(sanitizeDebugRawEntry),
+      curlFound: Boolean(curlDemoText),
+      curlNodeInfoCount: Array.isArray(curlNodeInfoList) ? curlNodeInfoList.length : 0
+    }
   };
 }
 
+function persistParseDebug(debugPayload) {
+  try {
+    localStorage.setItem(PARSE_DEBUG_STORAGE_KEY, JSON.stringify(debugPayload));
+  } catch (_) {}
+}
+
+function buildParseDebugRecord(endpoint, appId, result, source, parseDebug, payload) {
+  return {
+    endpoint,
+    appId,
+    topLevelKeys: Object.keys(result || {}),
+    dataKeys: source && typeof source === "object" ? Object.keys(source) : [],
+    resultKeys: result && result.result && typeof result.result === "object" ? Object.keys(result.result) : [],
+    candidateInputArrays: parseDebug.candidates || [],
+    selectedCandidatePath: parseDebug.selectedPath || "",
+    selectedRawCount: parseDebug.selectedRawCount || 0,
+    firstRawEntries: parseDebug.selectedRawPreview || [],
+    normalizedInputs: (payload.inputs || []).map((item) => ({
+      key: item.key,
+      type: inferInputType(item.type || item.fieldType),
+      label: item.label || item.name || item.key
+    })),
+    curl: {
+      found: Boolean(parseDebug.curlFound),
+      nodeInfoCount: parseDebug.curlNodeInfoCount || 0
+    },
+    generatedAt: new Date().toISOString()
+  };
+}
 function warnSelectOptionCoverage(appInfo, log) {
   if (typeof log !== "function" || !appInfo || !Array.isArray(appInfo.inputs)) return;
   const weakSelects = appInfo.inputs
@@ -592,6 +781,12 @@ async function fetchAppInfo(appId, apiKey, options = {}) {
   const log = options.log || (() => {});
   const normalizedId = normalizeAppId(appId);
   const reasons = [];
+  persistParseDebug({
+    endpoint: API.ENDPOINTS.PARSE_APP,
+    appId: normalizedId,
+    phase: "request_start",
+    generatedAt: new Date().toISOString()
+  });
 
   const parseUrl = new URL(`${API.BASE_URL}${API.ENDPOINTS.PARSE_APP}`);
   parseUrl.searchParams.set("apiKey", apiKey);
@@ -605,12 +800,30 @@ async function fetchAppInfo(appId, apiKey, options = {}) {
     });
     const result = await parseJsonResponse(response);
     if (response.ok && result && (result.code === 0 || result.success === true)) {
-      const payload = extractAppInfoPayload(result.data || result.result || result);
+      const source = result.data || result.result || result;
+      const parsed = extractAppInfoPayload(source);
+      const payload = parsed.payload || { name: "Unknown App", description: "", inputs: [] };
+      persistParseDebug(buildParseDebugRecord(API.ENDPOINTS.PARSE_APP, normalizedId, result, source, parsed.debug || {}, payload));
       warnSelectOptionCoverage(payload, log);
       return payload;
     }
+    persistParseDebug({
+      endpoint: API.ENDPOINTS.PARSE_APP,
+      appId: normalizedId,
+      phase: "request_failed",
+      topLevelKeys: result && typeof result === "object" ? Object.keys(result) : [],
+      message: toMessage(result, `HTTP ${response.status}`),
+      generatedAt: new Date().toISOString()
+    });
     reasons.push(`apiCallDemo: ${toMessage(result, `HTTP ${response.status}`)}`);
   } catch (e) {
+    persistParseDebug({
+      endpoint: API.ENDPOINTS.PARSE_APP,
+      appId: normalizedId,
+      phase: "request_error",
+      message: e && e.message ? e.message : String(e),
+      generatedAt: new Date().toISOString()
+    });
     reasons.push(`apiCallDemo: ${e.message}`);
   }
 
@@ -624,12 +837,30 @@ async function fetchAppInfo(appId, apiKey, options = {}) {
       });
       const result = await parseJsonResponse(response);
       if (response.ok && result && (result.code === 0 || result.success === true)) {
-        const payload = extractAppInfoPayload(result.data || result.result || result);
+        const source = result.data || result.result || result;
+        const parsed = extractAppInfoPayload(source);
+        const payload = parsed.payload || { name: "Unknown App", description: "", inputs: [] };
+        persistParseDebug(buildParseDebugRecord(endpoint, normalizedId, result, source, parsed.debug || {}, payload));
         warnSelectOptionCoverage(payload, log);
         return payload;
       }
+      persistParseDebug({
+        endpoint,
+        appId: normalizedId,
+        phase: "fallback_failed",
+        topLevelKeys: result && typeof result === "object" ? Object.keys(result) : [],
+        message: toMessage(result, `HTTP ${response.status}`),
+        generatedAt: new Date().toISOString()
+      });
       reasons.push(`${endpoint}: ${toMessage(result, `HTTP ${response.status}`)}`);
     } catch (e) {
+      persistParseDebug({
+        endpoint,
+        appId: normalizedId,
+        phase: "fallback_error",
+        message: e && e.message ? e.message : String(e),
+        generatedAt: new Date().toISOString()
+      });
       reasons.push(`${endpoint}: ${e.message}`);
     }
   }
@@ -662,7 +893,7 @@ function normalizeUploadBuffer(imageValue) {
     }
   }
   if (typeof imageValue === "string" && imageValue.trim()) return base64ToArrayBuffer(imageValue.trim());
-  throw new Error("鍥剧墖杈撳叆鏃犳晥");
+  throw new Error("图片输入无效");
 }
 
 function pickUploadedValue(data) {
@@ -731,6 +962,26 @@ function buildNodeInfoPayload(input, value) {
   if (input.fieldType) payload.fieldType = input.fieldType;
   if (input.fieldData) payload.fieldData = input.fieldData;
   return payload;
+}
+
+function resolveRuntimeInputType(input) {
+  const rawType = inferInputType(input.type || input.fieldType);
+  if (rawType === "select") {
+    const options = Array.isArray(input.options) ? input.options : [];
+    const defaultValue = input.default;
+    const defaultLooksNumeric = defaultValue !== undefined && defaultValue !== null && /^-?\d+(?:\.\d+)?$/.test(String(defaultValue).trim());
+    const allOptionsNumeric = options.length > 0 && options.every((opt) => /^-?\d+(?:\.\d+)?$/.test(String(opt).trim()));
+    if (defaultLooksNumeric && (options.length === 0 || allOptionsNumeric)) {
+      return "number";
+    }
+    if (options.length === 0) return "text";
+    return "select";
+  }
+  if (rawType === "text" && Array.isArray(input.options) && input.options.length > 1) return "select";
+  if ((rawType === "boolean" || rawType === "text") && /(?:^|[^a-z])(int|integer|float|double|decimal|number)(?:[^a-z]|$)/i.test(String(input.fieldType || ""))) {
+    return "number";
+  }
+  return rawType;
 }
 
 function parseTaskId(result) {
@@ -935,7 +1186,7 @@ async function runAppTask(apiKey, appItem, inputValues, options = {}) {
     if (!key) continue;
 
     let value = inputValues[key];
-    const type = inferInputType(input.type || input.fieldType);
+    const type = resolveRuntimeInputType(input);
     if (type !== "image" && input.required && isEmptyValue(value)) {
       throw new Error(`缺少必填参数: ${input.label || input.name || key}`);
     }

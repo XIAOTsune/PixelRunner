@@ -82,6 +82,141 @@ function encodeDataId(id) {
     return encodeURIComponent(String(id || ""));
 }
 
+function getRenderedElementCount(node) {
+    if (!node) return 0;
+    if (typeof node.childElementCount === "number") return node.childElementCount;
+    if (node.children && typeof node.children.length === "number") return node.children.length;
+    if (node.childNodes && typeof node.childNodes.length === "number") {
+        let count = 0;
+        for (let i = 0; i < node.childNodes.length; i += 1) {
+            const child = node.childNodes[i];
+            if (child && child.nodeType === 1) count += 1;
+        }
+        return count;
+    }
+    return 0;
+}
+
+function parseOptionsFromUnknown(raw) {
+    const pickOptionTextFromObject = (obj) => {
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) return "";
+        const keys = ["index", "name", "label", "title", "value", "text", "id", "key", "optionValue", "enumValue"];
+        for (const key of keys) {
+            const v = obj[key];
+            if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+                const text = String(v).trim();
+                if (text) return text;
+            }
+        }
+        return "";
+    };
+
+    const shouldIgnoreOption = (text) => {
+        const marker = String(text || "").trim().toLowerCase();
+        if (!marker) return true;
+        if (marker === "ignore" || marker === "ignored" || marker === "忽略") return true;
+        if (marker === "default" || marker === "description" || marker === "descriptionen" || marker === "descriptioncn") return true;
+        return false;
+    };
+
+    if (Array.isArray(raw)) {
+        const list = [];
+        const seen = new Set();
+        const push = (value) => {
+            const text = String(value == null ? "" : value).trim();
+            if (shouldIgnoreOption(text)) return;
+            const marker = text.toLowerCase();
+            if (seen.has(marker)) return;
+            seen.add(marker);
+            list.push(text);
+        };
+        raw.forEach((item) => {
+            if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+                push(item);
+                return;
+            }
+            if (item && typeof item === "object") {
+                const direct = pickOptionTextFromObject(item);
+                if (direct) {
+                    push(direct);
+                    return;
+                }
+                parseOptionsFromUnknown(item).forEach(push);
+            }
+        });
+        return list;
+    }
+
+    if (typeof raw === "string") {
+        const text = raw.trim();
+        if (!text) return [];
+        try {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) return parseOptionsFromUnknown(parsed);
+            if (parsed && typeof parsed === "object") return parseOptionsFromUnknown(parsed);
+        } catch (_) {}
+
+        if (text.includes("|") || text.includes(",") || text.includes("\n")) {
+            return text.split(/[|,\r\n]+/).map((item) => item.trim()).filter(Boolean);
+        }
+        return [];
+    }
+
+    if (!raw || typeof raw !== "object") return [];
+
+    const containerKeys = ["options", "enums", "values", "items", "list", "data", "children", "selectOptions", "optionList", "fieldOptions"];
+    const values = [];
+    const seen = new Set();
+    const push = (value) => {
+        const text = String(value == null ? "" : value).trim();
+        if (shouldIgnoreOption(text)) return;
+        const marker = text.toLowerCase();
+        if (seen.has(marker)) return;
+        seen.add(marker);
+        values.push(text);
+    };
+    containerKeys.forEach((key) => {
+        if (raw[key] !== undefined) parseOptionsFromUnknown(raw[key]).forEach(push);
+    });
+    Object.keys(raw).forEach((key) => {
+        const v = raw[key];
+        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") push(v);
+    });
+    return values;
+}
+
+function getInputOptions(input) {
+    const fromOptions = parseOptionsFromUnknown(input && input.options);
+    if (fromOptions.length > 0) return fromOptions;
+    return parseOptionsFromUnknown(input && input.fieldData);
+}
+
+function resolveUiInputType(input) {
+    const rawType = inferInputType(input && (input.type || input.fieldType));
+    if (rawType === "select") {
+        const options = getInputOptions(input);
+        const defaultValue = input && input.default;
+        const defaultLooksNumeric =
+            defaultValue !== undefined &&
+            defaultValue !== null &&
+            /^-?\d+(?:\.\d+)?$/.test(String(defaultValue).trim());
+        const allOptionsNumeric =
+            options.length > 0 &&
+            options.every((opt) => /^-?\d+(?:\.\d+)?$/.test(String(opt).trim()));
+        if (defaultLooksNumeric && (options.length === 0 || allOptionsNumeric)) return "number";
+        if (options.length === 0) return "text";
+        return "select";
+    }
+    if (rawType === "text" && getInputOptions(input).length > 1) return "select";
+    if (
+        (rawType === "boolean" || rawType === "text") &&
+        /(?:^|[^a-z])(int|integer|float|double|decimal|number)(?:[^a-z]|$)/i.test(String((input && input.fieldType) || ""))
+    ) {
+        return "number";
+    }
+    return rawType;
+}
+
 function updateRunButtonUI() {
     const btn = dom.btnRun || byId("btnRun");
     if (!btn) return;
@@ -171,8 +306,9 @@ function renderDynamicInputs(appItem) {
     }
 
     const inputs = Array.isArray(appItem.inputs) ? appItem.inputs : [];
-    const imageInputs = inputs.filter((input) => inferInputType(input.type || input.fieldType) === "image");
-    const otherInputs = inputs.filter((input) => inferInputType(input.type || input.fieldType) !== "image");
+    const imageInputs = inputs.filter((input) => resolveUiInputType(input) === "image");
+    const otherInputs = inputs.filter((input) => resolveUiInputType(input) !== "image");
+    log(`render inputs: image=${imageInputs.length}, other=${otherInputs.length}`, "info");
 
     if (imageInputs.length > 0 && imgContainer) {
         imgContainer.style.display = "block";
@@ -187,23 +323,40 @@ function renderDynamicInputs(appItem) {
         grid.className = "input-grid";
 
         otherInputs.forEach((input, idx) => {
-            const field = createInputField(input, idx);
-            const inputType = inferInputType(input.type || input.fieldType);
-            const isLongText = inputType === "text" && (!input.options || input.options.length === 0);
-            let isPrompt = false;
             try {
-                isPrompt = isPromptLikeInput(input);
-            } catch (_) {
-                isPrompt = false;
+                const field = createInputField(input, idx);
+                const inputType = resolveUiInputType(input);
+                const isLongText = inputType === "text" && getInputOptions(input).length === 0;
+                let isPrompt = false;
+                try {
+                    isPrompt = isPromptLikeInput(input);
+                } catch (_) {
+                    isPrompt = false;
+                }
+                if (isLongText || isPrompt) {
+                    field.classList.add("full-width");
+                    field.style.gridColumn = "span 2";
+                }
+                grid.appendChild(field);
+            } catch (error) {
+                console.error("[Workspace] render input failed", input, error);
+                const fieldName = input && (input.label || input.name || input.key) ? (input.label || input.name || input.key) : "unknown";
+                log(`render input failed: ${fieldName} | ${error && error.message ? error.message : error}`, "warn");
+                try {
+                    const fallback = createFallbackInputField(input, idx);
+                    grid.appendChild(fallback);
+                } catch (fallbackError) {
+                    console.error("[Workspace] render fallback input failed", input, fallbackError);
+                }
             }
-            if (isLongText || isPrompt) {
-                field.classList.add("full-width");
-                field.style.gridColumn = "span 2";
-            }
-            grid.appendChild(field);
         });
-
-        container.appendChild(grid);
+        const renderedCount = getRenderedElementCount(grid);
+        if (renderedCount > 0) {
+            container.appendChild(grid);
+            log(`rendered non-image inputs: ${renderedCount}`, "info");
+        } else {
+            container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">参数渲染失败，请重新解析应用后重试</div>`;
+        }
     } else if (imageInputs.length === 0 && container) {
         container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">该应用没有可配置参数，请直接运行</div>`;
     }
@@ -213,7 +366,7 @@ function renderDynamicInputs(appItem) {
 
 function createInputField(input, idx) {
     const key = String(input.key || `param_${idx}`);
-    const type = inferInputType(input.type || input.fieldType);
+    const type = resolveUiInputType(input);
     const labelText = input.label || input.name || key;
 
     if (type === "image") {
@@ -235,6 +388,8 @@ function createInputField(input, idx) {
             </div>
         `;
 
+        const initialText = wrapper.querySelector(".image-input-text");
+        if (initialText) initialText.textContent = "点击从 PS 选区获取";
         wrapper.addEventListener("click", async () => {
             const statusText = wrapper.querySelector(".image-input-text");
             const previewImg = wrapper.querySelector(".image-preview");
@@ -284,15 +439,30 @@ function createInputField(input, idx) {
     let inputEl;
 
     if (type === "select") {
+        const options = getInputOptions(input);
+        if (options.length === 0) {
+            inputEl = document.createElement("input");
+            inputEl.type = "text";
+            inputEl.placeholder = String(input.default || "");
+            inputEl.value = String(input.default || "");
+            state.inputValues[key] = inputEl.value;
+            inputEl.addEventListener("input", (event) => {
+                state.inputValues[key] = event.target.value;
+            });
+            wrapper.appendChild(headerRow);
+            wrapper.appendChild(inputEl);
+            return wrapper;
+        }
+
         inputEl = document.createElement("select");
-        (input.options || []).forEach((opt) => {
+        options.forEach((opt) => {
             const option = document.createElement("option");
             option.value = opt;
             option.textContent = opt;
             inputEl.appendChild(option);
         });
 
-        const defaultValue = input.default || (Array.isArray(input.options) ? input.options[0] : "");
+        const defaultValue = input.default || options[0] || "";
         if (!isEmptyValue(defaultValue)) {
             inputEl.value = defaultValue;
             state.inputValues[key] = defaultValue;
@@ -309,7 +479,7 @@ function createInputField(input, idx) {
             state.inputValues[key] = event.target.value === "true";
         });
     } else {
-        const isLongText = promptLike || (type === "text" && !input.options);
+        const isLongText = promptLike || (type === "text" && getInputOptions(input).length === 0);
         if (isLongText) {
             inputEl = document.createElement("textarea");
             inputEl.rows = promptLike ? 3 : 1;
@@ -337,6 +507,11 @@ function createInputField(input, idx) {
             inputEl = document.createElement("input");
             inputEl.type = type === "number" ? "number" : "text";
             inputEl.placeholder = String(input.default || "");
+            if (type === "number") {
+                if (Number.isFinite(input.min)) inputEl.min = String(input.min);
+                if (Number.isFinite(input.max)) inputEl.max = String(input.max);
+                if (Number.isFinite(input.step)) inputEl.step = String(input.step);
+            }
         }
 
         inputEl.value = String(input.default || "");
@@ -351,12 +526,41 @@ function createInputField(input, idx) {
     return wrapper;
 }
 
+function createFallbackInputField(input, idx) {
+    const key = String((input && input.key) || `param_${idx}`);
+    const labelText = (input && (input.label || input.name || key)) || key;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "dynamic-input-field";
+
+    const headerRow = document.createElement("div");
+    headerRow.className = "input-label-row";
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "dynamic-input-label";
+    labelEl.innerHTML = `${escapeHtml(labelText)} <span style="opacity:.6;">(fallback)</span>`;
+    headerRow.appendChild(labelEl);
+
+    const inputEl = document.createElement("input");
+    inputEl.type = "text";
+    inputEl.placeholder = "";
+    inputEl.value = String((input && input.default) || "");
+    state.inputValues[key] = inputEl.value;
+    inputEl.addEventListener("input", (event) => {
+        state.inputValues[key] = event.target.value;
+    });
+
+    wrapper.appendChild(headerRow);
+    wrapper.appendChild(inputEl);
+    return wrapper;
+}
+
 function resolveTargetBounds() {
     if (!state.currentApp) return null;
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
 
     for (const input of inputs) {
-        if (inferInputType(input.type || input.fieldType) !== "image") continue;
+        if (resolveUiInputType(input) !== "image") continue;
         const key = String(input.key || "").trim();
         if (!key) continue;
         if (isEmptyValue(state.inputValues[key])) continue;
