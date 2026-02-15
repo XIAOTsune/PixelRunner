@@ -132,11 +132,11 @@ function migrateLegacyWorkflows(log) {
         const inputs = rawInputs
           .map((input, inputIndex) => {
             const key = String(
-              input.key || input.name || input.fieldName || input.paramKey || `param_${inputIndex + 1}`
+              input.key || input.paramKey || input.fieldName || input.name || `param_${inputIndex + 1}`
             ).trim();
             if (!key) return null;
 
-            const label = String(input.label || input.title || input.name || key).trim();
+            const label = String(input.label || input.title || input.name || input.description || key).trim();
             return {
               key,
               name: label,

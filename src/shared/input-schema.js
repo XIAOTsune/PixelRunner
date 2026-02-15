@@ -78,20 +78,36 @@ function parseOptionsFromUnknown(raw) {
     seen.add(marker);
     values.push(text);
   };
+
+  let hasContainer = false;
   containerKeys.forEach((key) => {
-    if (raw[key] !== undefined) parseOptionsFromUnknown(raw[key]).forEach(push);
+    if (raw[key] !== undefined) {
+      hasContainer = true;
+      parseOptionsFromUnknown(raw[key]).forEach(push);
+    }
   });
-  Object.keys(raw).forEach((key) => {
-    const v = raw[key];
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") push(v);
-  });
+
+  if (!hasContainer) {
+    const keys = Object.keys(raw);
+    const isNumericList =
+      keys.length > 0 &&
+      keys.every((key) => /^\d+$/.test(key) && (typeof raw[key] === "string" || typeof raw[key] === "number" || typeof raw[key] === "boolean"));
+    if (isNumericList) {
+      keys
+        .sort((a, b) => Number(a) - Number(b))
+        .forEach((key) => {
+          push(raw[key]);
+        });
+    }
+  }
+
   return values;
 }
 
 function getInputOptions(input) {
   const fromOptions = parseOptionsFromUnknown(input && input.options);
   if (fromOptions.length > 0) return fromOptions;
-  return parseOptionsFromUnknown(input && input.fieldData);
+  return [];
 }
 
 function resolveInputType(input) {

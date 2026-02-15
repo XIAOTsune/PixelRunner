@@ -130,12 +130,17 @@ function createWorkspaceInputs(deps) {
     labelEl.innerHTML = escapeHtml(labelText);
     headerRow.appendChild(labelEl);
 
-    const promptLike = isPromptLikeInput(input) || (type === "text" && (key.toLowerCase().includes("prompt") || String(labelText).includes("提示")));
+    const typeHint = String(input.type || input.fieldType || "").toLowerCase();
+    const promptLike =
+      isPromptLikeInput(input) ||
+      (type === "text" && (key.toLowerCase().includes("prompt") || String(labelText).includes("提示"))) ||
+      /prompt|text|string/.test(typeHint);
     let inputEl;
 
-    if (type === "select") {
+    const fieldTypeHint = String(input.fieldType || input.type || "").toLowerCase();
+    if (type === "select" || /select|enum|list/.test(fieldTypeHint)) {
       const options = getInputOptions(input);
-      if (options.length === 0) {
+      if (options.length <= 1) {
         inputEl = document.createElement("input");
         inputEl.type = "text";
         inputEl.placeholder = String(input.default || "");

@@ -24,6 +24,81 @@ const FIELD_LABEL_MAP = {
   denoise: "降噪强度"
 };
 
+const OPTION_CONTAINER_KEYS = [
+  "options",
+  "enums",
+  "values",
+  "items",
+  "list",
+  "data",
+  "children",
+  "selectOptions",
+  "optionList",
+  "fieldOptions",
+  "candidate",
+  "candidates",
+  "enum"
+];
+
+const OPTION_VALUE_KEYS = [
+  "value",
+  "name",
+  "label",
+  "title",
+  "text",
+  "index",
+  "option",
+  "optionValue",
+  "enumValue",
+  "displayName",
+  "display",
+  "key",
+  "id",
+  "code"
+];
+
+const OPTION_IGNORE_MARKERS = new Set(["ignore", "ignored", "忽略"]);
+const OPTION_NOISE_MARKERS = new Set([
+  "string",
+  "text",
+  "number",
+  "int",
+  "integer",
+  "float",
+  "double",
+  "boolean",
+  "bool",
+  "object",
+  "array",
+  "list",
+  "enum",
+  "select",
+  "index",
+  "fastindex",
+  "description",
+  "descriptionen",
+  "descriptioncn"
+]);
+const OPTION_META_KEYS = new Set([
+  "default",
+  "description",
+  "descriptionen",
+  "desc",
+  "title",
+  "label",
+  "name",
+  "placeholder",
+  "required",
+  "min",
+  "max",
+  "step",
+  "type",
+  "widget",
+  "inputtype",
+  "fieldtype",
+  "multiple"
+]);
+
 function normalizeFieldToken(text) {
   return String(text || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -41,6 +116,236 @@ function resolveDisplayLabel(key, fieldName, rawLabel, rawName) {
     if (mapped) return mapped;
   }
   return String(rawLabel || rawName || key || "").trim();
+}
+
+function resolveFieldDataLabel(fieldData) {
+  if (!fieldData) return "";
+  let parsed = fieldData;
+  if (typeof fieldData === "string") {
+    parsed = parseJsonFromEscapedText(fieldData);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
+  const candidate = parsed.label || parsed.name || parsed.title || parsed.description || "";
+  return String(candidate || "").trim();
+}
+
+function isWeakLabel(label) {
+  const text = String(label || "").trim().toLowerCase();
+  if (!text) return true;
+  return ["value", "text", "string", "number", "int", "float", "double", "bool", "boolean"].includes(text);
+}
+
+function isLikelyOptionKey(rawKey) {
+  const key = String(rawKey || "").trim();
+  if (!key) return false;
+  const marker = key.toLowerCase();
+  if (OPTION_META_KEYS.has(marker)) return false;
+  if (key.length > 40) return false;
+  return /^[a-z0-9:_./\-]+$/i.test(key);
+}
+
+function tryParseJsonString(raw) {
+  if (typeof raw !== "string") return undefined;
+  const text = raw.trim();
+  if (!text) return undefined;
+  if (!/^[\[{\"]/.test(text)) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return undefined;
+  }
+}
+
+function normalizeOptionText(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+  if (typeof value !== "object" || Array.isArray(value)) return "";
+  for (const key of OPTION_VALUE_KEYS) {
+    const item = value[key];
+    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+      const text = String(item).trim();
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+function pushOptionValue(bucket, seen, value) {
+  const text = normalizeOptionText(value);
+  if (!text) return false;
+  const marker = text.toLowerCase();
+  if (OPTION_IGNORE_MARKERS.has(marker)) return false;
+  if (seen.has(marker)) return true;
+  seen.add(marker);
+  bucket.push(text);
+  return true;
+}
+
+function collectOptionValues(source, bucket, seen, depth = 0) {
+  if (depth > 8 || source === undefined || source === null) return;
+
+  if (typeof source === "string") {
+    const text = source.trim();
+    if (!text) return;
+    const parsed = tryParseJsonString(text);
+    if (parsed !== undefined) {
+      collectOptionValues(parsed, bucket, seen, depth + 1);
+      return;
+    }
+    if ((text.includes("|") || text.includes(",") || text.includes("\n")) && text.length <= 2000) {
+      const tokens = text.split(/[|,\r\n]+/).map((x) => x.trim()).filter(Boolean);
+      if (tokens.length > 1) tokens.forEach((token) => pushOptionValue(bucket, seen, token));
+    }
+    return;
+  }
+
+  if (typeof source === "number" || typeof source === "boolean") {
+    pushOptionValue(bucket, seen, source);
+    return;
+  }
+
+  if (Array.isArray(source)) {
+    source.forEach((item) => collectOptionValues(item, bucket, seen, depth + 1));
+    return;
+  }
+
+  if (typeof source !== "object") return;
+
+  let usedKnownContainer = false;
+  for (const key of OPTION_CONTAINER_KEYS) {
+    if (source[key] !== undefined) {
+      usedKnownContainer = true;
+      collectOptionValues(source[key], bucket, seen, depth + 1);
+    }
+  }
+
+  pushOptionValue(bucket, seen, source);
+  if (usedKnownContainer) return;
+
+  const keys = Object.keys(source);
+  if (keys.length > 0 && keys.length <= 24) {
+    const optionLikeKeys = keys.filter(isLikelyOptionKey);
+    if (optionLikeKeys.length >= 2) {
+      optionLikeKeys.forEach((k) => pushOptionValue(bucket, seen, k));
+    }
+
+    const primitiveValues = keys
+      .map((k) => source[k])
+      .filter((v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean");
+    if (primitiveValues.length >= 2) {
+      primitiveValues.forEach((v) => pushOptionValue(bucket, seen, v));
+    }
+
+    const nestedValues = keys.map((k) => source[k]).filter((v) => v && (Array.isArray(v) || typeof v === "object"));
+    if (nestedValues.length > 0) {
+      nestedValues.forEach((v) => collectOptionValues(v, bucket, seen, depth + 1));
+    }
+  }
+}
+
+function sanitizeOptionList(list) {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    const text = String(item || "").trim();
+    if (!text) continue;
+    const marker = text.toLowerCase();
+    if (seen.has(marker)) continue;
+    if (OPTION_IGNORE_MARKERS.has(marker)) continue;
+    if (OPTION_META_KEYS.has(marker)) continue;
+    if (OPTION_NOISE_MARKERS.has(marker)) continue;
+    if (/^\d+$/.test(marker)) continue;
+    if (/^(?:fast)?index$/i.test(text)) continue;
+    if (/^description(?:en|cn)?$/i.test(text)) continue;
+    seen.add(marker);
+    out.push(text);
+  }
+  return out;
+}
+
+function parseFieldOptions(fieldData) {
+  const bucket = [];
+  const seen = new Set();
+  collectOptionValues(fieldData, bucket, seen, 0);
+  const cleaned = sanitizeOptionList(bucket);
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+function stringifyLoose(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch (_) {
+    return String(value);
+  }
+}
+
+function pushUniqueText(bucket, seen, value) {
+  const text = String(value || "").trim();
+  if (!text) return;
+  const marker = text.toLowerCase();
+  if (seen.has(marker) || OPTION_IGNORE_MARKERS.has(marker) || OPTION_META_KEYS.has(marker)) return;
+  seen.add(marker);
+  bucket.push(text);
+}
+
+function inferOptionsFromRawText(fieldData, hintText) {
+  const text = stringifyLoose(fieldData);
+  if (!text) return [];
+
+  const bucket = [];
+  const seen = new Set();
+  const hint = String(hintText || "").toLowerCase();
+  const preferAspect = /aspect|ratio|比例/.test(hint);
+  const preferResolution = /resolution|分辨率/.test(hint);
+  if (!preferAspect && !preferResolution) return [];
+
+  if (preferAspect) {
+    if (/\bauto\b/i.test(text) || /自动/.test(text)) {
+      pushUniqueText(bucket, seen, "auto");
+    }
+    const ratioMatches = text.match(/\b\d{1,2}\s*:\s*\d{1,2}\b/g) || [];
+    ratioMatches.forEach((x) => pushUniqueText(bucket, seen, x.replace(/\s+/g, "")));
+  }
+
+  if (preferResolution) {
+    const kMatches = text.match(/\b\d+(?:\.\d+)?k\b/gi) || [];
+    const sizeMatches = text.match(/\b\d{3,5}\s*[xX]\s*\d{3,5}\b/g) || [];
+    kMatches.forEach((x) => pushUniqueText(bucket, seen, x.toLowerCase()));
+    sizeMatches.forEach((x) => pushUniqueText(bucket, seen, x.replace(/\s+/g, "").toLowerCase()));
+  }
+
+  return sanitizeOptionList(bucket).slice(0, 40);
+}
+
+function pickBestOptionList(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return undefined;
+  let fallback = undefined;
+  let best = undefined;
+  for (const list of candidates) {
+    if (!Array.isArray(list) || list.length === 0) continue;
+    if (!fallback) fallback = list;
+    if (list.length <= 1) continue;
+    if (!best || list.length > best.length) best = list;
+  }
+  return best || fallback;
+}
+
+function mergeOptionLists(base, extra) {
+  const a = Array.isArray(base) ? base : [];
+  const b = Array.isArray(extra) ? extra : [];
+  if (a.length === 0) return b;
+  if (b.length === 0) return a;
+  return sanitizeOptionList([...a, ...b]);
+}
+
+function isPromptLikeText(text) {
+  const hint = String(text || "").toLowerCase();
+  return /prompt|提示词|negative|正向|负向/.test(hint);
 }
 
 function parseJsonText(raw) {
@@ -105,9 +410,25 @@ function extractNodeInfoListFromCurl(curlText) {
   return [];
 }
 
+function extractNodeInfoListFromText(rawText) {
+  if (typeof rawText !== "string" || !rawText.trim()) return [];
+  const fromCurl = extractNodeInfoListFromCurl(rawText);
+  if (fromCurl.length > 0) return fromCurl;
+
+  const jsonCandidate = parseJsonFromEscapedText(rawText);
+  if (jsonCandidate && Array.isArray(jsonCandidate.nodeInfoList)) return jsonCandidate.nodeInfoList;
+
+  const fragment = rawText.match(/"nodeInfoList"\s*:\s*(\[[\s\S]*?\])\s*(?:,|\})/);
+  if (fragment && fragment[1]) {
+    const list = parseJsonFromEscapedText(fragment[1]);
+    if (Array.isArray(list)) return list;
+  }
+  return [];
+}
+
 function findCurlDemoText(data, depth = 0) {
   if (!data || typeof data !== "object" || depth > 8) return "";
-  const keys = ["curl", "curlCmd", "curlCommand", "apiCallDemo", "requestDemo", "requestExample", "demo", "example"];
+  const keys = ["curl", "curlCmd", "curlCommand", "apiCallDemo", "requestDemo", "requestExample", "demo", "example", "doc", "docs", "apiDoc", "apiDocs"];
   for (const key of keys) {
     if (typeof data[key] === "string" && data[key].trim()) return data[key];
   }
@@ -139,6 +460,41 @@ function isLikelyInputRecord(item) {
   return Boolean(marker);
 }
 
+function isLikelyOptionRecord(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+  if (String(item.value || item.optionValue || item.enumValue || item.key || "").trim()) return true;
+  if (String(item.name || item.label || item.title || item.text || item.displayName || "").trim()) return true;
+  return false;
+}
+
+function isGhostSchemaInput(raw, input) {
+  if (!raw || !input) return false;
+  const hint = `${input.key || ""} ${input.fieldName || ""} ${input.label || ""}`;
+  if (!isPromptLikeText(hint)) return false;
+
+  const hasNodeBinding = Boolean(String(input.nodeId || "").trim() && String(input.fieldName || "").trim());
+  if (hasNodeBinding) return false;
+
+  const rawType = String(raw.type || raw.valueType || raw.widget || raw.inputType || raw.fieldType || "").toLowerCase();
+  const defaultMarker = String(input.default || "").trim().toLowerCase();
+  const optionCount = Array.isArray(input.options) ? input.options.length : 0;
+  const looksTypeDescriptor = OPTION_NOISE_MARKERS.has(defaultMarker) || /string|text|schema/.test(rawType);
+  return looksTypeDescriptor && optionCount <= 1;
+}
+
+function isBooleanOptionList(options) {
+  if (!Array.isArray(options) || options.length === 0) return false;
+  const markers = new Set(["true", "false", "yes", "no", "是", "否"]);
+  let matched = 0;
+  for (const item of options) {
+    const text = String(item || "").trim().toLowerCase();
+    if (!text) continue;
+    if (!markers.has(text)) return false;
+    matched += 1;
+  }
+  return matched > 0;
+}
+
 function toInputListFromUnknown(value) {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== "object") return [];
@@ -154,7 +510,9 @@ function collectInputCandidates(source, depth = 0, path = "root", out = []) {
   if (!source || depth > 8) return out;
   if (Array.isArray(source)) {
     const inputLikeCount = source.filter(isLikelyInputRecord).length;
-    if (source.length > 0 && inputLikeCount > 0) out.push({ path, list: source, inputLikeCount });
+    if (source.length > 0 && inputLikeCount > 0) {
+      out.push({ path, list: source, inputLikeCount, nodeBindingCount: getNodeBindingCount(source) });
+    }
     source.forEach((item, idx) => collectInputCandidates(item, depth + 1, `${path}[${idx}]`, out));
     return out;
   }
@@ -165,7 +523,8 @@ function collectInputCandidates(source, depth = 0, path = "root", out = []) {
     out.push({
       path,
       list: objectList,
-      inputLikeCount: objectList.filter(isLikelyInputRecord).length
+      inputLikeCount: objectList.filter(isLikelyInputRecord).length,
+      nodeBindingCount: getNodeBindingCount(objectList)
     });
   }
 
@@ -186,9 +545,22 @@ function dedupeCandidates(candidates) {
     deduped.push(item);
   }
   return deduped.sort((a, b) => {
+    if ((b.nodeBindingCount || 0) !== (a.nodeBindingCount || 0)) {
+      return (b.nodeBindingCount || 0) - (a.nodeBindingCount || 0);
+    }
     if ((b.inputLikeCount || 0) !== (a.inputLikeCount || 0)) return (b.inputLikeCount || 0) - (a.inputLikeCount || 0);
     return b.list.length - a.list.length;
   });
+}
+
+function getNodeBindingCount(list) {
+  if (!Array.isArray(list)) return 0;
+  let count = 0;
+  list.forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    if (String(item.nodeId || item.nodeID || "").trim() && String(item.fieldName || item.field || "").trim()) count += 1;
+  });
+  return count;
 }
 
 function normalizeDefaultValueByType(value, type) {
@@ -206,36 +578,90 @@ function normalizeDefaultValueByType(value, type) {
 }
 
 function normalizeInput(raw, index = 0) {
-  const nodeId = String(raw.nodeId || raw.nodeID || "").trim();
-  const fieldName = String(raw.fieldName || "").trim();
-  const key = String(raw.key || raw.paramKey || (nodeId && fieldName ? `${nodeId}:${fieldName}` : `param_${index + 1}`)).trim();
-  const options = parseOptionsFromUnknown(
-    raw.options ??
-      raw.enums ??
-      raw.values ??
-      raw.selectOptions ??
-      raw.optionList ??
-      raw.fieldOptions ??
-      raw.fieldData
-  );
+  const nodeId = String(raw.nodeId || raw.nodeID || raw.node || raw.node_id || "").trim();
+  const fieldName = String(raw.fieldName || raw.field || raw.name || "").trim();
+  const key = String(
+    raw.key || raw.paramKey || raw.fieldName || (nodeId && fieldName ? `${nodeId}:${fieldName}` : `param_${index + 1}`)
+  ).trim();
+  const explicitOptionFields = [
+    parseFieldOptions(raw.options),
+    parseFieldOptions(raw.enums),
+    parseFieldOptions(raw.values),
+    parseFieldOptions(raw.selectOptions),
+    parseFieldOptions(raw.optionList),
+    parseFieldOptions(raw.fieldOptions)
+  ];
+
+  let inlineFieldOptions = parseFieldOptions(raw.fieldData);
+  if (!inlineFieldOptions && raw.fieldData && typeof raw.fieldData === "object" && !Array.isArray(raw.fieldData)) {
+    const fieldDataValues = Object.values(raw.fieldData);
+    if (fieldDataValues.length > 0 && fieldDataValues.every(isLikelyOptionRecord)) {
+      inlineFieldOptions = fieldDataValues
+        .map((item) => normalizeOptionText(item))
+        .map((item) => String(item || "").trim())
+        .filter(Boolean);
+    }
+  }
+  if (inlineFieldOptions && inlineFieldOptions.length > 0) {
+    inlineFieldOptions = sanitizeOptionList(inlineFieldOptions);
+  }
+
+  const primaryOptionCandidates = [...explicitOptionFields, inlineFieldOptions];
+  const secondaryOptionCandidates = [parseFieldOptions(raw.config), parseFieldOptions(raw.extra), parseFieldOptions(raw.schema)];
+  let options = pickBestOptionList(primaryOptionCandidates) || pickBestOptionList(secondaryOptionCandidates);
+
+  const optionCount = Array.isArray(options) ? options.length : 0;
+  if (optionCount <= 1) {
+    const hintText = `${key} ${raw.fieldName || ""} ${raw.label || ""} ${raw.name || ""} ${raw.description || ""}`;
+    const textFallback = inferOptionsFromRawText(raw.fieldData, hintText);
+    options = mergeOptionLists(options, textFallback);
+  }
+  options = sanitizeOptionList(options);
+
+  const inferredType = inferInputType(raw.type || raw.valueType || raw.widget || raw.inputType || raw.fieldType);
+  const keyHint = `${key} ${raw.fieldName || ""} ${raw.label || ""} ${raw.name || ""} ${raw.description || ""}`.toLowerCase();
+  const looksPromptLike = isPromptLikeText(keyHint);
+  let normalizedType = inferredType;
+  if (inferredType === "text" && Array.isArray(options) && options.length > 1) normalizedType = "select";
+  if (inferredType === "select" && looksPromptLike && (!Array.isArray(options) || options.length <= 1)) {
+    normalizedType = "text";
+  }
+
+  const numericDefault = raw.default ?? raw.fieldValue;
+  const numericMarker = numericDefault !== undefined && numericDefault !== null && String(numericDefault).trim() !== "";
+  const numericValue = numericMarker ? Number(numericDefault) : NaN;
+  if (!looksPromptLike && normalizedType === "text" && Number.isFinite(numericValue)) {
+    normalizedType = "number";
+  }
+
+  if (looksPromptLike) {
+    normalizedType = "text";
+    options = undefined;
+  }
 
   const mappedInput = {
-    type: raw.type || raw.valueType || raw.widget || raw.inputType || raw.fieldType,
+    type: normalizedType,
     fieldType: raw.fieldType || "",
     options,
     fieldData: raw.fieldData,
     default: raw.default ?? raw.fieldValue
   };
   const type = resolveInputType(mappedInput);
-  const baseName = String(raw.name || raw.label || raw.title || raw.description || fieldName || key).trim();
-  const baseLabel = String(raw.label || raw.name || raw.title || fieldName || key).trim();
+  const fieldDataLabel = resolveFieldDataLabel(raw.fieldData);
+  const rawDescription = String(raw.description || raw.desc || "").trim();
+  const baseName = String(raw.name || raw.label || raw.title || rawDescription || fieldDataLabel || fieldName || key).trim();
+  const baseLabel = String(rawDescription || raw.label || raw.name || raw.title || fieldDataLabel || fieldName || key).trim();
   const displayLabel = resolveDisplayLabel(key, fieldName, baseLabel, baseName);
+  const normalizedLabel =
+    isWeakLabel(displayLabel) && (rawDescription || fieldDataLabel)
+      ? rawDescription || fieldDataLabel
+      : displayLabel;
 
   return {
     key,
     name: baseName,
-    label: displayLabel || baseLabel || baseName || key,
-    type,
+    label: normalizedLabel || baseLabel || baseName || key,
+    type: normalizedType,
     required: raw.required !== false && raw.required !== 0 && raw.required !== "false",
     default: normalizeDefaultValueByType(raw.default ?? raw.fieldValue, type),
     options: Array.isArray(options) && options.length > 0 ? options : undefined,
@@ -279,11 +705,15 @@ function mergeInputsWithFallback(primaryInputs, fallbackInputs) {
     const alt = backupMap.get(marker);
     if (!alt) return input;
 
+    const inputType = inferInputType(input.type || input.fieldType);
+    const inputOptions = Array.isArray(input.options) ? input.options : [];
+    const altOptions = Array.isArray(alt.options) ? alt.options : [];
+    const inputHasBooleanOptions = isBooleanOptionList(inputOptions);
+    const altHasBooleanOptions = isBooleanOptionList(altOptions);
     const needsSelectOptions =
-      inferInputType(input.type || input.fieldType) === "select" &&
-      (!Array.isArray(input.options) || input.options.length <= 1) &&
-      Array.isArray(alt.options) &&
-      alt.options.length > 1;
+      inputType === "select" &&
+      (inputOptions.length <= 1 || (inputHasBooleanOptions && !altHasBooleanOptions)) &&
+      altOptions.length > 1;
     if (!needsSelectOptions) return input;
     return { ...input, options: alt.options };
   });
@@ -436,6 +866,13 @@ function extractAppInfoPayload(data) {
     data.workflow && data.workflow.nodeInfoList,
     data.appInfo && data.appInfo.nodeInfoList,
     data.webappInfo && data.webappInfo.nodeInfoList,
+    data.webappInfo && data.webappInfo.nodeList,
+    data.workflow && data.workflow.nodeList,
+    data.workflow && data.workflow.nodes,
+    data.nodeInfo,
+    data.nodeInfos,
+    data.data && data.data.nodeInfo,
+    data.data && data.data.nodeInfos,
     data.data && data.data.nodeInfoList,
     data.data && data.data.inputs,
     data.result && data.result.nodeInfoList,
@@ -448,7 +885,8 @@ function extractAppInfoPayload(data) {
       return {
         path: `legacyCandidate[${idx}]`,
         list,
-        inputLikeCount: list.filter(isLikelyInputRecord).length
+        inputLikeCount: list.filter(isLikelyInputRecord).length,
+        nodeBindingCount: getNodeBindingCount(list)
       };
     })
     .filter((item) => Array.isArray(item.list) && item.list.length > 0);
@@ -461,11 +899,25 @@ function extractAppInfoPayload(data) {
   const primaryInputs = rawInputs
     .map((item, idx) => ({ raw: item, input: normalizeInput(item, idx) }))
     .filter((item) => item && item.input && item.input.key)
+    .filter((item) => !isGhostSchemaInput(item.raw, item.input))
     .map((item) => item.input);
 
+  const altCandidates = candidateList.filter((item) => item && item.path && item.path !== selected.path).slice(0, 3);
+  const altInputs = altCandidates
+    .flatMap((candidate) => {
+      const list = Array.isArray(candidate.list) ? candidate.list : [];
+      return list
+        .map((item, idx) => ({ raw: item, input: normalizeInput(item, idx) }))
+        .filter((item) => item && item.input && item.input.key)
+        .filter((item) => !isGhostSchemaInput(item.raw, item.input))
+        .map((item) => item.input);
+    })
+    .filter(Boolean);
+
   const curlDemoText = findCurlDemoText(data);
-  const curlNodeInfoList = extractNodeInfoListFromCurl(curlDemoText);
-  const fallbackInputs = curlNodeInfoList.map((item, idx) => normalizeInput(item, idx)).filter((item) => item.key);
+  const curlNodeInfoList = extractNodeInfoListFromText(curlDemoText);
+  const curlInputs = curlNodeInfoList.map((item, idx) => normalizeInput(item, idx)).filter((item) => item.key);
+  const fallbackInputs = [...altInputs, ...curlInputs];
   const inputs = mergeInputsWithFallback(primaryInputs, fallbackInputs);
 
   return {

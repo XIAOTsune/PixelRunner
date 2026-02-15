@@ -54,7 +54,7 @@ function buildNodeInfoPayload(input, value) {
     fieldValue: value
   };
   if (input.fieldType) payload.fieldType = input.fieldType;
-  if (input.fieldData) payload.fieldData = input.fieldData;
+  if (input.fieldData !== undefined) payload.fieldData = input.fieldData;
   return payload;
 }
 

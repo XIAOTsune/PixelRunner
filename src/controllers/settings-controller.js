@@ -341,7 +341,10 @@ function renderSavedAppsList() {
                     <div style="font-size:10px; color:#777;">应用ID: ${escapeHtml(app.appId || "-")}</div>
                     <div style="font-size:10px; color:#777;">记录ID: ${escapeHtml(meta.id)}${duplicateTag}</div>
                 </div>
-                <button class="tiny-btn" type="button" data-action="delete-app" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>删除</button>
+                <div style="display:flex; gap:6px;">
+                    <button class="tiny-btn" type="button" data-action="edit-app" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>修改</button>
+                    <button class="tiny-btn" type="button" data-action="delete-app" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>删除</button>
+                </div>
             </div>
         `;
     })
@@ -357,8 +360,12 @@ function saveTemplate() {
     return;
   }
 
+  const existingByTitle = store.getPromptTemplates().find((item) => String(item.title || "").trim() === title);
+  if (existingByTitle && existingByTitle.id) {
+    store.deletePromptTemplate(existingByTitle.id);
+  }
   store.addPromptTemplate({ title, content });
-  emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: "saved" });
+  emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: existingByTitle ? "updated" : "saved" });
   dom.templateTitleInput.value = "";
   dom.templateContentInput.value = "";
   renderSavedTemplates();
@@ -388,7 +395,10 @@ function renderSavedTemplates() {
                     <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(template.title || "未命名模板")}</div>
                     <div style="font-size:10px; color:#777;">记录ID: ${escapeHtml(meta.id)}${duplicateTag}</div>
                 </div>
-                <button class="tiny-btn" type="button" data-action="delete-template" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>删除</button>
+                <div style="display:flex; gap:6px;">
+                    <button class="tiny-btn" type="button" data-action="edit-template" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>修改</button>
+                    <button class="tiny-btn" type="button" data-action="delete-template" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>删除</button>
+                </div>
             </div>
         `;
     })
@@ -397,8 +407,34 @@ function renderSavedTemplates() {
 
 function onSavedAppsListClick(event) {
   const button = event.target && event.target.closest ? event.target.closest("button[data-action]") : null;
-  if (!button || button.dataset.action !== "delete-app") return;
+  if (!button) return;
   if (!dom.savedAppsList.contains(button)) return;
+
+  if (button.dataset.action === "edit-app") {
+    const row = findClosestByClass(button, "saved-item");
+    const idFromButton = decodeDataId(String(button.dataset.id || "").trim());
+    const idFromRow = row ? decodeDataId(String((row.dataset && row.dataset.id) || "").trim()) : "";
+    const id = idFromButton || idFromRow;
+    const app = store.getAiApps().find((item) => String(item.id) === String(id));
+    if (!app) {
+      alert("未找到应用记录");
+      return;
+    }
+    dom.appIdInput.value = String(app.appId || "");
+    dom.appNameInput.value = String(app.name || "");
+    state.currentEditingAppId = String(app.id || "");
+    state.parsedAppData = {
+      appId: app.appId || "",
+      name: app.name || "",
+      description: app.description || "",
+      inputs: Array.isArray(app.inputs) ? app.inputs : []
+    };
+    dom.parseResultContainer.innerHTML = `<div style="color:#aaa; font-size:11px; margin:6px 0;">已载入应用，点击“解析”重新拉取参数后保存。</div>`;
+    dom.manualConfigArea.style.display = "none";
+    return;
+  }
+
+  if (button.dataset.action !== "delete-app") return;
 
   const row = findClosestByClass(button, "saved-item");
   const idFromButton = decodeDataId(String(button.dataset.id || "").trim());
@@ -426,8 +462,22 @@ function onSavedAppsListClick(event) {
 
 function onSavedTemplatesListClick(event) {
   const button = event.target && event.target.closest ? event.target.closest("button[data-action]") : null;
-  if (!button || button.dataset.action !== "delete-template") return;
+  if (!button) return;
   if (!dom.savedTemplatesList.contains(button)) return;
+
+  if (button.dataset.action === "edit-template") {
+    const id = decodeDataId(String(button.dataset.id || "").trim());
+    const template = store.getPromptTemplates().find((item) => String(item.id) === String(id));
+    if (!template) {
+      alert("未找到模板记录");
+      return;
+    }
+    dom.templateTitleInput.value = String(template.title || "");
+    dom.templateContentInput.value = String(template.content || "");
+    return;
+  }
+
+  if (button.dataset.action !== "delete-template") return;
 
   const id = decodeDataId(String(button.dataset.id || "").trim());
   if (!id) {
