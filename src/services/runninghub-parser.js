@@ -313,6 +313,98 @@ function sanitizeDebugRawEntry(raw) {
   };
 }
 
+function normalizeNameKey(key) {
+  return String(key || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isMeaningfulAppName(name) {
+  const text = String(name || "").trim();
+  if (!text) return false;
+  const marker = text.toLowerCase();
+  if (marker === "unknown app" || marker === "unknown" || marker === "unnamed app" || marker === "app") return false;
+  return true;
+}
+
+function scoreAppNameCandidate(name, key, depth) {
+  const text = String(name || "").trim();
+  if (!isMeaningfulAppName(text)) return 0;
+  const keyWeight = {
+    webappname: 50,
+    appname: 46,
+    workflowname: 44,
+    displayname: 42,
+    title: 38,
+    name: 34
+  };
+  const normalizedKey = normalizeNameKey(key);
+  const base = keyWeight[normalizedKey] || 20;
+  const lengthScore = Math.min(12, text.length);
+  const depthPenalty = Math.max(0, Number(depth) || 0);
+  return base + lengthScore - depthPenalty;
+}
+
+function pushAppNameCandidate(bucket, seen, value, key, depth) {
+  if (value === undefined || value === null) return;
+  const text = String(value).trim();
+  if (!isMeaningfulAppName(text)) return;
+  const marker = text.toLowerCase();
+  if (seen.has(marker)) return;
+  seen.add(marker);
+  bucket.push({
+    value: text,
+    key: normalizeNameKey(key),
+    depth: Number(depth) || 0,
+    score: scoreAppNameCandidate(text, key, depth)
+  });
+}
+
+function collectAppNameCandidatesFromValue(value, depth = 0, bucket = [], seen = new Set(), parentKey = "") {
+  if (depth > 8 || value === undefined || value === null) return bucket;
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    const normalizedParent = normalizeNameKey(parentKey);
+    if (normalizedParent === "name" || normalizedParent === "title" || normalizedParent === "appname" || normalizedParent === "webappname" || normalizedParent === "workflowname" || normalizedParent === "displayname") {
+      pushAppNameCandidate(bucket, seen, value, normalizedParent, depth);
+    }
+    if (typeof value === "string") {
+      const parsed = parseJsonFromEscapedText(value);
+      if (parsed !== undefined) {
+        collectAppNameCandidatesFromValue(parsed, depth + 1, bucket, seen, "");
+      }
+    }
+    return bucket;
+  }
+
+  if (Array.isArray(value)) {
+    value.slice(0, 30).forEach((item) => collectAppNameCandidatesFromValue(item, depth + 1, bucket, seen, parentKey));
+    return bucket;
+  }
+
+  if (typeof value !== "object") return bucket;
+
+  const directKeys = ["webappName", "appName", "workflowName", "displayName", "title", "name"];
+  for (const key of directKeys) {
+    if (value[key] !== undefined) pushAppNameCandidate(bucket, seen, value[key], key, depth);
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    collectAppNameCandidatesFromValue(child, depth + 1, bucket, seen, key);
+  }
+  return bucket;
+}
+
+function resolveBestAppName(data, fallback = "Unknown App") {
+  if (!data || typeof data !== "object") return fallback;
+  const candidates = collectAppNameCandidatesFromValue(data, 0, [], new Set(), "");
+  if (!Array.isArray(candidates) || candidates.length === 0) return fallback;
+  candidates.sort((a, b) => {
+    if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+    return (a.depth || 0) - (b.depth || 0);
+  });
+  const best = candidates[0];
+  return best && best.value ? best.value : fallback;
+}
+
 function extractAppInfoPayload(data) {
   const parsedString = typeof data === "string" ? parseJsonFromEscapedText(data) : undefined;
   if (parsedString && typeof parsedString === "object") return extractAppInfoPayload(parsedString);
@@ -378,7 +470,7 @@ function extractAppInfoPayload(data) {
 
   return {
     payload: {
-      name: data.webappName || data.name || data.title || data.appName || data.workflowName || "Unknown App",
+      name: resolveBestAppName(data, "Unknown App"),
       description: data.description || data.desc || data.summary || "",
       inputs
     },
@@ -499,17 +591,22 @@ function pickBestParsedPayload(candidates) {
     const inputs = Array.isArray(payload.inputs) ? payload.inputs : [];
     const score = inputs.length;
     const rawCount = Number(parsed && parsed.debug && parsed.debug.selectedRawCount) || 0;
+    const nameScore = isMeaningfulAppName(payload && payload.name) ? 1 : 0;
 
     if (!best) {
-      best = { source, parsed, payload, score, rawCount };
+      best = { source, parsed, payload, score, rawCount, nameScore };
       continue;
     }
     if (score > best.score) {
-      best = { source, parsed, payload, score, rawCount };
+      best = { source, parsed, payload, score, rawCount, nameScore };
       continue;
     }
-    if (score === best.score && rawCount > best.rawCount) {
-      best = { source, parsed, payload, score, rawCount };
+    if (score === best.score && nameScore > best.nameScore) {
+      best = { source, parsed, payload, score, rawCount, nameScore };
+      continue;
+    }
+    if (score === best.score && nameScore === best.nameScore && rawCount > best.rawCount) {
+      best = { source, parsed, payload, score, rawCount, nameScore };
     }
   }
   return best;
@@ -574,6 +671,10 @@ async function fetchAppInfoCore(params = {}) {
     if (!best) return null;
 
     const payload = best.payload || { name: "Unknown App", description: "", inputs: [] };
+    const globalName = resolveBestAppName(result, "");
+    if (!isMeaningfulAppName(payload.name) && isMeaningfulAppName(globalName)) {
+      payload.name = globalName;
+    }
     lastParseSnapshot = buildParseDebugRecord(
       endpoint,
       normalizedId,

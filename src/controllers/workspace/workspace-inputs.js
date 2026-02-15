@@ -278,8 +278,10 @@ function createWorkspaceInputs(deps) {
     if (otherInputs.length > 0 && container) {
       const grid = document.createElement("div");
       grid.className = "input-grid";
+      let renderedCount = 0;
 
       otherInputs.forEach((input, idx) => {
+        const fieldKey = String((input && input.key) || `param_${idx}`);
         try {
           const field = createInputField(input, idx);
           const inputType = resolveUiInputType(input);
@@ -295,19 +297,21 @@ function createWorkspaceInputs(deps) {
             field.style.gridColumn = "span 2";
           }
           grid.appendChild(field);
+          renderedCount += 1;
         } catch (error) {
           console.error("[Workspace] render input failed", input, error);
           const fieldName = input && (input.label || input.name || input.key) ? input.label || input.name || input.key : "unknown";
           log(`render input failed: ${fieldName} | ${error && error.message ? error.message : error}`, "warn");
           try {
             grid.appendChild(createFallbackInputField(input, idx));
+            renderedCount += 1;
+            log(`render field fallback: ${fieldKey}`, "warn");
           } catch (fallbackError) {
             console.error("[Workspace] render fallback input failed", input, fallbackError);
           }
         }
       });
 
-      const renderedCount = getRenderedElementCount(grid);
       if (renderedCount > 0) {
         container.appendChild(grid);
         log(`rendered non-image inputs: ${renderedCount}`, "info");
