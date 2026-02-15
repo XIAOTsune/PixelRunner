@@ -276,7 +276,7 @@ async function createNeutralGrayLayer() {
       // 2. 命名
       { _obj: "set", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }], to: { _obj: "layer", name: "中性灰 (D&B)" } },
       // 3. 填充 50% 灰
-      { _obj: "fill", using: { _enum: "fillContents", _value: "gray" }, opacity: { _unit: "percentUnit", _value: 50 }, mode: { _enum: "blendMode", _value: "normal" } },
+      { _obj: "fill", using: { _enum: "fillContents", _value: "gray" }, opacity: { _unit: "percentUnit", _value: 100 }, mode: { _enum: "blendMode", _value: "normal" } },
       // 4. 混合模式改为柔光 (Soft Light)
       { _obj: "set", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }], to: { _obj: "layer", mode: { _enum: "blendMode", _value: "softLight" } } }
     ], {});
@@ -306,15 +306,34 @@ async function createObserverLayer() {
  */
 async function stampVisibleLayers() {
   await core.executeAsModal(async () => {
-    // 这是一个特殊的命令，模拟键盘快捷键行为
-    // 1. 全选
-    await action.batchPlay([{ _obj: "selectAll", _target: [{ _ref: "channel", _enum: "channel", _value: "component" }] }], {});
-    // 2. 复制合并 (Copy Merged)
-    await action.batchPlay([{ _obj: "copyTheMergedLayers" }], {});
-    // 3. 粘贴 (Paste)
-    await action.batchPlay([{ _obj: "paste" }], {});
-    // 4. 命名
-    await action.batchPlay([{ _obj: "set", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }], to: { _obj: "layer", name: "盖印图层" } }], {});
+    const doc = app.activeDocument;
+    if (!doc) return;
+    const beforeCount = Array.isArray(doc.layers) ? doc.layers.length : null;
+
+    let stamped = false;
+    try {
+      await action.batchPlay([{ _obj: "mergeVisible", duplicate: true }], {});
+      stamped = true;
+    } catch (_) {
+      try {
+        // 备用方案：复制合并 + 粘贴
+        await action.batchPlay([{ _obj: "selectAll", _target: [{ _ref: "channel", _enum: "channel", _value: "component" }] }], {});
+        await action.batchPlay([{ _obj: "copyTheMergedLayers" }], {});
+        await action.batchPlay([{ _obj: "paste" }], {});
+        stamped = true;
+      } catch (error) {
+        console.error("[PS] stampVisibleLayers failed", error);
+        return;
+      }
+    }
+
+    if (!stamped) return;
+    const afterCount = Array.isArray(doc.layers) ? doc.layers.length : null;
+    if (beforeCount === null || afterCount === null || afterCount > beforeCount) {
+      await action.batchPlay([
+        { _obj: "set", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }], to: { _obj: "layer", name: "盖印图层" } }
+      ], {});
+    }
   }, { commandName: "盖印图层" });
 }
 

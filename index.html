@@ -14,15 +14,63 @@
   </div>
   
   <section id="viewTools" class="tab-content">
-    <div class="section-header">图层辅助</div>
-    <div class="input-grid">
-        <button id="btnNeutralGray" class="main-btn" type="button">新建中性灰 (D&B)</button>
-        <button id="btnObserver" class="main-btn" type="button">创建观察层</button>
+    <div class="tools-intro">
+      <div class="tools-title">工具箱</div>
+      <div class="tools-subtitle">常用 PS 功能入口，后续会加入更多工具与可选参数。</div>
     </div>
-    
-    <div class="section-header">合并操作</div>
-    <div class="input-grid full-width">
-        <button id="btnStamp" class="main-btn" type="button">盖印图层 (Ctrl+Alt+Shift+E)</button>
+
+    <div class="tools-group">
+      <div class="tools-group-title">图层辅助</div>
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">黑白观察层</div>
+              <div class="tool-card-desc">创建观察组（黑白 + 曲线）用于明暗检查。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnObserver" class="main-btn main-btn-secondary tool-action-btn" type="button">创建</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">类型: 观察组</span>
+            <span class="tool-chip">用途: 明暗检查</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">中性灰图层</div>
+              <div class="tool-card-desc">新建 50% 灰层并设为柔光，用于加深/减淡。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnNeutralGray" class="main-btn main-btn-secondary tool-action-btn" type="button">创建</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">填充: 50%</span>
+            <span class="tool-chip">模式: 柔光</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tools-group">
+      <div class="tools-group-title">合并操作</div>
+      <div class="tools-grid">
+        <div class="tool-card tool-card-compact">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">盖印图层</div>
+              <div class="tool-card-desc">等同 Ctrl+Alt+Shift+E。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnStamp" class="main-btn tool-action-btn" type="button">执行</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 </section>
 

@@ -104,6 +104,115 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* === 4.5 Tools Page Layout === */
+.tools-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tools-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.tools-subtitle {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.tools-group {
+  background: #1e1e1e;
+  border: 1px solid #242424;
+  border-radius: 6px;
+  padding: 7px 8px;
+  margin-bottom: 8px;
+}
+.tools-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-sub);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 5px;
+}
+
+.tools-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (min-width: 520px) {
+  .tools-grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .tool-card {
+    flex: 1 1 240px;
+  }
+}
+
+.tool-card {
+  background: #262626;
+  border: 1px solid #2f2f2f;
+  border-radius: 6px;
+  padding: 6px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tool-card-compact {
+  padding: 6px 7px;
+}
+
+.tool-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 5px;
+}
+.tool-card-info {
+  min-width: 0;
+}
+.tool-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+.tool-card-desc {
+  font-size: 9px;
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+.tool-card-actions {
+  flex-shrink: 0;
+}
+.tool-action-btn {
+  width: auto;
+  padding: 2px 7px;
+  font-size: 9px;
+}
+
+.tool-card-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: -1px;
+  align-items: center;
+}
+.tool-chip {
+  background: #1b1b1b;
+  border: 1px solid #2b2b2b;
+  border-radius: 999px;
+  padding: 1px 5px;
+  font-size: 7px;
+  color: #9aa0a6;
+  line-height: 1.2;
+}
+
 /* === 4. 表单与按钮 === */
 .input-grid {
   display: grid;
