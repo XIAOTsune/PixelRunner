@@ -1,38 +1,39 @@
 const ps = require("../services/ps");
+const { byId, rebindEvent } = require("../shared/dom-utils");
 
-// 这个控制器不需要像 app-controller 那样维护复杂的 state
-// 它只需要绑定事件
+async function onNeutralGrayClick() {
+  try {
+    await ps.createNeutralGrayLayer();
+    console.log("[Tools] Neutral gray layer created");
+  } catch (error) {
+    console.error("[Tools] Failed to create neutral gray layer", error);
+  }
+}
+
+async function onObserverClick() {
+  try {
+    await ps.createObserverLayer();
+  } catch (error) {
+    console.error("[Tools] Failed to create observer layer", error);
+  }
+}
+
+async function onStampClick() {
+  try {
+    await ps.stampVisibleLayers();
+  } catch (error) {
+    console.error("[Tools] Failed to stamp visible layers", error);
+  }
+}
 
 function initToolsController() {
-  const btnNeutralGray = document.getElementById("btnNeutralGray");
-  const btnObserver = document.getElementById("btnObserver");
-  const btnStamp = document.getElementById("btnStamp");
+  const btnNeutralGray = byId("btnNeutralGray");
+  const btnObserver = byId("btnObserver");
+  const btnStamp = byId("btnStamp");
 
-  // 绑定事件
-  if (btnNeutralGray) {
-    btnNeutralGray.addEventListener("click", async () => {
-      try {
-        await ps.createNeutralGrayLayer();
-        // 如果你有 toast 系统，可以在这里调用 showToast("创建成功")
-        console.log("中性灰图层已创建");
-      } catch (e) {
-        console.error("创建失败", e);
-        // showToast("创建失败: " + e.message, "error");
-      }
-    });
-  }
-
-  if (btnObserver) {
-    btnObserver.addEventListener("click", async () => {
-      await ps.createObserverLayer();
-    });
-  }
-
-  if (btnStamp) {
-    btnStamp.addEventListener("click", async () => {
-      await ps.stampVisibleLayers();
-    });
-  }
+  rebindEvent(btnNeutralGray, "click", onNeutralGrayClick);
+  rebindEvent(btnObserver, "click", onObserverClick);
+  rebindEvent(btnStamp, "click", onStampClick);
 }
 
 module.exports = { initToolsController };
