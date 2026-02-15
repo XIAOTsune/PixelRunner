@@ -621,7 +621,6 @@ function initSettingsController() {
   rebindEvent(dom.btnLoadParseDebug, "click", loadParseDebugReport);
   rebindEvent(dom.savedAppsList, "click", onSavedAppsListClick);
   rebindEvent(dom.envDiagnosticsHeader, "click", onEnvDiagnosticsToggleClick);
-  rebindEvent(dom.envDiagnosticsToggle, "click", onEnvDiagnosticsToggleClick);
   rebindEvent(dom.savedTemplatesList, "click", onSavedTemplatesListClick);
   rebindEvent(document, APP_EVENTS.APPS_CHANGED, onAppsChanged);
   rebindEvent(document, APP_EVENTS.TEMPLATES_CHANGED, onTemplatesChanged);
