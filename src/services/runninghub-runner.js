@@ -244,7 +244,11 @@ async function runAppTaskCore(params = {}) {
     const key = String(input.key || "").trim();
     if (!key) continue;
 
+    const aliasKey = key.includes(":") ? key.split(":").pop() : "";
     let value = inputValues[key];
+    if (isEmptyValue(value) && aliasKey) {
+      value = inputValues[aliasKey];
+    }
     const type = resolveRuntimeInputType(input);
     if (type !== "image" && input.required && isEmptyValue(value)) {
       throw new Error(`Missing required parameter: ${input.label || input.name || key}`);

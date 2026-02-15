@@ -157,16 +157,21 @@
       </div>
     </div>
 
-    <div class="setting-section">
-      <div class="setting-section-title">环境诊断</div>
-      <div class="inline-row">
-        <button id="btnRunEnvDoctor" type="button" class="main-btn main-btn-secondary">运行环境检测</button>
-        <button id="btnLoadLatestDiag" type="button" class="main-btn">读取最近报告</button>
-        <button id="btnLoadParseDebug" type="button" class="main-btn">Load Parse Debug</button>
+    <div id="envDiagnosticsSection" class="setting-section setting-section-collapsible setting-section-compact is-collapsed">
+      <div id="envDiagnosticsHeader" class="setting-section-title setting-section-toggle" role="button" tabindex="0" aria-expanded="false">
+        <span>环境诊断</span>
+        <button id="envDiagnosticsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
       </div>
-      <div class="control-group">
-        <label for="envDoctorOutput">诊断输出</label>
-        <textarea id="envDoctorOutput" rows="10" placeholder="点击“运行环境检测”后会显示报告摘要与文件路径"></textarea>
+      <div class="setting-section-body">
+        <div class="inline-row">
+          <button id="btnRunEnvDoctor" type="button" class="main-btn main-btn-secondary">运行环境检测</button>
+          <button id="btnLoadLatestDiag" type="button" class="main-btn">读取最近报告</button>
+          <button id="btnLoadParseDebug" type="button" class="main-btn">Load Parse Debug</button>
+        </div>
+        <div class="control-group">
+          <label for="envDoctorOutput">诊断输出</label>
+          <textarea id="envDoctorOutput" rows="10" placeholder="点击“运行环境检测”后会显示报告摘要与文件路径"></textarea>
+        </div>
       </div>
     </div>
   </section>

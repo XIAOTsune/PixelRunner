@@ -543,6 +543,21 @@ function onAdvancedSettingsToggleClick() {
   }
 }
 
+function onEnvDiagnosticsToggleClick() {
+  const section = dom.envDiagnosticsSection;
+  const btn = dom.envDiagnosticsToggle;
+  if (!section || !btn) return;
+
+  const isCollapsed = section.classList.contains("is-collapsed");
+  if (isCollapsed) {
+    section.classList.remove("is-collapsed");
+    btn.textContent = "收起";
+  } else {
+    section.classList.add("is-collapsed");
+    btn.textContent = "展开";
+  }
+}
+
 function initSettingsController() {
   const ids = [
     "apiKeyInput",
@@ -568,12 +583,28 @@ function initSettingsController() {
     "envDoctorOutput",
     "advancedSettingsHeader",
     "advancedSettingsToggle",
-    "advancedSettingsSection"
+    "advancedSettingsSection",
+    "envDiagnosticsHeader",
+    "envDiagnosticsToggle",
+    "envDiagnosticsSection"
   ];
 
   ids.forEach((id) => {
     dom[id] = byId(id);
   });
+
+  if (dom.advancedSettingsSection) {
+    dom.advancedSettingsSection.classList.add("is-collapsed");
+  }
+  if (dom.advancedSettingsToggle) {
+    dom.advancedSettingsToggle.textContent = "展开";
+  }
+  if (dom.envDiagnosticsSection) {
+    dom.envDiagnosticsSection.classList.add("is-collapsed");
+  }
+  if (dom.envDiagnosticsToggle) {
+    dom.envDiagnosticsToggle.textContent = "展开";
+  }
 
   dom.apiKeyInput.value = store.getApiKey();
   const settings = store.getSettings();
@@ -589,6 +620,8 @@ function initSettingsController() {
   rebindEvent(dom.btnLoadLatestDiag, "click", loadLatestDiagnosticReport);
   rebindEvent(dom.btnLoadParseDebug, "click", loadParseDebugReport);
   rebindEvent(dom.savedAppsList, "click", onSavedAppsListClick);
+  rebindEvent(dom.envDiagnosticsHeader, "click", onEnvDiagnosticsToggleClick);
+  rebindEvent(dom.envDiagnosticsToggle, "click", onEnvDiagnosticsToggleClick);
   rebindEvent(dom.savedTemplatesList, "click", onSavedTemplatesListClick);
   rebindEvent(document, APP_EVENTS.APPS_CHANGED, onAppsChanged);
   rebindEvent(document, APP_EVENTS.TEMPLATES_CHANGED, onTemplatesChanged);

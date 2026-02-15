@@ -87,12 +87,41 @@ function createWorkspaceInputs(deps) {
         </div>
       `;
 
+      const clearBtn = document.createElement("button");
+      clearBtn.type = "button";
+      clearBtn.textContent = "清除";
+      clearBtn.className = "image-input-clear-btn";
+      clearBtn.style.position = "absolute";
+      clearBtn.style.top = "8px";
+      clearBtn.style.right = "8px";
+      clearBtn.style.zIndex = "3";
+      clearBtn.style.padding = "2px 6px";
+      clearBtn.style.fontSize = "10px";
+      clearBtn.style.borderRadius = "2px";
+      clearBtn.style.border = "1px solid #555";
+      clearBtn.style.background = "rgba(0,0,0,0.5)";
+      clearBtn.style.color = "#ddd";
+      clearBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const statusText = wrapper.querySelector(".image-input-text");
+        const previewImg = wrapper.querySelector(".image-preview");
+        revokePreviewUrl(state.inputValues[key]);
+        delete state.inputValues[key];
+        delete state.imageBounds[key];
+        if (previewImg) {
+          previewImg.src = "";
+          previewImg.classList.remove("has-image");
+        }
+        if (statusText) statusText.textContent = "点击从 PS 选区获取";
+      });
+      wrapper.appendChild(clearBtn);
+
       wrapper.addEventListener("click", async () => {
         const statusText = wrapper.querySelector(".image-input-text");
         const previewImg = wrapper.querySelector(".image-preview");
         if (!statusText || !previewImg) return;
 
-        statusText.textContent = "获取中...";
+        statusText.textContent = "正在获取图像中...";
         try {
           const capture = await ps.captureSelection({ log });
           if (!capture || !capture.arrayBuffer) {
@@ -121,6 +150,7 @@ function createWorkspaceInputs(deps) {
 
     const wrapper = document.createElement("div");
     wrapper.className = "dynamic-input-field";
+    wrapper.dataset.inputKey = key;
 
     const headerRow = document.createElement("div");
     headerRow.className = "input-label-row";
@@ -145,9 +175,20 @@ function createWorkspaceInputs(deps) {
         inputEl.type = "text";
         inputEl.placeholder = String(input.default || "");
         inputEl.value = String(input.default || "");
-        state.inputValues[key] = inputEl.value;
+        const defaultNumeric = input.default !== undefined && input.default !== null ? Number(input.default) : NaN;
+        if (Number.isFinite(defaultNumeric)) {
+          state.inputValues[key] = defaultNumeric;
+          state.inputValues[key.split(":").pop()] = defaultNumeric;
+        } else {
+          state.inputValues[key] = inputEl.value;
+          state.inputValues[key.split(":").pop()] = inputEl.value;
+        }
         inputEl.addEventListener("input", (event) => {
-          state.inputValues[key] = event.target.value;
+          const nextValue = event.target.value;
+          const numeric = Number(nextValue);
+          const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
+          state.inputValues[key] = storedValue;
+          state.inputValues[key.split(":").pop()] = storedValue;
         });
         wrapper.appendChild(headerRow);
         wrapper.appendChild(inputEl);
@@ -169,14 +210,19 @@ function createWorkspaceInputs(deps) {
       }
       inputEl.addEventListener("change", (event) => {
         state.inputValues[key] = event.target.value;
+        state.inputValues[key.split(":").pop()] = event.target.value;
       });
     } else if (type === "boolean") {
       inputEl = document.createElement("select");
       inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
       inputEl.value = String(input.default) === "true" ? "true" : "false";
-      state.inputValues[key] = inputEl.value === "true";
+      const boolValue = inputEl.value === "true";
+      state.inputValues[key] = boolValue;
+      state.inputValues[key.split(":").pop()] = boolValue;
       inputEl.addEventListener("change", (event) => {
-        state.inputValues[key] = event.target.value === "true";
+        const nextValue = event.target.value === "true";
+        state.inputValues[key] = nextValue;
+        state.inputValues[key.split(":").pop()] = nextValue;
       });
     } else {
       const isLongText = promptLike || (type === "text" && getInputOptions(input).length === 0);
@@ -195,6 +241,7 @@ function createWorkspaceInputs(deps) {
             openTemplatePicker((content) => {
               inputEl.value = content;
               state.inputValues[key] = content;
+              state.inputValues[key.split(":").pop()] = content;
               inputEl.style.borderColor = "#4caf50";
               setTimeout(() => {
                 inputEl.style.borderColor = "";
@@ -215,9 +262,21 @@ function createWorkspaceInputs(deps) {
       }
 
       inputEl.value = String(input.default || "");
-      state.inputValues[key] = inputEl.value;
+      if (type === "number") {
+        const numericDefault = Number(input.default);
+        const storedValue = Number.isFinite(numericDefault) ? numericDefault : 0;
+        state.inputValues[key] = storedValue;
+        state.inputValues[key.split(":").pop()] = storedValue;
+      } else {
+        state.inputValues[key] = inputEl.value;
+        state.inputValues[key.split(":").pop()] = inputEl.value;
+      }
       inputEl.addEventListener("input", (event) => {
-        state.inputValues[key] = event.target.value;
+        const nextValue = event.target.value;
+        const numeric = Number(nextValue);
+        const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
+        state.inputValues[key] = storedValue;
+        state.inputValues[key.split(":").pop()] = storedValue;
       });
     }
 
@@ -407,11 +466,15 @@ function createWorkspaceInputs(deps) {
   function resolveTargetBounds() {
     if (!state.currentApp) return null;
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
-    for (const input of inputs) {
-      if (resolveUiInputType(input) !== "image") continue;
+    const imageInputs = inputs.filter((input) => resolveUiInputType(input) === "image");
+    const firstImage = imageInputs[0];
+    if (firstImage) {
+      const key = String(firstImage.key || "").trim();
+      if (key && state.imageBounds[key]) return state.imageBounds[key];
+    }
+    for (const input of imageInputs) {
       const key = String(input.key || "").trim();
       if (!key) continue;
-      if (isEmptyValue(state.inputValues[key])) continue;
       if (state.imageBounds[key]) return state.imageBounds[key];
     }
     return null;

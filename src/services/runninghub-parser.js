@@ -580,9 +580,8 @@ function normalizeDefaultValueByType(value, type) {
 function normalizeInput(raw, index = 0) {
   const nodeId = String(raw.nodeId || raw.nodeID || raw.node || raw.node_id || "").trim();
   const fieldName = String(raw.fieldName || raw.field || raw.name || "").trim();
-  const key = String(
-    raw.key || raw.paramKey || raw.fieldName || (nodeId && fieldName ? `${nodeId}:${fieldName}` : `param_${index + 1}`)
-  ).trim();
+  const derivedKey = nodeId && fieldName ? `${nodeId}:${fieldName}` : "";
+  const key = String(raw.key || raw.paramKey || derivedKey || raw.fieldName || `param_${index + 1}`).trim();
   const explicitOptionFields = [
     parseFieldOptions(raw.options),
     parseFieldOptions(raw.enums),
