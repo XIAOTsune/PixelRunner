@@ -52,6 +52,17 @@ function createWorkspaceInputs(deps) {
     return inputSchema.resolveInputType(input || {});
   }
 
+  function applyInputGridLayout(grid) {
+    if (!grid) return;
+    const supportsGrid =
+      typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("display", "grid");
+    if (!supportsGrid) {
+      grid.style.display = "flex";
+      grid.style.flexDirection = "column";
+      grid.style.gap = "8px";
+    }
+  }
+
   function createInputField(input, idx) {
     const key = String(input.key || `param_${idx}`);
     const type = resolveUiInputType(input);
@@ -239,6 +250,58 @@ function createWorkspaceInputs(deps) {
     return wrapper;
   }
 
+  function createMinimalFallbackField(input, idx) {
+    const key = String((input && input.key) || `param_${idx}`);
+    const labelText = (input && (input.label || input.name || key)) || key;
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "dynamic-input-field";
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "dynamic-input-label";
+    labelEl.textContent = String(labelText || "参数");
+
+    const inputEl = document.createElement("input");
+    inputEl.type = "text";
+    inputEl.value = String((input && input.default) || "");
+    state.inputValues[key] = inputEl.value;
+    inputEl.addEventListener("input", (event) => {
+      state.inputValues[key] = event.target.value;
+    });
+
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(inputEl);
+    return wrapper;
+  }
+
+  function renderFallbackInputs(inputs, container) {
+    if (!container) return 0;
+    const fallbackList = document.createElement("div");
+    fallbackList.className = "input-grid";
+    fallbackList.style.display = "flex";
+    fallbackList.style.flexDirection = "column";
+    fallbackList.style.gap = "8px";
+    let fallbackCount = 0;
+
+    inputs.forEach((input, idx) => {
+      try {
+        fallbackList.appendChild(createFallbackInputField(input, idx));
+        fallbackCount += 1;
+      } catch (error) {
+        console.error("[Workspace] render minimal fallback failed", input, error);
+        try {
+          fallbackList.appendChild(createMinimalFallbackField(input, idx));
+          fallbackCount += 1;
+        } catch (finalError) {
+          console.error("[Workspace] render minimal fallback hard failed", input, finalError);
+        }
+      }
+    });
+
+    container.appendChild(fallbackList);
+    return fallbackCount;
+  }
+
   function renderDynamicInputs(appItem) {
     Object.values(state.inputValues || {}).forEach(revokePreviewUrl);
     state.currentApp = appItem || null;
@@ -250,7 +313,12 @@ function createWorkspaceInputs(deps) {
 
     updateCurrentAppMeta();
 
-    if (container) container.innerHTML = "";
+    if (container) {
+      container.innerHTML = "";
+      container.style.display = "block";
+      container.style.visibility = "visible";
+      container.style.opacity = "1";
+    }
     if (imgContainer) {
       imgContainer.innerHTML = "";
       imgContainer.style.display = "none";
@@ -278,6 +346,7 @@ function createWorkspaceInputs(deps) {
     if (otherInputs.length > 0 && container) {
       const grid = document.createElement("div");
       grid.className = "input-grid";
+      applyInputGridLayout(grid);
       let renderedCount = 0;
 
       otherInputs.forEach((input, idx) => {
@@ -316,7 +385,12 @@ function createWorkspaceInputs(deps) {
         container.appendChild(grid);
         log(`rendered non-image inputs: ${renderedCount}`, "info");
       } else {
-        container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">参数渲染失败，请重新解析应用后重试</div>`;
+        const fallbackCount = renderFallbackInputs(otherInputs, container);
+        if (fallbackCount > 0) {
+          log(`rendered fallback inputs: ${fallbackCount}`, "warn");
+        } else {
+          container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">参数渲染失败，请重新解析应用后重试</div>`;
+        }
       }
     } else if (imageInputs.length === 0 && container) {
       container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">该应用没有可配置参数，请直接运行</div>`;
