@@ -418,7 +418,10 @@ async function runPsEnvironmentDoctor(options = {}) {
         "placeImage",
         "createNeutralGrayLayer",
         "createObserverLayer",
-        "stampVisibleLayers"
+        "stampVisibleLayers",
+        "createFrequencySeparation",
+        "gaussianBlur",
+        "sharpen"
       ])
     ],
     dataHealth: inspectDataHealth(),
