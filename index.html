@@ -57,6 +57,75 @@
     </div>
 
     <div class="tools-group">
+      <div class="tools-group-title">滤镜与修复</div>
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">高斯模糊</div>
+              <div class="tool-card-desc">打开 PS 高斯模糊对话框，作用于当前图层或选区。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnGaussianBlur" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">滤镜 &gt; 模糊</span>
+            <span class="tool-chip">系统对话框</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">锐化</div>
+              <div class="tool-card-desc">直接执行一次锐化处理，快速提升清晰度。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnSharpen" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">滤镜 &gt; 锐化</span>
+            <span class="tool-chip">快捷执行</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">高反差保留</div>
+              <div class="tool-card-desc">调用高反差保留滤镜，可在弹窗中设置半径。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnHighPass" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">滤镜 &gt; 其他</span>
+            <span class="tool-chip">系统对话框</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">智能识别填充</div>
+              <div class="tool-card-desc">调用内容识别填充（Content-Aware），需先有选区。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnContentAwareFill" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">编辑 &gt; 填充</span>
+            <span class="tool-chip">内容识别</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tools-group">
       <div class="tools-group-title">合并操作</div>
       <div class="tools-grid">
         <div class="tool-card tool-card-compact">

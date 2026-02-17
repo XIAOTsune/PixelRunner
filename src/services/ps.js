@@ -4,6 +4,14 @@ const { storage } = require("uxp");
 const fs = storage.localFileSystem;
 const formats = storage.formats;
 
+function ensureActiveDocument() {
+  const doc = app.activeDocument;
+  if (!doc) {
+    throw new Error("请先在 Photoshop 中打开或激活一个文档。");
+  }
+  return doc;
+}
+
 function toPixelNumber(value, fallback = 0) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -337,11 +345,224 @@ async function stampVisibleLayers() {
   }, { commandName: "盖印图层" });
 }
 
+function ensureSelectionExists(doc = app.activeDocument) {
+  try {
+    const bounds = doc && doc.selection && doc.selection.bounds;
+    return Boolean(bounds);
+  } catch (_) {
+    return false;
+  }
+}
+
+function assertBatchPlaySucceeded(result, label) {
+  const first = Array.isArray(result) ? result[0] : null;
+  if (first && first._obj === "error" && Number(first.result) !== 0) {
+    const msg = first.message || `${label} failed`;
+    throw new Error(msg);
+  }
+}
+
+const TOOL_MENU_KEYWORDS = {
+  gaussianBlur: ["gaussian blur", "高斯模糊"],
+  smartSharpen: ["smart sharpen", "智能锐化"],
+  highPass: ["high pass", "高反差保留"],
+  contentAwareFill: ["content-aware fill", "内容识别填充"]
+};
+
+const TOOL_MENU_SCAN_RANGE = { start: 900, end: 5000 };
+let toolMenuIdsCache = null;
+let toolMenuIdsPromise = null;
+
+function normalizeMenuTitle(title) {
+  return String(title || "")
+    .replace(/\u2026/g, "...")
+    .trim()
+    .toLowerCase();
+}
+
+async function scanToolMenuIds() {
+  const ids = {};
+  if (!core || typeof core.getMenuCommandTitle !== "function") return ids;
+
+  const keys = Object.keys(TOOL_MENU_KEYWORDS);
+  for (let commandID = TOOL_MENU_SCAN_RANGE.start; commandID <= TOOL_MENU_SCAN_RANGE.end; commandID += 1) {
+    let title = "";
+    try {
+      title = await core.getMenuCommandTitle({ commandID });
+    } catch (_) {
+      continue;
+    }
+
+    const normalized = normalizeMenuTitle(title);
+    if (!normalized) continue;
+
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i];
+      if (ids[key]) continue;
+      const patterns = TOOL_MENU_KEYWORDS[key];
+      for (let j = 0; j < patterns.length; j += 1) {
+        if (normalized.includes(patterns[j])) {
+          ids[key] = commandID;
+          break;
+        }
+      }
+    }
+
+    if (keys.every((key) => Boolean(ids[key]))) break;
+  }
+
+  return ids;
+}
+
+async function getToolMenuIds() {
+  if (toolMenuIdsCache) return toolMenuIdsCache;
+  if (!toolMenuIdsPromise) {
+    toolMenuIdsPromise = scanToolMenuIds()
+      .then((ids) => {
+        toolMenuIdsCache = ids;
+        return ids;
+      })
+      .finally(() => {
+        toolMenuIdsPromise = null;
+      });
+  }
+  return toolMenuIdsPromise;
+}
+
+async function runMenuCommandByKey(menuKey, label) {
+  if (!core || typeof core.performMenuCommand !== "function") {
+    throw new Error("当前 Photoshop 不支持菜单命令调用。");
+  }
+
+  const ids = await getToolMenuIds();
+  const commandID = ids[menuKey];
+  if (!commandID) {
+    throw new Error(`${label} 菜单命令未找到。`);
+  }
+
+  if (typeof core.getMenuCommandState === "function") {
+    try {
+      const enabled = await core.getMenuCommandState({ commandID });
+      if (enabled === false) {
+        throw new Error(`${label} 当前不可用，请检查图层或选区状态。`);
+      }
+    } catch (error) {
+      const msg = String((error && error.message) || "");
+      if (msg.includes("不可用")) throw error;
+    }
+  }
+
+  const ok = await core.performMenuCommand({ commandID });
+  if (ok === false) {
+    throw new Error(`${label} 菜单命令执行失败。`);
+  }
+}
+
+async function runSingleCommandWithDialog(descriptor, label) {
+  const command = {
+    ...descriptor,
+    _options: {
+      ...(descriptor._options || {}),
+      dialogOptions: "display"
+    }
+  };
+
+  const result = await action.batchPlay([command], {});
+  assertBatchPlaySucceeded(result, label);
+  return result;
+}
+
+async function runDialogCommandWithFallback({ label, menuKey, descriptor, commandName }) {
+  let menuError = null;
+  try {
+    await runMenuCommandByKey(menuKey, label);
+    return;
+  } catch (error) {
+    menuError = error;
+  }
+
+  try {
+    await core.executeAsModal(async () => {
+      await runSingleCommandWithDialog(descriptor, label);
+    }, { commandName, interactive: true });
+    return;
+  } catch (batchError) {
+    const menuMsg = menuError && menuError.message ? menuError.message : String(menuError || "");
+    const batchMsg = batchError && batchError.message ? batchError.message : String(batchError || "");
+    throw new Error(`${label} 执行失败。菜单方式: ${menuMsg}; BatchPlay方式: ${batchMsg}`);
+  }
+}
+
+/**
+ * 调用 Photoshop 自带的高斯模糊滤镜（弹出原生对话框，可自调半径）
+ */
+async function runGaussianBlur() {
+  ensureActiveDocument();
+  await runDialogCommandWithFallback({
+    label: "高斯模糊",
+    menuKey: "gaussianBlur",
+    descriptor: {
+      _obj: "gaussianBlur",
+      radius: { _unit: "pixelsUnit", _value: 5 }
+    },
+    commandName: "高斯模糊"
+  });
+}
+
+/**
+ * 调用 Photoshop 自带锐化（弹出可调参数对话框）
+ */
+async function runSharpen() {
+  ensureActiveDocument();
+  await runDialogCommandWithFallback({
+    label: "智能锐化",
+    menuKey: "smartSharpen",
+    descriptor: { _obj: "smartSharpen" },
+    commandName: "锐化（Smart Sharpen）"
+  });
+}
+
+/**
+ * 调用 Photoshop 高反差保留滤镜（弹出原生对话框，可调半径）
+ */
+async function runHighPass() {
+  ensureActiveDocument();
+  await runDialogCommandWithFallback({
+    label: "高反差保留",
+    menuKey: "highPass",
+    descriptor: {
+      _obj: "highPass",
+      radius: { _unit: "pixelsUnit", _value: 2 }
+    },
+    commandName: "高反差保留"
+  });
+}
+
+/**
+ * 调用 Photoshop 内容识别填充（显示填充参数窗口），依赖当前选区
+ */
+async function runContentAwareFill() {
+  const doc = ensureActiveDocument();
+  if (!ensureSelectionExists(doc)) {
+    throw new Error("请先建立选区，再运行智能识别填充。");
+  }
+  await runDialogCommandWithFallback({
+    label: "内容识别填充",
+    menuKey: "contentAwareFill",
+    descriptor: { _obj: "contentAwareFill" },
+    commandName: "智能识别填充"
+  });
+}
+
 // 记得在 module.exports 里导出这些新函数
 module.exports = {
   captureSelection,
   placeImage,
   createNeutralGrayLayer, // 新增
   createObserverLayer,    // 新增
-  stampVisibleLayers      // 新增
+  stampVisibleLayers,     // 新增
+  runGaussianBlur,
+  runSharpen,
+  runHighPass,
+  runContentAwareFill
 };
