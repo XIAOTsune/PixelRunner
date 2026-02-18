@@ -27,9 +27,9 @@ const API = {
 
 const DEFAULT_SETTINGS = {
   pollInterval: 2,
-  timeout: 180,
+  timeout: 60,
   uploadMaxEdge: 0,
-  pasteStrategy: "normal"
+  pasteStrategy: "smart"
 };
 
 const DEFAULT_PROMPT_TEMPLATES = [

@@ -87,6 +87,9 @@ function createWorkspaceInputs(deps) {
     const key = String(input.key || `param_${idx}`);
     const type = resolveUiInputType(input);
     const labelText = input.label || input.name || key;
+    const labelHint = input.labelConfidence !== undefined && input.labelConfidence < 0.5
+      ? `${labelText} (${input.fieldName || key})`
+      : labelText;
     const isUiRequired = type === "image"
       ? Boolean(input && input.required && input.requiredExplicit === true)
       : Boolean(input && input.required);
@@ -98,7 +101,7 @@ function createWorkspaceInputs(deps) {
 
       const labelEl = document.createElement("div");
       labelEl.className = "dynamic-input-label";
-      labelEl.innerHTML = `${escapeHtml(labelText)} ${isUiRequired ? '<span style="color:#ff6b6b">*</span>' : ""}`;
+      labelEl.innerHTML = `${escapeHtml(labelHint)} ${isUiRequired ? '<span style="color:#ff6b6b">*</span>' : ""}`;
 
       const wrapper = document.createElement("div");
       wrapper.className = "image-input-wrapper";
@@ -180,7 +183,7 @@ function createWorkspaceInputs(deps) {
 
     const labelEl = document.createElement("span");
     labelEl.className = "dynamic-input-label";
-    labelEl.innerHTML = escapeHtml(labelText);
+    labelEl.innerHTML = escapeHtml(labelHint);
     headerRow.appendChild(labelEl);
 
     const typeHint = String(input.type || input.fieldType || "").toLowerCase();

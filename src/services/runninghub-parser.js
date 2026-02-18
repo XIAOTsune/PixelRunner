@@ -105,14 +105,17 @@ function normalizeFieldToken(text) {
 
 function resolveDisplayLabel(key, fieldName, rawLabel, rawName) {
   const preferredRawLabel = String(rawLabel || rawName || "").trim();
-  if (preferredRawLabel && !isWeakLabel(preferredRawLabel)) return preferredRawLabel;
+  if (preferredRawLabel && !isWeakLabel(preferredRawLabel)) {
+    return { label: preferredRawLabel, source: "raw", confidence: 1 };
+  }
 
   const candidates = [fieldName, key, key && String(key).includes(":") ? String(key).split(":").pop() : ""];
   for (const item of candidates) {
     const mapped = FIELD_LABEL_MAP[normalizeFieldToken(item)];
-    if (mapped) return mapped;
+    if (mapped) return { label: mapped, source: "map", confidence: 0.6 };
   }
-  return preferredRawLabel || String(fieldName || key || "").trim();
+  const fallback = preferredRawLabel || String(fieldName || key || "").trim();
+  return { label: fallback, source: "fallback", confidence: 0.4 };
 }
 
 function resolveFieldDataLabel(fieldData) {
@@ -122,6 +125,10 @@ function resolveFieldDataLabel(fieldData) {
     parsed = parseJsonFromEscapedText(fieldData);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
+
+  const hasOptionLike = Array.isArray(parsed.options) || Array.isArray(parsed.items) || Array.isArray(parsed.values);
+  if (hasOptionLike) return "";
+
   const candidate = parsed.label || parsed.name || parsed.title || parsed.description || "";
   return String(candidate || "").trim();
 }
@@ -744,10 +751,13 @@ function normalizeInput(raw, index = 0) {
   const baseName = String(raw.name || raw.label || raw.title || fieldDataLabel || rawDescription || fieldName || key).trim();
   const baseLabel = String(raw.label || raw.name || raw.title || fieldDataLabel || rawDescription || fieldName || key).trim();
   const explicitTitle = String(raw.label || raw.name || raw.title || fieldDataLabel || "").trim();
-  const displayLabel = resolveDisplayLabel(key, fieldName, baseLabel, baseName);
+  const displayMeta = resolveDisplayLabel(key, fieldName, baseLabel, baseName);
+  const displayLabel = displayMeta.label;
   const normalizedLabel = isWeakLabel(displayLabel)
     ? explicitTitle || rawDescription || displayLabel
     : displayLabel;
+  const labelSource = isWeakLabel(displayLabel) ? "fallback" : displayMeta.source;
+  const labelConfidence = isWeakLabel(displayLabel) ? 0.3 : displayMeta.confidence;
   const requiredSpec = resolveRequiredSpec(raw, type);
 
   return {
@@ -765,7 +775,9 @@ function normalizeInput(raw, index = 0) {
     nodeId: nodeId || undefined,
     fieldName: fieldName || undefined,
     fieldType: raw.fieldType || undefined,
-    fieldData: raw.fieldData || undefined
+    fieldData: raw.fieldData || undefined,
+    labelSource,
+    labelConfidence
   };
 }
 
@@ -808,8 +820,19 @@ function mergeInputsWithFallback(primaryInputs, fallbackInputs) {
       inputType === "select" &&
       (inputOptions.length <= 1 || (inputHasBooleanOptions && !altHasBooleanOptions)) &&
       altOptions.length > 1;
-    if (!needsSelectOptions) return input;
-    return { ...input, options: alt.options };
+    const shouldReplaceLabel =
+      typeof alt.labelConfidence === "number" &&
+      (typeof input.labelConfidence !== "number" || alt.labelConfidence > input.labelConfidence + 0.2) &&
+      !isWeakLabel(String(alt.label || ""));
+
+    if (!needsSelectOptions && !shouldReplaceLabel) return input;
+    return {
+      ...input,
+      options: needsSelectOptions ? alt.options : input.options,
+      label: shouldReplaceLabel ? alt.label : input.label,
+      labelSource: shouldReplaceLabel ? alt.labelSource : input.labelSource,
+      labelConfidence: shouldReplaceLabel ? alt.labelConfidence : input.labelConfidence
+    };
   });
 
   const mergedMarkers = new Set(merged.map((item) => buildInputMergeKey(item)).filter(Boolean));
@@ -1025,6 +1048,13 @@ function extractAppInfoPayload(data) {
       selectedPath: selected.path || "",
       selectedRawCount: rawInputs.length,
       selectedRawPreview: rawInputs.slice(0, 5).map(sanitizeDebugRawEntry),
+      labelDecisionPreview: inputs.slice(0, 6).map((item) => ({
+        key: item.key,
+        label: item.label,
+        labelSource: item.labelSource,
+        labelConfidence: item.labelConfidence,
+        fieldName: item.fieldName
+      })),
       curlFound: Boolean(curlDemoText),
       curlNodeInfoCount: Array.isArray(curlNodeInfoList) ? curlNodeInfoList.length : 0
     }
