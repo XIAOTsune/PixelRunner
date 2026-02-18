@@ -15,6 +15,8 @@ const IMAGE_DECODE_TIMEOUT_MS = 2500;
 const CONTENT_ANALYSIS_TIMEOUT_MS = 5000;
 const SMART_ANALYSIS_TIMEOUT_MS = 6000;
 const SMART_MAX_EDGE = 1024;
+const SMART_OVERFLOW_THRESHOLD = 0.12; // 允许选区外溢出占比
+const SMART_SCORE_THRESHOLD = 0.5;
 
 function createAbortError(message = "用户中止") {
   const err = new Error(message);
@@ -333,6 +335,7 @@ function detectEdgeContentBox(decoded) {
 
   const meanMag = sumMag / sampleCount;
   const threshold = Math.max(meanMag * 2.2, maxMag * 0.22);
+  const thresholdHigh = Math.max(meanMag * 3.0, maxMag * 0.32);
   let left = width;
   let top = height;
   let right = -1;
@@ -348,7 +351,7 @@ function detectEdgeContentBox(decoded) {
         -gray[p - width - 1] - 2 * gray[p - width] - gray[p - width + 1] +
         gray[p + width - 1] + 2 * gray[p + width] + gray[p + width + 1];
       const mag = Math.abs(gx) + Math.abs(gy);
-      if (mag < threshold) continue;
+      if (mag < threshold && mag < thresholdHigh) continue;
       if (x < left) left = x;
       if (y < top) top = y;
       if (x > right) right = x;
@@ -409,6 +412,7 @@ function detectBorderContrastContentBox(decoded) {
   const meanR = borderR / borderCount;
   const meanG = borderG / borderCount;
   const meanB = borderB / borderCount;
+  const deltaSamples = [];
   let left = width;
   let top = height;
   let right = -1;
@@ -423,7 +427,41 @@ function detectBorderContrastContentBox(decoded) {
         Math.abs(data[idx] - meanR) +
         Math.abs(data[idx + 1] - meanG) +
         Math.abs(data[idx + 2] - meanB);
-      if (delta < 54) continue;
+      deltaSamples.push(delta);
+    }
+  }
+
+  if (deltaSamples.length === 0) return null;
+  deltaSamples.sort((a, b) => a - b);
+  const quantile = (q) => {
+    const pos = (deltaSamples.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    if (deltaSamples[base + 1] !== undefined) {
+      return deltaSamples[base] + rest * (deltaSamples[base + 1] - deltaSamples[base]);
+    }
+    return deltaSamples[base];
+  };
+  const delta50 = quantile(0.5);
+  const delta90 = quantile(0.9);
+  const delta95 = quantile(0.95);
+  const threshold = Math.max(54, delta50 * 1.6, delta90 * 0.9, delta95 * 0.8);
+
+  left = width;
+  top = height;
+  right = -1;
+  bottom = -1;
+  hitCount = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (y * width + x) * 4;
+      const a = data[idx + 3];
+      if (a <= 6) continue;
+      const delta =
+        Math.abs(data[idx] - meanR) +
+        Math.abs(data[idx + 1] - meanG) +
+        Math.abs(data[idx + 2] - meanB);
+      if (delta < threshold) continue;
       if (x < left) left = x;
       if (y < top) top = y;
       if (x > right) right = x;
@@ -497,7 +535,9 @@ function detectGradientContentBox(decoded) {
   if (sampleCount <= 0 || maxMag <= 0) return null;
 
   const meanMag = sumMag / sampleCount;
-  const threshold = Math.max(meanMag * 2.4, maxMag * 0.28);
+  const thresholdLow = Math.max(meanMag * 1.8, maxMag * 0.2);
+  const thresholdHigh = Math.max(meanMag * 2.8, maxMag * 0.32);
+  const threshold = Math.min(thresholdHigh, Math.max(thresholdLow, meanMag * 2.2));
   let left = width;
   let top = height;
   let right = -1;
@@ -544,14 +584,150 @@ function detectGradientContentBox(decoded) {
   );
 }
 
+function detectBinaryConnectivityBox(decoded) {
+  if (!decoded || !decoded.data) return null;
+  const { data, width, height } = decoded;
+  if (width < 4 || height < 4) return null;
+
+  const gray = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const a = data[idx + 3] / 255;
+      gray[y * width + x] = Math.round((0.299 * r + 0.587 * g + 0.114 * b) * a);
+    }
+  }
+
+  const samples = Array.from(gray);
+  samples.sort((a, b) => a - b);
+  const quantile = (q) => {
+    const pos = (samples.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    if (samples[base + 1] !== undefined) {
+      return samples[base] + rest * (samples[base + 1] - samples[base]);
+    }
+    return samples[base];
+  };
+  const thLow = quantile(0.55);
+  const thHigh = quantile(0.8);
+  const threshold = Math.min(220, Math.max(32, (thLow + thHigh) * 0.5));
+
+  const visited = new Uint8Array(width * height);
+  const queueX = new Int32Array(width * height);
+  const queueY = new Int32Array(width * height);
+  const components = [];
+
+  const enqueue = (x, y, headTail) => {
+    queueX[headTail.tail] = x;
+    queueY[headTail.tail] = y;
+    headTail.tail += 1;
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = y * width + x;
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+      if (gray[idx] < threshold) continue;
+
+      const headTail = { head: 0, tail: 0 };
+      enqueue(x, y, headTail);
+      let minX = x;
+      let maxX = x;
+      let minY = y;
+      let maxY = y;
+      let count = 0;
+
+      while (headTail.head < headTail.tail) {
+        const cx = queueX[headTail.head];
+        const cy = queueY[headTail.head];
+        headTail.head += 1;
+        count += 1;
+        minX = Math.min(minX, cx);
+        maxX = Math.max(maxX, cx);
+        minY = Math.min(minY, cy);
+        maxY = Math.max(maxY, cy);
+
+        const neighbors = [
+          [cx - 1, cy],
+          [cx + 1, cy],
+          [cx, cy - 1],
+          [cx, cy + 1]
+        ];
+        for (let i = 0; i < neighbors.length; i += 1) {
+          const nx = neighbors[i][0];
+          const ny = neighbors[i][1];
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const nIdx = ny * width + nx;
+          if (visited[nIdx]) continue;
+          visited[nIdx] = 1;
+          if (gray[nIdx] < threshold) continue;
+          enqueue(nx, ny, headTail);
+        }
+      }
+
+      components.push({
+        left: minX,
+        top: minY,
+        right: maxX + 1,
+        bottom: maxY + 1,
+        area: count
+      });
+    }
+  }
+
+  if (components.length === 0) return null;
+
+  const sorted = components.sort((a, b) => b.area - a.area);
+  const top = sorted.slice(0, 3);
+  const totalArea = width * height;
+  let best = null;
+  for (const comp of top) {
+    const areaRatio = comp.area / totalArea;
+    if (areaRatio < 0.005 || areaRatio > 0.8) continue;
+    const box = clampContentBox(comp, width, height);
+    if (!box) continue;
+    if (isNearlyFullContentBox(box, width, height, 1)) continue;
+    best = box;
+    break;
+  }
+  return best;
+}
+
 function pickSmartContentBox(decoded) {
+  const candidates = [];
   const gradientBox = detectGradientContentBox(decoded);
-  if (gradientBox) return { box: gradientBox, method: "gradient" };
+  if (gradientBox) candidates.push({ box: gradientBox, method: "gradient" });
   const edgeBox = detectEdgeContentBox(decoded);
-  if (edgeBox) return { box: edgeBox, method: "edge" };
+  if (edgeBox) candidates.push({ box: edgeBox, method: "edge" });
   const contrastBox = detectBorderContrastContentBox(decoded);
-  if (contrastBox) return { box: contrastBox, method: "contrast" };
-  return { box: null, method: "none" };
+  if (contrastBox) candidates.push({ box: contrastBox, method: "contrast" });
+  const binaryBox = detectBinaryConnectivityBox(decoded);
+  if (binaryBox) candidates.push({ box: binaryBox, method: "binary" });
+
+  if (candidates.length === 0) return { box: null, method: "none" };
+
+  const totalArea = decoded.sourceWidth * decoded.sourceHeight;
+  const scored = candidates
+    .map((c) => {
+      const size = getBoundsSize(c.box);
+      const area = size.width * size.height;
+      const areaRatio = area / Math.max(1, totalArea);
+      const center = getBoundsCenter(c.box);
+      const cxNorm = Math.abs(center.x / Math.max(1, decoded.sourceWidth) - 0.5);
+      const cyNorm = Math.abs(center.y / Math.max(1, decoded.sourceHeight) - 0.5);
+      const centerPenalty = Math.max(cxNorm, cyNorm);
+      const areaPenalty = areaRatio < 0.01 || areaRatio > 0.9 ? 1 : 0;
+      const score = Math.max(0, 1 - centerPenalty * 1.2 - areaPenalty);
+      return { ...c, score, areaRatio };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  return scored[0];
 }
 
 function mapScaledBoxToSource(box, decoded) {
@@ -605,6 +781,24 @@ function computeAlignmentScore(sourceBox, outputBox) {
   };
 }
 
+function computeOverflowRatio(bounds, targetBounds) {
+  if (!bounds || !targetBounds) return 0;
+  const width = Math.max(0, bounds.right - bounds.left);
+  const height = Math.max(0, bounds.bottom - bounds.top);
+  const area = width * height;
+  if (area <= 0) return 0;
+
+  const interLeft = Math.max(bounds.left, targetBounds.left);
+  const interTop = Math.max(bounds.top, targetBounds.top);
+  const interRight = Math.min(bounds.right, targetBounds.right);
+  const interBottom = Math.min(bounds.bottom, targetBounds.bottom);
+  const interW = Math.max(0, interRight - interLeft);
+  const interH = Math.max(0, interBottom - interTop);
+  const interArea = interW * interH;
+  const overflowArea = Math.max(0, area - interArea);
+  return overflowArea / area;
+}
+
 async function computeSmartAlignment(sourceBuffer, outputBuffer, options = {}) {
   const signal = options.signal || null;
   if (signal && signal.aborted) throw createAbortError("用户中止");
@@ -647,12 +841,28 @@ async function computeSmartAlignment(sourceBuffer, outputBuffer, options = {}) {
     }
 
     const { score, metrics } = computeAlignmentScore(sourceBox, outputBox);
+    const sx = sSize.width / oSize.width;
+    const sy = sSize.height / oSize.height;
+    if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0) {
+      return { reason: "invalid-scale" };
+    }
+
+    const sCenter = getBoundsCenter(sourceBox);
+    const oCenter = getBoundsCenter(outputBox);
+    const dx = sCenter.x - oCenter.x;
+    const dy = sCenter.y - oCenter.y;
+
     return {
+      sx,
+      sy,
+      dx,
+      dy,
       score,
       metrics,
       sourceBox,
       outputBox,
       outputSize: { width: outputDecoded.sourceWidth, height: outputDecoded.sourceHeight },
+      sourceSize: { width: sourceDecoded.sourceWidth, height: sourceDecoded.sourceHeight },
       sourceMethod: sourcePick.method,
       outputMethod: outputPick.method
     };
@@ -940,6 +1150,7 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
   const smartTransform = options.smartTransform || null;
   const useMask = options.useMask === true;
   const outputSize = options.outputSize || null;
+  const maskBounds = options.targetBounds || null;
   const sourceBounds = options.sourceBounds || null;
   const layerId = layer.id;
   const currentBounds0 = parseLayerBounds(layer.bounds);
@@ -965,10 +1176,18 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
         bottom: currentBounds0.top + (smartTransform.outputBox.bottom * layerScaleY)
       };
 
+      if (maskBounds) {
+        const overflowRatio = computeOverflowRatio(scaledBox, maskBounds);
+        if (Number.isFinite(overflowRatio) && overflowRatio > SMART_OVERFLOW_THRESHOLD) {
+          log(`smart overflow=${overflowRatio.toFixed(3)} > ${SMART_OVERFLOW_THRESHOLD}, fallback`, "warn");
+          return;
+        }
+      }
+
       const scaleXPercent = scaleX * 100;
       const scaleYPercent = scaleY * 100;
       log(
-        `align geometry before: mode=smart, layer=${formatBoundsForLog(currentBounds0)}, target=${formatBoundsForLog(targetBounds)}`,
+        `align geometry before: mode=smart, layer=${formatBoundsForLog(currentBounds0)}, target=${formatBoundsForLog(maskBounds)}`,
         "info"
       );
       log(`align scale factors: sx=${scaleX.toFixed(4)}, sy=${scaleY.toFixed(4)}`, "info");
@@ -1001,7 +1220,7 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
 
       if (useMask) {
         try {
-          await createSelectionFromBounds(targetBounds, doc);
+          await createSelectionFromBounds(maskBounds, doc);
           await applyLayerMaskFromSelection();
         } catch (error) {
           log(`apply mask failed: ${error.message || error}`, "warn");
@@ -1069,7 +1288,6 @@ async function placeImage(arrayBuffer, options = {}) {
   const sourceBuffer = options.sourceBuffer || null;
   let contentReference = { mode: "cover", sourceSize: null, sourceRefBox: null };
   let smartTransform = null;
-  let smartMeta = null;
   const useSmart = pasteStrategy === "smart";
   if (targetBoundsRaw) {
     log("buildContentReference start", "info");
@@ -1136,7 +1354,6 @@ async function placeImage(arrayBuffer, options = {}) {
             analysisTimeoutMs: SMART_ANALYSIS_TIMEOUT_MS,
             imageDecodeTimeoutMs: IMAGE_DECODE_TIMEOUT_MS
           });
-          smartMeta = smartTransform;
         } else {
           log("smart alignment skipped: source buffer missing", "warn");
         }
@@ -1152,21 +1369,21 @@ async function placeImage(arrayBuffer, options = {}) {
         log("computeSmartAlignment end", "info");
       }
 
-    if (smartTransform && smartTransform.score !== undefined) {
-      const score = Number(smartTransform.score);
-      const center = smartTransform.metrics && smartTransform.metrics.centerOffset;
-      const ratioDiff = smartTransform.metrics && smartTransform.metrics.ratioDiff;
-      const iou = smartTransform.metrics && smartTransform.metrics.iou;
-      const sourceMethod = smartTransform.sourceMethod || "-";
-      const outputMethod = smartTransform.outputMethod || "-";
-      log(
-        `smart score: ${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, center=(${center ? center.dx.toFixed(1) : "-"},${center ? center.dy.toFixed(1) : "-"}), ratioDiff=${Number.isFinite(ratioDiff) ? ratioDiff.toFixed(3) : "-"}, iou=${Number.isFinite(iou) ? iou.toFixed(3) : "-"}, method=(${sourceMethod}/${outputMethod})`,
-        "info"
-      );
-    }
+      if (smartTransform && smartTransform.score !== undefined) {
+        const score = Number(smartTransform.score);
+        const center = smartTransform.metrics && smartTransform.metrics.centerOffset;
+        const ratioDiff = smartTransform.metrics && smartTransform.metrics.ratioDiff;
+        const iou = smartTransform.metrics && smartTransform.metrics.iou;
+        const sourceMethod = smartTransform.sourceMethod || "-";
+        const outputMethod = smartTransform.outputMethod || "-";
+        log(
+          `smart score: ${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, center=(${center ? center.dx.toFixed(1) : "-"},${center ? center.dy.toFixed(1) : "-"}), ratioDiff=${Number.isFinite(ratioDiff) ? ratioDiff.toFixed(3) : "-"}, iou=${Number.isFinite(iou) ? iou.toFixed(3) : "-"}, method=(${sourceMethod}/${outputMethod})`,
+          "info"
+        );
+      }
 
       const score = smartTransform && Number(smartTransform.score);
-      if (!smartTransform || !Number.isFinite(score) || score < 0.45) {
+      if (!smartTransform || !Number.isFinite(score) || score < SMART_SCORE_THRESHOLD) {
         const reason = smartTransform && smartTransform.reason ? smartTransform.reason : "score-threshold";
         log(`smart fallback to normal: ${reason}, score=${Number.isFinite(score) ? score.toFixed(3) : "n/a"}`, "warn");
         smartTransform = null;
@@ -1182,6 +1399,7 @@ async function placeImage(arrayBuffer, options = {}) {
         useMask: Boolean(smartTransform),
         outputSize: smartTransform && smartTransform.outputSize ? smartTransform.outputSize : null,
         sourceBounds: smartTransform && smartTransform.sourceBox ? smartTransform.sourceBox : null,
+        targetBounds,
         log
       });
     } catch (e) {
