@@ -33,6 +33,16 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
+let qrLib = null;
+try {
+  qrLib = require("./src/libs/qrcode-generator.js");
+  if (qrLib && typeof window !== "undefined" && typeof window.qrcode !== "function") {
+    window.qrcode = qrLib;
+  }
+} catch (error) {
+  console.warn("Failed to load qrcode library", error);
+}
+
 function setupTabs() {
   const tabs = {
     tabWorkspace: "viewWorkspace",
@@ -58,55 +68,75 @@ function setupTabs() {
 
 function setupDonationModal() {
   const btnDonate = document.getElementById("btnDonate");
-  const donationModal = document.getElementById("donationModal");
-  const donationModalClose = document.getElementById("donationModalClose");
-  const wxImg = document.getElementById("donationWxImg");
-  const zfbImg = document.getElementById("donationZfbImg");
-  if (!btnDonate || !donationModal || !donationModalClose) return;
+  const donationDialog = document.getElementById("donationDialog");
+  const donationDialogClose = document.getElementById("donationDialogClose");
+  const zfbCanvas = document.getElementById("donationZfbCanvas");
+  const wxCanvas = document.getElementById("donationWxCanvas");
+  if (!btnDonate || !donationDialog || !donationDialogClose) return;
 
-  const closeModal = () => {
-    donationModal.classList.remove("active");
+  const closeDialog = () => {
+    donationDialog.close();
     refreshModalOpenState();
   };
-  const openModal = () => {
-    donationModal.classList.add("active");
+  const openDialog = () => {
+    renderDonationQr(zfbCanvas, DONATION_ZFB_TEXT);
+    renderDonationQr(wxCanvas, DONATION_WX_TEXT);
+    donationDialog.showModal();
     refreshModalOpenState();
-    ensureDonationImages(wxImg, "vx.png");
-    ensureDonationImages(zfbImg, "zfb.png");
   };
 
-  btnDonate.addEventListener("click", openModal);
-  donationModalClose.addEventListener("click", closeModal);
-  donationModal.addEventListener("click", (event) => {
-    if (event.target === donationModal) closeModal();
-  });
+  btnDonate.addEventListener("click", openDialog);
+  donationDialogClose.addEventListener("click", closeDialog);
+  donationDialog.addEventListener("close", refreshModalOpenState);
+  if (zfbCanvas) {
+    zfbCanvas.addEventListener("click", () => {
+      try {
+        const { shell } = require("uxp");
+        if (shell && shell.openExternal) {
+          shell.openExternal(DONATION_ZFB_TEXT);
+        }
+      } catch (error) {
+        console.warn("Failed to open donation link", error);
+      }
+    });
+  }
 }
 
 function refreshModalOpenState() {
-  const isOpen = Boolean(document.querySelector(".modal-overlay.active"));
-  document.body.classList.toggle("modal-open", isOpen);
+  const overlayOpen = Boolean(document.querySelector(".modal-overlay.active"));
+  const dialogOpen = Boolean(document.querySelector("dialog[open]"));
+  document.body.classList.toggle("modal-open", overlayOpen || dialogOpen);
 }
 
-async function ensureDonationImages(imgEl, fileName) {
-  if (!imgEl || imgEl.dataset.loaded === "true") return;
-  const currentSrc = imgEl.getAttribute("src") || "";
-  if (currentSrc.startsWith("plugin-file://")) {
-    imgEl.dataset.loaded = "true";
+const DONATION_ZFB_TEXT = "https://qr.alipay.com/fkx12142r0sdwj4kizujk2f";
+const DONATION_WX_TEXT = "wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI";
+
+function renderDonationQr(canvas, text) {
+  if (!canvas) return;
+  const qrFactory = typeof qrcode === "function" ? qrcode : qrLib;
+  if (typeof qrFactory !== "function") {
+    console.warn("qrcode generator is unavailable");
     return;
   }
-  try {
-    const { storage } = require("uxp");
-    const fs = storage && storage.localFileSystem;
-    if (!fs || typeof fs.getPluginFolder !== "function") return;
-    const pluginFolder = await fs.getPluginFolder();
-    const iconsFolder = await pluginFolder.getEntry("icons");
-    const imgEntry = await iconsFolder.getEntry(fileName);
-    const sessionUrl = await fs.createSessionToken(imgEntry);
-    if (sessionUrl) {
-      imgEl.src = sessionUrl;
-      imgEl.dataset.loaded = "true";
+  canvas.style.display = "block";
+  const qr = qrFactory(0, "M");
+  qr.addData(text);
+  qr.make();
+  const size = Math.min(canvas.width || 220, canvas.height || 220);
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
+  const count = qr.getModuleCount();
+  const cellSize = Math.floor(size / count);
+  const offset = Math.floor((size - cellSize * count) / 2);
+  ctx.fillStyle = "#000000";
+  for (let r = 0; r < count; r += 1) {
+    for (let c = 0; c < count; c += 1) {
+      if (!qr.isDark(r, c)) continue;
+      ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize, cellSize);
     }
-  } catch (error) {
-    console.warn("Failed to load donation image", fileName, error);
   }
 }

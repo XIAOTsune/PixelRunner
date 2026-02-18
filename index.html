@@ -10,7 +10,7 @@
   <div class="nav-tabs">
       <div class="nav-brand" title="Plugin Logo">
         <img class="nav-brand-logo" src="icons/icon.png" alt="logo" />
-        <button id="btnDonate" class="donate-btn" type="button">打赏</button>
+        <sp-button id="btnDonate" variant="primary" size="s" quiet>打赏</sp-button>
       </div>
       <button id="tabWorkspace" class="nav-item active" type="button">RH 工作台</button>
       <button id="tabTools" class="nav-item" type="button">工具箱</button>
@@ -178,7 +178,7 @@
           </select>
         </div>
       </div>
-      <span class="version">v2.0.1</span>
+      <span class="version">v2.0.2</span>
     </header>
 
     <div class="card app-select-card">
@@ -222,7 +222,7 @@
   <section id="viewSettings" class="tab-content">
     <header class="header">
       <h3>系统设置</h3>
-      <span class="version">v2.0.1</span>
+      <span class="version">v2.0.2</span>
     </header>
 
     <div class="setting-section">
@@ -319,27 +319,15 @@
     </div>
   </section>
 
-  <div id="donationModal" class="modal-overlay">
-    <div class="modal-content donation-modal">
-      <div class="modal-header">
-        支持作者
-        <button id="donationModalClose" class="modal-close" type="button">&times;</button>
-      </div>
-      <div class="donation-body">
-        <div class="donation-tip">扫码打赏</div>
-        <div class="donation-grid">
-          <div class="donation-card">
-            <img id="donationWxImg" src="icons/vx.png" alt="微信收款码" />
-            <div class="donation-label">微信</div>
-          </div>
-          <div class="donation-card">
-            <img id="donationZfbImg" src="icons/zfb.png" alt="支付宝收款码" />
-            <div class="donation-label">支付宝</div>
-          </div>
-        </div>
-      </div>
+  <dialog id="donationDialog" class="donation-dialog">
+    <div class="donation-dialog-header">
+      <div class="donation-dialog-title">支持作者</div>
+      <sp-button id="donationDialogClose" variant="secondary" size="s" quiet>关闭</sp-button>
     </div>
-  </div>
+    <div class="donation-dialog-body">
+      <div class="donation-tip">该功能正在开发中，打赏请联系原作者QQ:1048855084，感谢你的支持。</div>
+    </div>
+  </dialog>
 
   <div id="templateModal" class="modal-overlay">
     <div class="modal-content">
@@ -365,6 +353,7 @@
     </div>
   </div>
 
+  <script src="src/libs/qrcode-generator.js"></script>
   <script src="index.js"></script>
 </body>
 </html>

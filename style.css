@@ -31,6 +31,10 @@ body.modal-open .modal-overlay.active select {
   visibility: visible;
 }
 
+body.modal-open dialog select {
+  visibility: visible;
+}
+
 /* === 1. 顶部导航 Tabs === */
 .nav-tabs {
   display: flex;
@@ -53,22 +57,10 @@ body.modal-open .modal-overlay.active select {
   border-radius: 3px;
   display: block;
 }
-.donate-btn {
-  background: none;
-  border: none;
-  color: #ffcf4a;
+.nav-brand sp-button {
+  min-height: 16px;
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  padding: 0;
-  cursor: pointer;
-  text-shadow: 0 0 8px rgba(255, 207, 74, 0.4);
-}
-.donate-btn:hover {
-  color: #ffe27a;
-}
-.donate-btn:active {
-  color: #ffb921;
+  padding: 0 4px;
 }
 .nav-item {
   flex: 1;
@@ -578,10 +570,34 @@ textarea { resize: vertical; min-height: 40px; }
   overflow: hidden;
   border: 1px solid #555;
 }
-.modal-content.donation-modal {
-  max-width: 360px;
+.donation-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
 }
-.donation-body {
+.donation-dialog {
+  border: 1px solid #2a2a2a;
+  background: var(--bg-panel);
+  color: var(--text-main);
+  border-radius: 8px;
+  width: min(520px, 92vw);
+  padding: 0;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.donation-dialog[open] {
+  display: block;
+}
+.donation-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #1a1a1a;
+  background: #2a2a2a;
+}
+.donation-dialog-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+.donation-dialog-body {
   padding: 12px;
 }
 .donation-tip {
@@ -592,24 +608,23 @@ textarea { resize: vertical; min-height: 40px; }
 }
 .donation-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
 }
 .donation-card {
   background: #1f1f1f;
   border: 1px solid #2a2a2a;
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: 8px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
-.donation-card img {
-  width: 100%;
-  max-width: 140px;
-  height: auto;
-  border-radius: 4px;
+.donation-card canvas {
+  width: 180px;
+  height: 180px;
+  border-radius: 6px;
   background: #fff;
 }
 .donation-label {
