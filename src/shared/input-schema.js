@@ -1,143 +1,294 @@
 const { inferInputType } = require("../utils");
 
-function parseOptionsFromUnknown(raw) {
-  const pickOptionTextFromObject = (obj) => {
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return "";
-    const keys = ["index", "name", "label", "title", "value", "text", "id", "key", "optionValue", "enumValue"];
-    for (const key of keys) {
-      const v = obj[key];
-      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-        const text = String(v).trim();
-        if (text) return text;
-      }
-    }
-    return "";
-  };
+const OPTION_CONTAINER_KEYS = ["options", "enums", "values", "items", "list", "data", "children", "selectOptions", "optionList", "fieldOptions"];
+const OPTION_VALUE_KEYS = ["value", "optionValue", "enumValue", "id", "key", "code", "index", "fastIndex", "name", "label", "title", "text"];
+const OPTION_LABEL_KEYS = ["label", "title", "text", "description", "descriptionCn", "descriptionEn", "name", "value", "index", "id", "key"];
 
-  const shouldIgnoreOption = (text) => {
-    const marker = String(text || "").trim().toLowerCase();
-    if (!marker) return true;
-    if (marker === "ignore" || marker === "ignored") return true;
-    if (marker === "default" || marker === "description" || marker === "descriptionen" || marker === "descriptioncn") return true;
-    return false;
-  };
+function isPrimitive(value) {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
 
-  if (Array.isArray(raw)) {
-    const list = [];
-    const seen = new Set();
-    const push = (value) => {
-      const text = String(value == null ? "" : value).trim();
-      if (shouldIgnoreOption(text)) return;
-      const marker = text.toLowerCase();
-      if (seen.has(marker)) return;
-      seen.add(marker);
-      list.push(text);
-    };
-    raw.forEach((item) => {
-      if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
-        push(item);
-        return;
-      }
-      if (item && typeof item === "object") {
-        const direct = pickOptionTextFromObject(item);
-        if (direct) {
-          push(direct);
-          return;
-        }
-        parseOptionsFromUnknown(item).forEach(push);
-      }
-    });
-    return list;
+function shouldIgnoreOptionText(text) {
+  const marker = String(text || "").trim().toLowerCase();
+  if (!marker) return true;
+  if (marker === "ignore" || marker === "ignored") return true;
+  if (marker === "default" || marker === "description" || marker === "descriptionen" || marker === "descriptioncn") return true;
+  return false;
+}
+
+function normalizeOptionValue(value) {
+  if (value === true || value === false) return value;
+  const text = String(value == null ? "" : value).trim();
+  if (!text) return "";
+  return text;
+}
+
+function normalizeOptionLabel(value) {
+  const text = String(value == null ? "" : value).trim();
+  if (!text || shouldIgnoreOptionText(text)) return "";
+  return text;
+}
+
+function buildOptionEntry(value, label) {
+  const normalizedValue = normalizeOptionValue(value);
+  if (normalizedValue === "") return null;
+  const normalizedLabel = normalizeOptionLabel(label);
+  return {
+    value: normalizedValue,
+    label: normalizedLabel || String(normalizedValue)
+  };
+}
+
+function findObjectFieldValue(obj, keys) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return undefined;
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+    const value = obj[key];
+    if (!isPrimitive(value)) continue;
+    const text = String(value).trim();
+    if (!text && value !== false) continue;
+    return value;
   }
+  return undefined;
+}
+
+function parseOptionEntryFromObject(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+  const value = findObjectFieldValue(obj, OPTION_VALUE_KEYS);
+  const label = findObjectFieldValue(obj, OPTION_LABEL_KEYS);
+  if (value === undefined && label === undefined) return null;
+  return buildOptionEntry(value !== undefined ? value : label, label !== undefined ? label : value);
+}
+
+function markerFromValue(value) {
+  if (value === true || value === false) return `b:${value}`;
+  return `s:${String(value).trim().toLowerCase()}`;
+}
+
+function dedupeOptionEntries(entries) {
+  const out = [];
+  const seen = new Set();
+  (Array.isArray(entries) ? entries : []).forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const value = normalizeOptionValue(entry.value);
+    if (value === "") return;
+    const label = normalizeOptionLabel(entry.label || value) || String(value);
+    const marker = markerFromValue(value);
+    if (seen.has(marker)) return;
+    seen.add(marker);
+    out.push({ value, label });
+  });
+  return out;
+}
+
+function extractOptionEntriesFromUnknown(raw, depth = 0) {
+  if (depth > 8 || raw === undefined || raw === null) return [];
 
   if (typeof raw === "string") {
     const text = raw.trim();
     if (!text) return [];
     try {
       const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) return parseOptionsFromUnknown(parsed);
-      if (parsed && typeof parsed === "object") return parseOptionsFromUnknown(parsed);
+      return extractOptionEntriesFromUnknown(parsed, depth + 1);
     } catch (_) {}
 
     if (text.includes("|") || text.includes(",") || text.includes("\n")) {
-      return text.split(/[|,\r\n]+/).map((item) => item.trim()).filter(Boolean);
+      const values = text.split(/[|,\r\n]+/).map((item) => item.trim()).filter(Boolean);
+      return dedupeOptionEntries(values.map((value) => buildOptionEntry(value, value)).filter(Boolean));
     }
-    return [];
+
+    const entry = buildOptionEntry(text, text);
+    return entry ? [entry] : [];
+  }
+
+  if (isPrimitive(raw)) {
+    const entry = buildOptionEntry(raw, raw);
+    return entry ? [entry] : [];
+  }
+
+  if (Array.isArray(raw)) {
+    const list = [];
+    raw.forEach((item) => {
+      list.push(...extractOptionEntriesFromUnknown(item, depth + 1));
+    });
+    return dedupeOptionEntries(list);
   }
 
   if (!raw || typeof raw !== "object") return [];
 
-  const containerKeys = ["options", "enums", "values", "items", "list", "data", "children", "selectOptions", "optionList", "fieldOptions"];
-  const values = [];
-  const seen = new Set();
-  const push = (value) => {
-    const text = String(value == null ? "" : value).trim();
-    if (shouldIgnoreOption(text)) return;
-    const marker = text.toLowerCase();
-    if (seen.has(marker)) return;
-    seen.add(marker);
-    values.push(text);
-  };
+  const directEntry = parseOptionEntryFromObject(raw);
+  const nestedEntries = [];
 
   let hasContainer = false;
-  containerKeys.forEach((key) => {
-    if (raw[key] !== undefined) {
-      hasContainer = true;
-      parseOptionsFromUnknown(raw[key]).forEach(push);
-    }
+  OPTION_CONTAINER_KEYS.forEach((key) => {
+    if (raw[key] === undefined) return;
+    hasContainer = true;
+    nestedEntries.push(...extractOptionEntriesFromUnknown(raw[key], depth + 1));
   });
 
-  if (!hasContainer) {
-    const keys = Object.keys(raw);
-    const isNumericList =
-      keys.length > 0 &&
-      keys.every((key) => /^\d+$/.test(key) && (typeof raw[key] === "string" || typeof raw[key] === "number" || typeof raw[key] === "boolean"));
-    if (isNumericList) {
-      keys
-        .sort((a, b) => Number(a) - Number(b))
-        .forEach((key) => {
-          push(raw[key]);
-        });
+  if (hasContainer) {
+    if (directEntry) nestedEntries.push(directEntry);
+    return dedupeOptionEntries(nestedEntries);
+  }
+
+  const keys = Object.keys(raw);
+  const isNumericList =
+    keys.length > 0 &&
+    keys.every((key) => /^\d+$/.test(key) && isPrimitive(raw[key]));
+  if (isNumericList) {
+    const list = keys
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => buildOptionEntry(raw[key], raw[key]))
+      .filter(Boolean);
+    return dedupeOptionEntries(list);
+  }
+
+  if (directEntry) return [directEntry];
+  return [];
+}
+
+function parseOptionsFromUnknown(raw) {
+  return extractOptionEntriesFromUnknown(raw).map((entry) => entry.label);
+}
+
+function getInputOptionEntries(input) {
+  const source = input || {};
+  const merged = [];
+  const fieldDataEntries = extractOptionEntriesFromUnknown(source.fieldData);
+  const sources = [
+    source.options,
+    source.enums,
+    source.values,
+    source.selectOptions,
+    source.optionList,
+    source.fieldOptions
+  ];
+
+  sources.forEach((item) => {
+    merged.push(...extractOptionEntriesFromUnknown(item));
+  });
+
+  const normalizedFieldDataEntries = dedupeOptionEntries(fieldDataEntries);
+  if (normalizedFieldDataEntries.length > 1) {
+    const defaultValue = source.default;
+    const defaultLooksNumeric = /^-?\d+(?:\.\d+)?$/.test(String(defaultValue == null ? "" : defaultValue).trim());
+    const allFieldValuesNumeric = normalizedFieldDataEntries.every((entry) =>
+      /^-?\d+(?:\.\d+)?$/.test(String(entry && entry.value == null ? "" : entry.value).trim())
+    );
+
+    // Prefer fieldData-derived options when it clearly encodes numeric indexes (e.g. ImpactSwitch).
+    if (defaultLooksNumeric && allFieldValuesNumeric) {
+      return normalizedFieldDataEntries;
     }
   }
 
-  return values;
+  if (merged.length === 0) return normalizedFieldDataEntries;
+  return dedupeOptionEntries(merged);
 }
 
 function getInputOptions(input) {
-  const fromOptions = parseOptionsFromUnknown(input && input.options);
-  if (fromOptions.length > 0) return fromOptions;
-  return [];
+  const source = input || {};
+  const merged = [];
+  const sources = [
+    source.options,
+    source.enums,
+    source.values,
+    source.selectOptions,
+    source.optionList,
+    source.fieldOptions
+  ];
+
+  sources.forEach((item) => {
+    merged.push(...extractOptionEntriesFromUnknown(item));
+  });
+
+  return dedupeOptionEntries(merged).map((entry) => entry.label);
+}
+
+function isNumericLike(value) {
+  return /^-?\d+(?:\.\d+)?$/.test(String(value == null ? "" : value).trim());
+}
+
+function parseBooleanLike(value) {
+  if (value === true || value === false) return value;
+  const marker = String(value == null ? "" : value).trim().toLowerCase();
+  if (!marker) return null;
+  if (["true", "1", "yes", "y", "on", "是"].includes(marker)) return true;
+  if (["false", "0", "no", "n", "off", "否"].includes(marker)) return false;
+  return null;
+}
+
+function isBooleanOptionEntries(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return false;
+  if (entries.length > 4) return false;
+  return entries.every((entry) => parseBooleanLike(entry && entry.value) !== null);
+}
+
+function hasNumericFieldHint(fieldType) {
+  return /(?:^|[^a-z])(int|integer|float|double|decimal|number)(?:[^a-z]|$)/i.test(String(fieldType || ""));
+}
+
+function hasBooleanFieldHint(fieldType) {
+  return /(?:^|[^a-z])(bool|boolean|checkbox|toggle|switch)(?:[^a-z]|$)/i.test(String(fieldType || ""));
 }
 
 function resolveInputType(input) {
   const rawType = inferInputType(input && (input.type || input.fieldType));
+  const entries = getInputOptionEntries(input);
+  const optionValues = entries.map((entry) => entry.value);
+  const optionsNumeric = optionValues.length > 0 && optionValues.every(isNumericLike);
+  const optionsBoolean = isBooleanOptionEntries(entries);
+
+  const defaultValue = input && input.default;
+  const defaultNumeric = defaultValue !== undefined && defaultValue !== null && isNumericLike(defaultValue);
+  const defaultBoolean = parseBooleanLike(defaultValue) !== null;
+
+  const fieldType = String((input && input.fieldType) || "");
+  const numericHint = hasNumericFieldHint(fieldType);
+  const booleanHint = hasBooleanFieldHint(fieldType);
+
+  if (rawType === "image" || rawType === "number") return rawType;
+
+  if (rawType === "boolean") {
+    if (entries.length > 1) {
+      if (optionsBoolean) return "boolean";
+      return "select";
+    }
+    if (optionsNumeric || (numericHint && !optionsBoolean)) return "number";
+    if (optionsBoolean || defaultBoolean || booleanHint) return "boolean";
+    return "boolean";
+  }
+
   if (rawType === "select") {
-    const options = getInputOptions(input);
-    const defaultValue = input && input.default;
-    const defaultLooksNumeric =
-      defaultValue !== undefined &&
-      defaultValue !== null &&
-      /^-?\d+(?:\.\d+)?$/.test(String(defaultValue).trim());
-    const allOptionsNumeric =
-      options.length > 0 &&
-      options.every((opt) => /^-?\d+(?:\.\d+)?$/.test(String(opt).trim()));
-    if (defaultLooksNumeric && (options.length === 0 || allOptionsNumeric)) return "number";
-    if (options.length === 0) return "text";
+    if (entries.length > 0) {
+      if (optionsBoolean) return "boolean";
+      return "select";
+    }
+    if (defaultBoolean && booleanHint) return "boolean";
+    if (optionsNumeric || (numericHint && defaultNumeric)) return "number";
+    if (booleanHint && defaultBoolean) return "boolean";
+    return "text";
+  }
+
+  if (rawType === "text" && entries.length > 1) {
+    if (optionsBoolean) return "boolean";
     return "select";
   }
-  if (rawType === "text" && getInputOptions(input).length > 1) return "select";
-  if (
-    (rawType === "boolean" || rawType === "text") &&
-    /(?:^|[^a-z])(int|integer|float|double|decimal|number)(?:[^a-z]|$)/i.test(String((input && input.fieldType) || ""))
-  ) {
+
+  if ((rawType === "boolean" || rawType === "text" || rawType === "select") && numericHint) {
     return "number";
   }
+
+  if (rawType === "text" && (optionsBoolean || (booleanHint && defaultBoolean))) {
+    return "boolean";
+  }
+
   return rawType;
 }
 
 module.exports = {
   parseOptionsFromUnknown,
+  getInputOptionEntries,
   getInputOptions,
   resolveInputType
 };

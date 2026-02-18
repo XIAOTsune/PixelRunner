@@ -1,6 +1,6 @@
 const { API } = require("../config");
 const { normalizeAppId, inferInputType } = require("../utils");
-const { parseOptionsFromUnknown, resolveInputType } = require("../shared/input-schema");
+const { resolveInputType } = require("../shared/input-schema");
 
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 
@@ -104,18 +104,15 @@ function normalizeFieldToken(text) {
 }
 
 function resolveDisplayLabel(key, fieldName, rawLabel, rawName) {
-  const candidates = [
-    fieldName,
-    key,
-    key && String(key).includes(":") ? String(key).split(":").pop() : "",
-    rawLabel,
-    rawName
-  ];
+  const preferredRawLabel = String(rawLabel || rawName || "").trim();
+  if (preferredRawLabel && !isWeakLabel(preferredRawLabel)) return preferredRawLabel;
+
+  const candidates = [fieldName, key, key && String(key).includes(":") ? String(key).split(":").pop() : ""];
   for (const item of candidates) {
     const mapped = FIELD_LABEL_MAP[normalizeFieldToken(item)];
     if (mapped) return mapped;
   }
-  return String(rawLabel || rawName || key || "").trim();
+  return preferredRawLabel || String(fieldName || key || "").trim();
 }
 
 function resolveFieldDataLabel(fieldData) {
@@ -170,6 +167,59 @@ function normalizeOptionText(value) {
     }
   }
   return "";
+}
+
+function buildStructuredOptionEntry(value, label) {
+  const normalizedValue = normalizeOptionText(value);
+  if (!normalizedValue) return null;
+  const normalizedLabel = normalizeOptionText(label) || normalizedValue;
+  if (!normalizedLabel) return null;
+  return {
+    value: normalizedValue,
+    label: normalizedLabel
+  };
+}
+
+function sanitizeStructuredOptionEntries(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of entries) {
+    if (!item || typeof item !== "object") continue;
+    const value = normalizeOptionText(item.value);
+    if (!value) continue;
+    const label = normalizeOptionText(item.label) || value;
+    const marker = value.toLowerCase();
+    if (seen.has(marker)) continue;
+    seen.add(marker);
+    out.push({ value, label });
+  }
+  return out;
+}
+
+function parseIndexedSwitchOptions(fieldData) {
+  let parsed = fieldData;
+  if (typeof parsed === "string") {
+    parsed = parseJsonFromEscapedText(parsed);
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+
+  const entries = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+
+    const value = item.index ?? item.fastIndex ?? item.value ?? item.optionValue ?? item.enumValue;
+    if (value === undefined || value === null) return undefined;
+    if (!normalizeOptionText(value)) return undefined;
+
+    const label = item.description || item.descriptionCn || item.descriptionEn || item.label || item.name || item.title || item.text || value;
+    const entry = buildStructuredOptionEntry(value, label);
+    if (!entry) return undefined;
+    entries.push(entry);
+  }
+
+  const normalized = sanitizeStructuredOptionEntries(entries);
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 function pushOptionValue(bucket, seen, value) {
@@ -257,7 +307,6 @@ function sanitizeOptionList(list) {
     if (OPTION_IGNORE_MARKERS.has(marker)) continue;
     if (OPTION_META_KEYS.has(marker)) continue;
     if (OPTION_NOISE_MARKERS.has(marker)) continue;
-    if (/^\d+$/.test(marker)) continue;
     if (/^(?:fast)?index$/i.test(text)) continue;
     if (/^description(?:en|cn)?$/i.test(text)) continue;
     seen.add(marker);
@@ -487,7 +536,11 @@ function isBooleanOptionList(options) {
   const markers = new Set(["true", "false", "yes", "no", "是", "否"]);
   let matched = 0;
   for (const item of options) {
-    const text = String(item || "").trim().toLowerCase();
+    const rawValue =
+      item && typeof item === "object" && !Array.isArray(item)
+        ? item.value ?? item.label ?? item.name ?? ""
+        : item;
+    const text = String(rawValue || "").trim().toLowerCase();
     if (!text) continue;
     if (!markers.has(text)) return false;
     matched += 1;
@@ -577,6 +630,36 @@ function normalizeDefaultValueByType(value, type) {
   return value;
 }
 
+function parseExplicitRequired(value) {
+  if (value === undefined) return null;
+  if (value === null) return false;
+  if (value === true || value === false) return value;
+  if (typeof value === "number") return value !== 0;
+  const marker = String(value || "").trim().toLowerCase();
+  if (!marker) return false;
+  if (["true", "1", "yes", "y", "on", "required", "是"].includes(marker)) return true;
+  if (["false", "0", "no", "n", "off", "optional", "否"].includes(marker)) return false;
+  return Boolean(marker);
+}
+
+function resolveRequiredSpec(raw, type) {
+  const requiredKeys = ["required", "isRequired", "must", "need", "needRequired", "mandatory"];
+  for (const key of requiredKeys) {
+    if (!Object.prototype.hasOwnProperty.call(raw || {}, key)) continue;
+    const parsed = parseExplicitRequired(raw[key]);
+    if (parsed !== null) {
+      return { required: parsed, explicit: true };
+    }
+  }
+
+  // RunningHub image nodes often do not provide explicit required metadata.
+  // Treat them as optional by default and rely on backend validation when needed.
+  if (type === "image") {
+    return { required: false, explicit: false };
+  }
+  return { required: true, explicit: false };
+}
+
 function normalizeInput(raw, index = 0) {
   const nodeId = String(raw.nodeId || raw.nodeID || raw.node || raw.node_id || "").trim();
   const fieldName = String(raw.fieldName || raw.field || raw.name || "").trim();
@@ -607,15 +690,25 @@ function normalizeInput(raw, index = 0) {
 
   const primaryOptionCandidates = [...explicitOptionFields, inlineFieldOptions];
   const secondaryOptionCandidates = [parseFieldOptions(raw.config), parseFieldOptions(raw.extra), parseFieldOptions(raw.schema)];
-  let options = pickBestOptionList(primaryOptionCandidates) || pickBestOptionList(secondaryOptionCandidates);
+  const indexedSwitchOptions = parseIndexedSwitchOptions(raw.fieldData);
+  let options =
+    (Array.isArray(indexedSwitchOptions) && indexedSwitchOptions.length > 0 && indexedSwitchOptions) ||
+    pickBestOptionList(primaryOptionCandidates) ||
+    pickBestOptionList(secondaryOptionCandidates);
 
-  const optionCount = Array.isArray(options) ? options.length : 0;
-  if (optionCount <= 1) {
-    const hintText = `${key} ${raw.fieldName || ""} ${raw.label || ""} ${raw.name || ""} ${raw.description || ""}`;
-    const textFallback = inferOptionsFromRawText(raw.fieldData, hintText);
-    options = mergeOptionLists(options, textFallback);
+  const hasStructuredOptions =
+    Array.isArray(options) &&
+    options.some((item) => item && typeof item === "object" && !Array.isArray(item));
+
+  if (!hasStructuredOptions) {
+    const optionCount = Array.isArray(options) ? options.length : 0;
+    if (optionCount <= 1) {
+      const hintText = `${key} ${raw.fieldName || ""} ${raw.label || ""} ${raw.name || ""} ${raw.description || ""}`;
+      const textFallback = inferOptionsFromRawText(raw.fieldData, hintText);
+      options = mergeOptionLists(options, textFallback);
+    }
+    options = sanitizeOptionList(options);
   }
-  options = sanitizeOptionList(options);
 
   const inferredType = inferInputType(raw.type || raw.valueType || raw.widget || raw.inputType || raw.fieldType);
   const keyHint = `${key} ${raw.fieldName || ""} ${raw.label || ""} ${raw.name || ""} ${raw.description || ""}`.toLowerCase();
@@ -648,20 +741,22 @@ function normalizeInput(raw, index = 0) {
   const type = resolveInputType(mappedInput);
   const fieldDataLabel = resolveFieldDataLabel(raw.fieldData);
   const rawDescription = String(raw.description || raw.desc || "").trim();
-  const baseName = String(raw.name || raw.label || raw.title || rawDescription || fieldDataLabel || fieldName || key).trim();
-  const baseLabel = String(rawDescription || raw.label || raw.name || raw.title || fieldDataLabel || fieldName || key).trim();
+  const baseName = String(raw.name || raw.label || raw.title || fieldDataLabel || rawDescription || fieldName || key).trim();
+  const baseLabel = String(raw.label || raw.name || raw.title || fieldDataLabel || rawDescription || fieldName || key).trim();
+  const explicitTitle = String(raw.label || raw.name || raw.title || fieldDataLabel || "").trim();
   const displayLabel = resolveDisplayLabel(key, fieldName, baseLabel, baseName);
-  const normalizedLabel =
-    isWeakLabel(displayLabel) && (rawDescription || fieldDataLabel)
-      ? rawDescription || fieldDataLabel
-      : displayLabel;
+  const normalizedLabel = isWeakLabel(displayLabel)
+    ? explicitTitle || rawDescription || displayLabel
+    : displayLabel;
+  const requiredSpec = resolveRequiredSpec(raw, type);
 
   return {
     key,
     name: baseName,
     label: normalizedLabel || baseLabel || baseName || key,
-    type: normalizedType,
-    required: raw.required !== false && raw.required !== 0 && raw.required !== "false",
+    type,
+    required: requiredSpec.required,
+    requiredExplicit: requiredSpec.explicit,
     default: normalizeDefaultValueByType(raw.default ?? raw.fieldValue, type),
     options: Array.isArray(options) && options.length > 0 ? options : undefined,
     min: typeof raw.min === "number" ? raw.min : undefined,

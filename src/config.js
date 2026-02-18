@@ -27,7 +27,8 @@ const API = {
 
 const DEFAULT_SETTINGS = {
   pollInterval: 2,
-  timeout: 90
+  timeout: 180,
+  uploadMaxEdge: 0
 };
 
 const DEFAULT_PROMPT_TEMPLATES = [

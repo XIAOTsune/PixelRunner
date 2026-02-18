@@ -53,7 +53,8 @@ function inferInputType(rawType) {
   if (t.includes("number") || t.includes("int") || t.includes("float") || t.includes("slider")) return "number";
   if (t === "list") return "select";
   if (t.includes("select") || t.includes("enum") || t.includes("option")) return "select";
-  if (t.includes("bool") || t.includes("switch") || t.includes("checkbox")) return "boolean";
+  if (t.includes("bool") || t.includes("checkbox") || t.includes("toggle")) return "boolean";
+  if (t.includes("switch")) return "select";
   return "text";
 }
 

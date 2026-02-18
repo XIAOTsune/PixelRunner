@@ -1,5 +1,12 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
+const PROMPT_TEMPLATE_MAX_CHARS = 500;
+
+function clampToMaxChars(value, maxChars) {
+  return Array.from(String(value == null ? "" : value))
+    .slice(0, Math.max(0, Number(maxChars) || 0))
+    .join("");
+}
 
 function readJson(key, fallback) {
   const raw = localStorage.getItem(key);
@@ -21,16 +28,22 @@ function saveApiKey(apiKey) {
 
 function getSettings() {
   const value = readJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  const uploadMaxEdgeRaw = Number(value.uploadMaxEdge);
+  const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
   return {
     pollInterval: Number(value.pollInterval) || DEFAULT_SETTINGS.pollInterval,
-    timeout: Number(value.timeout) || DEFAULT_SETTINGS.timeout
+    timeout: Number(value.timeout) || DEFAULT_SETTINGS.timeout,
+    uploadMaxEdge
   };
 }
 
 function saveSettings(settings) {
+  const uploadMaxEdgeRaw = Number(settings.uploadMaxEdge);
+  const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
   writeJson(STORAGE_KEYS.SETTINGS, {
     pollInterval: Number(settings.pollInterval) || DEFAULT_SETTINGS.pollInterval,
-    timeout: Number(settings.timeout) || DEFAULT_SETTINGS.timeout
+    timeout: Number(settings.timeout) || DEFAULT_SETTINGS.timeout,
+    uploadMaxEdge
   });
 }
 
@@ -85,15 +98,23 @@ function getPromptTemplates() {
 }
 
 function savePromptTemplates(templates) {
-  writeJson(STORAGE_KEYS.PROMPT_TEMPLATES, Array.isArray(templates) ? templates : []);
+  const normalized = (Array.isArray(templates) ? templates : []).map((item) => {
+    const source = item && typeof item === "object" ? item : {};
+    return {
+      ...source,
+      title: clampToMaxChars(String(source.title || "").trim(), PROMPT_TEMPLATE_MAX_CHARS),
+      content: clampToMaxChars(String(source.content || ""), PROMPT_TEMPLATE_MAX_CHARS)
+    };
+  });
+  writeJson(STORAGE_KEYS.PROMPT_TEMPLATES, normalized);
 }
 
 function addPromptTemplate(template) {
   const list = getPromptTemplates();
   list.push({
     id: generateId(),
-    title: String(template.title || "").trim(),
-    content: String(template.content || ""),
+    title: clampToMaxChars(String(template.title || "").trim(), PROMPT_TEMPLATE_MAX_CHARS),
+    content: clampToMaxChars(String(template.content || ""), PROMPT_TEMPLATE_MAX_CHARS),
     createdAt: Date.now()
   });
   savePromptTemplates(list);

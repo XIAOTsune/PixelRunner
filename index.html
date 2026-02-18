@@ -8,6 +8,9 @@
 </head>
 <body>
   <div class="nav-tabs">
+      <div class="nav-brand" title="Plugin Logo">
+        <img class="nav-brand-logo" src="icons/icon.png" alt="logo" />
+      </div>
       <button id="tabWorkspace" class="nav-item active" type="button">RH 工作台</button>
       <button id="tabTools" class="nav-item" type="button">工具箱</button>
       <button id="tabSettings" class="nav-item" type="button">设置</button>
@@ -157,8 +160,17 @@
             <span id="accountCoinsValue" class="account-pill-value">--</span>
           </span>
         </div>
+        <div class="upload-limit-control">
+          <label for="uploadMaxEdgeSelect">上传分辨率</label>
+          <select id="uploadMaxEdgeSelect">
+            <option value="0">无限制</option>
+            <option value="4096">4k</option>
+            <option value="2048">2k</option>
+            <option value="1024">1k</option>
+          </select>
+        </div>
       </div>
-      <span class="version">v3.2.0</span>
+      <span class="version">v2.0.0</span>
     </header>
 
     <div class="card app-select-card">
@@ -188,15 +200,21 @@
 
     <button id="btnRun" class="main-btn main-btn-primary" type="button" disabled>开始运行</button>
 
-    <div id="logWindow">
-      <div class="log-info">[系统] 插件已加载，等待操作...</div>
+    <div class="log-toolbar">
+      <div class="log-toolbar-title">运行日志</div>
+      <div class="log-toolbar-actions">
+        <button id="btnCopyLog" class="tiny-btn tiny-btn-compact" type="button">复制</button>
+        <button id="btnClearLog" class="tiny-btn tiny-btn-compact" type="button">清空</button>
+      </div>
     </div>
+    <textarea id="logWindow" readonly>[系统] 插件已加载，等待操作...</textarea>
+    <div class="log-hint">可选中文本后直接复制，或点“复制”按钮。</div>
   </section>
 
   <section id="viewSettings" class="tab-content">
     <header class="header">
       <h3>系统设置</h3>
-      <span class="version">v3.2.0</span>
+      <span class="version">v2.0.0</span>
     </header>
 
     <div class="setting-section">
@@ -247,11 +265,11 @@
       <div class="setting-section-title">提示词模板</div>
       <div class="control-group">
         <label for="templateTitleInput">模板标题</label>
-        <input id="templateTitleInput" type="text" placeholder="例如: 高质量二次元" />
+        <input id="templateTitleInput" type="text" maxlength="500" placeholder="例如: 高质量二次元" />
       </div>
       <div class="control-group">
         <label for="templateContentInput">模板内容</label>
-        <textarea id="templateContentInput" rows="3" placeholder="输入模板文本"></textarea>
+        <textarea id="templateContentInput" rows="3" maxlength="500" placeholder="输入模板文本"></textarea>
       </div>
       <button id="btnSaveTemplate" type="button" class="main-btn main-btn-primary">保存模板</button>
       <div id="savedTemplatesList" class="saved-list"></div>
@@ -269,7 +287,7 @@
         </div>
         <div class="control-group">
           <label for="timeoutInput">超时时间（秒）</label>
-          <input id="timeoutInput" type="number" min="10" max="600" value="90" />
+          <input id="timeoutInput" type="number" min="10" max="600" value="180" />
         </div>
       </div>
     </div>

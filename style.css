@@ -30,6 +30,19 @@ body {
   border-bottom: 1px solid #1a1a1a;
   padding: 0 4px;
 }
+.nav-brand {
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+.nav-brand-logo {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  display: block;
+}
 .nav-item {
   flex: 1;
   background: transparent;
@@ -59,20 +72,49 @@ body {
 }
 .tab-content.active { display: block; }
 
-#logWindow {
+.log-toolbar {
   margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-toolbar-title {
+  font-size: 10px;
+  color: #a7a7a7;
+  font-weight: 600;
+}
+
+.log-toolbar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+#logWindow {
+  margin-top: 6px;
+  width: 100%;
+  min-height: 140px;
+  max-height: 240px;
+  resize: vertical;
   padding: 8px;
   background: #222;
   border: 1px solid #1a1a1a;
   border-radius: 4px;
-  max-height: 140px;
-  overflow-y: auto;
   box-sizing: border-box;
+  color: #bbb;
+  font-size: 10px;
+  line-height: 1.45;
+  font-family: Consolas, "Courier New", monospace;
+  user-select: text;
+  -webkit-user-select: text;
+  white-space: pre;
 }
 
-.log-info {
-  font-size: var(--font-size-xs);
-  color: #888;
+.log-hint {
+  margin-top: 4px;
+  font-size: 9px;
+  color: #6f6f6f;
 }
 
 /* 滚动条美化 */
@@ -92,6 +134,17 @@ body {
 }
 .header h3 { margin: 0; font-size: 13px; font-weight: 600; }
 .version { font-size: 9px; color: var(--text-dim); }
+
+.header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.header-main h3 {
+  margin-right: auto;
+}
 
 .section-header {
   font-size: var(--font-size-xs);
@@ -287,6 +340,24 @@ textarea { resize: vertical; min-height: 40px; }
 }
 .account-pill-label { color: var(--text-dim); margin-right: 4px; }
 .account-pill-value { color: var(--accent-color); font-weight: bold; }
+
+.upload-limit-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.upload-limit-control select {
+  height: 22px;
+  min-width: 76px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 3px;
+  color: var(--text-main);
+  font-size: 10px;
+  padding: 0 4px;
+}
 
 .app-select-card {
   background: var(--bg-panel);

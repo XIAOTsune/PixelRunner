@@ -23,7 +23,7 @@ async function pollTaskOutputCore(params) {
 
   const log = options.log || (() => {});
   const pollIntervalMs = Math.max(1, Number(settings && settings.pollInterval) || 2) * 1000;
-  const timeoutMs = Math.max(10, Number(settings && settings.timeout) || 90) * 1000;
+  const timeoutMs = Math.max(10, Number(settings && settings.timeout) || 180) * 1000;
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {

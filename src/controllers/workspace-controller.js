@@ -19,8 +19,30 @@ const state = {
   appPickerKeyword: "",
   templateSelectCallback: null
 };
+const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
+const UPLOAD_MAX_EDGE_LABELS = {
+  0: "无限制",
+  4096: "4k",
+  2048: "2k",
+  1024: "1k"
+};
 
 let workspaceInputs = null;
+
+function normalizeUploadMaxEdge(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : 0;
+}
+
+function syncUploadMaxEdgeSelect() {
+  const select = dom.uploadMaxEdgeSelect || byId("uploadMaxEdgeSelect");
+  if (!select) return;
+  const settings = store.getSettings();
+  const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+  const nextValue = String(uploadMaxEdge);
+  if (select.value !== nextValue) select.value = nextValue;
+}
 
 function getWorkspaceInputs() {
   if (!workspaceInputs) {
@@ -43,18 +65,78 @@ function getWorkspaceInputs() {
   return workspaceInputs;
 }
 
+function getLogText(logDiv) {
+  if (!logDiv) return "";
+  if (typeof logDiv.value === "string") return String(logDiv.value || "");
+  return String(logDiv.textContent || "");
+}
+
+function setLogText(logDiv, text) {
+  if (!logDiv) return;
+  const nextText = String(text || "");
+  if (typeof logDiv.value === "string") {
+    logDiv.value = nextText;
+    return;
+  }
+  logDiv.textContent = nextText;
+}
+
+function isNearLogBottom(logDiv, threshold = 12) {
+  if (!logDiv) return true;
+  const maxScrollTop = Math.max(0, logDiv.scrollHeight - logDiv.clientHeight);
+  return maxScrollTop - logDiv.scrollTop <= threshold;
+}
+
 function log(msg, type = "info") {
   console.log(`[Workspace][${type}] ${msg}`);
   const logDiv = dom.logWindow || byId("logWindow");
   if (!logDiv) return;
   if (msg === "CLEAR") {
-    logDiv.innerHTML = "";
+    setLogText(logDiv, "");
     return;
   }
   const time = new Date().toLocaleTimeString();
-  const color = type === "error" ? "#ff6b6b" : type === "success" ? "#4caf50" : "#bbb";
-  logDiv.innerHTML += `<div style="color:${color}; margin-top:4px;">[${time}] ${escapeHtml(msg)}</div>`;
-  logDiv.scrollTop = logDiv.scrollHeight;
+  const level = String(type || "info").toUpperCase();
+  const line = `[${time}] [${level}] ${String(msg || "")}`;
+  const stickToBottom = isNearLogBottom(logDiv);
+  const current = getLogText(logDiv);
+  setLogText(logDiv, current ? `${current}\n${line}` : line);
+  if (stickToBottom) {
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+}
+
+async function onCopyLogClick() {
+  const logDiv = dom.logWindow || byId("logWindow");
+  if (!logDiv) return;
+  const text = getLogText(logDiv).trim();
+  if (!text) {
+    log("日志为空，无可复制内容", "warn");
+    return;
+  }
+
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(text);
+      log("日志已复制到剪贴板", "success");
+      return;
+    }
+  } catch (_) {}
+
+  try {
+    if (typeof logDiv.focus === "function") logDiv.focus();
+    if (typeof logDiv.select === "function") logDiv.select();
+    if (typeof document.execCommand === "function" && document.execCommand("copy")) {
+      log("日志已复制到剪贴板", "success");
+      return;
+    }
+  } catch (_) {}
+
+  log("复制失败，请手动全选后复制", "error");
+}
+
+function onClearLogClick() {
+  log("CLEAR");
 }
 
 function getApps() {
@@ -175,11 +257,12 @@ async function handleRun() {
   log("开始执行任务", "info");
 
   try {
-    const runOptions = { log, signal };
+    const settings = store.getSettings();
+    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+    const runOptions = { log, signal, uploadMaxEdge };
     const taskId = await runninghub.runAppTask(apiKey, state.currentApp, state.inputValues, runOptions);
     log(`任务已提交: ${taskId}`, "success");
 
-    const settings = store.getSettings();
     const resultUrl = await runninghub.pollTaskOutput(apiKey, taskId, settings, runOptions);
     log("任务完成，下载结果中", "info");
 
@@ -409,6 +492,18 @@ function onRefreshWorkspaceClick() {
   log("应用列表已刷新", "info");
 }
 
+function onUploadMaxEdgeChange(event) {
+  const nextUploadMaxEdge = normalizeUploadMaxEdge(event && event.target ? event.target.value : 0);
+  const settings = store.getSettings();
+  store.saveSettings({
+    pollInterval: settings.pollInterval,
+    timeout: settings.timeout,
+    uploadMaxEdge: nextUploadMaxEdge
+  });
+  const marker = UPLOAD_MAX_EDGE_LABELS[nextUploadMaxEdge] || "无限制";
+  log(`上传分辨率策略已切换: ${marker}`, "info");
+}
+
 function bindWorkspaceEvents() {
   rebindEvent(dom.btnRun, "click", handleRun);
   rebindEvent(dom.btnOpenAppPicker, "click", openAppPickerModal);
@@ -417,9 +512,12 @@ function bindWorkspaceEvents() {
   rebindEvent(dom.appPickerList, "click", handleAppPickerListClick);
   rebindEvent(dom.appPickerSearchInput, "input", onAppPickerSearchInput);
   rebindEvent(dom.btnRefreshWorkspaceApps, "click", onRefreshWorkspaceClick);
+  rebindEvent(dom.uploadMaxEdgeSelect, "change", onUploadMaxEdgeChange);
   rebindEvent(dom.templateModalClose, "click", closeTemplatePicker);
   rebindEvent(dom.templateModal, "click", onTemplateModalClick);
   rebindEvent(dom.templateList, "click", handleTemplateListClick);
+  rebindEvent(dom.btnCopyLog, "click", onCopyLogClick);
+  rebindEvent(dom.btnClearLog, "click", onClearLogClick);
 
   rebindEvent(document, APP_EVENTS.APPS_CHANGED, onAppsChanged);
   rebindEvent(document, APP_EVENTS.TEMPLATES_CHANGED, onTemplatesChanged);
@@ -436,6 +534,7 @@ function onTemplatesChanged() {
 
 function onSettingsChanged() {
   updateAccountStatus();
+  syncUploadMaxEdgeSelect();
 }
 
 function cacheDomRefs() {
@@ -443,6 +542,9 @@ function cacheDomRefs() {
     "btnRun",
     "btnOpenAppPicker",
     "btnRefreshWorkspaceApps",
+    "uploadMaxEdgeSelect",
+    "btnCopyLog",
+    "btnClearLog",
     "appPickerMeta",
     "dynamicInputContainer",
     "imageInputContainer",
@@ -466,6 +568,7 @@ function cacheDomRefs() {
 
 function initWorkspaceController() {
   cacheDomRefs();
+  syncUploadMaxEdgeSelect();
   workspaceInputs = null;
   getWorkspaceInputs();
   bindWorkspaceEvents();

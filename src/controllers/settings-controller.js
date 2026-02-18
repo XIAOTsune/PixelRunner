@@ -6,6 +6,7 @@ const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnosti
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
 
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
+const TEMPLATE_MAX_CHARS = 500;
 const dom = {};
 
 function log(msg) {
@@ -180,6 +181,23 @@ function getDuplicateMeta(list) {
   });
 }
 
+function clampToMaxChars(value, maxChars) {
+  return Array.from(String(value == null ? "" : value))
+    .slice(0, Math.max(0, Number(maxChars) || 0))
+    .join("");
+}
+
+function enforceTemplateFieldLimits() {
+  if (dom.templateTitleInput) {
+    const nextTitle = clampToMaxChars(dom.templateTitleInput.value, TEMPLATE_MAX_CHARS);
+    if (nextTitle !== dom.templateTitleInput.value) dom.templateTitleInput.value = nextTitle;
+  }
+  if (dom.templateContentInput) {
+    const nextContent = clampToMaxChars(dom.templateContentInput.value, TEMPLATE_MAX_CHARS);
+    if (nextContent !== dom.templateContentInput.value) dom.templateContentInput.value = nextContent;
+  }
+}
+
 function safeConfirm(message) {
   try {
     if (typeof confirm === "function") {
@@ -195,10 +213,15 @@ function safeConfirm(message) {
 function saveApiKeyAndSettings() {
   const apiKey = String(dom.apiKeyInput.value || "").trim();
   const pollInterval = Number(dom.pollIntervalInput.value) || 2;
-  const timeout = Number(dom.timeoutInput.value) || 90;
+  const timeout = Number(dom.timeoutInput.value) || 180;
+  const currentSettings = store.getSettings();
 
   store.saveApiKey(apiKey);
-  store.saveSettings({ pollInterval, timeout });
+  store.saveSettings({
+    pollInterval,
+    timeout,
+    uploadMaxEdge: currentSettings.uploadMaxEdge
+  });
   emitAppEvent(APP_EVENTS.SETTINGS_CHANGED, { apiKeyChanged: true, settingsChanged: true });
   alert("设置已保存");
 }
@@ -352,8 +375,9 @@ function renderSavedAppsList() {
 }
 
 function saveTemplate() {
-  const title = String(dom.templateTitleInput.value || "").trim();
-  const content = String(dom.templateContentInput.value || "").trim();
+  enforceTemplateFieldLimits();
+  const title = clampToMaxChars(String(dom.templateTitleInput.value || "").trim(), TEMPLATE_MAX_CHARS);
+  const content = clampToMaxChars(String(dom.templateContentInput.value || "").trim(), TEMPLATE_MAX_CHARS);
 
   if (!title || !content) {
     alert("标题和内容不能为空");
@@ -610,6 +634,8 @@ function initSettingsController() {
   const settings = store.getSettings();
   dom.pollIntervalInput.value = settings.pollInterval;
   dom.timeoutInput.value = settings.timeout;
+  if (dom.templateTitleInput) dom.templateTitleInput.maxLength = TEMPLATE_MAX_CHARS;
+  if (dom.templateContentInput) dom.templateContentInput.maxLength = TEMPLATE_MAX_CHARS;
 
   rebindEvent(dom.btnSaveApiKey, "click", saveApiKeyAndSettings);
   rebindEvent(dom.btnTestApiKey, "click", testApiKey);
@@ -619,6 +645,8 @@ function initSettingsController() {
   rebindEvent(dom.btnRunEnvDoctor, "click", runEnvironmentDoctorManual);
   rebindEvent(dom.btnLoadLatestDiag, "click", loadLatestDiagnosticReport);
   rebindEvent(dom.btnLoadParseDebug, "click", loadParseDebugReport);
+  rebindEvent(dom.templateTitleInput, "input", enforceTemplateFieldLimits);
+  rebindEvent(dom.templateContentInput, "input", enforceTemplateFieldLimits);
   rebindEvent(dom.savedAppsList, "click", onSavedAppsListClick);
   rebindEvent(dom.envDiagnosticsHeader, "click", onEnvDiagnosticsToggleClick);
   rebindEvent(dom.savedTemplatesList, "click", onSavedTemplatesListClick);

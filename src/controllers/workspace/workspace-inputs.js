@@ -14,6 +14,13 @@ function createWorkspaceInputs(deps) {
     updateRunButtonUI,
     openTemplatePicker
   } = deps;
+  const PROMPT_MAX_CHARS = 500;
+
+  function clampToMaxChars(value, maxChars) {
+    return Array.from(String(value == null ? "" : value))
+      .slice(0, Math.max(0, Number(maxChars) || 0))
+      .join("");
+  }
 
   function revokePreviewUrl(value) {
     if (!value || typeof value !== "object") return;
@@ -48,8 +55,21 @@ function createWorkspaceInputs(deps) {
     return inputSchema.getInputOptions(input);
   }
 
+  function getInputOptionEntries(input) {
+    if (inputSchema && typeof inputSchema.getInputOptionEntries === "function") {
+      return inputSchema.getInputOptionEntries(input);
+    }
+    const options = getInputOptions(input);
+    return (Array.isArray(options) ? options : []).map((value) => ({ value, label: String(value) }));
+  }
+
   function resolveUiInputType(input) {
     return inputSchema.resolveInputType(input || {});
+  }
+
+  function setInputValueByKey(key, value) {
+    state.inputValues[key] = value;
+    state.inputValues[key.split(":").pop()] = value;
   }
 
   function applyInputGridLayout(grid) {
@@ -67,6 +87,9 @@ function createWorkspaceInputs(deps) {
     const key = String(input.key || `param_${idx}`);
     const type = resolveUiInputType(input);
     const labelText = input.label || input.name || key;
+    const isUiRequired = type === "image"
+      ? Boolean(input && input.required && input.requiredExplicit === true)
+      : Boolean(input && input.required);
 
     if (type === "image") {
       const container = document.createElement("div");
@@ -75,7 +98,7 @@ function createWorkspaceInputs(deps) {
 
       const labelEl = document.createElement("div");
       labelEl.className = "dynamic-input-label";
-      labelEl.innerHTML = `${escapeHtml(labelText)} ${input.required ? '<span style="color:#ff6b6b">*</span>' : ""}`;
+      labelEl.innerHTML = `${escapeHtml(labelText)} ${isUiRequired ? '<span style="color:#ff6b6b">*</span>' : ""}`;
 
       const wrapper = document.createElement("div");
       wrapper.className = "image-input-wrapper";
@@ -169,26 +192,23 @@ function createWorkspaceInputs(deps) {
 
     const fieldTypeHint = String(input.fieldType || input.type || "").toLowerCase();
     if (type === "select" || /select|enum|list/.test(fieldTypeHint)) {
-      const options = getInputOptions(input);
-      if (options.length <= 1) {
+      const optionEntries = getInputOptionEntries(input);
+      if (optionEntries.length <= 1) {
         inputEl = document.createElement("input");
         inputEl.type = "text";
         inputEl.placeholder = String(input.default || "");
         inputEl.value = String(input.default || "");
         const defaultNumeric = input.default !== undefined && input.default !== null ? Number(input.default) : NaN;
         if (Number.isFinite(defaultNumeric)) {
-          state.inputValues[key] = defaultNumeric;
-          state.inputValues[key.split(":").pop()] = defaultNumeric;
+          setInputValueByKey(key, defaultNumeric);
         } else {
-          state.inputValues[key] = inputEl.value;
-          state.inputValues[key.split(":").pop()] = inputEl.value;
+          setInputValueByKey(key, inputEl.value);
         }
         inputEl.addEventListener("input", (event) => {
           const nextValue = event.target.value;
           const numeric = Number(nextValue);
           const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
-          state.inputValues[key] = storedValue;
-          state.inputValues[key.split(":").pop()] = storedValue;
+          setInputValueByKey(key, storedValue);
         });
         wrapper.appendChild(headerRow);
         wrapper.appendChild(inputEl);
@@ -196,33 +216,45 @@ function createWorkspaceInputs(deps) {
       }
 
       inputEl = document.createElement("select");
-      options.forEach((opt) => {
+      const optionValueMap = new Map();
+      optionEntries.forEach((entry) => {
+        const rawValue = entry && Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : "";
+        const rawLabel = entry && Object.prototype.hasOwnProperty.call(entry, "label") ? entry.label : rawValue;
+        const domValue = String(rawValue);
         const option = document.createElement("option");
-        option.value = opt;
-        option.textContent = opt;
+        option.value = domValue;
+        option.textContent = String(rawLabel || rawValue || "");
         inputEl.appendChild(option);
+        if (!optionValueMap.has(domValue)) {
+          optionValueMap.set(domValue, rawValue);
+        }
       });
 
-      const defaultValue = input.default || options[0] || "";
-      if (!isEmptyValue(defaultValue)) {
-        inputEl.value = defaultValue;
-        state.inputValues[key] = defaultValue;
-      }
+      const firstOption = optionEntries[0];
+      const rawDefaultValue = !isEmptyValue(input.default) ? input.default : firstOption && firstOption.value;
+      const defaultDomValue = String(rawDefaultValue == null ? "" : rawDefaultValue);
+      const selectedDomValue = optionValueMap.has(defaultDomValue)
+        ? defaultDomValue
+        : String(firstOption && firstOption.value != null ? firstOption.value : "");
+      inputEl.value = selectedDomValue;
+      const typedDefaultValue = optionValueMap.has(selectedDomValue) ? optionValueMap.get(selectedDomValue) : selectedDomValue;
+      setInputValueByKey(key, typedDefaultValue);
+
       inputEl.addEventListener("change", (event) => {
-        state.inputValues[key] = event.target.value;
-        state.inputValues[key.split(":").pop()] = event.target.value;
+        const selectedValue = event.target.value;
+        const typedValue = optionValueMap.has(selectedValue) ? optionValueMap.get(selectedValue) : selectedValue;
+        setInputValueByKey(key, typedValue);
       });
     } else if (type === "boolean") {
       inputEl = document.createElement("select");
       inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
-      inputEl.value = String(input.default) === "true" ? "true" : "false";
+      const defaultMarker = String(input.default == null ? "" : input.default).trim().toLowerCase();
+      inputEl.value = defaultMarker === "true" || defaultMarker === "1" || defaultMarker === "yes" ? "true" : "false";
       const boolValue = inputEl.value === "true";
-      state.inputValues[key] = boolValue;
-      state.inputValues[key.split(":").pop()] = boolValue;
+      setInputValueByKey(key, boolValue);
       inputEl.addEventListener("change", (event) => {
         const nextValue = event.target.value === "true";
-        state.inputValues[key] = nextValue;
-        state.inputValues[key.split(":").pop()] = nextValue;
+        setInputValueByKey(key, nextValue);
       });
     } else {
       const isLongText = promptLike || (type === "text" && getInputOptions(input).length === 0);
@@ -230,6 +262,7 @@ function createWorkspaceInputs(deps) {
         inputEl = document.createElement("textarea");
         inputEl.rows = promptLike ? 3 : 1;
         inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
+        if (promptLike) inputEl.maxLength = PROMPT_MAX_CHARS;
         wrapper.classList.add("full-width");
 
         if (promptLike) {
@@ -239,9 +272,9 @@ function createWorkspaceInputs(deps) {
           btnTemplate.textContent = "预设";
           btnTemplate.addEventListener("click", () => {
             openTemplatePicker((content) => {
-              inputEl.value = content;
-              state.inputValues[key] = content;
-              state.inputValues[key.split(":").pop()] = content;
+              const limitedContent = clampToMaxChars(content, PROMPT_MAX_CHARS);
+              inputEl.value = limitedContent;
+              setInputValueByKey(key, limitedContent);
               inputEl.style.borderColor = "#4caf50";
               setTimeout(() => {
                 inputEl.style.borderColor = "";
@@ -261,22 +294,25 @@ function createWorkspaceInputs(deps) {
         }
       }
 
-      inputEl.value = String(input.default || "");
+      const initialTextValue = String(input.default || "");
+      inputEl.value = promptLike ? clampToMaxChars(initialTextValue, PROMPT_MAX_CHARS) : initialTextValue;
       if (type === "number") {
         const numericDefault = Number(input.default);
         const storedValue = Number.isFinite(numericDefault) ? numericDefault : 0;
-        state.inputValues[key] = storedValue;
-        state.inputValues[key.split(":").pop()] = storedValue;
+        setInputValueByKey(key, storedValue);
       } else {
-        state.inputValues[key] = inputEl.value;
-        state.inputValues[key.split(":").pop()] = inputEl.value;
+        setInputValueByKey(key, inputEl.value);
       }
       inputEl.addEventListener("input", (event) => {
-        const nextValue = event.target.value;
+        let nextValue = event.target.value;
+        if (promptLike) {
+          const limited = clampToMaxChars(nextValue, PROMPT_MAX_CHARS);
+          if (limited !== nextValue) event.target.value = limited;
+          nextValue = limited;
+        }
         const numeric = Number(nextValue);
         const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
-        state.inputValues[key] = storedValue;
-        state.inputValues[key.split(":").pop()] = storedValue;
+        setInputValueByKey(key, storedValue);
       });
     }
 

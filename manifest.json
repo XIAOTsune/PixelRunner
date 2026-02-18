@@ -31,17 +31,28 @@
         {
           "width": 23,
           "height": 23,
-          "path": "icons/icon.png",
+          "path": "icons/toolbar.png",
           "scale": [
-            1
+            1,
+            2
+          ],
+          "theme": [
+            "darkest",
+            "dark",
+            "medium"
           ]
         },
         {
-          "width": 46,
-          "height": 46,
-          "path": "icons/icon@2x.png",
+          "width": 23,
+          "height": 23,
+          "path": "icons/toolbar.png",
           "scale": [
+            1,
             2
+          ],
+          "theme": [
+            "lightest",
+            "light"
           ]
         }
       ]
@@ -53,19 +64,38 @@
   },
   "icons": [
     {
-      "width": 23,
-      "height": 23,
-      "path": "icons/icon.png",
+      "width": 24,
+      "height": 24,
+      "path": "icons/plugin.png",
       "scale": [
-        1
+        1,
+        2
+      ],
+      "theme": [
+        "darkest",
+        "dark",
+        "medium"
+      ],
+      "species": [
+        "pluginList",
+        "generic"
       ]
     },
     {
-      "width": 46,
-      "height": 46,
-      "path": "icons/icon@2x.png",
+      "width": 24,
+      "height": 24,
+      "path": "icons/plugin.png",
       "scale": [
+        1,
         2
+      ],
+      "theme": [
+        "lightest",
+        "light"
+      ],
+      "species": [
+        "pluginList",
+        "generic"
       ]
     }
   ],
