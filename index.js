@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initSettingsController();
     initToolsController();
     setupTabs();
+    setupDonationModal();
   } catch (error) {
     initError = error;
     console.error("Initialization Failed:", error);
@@ -53,4 +54,59 @@ function setupTabs() {
       if (view) view.classList.add("active");
     });
   });
+}
+
+function setupDonationModal() {
+  const btnDonate = document.getElementById("btnDonate");
+  const donationModal = document.getElementById("donationModal");
+  const donationModalClose = document.getElementById("donationModalClose");
+  const wxImg = document.getElementById("donationWxImg");
+  const zfbImg = document.getElementById("donationZfbImg");
+  if (!btnDonate || !donationModal || !donationModalClose) return;
+
+  const closeModal = () => {
+    donationModal.classList.remove("active");
+    refreshModalOpenState();
+  };
+  const openModal = () => {
+    donationModal.classList.add("active");
+    refreshModalOpenState();
+    ensureDonationImages(wxImg, "vx.png");
+    ensureDonationImages(zfbImg, "zfb.png");
+  };
+
+  btnDonate.addEventListener("click", openModal);
+  donationModalClose.addEventListener("click", closeModal);
+  donationModal.addEventListener("click", (event) => {
+    if (event.target === donationModal) closeModal();
+  });
+}
+
+function refreshModalOpenState() {
+  const isOpen = Boolean(document.querySelector(".modal-overlay.active"));
+  document.body.classList.toggle("modal-open", isOpen);
+}
+
+async function ensureDonationImages(imgEl, fileName) {
+  if (!imgEl || imgEl.dataset.loaded === "true") return;
+  const currentSrc = imgEl.getAttribute("src") || "";
+  if (currentSrc.startsWith("plugin-file://")) {
+    imgEl.dataset.loaded = "true";
+    return;
+  }
+  try {
+    const { storage } = require("uxp");
+    const fs = storage && storage.localFileSystem;
+    if (!fs || typeof fs.getPluginFolder !== "function") return;
+    const pluginFolder = await fs.getPluginFolder();
+    const iconsFolder = await pluginFolder.getEntry("icons");
+    const imgEntry = await iconsFolder.getEntry(fileName);
+    const sessionUrl = await fs.createSessionToken(imgEntry);
+    if (sessionUrl) {
+      imgEl.src = sessionUrl;
+      imgEl.dataset.loaded = "true";
+    }
+  } catch (error) {
+    console.warn("Failed to load donation image", fileName, error);
+  }
 }

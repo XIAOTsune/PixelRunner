@@ -23,6 +23,14 @@ body {
   overflow: hidden;
 }
 
+body.modal-open select {
+  visibility: hidden;
+}
+
+body.modal-open .modal-overlay.active select {
+  visibility: visible;
+}
+
 /* === 1. 顶部导航 Tabs === */
 .nav-tabs {
   display: flex;
@@ -31,17 +39,36 @@ body {
   padding: 0 4px;
 }
 .nav-brand {
-  width: 24px;
+  width: 30px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   margin-right: 4px;
+  gap: 3px;
 }
 .nav-brand-logo {
   width: 16px;
   height: 16px;
   border-radius: 3px;
   display: block;
+}
+.donate-btn {
+  background: none;
+  border: none;
+  color: #ffcf4a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 0;
+  cursor: pointer;
+  text-shadow: 0 0 8px rgba(255, 207, 74, 0.4);
+}
+.donate-btn:hover {
+  color: #ffe27a;
+}
+.donate-btn:active {
+  color: #ffb921;
 }
 .nav-item {
   flex: 1;
@@ -533,7 +560,7 @@ textarea { resize: vertical; min-height: 40px; }
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.6);
-  z-index: 999;
+  z-index: 10000;
   display: none;
   justify-content: center;
   align-items: flex-start;
@@ -550,6 +577,44 @@ textarea { resize: vertical; min-height: 40px; }
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #555;
+}
+.modal-content.donation-modal {
+  max-width: 360px;
+}
+.donation-body {
+  padding: 12px;
+}
+.donation-tip {
+  font-size: 12px;
+  color: #d2d2d2;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.donation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.donation-card {
+  background: #1f1f1f;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.donation-card img {
+  width: 100%;
+  max-width: 140px;
+  height: auto;
+  border-radius: 4px;
+  background: #fff;
+}
+.donation-label {
+  font-size: 10px;
+  color: #cfcfcf;
 }
 .modal-header {
   padding: 10px;

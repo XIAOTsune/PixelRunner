@@ -10,6 +10,7 @@
   <div class="nav-tabs">
       <div class="nav-brand" title="Plugin Logo">
         <img class="nav-brand-logo" src="icons/icon.png" alt="logo" />
+        <button id="btnDonate" class="donate-btn" type="button">打赏</button>
       </div>
       <button id="tabWorkspace" class="nav-item active" type="button">RH 工作台</button>
       <button id="tabTools" class="nav-item" type="button">工具箱</button>
@@ -317,6 +318,28 @@
       </div>
     </div>
   </section>
+
+  <div id="donationModal" class="modal-overlay">
+    <div class="modal-content donation-modal">
+      <div class="modal-header">
+        支持作者
+        <button id="donationModalClose" class="modal-close" type="button">&times;</button>
+      </div>
+      <div class="donation-body">
+        <div class="donation-tip">扫码打赏</div>
+        <div class="donation-grid">
+          <div class="donation-card">
+            <img id="donationWxImg" src="icons/vx.png" alt="微信收款码" />
+            <div class="donation-label">微信</div>
+          </div>
+          <div class="donation-card">
+            <img id="donationZfbImg" src="icons/zfb.png" alt="支付宝收款码" />
+            <div class="donation-label">支付宝</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="templateModal" class="modal-overlay">
     <div class="modal-content">

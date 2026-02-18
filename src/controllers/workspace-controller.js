@@ -364,6 +364,7 @@ function renderAppPickerList() {
 
 function closeAppPickerModal() {
   if (dom.appPickerModal) dom.appPickerModal.classList.remove("active");
+  refreshModalOpenState();
 }
 
 function openAppPickerModal() {
@@ -371,6 +372,7 @@ function openAppPickerModal() {
   if (dom.appPickerSearchInput) dom.appPickerSearchInput.value = "";
   renderAppPickerList();
   if (dom.appPickerModal) dom.appPickerModal.classList.add("active");
+  refreshModalOpenState();
 }
 
 function selectAppInternal(id, options = {}) {
@@ -479,12 +481,19 @@ function renderTemplatePickerList() {
 function closeTemplatePicker() {
   if (dom.templateModal) dom.templateModal.classList.remove("active");
   state.templateSelectCallback = null;
+  refreshModalOpenState();
 }
 
 function openTemplatePicker(onSelectCallback) {
   state.templateSelectCallback = typeof onSelectCallback === "function" ? onSelectCallback : null;
   renderTemplatePickerList();
   if (dom.templateModal) dom.templateModal.classList.add("active");
+  refreshModalOpenState();
+}
+
+function refreshModalOpenState() {
+  const isOpen = Boolean(document.querySelector(".modal-overlay.active"));
+  document.body.classList.toggle("modal-open", isOpen);
 }
 
 function handleTemplateListClick(event) {
