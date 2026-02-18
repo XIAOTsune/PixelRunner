@@ -359,6 +359,10 @@ textarea { resize: vertical; min-height: 40px; }
   padding: 0 4px;
 }
 
+.paste-strategy-control select {
+  min-width: 126px;
+}
+
 .app-select-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-color);

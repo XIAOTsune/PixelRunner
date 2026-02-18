@@ -1,6 +1,14 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
 const PROMPT_TEMPLATE_MAX_CHARS = 500;
+const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
+const LEGACY_PASTE_STRATEGY_MAP = {
+  stretch: "normal",
+  contain: "normal",
+  cover: "normal",
+  alphaTrim: "smart",
+  edgeAuto: "smart"
+};
 
 function clampToMaxChars(value, maxChars) {
   return Array.from(String(value == null ? "" : value))
@@ -30,20 +38,32 @@ function getSettings() {
   const value = readJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
   const uploadMaxEdgeRaw = Number(value.uploadMaxEdge);
   const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
+  let pasteStrategy = String(value.pasteStrategy || "").trim();
+  if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
+    pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
+  }
+  pasteStrategy = PASTE_STRATEGY_CHOICES.includes(pasteStrategy) ? pasteStrategy : DEFAULT_SETTINGS.pasteStrategy;
   return {
     pollInterval: Number(value.pollInterval) || DEFAULT_SETTINGS.pollInterval,
     timeout: Number(value.timeout) || DEFAULT_SETTINGS.timeout,
-    uploadMaxEdge
+    uploadMaxEdge,
+    pasteStrategy
   };
 }
 
 function saveSettings(settings) {
   const uploadMaxEdgeRaw = Number(settings.uploadMaxEdge);
   const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
+  let pasteStrategy = String(settings.pasteStrategy || "").trim();
+  if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
+    pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
+  }
+  pasteStrategy = PASTE_STRATEGY_CHOICES.includes(pasteStrategy) ? pasteStrategy : DEFAULT_SETTINGS.pasteStrategy;
   writeJson(STORAGE_KEYS.SETTINGS, {
     pollInterval: Number(settings.pollInterval) || DEFAULT_SETTINGS.pollInterval,
     timeout: Number(settings.timeout) || DEFAULT_SETTINGS.timeout,
-    uploadMaxEdge
+    uploadMaxEdge,
+    pasteStrategy
   });
 }
 

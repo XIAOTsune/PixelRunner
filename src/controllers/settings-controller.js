@@ -220,7 +220,8 @@ function saveApiKeyAndSettings() {
   store.saveSettings({
     pollInterval,
     timeout,
-    uploadMaxEdge: currentSettings.uploadMaxEdge
+    uploadMaxEdge: currentSettings.uploadMaxEdge,
+    pasteStrategy: currentSettings.pasteStrategy
   });
   emitAppEvent(APP_EVENTS.SETTINGS_CHANGED, { apiKeyChanged: true, settingsChanged: true });
   alert("设置已保存");

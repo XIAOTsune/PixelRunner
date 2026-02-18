@@ -26,6 +26,18 @@ const UPLOAD_MAX_EDGE_LABELS = {
   2048: "2k",
   1024: "1k"
 };
+const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
+const PASTE_STRATEGY_LABELS = {
+  normal: "普通（居中填满）",
+  smart: "智能（主体对齐）"
+};
+const LEGACY_PASTE_STRATEGY_MAP = {
+  stretch: "normal",
+  contain: "normal",
+  cover: "normal",
+  alphaTrim: "smart",
+  edgeAuto: "smart"
+};
 
 let workspaceInputs = null;
 
@@ -35,12 +47,29 @@ function normalizeUploadMaxEdge(value) {
   return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : 0;
 }
 
+function normalizePasteStrategy(value) {
+  const marker = String(value || "").trim();
+  if (!marker) return "normal";
+  const legacy = LEGACY_PASTE_STRATEGY_MAP[marker];
+  const normalized = legacy || marker;
+  return PASTE_STRATEGY_CHOICES.includes(normalized) ? normalized : "normal";
+}
+
 function syncUploadMaxEdgeSelect() {
   const select = dom.uploadMaxEdgeSelect || byId("uploadMaxEdgeSelect");
   if (!select) return;
   const settings = store.getSettings();
   const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
   const nextValue = String(uploadMaxEdge);
+  if (select.value !== nextValue) select.value = nextValue;
+}
+
+function syncPasteStrategySelect() {
+  const select = dom.pasteStrategySelect || byId("pasteStrategySelect");
+  if (!select) return;
+  const settings = store.getSettings();
+  const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
+  const nextValue = String(pasteStrategy);
   if (select.value !== nextValue) select.value = nextValue;
 }
 
@@ -213,6 +242,10 @@ function resolveTargetBounds() {
   return getWorkspaceInputs().resolveTargetBounds();
 }
 
+function resolveSourceImageBuffer() {
+  return getWorkspaceInputs().resolveSourceImageBuffer();
+}
+
 function setRunState(running) {
   state.isRunning = running;
   if (running) {
@@ -259,6 +292,7 @@ async function handleRun() {
   try {
     const settings = store.getSettings();
     const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+    const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
     const runOptions = { log, signal, uploadMaxEdge };
     const taskId = await runninghub.runAppTask(apiKey, state.currentApp, state.inputValues, runOptions);
     log(`任务已提交: ${taskId}`, "success");
@@ -268,8 +302,9 @@ async function handleRun() {
 
     if (signal.aborted) throw new Error("用户中止");
     const targetBounds = resolveTargetBounds();
+    const sourceBuffer = resolveSourceImageBuffer();
     const buffer = await runninghub.downloadResultBinary(resultUrl, runOptions);
-    await ps.placeImage(buffer, { log, targetBounds });
+    await ps.placeImage(buffer, { log, signal, targetBounds, pasteStrategy, sourceBuffer });
 
     log("处理完成，结果已回贴", "success");
     updateAccountStatus();
@@ -495,13 +530,29 @@ function onRefreshWorkspaceClick() {
 function onUploadMaxEdgeChange(event) {
   const nextUploadMaxEdge = normalizeUploadMaxEdge(event && event.target ? event.target.value : 0);
   const settings = store.getSettings();
+  const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
   store.saveSettings({
     pollInterval: settings.pollInterval,
     timeout: settings.timeout,
-    uploadMaxEdge: nextUploadMaxEdge
+    uploadMaxEdge: nextUploadMaxEdge,
+    pasteStrategy
   });
   const marker = UPLOAD_MAX_EDGE_LABELS[nextUploadMaxEdge] || "无限制";
   log(`上传分辨率策略已切换: ${marker}`, "info");
+}
+
+function onPasteStrategyChange(event) {
+  const nextPasteStrategy = normalizePasteStrategy(event && event.target ? event.target.value : "");
+  const settings = store.getSettings();
+  const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+  store.saveSettings({
+    pollInterval: settings.pollInterval,
+    timeout: settings.timeout,
+    uploadMaxEdge,
+    pasteStrategy: nextPasteStrategy
+  });
+  const marker = PASTE_STRATEGY_LABELS[nextPasteStrategy] || nextPasteStrategy;
+  log(`回贴策略已切换: ${marker}`, "info");
 }
 
 function bindWorkspaceEvents() {
@@ -513,6 +564,7 @@ function bindWorkspaceEvents() {
   rebindEvent(dom.appPickerSearchInput, "input", onAppPickerSearchInput);
   rebindEvent(dom.btnRefreshWorkspaceApps, "click", onRefreshWorkspaceClick);
   rebindEvent(dom.uploadMaxEdgeSelect, "change", onUploadMaxEdgeChange);
+  rebindEvent(dom.pasteStrategySelect, "change", onPasteStrategyChange);
   rebindEvent(dom.templateModalClose, "click", closeTemplatePicker);
   rebindEvent(dom.templateModal, "click", onTemplateModalClick);
   rebindEvent(dom.templateList, "click", handleTemplateListClick);
@@ -535,6 +587,7 @@ function onTemplatesChanged() {
 function onSettingsChanged() {
   updateAccountStatus();
   syncUploadMaxEdgeSelect();
+  syncPasteStrategySelect();
 }
 
 function cacheDomRefs() {
@@ -543,6 +596,7 @@ function cacheDomRefs() {
     "btnOpenAppPicker",
     "btnRefreshWorkspaceApps",
     "uploadMaxEdgeSelect",
+    "pasteStrategySelect",
     "btnCopyLog",
     "btnClearLog",
     "appPickerMeta",
@@ -569,6 +623,7 @@ function cacheDomRefs() {
 function initWorkspaceController() {
   cacheDomRefs();
   syncUploadMaxEdgeSelect();
+  syncPasteStrategySelect();
   workspaceInputs = null;
   getWorkspaceInputs();
   bindWorkspaceEvents();

@@ -516,6 +516,36 @@ function createWorkspaceInputs(deps) {
     return null;
   }
 
+  function resolveSourceImageBuffer() {
+    if (!state.currentApp) return null;
+    const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
+    const imageInputs = inputs.filter((input) => resolveUiInputType(input) === "image");
+    const firstImage = imageInputs[0];
+    const pickBuffer = (key) => {
+      const value = key ? state.inputValues[key] : null;
+      if (value && value.arrayBuffer instanceof ArrayBuffer) return value.arrayBuffer;
+      if (value && ArrayBuffer.isView(value.arrayBuffer)) {
+        const view = value.arrayBuffer;
+        return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+      }
+      return null;
+    };
+
+    if (firstImage) {
+      const key = String(firstImage.key || "").trim();
+      const buffer = pickBuffer(key);
+      if (buffer) return buffer;
+    }
+
+    for (const input of imageInputs) {
+      const key = String(input.key || "").trim();
+      if (!key) continue;
+      const buffer = pickBuffer(key);
+      if (buffer) return buffer;
+    }
+    return null;
+  }
+
   return {
     revokePreviewUrl,
     createPreviewUrlFromBuffer,
@@ -524,7 +554,8 @@ function createWorkspaceInputs(deps) {
     createInputField,
     createFallbackInputField,
     renderDynamicInputs,
-    resolveTargetBounds
+    resolveTargetBounds,
+    resolveSourceImageBuffer
   };
 }
 
