@@ -34,6 +34,8 @@ Desktop.ini
 
 # Local project helper folders
 .roo/
+docs/
+tools/
 
 # Temporary
 *.tmp

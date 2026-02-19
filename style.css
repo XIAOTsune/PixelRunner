@@ -699,7 +699,7 @@ textarea { resize: vertical; min-height: 40px; }
 .setting-hint { font-size: 9px; color: #666; margin-top: 6px; }
 .saved-list { margin-top: 10px; max-height: 150px; overflow-y: auto; }
 
-/* === 新增：紧凑参数区样式 === */
+/* === 紧凑参数区样式 === */
 
 /* 1. 参数网格布局：默认双列，更紧凑 */
 .input-grid {
