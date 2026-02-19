@@ -1,117 +1,230 @@
-# 小T修图助手 / RunningHub Photoshop Plugin
+<div align="center">
+  <img src="icons/icon.png" width="92" alt="小T修图助手" />
+  <h1>小T修图助手</h1>
+  <p>RunningHub Photoshop Plugin</p>
+  <p>把 RunningHub AI 工作流直接放进 Photoshop 的 UXP 插件。自动解析参数、执行任务、下载结果，并回贴到当前画布。</p>
+  <p>
+    <img src="https://img.shields.io/badge/version-2.0.3-0A7BFF" alt="version" />
+    <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="photoshop" />
+    <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="uxp" />
+    <img src="https://img.shields.io/badge/license-Apache--2.0-3DA639" alt="license" />
+  </p>
+</div>
 
-RunningHub AI 工作流在 Photoshop 内一键运行的 UXP 插件，支持自动解析参数、任务运行与结果回贴 / A Photoshop UXP plugin that runs RunningHub AI apps inside Photoshop with auto parsing, task execution, and smart pasting.
+<p align="center">
+  <a href="#quick-start">快速上手</a> ·
+  <a href="#feature-map">功能一览</a> ·
+  <a href="#workflow">工作流</a> ·
+  <a href="#integration">集成细节</a> ·
+  <a href="#data-privacy">数据与隐私</a> ·
+  <a href="#development">开发与调试</a>
+</p>
 
-## 功能亮点 / Highlights
-- RunningHub 应用一键接入：输入应用 ID 或 URL，自动解析参数并生成动态表单 / One-click import of RunningHub apps by ID/URL with automatic parameter parsing and dynamic form generation.
-- 图像参数直接取自 PS 选区并支持预览与清除 / Image parameters can be captured directly from Photoshop selections with preview and clear controls.
-- 提示词模板一键插入，提升重复任务效率 / Prompt templates can be inserted with one click for faster repeated workflows.
-- 任务运行、轮询、结果下载与回贴一体化 / End-to-end task execution, polling, download, and result pasting.
-- 智能回贴策略：对齐主体位置并可自动容错回退 / Smart pasting aligns main subjects and falls back when alignment confidence is low.
-- 内置 PS 工具箱：观察层、中性灰、盖印、高斯模糊、锐化、高反差、内容识别填充 / Built-in PS tools: observer group, neutral gray, stamp, Gaussian blur, sharpen, high pass, content-aware fill.
-- 启动即运行环境诊断，支持一键导出诊断报告 / Startup environment diagnostics with one-click report export.
+> 在 Photoshop 内完成 RunningHub AI 应用的解析、参数填写、任务执行与结果回贴，适合高频、可复用、追求效率的修图场景。
 
+<a name="specs"></a>
+## 关键规格 / Specs
+
+| 项目 | 值 |
+| --- | --- |
+| Host | Photoshop (UXP Manifest v5) |
+| Min Photoshop | 23.0 |
+| Version | 2.0.3 |
+
+<a name="highlights"></a>
+## 亮点 / Highlights
+- 一键接入 RunningHub 应用，自动解析参数并生成动态表单
+- 图像参数可直接从 PS 选区获取，支持预览与清除
+- 提示词模板一键插入，适合高频重复任务
+- 任务执行、轮询、下载与回贴一体化完成
+- 智能回贴对齐主体位置，低置信度自动回退
+- 内置常用修图工具箱，启动即生成环境诊断报告
+
+<a name="use-cases"></a>
 ## 适用场景 / Use Cases
-- 将 RunningHub 上的 AI 应用直接嵌入 PS 修图流程 / Embed RunningHub AI apps directly into Photoshop retouching workflows.
-- 在 PS 内完成参数配置、任务提交与结果回贴 / Configure parameters, submit tasks, and paste results without leaving Photoshop.
-- 需要高频调用模板化提示词的场景 / Scenarios with frequent prompt-template reuse.
+- 将 RunningHub AI 应用嵌入 PS 修图流程
+- 在 PS 内完成参数配置、任务提交与结果回贴
+- 需要模板化提示词与快速试错的场景
 
+<a name="quick-start"></a>
 ## 快速上手 / Quick Start
-1. 安装：使用 Adobe UXP Developer Tool 添加插件，选择 `manifest.json` / Install via Adobe UXP Developer Tool and select `manifest.json`.
-2. 启动：在 Photoshop 中打开“插件面板 → 小T修图助手” / Open the panel in Photoshop.
-3. 配置：进入“设置”保存 RunningHub API Key，并点击测试 / Go to Settings, save the RunningHub API Key, and test the connection.
-4. 解析应用：输入 RunningHub 应用 ID 或 URL → 解析 → 保存到工作台 / Parse an app by ID/URL, then save it to Workspace.
-5. 运行任务：选择应用，捕获选区图像，填写参数，点击“开始运行” / Select an app, capture selection images, fill parameters, and click Run.
-6. 查看结果：日志区查看进度，结果自动下载并回贴到当前文档 / Watch logs, the result downloads and pastes into the active document.
+1. 安装：使用 Adobe UXP Developer Tool 添加插件，选择 `manifest.json`
+2. 启动：在 Photoshop 中打开 “插件面板 -> 小T修图助手”
+3. 配置：在 “设置” 保存 RunningHub API Key 并点击测试
+4. 解析应用：输入 RunningHub 应用 ID 或 URL -> 解析 -> 保存到工作台
+5. 运行任务：选择应用，捕获选区图像，填写参数，点击 “开始运行”
+6. 查看结果：日志区查看进度，结果自动下载并回贴到当前文档
 
-## 使用指南 / Usage
+<a name="feature-map"></a>
+## 功能一览 / Feature Map
 
-### RH 工作台 / Workspace
-- 应用选择器：支持搜索与刷新 / App picker supports search and refresh.
-- 动态参数：根据解析结果生成输入控件（图像、文本、数字、选择、布尔） / Dynamic inputs for image/text/number/select/boolean.
-- 图像输入：点击“从 PS 选区获取”，支持预览与清除 / Image inputs capture from PS selection with preview and clear.
-- 提示词模板：提示词输入框支持“预设”弹窗选择 / Prompt fields support a template picker.
-- 上传分辨率：无限制/4k/2k/1k，可减少上传时间 / Upload max edge: unlimited/4k/2k/1k to reduce upload time.
-- 回贴策略：普通（居中填满）与智能（主体对齐） / Paste strategy: normal (center cover) or smart (subject alignment).
-- 运行日志：支持复制与清空 / Logs can be copied or cleared.
+| 模块 | 亮点 | 典型用途 |
+| --- | --- | --- |
+| Workspace | 动态参数表单、图像取样、模板插入 | 解析应用并执行任务 |
+| Tools | 观察层、盖印、高斯模糊、锐化等 | 高频修图操作快捷入口 |
+| Settings | API Key、应用管理、模板管理 | 初始配置与维护 |
+| Diagnostics | 启动诊断、报告导出 | 环境与依赖排查 |
 
-### 工具箱 / Tools
-- 黑白观察层：创建黑白+曲线观察组 / Create a B&W + Curves observer group.
-- 中性灰图层：50% 灰 + 柔光，用于加深减淡 / 50% gray layer in Soft Light for dodge & burn.
-- 盖印图层：等同 Ctrl+Alt+Shift+E / Stamp visible layers.
-- 高斯模糊：调用原生对话框 / Gaussian blur with native dialog.
-- 锐化：调用智能锐化对话框 / Smart sharpen dialog.
-- 高反差保留：调用原生对话框 / High pass dialog.
-- 智能识别填充：需先建立选区 / Content-Aware Fill (selection required).
+<details>
+<summary><strong>Workspace 细节</strong></summary>
 
-### 设置 / Settings
-- API Key：保存/显示/测试 RunningHub API Key / Save, reveal, and test API key.
-- 应用管理：解析应用、保存、编辑、删除，重复 ID 自动标记 / Parse apps, save/edit/delete, duplicate IDs are highlighted.
-- 解析调试：可读取最近一次解析 Debug 信息 / Load the latest parse debug report.
-- 提示词模板：新增、覆盖同名、删除模板 / Add, overwrite by title, or delete templates.
-- 高级设置：轮询间隔（1-15s）与超时（10-600s） / Advanced: poll interval and timeout.
-- 环境诊断：手动运行并查看报告摘要 / Run diagnostics and view summaries.
+- 应用选择器：搜索、刷新与快速切换
+- 动态参数：图像、文本、数字、选择、布尔等控件自动生成
+- 图像输入：从 PS 选区获取，支持预览与清除
+- 提示词模板：输入框可唤起模板面板
+- 上传分辨率：无限制 / 4k / 2k / 1k 以缩短上传时间
+- 回贴策略：普通(居中填满) 与 智能(主体对齐)
+- 运行日志：支持复制与清空
 
-## RunningHub 集成 / RunningHub Integration
-- 多端点解析：优先使用 `/api/webapp/apiCallDemo`，失败时回退到 `/uc/openapi/app` 等 / Parses via `/api/webapp/apiCallDemo` with fallbacks to `/uc/openapi/app` and others.
-- 参数智能规范化：自动推断类型、解析选项、优化标签 / Heuristic normalization of types, options, and labels.
-- AI App / Legacy 双通道：优先 AI App API，失败自动回退 Legacy / Uses AI App API first, falls back to legacy workflow API.
-- 图片上传：支持 v2/legacy 上传接口，可自动缩放 / Uploads via v2/legacy endpoints with optional resize.
-- 任务轮询：依据状态与超时配置进行轮询，失败有清晰提示 / Polls with status/timeout handling and clear errors.
+</details>
 
-## 图像处理与回贴 / Image Pipeline & Pasting
-- 选区捕获：有选区时裁剪导出，无选区时导出整幅画面 / Captures selection or full document.
-- 结果回贴：基于选区边界进行放置与对齐 / Pastes results based on selection bounds.
-- 智能对齐：基于内容分析计算缩放与偏移，低分数自动降级 / Smart alignment computes scale/offset and falls back if confidence is low.
-- 兼容处理：异常或超时会回退到普通回贴 / Errors and timeouts fall back to normal pasting.
+<details>
+<summary><strong>Tools 细节</strong></summary>
 
-## 环境诊断 / Diagnostics
-- 自动启动诊断：插件加载即生成报告 / A report is generated on startup.
-- 报告存储：LocalStorage `rh_env_diagnostic_latest` 与 UXP 数据目录 `pixelrunner_diag_*.json/txt` / Stored in localStorage and UXP data folder.
-- 检测范围：运行环境、PS/UXP 版本、DOM 完整性、模块契约、数据健康、网络连通性 / Checks runtime, host, DOM, module exports, data health, and network reachability.
+- 黑白观察层：创建黑白 + 曲线观察组
+- 中性灰图层：50% 灰 + 柔光，用于加深减淡
+- 盖印图层：等同 Ctrl+Alt+Shift+E
+- 高斯模糊：调用原生对话框
+- 锐化：调用智能锐化对话框
+- 高反差保留：调用原生对话框
+- 内容识别填充：需先建立选区
 
+</details>
+
+<details>
+<summary><strong>Settings 细节</strong></summary>
+
+- API Key：保存、显示与测试 RunningHub API Key
+- 应用管理：解析、保存、编辑、删除，重复 ID 自动标记
+- 解析调试：读取最近一次解析的 Debug 信息
+- 提示词模板：新增、覆盖同名、删除模板
+- 高级设置：轮询间隔(1-15s) 与超时(10-600s)
+- 环境诊断：手动运行并查看摘要
+
+</details>
+
+<a name="workflow"></a>
+## 工作流 / Workflow
+
+```mermaid
+flowchart LR
+  A[RunningHub App ID or URL] --> B[参数解析]
+  B --> C[动态表单]
+  C --> D[选区图像捕获]
+  D --> E[任务提交]
+  E --> F[状态轮询]
+  F --> G[结果下载]
+  G --> H[智能回贴]
+```
+
+<a name="integration"></a>
+## 集成细节 / Integration
+
+### RunningHub 解析与任务
+- 解析端点：优先 `/api/webapp/apiCallDemo`，失败回退 `/uc/openapi/app` 等
+- 参数规范化：自动推断类型、解析选项、优化标签
+- AI App / Legacy 双通道：优先 AI App API，失败回退 Legacy
+- 图片上传：支持 v2/legacy 上传接口，可按设置自动缩放
+- 任务轮询：依据状态与超时配置轮询，失败有清晰提示
+
+### 图像处理与回贴
+- 选区捕获：有选区时裁剪导出，无选区时导出整幅画面
+- 结果回贴：基于选区边界放置与对齐
+- 智能对齐：基于内容分析计算缩放与偏移，低分数自动降级
+- 兼容处理：异常或超时回退到普通回贴
+
+<a name="data-privacy"></a>
 ## 数据与隐私 / Data & Privacy
-- 本地存储键 / LocalStorage keys: `rh_api_key`, `rh_ai_apps_v2`, `rh_prompt_templates`, `rh_settings`.
-- 解析 Debug：`rh_last_parse_debug` / Parse debug key: `rh_last_parse_debug`.
-- 网络请求仅面向 RunningHub 域名 / Network requests are limited to RunningHub domains.
 
+| 类型 | 内容 |
+| --- | --- |
+| LocalStorage | `rh_api_key`, `rh_ai_apps_v2`, `rh_prompt_templates`, `rh_settings` |
+| Parse Debug | `rh_last_parse_debug` |
+| 网络请求 | 仅访问 RunningHub 域名 |
+
+<a name="permissions"></a>
 ## 权限说明 / Permissions
-- `localFileSystem: fullAccess`：临时文件、诊断报告读写 / For temp files and diagnostic reports.
-- `launchProcess`：打开外部链接（如打赏二维码） / Open external links (e.g., donation QR).
-- `network`：访问 RunningHub API 与资源域名 / Access RunningHub API and assets.
 
+| 权限 | 用途 |
+| --- | --- |
+| `localFileSystem: fullAccess` | 临时文件与诊断报告读写 |
+| `launchProcess` | 打开外部链接(如打赏二维码) |
+| `network` | 访问 RunningHub API 与资源域名 |
+
+<a name="structure"></a>
 ## 项目结构 / Project Structure
-- `index.html`：面板 UI 结构 / Panel UI layout.
-- `index.js`：启动与控制器初始化 / Bootstrap and controllers.
-- `style.css`：UI 样式 / UI styles.
-- `src/controllers`：工作台/设置/工具箱控制器 / Workspace/Settings/Tools controllers.
-- `src/services`：RunningHub API、PS 操作、存储逻辑 / RunningHub APIs, PS operations, storage.
-- `src/diagnostics`：环境诊断 / Environment diagnostics.
-- `src/shared`：输入规范与 DOM 工具 / Input schema and DOM helpers.
-- `docs/`：设计与诊断说明 / Design and diagnostic notes.
 
+```text
+.
+├─ index.html             # 面板 UI 结构
+├─ index.js               # 启动与控制器初始化
+├─ style.css              # UI 样式
+├─ src/
+│  ├─ controllers/        # 工作台 / 设置 / 工具箱控制器
+│  ├─ services/           # RunningHub API、PS 操作、存储逻辑
+│  ├─ diagnostics/        # 环境诊断
+│  └─ shared/             # 输入规范与 DOM 工具
+└─ tools/                 # 辅助脚本
+```
+
+<a name="development"></a>
 ## 开发与调试 / Development
-- 无需构建步骤，直接由 UXP 加载 / No build step required; load directly in UXP Developer Tool.
-- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/services` / Main entry points.
-- 日志查看：使用 UXP Developer Console / Use UXP Developer Console for logs.
-- 调试解析：设置页提供“Load Parse Debug” / Parse debug can be loaded from Settings.
+- 无需构建步骤，直接由 UXP Developer Tool 加载
+- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/services`
+- 日志查看：使用 UXP Developer Console
+- 解析调试：设置页提供 “Load Parse Debug”
 
+<a name="faq"></a>
 ## 常见问题 / FAQ
-- API Key 无效？确认 RunningHub 后台生成的 API Key，账户余额与权限正常 / Ensure the API key is valid and the account has balance/permissions.
-- 解析失败？尝试不同应用 URL/ID，或查看 Parse Debug 信息 / Try different IDs/URLs and inspect Parse Debug.
-- 任务超时？提高超时设置或稍后在 RunningHub 任务列表查看 / Increase timeout or check RunningHub task list later.
-- 智能回贴效果不理想？切换为“普通”策略 / Switch paste strategy to Normal.
-- 内容识别填充不可用？确保有有效选区 / Content-Aware Fill requires a selection.
 
+<details>
+<summary><strong>API Key 无效怎么办</strong></summary>
+
+确认 RunningHub 后台生成的 API Key，账户余额与权限正常。
+
+</details>
+
+<details>
+<summary><strong>解析失败怎么办</strong></summary>
+
+尝试不同应用 URL/ID，或查看 Parse Debug 信息。
+
+</details>
+
+<details>
+<summary><strong>任务超时怎么办</strong></summary>
+
+提高超时设置或稍后在 RunningHub 任务列表查看。
+
+</details>
+
+<details>
+<summary><strong>智能回贴不理想</strong></summary>
+
+切换为 “普通” 策略。
+
+</details>
+
+<details>
+<summary><strong>内容识别填充不可用</strong></summary>
+
+确保有有效选区。
+
+</details>
+
+<a name="roadmap"></a>
 ## 路线图 / Roadmap
-- 失败场景的手动参数编辑器 / Manual parameter editor for parse failures.
-- 更多 PS 工具与预设 / More PS tools and presets.
+- 失败场景的手动参数编辑器
+- 更多 PS 工具与预设
 
+<a name="version"></a>
 ## 版本 / Version
-- 当前版本：`v2.0.3`（见 `manifest.json`） / Current version: `v2.0.3` (see `manifest.json`).
+- 当前版本：`v2.0.3` (见 `manifest.json`)
 
+<a name="license"></a>
 ## 许可 / License
 - Apache-2.0
 
+<a name="support"></a>
 ## 支持与反馈 / Support
-- GitHub Issues 或联系 QQ: 1048855084 / GitHub Issues or QQ: 1048855084.
+- GitHub Issues 或联系 QQ: 1048855084
