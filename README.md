@@ -108,7 +108,7 @@ RunningHub AI 工作流在 Photoshop 内一键运行的 UXP 插件，支持自�
 - 更多 PS 工具与预设 / More PS tools and presets.
 
 ## 版本 / Version
-- 当前版本：`v2.0.2`（见 `manifest.json`） / Current version: `v2.0.2` (see `manifest.json`).
+- 当前版本：`v2.0.3`（见 `manifest.json`） / Current version: `v2.0.3` (see `manifest.json`).
 
 ## 许可 / License
 - Apache-2.0
