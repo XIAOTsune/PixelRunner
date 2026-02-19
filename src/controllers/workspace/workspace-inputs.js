@@ -14,12 +14,25 @@ function createWorkspaceInputs(deps) {
     updateRunButtonUI,
     openTemplatePicker
   } = deps;
-  const PROMPT_MAX_CHARS = 500;
+  const LARGE_PROMPT_WARNING_CHARS = 5000;
+  const warnedPromptKeys = new Set();
 
-  function clampToMaxChars(value, maxChars) {
-    return Array.from(String(value == null ? "" : value))
-      .slice(0, Math.max(0, Number(maxChars) || 0))
-      .join("");
+  function getTextLength(value) {
+    return Array.from(String(value == null ? "" : value)).length;
+  }
+
+  function warnLargePromptLength(key, value) {
+    const length = getTextLength(value);
+    if (length < LARGE_PROMPT_WARNING_CHARS) {
+      warnedPromptKeys.delete(key);
+      return;
+    }
+    if (warnedPromptKeys.has(key)) return;
+    warnedPromptKeys.add(key);
+    log(
+      `提示词长度已达到 ${length} 字符。插件不限制长度，但 RunningHub 侧可能存在长度限制，请以接口返回为准。`,
+      "warn"
+    );
   }
 
   function revokePreviewUrl(value) {
@@ -265,7 +278,6 @@ function createWorkspaceInputs(deps) {
         inputEl = document.createElement("textarea");
         inputEl.rows = promptLike ? 3 : 1;
         inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
-        if (promptLike) inputEl.maxLength = PROMPT_MAX_CHARS;
         wrapper.classList.add("full-width");
 
         if (promptLike) {
@@ -275,9 +287,10 @@ function createWorkspaceInputs(deps) {
           btnTemplate.textContent = "预设";
           btnTemplate.addEventListener("click", () => {
             openTemplatePicker((content) => {
-              const limitedContent = clampToMaxChars(content, PROMPT_MAX_CHARS);
-              inputEl.value = limitedContent;
-              setInputValueByKey(key, limitedContent);
+              const templateContent = String(content == null ? "" : content);
+              inputEl.value = templateContent;
+              setInputValueByKey(key, templateContent);
+              if (promptLike) warnLargePromptLength(key, templateContent);
               inputEl.style.borderColor = "#4caf50";
               setTimeout(() => {
                 inputEl.style.borderColor = "";
@@ -298,24 +311,21 @@ function createWorkspaceInputs(deps) {
       }
 
       const initialTextValue = String(input.default || "");
-      inputEl.value = promptLike ? clampToMaxChars(initialTextValue, PROMPT_MAX_CHARS) : initialTextValue;
+      inputEl.value = initialTextValue;
       if (type === "number") {
         const numericDefault = Number(input.default);
         const storedValue = Number.isFinite(numericDefault) ? numericDefault : 0;
         setInputValueByKey(key, storedValue);
       } else {
         setInputValueByKey(key, inputEl.value);
+        if (promptLike) warnLargePromptLength(key, inputEl.value);
       }
       inputEl.addEventListener("input", (event) => {
-        let nextValue = event.target.value;
-        if (promptLike) {
-          const limited = clampToMaxChars(nextValue, PROMPT_MAX_CHARS);
-          if (limited !== nextValue) event.target.value = limited;
-          nextValue = limited;
-        }
+        const nextValue = event.target.value;
         const numeric = Number(nextValue);
         const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
         setInputValueByKey(key, storedValue);
+        if (promptLike) warnLargePromptLength(key, nextValue);
       });
     }
 
@@ -406,6 +416,7 @@ function createWorkspaceInputs(deps) {
   }
 
   function renderDynamicInputs(appItem) {
+    warnedPromptKeys.clear();
     Object.values(state.inputValues || {}).forEach(revokePreviewUrl);
     state.currentApp = appItem || null;
     state.inputValues = {};

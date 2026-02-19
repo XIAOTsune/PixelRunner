@@ -6,7 +6,7 @@ const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnosti
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
 
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
-const TEMPLATE_MAX_CHARS = 500;
+const LARGE_PROMPT_WARNING_CHARS = 5000;
 const dom = {};
 
 function log(msg) {
@@ -181,21 +181,24 @@ function getDuplicateMeta(list) {
   });
 }
 
-function clampToMaxChars(value, maxChars) {
-  return Array.from(String(value == null ? "" : value))
-    .slice(0, Math.max(0, Number(maxChars) || 0))
-    .join("");
+function getTextLength(value) {
+  return Array.from(String(value == null ? "" : value)).length;
 }
 
-function enforceTemplateFieldLimits() {
-  if (dom.templateTitleInput) {
-    const nextTitle = clampToMaxChars(dom.templateTitleInput.value, TEMPLATE_MAX_CHARS);
-    if (nextTitle !== dom.templateTitleInput.value) dom.templateTitleInput.value = nextTitle;
+function updateTemplateLengthHint() {
+  if (!dom.templateLengthHint) return;
+  const titleLen = getTextLength(dom.templateTitleInput && dom.templateTitleInput.value);
+  const contentLen = getTextLength(dom.templateContentInput && dom.templateContentInput.value);
+  const isLarge = titleLen >= LARGE_PROMPT_WARNING_CHARS || contentLen >= LARGE_PROMPT_WARNING_CHARS;
+
+  if (isLarge) {
+    dom.templateLengthHint.textContent = `提示：当前模板较长（标题 ${titleLen} / 内容 ${contentLen} 字符）。插件不限制长度，但 RunningHub 侧可能存在长度限制，请以接口返回为准。`;
+    dom.templateLengthHint.style.color = "#ffb74d";
+    return;
   }
-  if (dom.templateContentInput) {
-    const nextContent = clampToMaxChars(dom.templateContentInput.value, TEMPLATE_MAX_CHARS);
-    if (nextContent !== dom.templateContentInput.value) dom.templateContentInput.value = nextContent;
-  }
+
+  dom.templateLengthHint.textContent = "提示：插件不限制模板长度；超长提示词可能触发 RunningHub 侧限制，请以接口返回为准。";
+  dom.templateLengthHint.style.color = "";
 }
 
 function safeConfirm(message) {
@@ -376,9 +379,8 @@ function renderSavedAppsList() {
 }
 
 function saveTemplate() {
-  enforceTemplateFieldLimits();
-  const title = clampToMaxChars(String(dom.templateTitleInput.value || "").trim(), TEMPLATE_MAX_CHARS);
-  const content = clampToMaxChars(String(dom.templateContentInput.value || "").trim(), TEMPLATE_MAX_CHARS);
+  const title = String(dom.templateTitleInput.value || "").trim();
+  const content = String(dom.templateContentInput.value || "").trim();
 
   if (!title || !content) {
     alert("标题和内容不能为空");
@@ -393,6 +395,7 @@ function saveTemplate() {
   emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: existingByTitle ? "updated" : "saved" });
   dom.templateTitleInput.value = "";
   dom.templateContentInput.value = "";
+  updateTemplateLengthHint();
   renderSavedTemplates();
 }
 
@@ -499,6 +502,7 @@ function onSavedTemplatesListClick(event) {
     }
     dom.templateTitleInput.value = String(template.title || "");
     dom.templateContentInput.value = String(template.content || "");
+    updateTemplateLengthHint();
     return;
   }
 
@@ -602,6 +606,7 @@ function initSettingsController() {
     "templateContentInput",
     "btnSaveTemplate",
     "savedTemplatesList",
+    "templateLengthHint",
     "btnRunEnvDoctor",
     "btnLoadLatestDiag",
     "btnLoadParseDebug",
@@ -635,8 +640,6 @@ function initSettingsController() {
   const settings = store.getSettings();
   dom.pollIntervalInput.value = settings.pollInterval;
   dom.timeoutInput.value = settings.timeout;
-  if (dom.templateTitleInput) dom.templateTitleInput.maxLength = TEMPLATE_MAX_CHARS;
-  if (dom.templateContentInput) dom.templateContentInput.maxLength = TEMPLATE_MAX_CHARS;
 
   rebindEvent(dom.btnSaveApiKey, "click", saveApiKeyAndSettings);
   rebindEvent(dom.btnTestApiKey, "click", testApiKey);
@@ -646,8 +649,8 @@ function initSettingsController() {
   rebindEvent(dom.btnRunEnvDoctor, "click", runEnvironmentDoctorManual);
   rebindEvent(dom.btnLoadLatestDiag, "click", loadLatestDiagnosticReport);
   rebindEvent(dom.btnLoadParseDebug, "click", loadParseDebugReport);
-  rebindEvent(dom.templateTitleInput, "input", enforceTemplateFieldLimits);
-  rebindEvent(dom.templateContentInput, "input", enforceTemplateFieldLimits);
+  rebindEvent(dom.templateTitleInput, "input", updateTemplateLengthHint);
+  rebindEvent(dom.templateContentInput, "input", updateTemplateLengthHint);
   rebindEvent(dom.savedAppsList, "click", onSavedAppsListClick);
   rebindEvent(dom.envDiagnosticsHeader, "click", onEnvDiagnosticsToggleClick);
   rebindEvent(dom.savedTemplatesList, "click", onSavedTemplatesListClick);
@@ -659,6 +662,7 @@ function initSettingsController() {
   rebindEvent(dom.advancedSettingsHeader, "click", onAdvancedSettingsToggleClick);
 
   syncSettingsLists();
+  updateTemplateLengthHint();
   loadLatestDiagnosticReport();
 }
 

@@ -273,12 +273,13 @@
       <div class="setting-section-title">提示词模板</div>
       <div class="control-group">
         <label for="templateTitleInput">模板标题</label>
-        <input id="templateTitleInput" type="text" maxlength="500" placeholder="例如: 高质量二次元" />
+        <input id="templateTitleInput" type="text" placeholder="例如: 高质量二次元" />
       </div>
       <div class="control-group">
         <label for="templateContentInput">模板内容</label>
-        <textarea id="templateContentInput" rows="3" maxlength="500" placeholder="输入模板文本"></textarea>
+        <textarea id="templateContentInput" rows="3" placeholder="输入模板文本"></textarea>
       </div>
+      <div id="templateLengthHint" class="setting-hint">提示：插件不限制模板长度；超长提示词可能触发 RunningHub 侧限制，请以接口返回为准。</div>
       <button id="btnSaveTemplate" type="button" class="main-btn main-btn-primary">保存模板</button>
       <div id="savedTemplatesList" class="saved-list"></div>
     </div>

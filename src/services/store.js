@@ -1,6 +1,5 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
-const PROMPT_TEMPLATE_MAX_CHARS = 500;
 const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
 const LEGACY_PASTE_STRATEGY_MAP = {
   stretch: "normal",
@@ -9,12 +8,6 @@ const LEGACY_PASTE_STRATEGY_MAP = {
   alphaTrim: "smart",
   edgeAuto: "smart"
 };
-
-function clampToMaxChars(value, maxChars) {
-  return Array.from(String(value == null ? "" : value))
-    .slice(0, Math.max(0, Number(maxChars) || 0))
-    .join("");
-}
 
 function readJson(key, fallback) {
   const raw = localStorage.getItem(key);
@@ -122,8 +115,8 @@ function savePromptTemplates(templates) {
     const source = item && typeof item === "object" ? item : {};
     return {
       ...source,
-      title: clampToMaxChars(String(source.title || "").trim(), PROMPT_TEMPLATE_MAX_CHARS),
-      content: clampToMaxChars(String(source.content || ""), PROMPT_TEMPLATE_MAX_CHARS)
+      title: String(source.title || "").trim(),
+      content: String(source.content || "")
     };
   });
   writeJson(STORAGE_KEYS.PROMPT_TEMPLATES, normalized);
@@ -133,8 +126,8 @@ function addPromptTemplate(template) {
   const list = getPromptTemplates();
   list.push({
     id: generateId(),
-    title: clampToMaxChars(String(template.title || "").trim(), PROMPT_TEMPLATE_MAX_CHARS),
-    content: clampToMaxChars(String(template.content || ""), PROMPT_TEMPLATE_MAX_CHARS),
+    title: String(template.title || "").trim(),
+    content: String(template.content || ""),
     createdAt: Date.now()
   });
   savePromptTemplates(list);
