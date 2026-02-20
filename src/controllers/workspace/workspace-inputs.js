@@ -14,7 +14,7 @@ function createWorkspaceInputs(deps) {
     updateRunButtonUI,
     openTemplatePicker
   } = deps;
-  const LARGE_PROMPT_WARNING_CHARS = 5000;
+  const LARGE_PROMPT_WARNING_CHARS = 4000;
   const warnedPromptKeys = new Set();
 
   function getTextLength(value) {
@@ -30,7 +30,7 @@ function createWorkspaceInputs(deps) {
     if (warnedPromptKeys.has(key)) return;
     warnedPromptKeys.add(key);
     log(
-      `提示词长度已达到 ${length} 字符。插件不限制长度，但 RunningHub 侧可能存在长度限制，请以接口返回为准。`,
+      `提示词长度已达到 ${length} 字符。建议控制在 4000 字符内，避免 RunningHub 侧拒绝。`,
       "warn"
     );
   }
@@ -276,8 +276,18 @@ function createWorkspaceInputs(deps) {
       const isLongText = promptLike || (type === "text" && getInputOptions(input).length === 0);
       if (isLongText) {
         inputEl = document.createElement("textarea");
-        inputEl.rows = promptLike ? 3 : 1;
+        inputEl.rows = promptLike ? 6 : 2;
         inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
+        inputEl.wrap = "soft";
+        inputEl.style.paddingRight = "14px";
+        inputEl.style.overflowX = "hidden";
+        if (promptLike) {
+          inputEl.classList.add("prompt-input-textarea");
+          inputEl.style.fontFamily = `"Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif`;
+          inputEl.style.minHeight = "120px";
+          inputEl.style.maxHeight = "260px";
+          inputEl.style.overflowY = "auto";
+        }
         wrapper.classList.add("full-width");
 
         if (promptLike) {
@@ -286,15 +296,22 @@ function createWorkspaceInputs(deps) {
           btnTemplate.type = "button";
           btnTemplate.textContent = "预设";
           btnTemplate.addEventListener("click", () => {
-            openTemplatePicker((content) => {
-              const templateContent = String(content == null ? "" : content);
-              inputEl.value = templateContent;
-              setInputValueByKey(key, templateContent);
-              if (promptLike) warnLargePromptLength(key, templateContent);
-              inputEl.style.borderColor = "#4caf50";
-              setTimeout(() => {
-                inputEl.style.borderColor = "";
-              }, 300);
+            openTemplatePicker({
+              mode: "multiple",
+              maxSelection: 5,
+              onApply: (result) => {
+                const templateContent = String(
+                  result && Object.prototype.hasOwnProperty.call(result, "content") ? result.content : ""
+                );
+                if (!templateContent.trim()) return;
+                inputEl.value = templateContent;
+                setInputValueByKey(key, templateContent);
+                if (promptLike) warnLargePromptLength(key, templateContent);
+                inputEl.style.borderColor = "#4caf50";
+                setTimeout(() => {
+                  inputEl.style.borderColor = "";
+                }, 300);
+              }
             });
           });
           headerRow.appendChild(btnTemplate);

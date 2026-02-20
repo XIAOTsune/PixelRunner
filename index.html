@@ -277,10 +277,14 @@
       </div>
       <div class="control-group">
         <label for="templateContentInput">模板内容</label>
-        <textarea id="templateContentInput" rows="3" placeholder="输入模板文本"></textarea>
+        <textarea id="templateContentInput" rows="6" placeholder="输入模板文本"></textarea>
       </div>
-      <div id="templateLengthHint" class="setting-hint">提示：插件不限制模板长度；超长提示词可能触发 RunningHub 侧限制，请以接口返回为准。</div>
-      <button id="btnSaveTemplate" type="button" class="main-btn main-btn-primary">保存模板</button>
+      <div id="templateLengthHint" class="setting-hint">提示：插件本地不会截断模板内容；建议单条提示词控制在 4000 字符内。</div>
+      <div class="inline-row">
+        <button id="btnSaveTemplate" type="button" class="main-btn main-btn-primary">保存模板</button>
+        <button id="btnExportTemplatesJson" type="button" class="main-btn">导出 JSON</button>
+        <button id="btnImportTemplatesJson" type="button" class="main-btn">导入 JSON</button>
+      </div>
       <div id="savedTemplatesList" class="saved-list"></div>
     </div>
 
@@ -333,10 +337,14 @@
   <div id="templateModal" class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
-        选择提示词模板
+        <span id="templateModalTitle">选择提示词模板</span>
         <button id="templateModalClose" class="modal-close" type="button">&times;</button>
       </div>
       <div id="templateList" class="template-list"></div>
+      <div id="templateModalActions" class="template-modal-actions" style="display:none;">
+        <div id="templateModalSelectionInfo" class="template-modal-selection-info">已选择 0 / 5</div>
+        <button id="btnApplyTemplateSelection" type="button" class="main-btn main-btn-primary">应用组合</button>
+      </div>
     </div>
   </div>
 

@@ -4,9 +4,17 @@ const { normalizeAppId, escapeHtml } = require("../utils");
 const { APP_EVENTS, emitAppEvent } = require("../events");
 const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
+let localFileSystem = null;
+try {
+  const { storage } = require("uxp");
+  localFileSystem = storage && storage.localFileSystem;
+} catch (_) {
+  localFileSystem = null;
+}
 
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
-const LARGE_PROMPT_WARNING_CHARS = 5000;
+const LARGE_PROMPT_WARNING_CHARS = 4000;
+const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
 const dom = {};
 
 function log(msg) {
@@ -192,12 +200,12 @@ function updateTemplateLengthHint() {
   const isLarge = titleLen >= LARGE_PROMPT_WARNING_CHARS || contentLen >= LARGE_PROMPT_WARNING_CHARS;
 
   if (isLarge) {
-    dom.templateLengthHint.textContent = `提示：当前模板较长（标题 ${titleLen} / 内容 ${contentLen} 字符）。插件不限制长度，但 RunningHub 侧可能存在长度限制，请以接口返回为准。`;
+    dom.templateLengthHint.textContent = `提示：当前模板较长（标题 ${titleLen} / 内容 ${contentLen} 字符）。建议控制在 4000 字符内，避免 RunningHub 侧拒绝。`;
     dom.templateLengthHint.style.color = "#ffb74d";
     return;
   }
 
-  dom.templateLengthHint.textContent = "提示：插件不限制模板长度；超长提示词可能触发 RunningHub 侧限制，请以接口返回为准。";
+  dom.templateLengthHint.textContent = "提示：插件本地不会截断模板内容；建议单条提示词控制在 4000 字符内。";
   dom.templateLengthHint.style.color = "";
 }
 
@@ -380,9 +388,9 @@ function renderSavedAppsList() {
 
 function saveTemplate() {
   const title = String(dom.templateTitleInput.value || "").trim();
-  const content = String(dom.templateContentInput.value || "").trim();
+  const content = String(dom.templateContentInput.value || "");
 
-  if (!title || !content) {
+  if (!title || !content.trim()) {
     alert("标题和内容不能为空");
     return;
   }
@@ -397,6 +405,120 @@ function saveTemplate() {
   dom.templateContentInput.value = "";
   updateTemplateLengthHint();
   renderSavedTemplates();
+}
+
+function getTemplateTitleKey(title) {
+  return String(title || "").trim().toLowerCase();
+}
+
+function resolvePickedEntry(picked) {
+  if (!picked) return null;
+  if (Array.isArray(picked)) return picked[0] || null;
+  return picked;
+}
+
+function normalizeReadText(value) {
+  if (typeof value === "string") return value;
+  if (value instanceof ArrayBuffer) {
+    try {
+      return new TextDecoder("utf-8").decode(new Uint8Array(value));
+    } catch (_) {
+      return "";
+    }
+  }
+  if (ArrayBuffer.isView(value)) {
+    try {
+      const view = value;
+      return new TextDecoder("utf-8").decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    } catch (_) {
+      return "";
+    }
+  }
+  return String(value == null ? "" : value);
+}
+
+async function exportTemplatesJson() {
+  if (!localFileSystem || typeof localFileSystem.getFileForSaving !== "function") {
+    alert("当前环境不支持导出文件");
+    return;
+  }
+
+  try {
+    const bundle = store.buildPromptTemplatesBundle();
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const defaultName = `${TEMPLATE_EXPORT_FILENAME_PREFIX}_${dateTag}.json`;
+    const targetFile = await localFileSystem.getFileForSaving(defaultName);
+    if (!targetFile) return;
+
+    await targetFile.write(JSON.stringify(bundle, null, 2));
+    const savedPath = targetFile.nativePath || targetFile.name || defaultName;
+    appendEnvDoctorOutput(`Template export success: ${savedPath}`);
+    alert(`导出完成：${bundle.templates.length} 条模板`);
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error || "unknown");
+    appendEnvDoctorOutput(`Template export failed: ${message}`);
+    alert(`导出失败: ${message}`);
+  }
+}
+
+async function importTemplatesJson() {
+  if (!localFileSystem || typeof localFileSystem.getFileForOpening !== "function") {
+    alert("当前环境不支持导入文件");
+    return;
+  }
+
+  try {
+    const picked = await localFileSystem.getFileForOpening({ allowMultiple: false, types: ["json"] });
+    const entry = resolvePickedEntry(picked);
+    if (!entry) return;
+
+    const rawText = normalizeReadText(await entry.read());
+    const importedTemplates = store.parsePromptTemplatesBundle(rawText);
+    const mergedTemplates = [...store.getPromptTemplates()];
+    const titleIndexMap = new Map();
+    mergedTemplates.forEach((template, index) => {
+      const key = getTemplateTitleKey(template.title);
+      if (!key) return;
+      if (!titleIndexMap.has(key)) titleIndexMap.set(key, index);
+    });
+
+    let addedCount = 0;
+    let replacedCount = 0;
+    importedTemplates.forEach((template) => {
+      const key = getTemplateTitleKey(template.title);
+      if (key && titleIndexMap.has(key)) {
+        const targetIndex = titleIndexMap.get(key);
+        const previous = mergedTemplates[targetIndex] || {};
+        mergedTemplates[targetIndex] = {
+          ...template,
+          id: previous.id || template.id,
+          createdAt: previous.createdAt || template.createdAt
+        };
+        replacedCount += 1;
+        return;
+      }
+      mergedTemplates.push(template);
+      if (key) titleIndexMap.set(key, mergedTemplates.length - 1);
+      addedCount += 1;
+    });
+
+    store.savePromptTemplates(mergedTemplates);
+    emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, {
+      reason: "imported",
+      added: addedCount,
+      replaced: replacedCount,
+      total: mergedTemplates.length
+    });
+    renderSavedTemplates();
+    appendEnvDoctorOutput(
+      `Template import success: total=${mergedTemplates.length}, added=${addedCount}, replaced=${replacedCount}`
+    );
+    alert(`导入完成：新增 ${addedCount}，覆盖 ${replacedCount}，当前共 ${mergedTemplates.length} 条模板`);
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error || "unknown");
+    appendEnvDoctorOutput(`Template import failed: ${message}`);
+    alert(`导入失败: ${message}`);
+  }
 }
 
 function renderSavedTemplates() {
@@ -605,6 +727,8 @@ function initSettingsController() {
     "templateTitleInput",
     "templateContentInput",
     "btnSaveTemplate",
+    "btnExportTemplatesJson",
+    "btnImportTemplatesJson",
     "savedTemplatesList",
     "templateLengthHint",
     "btnRunEnvDoctor",
@@ -646,6 +770,8 @@ function initSettingsController() {
   rebindEvent(dom.btnParseApp, "click", parseApp);
   rebindEvent(dom.toggleApiKey, "click", onToggleApiKey);
   rebindEvent(dom.btnSaveTemplate, "click", saveTemplate);
+  rebindEvent(dom.btnExportTemplatesJson, "click", exportTemplatesJson);
+  rebindEvent(dom.btnImportTemplatesJson, "click", importTemplatesJson);
   rebindEvent(dom.btnRunEnvDoctor, "click", runEnvironmentDoctorManual);
   rebindEvent(dom.btnLoadLatestDiag, "click", loadLatestDiagnosticReport);
   rebindEvent(dom.btnLoadParseDebug, "click", loadParseDebugReport);

@@ -1,187 +1,169 @@
-# 提示词卡片系统增强计划
+# 提示词模板增强工作清单与实现文档
 
-## 项目概述
+## 1. 目标与范围
 
-为RunningHub Photoshop插件增加提示词模板的JSON批量导入导出功能，以及在工作台支持多选提示词组合输入。
+本次改造目标：
 
-## 技术方案
+1. 在设置页「提示词模板」区域增加 **JSON 导入/导出**。
+2. 统一提示词模板 JSON 文件格式，支持跨用户共享与批量导入。
+3. 在 RH 工作台的提示词输入「预设」按钮，支持 **最多同时选择 5 个模板**并组合填入。
+4. 组合时考虑 RunningHub 侧上限，按 **4000 字符**做校验。
+5. 修复提示词输入相关的“本地截断感”问题（设置页模板内容、工作区提示词输入）。
+6. 修复升级后旧用户 `timeout=90s` 覆盖新默认 `180s` 的问题（引入设置迁移策略）。
 
-### 1. JSON导入导出功能
+不在本次范围：
 
-#### 1.1 JSON格式规范
+1. 不改 RunningHub 接口协议。
+2. 不改 AI 应用解析逻辑主流程（仅对提示词模板与设置迁移做增强）。
+3. 不改插件整体视觉风格。
+
+---
+
+## 2. 交付物清单
+
+1. 代码改造（`settings-controller` / `workspace-controller` / `workspace-inputs` / `store` / `index.html` / `style.css`）。
+2. 统一 JSON 文件格式规范。
+3. 设置迁移策略（schema version）。
+4. 功能验收清单（手动测试项）。
+5. 本文档（用于跟踪与复盘）。
+
+---
+
+## 3. 工作清单（可勾选）
+
+## 阶段 A：数据层与迁移
+- [x] A1. 为设置增加 `schemaVersion`（如 `2`），保存时写入版本号。
+- [x] A2. 在 `getSettings()` 中加入迁移：旧版本配置若 `timeout < 180`，自动提升到 `180` 并回写。
+- [x] A3. 提示词模板数据规范化：`id` 唯一、`title/content` 合法、时间字段兜底。
+- [x] A4. 提供模板 JSON 构建/解析能力（导出 bundle、导入解析）。
+
+## 阶段 B：设置页 JSON 导入/导出
+- [x] B1. 设置页新增按钮：`导出 JSON`、`导入 JSON`。
+- [x] B2. 导出逻辑：导出当前全部模板到 JSON 文件。
+- [x] B3. 导入逻辑：读取 JSON -> 校验格式 -> 合并模板（同标题覆盖）-> 保存并刷新。
+- [x] B4. 导入/导出异常提示与日志记录（取消、格式错误、读写失败）。
+
+## 阶段 C：工作台模板组合（最多 5 个）
+- [x] C1. 模板弹窗支持两种模式：单选模式 / 多选模式。
+- [x] C2. 预设按钮进入多选模式，最多选择 5 项。
+- [x] C3. 组合规则：按选中顺序拼接为一个提示词文本（建议换行拼接）。
+- [x] C4. 组合长度校验：超过 4000 字符阻止应用并提示。
+
+## 阶段 D：输入长度与稳定性修复
+- [x] D1. 设置页模板内容保存不做不必要截断（保留用户原始内容）。
+- [x] D2. 工作区提示词输入保留完整文本，不做本地长度截断。
+- [x] D3. 提示文案统一：插件本地不截断，建议控制在 4000 字符内。
+
+## 阶段 E：联调与验收
+- [ ] E1. 导出 -> 导入回环验证（数据一致性）。
+- [ ] E2. 导入他人 JSON 验证（兼容性）。
+- [ ] E3. 多模板组合验证（1~5 个、超限阻断）。
+- [ ] E4. 升级迁移验证（旧 `90s` 自动提升）。
+- [ ] E5. 回归验证（现有模板编辑/删除、工作台运行流程不回归）。
+
+---
+
+## 4. 统一 JSON 格式规范（提案）
 
 ```json
 {
-  "version": "1.0",
-  "exportedAt": "2026-02-20T07:30:00.000Z",
-  "app": "RunningHub Photoshop Plugin",
+  "format": "pixelrunner.prompt-templates",
+  "version": 1,
+  "exportedAt": "2026-02-20T12:34:56.000Z",
   "templates": [
     {
-      "id": "high_quality",
+      "id": "id_1700000000000_xxx",
       "title": "高质量二次元",
-      "content": "masterpiece, best quality, anime style...",
+      "content": "masterpiece, best quality, ...",
       "createdAt": 1700000000000
     }
   ]
 }
 ```
 
-#### 1.2 导出功能实现
+规范说明：
 
-**位置**: [`src/controllers/settings-controller.js`](src/controllers/settings-controller.js)
+1. `format`：固定值，用于识别文件类型。
+2. `version`：格式版本，当前为 `1`。
+3. `templates`：模板数组，`title/content` 必填。
+4. 导入时允许：
+   - 标准 bundle（如上结构）。
+   - 纯数组（兼容场景），但会统一规范化后保存。
 
-**新增函数**:
-- `exportTemplatesToJson()` - 导出所有模板到JSON文件
-- `downloadJsonFile(data, filename)` - 触发文件下载
+---
 
-**UI修改**: 在提示词模板区域添加"导出JSON"按钮
+## 5. 关键实现设计
 
-#### 1.3 导入功能实现
+## 5.1 导入合并策略
 
-**新增函数**:
-- `importTemplatesFromJson(file)` - 从JSON文件导入模板
-- `validateImportData(data)` - 验证导入数据格式
-- `mergeTemplates(existing, imported)` - 合并模板（重复title覆盖）
+默认策略：**按标题去重，导入覆盖同标题模板**。
 
-**UI修改**: 在提示词模板区域添加"导入JSON"按钮和隐藏的文件输入框
+1. 读取现有模板列表。
+2. 以 `title.trim().toLowerCase()` 建立索引。
+3. 导入模板命中同标题时覆盖内容（保留现有稳定 ID）。
+4. 未命中则追加。
+5. 保存时再次做模板规范化，保证 `id` 唯一。
 
-### 2. 提示词组合功能
+原因：
 
-#### 2.1 多选UI设计
+1. 避免重复模板堆积。
+2. 保留现有记录 ID，减少删除/编辑引用问题。
 
-**位置**: [`src/controllers/workspace-controller.js`](src/controllers/workspace-controller.js)
+## 5.2 多模板组合规则
 
-**修改函数**:
-- `renderTemplatePickerList()` - 支持多选渲染
-- `openTemplatePicker()` - 支持多选模式参数
+1. 选择上限：`maxSelect = 5`。
+2. 组合顺序：按用户点击顺序。
+3. 拼接方式：`"\n"`（换行）拼接。
+4. 长度校验：组合后字符数 `<= 4000` 才允许应用。
 
-**新增状态**:
-```javascript
-state.selectedTemplates = new Set(); // 已选中的模板ID
-state.isMultiSelectMode = false;     // 是否多选模式
-```
+## 5.3 超时迁移策略
 
-#### 2.2 字符限制逻辑
+1. 保存设置时写入 `schemaVersion`。
+2. 读取设置时：
+   - 若是旧版本配置（无 version 或 version 过低），且 `timeout < 180`；
+   - 自动提升到 `180` 并回写。
 
-**常量定义**:
-```javascript
-const MAX_TEMPLATE_SELECTION = 5;    // 最多选择5个
-const MAX_PROMPT_LENGTH = 4000;      // RunningHub限制4000字符
-const TEMPLATE_SEPARATOR = ", ";     // 分隔符：逗号+空格
-```
+---
 
-**新增函数**:
-- `calculateCombinedLength(templateIds)` - 计算组合后字符数
-- `validateSelection(templateIds)` - 验证选择是否合法
+## 6. 验收标准（DoD）
 
-#### 2.3 交互设计
+1. 设置页可成功导出当前全部模板为 JSON 文件。
+2. 可导入自己或他人的导出文件，导入后模板可正常编辑/删除/使用。
+3. 工作台预设支持最多 5 个模板组合，并能正确写入提示词输入框。
+4. 超过 4000 字符时有明确提示，且不会提交超限组合。
+5. 设置页与工作区提示词输入不出现插件本地截断。
+6. 旧用户 `timeout=90s` 升级后自动迁移到 `180s`（且可再次手动调整）。
+7. 原有功能无明显回归（解析、运行、下载回贴、模板 CRUD）。
 
-**单选模式**（向后兼容）:
-- 点击模板标题/内容区域 → 直接选择并关闭模态框
+---
 
-**多选模式**:
-- 点击模板左侧checkbox → 切换选中状态
-- 底部显示"已选择 X/5"和字符计数
-- 超过4000字符时显示警告并禁用确认按钮
-- "确认组合"按钮将选中的提示词用", "连接填入输入框
+## 7. 测试用例清单
 
-### 3. 文件修改清单
+1. 导出空模板列表（或仅默认模板）是否成功。
+2. 导出后立即导入，条目数与内容一致。
+3. 导入格式错误 JSON，提示是否清晰。
+4. 导入包含重复标题模板，是否按策略覆盖。
+5. 工作台选择 1/3/5 个模板组合是否正确。
+6. 工作台尝试选择第 6 个模板是否被拦截。
+7. 组合结果正好 4000 字符是否可用。
+8. 组合结果 4001 字符是否阻止。
+9. 旧配置 `timeout=90` 启动后是否迁移为 `180`。
+10. 新用户未配置设置时默认 `timeout=180` 是否生效。
 
-#### 3.1 HTML结构修改 ([`index.html`](index.html))
+---
 
-**设置页面 - 提示词模板区域** (约272-285行):
-```html
-<div class="setting-section">
-  <div class="setting-section-title">提示词模板</div>
-  <!-- 现有表单... -->
-  <div class="template-actions-row">
-    <button id="btnExportTemplates" type="button" class="main-btn">导出JSON</button>
-    <button id="btnImportTemplates" type="button" class="main-btn main-btn-secondary">导入JSON</button>
-    <input type="file" id="templateImportFile" accept=".json" style="display:none">
-  </div>
-  <div id="savedTemplatesList" class="saved-list"></div>
-</div>
-```
+## 8. 进度记录
 
-**工作台 - 模板选择器模态框** (约333-341行):
-```html
-<div id="templateModal" class="modal-overlay">
-  <div class="modal-content">
-    <div class="modal-header">
-      选择提示词模板
-      <button id="templateModalClose" class="modal-close" type="button">&times;</button>
-    </div>
-    <div id="templateList" class="template-list"></div>
-    <div id="templateMultiSelectControls" class="template-multi-controls" style="display:none">
-      <div class="template-selection-info">
-        <span id="templateSelectionCount">已选择 0/5</span>
-        <span id="templateCharCount">0/4000 字符</span>
-      </div>
-      <div class="template-selection-actions">
-        <button id="btnClearTemplateSelection" type="button" class="tiny-btn">清空</button>
-        <button id="btnConfirmTemplateSelection" type="button" class="main-btn main-btn-primary" disabled>确认组合</button>
-      </div>
-    </div>
-  </div>
-</div>
-```
+> 更新时间：2026-02-20
 
-#### 3.2 JavaScript修改
+当前状态：
 
-**Store服务** ([`src/services/store.js`](src/services/store.js)):
-- 可能需要添加批量导入模板的方法
+1. [x] 需求拆解与方案设计完成。
+2. [x] A-D 阶段代码改造完成（待 E 阶段联调与验收）。
 
-**设置控制器** ([`src/controllers/settings-controller.js`](src/controllers/settings-controller.js)):
-- 添加导入导出事件处理
-- 添加文件读取逻辑
+变更日志（执行中持续追加）：
 
-**工作台控制器** ([`src/controllers/workspace-controller.js`](src/controllers/workspace-controller.js)):
-- 修改模板选择器逻辑支持多选
-- 添加字符计数和验证
-
-**工作区输入模块** ([`src/controllers/workspace/workspace-inputs.js](src/controllers/workspace/workspace-inputs.js)):
-- 修改`openTemplatePicker`调用支持多选回调
-
-#### 3.3 CSS样式添加 ([`style.css`](style.css))
-
-需要添加的样式:
-- `.template-actions-row` - 导入导出按钮行
-- `.template-multi-controls` - 多选控制栏
-- `.template-selection-info` - 选择信息区
-- `.template-checkbox` - 多选checkbox样式
-- `.template-item-selected` - 选中状态样式
-
-### 4. 实现顺序
-
-1. **先实现JSON导入导出**（设置页面）
-   - 风险低，不影响现有功能
-   - 可以独立测试
-
-2. **再实现提示词组合**（工作台）
-   - 需要修改现有模板选择器
-   - 需要确保向后兼容
-
-### 5. 边界情况处理
-
-#### 导入功能
-- 空JSON文件 → 提示"文件为空"
-- 格式错误 → 提示"JSON格式错误"
-- 缺少必填字段 → 跳过该模板，记录错误
-- 超大文件 → 限制文件大小（如1MB）
-- 重复title → 覆盖现有模板
-
-#### 组合功能
-- 单个提示词超过4000字符 → 允许选择但显示警告
-- 组合后超过4000字符 → 禁用确认按钮
-- 选择0个提示词 → 禁用确认按钮
-- 快速连续点击 → 防抖处理
-
-## 验收标准
-
-- [ ] 可以成功导出所有提示词模板为JSON文件
-- [ ] 可以成功导入JSON文件并正确合并模板
-- [ ] 导入时重复title的模板会覆盖现有模板
-- [ ] 工作台预设按钮支持多选（最多5个）
-- [ ] 组合时实时显示字符数，超过4000时给出警告
-- [ ] 单选点击功能保持向后兼容
-- [ ] 所有操作有适当的用户反馈
+1. `store.js`：增加 settings schemaVersion 迁移、timeout 旧值提升、模板 bundle 导入导出解析。
+2. `settings-controller.js` + `index.html`：增加 JSON 导入导出按钮及逻辑，模板保存保留原始内容。
+3. `workspace-controller.js` + `workspace-inputs.js`：模板弹窗支持多选组合（最多 5 个），并加入 4000 字符上限拦截。
+4. `style.css`：补充模板弹窗操作区与布局样式。

@@ -1,6 +1,9 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
 const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
+const SETTINGS_SCHEMA_VERSION = 2;
+const PROMPT_TEMPLATE_BUNDLE_FORMAT = "pixelrunner.prompt-templates";
+const PROMPT_TEMPLATE_BUNDLE_VERSION = 1;
 const LEGACY_PASTE_STRATEGY_MAP = {
   stretch: "normal",
   contain: "normal",
@@ -8,6 +11,24 @@ const LEGACY_PASTE_STRATEGY_MAP = {
   alphaTrim: "smart",
   edgeAuto: "smart"
 };
+
+function toPositiveInteger(value, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.floor(num);
+}
+
+function normalizePollInterval(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_SETTINGS.pollInterval;
+  return Math.max(1, Math.min(15, Math.floor(num)));
+}
+
+function normalizeTimeout(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return DEFAULT_SETTINGS.timeout;
+  return Math.max(10, Math.min(600, Math.floor(num)));
+}
 
 function readJson(key, fallback) {
   const raw = localStorage.getItem(key);
@@ -28,7 +49,8 @@ function saveApiKey(apiKey) {
 }
 
 function getSettings() {
-  const value = readJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  const rawValue = readJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  const value = rawValue && typeof rawValue === "object" ? rawValue : {};
   const uploadMaxEdgeRaw = Number(value.uploadMaxEdge);
   const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
   let pasteStrategy = String(value.pasteStrategy || "").trim();
@@ -36,12 +58,32 @@ function getSettings() {
     pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
   }
   pasteStrategy = PASTE_STRATEGY_CHOICES.includes(pasteStrategy) ? pasteStrategy : DEFAULT_SETTINGS.pasteStrategy;
-  return {
-    pollInterval: Number(value.pollInterval) || DEFAULT_SETTINGS.pollInterval,
-    timeout: Number(value.timeout) || DEFAULT_SETTINGS.timeout,
+  let timeout = normalizeTimeout(value.timeout);
+  const schemaVersion = toPositiveInteger(value.schemaVersion, 0);
+  let shouldPersistMigration = false;
+
+  // Migrate legacy settings written before schemaVersion existed.
+  // Older releases often persisted 90s timeout; raise to current default to reduce timeout failures.
+  if (schemaVersion < SETTINGS_SCHEMA_VERSION) {
+    if (timeout < DEFAULT_SETTINGS.timeout) timeout = DEFAULT_SETTINGS.timeout;
+    shouldPersistMigration = true;
+  }
+
+  const normalizedSettings = {
+    pollInterval: normalizePollInterval(value.pollInterval),
+    timeout,
     uploadMaxEdge,
     pasteStrategy
   };
+
+  if (shouldPersistMigration) {
+    writeJson(STORAGE_KEYS.SETTINGS, {
+      ...normalizedSettings,
+      schemaVersion: SETTINGS_SCHEMA_VERSION
+    });
+  }
+
+  return normalizedSettings;
 }
 
 function saveSettings(settings) {
@@ -53,10 +95,11 @@ function saveSettings(settings) {
   }
   pasteStrategy = PASTE_STRATEGY_CHOICES.includes(pasteStrategy) ? pasteStrategy : DEFAULT_SETTINGS.pasteStrategy;
   writeJson(STORAGE_KEYS.SETTINGS, {
-    pollInterval: Number(settings.pollInterval) || DEFAULT_SETTINGS.pollInterval,
-    timeout: Number(settings.timeout) || DEFAULT_SETTINGS.timeout,
+    pollInterval: normalizePollInterval(settings.pollInterval),
+    timeout: normalizeTimeout(settings.timeout),
     uploadMaxEdge,
-    pasteStrategy
+    pasteStrategy,
+    schemaVersion: SETTINGS_SCHEMA_VERSION
   });
 }
 
@@ -106,29 +149,30 @@ function deleteAiApp(id) {
 
 function getPromptTemplates() {
   const value = readJson(STORAGE_KEYS.PROMPT_TEMPLATES, DEFAULT_PROMPT_TEMPLATES);
-  if (!Array.isArray(value) || value.length === 0) return [...DEFAULT_PROMPT_TEMPLATES];
-  return value;
+  const sourceList = Array.isArray(value) && value.length > 0 ? value : DEFAULT_PROMPT_TEMPLATES;
+  const normalized = normalizePromptTemplates(sourceList);
+  if (normalized.length === 0) {
+    return normalizePromptTemplates(DEFAULT_PROMPT_TEMPLATES);
+  }
+  if (!isSamePromptTemplateList(sourceList, normalized)) {
+    writeJson(STORAGE_KEYS.PROMPT_TEMPLATES, normalized);
+  }
+  return normalized;
 }
 
 function savePromptTemplates(templates) {
-  const normalized = (Array.isArray(templates) ? templates : []).map((item) => {
-    const source = item && typeof item === "object" ? item : {};
-    return {
-      ...source,
-      title: String(source.title || "").trim(),
-      content: String(source.content || "")
-    };
-  });
+  const normalized = normalizePromptTemplates(templates);
   writeJson(STORAGE_KEYS.PROMPT_TEMPLATES, normalized);
 }
 
 function addPromptTemplate(template) {
   const list = getPromptTemplates();
   list.push({
-    id: generateId(),
-    title: String(template.title || "").trim(),
-    content: String(template.content || ""),
-    createdAt: Date.now()
+    ...(template && typeof template === "object" ? template : {}),
+    id: template && template.id ? String(template.id) : generateId(),
+    title: String((template && template.title) || "").trim(),
+    content: String((template && template.content) || ""),
+    createdAt: toPositiveInteger(template && template.createdAt, Date.now())
   });
   savePromptTemplates(list);
 }
@@ -139,6 +183,98 @@ function deletePromptTemplate(id) {
   if (next.length === list.length) return false;
   savePromptTemplates(next);
   return true;
+}
+
+function normalizePromptTemplate(source, index = 0, seenIds = new Set()) {
+  const safeSource = source && typeof source === "object" ? source : {};
+  const title = String(safeSource.title || "").trim();
+  const content = String(safeSource.content == null ? "" : safeSource.content);
+  if (!title || !content) return null;
+
+  let id = String(safeSource.id || "").trim();
+  if (!id || seenIds.has(id)) id = generateId();
+  seenIds.add(id);
+
+  const now = Date.now();
+  const createdAt = toPositiveInteger(safeSource.createdAt, now + index);
+  const updatedAt = toPositiveInteger(safeSource.updatedAt, 0);
+  const normalized = {
+    id,
+    title,
+    content,
+    createdAt
+  };
+  if (updatedAt > 0) normalized.updatedAt = updatedAt;
+  return normalized;
+}
+
+function normalizePromptTemplates(templates) {
+  const list = Array.isArray(templates) ? templates : [];
+  const seenIds = new Set();
+  const normalized = [];
+  list.forEach((item, index) => {
+    const next = normalizePromptTemplate(item, index, seenIds);
+    if (next) normalized.push(next);
+  });
+  return normalized;
+}
+
+function isSamePromptTemplateList(sourceList, normalizedList) {
+  if (!Array.isArray(sourceList) || !Array.isArray(normalizedList)) return false;
+  if (sourceList.length !== normalizedList.length) return false;
+  for (let i = 0; i < sourceList.length; i += 1) {
+    const source = sourceList[i] && typeof sourceList[i] === "object" ? sourceList[i] : {};
+    const normalized = normalizedList[i] && typeof normalizedList[i] === "object" ? normalizedList[i] : {};
+    if (String(source.id || "").trim() !== String(normalized.id || "").trim()) return false;
+    if (String(source.title || "").trim() !== String(normalized.title || "")) return false;
+    if (String(source.content == null ? "" : source.content) !== String(normalized.content || "")) return false;
+    if (toPositiveInteger(source.createdAt, 0) !== toPositiveInteger(normalized.createdAt, 0)) return false;
+    if (toPositiveInteger(source.updatedAt, 0) !== toPositiveInteger(normalized.updatedAt, 0)) return false;
+  }
+  return true;
+}
+
+function buildPromptTemplatesBundle() {
+  const templates = getPromptTemplates().map((template) => ({
+    id: template.id,
+    title: template.title,
+    content: template.content,
+    createdAt: template.createdAt
+  }));
+  return {
+    format: PROMPT_TEMPLATE_BUNDLE_FORMAT,
+    version: PROMPT_TEMPLATE_BUNDLE_VERSION,
+    exportedAt: new Date().toISOString(),
+    templates
+  };
+}
+
+function parsePromptTemplatesBundle(payload) {
+  let parsed = payload;
+  if (typeof payload === "string") {
+    parsed = safeJsonParse(payload, null);
+  }
+  if (!parsed) throw new Error("JSON 解析失败");
+
+  let templatesSource = null;
+  if (Array.isArray(parsed)) {
+    templatesSource = parsed;
+  } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.templates)) {
+    if (parsed.format && String(parsed.format) !== PROMPT_TEMPLATE_BUNDLE_FORMAT) {
+      throw new Error(`不支持的模板格式: ${parsed.format}`);
+    }
+    templatesSource = parsed.templates;
+  }
+
+  if (!Array.isArray(templatesSource)) {
+    throw new Error("JSON 文件中未找到 templates 数组");
+  }
+
+  const templates = normalizePromptTemplates(templatesSource);
+  if (templates.length === 0) {
+    throw new Error("未解析到可导入的模板（需要包含 title 与 content）");
+  }
+  return templates;
 }
 
 function migrateLegacyWorkflows(log) {
@@ -251,5 +387,7 @@ module.exports = {
   savePromptTemplates,
   addPromptTemplate,
   deletePromptTemplate,
+  buildPromptTemplatesBundle,
+  parsePromptTemplatesBundle,
   migrateLegacyWorkflows
 };

@@ -17,7 +17,10 @@ const state = {
   timerId: null,
   runStartedAt: 0,
   appPickerKeyword: "",
-  templateSelectCallback: null
+  templateSelectCallback: null,
+  templatePickerMode: "single",
+  templatePickerMaxSelection: 1,
+  templatePickerSelectedIds: []
 };
 const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
 const UPLOAD_MAX_EDGE_LABELS = {
@@ -38,6 +41,8 @@ const LEGACY_PASTE_STRATEGY_MAP = {
   alphaTrim: "smart",
   edgeAuto: "smart"
 };
+const MAX_TEMPLATE_COMBINE_COUNT = 5;
+const RH_PROMPT_MAX_CHARS = 4000;
 
 let workspaceInputs = null;
 
@@ -450,9 +455,43 @@ function handleAppPickerListClick(event) {
   selectAppInternal(id);
 }
 
+function getTextLength(value) {
+  return Array.from(String(value == null ? "" : value)).length;
+}
+
+function isTemplatePickerMultipleMode() {
+  return state.templatePickerMode === "multiple";
+}
+
+function updateTemplateSelectionInfo() {
+  if (!dom.templateModalSelectionInfo) return;
+  if (!isTemplatePickerMultipleMode()) {
+    dom.templateModalSelectionInfo.textContent = "";
+    if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = true;
+    return;
+  }
+  const current = state.templatePickerSelectedIds.length;
+  const limit = state.templatePickerMaxSelection;
+  dom.templateModalSelectionInfo.textContent = `已选择 ${current} / ${limit}`;
+  if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = current === 0;
+}
+
+function syncTemplatePickerUiState() {
+  if (dom.templateModalTitle) {
+    dom.templateModalTitle.textContent = isTemplatePickerMultipleMode() ? "选择提示词模板（可组合）" : "选择提示词模板";
+  }
+  if (dom.templateModalActions) {
+    dom.templateModalActions.style.display = isTemplatePickerMultipleMode() ? "flex" : "none";
+  }
+  updateTemplateSelectionInfo();
+}
+
 function renderTemplatePickerList() {
   if (!dom.templateList) return;
   const templates = store.getPromptTemplates();
+  const selectedSet = new Set(state.templatePickerSelectedIds.map((id) => String(id)));
+  const multipleMode = isTemplatePickerMultipleMode();
+
   if (!templates.length) {
     dom.templateList.innerHTML = `
       <div class="empty-state">
@@ -460,32 +499,58 @@ function renderTemplatePickerList() {
         <br><button class="tiny-btn" style="margin-top:8px" type="button" data-action="goto-settings">去添加</button>
       </div>
     `;
+    updateTemplateSelectionInfo();
     return;
   }
 
   dom.templateList.innerHTML = templates
-    .map(
-      (template) => `
-        <button type="button" class="app-picker-item" data-template-id="${encodeDataId(template.id)}">
+    .map((template) => {
+      const templateId = String(template.id || "");
+      const selected = selectedSet.has(templateId);
+      const selectedClass = selected ? "active" : "";
+      const actionLabel = multipleMode ? (selected ? "已选" : "选择") : "选择";
+      return `
+        <button type="button" class="app-picker-item ${selectedClass}" data-template-id="${encodeDataId(templateId)}">
           <div>
             <div style="font-weight:bold;font-size:12px">${escapeHtml(template.title)}</div>
             <div style="font-size:10px;color:#777; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${escapeHtml(template.content)}</div>
           </div>
-          <div style="font-size:12px;color:var(--accent-color)">选择</div>
+          <div style="font-size:12px;color:var(--accent-color)">${actionLabel}</div>
         </button>
-      `
-    )
+      `;
+    })
     .join("");
+  updateTemplateSelectionInfo();
 }
 
 function closeTemplatePicker() {
   if (dom.templateModal) dom.templateModal.classList.remove("active");
   state.templateSelectCallback = null;
+  state.templatePickerMode = "single";
+  state.templatePickerMaxSelection = 1;
+  state.templatePickerSelectedIds = [];
+  syncTemplatePickerUiState();
   refreshModalOpenState();
 }
 
-function openTemplatePicker(onSelectCallback) {
-  state.templateSelectCallback = typeof onSelectCallback === "function" ? onSelectCallback : null;
+function openTemplatePicker(config = {}) {
+  const options =
+    typeof config === "function"
+      ? { onApply: config, mode: "single", maxSelection: 1 }
+      : config && typeof config === "object"
+      ? config
+      : {};
+  const mode = options.mode === "multiple" ? "multiple" : "single";
+  const rawMaxSelection = Number(options.maxSelection);
+  const maxSelection = mode === "multiple"
+    ? Math.max(1, Math.min(MAX_TEMPLATE_COMBINE_COUNT, Number.isFinite(rawMaxSelection) ? Math.floor(rawMaxSelection) : MAX_TEMPLATE_COMBINE_COUNT))
+    : 1;
+
+  state.templateSelectCallback = typeof options.onApply === "function" ? options.onApply : null;
+  state.templatePickerMode = mode;
+  state.templatePickerMaxSelection = maxSelection;
+  state.templatePickerSelectedIds = [];
+  syncTemplatePickerUiState();
   renderTemplatePickerList();
   if (dom.templateModal) dom.templateModal.classList.add("active");
   refreshModalOpenState();
@@ -494,6 +559,62 @@ function openTemplatePicker(onSelectCallback) {
 function refreshModalOpenState() {
   const isOpen = Boolean(document.querySelector(".modal-overlay.active"));
   document.body.classList.toggle("modal-open", isOpen);
+}
+
+function toggleTemplateSelection(id) {
+  const marker = String(id || "");
+  if (!marker) return;
+  const selected = state.templatePickerSelectedIds.map((item) => String(item));
+  const index = selected.indexOf(marker);
+  if (index >= 0) {
+    selected.splice(index, 1);
+    state.templatePickerSelectedIds = selected;
+    renderTemplatePickerList();
+    return;
+  }
+
+  if (selected.length >= state.templatePickerMaxSelection) {
+    alert(`最多可选择 ${state.templatePickerMaxSelection} 个模板`);
+    return;
+  }
+  selected.push(marker);
+  state.templatePickerSelectedIds = selected;
+  renderTemplatePickerList();
+}
+
+function applyTemplateSelection() {
+  if (!isTemplatePickerMultipleMode()) return;
+  if (state.templatePickerSelectedIds.length === 0) {
+    alert("请至少选择一个模板");
+    return;
+  }
+
+  const templates = store.getPromptTemplates();
+  const selectedTemplates = state.templatePickerSelectedIds
+    .map((id) => templates.find((template) => String(template.id) === String(id)))
+    .filter(Boolean);
+  if (selectedTemplates.length === 0) {
+    alert("未找到已选择模板，请重试");
+    return;
+  }
+
+  const combinedContent = selectedTemplates.map((template) => String(template.content || "")).join("\n");
+  const combinedLength = getTextLength(combinedContent);
+  if (combinedLength > RH_PROMPT_MAX_CHARS) {
+    alert(`组合后长度为 ${combinedLength}，超过 ${RH_PROMPT_MAX_CHARS} 字符上限，请减少选择数量`);
+    return;
+  }
+
+  if (state.templateSelectCallback) {
+    state.templateSelectCallback({
+      mode: "multiple",
+      templates: selectedTemplates,
+      content: combinedContent,
+      length: combinedLength,
+      limit: RH_PROMPT_MAX_CHARS
+    });
+  }
+  closeTemplatePicker();
 }
 
 function handleTemplateListClick(event) {
@@ -510,10 +631,24 @@ function handleTemplateListClick(event) {
 
   const id = decodeDataId(item.dataset.templateId || "");
   if (!id) return;
-
   const template = store.getPromptTemplates().find((tpl) => String(tpl.id) === String(id));
   if (!template) return;
-  if (state.templateSelectCallback) state.templateSelectCallback(template.content);
+
+  if (isTemplatePickerMultipleMode()) {
+    toggleTemplateSelection(id);
+    return;
+  }
+
+  const content = String(template.content || "");
+  if (state.templateSelectCallback) {
+    state.templateSelectCallback({
+      mode: "single",
+      templates: [template],
+      content,
+      length: getTextLength(content),
+      limit: RH_PROMPT_MAX_CHARS
+    });
+  }
   closeTemplatePicker();
 }
 
@@ -528,6 +663,10 @@ function onAppPickerModalClick(event) {
 
 function onTemplateModalClick(event) {
   if (event.target === dom.templateModal) closeTemplatePicker();
+}
+
+function onApplyTemplateSelectionClick() {
+  applyTemplateSelection();
 }
 
 function onRefreshWorkspaceClick() {
@@ -577,6 +716,7 @@ function bindWorkspaceEvents() {
   rebindEvent(dom.templateModalClose, "click", closeTemplatePicker);
   rebindEvent(dom.templateModal, "click", onTemplateModalClick);
   rebindEvent(dom.templateList, "click", handleTemplateListClick);
+  rebindEvent(dom.btnApplyTemplateSelection, "click", onApplyTemplateSelectionClick);
   rebindEvent(dom.btnCopyLog, "click", onCopyLogClick);
   rebindEvent(dom.btnClearLog, "click", onClearLogClick);
 
@@ -590,7 +730,11 @@ function onAppsChanged() {
 }
 
 function onTemplatesChanged() {
-  if (dom.templateModal && dom.templateModal.classList.contains("active")) renderTemplatePickerList();
+  if (dom.templateModal && dom.templateModal.classList.contains("active")) {
+    const currentIds = new Set(store.getPromptTemplates().map((template) => String(template.id || "")));
+    state.templatePickerSelectedIds = state.templatePickerSelectedIds.filter((id) => currentIds.has(String(id)));
+    renderTemplatePickerList();
+  }
 }
 
 function onSettingsChanged() {
@@ -618,7 +762,11 @@ function cacheDomRefs() {
     "appPickerStats",
     "appPickerList",
     "templateModal",
+    "templateModalTitle",
     "templateList",
+    "templateModalActions",
+    "templateModalSelectionInfo",
+    "btnApplyTemplateSelection",
     "templateModalClose",
     "accountSummary",
     "accountBalanceValue",
@@ -631,6 +779,10 @@ function cacheDomRefs() {
 
 function initWorkspaceController() {
   cacheDomRefs();
+  state.templatePickerMode = "single";
+  state.templatePickerMaxSelection = 1;
+  state.templatePickerSelectedIds = [];
+  syncTemplatePickerUiState();
   syncUploadMaxEdgeSelect();
   syncPasteStrategySelect();
   workspaceInputs = null;
