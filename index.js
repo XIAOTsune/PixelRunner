@@ -33,16 +33,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-let qrLib = null;
-try {
-  qrLib = require("./src/libs/qrcode-generator.js");
-  if (qrLib && typeof window !== "undefined" && typeof window.qrcode !== "function") {
-    window.qrcode = qrLib;
-  }
-} catch (error) {
-  console.warn("Failed to load qrcode library", error);
-}
-
 function setupTabs() {
   const tabs = {
     tabWorkspace: "viewWorkspace",
@@ -70,17 +60,61 @@ function setupDonationModal() {
   const btnDonate = document.getElementById("btnDonate");
   const donationDialog = document.getElementById("donationDialog");
   const donationDialogClose = document.getElementById("donationDialogClose");
-  const zfbCanvas = document.getElementById("donationZfbCanvas");
-  const wxCanvas = document.getElementById("donationWxCanvas");
+  const donationBody = donationDialog ? donationDialog.querySelector(".donation-dialog-body") : null;
+  const donationStatusHint = document.getElementById("donationStatusHint");
   if (!btnDonate || !donationDialog || !donationDialogClose) return;
+  if (!donationBody) {
+    console.warn("Donation dialog body is missing");
+    return;
+  }
+
+  const zfbImage = ensureDonationImageNode({
+    body: donationBody,
+    imageId: "donationZfbImage",
+    labelText: "支付宝赞助"
+  });
+  const wxImage = ensureDonationImageNode({
+    body: donationBody,
+    imageId: "donationWxImage",
+    labelText: "微信赞助"
+  });
+  const imageStates = {
+    wx: "pending",
+    zfb: "pending"
+  };
+
+  const setDonationStatus = (text, state = "info") => {
+    if (!donationStatusHint) return;
+    donationStatusHint.textContent = String(text || "");
+    donationStatusHint.classList.remove("is-failed", "is-ok");
+    if (state === "failed") donationStatusHint.classList.add("is-failed");
+    if (state === "ok") donationStatusHint.classList.add("is-ok");
+  };
+
+  const refreshDonationStatus = () => {
+    const values = Object.values(imageStates);
+    const loadedCount = values.filter((item) => item === "loaded").length;
+    const failedCount = values.filter((item) => item === "failed").length;
+    if (loadedCount === 2) {
+      setDonationStatus("二维码已加载，可点击尝试打开链接。", "ok");
+      return;
+    }
+    if (loadedCount >= 1 && failedCount >= 1) {
+      setDonationStatus("部分二维码加载失败，建议直接扫码当前可见二维码。", "failed");
+      return;
+    }
+    if (failedCount === 2) {
+      setDonationStatus("二维码加载失败，请检查 icons 资源路径。", "failed");
+      return;
+    }
+    setDonationStatus("正在加载二维码...", "info");
+  };
 
   const closeDialog = () => {
     donationDialog.close();
     refreshModalOpenState();
   };
   const openDialog = () => {
-    renderDonationQr(zfbCanvas, DONATION_ZFB_TEXT);
-    renderDonationQr(wxCanvas, DONATION_WX_TEXT);
     donationDialog.showModal();
     refreshModalOpenState();
   };
@@ -88,18 +122,17 @@ function setupDonationModal() {
   btnDonate.addEventListener("click", openDialog);
   donationDialogClose.addEventListener("click", closeDialog);
   donationDialog.addEventListener("close", refreshModalOpenState);
-  if (zfbCanvas) {
-    zfbCanvas.addEventListener("click", () => {
-      try {
-        const { shell } = require("uxp");
-        if (shell && shell.openExternal) {
-          shell.openExternal(DONATION_ZFB_TEXT);
-        }
-      } catch (error) {
-        console.warn("Failed to open donation link", error);
-      }
-    });
-  }
+  loadDonationImageWithFallback(zfbImage, DONATION_IMAGE_SOURCES.zfb, "支付宝二维码", (status) => {
+    imageStates.zfb = status;
+    refreshDonationStatus();
+  });
+  loadDonationImageWithFallback(wxImage, DONATION_IMAGE_SOURCES.wx, "微信二维码", (status) => {
+    imageStates.wx = status;
+    refreshDonationStatus();
+  });
+  bindDonationImageEvents(zfbImage, DONATION_ZFB_TEXT, "支付宝二维码");
+  bindDonationImageEvents(wxImage, DONATION_WX_TEXT, "微信二维码");
+  refreshDonationStatus();
 }
 
 function refreshModalOpenState() {
@@ -110,33 +143,102 @@ function refreshModalOpenState() {
 
 const DONATION_ZFB_TEXT = "https://qr.alipay.com/fkx12142r0sdwj4kizujk2f";
 const DONATION_WX_TEXT = "wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI";
+const DONATION_IMAGE_SOURCES = {
+  zfb: ["icons/zfb.png", "./icons/zfb.png"],
+  wx: ["icons/vx.png", "./icons/vx.png"]
+};
 
-function renderDonationQr(canvas, text) {
-  if (!canvas) return;
-  const qrFactory = typeof qrcode === "function" ? qrcode : qrLib;
-  if (typeof qrFactory !== "function") {
-    console.warn("qrcode generator is unavailable");
+function ensureDonationGrid(body) {
+  if (!body) return null;
+  let grid = body.querySelector(".donation-grid");
+  if (grid) return grid;
+  grid = document.createElement("div");
+  grid.className = "donation-grid";
+  body.appendChild(grid);
+  return grid;
+}
+
+function ensureDonationImageNode({ body, imageId, labelText }) {
+  const existing = document.getElementById(imageId);
+  if (existing && String(existing.tagName || "").toLowerCase() === "img") {
+    return existing;
+  }
+  const grid = ensureDonationGrid(body);
+  if (!grid) return null;
+
+  const card = document.createElement("div");
+  card.className = "donation-card";
+
+  const imageEl = document.createElement("img");
+  imageEl.id = imageId;
+  imageEl.alt = `${labelText}二维码`;
+
+  const labelEl = document.createElement("div");
+  labelEl.className = "donation-label";
+  labelEl.textContent = labelText;
+
+  card.appendChild(imageEl);
+  card.appendChild(labelEl);
+  grid.appendChild(card);
+  return imageEl;
+}
+
+function loadDonationImageWithFallback(imageEl, sources, label, onStateChange) {
+  if (!imageEl) return;
+  const candidates = Array.isArray(sources)
+    ? sources.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (candidates.length === 0) return;
+
+  const currentSrcAttr = String(imageEl.getAttribute("src") || "").trim();
+  const initialIndex = currentSrcAttr ? Math.max(0, candidates.indexOf(currentSrcAttr)) : 0;
+  imageEl.dataset.srcIndex = String(initialIndex);
+  imageEl.src = candidates[initialIndex];
+  imageEl.addEventListener("load", () => {
+    const card = imageEl.closest(".donation-card");
+    if (card) card.classList.remove("is-broken");
+    if (typeof onStateChange === "function") onStateChange("loaded");
+  });
+
+  imageEl.addEventListener("error", () => {
+    const currentIndex = Number(imageEl.dataset.srcIndex || "0");
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < candidates.length) {
+      imageEl.dataset.srcIndex = String(nextIndex);
+      imageEl.src = candidates[nextIndex];
+      return;
+    }
+
+    const card = imageEl.closest(".donation-card");
+    if (card) {
+      card.classList.add("is-broken");
+      const labelEl = card.querySelector(".donation-label");
+      if (labelEl && !String(labelEl.textContent || "").includes("加载失败")) {
+        labelEl.textContent = `${String(labelEl.textContent || "").trim()}（加载失败）`;
+      }
+    }
+    const marker = imageEl.getAttribute("src") || "(empty)";
+    console.warn(`${label} failed to load: ${marker}`);
+    if (typeof onStateChange === "function") onStateChange("failed");
+  });
+}
+
+function openDonationLink(url, label) {
+  try {
+    const { shell } = require("uxp");
+    if (shell && typeof shell.openExternal === "function") {
+      shell.openExternal(url);
+      return;
+    }
+  } catch (error) {
+    console.warn(`Failed to open ${label}:`, error);
+  }
+}
+
+function bindDonationImageEvents(imageEl, url, label) {
+  if (!imageEl) {
+    console.warn(`${label} node is missing`);
     return;
   }
-  canvas.style.display = "block";
-  const qr = qrFactory(0, "M");
-  qr.addData(text);
-  qr.make();
-  const size = Math.min(canvas.width || 220, canvas.height || 220);
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, size, size);
-  const count = qr.getModuleCount();
-  const cellSize = Math.floor(size / count);
-  const offset = Math.floor((size - cellSize * count) / 2);
-  ctx.fillStyle = "#000000";
-  for (let r = 0; r < count; r += 1) {
-    for (let c = 0; c < count; c += 1) {
-      if (!qr.isDark(r, c)) continue;
-      ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize, cellSize);
-    }
-  }
+  imageEl.addEventListener("click", () => openDonationLink(url, label));
 }
