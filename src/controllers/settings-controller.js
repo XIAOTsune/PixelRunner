@@ -16,10 +16,17 @@ const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 const LARGE_PROMPT_WARNING_CHARS = 4000;
 const TEXT_INPUT_HARD_MAX_CHARS = 20000;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
+const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
 const dom = {};
 
 function log(msg) {
   console.log(`[Settings] ${msg}`);
+}
+
+function normalizeUploadMaxEdge(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : 0;
 }
 
 const state = {
@@ -276,12 +283,15 @@ function saveApiKeyAndSettings() {
   const pollInterval = Number(dom.pollIntervalInput.value) || 2;
   const timeout = Number(dom.timeoutInput.value) || 180;
   const currentSettings = store.getSettings();
+  const uploadMaxEdge = normalizeUploadMaxEdge(
+    dom.uploadMaxEdgeSettingSelect ? dom.uploadMaxEdgeSettingSelect.value : currentSettings.uploadMaxEdge
+  );
 
   store.saveApiKey(apiKey);
   store.saveSettings({
     pollInterval,
     timeout,
-    uploadMaxEdge: currentSettings.uploadMaxEdge,
+    uploadMaxEdge,
     pasteStrategy: currentSettings.pasteStrategy
   });
   emitAppEvent(APP_EVENTS.SETTINGS_CHANGED, { apiKeyChanged: true, settingsChanged: true });
@@ -764,6 +774,7 @@ function initSettingsController() {
     "apiKeyInput",
     "pollIntervalInput",
     "timeoutInput",
+    "uploadMaxEdgeSettingSelect",
     "toggleApiKey",
     "btnSaveApiKey",
     "btnTestApiKey",
@@ -814,6 +825,9 @@ function initSettingsController() {
   const settings = store.getSettings();
   dom.pollIntervalInput.value = settings.pollInterval;
   dom.timeoutInput.value = settings.timeout;
+  if (dom.uploadMaxEdgeSettingSelect) {
+    dom.uploadMaxEdgeSettingSelect.value = String(normalizeUploadMaxEdge(settings.uploadMaxEdge));
+  }
   enforceLongTextCapacity(dom.templateContentInput);
 
   rebindEvent(dom.btnSaveApiKey, "click", saveApiKeyAndSettings);

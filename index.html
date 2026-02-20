@@ -161,15 +161,6 @@
             <span id="accountCoinsValue" class="account-pill-value">--</span>
           </span>
         </div>
-        <div class="upload-limit-control">
-          <label for="uploadMaxEdgeSelect">上传分辨率</label>
-          <select id="uploadMaxEdgeSelect">
-            <option value="0">无限制</option>
-            <option value="4096">4k</option>
-            <option value="2048">2k</option>
-            <option value="1024">1k</option>
-          </select>
-        </div>
         <div class="upload-limit-control paste-strategy-control">
           <label for="pasteStrategySelect">回贴策略</label>
           <select id="pasteStrategySelect">
@@ -179,7 +170,7 @@
           </select>
         </div>
       </div>
-      <span class="version">V2.0.5</span>
+      <span class="version">V2.1.0</span>
     </header>
 
     <div class="card app-select-card">
@@ -213,18 +204,17 @@
     <div class="log-toolbar">
       <div class="log-toolbar-title">运行日志</div>
       <div class="log-toolbar-actions">
-        <button id="btnCopyLog" class="tiny-btn tiny-btn-compact" type="button">复制</button>
         <button id="btnClearLog" class="tiny-btn tiny-btn-compact" type="button">清空</button>
       </div>
     </div>
     <textarea id="logWindow" readonly>[系统] 插件已加载，等待操作...</textarea>
-    <div class="log-hint">可选中文本后直接复制，或点“复制”按钮。</div>
+    <div class="log-hint">可选中文本后直接复制。</div>
   </section>
 
   <section id="viewSettings" class="tab-content">
     <header class="header">
       <h3>系统设置</h3>
-      <span class="version">V2.0.5</span>
+      <span class="version">V2.1.0</span>
     </header>
 
     <div class="setting-section">
@@ -296,6 +286,16 @@
         <button id="advancedSettingsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
       </div>
       <div class="setting-section-body">
+        <div class="control-group">
+          <label for="uploadMaxEdgeSettingSelect">上传分辨率上限</label>
+          <select id="uploadMaxEdgeSettingSelect">
+            <option value="0">无限制（默认）</option>
+            <option value="4096">4k</option>
+            <option value="2048">2k</option>
+            <option value="1024">1k</option>
+          </select>
+          <div class="setting-hint">默认无限制。仅在特定应用需要限制输入尺寸时调整。</div>
+        </div>
         <div class="control-group">
           <label for="pollIntervalInput">轮询间隔（秒）</label>
           <input id="pollIntervalInput" type="number" min="1" max="15" value="2" />
