@@ -21,7 +21,15 @@ const SMART_ENHANCED_SCORE_THRESHOLD = 0.42;
 const SMART_ENHANCED_OVERFLOW_THRESHOLD = 0.18;
 const SMART_ENHANCED_MAX_ROTATE_DEG = 35;
 const SMART_ENHANCED_RESIDUAL_SCALE_LIMIT = 0.08;
+const SMART_ENHANCED_RESIDUAL_SCALE_LIMIT_MAX = 0.18;
 const SMART_ENHANCED_RESIDUAL_SHIFT_WEIGHT = 0.55;
+const SMART_CANDIDATE_LIMIT = 3;
+const SMART_POST_REFINE_SCALE_LIMIT = 0.12;
+const SMART_POST_REFINE_SHIFT_RATIO = 0.2;
+const SMART_ENHANCED_POST_REFINE_SCALE_LIMIT = 0.18;
+const SMART_ENHANCED_POST_REFINE_SHIFT_RATIO = 0.24;
+const SMART_POST_REFINE_MIN_SCALE_DELTA = 0.008;
+const SMART_POST_REFINE_MIN_SHIFT_PX = 0.75;
 const SMART_SCALE_MIN = 0.2;
 const SMART_SCALE_MAX = 6;
 
@@ -727,8 +735,60 @@ function detectBinaryConnectivityBox(decoded) {
   return best;
 }
 
-function pickSmartContentBox(decoded) {
+function computeBoundsIou(a, b) {
+  if (!a || !b) return 0;
+  const interLeft = Math.max(a.left, b.left);
+  const interTop = Math.max(a.top, b.top);
+  const interRight = Math.min(a.right, b.right);
+  const interBottom = Math.min(a.bottom, b.bottom);
+  const interW = Math.max(0, interRight - interLeft);
+  const interH = Math.max(0, interBottom - interTop);
+  const interArea = interW * interH;
+  const aSize = getBoundsSize(a);
+  const bSize = getBoundsSize(b);
+  const aArea = aSize.width * aSize.height;
+  const bArea = bSize.width * bSize.height;
+  const union = Math.max(1, aArea + bArea - interArea);
+  return interArea / union;
+}
+
+function getSmartMethodPrior(method) {
+  const marker = String(method || "").trim().toLowerCase();
+  if (marker === "alpha") return 0.92;
+  if (marker === "gradient") return 0.83;
+  if (marker === "edge") return 0.8;
+  if (marker === "contrast") return 0.76;
+  if (marker === "binary") return 0.72;
+  return 0.65;
+}
+
+function scoreSmartContentCandidate(box, method, decoded) {
+  const size = getBoundsSize(box);
+  const area = size.width * size.height;
+  const totalArea = Math.max(1, decoded.width * decoded.height);
+  const areaRatio = area / totalArea;
+  const center = getBoundsCenter(box);
+  const cxNorm = Math.abs(center.x / Math.max(1, decoded.width) - 0.5);
+  const cyNorm = Math.abs(center.y / Math.max(1, decoded.height) - 0.5);
+  const centerPenalty = Math.max(cxNorm, cyNorm);
+  const tinyPenalty = areaRatio < 0.01 ? clampNumber((0.01 - areaRatio) * 90, 0, 1) : 0;
+  const hugePenalty = areaRatio > 0.9 ? clampNumber((areaRatio - 0.9) * 10, 0, 1) : 0;
+  const areaPenalty = Math.max(tinyPenalty, hugePenalty);
+  const methodPrior = getSmartMethodPrior(method);
+  const score = clampNumber(
+    methodPrior * 0.42 +
+    (1 - centerPenalty) * 0.38 +
+    (1 - areaPenalty) * 0.2,
+    0,
+    1
+  );
+  return { score, areaRatio };
+}
+
+function pickSmartContentCandidates(decoded, limit = SMART_CANDIDATE_LIMIT) {
   const candidates = [];
+  const alphaBox = detectAlphaContentBox(decoded);
+  if (alphaBox) candidates.push({ box: alphaBox, method: "alpha" });
   const gradientBox = detectGradientContentBox(decoded);
   if (gradientBox) candidates.push({ box: gradientBox, method: "gradient" });
   const edgeBox = detectEdgeContentBox(decoded);
@@ -737,26 +797,29 @@ function pickSmartContentBox(decoded) {
   if (contrastBox) candidates.push({ box: contrastBox, method: "contrast" });
   const binaryBox = detectBinaryConnectivityBox(decoded);
   if (binaryBox) candidates.push({ box: binaryBox, method: "binary" });
+  if (candidates.length === 0) return [];
 
-  if (candidates.length === 0) return { box: null, method: "none" };
+  const deduped = [];
+  for (const candidate of candidates) {
+    const isDuplicate = deduped.some((item) => computeBoundsIou(item.box, candidate.box) >= 0.92);
+    if (!isDuplicate) deduped.push(candidate);
+  }
 
-  const totalArea = decoded.sourceWidth * decoded.sourceHeight;
-  const scored = candidates
-    .map((c) => {
-      const size = getBoundsSize(c.box);
-      const area = size.width * size.height;
-      const areaRatio = area / Math.max(1, totalArea);
-      const center = getBoundsCenter(c.box);
-      const cxNorm = Math.abs(center.x / Math.max(1, decoded.sourceWidth) - 0.5);
-      const cyNorm = Math.abs(center.y / Math.max(1, decoded.sourceHeight) - 0.5);
-      const centerPenalty = Math.max(cxNorm, cyNorm);
-      const areaPenalty = areaRatio < 0.01 || areaRatio > 0.9 ? 1 : 0;
-      const score = Math.max(0, 1 - centerPenalty * 1.2 - areaPenalty);
-      return { ...c, score, areaRatio };
+  const scored = deduped
+    .map((candidate) => {
+      const ranked = scoreSmartContentCandidate(candidate.box, candidate.method, decoded);
+      return { ...candidate, score: ranked.score, areaRatio: ranked.areaRatio };
     })
     .sort((a, b) => b.score - a.score);
 
-  return scored[0];
+  const safeLimit = Math.max(1, Math.round(Number(limit) || 1));
+  return scored.slice(0, safeLimit);
+}
+
+function pickSmartContentBox(decoded) {
+  const picks = pickSmartContentCandidates(decoded, 1);
+  if (picks.length === 0) return { box: null, method: "none", score: 0, areaRatio: 0 };
+  return picks[0];
 }
 
 function mapScaledBoxToSource(box, decoded) {
@@ -992,6 +1055,7 @@ function buildSmartEnhancedTransform(sourceBox, outputBox, sourceMoment, outputM
 
   let residualScaleX = 1;
   let residualScaleY = 1;
+  let residualScaleLimit = SMART_ENHANCED_RESIDUAL_SCALE_LIMIT;
   if (
     sourceMoment &&
     outputMoment &&
@@ -1009,15 +1073,22 @@ function buildSmartEnhancedTransform(sourceBox, outputBox, sourceMoment, outputM
     const blend = clampNumber(confidence * 0.35, 0, 0.35);
     const relX = majorRatio / Math.max(1e-6, sx);
     const relY = minorRatio / Math.max(1e-6, sy);
+    const requiredResidual = Math.max(Math.abs(relX - 1), Math.abs(relY - 1));
+    const confidenceGate = clampNumber((confidence - 0.18) / 0.82, 0, 1);
+    residualScaleLimit = clampNumber(
+      SMART_ENHANCED_RESIDUAL_SCALE_LIMIT + requiredResidual * 0.75 * confidenceGate,
+      SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
+      SMART_ENHANCED_RESIDUAL_SCALE_LIMIT_MAX
+    );
     residualScaleX = clampNumber(
       lerpNumber(1, relX, blend),
-      1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
-      1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+      1 - residualScaleLimit,
+      1 + residualScaleLimit
     );
     residualScaleY = clampNumber(
       lerpNumber(1, relY, blend),
-      1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
-      1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+      1 - residualScaleLimit,
+      1 + residualScaleLimit
     );
   }
 
@@ -1065,6 +1136,7 @@ function buildSmartEnhancedTransform(sourceBox, outputBox, sourceMoment, outputM
       dx: residualDx,
       dy: residualDy
     },
+    residualLimit: residualScaleLimit,
     confidence,
     score
   };
@@ -1112,6 +1184,81 @@ function computeAlignmentScore(sourceBox, outputBox) {
   };
 }
 
+function selectBestSmartAlignmentPair(sourcePicks, outputPicks, sourceDecoded, outputDecoded) {
+  if (!Array.isArray(sourcePicks) || !Array.isArray(outputPicks)) return null;
+  if (sourcePicks.length === 0 || outputPicks.length === 0) return null;
+  if (!sourceDecoded || !outputDecoded) return null;
+
+  let best = null;
+  for (let sIdx = 0; sIdx < sourcePicks.length; sIdx += 1) {
+    const sourcePick = sourcePicks[sIdx];
+    const sourceBox = mapScaledBoxToSource(sourcePick && sourcePick.box, sourceDecoded);
+    if (!sourceBox) continue;
+    const sourceSize = getBoundsSize(sourceBox);
+    if (sourceSize.width <= 0 || sourceSize.height <= 0) continue;
+    const sourceAreaRatio = (sourceSize.width * sourceSize.height) /
+      Math.max(1, sourceDecoded.sourceWidth * sourceDecoded.sourceHeight);
+
+    for (let oIdx = 0; oIdx < outputPicks.length; oIdx += 1) {
+      const outputPick = outputPicks[oIdx];
+      const outputBox = mapScaledBoxToSource(outputPick && outputPick.box, outputDecoded);
+      if (!outputBox) continue;
+      const outputSize = getBoundsSize(outputBox);
+      if (outputSize.width <= 0 || outputSize.height <= 0) continue;
+      const outputAreaRatio = (outputSize.width * outputSize.height) /
+        Math.max(1, outputDecoded.sourceWidth * outputDecoded.sourceHeight);
+
+      const sx = sourceSize.width / outputSize.width;
+      const sy = sourceSize.height / outputSize.height;
+      if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0) continue;
+
+      const sourceCenter = getBoundsCenter(sourceBox);
+      const outputCenter = getBoundsCenter(outputBox);
+      const dx = sourceCenter.x - outputCenter.x;
+      const dy = sourceCenter.y - outputCenter.y;
+      const { score: baseScore, metrics } = computeAlignmentScore(sourceBox, outputBox);
+
+      const priorScore = Math.min(
+        Number.isFinite(sourcePick && sourcePick.score) ? sourcePick.score : 0.6,
+        Number.isFinite(outputPick && outputPick.score) ? outputPick.score : 0.6
+      );
+      const areaRatioDiff = Math.abs(Math.log((sourceAreaRatio || 1e-6) / (outputAreaRatio || 1e-6)));
+      const areaScore = Math.max(0, 1 - Math.min(1, areaRatioDiff * 0.8));
+      const anisotropy = Math.abs(Math.log((sx || 1) / (sy || 1)));
+      const anisotropyScore = Math.max(0, 1 - Math.min(1, anisotropy * 0.85));
+      const comboScore = clampNumber(
+        baseScore * 0.68 +
+        priorScore * 0.2 +
+        areaScore * 0.07 +
+        anisotropyScore * 0.05,
+        0,
+        1
+      );
+
+      const candidate = {
+        sx,
+        sy,
+        dx,
+        dy,
+        baseScore,
+        comboScore,
+        metrics,
+        sourceBox,
+        outputBox,
+        sourcePick,
+        outputPick,
+        sourceRank: sIdx + 1,
+        outputRank: oIdx + 1
+      };
+
+      if (!best || candidate.comboScore > best.comboScore) {
+        best = candidate;
+      }
+    }
+  }
+  return best;
+}
+
 function computeOverflowRatio(bounds, targetBounds) {
   if (!bounds || !targetBounds) return 0;
   const width = Math.max(0, bounds.right - bounds.left);
@@ -1153,49 +1300,36 @@ async function computeSmartAlignment(sourceBuffer, outputBuffer, options = {}) {
     const outputDecoded = await decode(outputBuffer, "output");
     if (!sourceDecoded || !outputDecoded) return null;
 
-    const sourcePick = pickSmartContentBox(sourceDecoded);
-    const outputPick = pickSmartContentBox(outputDecoded);
-    const sourceBox = mapScaledBoxToSource(sourcePick.box, sourceDecoded);
-    const outputBox = mapScaledBoxToSource(outputPick.box, outputDecoded);
-    if (!sourceBox || !outputBox) {
+    const sourcePicks = pickSmartContentCandidates(sourceDecoded, SMART_CANDIDATE_LIMIT);
+    const outputPicks = pickSmartContentCandidates(outputDecoded, SMART_CANDIDATE_LIMIT);
+    const bestPair = selectBestSmartAlignmentPair(sourcePicks, outputPicks, sourceDecoded, outputDecoded);
+    if (!bestPair) {
       return {
-        reason: "content-box-not-found",
-        sourceMethod: sourcePick.method,
-        outputMethod: outputPick.method
+        reason: "content-box-not-found-or-invalid",
+        sourceMethod: sourcePicks[0] ? sourcePicks[0].method : "none",
+        outputMethod: outputPicks[0] ? outputPicks[0].method : "none"
       };
     }
 
-    const sSize = getBoundsSize(sourceBox);
-    const oSize = getBoundsSize(outputBox);
-    if (sSize.width <= 0 || sSize.height <= 0 || oSize.width <= 0 || oSize.height <= 0) {
-      return { reason: "invalid-box-size" };
-    }
-
-    const { score, metrics } = computeAlignmentScore(sourceBox, outputBox);
-    const sx = sSize.width / oSize.width;
-    const sy = sSize.height / oSize.height;
-    if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0) {
-      return { reason: "invalid-scale" };
-    }
-
-    const sCenter = getBoundsCenter(sourceBox);
-    const oCenter = getBoundsCenter(outputBox);
-    const dx = sCenter.x - oCenter.x;
-    const dy = sCenter.y - oCenter.y;
-
     return {
-      sx,
-      sy,
-      dx,
-      dy,
-      score,
-      metrics,
-      sourceBox,
-      outputBox,
+      sx: bestPair.sx,
+      sy: bestPair.sy,
+      dx: bestPair.dx,
+      dy: bestPair.dy,
+      score: bestPair.comboScore,
+      metrics: {
+        ...(bestPair.metrics || {}),
+        baseScore: bestPair.baseScore,
+        candidateScore: bestPair.comboScore,
+        sourceCandidateRank: bestPair.sourceRank,
+        outputCandidateRank: bestPair.outputRank
+      },
+      sourceBox: bestPair.sourceBox,
+      outputBox: bestPair.outputBox,
       outputSize: { width: outputDecoded.sourceWidth, height: outputDecoded.sourceHeight },
       sourceSize: { width: sourceDecoded.sourceWidth, height: sourceDecoded.sourceHeight },
-      sourceMethod: sourcePick.method,
-      outputMethod: outputPick.method
+      sourceMethod: `${bestPair.sourcePick.method}#${bestPair.sourceRank}`,
+      outputMethod: `${bestPair.outputPick.method}#${bestPair.outputRank}`
     };
   };
 
@@ -1229,53 +1363,70 @@ async function computeSmartEnhancedAlignment(sourceBuffer, outputBuffer, options
     const outputDecoded = await decode(outputBuffer, "output");
     if (!sourceDecoded || !outputDecoded) return null;
 
-    const sourcePick = pickSmartContentBox(sourceDecoded);
-    const outputPick = pickSmartContentBox(outputDecoded);
-    const sourceBox = mapScaledBoxToSource(sourcePick.box, sourceDecoded);
-    const outputBox = mapScaledBoxToSource(outputPick.box, outputDecoded);
-    if (!sourceBox || !outputBox) {
+    const sourcePicks = pickSmartContentCandidates(sourceDecoded, SMART_CANDIDATE_LIMIT);
+    const outputPicks = pickSmartContentCandidates(outputDecoded, SMART_CANDIDATE_LIMIT);
+    const bestPair = selectBestSmartAlignmentPair(sourcePicks, outputPicks, sourceDecoded, outputDecoded);
+    if (!bestPair) {
       return {
-        reason: "content-box-not-found",
-        sourceMethod: sourcePick.method,
-        outputMethod: outputPick.method
+        reason: "content-box-not-found-or-invalid",
+        sourceMethod: sourcePicks[0] ? sourcePicks[0].method : "none",
+        outputMethod: outputPicks[0] ? outputPicks[0].method : "none"
       };
     }
 
-    const sourceMomentDecoded = analyzeContentMoments(sourceDecoded, sourcePick.box || sourceBox);
-    const outputMomentDecoded = analyzeContentMoments(outputDecoded, outputPick.box || outputBox);
+    const sourceMomentDecoded = analyzeContentMoments(
+      sourceDecoded,
+      (bestPair.sourcePick && bestPair.sourcePick.box) || bestPair.sourceBox
+    );
+    const outputMomentDecoded = analyzeContentMoments(
+      outputDecoded,
+      (bestPair.outputPick && bestPair.outputPick.box) || bestPair.outputBox
+    );
     const sourceMoment = mapMomentToSource(sourceMomentDecoded, sourceDecoded);
     const outputMoment = mapMomentToSource(outputMomentDecoded, outputDecoded);
 
-    const { score: baseScore, metrics } = computeAlignmentScore(sourceBox, outputBox);
-    const enhanced = buildSmartEnhancedTransform(sourceBox, outputBox, sourceMoment, outputMoment, baseScore);
+    const enhanced = buildSmartEnhancedTransform(
+      bestPair.sourceBox,
+      bestPair.outputBox,
+      sourceMoment,
+      outputMoment,
+      bestPair.baseScore
+    );
     if (!enhanced) {
       return {
         reason: "enhanced-transform-invalid",
-        sourceMethod: sourcePick.method,
-        outputMethod: outputPick.method
+        sourceMethod: bestPair.sourcePick.method,
+        outputMethod: bestPair.outputPick.method
       };
     }
+
+    const score = clampNumber(enhanced.score * 0.85 + bestPair.comboScore * 0.15, 0, 1);
 
     return {
       ...enhanced,
       strategy: "smartEnhanced",
       model: "enhanced-affine-lite",
-      score: enhanced.score,
+      score,
       metrics: {
-        ...(metrics || {}),
+        ...(bestPair.metrics || {}),
+        baseScore: bestPair.baseScore,
+        candidateScore: bestPair.comboScore,
+        sourceCandidateRank: bestPair.sourceRank,
+        outputCandidateRank: bestPair.outputRank,
         enhancedConfidence: enhanced.confidence,
         angle: enhanced.angle,
         residualScaleX: enhanced.residual ? enhanced.residual.scaleX : null,
-        residualScaleY: enhanced.residual ? enhanced.residual.scaleY : null
+        residualScaleY: enhanced.residual ? enhanced.residual.scaleY : null,
+        residualLimit: enhanced.residualLimit
       },
-      sourceBox,
-      outputBox,
+      sourceBox: bestPair.sourceBox,
+      outputBox: bestPair.outputBox,
       sourceMoment,
       outputMoment,
       outputSize: { width: outputDecoded.sourceWidth, height: outputDecoded.sourceHeight },
       sourceSize: { width: sourceDecoded.sourceWidth, height: sourceDecoded.sourceHeight },
-      sourceMethod: sourcePick.method,
-      outputMethod: outputPick.method
+      sourceMethod: `${bestPair.sourcePick.method}#${bestPair.sourceRank}`,
+      outputMethod: `${bestPair.outputPick.method}#${bestPair.outputRank}`
     };
   };
 
@@ -1443,6 +1594,16 @@ function getBoundsCenter(bounds) {
   };
 }
 
+function offsetBounds(bounds, dx = 0, dy = 0) {
+  if (!bounds) return null;
+  return {
+    left: bounds.left + dx,
+    top: bounds.top + dy,
+    right: bounds.right + dx,
+    bottom: bounds.bottom + dy
+  };
+}
+
 function formatBoundsForLog(bounds) {
   if (!bounds) return "null";
   const left = Number(bounds.left);
@@ -1534,6 +1695,123 @@ function mapSourceBoxToLayerBounds(sourceBox, sourceSize, layerBounds) {
   return parseLayerBounds(mapped) || layerBounds;
 }
 
+function mapOutputBoxToLayerBounds(outputBox, outputSize, layerBounds) {
+  if (!outputBox || !outputSize || !layerBounds) return null;
+  const outputWidth = Number(outputSize.width);
+  const outputHeight = Number(outputSize.height);
+  if (!Number.isFinite(outputWidth) || !Number.isFinite(outputHeight) || outputWidth <= 0 || outputHeight <= 0) {
+    return null;
+  }
+  const layerSize = getBoundsSize(layerBounds);
+  const scaleX = layerSize.width / outputWidth;
+  const scaleY = layerSize.height / outputHeight;
+  const mapped = {
+    left: layerBounds.left + outputBox.left * scaleX,
+    top: layerBounds.top + outputBox.top * scaleY,
+    right: layerBounds.left + outputBox.right * scaleX,
+    bottom: layerBounds.top + outputBox.bottom * scaleY
+  };
+  return parseLayerBounds(mapped);
+}
+
+function computeSmartPostRefineCorrection(mappedOutputBox, sourceBounds, options = {}) {
+  if (!mappedOutputBox || !sourceBounds) return null;
+  const mappedSize = getBoundsSize(mappedOutputBox);
+  const sourceSize = getBoundsSize(sourceBounds);
+  if (mappedSize.width <= 0 || mappedSize.height <= 0 || sourceSize.width <= 0 || sourceSize.height <= 0) {
+    return null;
+  }
+
+  const maxScaleAdjustRaw = Number(options.maxScaleAdjust);
+  const maxScaleAdjust = Number.isFinite(maxScaleAdjustRaw)
+    ? clampNumber(maxScaleAdjustRaw, 0, 0.4)
+    : SMART_POST_REFINE_SCALE_LIMIT;
+  const ratioX = sourceSize.width / mappedSize.width;
+  const ratioY = sourceSize.height / mappedSize.height;
+  const scaleX = clampNumber(ratioX, 1 - maxScaleAdjust, 1 + maxScaleAdjust);
+  const scaleY = clampNumber(ratioY, 1 - maxScaleAdjust, 1 + maxScaleAdjust);
+
+  const shiftRatioRaw = Number(options.maxShiftRatio);
+  const shiftRatio = Number.isFinite(shiftRatioRaw) && shiftRatioRaw > 0
+    ? shiftRatioRaw
+    : SMART_POST_REFINE_SHIFT_RATIO;
+  const sourceCenter = getBoundsCenter(sourceBounds);
+  const mappedCenter = getBoundsCenter(mappedOutputBox);
+  const maxShiftX = Math.max(12, sourceSize.width * shiftRatio);
+  const maxShiftY = Math.max(12, sourceSize.height * shiftRatio);
+  const dx = clampNumber(sourceCenter.x - mappedCenter.x, -maxShiftX, maxShiftX);
+  const dy = clampNumber(sourceCenter.y - mappedCenter.y, -maxShiftY, maxShiftY);
+
+  return {
+    scaleX,
+    scaleY,
+    dx,
+    dy,
+    rawScaleX: ratioX,
+    rawScaleY: ratioY
+  };
+}
+
+async function applySmartGeometryRefinement(layerId, options = {}) {
+  const doc = options.doc || app.activeDocument;
+  const smartTransform = options.smartTransform || null;
+  const outputSize = options.outputSize || null;
+  const sourceBounds = options.sourceBounds || null;
+  if (!doc || !layerId || !smartTransform || !smartTransform.outputBox || !outputSize || !sourceBounds) return;
+  const log = options.log || (() => {});
+
+  const minScaleDelta = Number.isFinite(Number(options.minScaleDelta))
+    ? Math.max(0, Number(options.minScaleDelta))
+    : SMART_POST_REFINE_MIN_SCALE_DELTA;
+  const minShiftPx = Number.isFinite(Number(options.minShiftPx))
+    ? Math.max(0, Number(options.minShiftPx))
+    : SMART_POST_REFINE_MIN_SHIFT_PX;
+  const maxScaleAdjust = Number.isFinite(Number(options.maxScaleAdjust))
+    ? Number(options.maxScaleAdjust)
+    : SMART_POST_REFINE_SCALE_LIMIT;
+  const maxShiftRatio = Number.isFinite(Number(options.maxShiftRatio))
+    ? Number(options.maxShiftRatio)
+    : SMART_POST_REFINE_SHIFT_RATIO;
+  const label = String(options.label || "smart");
+
+  const layer0 = doc.activeLayers && doc.activeLayers[0];
+  const bounds0 = parseLayerBounds(layer0 && layer0.bounds);
+  if (!bounds0) return;
+  const mapped0 = mapOutputBoxToLayerBounds(smartTransform.outputBox, outputSize, bounds0);
+  if (!mapped0) return;
+  const correction0 = computeSmartPostRefineCorrection(mapped0, sourceBounds, {
+    maxScaleAdjust,
+    maxShiftRatio
+  });
+  if (!correction0) return;
+
+  const needScale =
+    Math.abs(correction0.scaleX - 1) > minScaleDelta ||
+    Math.abs(correction0.scaleY - 1) > minScaleDelta;
+  if (needScale) {
+    log(
+      `${label} post refine scale: sx=${correction0.scaleX.toFixed(4)}, sy=${correction0.scaleY.toFixed(4)}`,
+      "info"
+    );
+    await transformLayerScale(layerId, correction0.scaleX * 100, correction0.scaleY * 100);
+  }
+
+  const layer1 = doc.activeLayers && doc.activeLayers[0];
+  const bounds1 = parseLayerBounds(layer1 && layer1.bounds);
+  if (!bounds1) return;
+  const mapped1 = mapOutputBoxToLayerBounds(smartTransform.outputBox, outputSize, bounds1);
+  if (!mapped1) return;
+  const correction1 = computeSmartPostRefineCorrection(mapped1, sourceBounds, {
+    maxScaleAdjust: 0,
+    maxShiftRatio
+  });
+  if (!correction1) return;
+  if (Math.abs(correction1.dx) <= minShiftPx && Math.abs(correction1.dy) <= minShiftPx) return;
+
+  log(`${label} post refine offset: dx=${correction1.dx.toFixed(2)}, dy=${correction1.dy.toFixed(2)}`, "info");
+  await transformLayerOffset(layerId, correction1.dx, correction1.dy);
+}
+
 function resolveReferenceBounds(layerBounds, options = {}) {
   const sourceRefBox = options.sourceRefBox || null;
   const sourceSize = options.sourceSize || null;
@@ -1622,6 +1900,9 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
         -SMART_ENHANCED_MAX_ROTATE_DEG,
         SMART_ENHANCED_MAX_ROTATE_DEG
       );
+      const sourceBoundsInTarget = sourceBounds && maskBounds
+        ? offsetBounds(sourceBounds, maskBounds.left, maskBounds.top)
+        : sourceBounds;
       const sourceAnchor =
         smartTransform.sourceAnchor ||
         (sourceBounds ? getBoundsCenter(sourceBounds) : null);
@@ -1713,15 +1994,21 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
 
       const residual = smartTransform.residual || null;
       if (residual) {
+        const residualScaleLimit = clampNumber(
+          Number(smartTransform.residualLimit),
+          SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
+          SMART_ENHANCED_RESIDUAL_SCALE_LIMIT_MAX
+        );
+        log(`align enhanced residual limit: ${residualScaleLimit.toFixed(4)}`, "info");
         const residualScaleX = clampNumber(
           Number(residual.scaleX),
-          1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
-          1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+          1 - residualScaleLimit,
+          1 + residualScaleLimit
         );
         const residualScaleY = clampNumber(
           Number(residual.scaleY),
-          1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
-          1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+          1 - residualScaleLimit,
+          1 + residualScaleLimit
         );
         if (
           Number.isFinite(residualScaleX) &&
@@ -1752,6 +2039,19 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
         }
       }
 
+      await applySmartGeometryRefinement(layerId, {
+        doc,
+        smartTransform,
+        outputSize: { width: outputW, height: outputH },
+        sourceBounds: sourceBoundsInTarget,
+        maxScaleAdjust: SMART_ENHANCED_POST_REFINE_SCALE_LIMIT,
+        maxShiftRatio: SMART_ENHANCED_POST_REFINE_SHIFT_RATIO,
+        minScaleDelta: SMART_POST_REFINE_MIN_SCALE_DELTA,
+        minShiftPx: SMART_POST_REFINE_MIN_SHIFT_PX,
+        label: "smartEnhanced",
+        log
+      });
+
       if (useMask) {
         try {
           await createSelectionFromBounds(maskBounds, doc);
@@ -1774,8 +2074,11 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
     const outputW = Number(outputSize.width);
     const outputH = Number(outputSize.height);
     if (Number.isFinite(outputW) && Number.isFinite(outputH) && outputW > 0 && outputH > 0) {
-      const sCenter = getBoundsCenter(sourceBounds);
-      const sSize = getBoundsSize(sourceBounds);
+      const sourceBoundsInTarget = sourceBounds && maskBounds
+        ? offsetBounds(sourceBounds, maskBounds.left, maskBounds.top)
+        : sourceBounds;
+      const sCenter = getBoundsCenter(sourceBoundsInTarget);
+      const sSize = getBoundsSize(sourceBoundsInTarget);
       const oSize = getBoundsSize(smartTransform.outputBox);
       const scaleX = sSize.width / oSize.width;
       const scaleY = sSize.height / oSize.height;
@@ -1831,6 +2134,19 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
       if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
         await transformLayerOffset(layerId, dx, dy);
       }
+
+      await applySmartGeometryRefinement(layerId, {
+        doc,
+        smartTransform,
+        outputSize: { width: outputW, height: outputH },
+        sourceBounds: sourceBoundsInTarget,
+        maxScaleAdjust: SMART_POST_REFINE_SCALE_LIMIT,
+        maxShiftRatio: SMART_POST_REFINE_SHIFT_RATIO,
+        minScaleDelta: SMART_POST_REFINE_MIN_SCALE_DELTA,
+        minShiftPx: SMART_POST_REFINE_MIN_SHIFT_PX,
+        label: "smart",
+        log
+      });
 
       if (useMask) {
         try {
@@ -1998,12 +2314,17 @@ async function placeImage(arrayBuffer, options = {}) {
         const center = smartTransform.metrics && smartTransform.metrics.centerOffset;
         const ratioDiff = smartTransform.metrics && smartTransform.metrics.ratioDiff;
         const iou = smartTransform.metrics && smartTransform.metrics.iou;
+        const baseScore = smartTransform.metrics && Number(smartTransform.metrics.baseScore);
+        const candidateScore = smartTransform.metrics && Number(smartTransform.metrics.candidateScore);
+        const sourceCandidateRank = smartTransform.metrics && Number(smartTransform.metrics.sourceCandidateRank);
+        const outputCandidateRank = smartTransform.metrics && Number(smartTransform.metrics.outputCandidateRank);
         const sourceMethod = smartTransform.sourceMethod || "-";
         const outputMethod = smartTransform.outputMethod || "-";
         const angle = smartTransform.metrics && Number(smartTransform.metrics.angle);
         const enhancedConfidence = smartTransform.metrics && Number(smartTransform.metrics.enhancedConfidence);
+        const residualLimit = smartTransform.metrics && Number(smartTransform.metrics.residualLimit);
         log(
-          `${alignLabel} score: ${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, center=(${center ? center.dx.toFixed(1) : "-"},${center ? center.dy.toFixed(1) : "-"}), ratioDiff=${Number.isFinite(ratioDiff) ? ratioDiff.toFixed(3) : "-"}, iou=${Number.isFinite(iou) ? iou.toFixed(3) : "-"}, angle=${Number.isFinite(angle) ? angle.toFixed(2) : "-"}, conf=${Number.isFinite(enhancedConfidence) ? enhancedConfidence.toFixed(3) : "-"}, method=(${sourceMethod}/${outputMethod})`,
+          `${alignLabel} score: ${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, base=${Number.isFinite(baseScore) ? baseScore.toFixed(3) : "-"}, candidate=${Number.isFinite(candidateScore) ? candidateScore.toFixed(3) : "-"}, center=(${center ? center.dx.toFixed(1) : "-"},${center ? center.dy.toFixed(1) : "-"}), ratioDiff=${Number.isFinite(ratioDiff) ? ratioDiff.toFixed(3) : "-"}, iou=${Number.isFinite(iou) ? iou.toFixed(3) : "-"}, angle=${Number.isFinite(angle) ? angle.toFixed(2) : "-"}, conf=${Number.isFinite(enhancedConfidence) ? enhancedConfidence.toFixed(3) : "-"}, residualLimit=${Number.isFinite(residualLimit) ? residualLimit.toFixed(3) : "-"}, rank=(${Number.isFinite(sourceCandidateRank) ? sourceCandidateRank : "-"}/${Number.isFinite(outputCandidateRank) ? outputCandidateRank : "-"}), method=(${sourceMethod}/${outputMethod})`,
           "info"
         );
       }
