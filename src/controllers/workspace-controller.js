@@ -12,10 +12,12 @@ const state = {
   currentApp: null,
   inputValues: {},
   imageBounds: {},
-  isRunning: false,
-  abortController: null,
-  timerId: null,
-  runStartedAt: 0,
+  jobs: [],
+  nextJobSeq: 1,
+  schedulerRunningCount: 0,
+  schedulerTimerId: null,
+  taskSummaryTimerId: null,
+  applyQueue: Promise.resolve(),
   appPickerKeyword: "",
   templateSelectCallback: null,
   templatePickerMode: "single",
@@ -44,6 +46,20 @@ const LEGACY_PASTE_STRATEGY_MAP = {
 };
 const MAX_TEMPLATE_COMBINE_COUNT = 5;
 const RH_PROMPT_MAX_CHARS = 4000;
+const JOB_STATUS = {
+  QUEUED: "QUEUED",
+  SUBMITTING: "SUBMITTING",
+  REMOTE_RUNNING: "REMOTE_RUNNING",
+  DOWNLOADING: "DOWNLOADING",
+  APPLYING: "APPLYING",
+  TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
+  DONE: "DONE",
+  FAILED: "FAILED"
+};
+const LOCAL_MAX_CONCURRENT_JOBS = 2;
+const JOB_TIMEOUT_RETRY_DELAY_MS = 15000;
+const JOB_MAX_TIMEOUT_RECOVERIES = 40;
+const JOB_MAX_HISTORY = 120;
 
 let workspaceInputs = null;
 
@@ -59,6 +75,65 @@ function normalizePasteStrategy(value) {
   const legacy = LEGACY_PASTE_STRATEGY_MAP[marker];
   const normalized = legacy || marker;
   return PASTE_STRATEGY_CHOICES.includes(normalized) ? normalized : "normal";
+}
+
+function cloneArrayBuffer(value) {
+  if (value instanceof ArrayBuffer) return value.slice(0);
+  if (ArrayBuffer.isView(value)) {
+    return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+  }
+  return null;
+}
+
+function cloneDeepValue(value, depth = 0) {
+  if (value == null) return value;
+  if (typeof value !== "object") return value;
+
+  const binary = cloneArrayBuffer(value);
+  if (binary) return binary;
+  if (depth >= 8) return value;
+  if (Array.isArray(value)) return value.map((item) => cloneDeepValue(item, depth + 1));
+
+  const out = {};
+  Object.keys(value).forEach((key) => {
+    out[key] = cloneDeepValue(value[key], depth + 1);
+  });
+  return out;
+}
+
+function cloneInputValues(values) {
+  const source = values && typeof values === "object" ? values : {};
+  const out = {};
+  Object.keys(source).forEach((key) => {
+    out[key] = cloneDeepValue(source[key]);
+  });
+  return out;
+}
+
+function cloneBounds(bounds) {
+  if (!bounds || typeof bounds !== "object") return null;
+  return {
+    left: Number(bounds.left),
+    top: Number(bounds.top),
+    right: Number(bounds.right),
+    bottom: Number(bounds.bottom)
+  };
+}
+
+function getJobTag(job) {
+  if (!job) return "Job:-";
+  return `Job:${job.jobId}`;
+}
+
+function isJobTimeoutLikeError(error) {
+  const message = String((error && error.message) || error || "").toLowerCase();
+  return /timeout|超时/.test(message);
+}
+
+function createJobScopedLogger(job) {
+  return (msg, type = "info") => {
+    log(`[${getJobTag(job)}] ${String(msg || "")}`, type);
+  };
 }
 
 function syncUploadMaxEdgeSelect() {
@@ -181,26 +256,98 @@ function getApps() {
 function updateRunButtonUI() {
   const btn = dom.btnRun || byId("btnRun");
   if (!btn) return;
-
-  if (state.isRunning) {
-    const elapsed = ((Date.now() - state.runStartedAt) / 1000).toFixed(2);
-    btn.classList.add("running");
-    btn.disabled = false;
-    btn.textContent = `中止 (${elapsed}s)`;
-    return;
-  }
-
-  btn.classList.remove("running");
   if (!state.currentApp) {
     btn.disabled = true;
     btn.textContent = "开始运行";
     return;
   }
-
   btn.disabled = false;
-  btn.textContent = `运行: ${state.currentApp.name}`;
+  btn.textContent = `运行新任务: ${state.currentApp.name}`;
 }
 
+function getJobStatusLabel(status) {
+  if (status === JOB_STATUS.QUEUED) return "排队";
+  if (status === JOB_STATUS.SUBMITTING) return "提交";
+  if (status === JOB_STATUS.REMOTE_RUNNING) return "运行";
+  if (status === JOB_STATUS.DOWNLOADING) return "下载";
+  if (status === JOB_STATUS.APPLYING) return "回贴";
+  if (status === JOB_STATUS.TIMEOUT_TRACKING) return "超时跟踪";
+  if (status === JOB_STATUS.DONE) return "完成";
+  if (status === JOB_STATUS.FAILED) return "失败";
+  return status || "-";
+}
+
+function getJobElapsedSeconds(job, now = Date.now()) {
+  const start = Number(job && (job.startedAt || job.createdAt) || 0);
+  if (!Number.isFinite(start) || start <= 0) return "0.00";
+  const elapsed = Math.max(0, (now - start) / 1000);
+  return elapsed.toFixed(2);
+}
+
+function hasLiveJobs() {
+  return Array.isArray(state.jobs) && state.jobs.some((job) =>
+    ![JOB_STATUS.DONE, JOB_STATUS.FAILED].includes(job.status)
+  );
+}
+
+function syncTaskSummaryTicker() {
+  if (hasLiveJobs()) {
+    if (state.taskSummaryTimerId) return;
+    state.taskSummaryTimerId = setInterval(() => {
+      updateTaskStatusSummary();
+    }, 100);
+    return;
+  }
+  if (state.taskSummaryTimerId) {
+    clearInterval(state.taskSummaryTimerId);
+    state.taskSummaryTimerId = null;
+  }
+}
+
+function updateTaskStatusSummary() {
+  const summaryEl = dom.taskStatusSummary || byId("taskStatusSummary");
+  if (!summaryEl) return;
+  const now = Date.now();
+
+  if (!Array.isArray(state.jobs) || state.jobs.length === 0) {
+    summaryEl.textContent = "后台任务：无";
+    summaryEl.classList.remove("is-warning", "is-success");
+    summaryEl.title = "";
+    syncTaskSummaryTicker();
+    return;
+  }
+
+  const running = state.jobs.filter((job) =>
+    [JOB_STATUS.SUBMITTING, JOB_STATUS.REMOTE_RUNNING, JOB_STATUS.DOWNLOADING, JOB_STATUS.APPLYING].includes(job.status)
+  ).length;
+  const queued = state.jobs.filter((job) => job.status === JOB_STATUS.QUEUED).length;
+  const timeout = state.jobs.filter((job) => job.status === JOB_STATUS.TIMEOUT_TRACKING).length;
+  const done = state.jobs.filter((job) => job.status === JOB_STATUS.DONE).length;
+  const failed = state.jobs.filter((job) => job.status === JOB_STATUS.FAILED).length;
+
+  const line1 =
+    `后台任务：运行 ${running}｜排队 ${queued}｜完成 ${done}｜失败 ${failed}` +
+    (timeout > 0 ? `｜超时跟踪 ${timeout}` : "");
+  const activeJobs = state.jobs.filter((job) =>
+    ![JOB_STATUS.DONE, JOB_STATUS.FAILED].includes(job.status)
+  );
+  const line2 = activeJobs.length > 0
+    ? activeJobs
+      .slice(0, 6)
+      .map((job) => `${job.jobId} ${getJobStatusLabel(job.status)} ${getJobElapsedSeconds(job, now)}s`)
+      .join("｜")
+    : "";
+  summaryEl.textContent = line2 ? `${line1}\n${line2}` : line1;
+
+  summaryEl.classList.toggle("is-warning", failed > 0 || timeout > 0);
+  summaryEl.classList.toggle("is-success", failed === 0 && timeout === 0 && running === 0 && queued === 0 && done > 0);
+
+  const preview = state.jobs.slice(0, 8).map((job) =>
+    `${job.jobId} | ${job.appName || "-"} | ${getJobStatusLabel(job.status)} | ${getJobElapsedSeconds(job, now)}s${job.remoteTaskId ? ` | ${job.remoteTaskId}` : ""}`
+  );
+  summaryEl.title = preview.join("\n");
+  syncTaskSummaryTicker();
+}
 function updateCurrentAppMeta() {
   const metaEl = dom.appPickerMeta || byId("appPickerMeta");
   if (!metaEl) return;
@@ -252,32 +399,147 @@ function resolveSourceImageBuffer() {
   return getWorkspaceInputs().resolveSourceImageBuffer();
 }
 
-function setRunState(running) {
-  state.isRunning = running;
-  if (running) {
-    state.runStartedAt = Date.now();
-    if (state.timerId) clearInterval(state.timerId);
-    state.timerId = setInterval(updateRunButtonUI, 100);
-  } else {
-    if (state.timerId) {
-      clearInterval(state.timerId);
-      state.timerId = null;
-    }
-    state.runStartedAt = 0;
-    state.abortController = null;
+function setJobStatus(job, status, reason = "") {
+  if (!job) return;
+  job.status = status;
+  job.statusReason = String(reason || "");
+  job.updatedAt = Date.now();
+  updateTaskStatusSummary();
+}
+
+function pruneJobHistory() {
+  if (!Array.isArray(state.jobs) || state.jobs.length <= JOB_MAX_HISTORY) return;
+  const active = state.jobs.filter((job) =>
+    [JOB_STATUS.QUEUED, JOB_STATUS.SUBMITTING, JOB_STATUS.REMOTE_RUNNING, JOB_STATUS.DOWNLOADING, JOB_STATUS.APPLYING, JOB_STATUS.TIMEOUT_TRACKING].includes(job.status)
+  );
+  const finished = state.jobs
+    .filter((job) => !active.includes(job))
+    .slice(0, Math.max(0, JOB_MAX_HISTORY - active.length));
+  state.jobs = [...active, ...finished].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function scheduleJobPump(delayMs = 0) {
+  const delay = Math.max(0, Number(delayMs) || 0);
+  if (state.schedulerTimerId) {
+    clearTimeout(state.schedulerTimerId);
+    state.schedulerTimerId = null;
   }
-  updateRunButtonUI();
+  state.schedulerTimerId = setTimeout(() => {
+    state.schedulerTimerId = null;
+    pumpJobScheduler();
+  }, delay);
+}
+
+function findRunnableJob(now = Date.now()) {
+  return state.jobs.find((job) =>
+    (job.status === JOB_STATUS.QUEUED || job.status === JOB_STATUS.TIMEOUT_TRACKING) &&
+    Number(job.nextRunAt || 0) <= now
+  ) || null;
+}
+
+function findNextWakeDelay(now = Date.now()) {
+  let nextAt = null;
+  state.jobs.forEach((job) => {
+    if (job.status !== JOB_STATUS.QUEUED && job.status !== JOB_STATUS.TIMEOUT_TRACKING) return;
+    const ts = Number(job.nextRunAt || 0);
+    if (!Number.isFinite(ts) || ts <= now) return;
+    if (nextAt === null || ts < nextAt) nextAt = ts;
+  });
+  return nextAt === null ? null : Math.max(0, nextAt - now);
+}
+
+function enqueueApplyWork(job, buffer) {
+  const task = async () => {
+    await ps.placeImage(buffer, {
+      log: createJobScopedLogger(job),
+      targetBounds: cloneBounds(job.targetBounds),
+      pasteStrategy: job.pasteStrategy,
+      sourceBuffer: cloneArrayBuffer(job.sourceBuffer)
+    });
+  };
+  const queuedTask = state.applyQueue.then(task, task);
+  state.applyQueue = queuedTask.catch(() => {});
+  return queuedTask;
+}
+
+async function executeJob(job) {
+  const jobLog = createJobScopedLogger(job);
+  const signalController = new AbortController();
+  const signal = signalController.signal;
+  const runOptions = { log: jobLog, signal, uploadMaxEdge: job.uploadMaxEdge };
+
+  try {
+    if (!job.remoteTaskId) {
+      setJobStatus(job, JOB_STATUS.SUBMITTING);
+      const taskId = await runninghub.runAppTask(job.apiKey, job.appItem, job.inputValues, runOptions);
+      job.remoteTaskId = String(taskId || "");
+      jobLog(`任务已提交: ${job.remoteTaskId}`, "success");
+    }
+
+    setJobStatus(job, JOB_STATUS.REMOTE_RUNNING);
+    const resultUrl = await runninghub.pollTaskOutput(job.apiKey, job.remoteTaskId, job.pollSettings, runOptions);
+    job.resultUrl = String(resultUrl || "");
+
+    setJobStatus(job, JOB_STATUS.DOWNLOADING);
+    const buffer = await runninghub.downloadResultBinary(job.resultUrl, runOptions);
+
+    setJobStatus(job, JOB_STATUS.APPLYING);
+    await enqueueApplyWork(job, buffer);
+
+    setJobStatus(job, JOB_STATUS.DONE);
+    job.finishedAt = Date.now();
+    jobLog("处理完成，结果已回贴", "success");
+    updateAccountStatus();
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error || "unknown error");
+    if (isJobTimeoutLikeError(error) && job.remoteTaskId && job.timeoutRecoveries < JOB_MAX_TIMEOUT_RECOVERIES) {
+      job.timeoutRecoveries += 1;
+      job.nextRunAt = Date.now() + JOB_TIMEOUT_RETRY_DELAY_MS;
+      setJobStatus(job, JOB_STATUS.TIMEOUT_TRACKING, message);
+      jobLog(
+        `本地跟踪超时，${Math.round(JOB_TIMEOUT_RETRY_DELAY_MS / 1000)}s 后继续后台跟踪（第 ${job.timeoutRecoveries} 次）`,
+        "warn"
+      );
+      return;
+    }
+    setJobStatus(job, JOB_STATUS.FAILED, message);
+    job.finishedAt = Date.now();
+    jobLog(`任务失败: ${message}`, "error");
+  }
+}
+
+function runJobInBackground(job) {
+  state.schedulerRunningCount += 1;
+  updateTaskStatusSummary();
+  executeJob(job)
+    .catch((error) => {
+      const message = error && error.message ? error.message : String(error || "unknown error");
+      setJobStatus(job, JOB_STATUS.FAILED, message);
+      createJobScopedLogger(job)(`任务失败: ${message}`, "error");
+    })
+    .finally(() => {
+      state.schedulerRunningCount = Math.max(0, state.schedulerRunningCount - 1);
+      pruneJobHistory();
+      updateTaskStatusSummary();
+      pumpJobScheduler();
+    });
+}
+
+function pumpJobScheduler() {
+  const now = Date.now();
+  while (state.schedulerRunningCount < LOCAL_MAX_CONCURRENT_JOBS) {
+    const nextJob = findRunnableJob(now);
+    if (!nextJob) break;
+    runJobInBackground(nextJob);
+  }
+
+  const nextDelay = findNextWakeDelay(now);
+  if (nextDelay !== null) {
+    scheduleJobPump(nextDelay);
+  }
 }
 
 async function handleRun() {
-  if (state.isRunning) {
-    if (state.abortController) {
-      state.abortController.abort();
-      log("用户请求中止任务", "warn");
-    }
-    return;
-  }
-
   const apiKey = store.getApiKey();
   if (!apiKey) {
     alert("请先在设置页配置 API Key");
@@ -288,46 +550,41 @@ async function handleRun() {
     return;
   }
 
-  state.abortController = new AbortController();
-  const signal = state.abortController.signal;
-  setRunState(true);
+  const settings = store.getSettings();
+  const now = Date.now();
+  const job = {
+    jobId: `J${now}-${state.nextJobSeq++}`,
+    appName: String(state.currentApp.name || "未命名应用"),
+    apiKey,
+    appItem: cloneDeepValue(state.currentApp),
+    inputValues: cloneInputValues(state.inputValues),
+    targetBounds: cloneBounds(resolveTargetBounds()),
+    sourceBuffer: cloneArrayBuffer(resolveSourceImageBuffer()),
+    pasteStrategy: normalizePasteStrategy(settings.pasteStrategy),
+    uploadMaxEdge: normalizeUploadMaxEdge(settings.uploadMaxEdge),
+    pollSettings: {
+      pollInterval: Number(settings.pollInterval) || 2,
+      timeout: Number(settings.timeout) || 180
+    },
+    status: JOB_STATUS.QUEUED,
+    statusReason: "",
+    remoteTaskId: "",
+    resultUrl: "",
+    timeoutRecoveries: 0,
+    nextRunAt: now,
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    finishedAt: 0
+  };
 
-  log("CLEAR");
-  log("开始执行任务", "info");
-  logPromptLengthsBeforeRun();
-
-  try {
-    const settings = store.getSettings();
-    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
-    const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
-    const runOptions = { log, signal, uploadMaxEdge };
-    const taskId = await runninghub.runAppTask(apiKey, state.currentApp, state.inputValues, runOptions);
-    log(`任务已提交: ${taskId}`, "success");
-
-    const resultUrl = await runninghub.pollTaskOutput(apiKey, taskId, settings, runOptions);
-    log("任务完成，下载结果中", "info");
-
-    if (signal.aborted) throw new Error("用户中止");
-    const targetBounds = resolveTargetBounds();
-    const sourceBuffer = resolveSourceImageBuffer();
-    const buffer = await runninghub.downloadResultBinary(resultUrl, runOptions);
-    await ps.placeImage(buffer, { log, signal, targetBounds, pasteStrategy, sourceBuffer });
-
-    log("处理完成，结果已回贴", "success");
-    updateAccountStatus();
-  } catch (error) {
-    if (error && (error.name === "AbortError" || String(error.message || "").includes("中止"))) {
-      log("任务已中止", "warn");
-    } else {
-      console.error(error);
-      log(`运行失败: ${error.message}`, "error");
-      alert(`运行失败: ${error.message}`);
-    }
-  } finally {
-    setRunState(false);
-  }
+  state.jobs.unshift(job);
+  pruneJobHistory();
+  updateTaskStatusSummary();
+  log(`[${getJobTag(job)}] 已加入后台队列: ${job.appName}`, "info");
+  logPromptLengthsBeforeRun(job.appItem, job.inputValues, `[${getJobTag(job)}]`);
+  pumpJobScheduler();
 }
-
 function renderAppPickerList() {
   if (!dom.appPickerList) return;
 
@@ -469,12 +726,13 @@ function getTailPreview(value, maxChars = 20) {
   return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
 }
 
-function resolvePromptLogValue(input) {
+function resolvePromptLogValue(input, inputValues = state.inputValues) {
   const key = String((input && input.key) || "").trim();
   if (!key) return { key: "", value: "" };
   const aliasKey = key.includes(":") ? key.split(":").pop() : "";
-  let value = state.inputValues[key];
-  if (isEmptyValue(value) && aliasKey) value = state.inputValues[aliasKey];
+  const values = inputValues && typeof inputValues === "object" ? inputValues : {};
+  let value = values[key];
+  if (isEmptyValue(value) && aliasKey) value = values[aliasKey];
   return { key, value: String(value == null ? "" : value) };
 }
 
@@ -491,21 +749,22 @@ function isPromptLikeForLog(input) {
   );
 }
 
-function logPromptLengthsBeforeRun() {
-  if (!state.currentApp || !Array.isArray(state.currentApp.inputs)) return;
-  const promptInputs = state.currentApp.inputs.filter((input) => isPromptLikeForLog(input));
+function logPromptLengthsBeforeRun(appItem = state.currentApp, inputValues = state.inputValues, prefix = "") {
+  if (!appItem || !Array.isArray(appItem.inputs)) return;
+  const promptInputs = appItem.inputs.filter((input) => isPromptLikeForLog(input));
   if (promptInputs.length === 0) return;
 
-  log(`运行前长度检查：共 ${promptInputs.length} 个文本参数`, "info");
+  const head = prefix ? `${prefix} ` : "";
+  log(`${head}运行前长度检查：共 ${promptInputs.length} 个文本参数`, "info");
   promptInputs.slice(0, 12).forEach((input) => {
-    const { key, value } = resolvePromptLogValue(input);
+    const { key, value } = resolvePromptLogValue(input, inputValues);
     const label = String(input.label || input.name || key || "未命名参数");
     const length = getTextLength(value);
     const tail = getTailPreview(value, 20);
-    log(`参数 ${label} (${key}): 长度 ${length}，末尾 ${tail}`, "info");
+    log(`${head}参数 ${label} (${key}): 长度 ${length}，末尾 ${tail}`, "info");
   });
   if (promptInputs.length > 12) {
-    log(`其余 ${promptInputs.length - 12} 个文本参数未展开`, "info");
+    log(`${head}其余 ${promptInputs.length - 12} 个文本参数未展开`, "info");
   }
 }
 
@@ -802,6 +1061,7 @@ function cacheDomRefs() {
     "pasteStrategySelect",
     "btnCopyLog",
     "btnClearLog",
+    "taskStatusSummary",
     "appPickerMeta",
     "dynamicInputContainer",
     "imageInputContainer",
@@ -841,6 +1101,7 @@ function initWorkspaceController() {
   updateAccountStatus();
   syncWorkspaceApps({ forceRerender: true });
   updateRunButtonUI();
+  updateTaskStatusSummary();
 }
 
 module.exports = { initWorkspaceController };
