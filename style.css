@@ -350,6 +350,24 @@ textarea {
 .main-btn-primary { background: var(--accent-color); border-color: #205596; }
 .main-btn-primary:hover:not(:disabled) { background: #409bf5; }
 
+.task-status-summary {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #8f8f8f;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.task-status-summary.is-warning {
+  color: #ffb74d;
+}
+
+.task-status-summary.is-success {
+  color: #9dd88f;
+}
+
 .tiny-btn {
   background: transparent;
   border: 1px solid #555;
