@@ -25,12 +25,6 @@ const state = {
   templatePickerSelectedIds: []
 };
 const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
-const UPLOAD_MAX_EDGE_LABELS = {
-  0: "无限制",
-  4096: "4k",
-  2048: "2k",
-  1024: "1k"
-};
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const PASTE_STRATEGY_LABELS = {
   normal: "普通（居中铺满）",
@@ -136,15 +130,6 @@ function createJobScopedLogger(job) {
   };
 }
 
-function syncUploadMaxEdgeSelect() {
-  const select = dom.uploadMaxEdgeSelect || byId("uploadMaxEdgeSelect");
-  if (!select) return;
-  const settings = store.getSettings();
-  const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
-  const nextValue = String(uploadMaxEdge);
-  if (select.value !== nextValue) select.value = nextValue;
-}
-
 function syncPasteStrategySelect() {
   const select = dom.pasteStrategySelect || byId("pasteStrategySelect");
   if (!select) return;
@@ -214,35 +199,6 @@ function log(msg, type = "info") {
   if (stickToBottom) {
     logDiv.scrollTop = logDiv.scrollHeight;
   }
-}
-
-async function onCopyLogClick() {
-  const logDiv = dom.logWindow || byId("logWindow");
-  if (!logDiv) return;
-  const text = getLogText(logDiv).trim();
-  if (!text) {
-    log("日志为空，无可复制内容", "warn");
-    return;
-  }
-
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      await navigator.clipboard.writeText(text);
-      log("日志已复制到剪贴板", "success");
-      return;
-    }
-  } catch (_) {}
-
-  try {
-    if (typeof logDiv.focus === "function") logDiv.focus();
-    if (typeof logDiv.select === "function") logDiv.select();
-    if (typeof document.execCommand === "function" && document.execCommand("copy")) {
-      log("日志已复制到剪贴板", "success");
-      return;
-    }
-  } catch (_) {}
-
-  log("复制失败，请手动全选后复制", "error");
 }
 
 function onClearLogClick() {
@@ -984,20 +940,6 @@ function onRefreshWorkspaceClick() {
   log("应用列表已刷新", "info");
 }
 
-function onUploadMaxEdgeChange(event) {
-  const nextUploadMaxEdge = normalizeUploadMaxEdge(event && event.target ? event.target.value : 0);
-  const settings = store.getSettings();
-  const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
-  store.saveSettings({
-    pollInterval: settings.pollInterval,
-    timeout: settings.timeout,
-    uploadMaxEdge: nextUploadMaxEdge,
-    pasteStrategy
-  });
-  const marker = UPLOAD_MAX_EDGE_LABELS[nextUploadMaxEdge] || "无限制";
-  log(`上传分辨率策略已切换: ${marker}`, "info");
-}
-
 function onPasteStrategyChange(event) {
   const nextPasteStrategy = normalizePasteStrategy(event && event.target ? event.target.value : "");
   const settings = store.getSettings();
@@ -1020,13 +962,11 @@ function bindWorkspaceEvents() {
   rebindEvent(dom.appPickerList, "click", handleAppPickerListClick);
   rebindEvent(dom.appPickerSearchInput, "input", onAppPickerSearchInput);
   rebindEvent(dom.btnRefreshWorkspaceApps, "click", onRefreshWorkspaceClick);
-  rebindEvent(dom.uploadMaxEdgeSelect, "change", onUploadMaxEdgeChange);
   rebindEvent(dom.pasteStrategySelect, "change", onPasteStrategyChange);
   rebindEvent(dom.templateModalClose, "click", closeTemplatePicker);
   rebindEvent(dom.templateModal, "click", onTemplateModalClick);
   rebindEvent(dom.templateList, "click", handleTemplateListClick);
   rebindEvent(dom.btnApplyTemplateSelection, "click", onApplyTemplateSelectionClick);
-  rebindEvent(dom.btnCopyLog, "click", onCopyLogClick);
   rebindEvent(dom.btnClearLog, "click", onClearLogClick);
 
   rebindEvent(document, APP_EVENTS.APPS_CHANGED, onAppsChanged);
@@ -1048,7 +988,6 @@ function onTemplatesChanged() {
 
 function onSettingsChanged() {
   updateAccountStatus();
-  syncUploadMaxEdgeSelect();
   syncPasteStrategySelect();
 }
 
@@ -1057,9 +996,7 @@ function cacheDomRefs() {
     "btnRun",
     "btnOpenAppPicker",
     "btnRefreshWorkspaceApps",
-    "uploadMaxEdgeSelect",
     "pasteStrategySelect",
-    "btnCopyLog",
     "btnClearLog",
     "taskStatusSummary",
     "appPickerMeta",
@@ -1093,7 +1030,6 @@ function initWorkspaceController() {
   state.templatePickerMaxSelection = 1;
   state.templatePickerSelectedIds = [];
   syncTemplatePickerUiState();
-  syncUploadMaxEdgeSelect();
   syncPasteStrategySelect();
   workspaceInputs = null;
   getWorkspaceInputs();

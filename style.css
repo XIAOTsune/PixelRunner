@@ -23,15 +23,21 @@ body {
   overflow: hidden;
 }
 
-body.modal-open select {
+body.modal-open input,
+body.modal-open select,
+body.modal-open textarea {
   visibility: hidden;
 }
 
-body.modal-open .modal-overlay.active select {
+body.modal-open .modal-overlay.active input,
+body.modal-open .modal-overlay.active select,
+body.modal-open .modal-overlay.active textarea {
   visibility: visible;
 }
 
-body.modal-open dialog select {
+body.modal-open dialog input,
+body.modal-open dialog select,
+body.modal-open dialog textarea {
   visibility: visible;
 }
 

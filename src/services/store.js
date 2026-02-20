@@ -1,7 +1,7 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
-const SETTINGS_SCHEMA_VERSION = 2;
+const SETTINGS_SCHEMA_VERSION = 3;
 const PROMPT_TEMPLATE_BUNDLE_FORMAT = "pixelrunner.prompt-templates";
 const PROMPT_TEMPLATE_BUNDLE_VERSION = 1;
 const LEGACY_PASTE_STRATEGY_MAP = {
@@ -52,7 +52,7 @@ function getSettings() {
   const rawValue = readJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
   const value = rawValue && typeof rawValue === "object" ? rawValue : {};
   const uploadMaxEdgeRaw = Number(value.uploadMaxEdge);
-  const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
+  let uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
   let pasteStrategy = String(value.pasteStrategy || "").trim();
   if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
     pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
@@ -66,6 +66,8 @@ function getSettings() {
   // Older releases often persisted 90s timeout; raise to current default to reduce timeout failures.
   if (schemaVersion < SETTINGS_SCHEMA_VERSION) {
     if (timeout < DEFAULT_SETTINGS.timeout) timeout = DEFAULT_SETTINGS.timeout;
+    // Since upload resolution cap moved to advanced settings, reset legacy values to default unlimited once.
+    if (schemaVersion < 3) uploadMaxEdge = DEFAULT_SETTINGS.uploadMaxEdge;
     shouldPersistMigration = true;
   }
 

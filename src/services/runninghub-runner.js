@@ -5,6 +5,10 @@ const { resolveInputType, getInputOptionEntries } = require("../shared/input-sch
 const BLANK_IMAGE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2fJ0QAAAAASUVORK5CYII=";
 const UPLOAD_MAX_EDGE_CHOICES = [0, 1024, 2048, 4096];
+const UPLOAD_MAX_EDGE_RETRY_CHAIN = [1024, 2048, 4096, 0];
+const IMAGE_RESIZE_DECODE_TIMEOUT_MS = 3500;
+const IMAGE_RESIZE_ENCODE_TIMEOUT_MS = 3000;
+const REQUEST_TIMEOUT_MS = 45000;
 
 function fallbackToMessage(result, fallback = "Request failed") {
   if (!result || typeof result !== "object") return fallback;
@@ -47,34 +51,220 @@ function normalizeUploadMaxEdge(rawValue) {
   return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : 0;
 }
 
-async function loadImageFromBlob(blob) {
-  if (!blob) throw new Error("Image blob is empty");
+function getUploadMaxEdgeLabel(rawValue) {
+  const normalized = normalizeUploadMaxEdge(rawValue);
+  return normalized > 0 ? `${normalized}px` : "unlimited";
+}
+
+function buildUploadMaxEdgeCandidates(rawValue) {
+  const normalized = normalizeUploadMaxEdge(rawValue);
+  if (normalized <= 0) return [0];
+  const index = UPLOAD_MAX_EDGE_RETRY_CHAIN.indexOf(normalized);
+  if (index < 0) return [0];
+  return UPLOAD_MAX_EDGE_RETRY_CHAIN.slice(index);
+}
+
+function detectImageMime(arrayBuffer) {
+  if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength < 12) return "application/octet-stream";
+  const bytes = new Uint8Array(arrayBuffer);
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
+  return "application/octet-stream";
+}
+
+function createRunCancelledError(message = "Run cancelled") {
+  const err = new Error(message);
+  err.code = "RUN_CANCELLED";
+  return err;
+}
+
+async function fetchWithTimeout(fetchImpl, url, init = {}, options = {}) {
+  const safeFetch = typeof fetchImpl === "function" ? fetchImpl : fetch;
+  const timeoutRaw = Number(options.timeoutMs);
+  const timeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : REQUEST_TIMEOUT_MS;
+  const externalSignal = init && init.signal ? init.signal : null;
+
+  if (typeof AbortController === "undefined") {
+    return safeFetch(url, init);
+  }
+
+  const controller = new AbortController();
+  let timerId = null;
+  let abortCause = "";
+
+  const onExternalAbort = () => {
+    abortCause = "cancelled";
+    try {
+      controller.abort();
+    } catch (_) {}
+  };
+
+  if (externalSignal && externalSignal.aborted) {
+    throw createRunCancelledError("Run cancelled");
+  }
+  if (externalSignal && typeof externalSignal.addEventListener === "function") {
+    externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+  }
+
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timerId = setTimeout(() => {
+      abortCause = "timeout";
+      try {
+        controller.abort();
+      } catch (_) {}
+    }, timeoutMs);
+  }
+
+  try {
+    const requestInit = {
+      ...(init && typeof init === "object" ? init : {}),
+      signal: controller.signal
+    };
+    return await safeFetch(url, requestInit);
+  } catch (error) {
+    if (abortCause === "cancelled" || (externalSignal && externalSignal.aborted)) {
+      throw createRunCancelledError("Run cancelled");
+    }
+    if (abortCause === "timeout") {
+      throw new Error(`Request timeout after ${Math.round(timeoutMs)}ms`);
+    }
+    throw error;
+  } finally {
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+    if (externalSignal && typeof externalSignal.removeEventListener === "function") {
+      externalSignal.removeEventListener("abort", onExternalAbort);
+    }
+  }
+}
+
+async function loadImageFromBuffer(arrayBuffer, options = {}) {
+  if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength === 0) {
+    throw new Error("Image buffer is empty");
+  }
   if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
     throw new Error("URL.createObjectURL is not available");
   }
+  if (typeof Image === "undefined") {
+    throw new Error("Image is not available");
+  }
 
+  const signal = options.signal || null;
+  const timeoutMsRaw = Number(options.timeoutMs);
+  const timeoutMs =
+    Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : IMAGE_RESIZE_DECODE_TIMEOUT_MS;
+  const blob = new Blob([arrayBuffer], { type: detectImageMime(arrayBuffer) });
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
+    let done = false;
+    let timerId = null;
+
+    const cleanup = () => {
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (signal && typeof signal.removeEventListener === "function") {
+        signal.removeEventListener("abort", onAbort);
+      }
+      img.onload = null;
+      img.onerror = null;
+      try {
+        URL.revokeObjectURL(url);
+      } catch (_) {}
+    };
+
+    const finishResolve = (value) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const finishReject = (error) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onAbort = () => {
+      finishReject(createRunCancelledError("Run cancelled during image decode"));
+    };
+
+    if (signal && signal.aborted) {
+      finishReject(createRunCancelledError("Run cancelled during image decode"));
+      return;
+    }
+    if (signal && typeof signal.addEventListener === "function") {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    timerId = setTimeout(() => {
+      finishReject(new Error(`Image decode timeout after ${Math.round(timeoutMs)}ms`));
+    }, timeoutMs);
+
     img.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(img);
+      finishResolve(img);
     };
     img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Image decode failed"));
+      finishReject(new Error("Image decode failed"));
     };
     img.src = url;
   });
 }
 
-async function canvasToPngBlob(canvas) {
+async function canvasToPngBlob(canvas, options = {}) {
   if (!canvas) return null;
+  const timeoutMsRaw = Number(options.timeoutMs);
+  const timeoutMs =
+    Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : IMAGE_RESIZE_ENCODE_TIMEOUT_MS;
   if (typeof canvas.toBlob === "function") {
     const blob = await new Promise((resolve) => {
+      let done = false;
+      const timerId = setTimeout(() => {
+        if (done) return;
+        done = true;
+        resolve(null);
+      }, timeoutMs);
       try {
-        canvas.toBlob((result) => resolve(result || null), "image/png");
+        canvas.toBlob((result) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timerId);
+          resolve(result || null);
+        }, "image/png");
       } catch (_) {
+        if (done) return;
+        done = true;
+        clearTimeout(timerId);
         resolve(null);
       }
     });
@@ -91,14 +281,16 @@ async function canvasToPngBlob(canvas) {
   return null;
 }
 
-async function resizeUploadBufferIfNeeded(buffer, uploadMaxEdge, log) {
+async function resizeUploadBufferIfNeeded(buffer, uploadMaxEdge, log, options = {}) {
   const maxEdge = normalizeUploadMaxEdge(uploadMaxEdge);
   if (maxEdge <= 0) return buffer;
   if (typeof document === "undefined" || typeof Image === "undefined") return buffer;
 
   try {
-    const sourceBlob = new Blob([buffer], { type: "image/png" });
-    const img = await loadImageFromBlob(sourceBlob);
+    const img = await loadImageFromBuffer(buffer, {
+      signal: options.signal,
+      timeoutMs: options.resizeDecodeTimeoutMs
+    });
     const sourceWidth = Number(img && (img.naturalWidth || img.width) || 0);
     const sourceHeight = Number(img && (img.naturalHeight || img.height) || 0);
     const longEdge = Math.max(sourceWidth, sourceHeight);
@@ -114,7 +306,9 @@ async function resizeUploadBufferIfNeeded(buffer, uploadMaxEdge, log) {
     if (!ctx) return buffer;
 
     ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-    const resizedBlob = await canvasToPngBlob(canvas);
+    const resizedBlob = await canvasToPngBlob(canvas, {
+      timeoutMs: options.resizeEncodeTimeoutMs
+    });
     if (!resizedBlob) return buffer;
     const resizedBuffer = await resizedBlob.arrayBuffer();
     if (!(resizedBuffer instanceof ArrayBuffer) || resizedBuffer.byteLength === 0) return buffer;
@@ -124,6 +318,7 @@ async function resizeUploadBufferIfNeeded(buffer, uploadMaxEdge, log) {
     }
     return resizedBuffer;
   } catch (error) {
+    if (error && error.code === "RUN_CANCELLED") throw error;
     if (typeof log === "function") {
       const message = error && error.message ? error.message : String(error || "unknown");
       log(`Image resize skipped: ${message}`, "warn");
@@ -158,7 +353,7 @@ function getTextLength(value) {
 
 function getTailPreview(value, maxChars = 20) {
   const chars = Array.from(String(value == null ? "" : value));
-  if (chars.length === 0) return "(空)";
+  if (chars.length === 0) return "(empty)";
   const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
   const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
   return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
@@ -170,7 +365,7 @@ function isPromptLikeInputForPayload(input, runtimeType) {
   const fieldName = String((input && input.fieldName) || "").toLowerCase();
   const label = String((input && (input.label || input.name || "")) || "").toLowerCase();
   const marker = `${key} ${fieldName} ${label}`;
-  return /prompt|negative|提示词|正向|负向/.test(marker);
+  return /prompt|negative|positive|hint/.test(marker);
 }
 
 function shouldAttachFieldData(input, runtimeType) {
@@ -212,8 +407,8 @@ function parseBooleanValue(value) {
   if (value === true || value === false) return value;
   const marker = String(value == null ? "" : value).trim().toLowerCase();
   if (!marker) return null;
-  if (["true", "1", "yes", "y", "on", "是"].includes(marker)) return true;
-  if (["false", "0", "no", "n", "off", "否"].includes(marker)) return false;
+  if (["true", "1", "yes", "y", "on", "shi", "\u662f"].includes(marker)) return true;
+  if (["false", "0", "no", "n", "off", "fou", "\u5426"].includes(marker)) return false;
   return null;
 }
 
@@ -340,21 +535,26 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
   const log = options.log || (() => {});
   const endpoints = [API.ENDPOINTS.UPLOAD_V2, API.ENDPOINTS.UPLOAD_LEGACY];
   const rawBuffer = normalizeUploadBuffer(imageValue);
-  const buffer = await resizeUploadBufferIfNeeded(rawBuffer, options.uploadMaxEdge, log);
-  const blob = new Blob([buffer], { type: "image/png" });
+  const buffer = await resizeUploadBufferIfNeeded(rawBuffer, options.uploadMaxEdge, log, options);
+  const detectedMime = detectImageMime(buffer);
+  const uploadMime = detectedMime.startsWith("image/") ? detectedMime : "image/png";
+  const uploadFileName = uploadMime === "image/jpeg" ? "image.jpg" : uploadMime === "image/webp" ? "image.webp" : "image.png";
+  const blob = new Blob([buffer], { type: uploadMime });
   const reasons = [];
 
   for (const endpoint of endpoints) {
     safeThrowIfCancelled(options);
     try {
       const formData = new FormData();
-      formData.append("file", blob, "image.png");
+      formData.append("file", blob, uploadFileName);
 
-      const response = await safeFetch(`${API.BASE_URL}${endpoint}`, {
+      const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${endpoint}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },
         body: formData,
         signal: options.signal
+      }, {
+        timeoutMs: options.requestTimeoutMs
       });
       safeThrowIfCancelled(options);
       const result = await safeParseJsonResponse(response);
@@ -412,11 +612,13 @@ async function createAiAppTask(apiKey, appId, nodeInfoList, options = {}, helper
   for (const body of candidates) {
     safeThrowIfCancelled(options);
     try {
-      const response = await safeFetch(`${API.BASE_URL}${API.ENDPOINTS.AI_APP_RUN}`, {
+      const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${API.ENDPOINTS.AI_APP_RUN}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: options.signal
+      }, {
+        timeoutMs: options.requestTimeoutMs
       });
       safeThrowIfCancelled(options);
       const result = await safeParseJsonResponse(response);
@@ -462,11 +664,13 @@ async function createLegacyTask(apiKey, appId, nodeParams, options = {}, helpers
   const safeThrowIfCancelled = typeof throwIfCancelled === "function" ? throwIfCancelled : () => {};
 
   safeThrowIfCancelled(options);
-  const response = await safeFetch(`${API.BASE_URL}${API.ENDPOINTS.LEGACY_CREATE_TASK}`, {
+  const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${API.ENDPOINTS.LEGACY_CREATE_TASK}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ apiKey, workflowId: normalizeAppId(appId), nodeParams }),
     signal: options.signal
+  }, {
+    timeoutMs: options.requestTimeoutMs
   });
   safeThrowIfCancelled(options);
   const result = await safeParseJsonResponse(response);
@@ -477,11 +681,39 @@ async function createLegacyTask(apiKey, appId, nodeParams, options = {}, helpers
   return taskId;
 }
 
-async function runAppTaskCore(params = {}) {
+function createLocalValidationError(message, code = "LOCAL_VALIDATION") {
+  const error = new Error(String(message || "Validation failed"));
+  error.code = code;
+  error.localValidation = true;
+  return error;
+}
+
+function shouldRetryWithNextUploadEdge(error) {
+  if (!error) return true;
+  if (error.code === "RUN_CANCELLED") return false;
+  if (error.localValidation) return false;
+
+  const message = String(error.message || error || "").toLowerCase();
+  if (!message) return true;
+  const nonRetryMarkers = [
+    "missing required parameter",
+    "invalid number parameter",
+    "invalid boolean parameter",
+    "image input is invalid",
+    "no parameters to submit",
+    "param apikey is required",
+    "param api key is required",
+    "api key is required"
+  ];
+  return !nonRetryMarkers.some((marker) => message.includes(marker));
+}
+
+async function submitTaskAttempt(params = {}) {
   const {
     apiKey,
     appItem,
     inputValues,
+    uploadMaxEdge = 0,
     options = {},
     helpers = {}
   } = params;
@@ -492,8 +724,17 @@ async function runAppTaskCore(params = {}) {
     throwIfCancelled
   } = helpers;
   const safeThrowIfCancelled = typeof throwIfCancelled === "function" ? throwIfCancelled : () => {};
+  const normalizedUploadMaxEdge = normalizeUploadMaxEdge(uploadMaxEdge);
+  const attemptOptions = {
+    ...(options && typeof options === "object" ? options : {}),
+    uploadMaxEdge: normalizedUploadMaxEdge
+  };
+  const log = attemptOptions.log || (() => {});
 
-  const log = options.log || (() => {});
+  if (normalizedUploadMaxEdge > 0) {
+    log(`Upload max edge active: ${getUploadMaxEdgeLabel(normalizedUploadMaxEdge)}`, "info");
+  }
+
   const nodeInfoList = [];
   const nodeParams = {};
   const textPayloadDebug = [];
@@ -504,7 +745,7 @@ async function runAppTaskCore(params = {}) {
   const getBlankImageToken = async () => {
     if (blankImageToken) return blankImageToken;
     if (!blankImageTokenPromise) {
-      blankImageTokenPromise = uploadImage(apiKey, BLANK_IMAGE_PNG_BASE64, options, {
+      blankImageTokenPromise = uploadImage(apiKey, BLANK_IMAGE_PNG_BASE64, attemptOptions, {
         fetchImpl,
         parseJsonResponse,
         toMessage,
@@ -520,29 +761,35 @@ async function runAppTaskCore(params = {}) {
   };
 
   for (const input of appItem.inputs || []) {
-    safeThrowIfCancelled(options);
+    safeThrowIfCancelled(attemptOptions);
     const type = resolveRuntimeInputType(input);
     const strictRequired = Boolean(input && input.required && input.requiredExplicit === true);
     if (type !== "image" || !strictRequired) continue;
     const resolved = resolveInputValue(input, inputValues || {}, { allowAlias: false });
     if (isEmptyValue(resolved.value)) {
-      missingRequiredImages.push(String(input.label || input.name || resolved.key || "未命名图片参数"));
+      missingRequiredImages.push(String(input.label || input.name || resolved.key || "unnamed image parameter"));
     }
   }
 
   if (missingRequiredImages.length > 0) {
-    throw new Error(`缺少必填图片参数: ${missingRequiredImages.join("、")}。请先为这些参数捕获图片后再运行。`);
+    throw createLocalValidationError(
+      `Missing required image parameters: ${missingRequiredImages.join(", ")}. Please capture or provide images before running.`,
+      "MISSING_REQUIRED_IMAGE"
+    );
   }
 
   for (const input of appItem.inputs || []) {
-    safeThrowIfCancelled(options);
+    safeThrowIfCancelled(attemptOptions);
     const type = resolveRuntimeInputType(input);
     const resolved = resolveInputValue(input, inputValues || {}, { allowAlias: type !== "image" });
     const key = resolved.key;
     if (!key) continue;
     let value = resolved.value;
     if (type !== "image" && input.required && isEmptyValue(value)) {
-      throw new Error(`Missing required parameter: ${input.label || input.name || key}`);
+      throw createLocalValidationError(
+        `Missing required parameter: ${input.label || input.name || key}`,
+        "MISSING_REQUIRED_PARAMETER"
+      );
     }
 
     if (type === "image") {
@@ -551,27 +798,34 @@ async function runAppTaskCore(params = {}) {
           value = await getBlankImageToken();
           log(`Image parameter is empty, using uploaded blank placeholder: ${input.label || input.name || key}`, "warn");
         } catch (error) {
-          throw new Error(`Failed to upload blank placeholder for ${input.label || input.name || key}: ${error.message}`);
+          throw createLocalValidationError(
+            `Failed to upload blank placeholder for ${input.label || input.name || key}: ${error.message}`,
+            "BLANK_IMAGE_UPLOAD_FAILED"
+          );
         }
       } else {
-        const uploaded = await uploadImage(apiKey, value, options, {
+        const uploaded = await uploadImage(apiKey, value, attemptOptions, {
           fetchImpl,
           parseJsonResponse,
           toMessage,
           throwIfCancelled: safeThrowIfCancelled
         });
         value = uploaded.value;
-        safeThrowIfCancelled(options);
+        safeThrowIfCancelled(attemptOptions);
       }
     } else if (type === "select" && !isEmptyValue(value)) {
       value = coerceSelectValue(input, value);
     } else if (type === "number" && !isEmptyValue(value)) {
       const n = Number(value);
-      if (!Number.isFinite(n)) throw new Error(`Invalid number parameter: ${input.label || key}`);
+      if (!Number.isFinite(n)) {
+        throw createLocalValidationError(`Invalid number parameter: ${input.label || key}`, "INVALID_NUMBER_PARAMETER");
+      }
       value = n;
     } else if (type === "boolean") {
       const boolValue = parseBooleanValue(value);
-      if (boolValue === null) throw new Error(`Invalid boolean parameter: ${input.label || key}`);
+      if (boolValue === null) {
+        throw createLocalValidationError(`Invalid boolean parameter: ${input.label || key}`, "INVALID_BOOLEAN_PARAMETER");
+      }
       value = boolValue;
     }
 
@@ -591,21 +845,21 @@ async function runAppTaskCore(params = {}) {
   }
 
   if (textPayloadDebug.length > 0) {
-    log(`提交前文本参数检查：共 ${textPayloadDebug.length} 个`, "info");
+    log(`Pre-submit text parameter check: ${textPayloadDebug.length} item(s)`, "info");
     textPayloadDebug.slice(0, 12).forEach((item) => {
-      log(`参数 ${item.label} (${item.key}, ${item.type}): 长度 ${item.length}，末尾 ${item.tail}`, "info");
+      log(`Parameter ${item.label} (${item.key}, ${item.type}): length ${item.length}, tail ${item.tail}`, "info");
     });
     if (textPayloadDebug.length > 12) {
-      log(`其余 ${textPayloadDebug.length - 12} 个文本参数未展开`, "info");
+      log(`Other ${textPayloadDebug.length - 12} text parameter(s) not shown`, "info");
     }
   }
 
   let lastErr = null;
   if (nodeInfoList.length > 0) {
     try {
-      safeThrowIfCancelled(options);
+      safeThrowIfCancelled(attemptOptions);
       log(`Submitting task: AI app API (${nodeInfoList.length} params)`, "info");
-      return await createAiAppTask(apiKey, appItem.appId, nodeInfoList, options, {
+      return await createAiAppTask(apiKey, appItem.appId, nodeInfoList, attemptOptions, {
         fetchImpl,
         parseJsonResponse,
         toMessage,
@@ -620,9 +874,9 @@ async function runAppTaskCore(params = {}) {
   }
 
   if (Object.keys(nodeParams).length > 0) {
-    safeThrowIfCancelled(options);
+    safeThrowIfCancelled(attemptOptions);
     log("Submitting task: legacy workflow API", "info");
-    return createLegacyTask(apiKey, appItem.appId, nodeParams, options, {
+    return createLegacyTask(apiKey, appItem.appId, nodeParams, attemptOptions, {
       fetchImpl,
       parseJsonResponse,
       toMessage,
@@ -631,7 +885,58 @@ async function runAppTaskCore(params = {}) {
   }
 
   if (lastErr) throw lastErr;
-  throw new Error("No parameters to submit");
+  throw createLocalValidationError("No parameters to submit", "NO_PARAMETERS_TO_SUBMIT");
+}
+
+async function runAppTaskCore(params = {}) {
+  const {
+    apiKey,
+    appItem,
+    inputValues,
+    options = {},
+    helpers = {}
+  } = params;
+  const log = options.log || (() => {});
+  const hasImageInput = Array.isArray(appItem && appItem.inputs)
+    ? appItem.inputs.some((input) => resolveRuntimeInputType(input) === "image")
+    : false;
+  const uploadMaxEdgeCandidates = hasImageInput ? buildUploadMaxEdgeCandidates(options.uploadMaxEdge) : [0];
+  let lastErr = null;
+
+  for (let index = 0; index < uploadMaxEdgeCandidates.length; index += 1) {
+    const currentUploadMaxEdge = uploadMaxEdgeCandidates[index];
+    if (index > 0) {
+      const previousLabel = getUploadMaxEdgeLabel(uploadMaxEdgeCandidates[index - 1]);
+      const nextLabel = getUploadMaxEdgeLabel(currentUploadMaxEdge);
+      log(`Retrying task submission with relaxed upload limit: ${previousLabel} -> ${nextLabel}`, "warn");
+    }
+
+    try {
+      return await submitTaskAttempt({
+        apiKey,
+        appItem,
+        inputValues,
+        uploadMaxEdge: currentUploadMaxEdge,
+        options,
+        helpers
+      });
+    } catch (error) {
+      if (error && error.code === "RUN_CANCELLED") throw error;
+      lastErr = error;
+      const hasNextCandidate = index < uploadMaxEdgeCandidates.length - 1;
+      if (!hasNextCandidate || !shouldRetryWithNextUploadEdge(error)) {
+        throw error;
+      }
+      const currentLabel = getUploadMaxEdgeLabel(currentUploadMaxEdge);
+      const message = error && error.message ? error.message : String(error || "unknown error");
+      log(`Task submission failed under upload limit ${currentLabel}: ${message}`, "warn");
+    }
+  }
+
+  if (lastErr) throw lastErr;
+  throw new Error("Task submission failed");
 }
 
 module.exports = { runAppTaskCore };
+
+
