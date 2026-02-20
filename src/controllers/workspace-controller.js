@@ -29,10 +29,11 @@ const UPLOAD_MAX_EDGE_LABELS = {
   2048: "2k",
   1024: "1k"
 };
-const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
+const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const PASTE_STRATEGY_LABELS = {
-  normal: "普通（居中填满）",
-  smart: "智能（主体对齐）"
+  normal: "普通（居中铺满）",
+  smart: "智能（主体对齐）",
+  smartEnhanced: "智能增强（全局+局部补偿）"
 };
 const LEGACY_PASTE_STRATEGY_MAP = {
   stretch: "normal",

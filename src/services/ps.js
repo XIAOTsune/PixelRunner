@@ -3,7 +3,7 @@ const { storage } = require("uxp");
 
 const fs = storage.localFileSystem;
 const formats = storage.formats;
-const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
+const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const LEGACY_PASTE_STRATEGY_MAP = {
   stretch: "normal",
   contain: "normal",
@@ -17,6 +17,13 @@ const SMART_ANALYSIS_TIMEOUT_MS = 6000;
 const SMART_MAX_EDGE = 1024;
 const SMART_OVERFLOW_THRESHOLD = 0.12; // 允许选区外溢出占比
 const SMART_SCORE_THRESHOLD = 0.5;
+const SMART_ENHANCED_SCORE_THRESHOLD = 0.42;
+const SMART_ENHANCED_OVERFLOW_THRESHOLD = 0.18;
+const SMART_ENHANCED_MAX_ROTATE_DEG = 35;
+const SMART_ENHANCED_RESIDUAL_SCALE_LIMIT = 0.08;
+const SMART_ENHANCED_RESIDUAL_SHIFT_WEIGHT = 0.55;
+const SMART_SCALE_MIN = 0.2;
+const SMART_SCALE_MAX = 6;
 
 function createAbortError(message = "用户中止") {
   const err = new Error(message);
@@ -91,6 +98,28 @@ function normalizePasteStrategy(value) {
   const legacy = LEGACY_PASTE_STRATEGY_MAP[marker];
   const normalized = legacy || marker;
   return PASTE_STRATEGY_CHOICES.includes(normalized) ? normalized : "normal";
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+function lerpNumber(a, b, t) {
+  const x = Number.isFinite(a) ? a : 0;
+  const y = Number.isFinite(b) ? b : x;
+  const k = clampNumber(Number(t), 0, 1);
+  return x + (y - x) * k;
+}
+
+function wrapAngleDegrees(angle) {
+  if (!Number.isFinite(angle)) return 0;
+  let v = angle % 360;
+  if (v > 180) v -= 360;
+  if (v <= -180) v += 360;
+  return v;
 }
 
 function detectImageMime(arrayBuffer) {
@@ -739,6 +768,308 @@ function mapScaledBoxToSource(box, decoded) {
   return clampContentBox({ left, top, right, bottom }, decoded.sourceWidth, decoded.sourceHeight);
 }
 
+function buildGrayPlane(decoded) {
+  if (!decoded || !decoded.data) return null;
+  const { data, width, height } = decoded;
+  const gray = new Float32Array(width * height);
+  const alpha = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const p = y * width + x;
+      const idx = p * 4;
+      const a = data[idx + 3];
+      alpha[p] = a;
+      gray[p] = (0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]) * (a / 255);
+    }
+  }
+  return { gray, alpha, width, height };
+}
+
+function analyzeContentMoments(decoded, box) {
+  if (!decoded || !box) return null;
+  const plane = buildGrayPlane(decoded);
+  if (!plane) return null;
+  const { width, height, gray, alpha } = plane;
+
+  const clamped = clampContentBox(box, width, height);
+  if (!clamped) return null;
+  const left = Math.max(1, Math.floor(clamped.left));
+  const top = Math.max(1, Math.floor(clamped.top));
+  const right = Math.min(width - 2, Math.ceil(clamped.right) - 1);
+  const bottom = Math.min(height - 2, Math.ceil(clamped.bottom) - 1);
+  if (right <= left || bottom <= top) return null;
+
+  const boxWidth = right - left + 1;
+  const boxHeight = bottom - top + 1;
+  const boxArea = boxWidth * boxHeight;
+  const mags = new Float32Array(boxArea);
+
+  let magSum = 0;
+  let magMax = 0;
+  let magCount = 0;
+  let graySum = 0;
+  let graySqSum = 0;
+  let alphaCount = 0;
+  let idxMag = 0;
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      const p = y * width + x;
+      const a = alpha[p];
+      let mag = 0;
+      if (a > 6) {
+        const gx = gray[p + 1] - gray[p - 1];
+        const gy = gray[p + width] - gray[p - width];
+        mag = Math.abs(gx) + Math.abs(gy);
+        magSum += mag;
+        if (mag > magMax) magMax = mag;
+        magCount += 1;
+        graySum += gray[p];
+        graySqSum += gray[p] * gray[p];
+        alphaCount += 1;
+      }
+      mags[idxMag] = mag;
+      idxMag += 1;
+    }
+  }
+  if (magCount <= 0) return null;
+
+  const meanMag = magSum / magCount;
+  const threshold = Math.max(meanMag * 2.1, magMax * 0.22, 6);
+  const meanGray = graySum / Math.max(1, alphaCount);
+  const varGray = Math.max(0, graySqSum / Math.max(1, alphaCount) - meanGray * meanGray);
+  const stdGray = Math.sqrt(varGray);
+  const contrastThreshold = Math.max(8, stdGray * 0.85);
+
+  let selected = 0;
+  let weightSum = 0;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXX = 0;
+  let sumYY = 0;
+  let sumXY = 0;
+
+  idxMag = 0;
+  for (let y = top; y <= bottom; y += 1) {
+    for (let x = left; x <= right; x += 1) {
+      const p = y * width + x;
+      if (alpha[p] <= 6) {
+        idxMag += 1;
+        continue;
+      }
+      let w = mags[idxMag];
+      if (w < threshold) {
+        const contrast = Math.abs(gray[p] - meanGray);
+        if (contrast < contrastThreshold) {
+          idxMag += 1;
+          continue;
+        }
+        w = contrast + 4;
+      }
+      idxMag += 1;
+      selected += 1;
+      weightSum += w;
+      sumX += x * w;
+      sumY += y * w;
+      sumXX += x * x * w;
+      sumYY += y * y * w;
+      sumXY += x * y * w;
+    }
+  }
+
+  const minSelected = Math.max(24, Math.round(boxArea * 0.004));
+  if (selected < minSelected || weightSum <= 0) return null;
+
+  const centerX = sumX / weightSum;
+  const centerY = sumY / weightSum;
+  const varX = Math.max(1e-6, sumXX / weightSum - centerX * centerX);
+  const varY = Math.max(1e-6, sumYY / weightSum - centerY * centerY);
+  const covXY = sumXY / weightSum - centerX * centerY;
+  const trace = varX + varY;
+  const det = varX * varY - covXY * covXY;
+  const root = Math.sqrt(Math.max(0, trace * trace * 0.25 - det));
+  const eig1 = Math.max(1e-6, trace * 0.5 + root);
+  const eig2 = Math.max(1e-6, trace * 0.5 - root);
+  const angleRad = 0.5 * Math.atan2(2 * covXY, varX - varY);
+
+  const coverage = selected / Math.max(1, boxArea);
+  const pointScore = Math.min(1, selected / Math.max(56, boxArea * 0.06));
+  const coverageScore = clampNumber(coverage * 12, 0, 1);
+  const contrastScore = clampNumber(magMax / 220, 0, 1);
+  const confidence = clampNumber(0.15 + 0.4 * pointScore + 0.3 * coverageScore + 0.15 * contrastScore, 0, 1);
+
+  return {
+    center: { x: centerX, y: centerY },
+    boxCenter: getBoundsCenter(clamped),
+    spreadX: Math.sqrt(varX) * 2,
+    spreadY: Math.sqrt(varY) * 2,
+    spreadMajor: Math.sqrt(eig1) * 2,
+    spreadMinor: Math.sqrt(eig2) * 2,
+    angleRad,
+    angleDeg: angleRad * (180 / Math.PI),
+    selected,
+    confidence
+  };
+}
+
+function mapMomentToSource(moment, decoded) {
+  if (!moment || !decoded) return null;
+  return {
+    center: {
+      x: moment.center.x * decoded.scaleX,
+      y: moment.center.y * decoded.scaleY
+    },
+    boxCenter: {
+      x: moment.boxCenter.x * decoded.scaleX,
+      y: moment.boxCenter.y * decoded.scaleY
+    },
+    spreadX: moment.spreadX * decoded.scaleX,
+    spreadY: moment.spreadY * decoded.scaleY,
+    spreadMajor: moment.spreadMajor * Math.max(decoded.scaleX, decoded.scaleY),
+    spreadMinor: moment.spreadMinor * Math.min(decoded.scaleX, decoded.scaleY),
+    angleRad: moment.angleRad,
+    angleDeg: moment.angleDeg,
+    selected: moment.selected,
+    confidence: moment.confidence
+  };
+}
+
+function buildSmartEnhancedTransform(sourceBox, outputBox, sourceMoment, outputMoment, baseScore) {
+  if (!sourceBox || !outputBox) return null;
+  const sSize = getBoundsSize(sourceBox);
+  const oSize = getBoundsSize(outputBox);
+  const sxBox = sSize.width / oSize.width;
+  const syBox = sSize.height / oSize.height;
+  if (!Number.isFinite(sxBox) || !Number.isFinite(syBox) || sxBox <= 0 || syBox <= 0) return null;
+
+  const sourceCenter = getBoundsCenter(sourceBox);
+  const outputCenter = getBoundsCenter(outputBox);
+  const sourceAnchor = sourceMoment && sourceMoment.center ? sourceMoment.center : sourceCenter;
+  const outputAnchor = outputMoment && outputMoment.center ? outputMoment.center : outputCenter;
+  const confidence = Math.min(
+    sourceMoment && Number.isFinite(sourceMoment.confidence) ? sourceMoment.confidence : 0,
+    outputMoment && Number.isFinite(outputMoment.confidence) ? outputMoment.confidence : 0
+  );
+
+  let sx = sxBox;
+  let sy = syBox;
+  if (
+    sourceMoment &&
+    outputMoment &&
+    Number.isFinite(sourceMoment.spreadX) &&
+    Number.isFinite(sourceMoment.spreadY) &&
+    Number.isFinite(outputMoment.spreadX) &&
+    Number.isFinite(outputMoment.spreadY) &&
+    sourceMoment.spreadX > 0 &&
+    sourceMoment.spreadY > 0 &&
+    outputMoment.spreadX > 0 &&
+    outputMoment.spreadY > 0
+  ) {
+    const sxMoment = sourceMoment.spreadX / outputMoment.spreadX;
+    const syMoment = sourceMoment.spreadY / outputMoment.spreadY;
+    const blend = clampNumber(confidence * 0.55, 0, 0.55);
+    if (Number.isFinite(sxMoment) && sxMoment > 0) sx = lerpNumber(sxBox, sxMoment, blend);
+    if (Number.isFinite(syMoment) && syMoment > 0) sy = lerpNumber(syBox, syMoment, blend);
+  }
+  sx = clampNumber(sx, SMART_SCALE_MIN, SMART_SCALE_MAX);
+  sy = clampNumber(sy, SMART_SCALE_MIN, SMART_SCALE_MAX);
+
+  let angle = 0;
+  if (
+    sourceMoment &&
+    outputMoment &&
+    Number.isFinite(sourceMoment.angleDeg) &&
+    Number.isFinite(outputMoment.angleDeg)
+  ) {
+    const rawAngle = wrapAngleDegrees(sourceMoment.angleDeg - outputMoment.angleDeg);
+    const damping = clampNumber(confidence * 0.9 + 0.15, 0.2, 0.9);
+    const severePenalty = Math.abs(rawAngle) > 75 ? 0.35 : 1;
+    angle = clampNumber(
+      rawAngle * damping * severePenalty,
+      -SMART_ENHANCED_MAX_ROTATE_DEG,
+      SMART_ENHANCED_MAX_ROTATE_DEG
+    );
+  }
+
+  let residualScaleX = 1;
+  let residualScaleY = 1;
+  if (
+    sourceMoment &&
+    outputMoment &&
+    Number.isFinite(sourceMoment.spreadMajor) &&
+    Number.isFinite(sourceMoment.spreadMinor) &&
+    Number.isFinite(outputMoment.spreadMajor) &&
+    Number.isFinite(outputMoment.spreadMinor) &&
+    sourceMoment.spreadMajor > 0 &&
+    sourceMoment.spreadMinor > 0 &&
+    outputMoment.spreadMajor > 0 &&
+    outputMoment.spreadMinor > 0
+  ) {
+    const majorRatio = sourceMoment.spreadMajor / outputMoment.spreadMajor;
+    const minorRatio = sourceMoment.spreadMinor / outputMoment.spreadMinor;
+    const blend = clampNumber(confidence * 0.35, 0, 0.35);
+    const relX = majorRatio / Math.max(1e-6, sx);
+    const relY = minorRatio / Math.max(1e-6, sy);
+    residualScaleX = clampNumber(
+      lerpNumber(1, relX, blend),
+      1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
+      1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+    );
+    residualScaleY = clampNumber(
+      lerpNumber(1, relY, blend),
+      1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
+      1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+    );
+  }
+
+  const sourceBias = {
+    x: sourceAnchor.x - sourceCenter.x,
+    y: sourceAnchor.y - sourceCenter.y
+  };
+  const outputBias = {
+    x: outputAnchor.x - outputCenter.x,
+    y: outputAnchor.y - outputCenter.y
+  };
+  const residualDx = clampNumber(
+    (sourceBias.x - outputBias.x * sx) * SMART_ENHANCED_RESIDUAL_SHIFT_WEIGHT * Math.max(0.2, confidence),
+    -oSize.width * 0.2,
+    oSize.width * 0.2
+  );
+  const residualDy = clampNumber(
+    (sourceBias.y - outputBias.y * sy) * SMART_ENHANCED_RESIDUAL_SHIFT_WEIGHT * Math.max(0.2, confidence),
+    -oSize.height * 0.2,
+    oSize.height * 0.2
+  );
+
+  const anglePenalty = Math.min(1, Math.abs(angle) / 50);
+  const residualPenalty = Math.min(1, Math.abs(residualScaleX - 1) + Math.abs(residualScaleY - 1));
+  const score = clampNumber(
+    baseScore * (0.75 + confidence * 0.15) +
+    confidence * 0.22 -
+    anglePenalty * 0.05 -
+    residualPenalty * 0.03,
+    0,
+    1
+  );
+
+  return {
+    sx,
+    sy,
+    angle,
+    dx: sourceAnchor.x - outputAnchor.x,
+    dy: sourceAnchor.y - outputAnchor.y,
+    sourceAnchor,
+    outputAnchor,
+    residual: {
+      scaleX: residualScaleX,
+      scaleY: residualScaleY,
+      dx: residualDx,
+      dy: residualDy
+    },
+    confidence,
+    score
+  };
+}
+
 function computeAlignmentScore(sourceBox, outputBox) {
   if (!sourceBox || !outputBox) return { score: 0, metrics: null };
   const sSize = getBoundsSize(sourceBox);
@@ -871,6 +1202,86 @@ async function computeSmartAlignment(sourceBuffer, outputBuffer, options = {}) {
   const timeoutMs = Number(options.analysisTimeoutMs);
   if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
     return withTimeout(compute(), timeoutMs, "smart alignment");
+  }
+  return compute();
+}
+
+async function computeSmartEnhancedAlignment(sourceBuffer, outputBuffer, options = {}) {
+  const signal = options.signal || null;
+  if (signal && signal.aborted) throw createAbortError("用户中止");
+  const log = options.log || (() => {});
+
+  const decode = async (buffer, label) => {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return null;
+    const decoded = await decodeImagePixels(buffer, {
+      maxEdge: SMART_MAX_EDGE,
+      signal,
+      imageDecodeTimeoutMs: options.imageDecodeTimeoutMs
+    });
+    if (!decoded) {
+      log(`smart enhanced decode failed: ${label}`, "warn");
+    }
+    return decoded;
+  };
+
+  const compute = async () => {
+    const sourceDecoded = await decode(sourceBuffer, "source");
+    const outputDecoded = await decode(outputBuffer, "output");
+    if (!sourceDecoded || !outputDecoded) return null;
+
+    const sourcePick = pickSmartContentBox(sourceDecoded);
+    const outputPick = pickSmartContentBox(outputDecoded);
+    const sourceBox = mapScaledBoxToSource(sourcePick.box, sourceDecoded);
+    const outputBox = mapScaledBoxToSource(outputPick.box, outputDecoded);
+    if (!sourceBox || !outputBox) {
+      return {
+        reason: "content-box-not-found",
+        sourceMethod: sourcePick.method,
+        outputMethod: outputPick.method
+      };
+    }
+
+    const sourceMomentDecoded = analyzeContentMoments(sourceDecoded, sourcePick.box || sourceBox);
+    const outputMomentDecoded = analyzeContentMoments(outputDecoded, outputPick.box || outputBox);
+    const sourceMoment = mapMomentToSource(sourceMomentDecoded, sourceDecoded);
+    const outputMoment = mapMomentToSource(outputMomentDecoded, outputDecoded);
+
+    const { score: baseScore, metrics } = computeAlignmentScore(sourceBox, outputBox);
+    const enhanced = buildSmartEnhancedTransform(sourceBox, outputBox, sourceMoment, outputMoment, baseScore);
+    if (!enhanced) {
+      return {
+        reason: "enhanced-transform-invalid",
+        sourceMethod: sourcePick.method,
+        outputMethod: outputPick.method
+      };
+    }
+
+    return {
+      ...enhanced,
+      strategy: "smartEnhanced",
+      model: "enhanced-affine-lite",
+      score: enhanced.score,
+      metrics: {
+        ...(metrics || {}),
+        enhancedConfidence: enhanced.confidence,
+        angle: enhanced.angle,
+        residualScaleX: enhanced.residual ? enhanced.residual.scaleX : null,
+        residualScaleY: enhanced.residual ? enhanced.residual.scaleY : null
+      },
+      sourceBox,
+      outputBox,
+      sourceMoment,
+      outputMoment,
+      outputSize: { width: outputDecoded.sourceWidth, height: outputDecoded.sourceHeight },
+      sourceSize: { width: sourceDecoded.sourceWidth, height: sourceDecoded.sourceHeight },
+      sourceMethod: sourcePick.method,
+      outputMethod: outputPick.method
+    };
+  };
+
+  const timeoutMs = Number(options.analysisTimeoutMs);
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    return withTimeout(compute(), timeoutMs, "smart enhanced alignment");
   }
   return compute();
 }
@@ -1066,6 +1477,44 @@ async function transformLayerOffset(layerId, dx, dy) {
   }], {});
 }
 
+async function transformLayerRotate(layerId, angleDeg) {
+  await action.batchPlay([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _id: layerId }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    angle: { _unit: "angleUnit", _value: angleDeg }
+  }], {});
+}
+
+function mapImagePointToLayer(point, imageSize, layerBounds) {
+  if (!point || !imageSize || !layerBounds) return null;
+  const width = Number(imageSize.width);
+  const height = Number(imageSize.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  const layerSize = getBoundsSize(layerBounds);
+  const layerScaleX = layerSize.width / width;
+  const layerScaleY = layerSize.height / height;
+  return {
+    x: layerBounds.left + point.x * layerScaleX,
+    y: layerBounds.top + point.y * layerScaleY
+  };
+}
+
+function transformPointByScaleRotate(point, center, scaleX, scaleY, angleDeg) {
+  if (!point || !center) return null;
+  const sx = Number.isFinite(scaleX) ? scaleX : 1;
+  const sy = Number.isFinite(scaleY) ? scaleY : 1;
+  const rad = Number.isFinite(angleDeg) ? angleDeg * (Math.PI / 180) : 0;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const vx = (point.x - center.x) * sx;
+  const vy = (point.y - center.y) * sy;
+  return {
+    x: center.x + (vx * cos - vy * sin),
+    y: center.y + (vx * sin + vy * cos)
+  };
+}
+
 function mapSourceBoxToLayerBounds(sourceBox, sourceSize, layerBounds) {
   if (!sourceBox || !sourceSize || !layerBounds) return layerBounds;
   const sourceWidth = Number(sourceSize.width);
@@ -1155,6 +1604,171 @@ async function alignActiveLayerToBounds(targetBounds, options = {}) {
   const layerId = layer.id;
   const currentBounds0 = parseLayerBounds(layer.bounds);
   if (!currentBounds0) return;
+
+  if (
+    smartTransform &&
+    smartTransform.strategy === "smartEnhanced" &&
+    smartTransform.outputBox &&
+    outputSize &&
+    maskBounds
+  ) {
+    const outputW = Number(outputSize.width);
+    const outputH = Number(outputSize.height);
+    if (Number.isFinite(outputW) && Number.isFinite(outputH) && outputW > 0 && outputH > 0) {
+      const enhancedScaleX = clampNumber(Number(smartTransform.sx), SMART_SCALE_MIN, SMART_SCALE_MAX);
+      const enhancedScaleY = clampNumber(Number(smartTransform.sy), SMART_SCALE_MIN, SMART_SCALE_MAX);
+      let enhancedAngle = clampNumber(
+        Number(smartTransform.angle || 0),
+        -SMART_ENHANCED_MAX_ROTATE_DEG,
+        SMART_ENHANCED_MAX_ROTATE_DEG
+      );
+      const sourceAnchor =
+        smartTransform.sourceAnchor ||
+        (sourceBounds ? getBoundsCenter(sourceBounds) : null);
+      const outputAnchor =
+        smartTransform.outputAnchor ||
+        getBoundsCenter(smartTransform.outputBox);
+
+      const layerSize = getBoundsSize(currentBounds0);
+      const layerScaleX0 = layerSize.width / outputW;
+      const layerScaleY0 = layerSize.height / outputH;
+      const mappedBox0 = {
+        left: currentBounds0.left + smartTransform.outputBox.left * layerScaleX0,
+        top: currentBounds0.top + smartTransform.outputBox.top * layerScaleY0,
+        right: currentBounds0.left + smartTransform.outputBox.right * layerScaleX0,
+        bottom: currentBounds0.top + smartTransform.outputBox.bottom * layerScaleY0
+      };
+      const layerCenter0 = getBoundsCenter(currentBounds0);
+      const scaledBoxApprox = {
+        left: layerCenter0.x + (mappedBox0.left - layerCenter0.x) * enhancedScaleX,
+        top: layerCenter0.y + (mappedBox0.top - layerCenter0.y) * enhancedScaleY,
+        right: layerCenter0.x + (mappedBox0.right - layerCenter0.x) * enhancedScaleX,
+        bottom: layerCenter0.y + (mappedBox0.bottom - layerCenter0.y) * enhancedScaleY
+      };
+      const rotationInflation = 1 + Math.min(0.25, Math.abs(enhancedAngle) / 120);
+      const inflatedApprox = {
+        left: layerCenter0.x + (scaledBoxApprox.left - layerCenter0.x) * rotationInflation,
+        top: layerCenter0.y + (scaledBoxApprox.top - layerCenter0.y) * rotationInflation,
+        right: layerCenter0.x + (scaledBoxApprox.right - layerCenter0.x) * rotationInflation,
+        bottom: layerCenter0.y + (scaledBoxApprox.bottom - layerCenter0.y) * rotationInflation
+      };
+      const overflowRatio = computeOverflowRatio(inflatedApprox, maskBounds);
+      if (Number.isFinite(overflowRatio) && overflowRatio > SMART_ENHANCED_OVERFLOW_THRESHOLD) {
+        log(
+          `smart enhanced overflow=${overflowRatio.toFixed(3)} > ${SMART_ENHANCED_OVERFLOW_THRESHOLD}, fallback`,
+          "warn"
+        );
+        return;
+      }
+
+      log(
+        `align geometry before: mode=smartEnhanced, layer=${formatBoundsForLog(currentBounds0)}, target=${formatBoundsForLog(maskBounds)}`,
+        "info"
+      );
+      log(
+        `align enhanced factors: sx=${enhancedScaleX.toFixed(4)}, sy=${enhancedScaleY.toFixed(4)}, angle=${enhancedAngle.toFixed(2)}`,
+        "info"
+      );
+
+      if (
+        Math.abs(enhancedScaleX * 100 - 100) > 0.2 ||
+        Math.abs(enhancedScaleY * 100 - 100) > 0.2
+      ) {
+        await transformLayerScale(layerId, enhancedScaleX * 100, enhancedScaleY * 100);
+      }
+
+      if (Math.abs(enhancedAngle) > 0.2) {
+        try {
+          await transformLayerRotate(layerId, enhancedAngle);
+        } catch (error) {
+          log(`smart enhanced rotate skipped: ${error.message || error}`, "warn");
+          enhancedAngle = 0;
+        }
+      }
+
+      const mappedAnchor0 = mapImagePointToLayer(outputAnchor, { width: outputW, height: outputH }, currentBounds0);
+      let anchorAfterGlobal = mappedAnchor0;
+      if (mappedAnchor0) {
+        anchorAfterGlobal = transformPointByScaleRotate(
+          mappedAnchor0,
+          layerCenter0,
+          enhancedScaleX,
+          enhancedScaleY,
+          enhancedAngle
+        );
+      }
+
+      if (sourceAnchor && anchorAfterGlobal) {
+        const desiredAnchor = {
+          x: maskBounds.left + sourceAnchor.x,
+          y: maskBounds.top + sourceAnchor.y
+        };
+        const dx = desiredAnchor.x - anchorAfterGlobal.x;
+        const dy = desiredAnchor.y - anchorAfterGlobal.y;
+        log(`align enhanced offset: dx=${dx.toFixed(2)}, dy=${dy.toFixed(2)}`, "info");
+        if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
+          await transformLayerOffset(layerId, dx, dy);
+        }
+      }
+
+      const residual = smartTransform.residual || null;
+      if (residual) {
+        const residualScaleX = clampNumber(
+          Number(residual.scaleX),
+          1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
+          1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+        );
+        const residualScaleY = clampNumber(
+          Number(residual.scaleY),
+          1 - SMART_ENHANCED_RESIDUAL_SCALE_LIMIT,
+          1 + SMART_ENHANCED_RESIDUAL_SCALE_LIMIT
+        );
+        if (
+          Number.isFinite(residualScaleX) &&
+          Number.isFinite(residualScaleY) &&
+          (Math.abs(residualScaleX * 100 - 100) > 0.2 || Math.abs(residualScaleY * 100 - 100) > 0.2)
+        ) {
+          await transformLayerScale(layerId, residualScaleX * 100, residualScaleY * 100);
+        }
+
+        const layerAfterResidualScale = doc.activeLayers && doc.activeLayers[0];
+        const currentAfterResidualScale = parseLayerBounds(layerAfterResidualScale && layerAfterResidualScale.bounds);
+        if (currentAfterResidualScale) {
+          const currentSize = getBoundsSize(currentAfterResidualScale);
+          const pixelScaleX = currentSize.width / outputW;
+          const pixelScaleY = currentSize.height / outputH;
+          const maxShiftX = Math.max(18, (maskBounds.right - maskBounds.left) * 0.18);
+          const maxShiftY = Math.max(18, (maskBounds.bottom - maskBounds.top) * 0.18);
+          const residualDx = clampNumber(Number(residual.dx) * pixelScaleX, -maxShiftX, maxShiftX);
+          const residualDy = clampNumber(Number(residual.dy) * pixelScaleY, -maxShiftY, maxShiftY);
+          if (
+            Number.isFinite(residualDx) &&
+            Number.isFinite(residualDy) &&
+            (Math.abs(residualDx) > 0.2 || Math.abs(residualDy) > 0.2)
+          ) {
+            log(`align enhanced residual: dx=${residualDx.toFixed(2)}, dy=${residualDy.toFixed(2)}`, "info");
+            await transformLayerOffset(layerId, residualDx, residualDy);
+          }
+        }
+      }
+
+      if (useMask) {
+        try {
+          await createSelectionFromBounds(maskBounds, doc);
+          await applyLayerMaskFromSelection();
+        } catch (error) {
+          log(`apply mask failed: ${error.message || error}`, "warn");
+        }
+      }
+
+      const layerAfterEnhanced = doc.activeLayers && doc.activeLayers[0];
+      const currentBoundsEnhanced = parseLayerBounds(layerAfterEnhanced && layerAfterEnhanced.bounds);
+      if (currentBoundsEnhanced) {
+        log(`align geometry after: layer=${formatBoundsForLog(currentBoundsEnhanced)}`, "info");
+      }
+      return;
+    }
+  }
 
   if (smartTransform && smartTransform.outputBox && outputSize && sourceBounds) {
     const outputW = Number(outputSize.width);
@@ -1288,7 +1902,8 @@ async function placeImage(arrayBuffer, options = {}) {
   const sourceBuffer = options.sourceBuffer || null;
   let contentReference = { mode: "cover", sourceSize: null, sourceRefBox: null };
   let smartTransform = null;
-  const useSmart = pasteStrategy === "smart";
+  const useSmart = pasteStrategy === "smart" || pasteStrategy === "smartEnhanced";
+  const useSmartEnhanced = pasteStrategy === "smartEnhanced";
   if (targetBoundsRaw) {
     log("buildContentReference start", "info");
     try {
@@ -1308,7 +1923,7 @@ async function placeImage(arrayBuffer, options = {}) {
   if (signal && signal.aborted) throw createAbortError("用户中止");
   if (targetBoundsRaw) {
     if (useSmart) {
-      log("Paste strategy in effect: smart", "info");
+      log(`Paste strategy in effect: ${useSmartEnhanced ? "smartEnhanced" : "smart"}`, "info");
     } else {
       const marker = contentReference.sourceRefBox ? `${contentReference.mode}+content-box` : contentReference.mode;
       log(`Paste strategy in effect: ${pasteStrategy} -> ${marker}`, "info");
@@ -1345,28 +1960,37 @@ async function placeImage(arrayBuffer, options = {}) {
 
     const targetBounds = buildCropBounds(targetBoundsRaw, doc);
     if (useSmart) {
-      log("computeSmartAlignment start", "info");
+      const computeLabel = useSmartEnhanced ? "computeSmartEnhancedAlignment" : "computeSmartAlignment";
+      const alignLabel = useSmartEnhanced ? "smart enhanced" : "smart";
+      log(`${computeLabel} start`, "info");
       try {
         if (sourceBuffer instanceof ArrayBuffer) {
-          smartTransform = await computeSmartAlignment(sourceBuffer, arrayBuffer, {
+          smartTransform = useSmartEnhanced
+            ? await computeSmartEnhancedAlignment(sourceBuffer, arrayBuffer, {
+              log,
+              signal,
+              analysisTimeoutMs: SMART_ANALYSIS_TIMEOUT_MS,
+              imageDecodeTimeoutMs: IMAGE_DECODE_TIMEOUT_MS
+            })
+            : await computeSmartAlignment(sourceBuffer, arrayBuffer, {
             log,
             signal,
             analysisTimeoutMs: SMART_ANALYSIS_TIMEOUT_MS,
             imageDecodeTimeoutMs: IMAGE_DECODE_TIMEOUT_MS
           });
         } else {
-          log("smart alignment skipped: source buffer missing", "warn");
+          log(`${alignLabel} alignment skipped: source buffer missing`, "warn");
         }
       } catch (error) {
         if (isAbortError(error)) throw error;
         if (isTimeoutError(error)) {
-          log(`smart alignment timeout, fallback to normal: ${error.message || error}`, "warn");
+          log(`${alignLabel} alignment timeout, fallback to normal: ${error.message || error}`, "warn");
         } else {
-          log(`smart alignment failed, fallback to normal: ${error.message || error}`, "warn");
+          log(`${alignLabel} alignment failed, fallback to normal: ${error.message || error}`, "warn");
         }
         smartTransform = null;
       } finally {
-        log("computeSmartAlignment end", "info");
+        log(`${computeLabel} end`, "info");
       }
 
       if (smartTransform && smartTransform.score !== undefined) {
@@ -1376,16 +2000,22 @@ async function placeImage(arrayBuffer, options = {}) {
         const iou = smartTransform.metrics && smartTransform.metrics.iou;
         const sourceMethod = smartTransform.sourceMethod || "-";
         const outputMethod = smartTransform.outputMethod || "-";
+        const angle = smartTransform.metrics && Number(smartTransform.metrics.angle);
+        const enhancedConfidence = smartTransform.metrics && Number(smartTransform.metrics.enhancedConfidence);
         log(
-          `smart score: ${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, center=(${center ? center.dx.toFixed(1) : "-"},${center ? center.dy.toFixed(1) : "-"}), ratioDiff=${Number.isFinite(ratioDiff) ? ratioDiff.toFixed(3) : "-"}, iou=${Number.isFinite(iou) ? iou.toFixed(3) : "-"}, method=(${sourceMethod}/${outputMethod})`,
+          `${alignLabel} score: ${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, center=(${center ? center.dx.toFixed(1) : "-"},${center ? center.dy.toFixed(1) : "-"}), ratioDiff=${Number.isFinite(ratioDiff) ? ratioDiff.toFixed(3) : "-"}, iou=${Number.isFinite(iou) ? iou.toFixed(3) : "-"}, angle=${Number.isFinite(angle) ? angle.toFixed(2) : "-"}, conf=${Number.isFinite(enhancedConfidence) ? enhancedConfidence.toFixed(3) : "-"}, method=(${sourceMethod}/${outputMethod})`,
           "info"
         );
       }
 
       const score = smartTransform && Number(smartTransform.score);
-      if (!smartTransform || !Number.isFinite(score) || score < SMART_SCORE_THRESHOLD) {
+      const scoreThreshold = useSmartEnhanced ? SMART_ENHANCED_SCORE_THRESHOLD : SMART_SCORE_THRESHOLD;
+      if (!smartTransform || !Number.isFinite(score) || score < scoreThreshold) {
         const reason = smartTransform && smartTransform.reason ? smartTransform.reason : "score-threshold";
-        log(`smart fallback to normal: ${reason}, score=${Number.isFinite(score) ? score.toFixed(3) : "n/a"}`, "warn");
+        log(
+          `${alignLabel} fallback to normal: ${reason}, score=${Number.isFinite(score) ? score.toFixed(3) : "n/a"}, threshold=${scoreThreshold.toFixed(3)}`,
+          "warn"
+        );
         smartTransform = null;
       }
     }
