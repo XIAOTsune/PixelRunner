@@ -808,6 +808,20 @@ textarea {
   overflow-y: auto;
 }
 
+.prompt-length-hint {
+  margin-top: 4px;
+  font-size: 9px;
+  color: #7f7f7f;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-length-hint.is-warning {
+  color: #ffb74d;
+}
+
 .dynamic-input-field input[type="number"],
 .dynamic-input-field select {
   background: #2b2b2b;

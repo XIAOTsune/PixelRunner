@@ -152,14 +152,43 @@ function isImageLikeInput(input) {
   );
 }
 
-function buildNodeInfoPayload(input, value) {
+function getTextLength(value) {
+  return Array.from(String(value == null ? "" : value)).length;
+}
+
+function getTailPreview(value, maxChars = 20) {
+  const chars = Array.from(String(value == null ? "" : value));
+  if (chars.length === 0) return "(空)";
+  const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
+  const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
+  return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
+}
+
+function isPromptLikeInputForPayload(input, runtimeType) {
+  if (runtimeType === "image") return false;
+  const key = String((input && input.key) || "").toLowerCase();
+  const fieldName = String((input && input.fieldName) || "").toLowerCase();
+  const label = String((input && (input.label || input.name || "")) || "").toLowerCase();
+  const marker = `${key} ${fieldName} ${label}`;
+  return /prompt|negative|提示词|正向|负向/.test(marker);
+}
+
+function shouldAttachFieldData(input, runtimeType) {
+  if (isImageLikeInput(input)) return false;
+  if (input.fieldData === undefined) return false;
+  // Prompt-like text is sensitive to backend side coercion; avoid sending extra field metadata.
+  if (runtimeType === "text" || isPromptLikeInputForPayload(input, runtimeType)) return false;
+  return runtimeType === "select" || runtimeType === "boolean" || runtimeType === "number";
+}
+
+function buildNodeInfoPayload(input, value, runtimeType) {
   const payload = {
     nodeId: input.nodeId,
     fieldName: input.fieldName,
     fieldValue: value
   };
   if (input.fieldType) payload.fieldType = input.fieldType;
-  if (!isImageLikeInput(input) && input.fieldData !== undefined) {
+  if (shouldAttachFieldData(input, runtimeType)) {
     payload.fieldData = input.fieldData;
   }
   return payload;
@@ -467,6 +496,7 @@ async function runAppTaskCore(params = {}) {
   const log = options.log || (() => {});
   const nodeInfoList = [];
   const nodeParams = {};
+  const textPayloadDebug = [];
   const missingRequiredImages = [];
   let blankImageToken = "";
   let blankImageTokenPromise = null;
@@ -547,7 +577,27 @@ async function runAppTaskCore(params = {}) {
 
     nodeParams[key] = value;
     if (input.fieldName && !(input.fieldName in nodeParams)) nodeParams[input.fieldName] = value;
-    if (isAiInput(input)) nodeInfoList.push(buildNodeInfoPayload(input, value));
+    if (type !== "image") {
+      const textValue = String(value == null ? "" : value);
+      textPayloadDebug.push({
+        key,
+        label: String(input.label || input.name || key),
+        type,
+        length: getTextLength(textValue),
+        tail: getTailPreview(textValue, 20)
+      });
+    }
+    if (isAiInput(input)) nodeInfoList.push(buildNodeInfoPayload(input, value, type));
+  }
+
+  if (textPayloadDebug.length > 0) {
+    log(`提交前文本参数检查：共 ${textPayloadDebug.length} 个`, "info");
+    textPayloadDebug.slice(0, 12).forEach((item) => {
+      log(`参数 ${item.label} (${item.key}, ${item.type}): 长度 ${item.length}，末尾 ${item.tail}`, "info");
+    });
+    if (textPayloadDebug.length > 12) {
+      log(`其余 ${textPayloadDebug.length - 12} 个文本参数未展开`, "info");
+    }
   }
 
   let lastErr = null;

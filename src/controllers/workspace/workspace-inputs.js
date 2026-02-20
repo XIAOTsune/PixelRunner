@@ -15,10 +15,43 @@ function createWorkspaceInputs(deps) {
     openTemplatePicker
   } = deps;
   const LARGE_PROMPT_WARNING_CHARS = 4000;
+  const TEXT_INPUT_HARD_MAX_CHARS = 20000;
   const warnedPromptKeys = new Set();
 
   function getTextLength(value) {
     return Array.from(String(value == null ? "" : value)).length;
+  }
+
+  function getTailPreview(value, maxChars = 20) {
+    const chars = Array.from(String(value == null ? "" : value));
+    if (chars.length === 0) return "(空)";
+    const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
+    const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
+    return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
+  }
+
+  function enforceLongTextCapacity(inputEl) {
+    if (!inputEl) return;
+    try {
+      inputEl.maxLength = TEXT_INPUT_HARD_MAX_CHARS;
+    } catch (_) {}
+    try {
+      inputEl.setAttribute("maxlength", String(TEXT_INPUT_HARD_MAX_CHARS));
+    } catch (_) {}
+  }
+
+  function insertTextAtCursor(inputEl, rawText) {
+    if (!inputEl) return;
+    const text = String(rawText == null ? "" : rawText);
+    const current = String(inputEl.value || "");
+    const start = Number.isFinite(inputEl.selectionStart) ? inputEl.selectionStart : current.length;
+    const end = Number.isFinite(inputEl.selectionEnd) ? inputEl.selectionEnd : start;
+    const next = `${current.slice(0, start)}${text}${current.slice(end)}`;
+    inputEl.value = next;
+    const cursor = start + text.length;
+    if (typeof inputEl.setSelectionRange === "function") {
+      inputEl.setSelectionRange(cursor, cursor);
+    }
   }
 
   function warnLargePromptLength(key, value) {
@@ -205,11 +238,13 @@ function createWorkspaceInputs(deps) {
       (type === "text" && (key.toLowerCase().includes("prompt") || String(labelText).includes("提示"))) ||
       /prompt|text|string/.test(typeHint);
     let inputEl;
+    let promptLengthHintEl = null;
+    let updatePromptLengthHint = null;
 
     const fieldTypeHint = String(input.fieldType || input.type || "").toLowerCase();
     if (type === "select" || /select|enum|list/.test(fieldTypeHint)) {
       const optionEntries = getInputOptionEntries(input);
-      if (optionEntries.length <= 1) {
+      if (optionEntries.length <= 1 && !promptLike) {
         inputEl = document.createElement("input");
         inputEl.type = "text";
         inputEl.placeholder = String(input.default || "");
@@ -231,37 +266,41 @@ function createWorkspaceInputs(deps) {
         return wrapper;
       }
 
-      inputEl = document.createElement("select");
-      const optionValueMap = new Map();
-      optionEntries.forEach((entry) => {
-        const rawValue = entry && Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : "";
-        const rawLabel = entry && Object.prototype.hasOwnProperty.call(entry, "label") ? entry.label : rawValue;
-        const domValue = String(rawValue);
-        const option = document.createElement("option");
-        option.value = domValue;
-        option.textContent = String(rawLabel || rawValue || "");
-        inputEl.appendChild(option);
-        if (!optionValueMap.has(domValue)) {
-          optionValueMap.set(domValue, rawValue);
-        }
-      });
+      if (optionEntries.length > 1) {
+        inputEl = document.createElement("select");
+        const optionValueMap = new Map();
+        optionEntries.forEach((entry) => {
+          const rawValue = entry && Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : "";
+          const rawLabel = entry && Object.prototype.hasOwnProperty.call(entry, "label") ? entry.label : rawValue;
+          const domValue = String(rawValue);
+          const option = document.createElement("option");
+          option.value = domValue;
+          option.textContent = String(rawLabel || rawValue || "");
+          inputEl.appendChild(option);
+          if (!optionValueMap.has(domValue)) {
+            optionValueMap.set(domValue, rawValue);
+          }
+        });
 
-      const firstOption = optionEntries[0];
-      const rawDefaultValue = !isEmptyValue(input.default) ? input.default : firstOption && firstOption.value;
-      const defaultDomValue = String(rawDefaultValue == null ? "" : rawDefaultValue);
-      const selectedDomValue = optionValueMap.has(defaultDomValue)
-        ? defaultDomValue
-        : String(firstOption && firstOption.value != null ? firstOption.value : "");
-      inputEl.value = selectedDomValue;
-      const typedDefaultValue = optionValueMap.has(selectedDomValue) ? optionValueMap.get(selectedDomValue) : selectedDomValue;
-      setInputValueByKey(key, typedDefaultValue);
+        const firstOption = optionEntries[0];
+        const rawDefaultValue = !isEmptyValue(input.default) ? input.default : firstOption && firstOption.value;
+        const defaultDomValue = String(rawDefaultValue == null ? "" : rawDefaultValue);
+        const selectedDomValue = optionValueMap.has(defaultDomValue)
+          ? defaultDomValue
+          : String(firstOption && firstOption.value != null ? firstOption.value : "");
+        inputEl.value = selectedDomValue;
+        const typedDefaultValue = optionValueMap.has(selectedDomValue) ? optionValueMap.get(selectedDomValue) : selectedDomValue;
+        setInputValueByKey(key, typedDefaultValue);
 
-      inputEl.addEventListener("change", (event) => {
-        const selectedValue = event.target.value;
-        const typedValue = optionValueMap.has(selectedValue) ? optionValueMap.get(selectedValue) : selectedValue;
-        setInputValueByKey(key, typedValue);
-      });
-    } else if (type === "boolean") {
+        inputEl.addEventListener("change", (event) => {
+          const selectedValue = event.target.value;
+          const typedValue = optionValueMap.has(selectedValue) ? optionValueMap.get(selectedValue) : selectedValue;
+          setInputValueByKey(key, typedValue);
+        });
+      }
+    }
+
+    if (!inputEl && type === "boolean") {
       inputEl = document.createElement("select");
       inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
       const defaultMarker = String(input.default == null ? "" : input.default).trim().toLowerCase();
@@ -272,13 +311,16 @@ function createWorkspaceInputs(deps) {
         const nextValue = event.target.value === "true";
         setInputValueByKey(key, nextValue);
       });
-    } else {
+    }
+
+    if (!inputEl) {
       const isLongText = promptLike || (type === "text" && getInputOptions(input).length === 0);
       if (isLongText) {
         inputEl = document.createElement("textarea");
         inputEl.rows = promptLike ? 6 : 2;
         inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
         inputEl.wrap = "soft";
+        enforceLongTextCapacity(inputEl);
         inputEl.style.paddingRight = "14px";
         inputEl.style.overflowX = "hidden";
         if (promptLike) {
@@ -287,6 +329,14 @@ function createWorkspaceInputs(deps) {
           inputEl.style.minHeight = "120px";
           inputEl.style.maxHeight = "260px";
           inputEl.style.overflowY = "auto";
+          promptLengthHintEl = document.createElement("div");
+          promptLengthHintEl.className = "prompt-length-hint";
+          updatePromptLengthHint = (nextValue) => {
+            const length = getTextLength(nextValue);
+            const tailPreview = getTailPreview(nextValue, 20);
+            promptLengthHintEl.textContent = `长度 ${length} 字符 | 末尾预览 ${tailPreview}`;
+            promptLengthHintEl.classList.toggle("is-warning", length >= LARGE_PROMPT_WARNING_CHARS);
+          };
         }
         wrapper.classList.add("full-width");
 
@@ -307,6 +357,7 @@ function createWorkspaceInputs(deps) {
                 inputEl.value = templateContent;
                 setInputValueByKey(key, templateContent);
                 if (promptLike) warnLargePromptLength(key, templateContent);
+                if (updatePromptLengthHint) updatePromptLengthHint(templateContent);
                 inputEl.style.borderColor = "#4caf50";
                 setTimeout(() => {
                   inputEl.style.borderColor = "";
@@ -335,19 +386,43 @@ function createWorkspaceInputs(deps) {
         setInputValueByKey(key, storedValue);
       } else {
         setInputValueByKey(key, inputEl.value);
-        if (promptLike) warnLargePromptLength(key, inputEl.value);
+        if (promptLike) {
+          warnLargePromptLength(key, inputEl.value);
+          if (updatePromptLengthHint) updatePromptLengthHint(inputEl.value);
+        }
       }
       inputEl.addEventListener("input", (event) => {
         const nextValue = event.target.value;
         const numeric = Number(nextValue);
         const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
         setInputValueByKey(key, storedValue);
-        if (promptLike) warnLargePromptLength(key, nextValue);
+        if (promptLike) {
+          warnLargePromptLength(key, nextValue);
+          if (updatePromptLengthHint) updatePromptLengthHint(nextValue);
+        }
       });
+      if (promptLike && typeof inputEl.addEventListener === "function") {
+        inputEl.addEventListener("paste", (event) => {
+          const clipboardText =
+            event &&
+            event.clipboardData &&
+            typeof event.clipboardData.getData === "function"
+              ? event.clipboardData.getData("text/plain")
+              : "";
+          if (!clipboardText) return;
+          event.preventDefault();
+          insertTextAtCursor(inputEl, clipboardText);
+          const nextValue = String(inputEl.value || "");
+          setInputValueByKey(key, nextValue);
+          warnLargePromptLength(key, nextValue);
+          if (updatePromptLengthHint) updatePromptLengthHint(nextValue);
+        });
+      }
     }
 
     wrapper.appendChild(headerRow);
     wrapper.appendChild(inputEl);
+    if (promptLengthHintEl) wrapper.appendChild(promptLengthHintEl);
     return wrapper;
   }
 

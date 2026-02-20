@@ -160,6 +160,7 @@
 
 1. [x] 需求拆解与方案设计完成。
 2. [x] A-D 阶段代码改造完成（待 E 阶段联调与验收）。
+3. [x] 本轮用户验收通过（截断问题修复成功，长文本输入链路稳定）。
 
 变更日志（执行中持续追加）：
 
@@ -167,3 +168,8 @@
 2. `settings-controller.js` + `index.html`：增加 JSON 导入导出按钮及逻辑，模板保存保留原始内容。
 3. `workspace-controller.js` + `workspace-inputs.js`：模板弹窗支持多选组合（最多 5 个），并加入 4000 字符上限拦截。
 4. `style.css`：补充模板弹窗操作区与布局样式。
+5. `settings-controller.js` + `workspace-inputs.js`：对长文本输入框强制提高 `maxlength`（20000）并接管粘贴插入，规避宿主默认粘贴链路潜在截断。
+6. `workspace-controller.js` + `runninghub-runner.js`：增加两段长度观测日志（运行前输入值 + 提交前最终值），用于精准判断截断发生点。
+7. `runninghub-runner.js`：AI App 请求中 `text/prompt` 参数不再附带 `fieldData`，降低后端按字段元数据覆盖 `fieldValue` 的风险。
+8. 验收结果：用户确认“修改成功，验收成功”，截断问题关闭。
+9. 版本升级：所有显示版本号统一为 `V2.0.4`，`manifest.json` 同步升级到 `2.0.4`。

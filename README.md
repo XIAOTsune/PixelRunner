@@ -4,7 +4,7 @@
   <p>RunningHub Photoshop Plugin</p>
   <p>把 RunningHub AI 工作流直接放进 Photoshop 的 UXP 插件。自动解析参数、执行任务、下载结果，并回贴到当前画布。</p>
   <p>
-    <img src="https://img.shields.io/badge/version-2.0.3-0A7BFF" alt="version" />
+    <img src="https://img.shields.io/badge/version-V2.0.4-0A7BFF" alt="version" />
     <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="photoshop" />
     <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="uxp" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-3DA639" alt="license" />
@@ -29,7 +29,7 @@
 | --- | --- |
 | Host | Photoshop (UXP Manifest v5) |
 | Min Photoshop | 23.0 |
-| Version | 2.0.3 |
+| Version | V2.0.4 |
 
 <a name="highlights"></a>
 ## 亮点 / Highlights
@@ -219,7 +219,7 @@ flowchart LR
 
 <a name="version"></a>
 ## 版本 / Version
-- 当前版本：`v2.0.3` (见 `manifest.json`)
+- 当前版本：`V2.0.4` (见 `manifest.json`)
 
 <a name="license"></a>
 ## 许可 / License

@@ -14,6 +14,7 @@ try {
 
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 const LARGE_PROMPT_WARNING_CHARS = 4000;
+const TEXT_INPUT_HARD_MAX_CHARS = 20000;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
 const dom = {};
 
@@ -193,20 +194,69 @@ function getTextLength(value) {
   return Array.from(String(value == null ? "" : value)).length;
 }
 
+function getTailPreview(value, maxChars = 20) {
+  const chars = Array.from(String(value == null ? "" : value));
+  if (chars.length === 0) return "(空)";
+  const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
+  const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
+  return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
+}
+
+function enforceLongTextCapacity(inputEl) {
+  if (!inputEl) return;
+  try {
+    inputEl.maxLength = TEXT_INPUT_HARD_MAX_CHARS;
+  } catch (_) {}
+  try {
+    inputEl.setAttribute("maxlength", String(TEXT_INPUT_HARD_MAX_CHARS));
+  } catch (_) {}
+}
+
+function insertTextAtCursor(inputEl, rawText) {
+  if (!inputEl) return;
+  const text = String(rawText == null ? "" : rawText);
+  const current = String(inputEl.value || "");
+  const start = Number.isFinite(inputEl.selectionStart) ? inputEl.selectionStart : current.length;
+  const end = Number.isFinite(inputEl.selectionEnd) ? inputEl.selectionEnd : start;
+  const next = `${current.slice(0, start)}${text}${current.slice(end)}`;
+  inputEl.value = next;
+  const cursor = start + text.length;
+  if (typeof inputEl.setSelectionRange === "function") {
+    inputEl.setSelectionRange(cursor, cursor);
+  }
+}
+
 function updateTemplateLengthHint() {
   if (!dom.templateLengthHint) return;
-  const titleLen = getTextLength(dom.templateTitleInput && dom.templateTitleInput.value);
-  const contentLen = getTextLength(dom.templateContentInput && dom.templateContentInput.value);
+  const titleValue = String((dom.templateTitleInput && dom.templateTitleInput.value) || "");
+  const contentValue = String((dom.templateContentInput && dom.templateContentInput.value) || "");
+  const titleLen = getTextLength(titleValue);
+  const contentLen = getTextLength(contentValue);
+  const tailPreview = getTailPreview(contentValue, 20);
   const isLarge = titleLen >= LARGE_PROMPT_WARNING_CHARS || contentLen >= LARGE_PROMPT_WARNING_CHARS;
+  const baseMessage = `提示：标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。插件本地不会截断模板内容。`;
 
   if (isLarge) {
-    dom.templateLengthHint.textContent = `提示：当前模板较长（标题 ${titleLen} / 内容 ${contentLen} 字符）。建议控制在 4000 字符内，避免 RunningHub 侧拒绝。`;
+    dom.templateLengthHint.textContent = `${baseMessage} 建议控制在 4000 字符内，避免 RunningHub 侧拒绝。`;
     dom.templateLengthHint.style.color = "#ffb74d";
     return;
   }
 
-  dom.templateLengthHint.textContent = "提示：插件本地不会截断模板内容；建议单条提示词控制在 4000 字符内。";
+  dom.templateLengthHint.textContent = `${baseMessage} 建议单条提示词控制在 4000 字符内。`;
   dom.templateLengthHint.style.color = "";
+}
+
+function onTemplateContentPaste(event) {
+  const clipboardText =
+    event &&
+    event.clipboardData &&
+    typeof event.clipboardData.getData === "function"
+      ? event.clipboardData.getData("text/plain")
+      : "";
+  if (!clipboardText || !dom.templateContentInput) return;
+  event.preventDefault();
+  insertTextAtCursor(dom.templateContentInput, clipboardText);
+  updateTemplateLengthHint();
 }
 
 function safeConfirm(message) {
@@ -764,6 +814,7 @@ function initSettingsController() {
   const settings = store.getSettings();
   dom.pollIntervalInput.value = settings.pollInterval;
   dom.timeoutInput.value = settings.timeout;
+  enforceLongTextCapacity(dom.templateContentInput);
 
   rebindEvent(dom.btnSaveApiKey, "click", saveApiKeyAndSettings);
   rebindEvent(dom.btnTestApiKey, "click", testApiKey);
@@ -777,6 +828,7 @@ function initSettingsController() {
   rebindEvent(dom.btnLoadParseDebug, "click", loadParseDebugReport);
   rebindEvent(dom.templateTitleInput, "input", updateTemplateLengthHint);
   rebindEvent(dom.templateContentInput, "input", updateTemplateLengthHint);
+  rebindEvent(dom.templateContentInput, "paste", onTemplateContentPaste);
   rebindEvent(dom.savedAppsList, "click", onSavedAppsListClick);
   rebindEvent(dom.envDiagnosticsHeader, "click", onEnvDiagnosticsToggleClick);
   rebindEvent(dom.savedTemplatesList, "click", onSavedTemplatesListClick);

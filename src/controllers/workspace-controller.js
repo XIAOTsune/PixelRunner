@@ -293,6 +293,7 @@ async function handleRun() {
 
   log("CLEAR");
   log("开始执行任务", "info");
+  logPromptLengthsBeforeRun();
 
   try {
     const settings = store.getSettings();
@@ -457,6 +458,54 @@ function handleAppPickerListClick(event) {
 
 function getTextLength(value) {
   return Array.from(String(value == null ? "" : value)).length;
+}
+
+function getTailPreview(value, maxChars = 20) {
+  const chars = Array.from(String(value == null ? "" : value));
+  if (chars.length === 0) return "(空)";
+  const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
+  const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
+  return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
+}
+
+function resolvePromptLogValue(input) {
+  const key = String((input && input.key) || "").trim();
+  if (!key) return { key: "", value: "" };
+  const aliasKey = key.includes(":") ? key.split(":").pop() : "";
+  let value = state.inputValues[key];
+  if (isEmptyValue(value) && aliasKey) value = state.inputValues[aliasKey];
+  return { key, value: String(value == null ? "" : value) };
+}
+
+function isPromptLikeForLog(input) {
+  const resolvedType = inputSchema.resolveInputType(input || {});
+  if (resolvedType === "image") return false;
+  const key = String((input && input.key) || "").toLowerCase();
+  const label = String((input && (input.label || input.name || "")) || "").toLowerCase();
+  const typeHint = String((input && (input.type || input.fieldType || "")) || "").toLowerCase();
+  return (
+    isPromptLikeInput(input) ||
+    (resolvedType === "text" && (key.includes("prompt") || label.includes("提示"))) ||
+    /prompt|text|string/.test(typeHint)
+  );
+}
+
+function logPromptLengthsBeforeRun() {
+  if (!state.currentApp || !Array.isArray(state.currentApp.inputs)) return;
+  const promptInputs = state.currentApp.inputs.filter((input) => isPromptLikeForLog(input));
+  if (promptInputs.length === 0) return;
+
+  log(`运行前长度检查：共 ${promptInputs.length} 个文本参数`, "info");
+  promptInputs.slice(0, 12).forEach((input) => {
+    const { key, value } = resolvePromptLogValue(input);
+    const label = String(input.label || input.name || key || "未命名参数");
+    const length = getTextLength(value);
+    const tail = getTailPreview(value, 20);
+    log(`参数 ${label} (${key}): 长度 ${length}，末尾 ${tail}`, "info");
+  });
+  if (promptInputs.length > 12) {
+    log(`其余 ${promptInputs.length - 12} 个文本参数未展开`, "info");
+  }
 }
 
 function isTemplatePickerMultipleMode() {
