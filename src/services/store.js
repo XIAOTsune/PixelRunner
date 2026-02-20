@@ -1,6 +1,6 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
-const PASTE_STRATEGY_CHOICES = ["normal", "smart"];
+const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const SETTINGS_SCHEMA_VERSION = 2;
 const PROMPT_TEMPLATE_BUNDLE_FORMAT = "pixelrunner.prompt-templates";
 const PROMPT_TEMPLATE_BUNDLE_VERSION = 1;
