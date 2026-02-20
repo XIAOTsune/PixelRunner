@@ -330,7 +330,18 @@
       <sp-button id="donationDialogClose" variant="secondary" size="s" quiet>关闭</sp-button>
     </div>
     <div class="donation-dialog-body">
-      <div class="donation-tip">该功能正在开发中，打赏请联系原作者QQ:1048855084，感谢你的支持。</div>
+      <div class="donation-grid">
+        <div class="donation-card">
+          <img id="donationWxImage" src="icons/vx.png" alt="微信赞助二维码" width="136" height="136" loading="eager" />
+          <div class="donation-label">微信赞助</div>
+        </div>
+        <div class="donation-card">
+          <img id="donationZfbImage" src="icons/zfb.png" alt="支付宝赞助二维码" width="136" height="136" loading="eager" />
+          <div class="donation-label">支付宝赞助</div>
+        </div>
+      </div>
+      <div id="donationStatusHint" class="donation-status">正在加载二维码...</div>
+      <div class="donation-tip">感谢支持！可扫码赞助，若无法自动唤起请直接使用手机扫码。</div>
     </div>
   </dialog>
 
@@ -362,7 +373,6 @@
     </div>
   </div>
 
-  <script src="src/libs/qrcode-generator.js"></script>
   <script src="index.js"></script>
 </body>
 </html>

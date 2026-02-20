@@ -619,9 +619,13 @@ textarea {
   width: min(520px, 92vw);
   padding: 0;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  max-height: min(86vh, 560px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .donation-dialog[open] {
-  display: block;
+  display: flex;
 }
 .donation-dialog-header {
   display: flex;
@@ -637,17 +641,23 @@ textarea {
 }
 .donation-dialog-body {
   padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .donation-tip {
   font-size: 12px;
   color: #d2d2d2;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   text-align: center;
+  line-height: 1.4;
 }
 .donation-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+  margin-top: 0;
 }
 .donation-card {
   background: #1f1f1f;
@@ -658,6 +668,12 @@ textarea {
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  min-height: 168px;
+  flex: 1 1 170px;
+}
+.donation-card.is-broken {
+  border-color: #8a3f3f;
+  background: #2a1e1e;
 }
 .donation-card canvas {
   width: 180px;
@@ -665,9 +681,30 @@ textarea {
   border-radius: 6px;
   background: #fff;
 }
+.donation-card img {
+  width: 136px;
+  height: 136px;
+  border-radius: 6px;
+  background: #fff;
+  object-fit: cover;
+  border: 1px solid #2c2c2c;
+  cursor: pointer;
+}
+.donation-status {
+  font-size: 10px;
+  text-align: center;
+  color: #a8c4ff;
+}
+.donation-status.is-failed {
+  color: #ffb74d;
+}
+.donation-status.is-ok {
+  color: #9cd67f;
+}
 .donation-label {
   font-size: 10px;
   color: #cfcfcf;
+  text-align: center;
 }
 .modal-header {
   padding: 10px;
