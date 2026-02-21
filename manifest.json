@@ -4,7 +4,7 @@
   "version": "2.1.1",
   "main": "index.html",
   "manifestVersion": 5,
-  "entryPoints": [
+  "entrypoints": [
     {
       "type": "panel",
       "id": "mainPanel",
