@@ -352,6 +352,7 @@ textarea {
 }
 .main-btn:hover:not(:disabled) { background: #5a5a5a; }
 .main-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.main-btn.is-busy { filter: saturate(0.85); }
 
 .main-btn-primary { background: var(--accent-color); border-color: #205596; }
 .main-btn-primary:hover:not(:disabled) { background: #409bf5; }
@@ -372,6 +373,10 @@ textarea {
 
 .task-status-summary.is-success {
   color: #9dd88f;
+}
+
+.task-status-summary.is-info {
+  color: #8fc2ff;
 }
 
 .tiny-btn {

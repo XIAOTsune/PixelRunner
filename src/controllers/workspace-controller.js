@@ -22,7 +22,16 @@ const state = {
   templateSelectCallback: null,
   templatePickerMode: "single",
   templatePickerMaxSelection: 1,
-  templatePickerSelectedIds: []
+  templatePickerSelectedIds: [],
+  runSubmitInFlight: false,
+  runButtonPhase: "IDLE",
+  runClickBlockedUntil: 0,
+  runButtonTimerId: null,
+  recentRunFingerprints: new Map(),
+  taskSummaryHintText: "",
+  taskSummaryHintType: "info",
+  taskSummaryHintUntil: 0,
+  taskSummaryHintTimerId: null
 };
 const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
@@ -54,6 +63,17 @@ const LOCAL_MAX_CONCURRENT_JOBS = 2;
 const JOB_TIMEOUT_RETRY_DELAY_MS = 15000;
 const JOB_MAX_TIMEOUT_RECOVERIES = 40;
 const JOB_MAX_HISTORY = 120;
+const RUN_BUTTON_PHASE = {
+  IDLE: "IDLE",
+  SUBMITTING_GUARD: "SUBMITTING_GUARD",
+  SUBMITTED_ACK: "SUBMITTED_ACK"
+};
+const RUN_DOUBLE_CLICK_GUARD_MS = 450;
+const RUN_SUBMITTING_MIN_MS = 1000;
+const RUN_SUBMITTED_ACK_MS = 1000;
+const RUN_DEDUP_WINDOW_MS = 4000;
+const RUN_DEDUP_CACHE_LIMIT = 80;
+const RUN_SUMMARY_HINT_MS = 1800;
 
 let workspaceInputs = null;
 
@@ -209,14 +229,243 @@ function getApps() {
   return store.getAiApps().filter((app) => app && typeof app === "object");
 }
 
+function clearRunButtonTimer() {
+  if (!state.runButtonTimerId) return;
+  clearTimeout(state.runButtonTimerId);
+  state.runButtonTimerId = null;
+}
+
+function scheduleRunButtonRecover(delayMs = RUN_SUBMITTED_ACK_MS) {
+  clearRunButtonTimer();
+  const delay = Math.max(0, Number(delayMs) || 0);
+  state.runButtonTimerId = setTimeout(() => {
+    state.runButtonTimerId = null;
+    state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
+    state.runClickBlockedUntil = 0;
+    updateRunButtonUI();
+  }, delay);
+}
+
+function enterRunSubmittingGuard() {
+  clearRunButtonTimer();
+  state.runButtonPhase = RUN_BUTTON_PHASE.SUBMITTING_GUARD;
+  state.runClickBlockedUntil = Date.now() + Math.max(RUN_DOUBLE_CLICK_GUARD_MS, RUN_SUBMITTING_MIN_MS);
+  updateRunButtonUI();
+}
+
+function enterRunSubmittedAck() {
+  clearRunButtonTimer();
+  state.runButtonPhase = RUN_BUTTON_PHASE.SUBMITTED_ACK;
+  state.runClickBlockedUntil = Date.now() + RUN_SUBMITTED_ACK_MS;
+  updateRunButtonUI();
+  scheduleRunButtonRecover(RUN_SUBMITTED_ACK_MS);
+}
+
+function recoverRunButtonNow() {
+  clearRunButtonTimer();
+  state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
+  state.runClickBlockedUntil = 0;
+  updateRunButtonUI();
+}
+
+function isRunClickGuardActive(now = Date.now()) {
+  return Number(state.runClickBlockedUntil || 0) > now;
+}
+
+function sleepMs(ms) {
+  const delay = Math.max(0, Number(ms) || 0);
+  return new Promise((resolve) => {
+    setTimeout(resolve, delay);
+  });
+}
+
+async function waitRunSubmittingMinDuration(startedAt) {
+  const start = Number(startedAt || 0);
+  const elapsed = start > 0 ? Math.max(0, Date.now() - start) : RUN_SUBMITTING_MIN_MS;
+  const remain = RUN_SUBMITTING_MIN_MS - elapsed;
+  if (remain > 0) {
+    await sleepMs(remain);
+  }
+}
+
+function clearTaskSummaryHint() {
+  if (state.taskSummaryHintTimerId) {
+    clearTimeout(state.taskSummaryHintTimerId);
+    state.taskSummaryHintTimerId = null;
+  }
+  state.taskSummaryHintText = "";
+  state.taskSummaryHintType = "info";
+  state.taskSummaryHintUntil = 0;
+}
+
+function setTaskSummaryHint(text, type = "info", ttlMs = RUN_SUMMARY_HINT_MS) {
+  const hintText = String(text || "").trim();
+  if (!hintText) {
+    clearTaskSummaryHint();
+    updateTaskStatusSummary();
+    return;
+  }
+
+  const safeTtl = Math.max(300, Number(ttlMs) || RUN_SUMMARY_HINT_MS);
+  state.taskSummaryHintText = hintText;
+  state.taskSummaryHintType = type === "warn" ? "warn" : "info";
+  state.taskSummaryHintUntil = Date.now() + safeTtl;
+  if (state.taskSummaryHintTimerId) clearTimeout(state.taskSummaryHintTimerId);
+  state.taskSummaryHintTimerId = setTimeout(() => {
+    clearTaskSummaryHint();
+    updateTaskStatusSummary();
+  }, safeTtl + 20);
+  updateTaskStatusSummary();
+}
+
+function getActiveTaskSummaryHint(now = Date.now()) {
+  const hintText = String(state.taskSummaryHintText || "").trim();
+  if (!hintText) return null;
+  const expiresAt = Number(state.taskSummaryHintUntil || 0);
+  if (expiresAt > 0 && expiresAt <= now) {
+    clearTaskSummaryHint();
+    return null;
+  }
+  return {
+    text: hintText,
+    type: state.taskSummaryHintType === "warn" ? "warn" : "info"
+  };
+}
+
+function emitRunGuardFeedback(message, level = "info", ttlMs = RUN_SUMMARY_HINT_MS) {
+  const text = String(message || "").trim();
+  if (!text) return;
+  const type = level === "warn" ? "warn" : "info";
+  log(`[RunGuard] ${text}`, type);
+  setTaskSummaryHint(`最近操作：${text}`, type, ttlMs);
+}
+
+function getArrayBufferByteLength(value) {
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return 0;
+}
+
+function normalizeBoundsForFingerprint(bounds) {
+  if (!bounds || typeof bounds !== "object") return null;
+  const pick = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return Math.round(num * 1000) / 1000;
+  };
+  return {
+    left: pick(bounds.left),
+    top: pick(bounds.top),
+    right: pick(bounds.right),
+    bottom: pick(bounds.bottom)
+  };
+}
+
+function normalizeFingerprintValue(value, depth = 0, seen = new WeakSet()) {
+  if (value == null) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "bigint") return `bigint:${value.toString()}`;
+  if (typeof value === "function") return "[function]";
+
+  const binaryBytes = getArrayBufferByteLength(value);
+  if (binaryBytes > 0) return `[binary:${binaryBytes}]`;
+  if (depth >= 4) return "[max-depth]";
+
+  if (Array.isArray(value)) {
+    const maxItems = 20;
+    const items = value.slice(0, maxItems).map((item) => normalizeFingerprintValue(item, depth + 1, seen));
+    if (value.length > maxItems) items.push(`[+${value.length - maxItems}]`);
+    return items;
+  }
+
+  if (typeof value === "object") {
+    if (seen.has(value)) return "[circular]";
+    seen.add(value);
+    const out = {};
+    const keys = Object.keys(value).sort();
+    const maxKeys = 40;
+    keys.slice(0, maxKeys).forEach((key) => {
+      const item = value[key];
+      if (typeof item === "function") return;
+      out[key] = normalizeFingerprintValue(item, depth + 1, seen);
+    });
+    if (keys.length > maxKeys) out.__truncatedKeys = keys.length - maxKeys;
+    seen.delete(value);
+    return out;
+  }
+
+  return String(value);
+}
+
+function buildRunFingerprint({ appItem, inputValues, targetBounds, sourceBuffer, pasteStrategy, uploadMaxEdge, pollSettings }) {
+  const payload = {
+    appId: String((appItem && (appItem.id || appItem.appId || appItem.name)) || ""),
+    pasteStrategy: String(pasteStrategy || ""),
+    uploadMaxEdge: Number(uploadMaxEdge) || 0,
+    pollInterval: Number(pollSettings && pollSettings.pollInterval) || 0,
+    timeout: Number(pollSettings && pollSettings.timeout) || 0,
+    targetBounds: normalizeBoundsForFingerprint(targetBounds),
+    sourceBytes: getArrayBufferByteLength(sourceBuffer),
+    inputValues: normalizeFingerprintValue(inputValues)
+  };
+  return JSON.stringify(payload);
+}
+
+function pruneRecentRunFingerprints(now = Date.now()) {
+  if (!(state.recentRunFingerprints instanceof Map)) {
+    state.recentRunFingerprints = new Map();
+    return;
+  }
+  for (const [fingerprint, ts] of state.recentRunFingerprints.entries()) {
+    const time = Number(ts || 0);
+    if (!Number.isFinite(time) || now - time > RUN_DEDUP_WINDOW_MS) {
+      state.recentRunFingerprints.delete(fingerprint);
+    }
+  }
+  while (state.recentRunFingerprints.size > RUN_DEDUP_CACHE_LIMIT) {
+    const oldest = state.recentRunFingerprints.keys().next();
+    if (oldest.done) break;
+    state.recentRunFingerprints.delete(oldest.value);
+  }
+}
+
+function isRecentDuplicateRunFingerprint(fingerprint, now = Date.now()) {
+  if (!fingerprint) return false;
+  pruneRecentRunFingerprints(now);
+  const previous = Number(state.recentRunFingerprints.get(fingerprint) || 0);
+  return previous > 0 && now - previous <= RUN_DEDUP_WINDOW_MS;
+}
+
+function rememberRunFingerprint(fingerprint, now = Date.now()) {
+  if (!fingerprint) return;
+  pruneRecentRunFingerprints(now);
+  state.recentRunFingerprints.set(fingerprint, now);
+}
+
 function updateRunButtonUI() {
   const btn = dom.btnRun || byId("btnRun");
   if (!btn) return;
   if (!state.currentApp) {
+    btn.classList.remove("is-busy");
     btn.disabled = true;
     btn.textContent = "开始运行";
     return;
   }
+
+  if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTING_GUARD) {
+    btn.classList.add("is-busy");
+    btn.disabled = true;
+    btn.textContent = "提交中...";
+    return;
+  }
+  if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTED_ACK) {
+    btn.classList.add("is-busy");
+    btn.disabled = true;
+    btn.textContent = "已加入队列";
+    return;
+  }
+
+  btn.classList.remove("is-busy");
   btn.disabled = false;
   btn.textContent = `运行新任务: ${state.currentApp.name}`;
 }
@@ -264,10 +513,18 @@ function updateTaskStatusSummary() {
   const summaryEl = dom.taskStatusSummary || byId("taskStatusSummary");
   if (!summaryEl) return;
   const now = Date.now();
+  const hint = getActiveTaskSummaryHint(now);
+  summaryEl.classList.remove("is-warning", "is-success", "is-info");
 
   if (!Array.isArray(state.jobs) || state.jobs.length === 0) {
-    summaryEl.textContent = "后台任务：无";
-    summaryEl.classList.remove("is-warning", "is-success");
+    const lines = ["后台任务：无"];
+    if (hint) lines.push(hint.text);
+    summaryEl.textContent = lines.join("\n");
+    if (hint && hint.type === "warn") {
+      summaryEl.classList.add("is-warning");
+    } else if (hint && hint.type === "info") {
+      summaryEl.classList.add("is-info");
+    }
     summaryEl.title = "";
     syncTaskSummaryTicker();
     return;
@@ -293,14 +550,21 @@ function updateTaskStatusSummary() {
       .map((job) => `${job.jobId} ${getJobStatusLabel(job.status)} ${getJobElapsedSeconds(job, now)}s`)
       .join("｜")
     : "";
-  summaryEl.textContent = line2 ? `${line1}\n${line2}` : line1;
+  const lines = [line1];
+  if (line2) lines.push(line2);
+  if (hint) lines.push(hint.text);
+  summaryEl.textContent = lines.join("\n");
 
-  summaryEl.classList.toggle("is-warning", failed > 0 || timeout > 0);
-  summaryEl.classList.toggle("is-success", failed === 0 && timeout === 0 && running === 0 && queued === 0 && done > 0);
+  const hasWarning = failed > 0 || timeout > 0 || (hint && hint.type === "warn");
+  const hasSuccess = !hasWarning && failed === 0 && timeout === 0 && running === 0 && queued === 0 && done > 0;
+  if (hasWarning) summaryEl.classList.add("is-warning");
+  if (hasSuccess) summaryEl.classList.add("is-success");
+  if (!hasWarning && !hasSuccess && hint && hint.type === "info") summaryEl.classList.add("is-info");
 
   const preview = state.jobs.slice(0, 8).map((job) =>
     `${job.jobId} | ${job.appName || "-"} | ${getJobStatusLabel(job.status)} | ${getJobElapsedSeconds(job, now)}s${job.remoteTaskId ? ` | ${job.remoteTaskId}` : ""}`
   );
+  if (hint) preview.unshift(`Hint | ${hint.text}`);
   summaryEl.title = preview.join("\n");
   syncTaskSummaryTicker();
 }
@@ -506,40 +770,91 @@ async function handleRun() {
     return;
   }
 
-  const settings = store.getSettings();
   const now = Date.now();
-  const job = {
-    jobId: `J${now}-${state.nextJobSeq++}`,
-    appName: String(state.currentApp.name || "未命名应用"),
-    apiKey,
-    appItem: cloneDeepValue(state.currentApp),
-    inputValues: cloneInputValues(state.inputValues),
-    targetBounds: cloneBounds(resolveTargetBounds()),
-    sourceBuffer: cloneArrayBuffer(resolveSourceImageBuffer()),
-    pasteStrategy: normalizePasteStrategy(settings.pasteStrategy),
-    uploadMaxEdge: normalizeUploadMaxEdge(settings.uploadMaxEdge),
-    pollSettings: {
+  if (state.runSubmitInFlight || isRunClickGuardActive(now)) {
+    emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
+    return;
+  }
+
+  state.runSubmitInFlight = true;
+  enterRunSubmittingGuard();
+  const runSubmittingStartedAt = Date.now();
+
+  try {
+    const settings = store.getSettings();
+    const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
+    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+    const pollSettings = {
       pollInterval: Number(settings.pollInterval) || 2,
       timeout: Number(settings.timeout) || 180
-    },
-    status: JOB_STATUS.QUEUED,
-    statusReason: "",
-    remoteTaskId: "",
-    resultUrl: "",
-    timeoutRecoveries: 0,
-    nextRunAt: now,
-    startedAt: now,
-    createdAt: now,
-    updatedAt: now,
-    finishedAt: 0
-  };
+    };
+    const appItem = cloneDeepValue(state.currentApp);
+    const inputValues = cloneInputValues(state.inputValues);
+    const targetBounds = cloneBounds(resolveTargetBounds());
+    const sourceBuffer = cloneArrayBuffer(resolveSourceImageBuffer());
+    const runFingerprint = buildRunFingerprint({
+      appItem,
+      inputValues,
+      targetBounds,
+      sourceBuffer,
+      pasteStrategy,
+      uploadMaxEdge,
+      pollSettings
+    });
 
-  state.jobs.unshift(job);
-  pruneJobHistory();
-  updateTaskStatusSummary();
-  log(`[${getJobTag(job)}] 已加入后台队列: ${job.appName}`, "info");
-  logPromptLengthsBeforeRun(job.appItem, job.inputValues, `[${getJobTag(job)}]`);
-  pumpJobScheduler();
+    if (isRecentDuplicateRunFingerprint(runFingerprint, now)) {
+      emitRunGuardFeedback("检测到短时间重复提交，已自动拦截。", "warn", 1800);
+      await waitRunSubmittingMinDuration(runSubmittingStartedAt);
+      enterRunSubmittedAck();
+      return;
+    }
+
+    const createdAt = Date.now();
+    const job = {
+      jobId: `J${createdAt}-${state.nextJobSeq++}`,
+      appName: String(state.currentApp.name || "未命名应用"),
+      apiKey,
+      appItem,
+      inputValues,
+      targetBounds,
+      sourceBuffer,
+      pasteStrategy,
+      uploadMaxEdge,
+      pollSettings,
+      runFingerprint,
+      status: JOB_STATUS.QUEUED,
+      statusReason: "",
+      remoteTaskId: "",
+      resultUrl: "",
+      timeoutRecoveries: 0,
+      nextRunAt: createdAt,
+      startedAt: createdAt,
+      createdAt,
+      updatedAt: createdAt,
+      finishedAt: 0
+    };
+
+    rememberRunFingerprint(runFingerprint, createdAt);
+    state.jobs.unshift(job);
+    pruneJobHistory();
+    updateTaskStatusSummary();
+    emitRunGuardFeedback(`任务已提交到队列（${job.jobId}）`, "info", 1400);
+    log(`[${getJobTag(job)}] 已加入后台队列: ${job.appName}`, "info");
+    logPromptLengthsBeforeRun(job.appItem, job.inputValues, `[${getJobTag(job)}]`);
+    await waitRunSubmittingMinDuration(runSubmittingStartedAt);
+    enterRunSubmittedAck();
+    pumpJobScheduler();
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error || "unknown error");
+    emitRunGuardFeedback(`任务提交失败：${message}`, "warn", 2200);
+    log(`[RunGuard] 任务提交异常: ${message}`, "error");
+    recoverRunButtonNow();
+  } finally {
+    state.runSubmitInFlight = false;
+    if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTING_GUARD) {
+      recoverRunButtonNow();
+    }
+  }
 }
 function renderAppPickerList() {
   if (!dom.appPickerList) return;
@@ -1025,6 +1340,21 @@ function cacheDomRefs() {
 }
 
 function initWorkspaceController() {
+  clearRunButtonTimer();
+  clearTaskSummaryHint();
+  if (state.taskSummaryTimerId) {
+    clearInterval(state.taskSummaryTimerId);
+    state.taskSummaryTimerId = null;
+  }
+  if (state.schedulerTimerId) {
+    clearTimeout(state.schedulerTimerId);
+    state.schedulerTimerId = null;
+  }
+  state.runSubmitInFlight = false;
+  state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
+  state.runClickBlockedUntil = 0;
+  state.recentRunFingerprints = new Map();
+
   cacheDomRefs();
   state.templatePickerMode = "single";
   state.templatePickerMaxSelection = 1;
