@@ -674,6 +674,172 @@ src/
   - 结论：主功能链路当前可用，未发现新增阻断缺陷
 - 阶段状态更新：Phase 6 维持“已完成”；进入归档提交阶段（`phase6`）。
 
+### 10.25 进度快照（2026-02-25）
+- 本次完成：基于重构后代码审查，新增“审查问题执行清单”并固化关键决策：
+  - 新增任务清单（本文件第 11 节，6 个问题，含优先级、验收、执行顺序）
+  - 固化决策：
+    - 手动参数配置不下线，作为必须修复项
+    - 去重策略改为“弱去重”，允许用户主动重复提交
+    - `controller` 不直连 `services` 设为硬规则（需自动检查）
+- 阶段状态更新：进入“重构后治理收口”阶段（按 AR-01 ~ AR-06 执行）。
+
+### 10.26 进度快照（2026-02-24）
+- 本次完成：按产品策略调整，手动参数配置改为下线：
+  - 设置页移除手动参数配置入口（`manualConfigArea/btnAddParam/btnSaveManualApp`）
+  - `settings-controller` 移除手动参数状态、渲染与保存链路
+  - 删除手动配置相关 usecase / view / tests / style
+- 决策修订：
+  - 冻结项 #1 从“手动参数配置不下线”修订为“手动参数配置下线，统一走自动解析 + 失败提示”
+- 阶段状态更新：AR-01 改为“下线收口”定义并标记完成。
+
+## 11. 重构后审查任务清单（AR）
+
+### 11.1 决策冻结（2026-02-24，修订）
+1. 手动参数配置下线，设置页不再提供手动参数新增/编辑/保存入口。
+2. 去重策略采用“弱去重”：拦截误触连点，但允许用户主动重复提交。
+3. `controller` 不直接依赖 `services` 设为硬规则，纳入自动检查。
+
+### 11.2 任务总览（用于跟踪）
+
+| ID | 问题 | 优先级 | 状态 | 依赖 |
+| --- | --- | --- | --- | --- |
+| AR-01 | 手动参数配置链路下线（统一自动解析） | P0 | DONE | 无 |
+| AR-02 | 去重策略过强且指纹误判风险（改弱去重） | P1 | TODO | 无 |
+| AR-03 | 结构化解析错误在 usecase 层被降级丢失 | P1 | TODO | 无 |
+| AR-04 | controller 仍直连 services，分层规则未收口 | P0 | TODO | AR-03 |
+| AR-05 | 冗余文件：`src/services/ps/index.js` | P2 | TODO | AR-04 |
+| AR-06 | README 项目结构描述与代码现状不一致 | P2 | TODO | AR-04, AR-05 |
+
+### 11.3 任务明细与验收
+
+#### AR-01 手动参数配置链路下线（P0）
+- 目标：
+  - 统一应用接入路径为自动解析；下线手动参数配置入口，降低误用与维护成本。
+- 实施：
+  - 删除 `manualConfigArea/btnAddParam/btnSaveManualApp` UI 与绑定。
+  - 删除手动参数相关 usecase、view、测试与样式。
+  - 解析失败仅展示失败信息与诊断指引（保持 parse debug 可用）。
+- 验收：
+  - 设置页无手动参数配置入口；解析失败时仅显示失败提示，不再出现手动保存链路。
+
+#### AR-02 弱去重策略改造（P1）
+- 目标：
+  - 防误触连点，不阻止用户主动重复提交任务。
+- 实施：
+  - 将 dedup 从强拦截改为弱拦截（极短窗口仅防误触）。
+  - 若保留指纹，仅用于提示/日志，不作为强阻断条件。
+  - 补测试：`run-guard` 与 `submit-workspace-job` 的行为断言。
+- 验收：
+  - 快速双击仍被拦截；用户短时间重复提交可成功进入队列。
+
+#### AR-03 结构化错误透传（P1）
+- 目标：
+  - 保留 parser 结构化错误（`code/reasons/retryable`）到控制层。
+- 实施：
+  - `parse-runninghub-app` 不再仅 `throw new Error(message)`，需透传元信息。
+  - 控制层文案友好展示，日志/诊断保留结构化字段。
+  - 补跨层失败链路测试。
+- 验收：
+  - 控制层可读取 `PARSE_APP_FAILED` 等错误码与原因列表。
+
+#### AR-04 硬规则落地：controller 禁止直连 services（P0）
+- 目标：
+  - controller 仅依赖 usecase/application service/gateway。
+- 实施：
+  - workspace/tools 迁移直连 `store/runninghub/ps` 为中间层依赖。
+  - 新增依赖方向检查脚本并纳入预检/CI。
+- 验收：
+  - `src/controllers/**/*.js` 无 `require("../services/*")`（或等效路径）。
+
+#### AR-05 冗余文件清理（P2）
+- 目标：
+  - 清理重复导出入口，避免维护歧义。
+- 实施：
+  - 删除 `src/services/ps/index.js`（确认无引用后）。
+  - 统一 `ps` 对外入口为 `src/services/ps.js` facade。
+- 验收：
+  - 全量测试通过，且仓库内无 `ps/index.js` 运行时依赖。
+
+#### AR-06 README 同步（P2）
+- 目标：
+  - 文档结构与当前代码分层一致，降低接手成本。
+- 实施：
+  - 更新 README 的项目结构图、二开入口与规则说明。
+  - 写明“controller 禁止直连 services”硬规则与检查命令。
+- 验收：
+  - 新人仅看 README 可定位扩展入口并执行最小预检。
+
+### 11.4 推荐执行顺序
+1. Iteration A：AR-01 -> AR-04（先修可用性与架构边界）
+2. Iteration B：AR-02 -> AR-03（行为策略与错误可观测性）
+3. Iteration C：AR-05 -> AR-06（清理与文档收口）
+
+### 11.5 每项任务记录模板
+
+```text
+### [AR-XX] 进度快照（YYYY-MM-DD）
+- 本次完成：
+  - ...
+- 变更文件：
+  - ...
+- 校验命令：
+  - ...
+- 结果：
+  - ... passed, 0 failed
+- 风险/遗留：
+  - ...
+- 下一步：
+  - ...
+```
+
+### [AR-01] 进度快照（2026-02-24）
+- 本次完成：
+  - 修复解析失败后的手动参数配置链路：补齐 `btnAddParam/btnSaveManualApp` 事件绑定、手动参数列表渲染、参数增删改状态管理与保存流程。
+  - 新增手动参数规范化与校验用例，保证保存后的输入结构与 workspace 动态输入渲染契约一致（`key/name/label/type/required/default/options`）。
+  - 为手动参数列表新增专用视图模块与样式，确保设置页可操作性（可新增、删除、编辑参数并保存为应用）。
+- 变更文件：
+  - `src/controllers/settings-controller.js`
+  - `src/application/usecases/manual-app-config.js`
+  - `src/controllers/settings/manual-params-view.js`
+  - `style.css`
+  - `tests/application/usecases/manual-app-config.test.js`
+  - `tests/controllers/settings/manual-params-view.test.js`
+- 校验命令：
+  - `node --test tests/application/usecases/*.test.js tests/controllers/settings/*.test.js`
+  - `node --test tests/controllers/workspace/*.test.js`
+- 结果：
+  - `65 passed, 0 failed`
+  - `11 passed, 0 failed`
+- 风险/遗留：
+  - 当前自动化覆盖了手动参数规范化与视图渲染，未在 Node 环境执行 `settings-controller` 直接加载（依赖 UXP/Photoshop 运行时模块）。
+  - 建议在 UXP 环境按“解析失败 -> 手动配置 -> 保存 -> workspace 选择并渲染输入”做一次端到端冒烟确认。
+- 下一步：
+  - 进入 AR-02（弱去重策略改造），并与 AR-01 一起做一次提交链路联调验证。
+
+### [AR-01] 进度快照（2026-02-24）
+- 本次完成：
+  - 按决策修订彻底下线手动参数配置：移除设置页手动配置 UI、控制器事件与状态、手动保存流程。
+  - 清理对应代码资产：删除手动参数专用 usecase/view/test，移除相关样式。
+  - 文档同步：更新 11.1 决策冻结、11.2 跟踪项、11.3 AR-01 明细为“下线收口”版本。
+- 变更文件：
+  - `index.html`
+  - `src/controllers/settings-controller.js`
+  - `style.css`
+  - `plans/frontend-backend-separation-refactor-plan.md`
+  - `src/application/usecases/manual-app-config.js`（删除）
+  - `src/controllers/settings/manual-params-view.js`（删除）
+  - `tests/application/usecases/manual-app-config.test.js`（删除）
+  - `tests/controllers/settings/manual-params-view.test.js`（删除）
+- 校验命令：
+  - `node --test tests/application/usecases/*.test.js tests/controllers/settings/*.test.js`
+  - `node --test tests/controllers/workspace/*.test.js`
+- 结果：
+  - `67 passed, 0 failed`
+- 风险/遗留：
+  - 手动兜底链路已移除；解析失败时只能通过修正 appId/API key、查看 parse debug、等待 AR-03 错误透传优化来定位问题。
+- 下一步：
+  - 进入 AR-02（弱去重策略改造）。
+
 ---
 
 如果按本方案执行，重构将是“逐层替换”而不是“整包重写”，能在不中断现有插件可用性的前提下，持续降低复杂度并提升后续页面优化效率。

@@ -66,7 +66,6 @@ function log(msg) {
 }
 
 const state = {
-  manualParams: [],
   parsedAppData: null,
   currentEditingAppId: null
 };
@@ -219,7 +218,7 @@ async function parseApp() {
     renderParseResult(state.parsedAppData);
   } catch (error) {
     console.error(error);
-    showManualConfig(error.message || "未知错误");
+    showParseFailure(error.message || "未知错误");
   } finally {
     dom.btnParseApp.disabled = false;
     dom.btnParseApp.textContent = "解析";
@@ -234,8 +233,6 @@ function renderParseResult(data) {
 
   const saveBtn = byId("btnSaveParsedApp");
   if (saveBtn) saveBtn.addEventListener("click", saveParsedApp);
-
-  dom.manualConfigArea.style.display = "none";
 }
 
 function saveParsedApp() {
@@ -251,12 +248,11 @@ function saveParsedApp() {
   renderSavedAppsList();
 }
 
-function showManualConfig(message) {
+function showParseFailure(message) {
   const viewModel = buildParseFailureViewModel(message);
   dom.parseResultContainer.innerHTML = renderParseFailureHtml(viewModel, {
     escapeHtml
   });
-  dom.manualConfigArea.style.display = "block";
 }
 
 function renderSavedAppsList() {
@@ -380,7 +376,6 @@ function onSavedAppsListClick(event) {
     state.currentEditingAppId = editable.currentEditingAppId;
     state.parsedAppData = editable.parsedAppData;
     dom.parseResultContainer.innerHTML = `<div style="color:#aaa; font-size:11px; margin:6px 0;">已载入应用，点击“解析”重新拉取参数后保存。</div>`;
-    dom.manualConfigArea.style.display = "none";
     return;
   }
 
@@ -459,11 +454,9 @@ function clearAppEditorUI() {
   dom.appIdInput.value = "";
   dom.appNameInput.value = "";
   dom.parseResultContainer.innerHTML = "";
-  dom.manualConfigArea.style.display = "none";
 
   state.parsedAppData = null;
   state.currentEditingAppId = null;
-  state.manualParams = [];
 }
 
 function syncSettingsLists() {
@@ -513,8 +506,6 @@ function initSettingsController() {
     "appNameInput",
     "btnParseApp",
     "parseResultContainer",
-    "manualConfigArea",
-    "btnSaveManualApp",
     "savedAppsList",
     "templateTitleInput",
     "templateContentInput",
