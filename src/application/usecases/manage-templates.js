@@ -96,9 +96,44 @@ function buildTemplateExportUsecase(options = {}) {
   };
 }
 
+function loadEditableTemplateUsecase(options = {}) {
+  const template = options.template;
+  if (!template || typeof template !== "object") {
+    return {
+      found: false,
+      title: "",
+      content: ""
+    };
+  }
+
+  return {
+    found: true,
+    title: String(template.title || ""),
+    content: String(template.content || "")
+  };
+}
+
+function deleteTemplateUsecase(options = {}) {
+  const store = options.store;
+  requireStoreMethod(store, "deletePromptTemplate");
+  const id = String(options.id || "").trim();
+  if (!id) {
+    return {
+      deleted: false,
+      id: ""
+    };
+  }
+  return {
+    deleted: !!store.deletePromptTemplate(id),
+    id
+  };
+}
+
 module.exports = {
   getTemplateTitleKey,
   saveTemplateUsecase,
   importTemplatesUsecase,
-  buildTemplateExportUsecase
+  buildTemplateExportUsecase,
+  loadEditableTemplateUsecase,
+  deleteTemplateUsecase
 };

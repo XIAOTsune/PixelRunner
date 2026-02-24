@@ -5,13 +5,35 @@ const { APP_EVENTS, emitAppEvent } = require("../events");
 const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
 const textInputPolicy = require("../domain/policies/text-input-policy");
+const { normalizeUploadMaxEdge } = require("../domain/policies/run-settings-policy");
+const { buildSavedAppsListViewModel, buildSavedTemplatesListViewModel } = require("../application/services/settings-lists");
+const { buildParseSuccessViewModel, buildParseFailureViewModel } = require("../application/services/settings-parse-result");
+const {
+  summarizeDiagnosticReport,
+  summarizeParseDebugReport,
+  loadStoredJsonReport
+} = require("../application/services/settings-diagnostics");
+const {
+  buildTemplateLengthHintViewModel,
+  getClipboardPlainText
+} = require("../application/services/settings-template-editor");
 const { saveSettingsUsecase } = require("../application/usecases/manage-settings");
 const { parseRunninghubAppUsecase } = require("../application/usecases/parse-runninghub-app");
+const { saveParsedAppUsecase, loadEditableAppUsecase, deleteAppUsecase } = require("../application/usecases/manage-apps");
+const { exportTemplatesJsonUsecase, importTemplatesJsonUsecase } = require("../application/usecases/manage-template-transfer");
 const {
   saveTemplateUsecase,
   importTemplatesUsecase,
-  buildTemplateExportUsecase
+  loadEditableTemplateUsecase,
+  deleteTemplateUsecase
 } = require("../application/usecases/manage-templates");
+const { renderParseSuccessHtml, renderParseFailureHtml } = require("./settings/parse-result-view");
+const { renderSavedAppsListHtml } = require("./settings/saved-apps-view");
+const { renderSavedTemplatesListHtml } = require("./settings/saved-templates-view");
+const { resolveSavedAppsListAction, resolveSavedTemplatesListAction } = require("./settings/settings-list-actions");
+const { setEnvDoctorOutput, appendEnvDoctorOutput } = require("./settings/env-doctor-view");
+const { renderTemplateLengthHint } = require("./settings/template-editor-view");
+const { toggleSectionCollapse } = require("./settings/section-toggle-view");
 let localFileSystem = null;
 try {
   const { storage } = require("uxp");
@@ -24,17 +46,10 @@ const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 const LARGE_PROMPT_WARNING_CHARS = textInputPolicy.LARGE_PROMPT_WARNING_CHARS;
 const TEXT_INPUT_HARD_MAX_CHARS = textInputPolicy.TEXT_INPUT_HARD_MAX_CHARS;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
-const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
 const dom = {};
 
 function log(msg) {
   console.log(`[Settings] ${msg}`);
-}
-
-function normalizeUploadMaxEdge(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : 0;
 }
 
 const state = {
@@ -43,72 +58,18 @@ const state = {
   currentEditingAppId: null
 };
 
-function toPrettyJson(value) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch (_) {
-    return "";
-  }
-}
-
-function summarizeDiagnostic(report) {
-  if (!report || typeof report !== "object") return "诊断报告不可用。";
-  const lines = [];
-  lines.push(`Run ID: ${report.runId || "-"}`);
-  lines.push(`Time: ${report.generatedAt || "-"}`);
-  lines.push(`Stage: ${report.stage || "-"}`);
-  lines.push("");
-  lines.push(`DOM missing ids: ${(report.dom && report.dom.missingCount) || 0}`);
-  lines.push(`Apps: ${(report.dataHealth && report.dataHealth.apps && report.dataHealth.apps.count) || 0}`);
-  lines.push(`Empty app ids: ${(report.dataHealth && report.dataHealth.apps && report.dataHealth.apps.emptyIdCount) || 0}`);
-  lines.push("");
-
-  const persisted = report.persisted || {};
-  lines.push(`Report JSON: ${persisted.jsonPath || "未写入文件"}`);
-  lines.push(`Report TXT: ${persisted.textPath || "未写入文件"}`);
-  if (persisted.error) lines.push(`Persist warning: ${persisted.error}`);
-  lines.push("");
-
-  lines.push("Recommendations:");
-  const recommendations = Array.isArray(report.recommendations) ? report.recommendations : [];
-  if (!recommendations.length) {
-    lines.push("1. (none)");
-  } else {
-    recommendations.forEach((item, idx) => lines.push(`${idx + 1}. ${item}`));
-  }
-
-  lines.push("");
-  lines.push("Raw JSON:");
-  lines.push(toPrettyJson(report));
-  return lines.join("\n");
-}
-
-function setEnvDoctorOutput(text) {
-  if (!dom.envDoctorOutput) return;
-  dom.envDoctorOutput.value = String(text || "");
-  dom.envDoctorOutput.scrollTop = 0;
-}
-
-function appendEnvDoctorOutput(line) {
-  if (!dom.envDoctorOutput) return;
-  const current = String(dom.envDoctorOutput.value || "");
-  const ts = new Date().toLocaleTimeString();
-  dom.envDoctorOutput.value = `${current}${current ? "\n" : ""}[${ts}] ${line}`;
-  dom.envDoctorOutput.scrollTop = dom.envDoctorOutput.scrollHeight;
-}
-
 async function runEnvironmentDoctorManual() {
   if (!dom.btnRunEnvDoctor) return;
   dom.btnRunEnvDoctor.disabled = true;
   dom.btnRunEnvDoctor.textContent = "检测中...";
-  setEnvDoctorOutput("正在执行环境检测，请稍候...");
+  setEnvDoctorOutput(dom.envDoctorOutput, "正在执行环境检测，请稍候...");
 
   try {
     const report = await runPsEnvironmentDoctor({ stage: "manual-settings" });
-    setEnvDoctorOutput(summarizeDiagnostic(report));
+    setEnvDoctorOutput(dom.envDoctorOutput, summarizeDiagnosticReport(report));
   } catch (error) {
     const message = error && error.message ? error.message : String(error || "未知错误");
-    setEnvDoctorOutput(`环境检测失败: ${message}`);
+    setEnvDoctorOutput(dom.envDoctorOutput, `环境检测失败: ${message}`);
   } finally {
     dom.btnRunEnvDoctor.disabled = false;
     dom.btnRunEnvDoctor.textContent = "运行环境检测";
@@ -116,101 +77,25 @@ async function runEnvironmentDoctorManual() {
 }
 
 function loadLatestDiagnosticReport() {
-  let report = null;
-  try {
-    const raw = localStorage.getItem(DIAGNOSTIC_STORAGE_KEY);
-    report = raw ? JSON.parse(raw) : null;
-  } catch (_) {
-    report = null;
-  }
+  const report = loadStoredJsonReport(localStorage, DIAGNOSTIC_STORAGE_KEY);
 
   if (!report) {
-    setEnvDoctorOutput("未找到最近报告，请先点击“运行环境检测”。");
+    setEnvDoctorOutput(dom.envDoctorOutput, "未找到最近报告，请先点击“运行环境检测”。");
     return;
   }
 
-  setEnvDoctorOutput(summarizeDiagnostic(report));
-}
-
-function summarizeParseDebug(debug) {
-  if (!debug || typeof debug !== "object") return "Parse debug is not available.";
-  const lines = [];
-  lines.push(`Time: ${debug.generatedAt || "-"}`);
-  lines.push(`Endpoint: ${debug.endpoint || "-"}`);
-  lines.push(`App ID: ${debug.appId || "-"}`);
-  lines.push("");
-  lines.push(`Top-level keys: ${Array.isArray(debug.topLevelKeys) ? debug.topLevelKeys.join(", ") : "-"}`);
-  lines.push(`Data keys: ${Array.isArray(debug.dataKeys) ? debug.dataKeys.join(", ") : "-"}`);
-  lines.push(`Result keys: ${Array.isArray(debug.resultKeys) ? debug.resultKeys.join(", ") : "-"}`);
-  lines.push("");
-  lines.push(`Selected candidate: ${debug.selectedCandidatePath || "-"}`);
-  lines.push(`Selected raw count: ${Number(debug.selectedRawCount) || 0}`);
-  lines.push("");
-  lines.push("Candidate arrays:");
-  const candidates = Array.isArray(debug.candidateInputArrays) ? debug.candidateInputArrays : [];
-  if (candidates.length === 0) {
-    lines.push("1. (none)");
-  } else {
-    candidates.slice(0, 20).forEach((item, idx) => {
-      lines.push(`${idx + 1}. ${item.path || "-"} | count=${Number(item.count) || 0}, inputLike=${Number(item.inputLikeCount) || 0}`);
-    });
-  }
-  lines.push("");
-  lines.push("First raw entries:");
-  lines.push(toPrettyJson(Array.isArray(debug.firstRawEntries) ? debug.firstRawEntries : []));
-  lines.push("");
-  lines.push("Normalized inputs:");
-  lines.push(toPrettyJson(Array.isArray(debug.normalizedInputs) ? debug.normalizedInputs : []));
-  lines.push("");
-  lines.push("Curl:");
-  lines.push(toPrettyJson(debug.curl || {}));
-  return lines.join("\n");
+  setEnvDoctorOutput(dom.envDoctorOutput, summarizeDiagnosticReport(report));
 }
 
 function loadParseDebugReport() {
-  let report = null;
-  try {
-    const raw = localStorage.getItem(PARSE_DEBUG_STORAGE_KEY);
-    report = raw ? JSON.parse(raw) : null;
-  } catch (_) {
-    report = null;
-  }
+  const report = loadStoredJsonReport(localStorage, PARSE_DEBUG_STORAGE_KEY);
 
   if (!report) {
-    setEnvDoctorOutput("No parse debug found. Parse and save an app first, then click this button again.");
+    setEnvDoctorOutput(dom.envDoctorOutput, "No parse debug found. Parse and save an app first, then click this button again.");
     return;
   }
 
-  setEnvDoctorOutput(summarizeParseDebug(report));
-}
-
-function getDuplicateMeta(list) {
-  const totals = Object.create(null);
-  const occurrences = Object.create(null);
-
-  list.forEach((item) => {
-    const key = String((item && item.id) || "unknown-id");
-    totals[key] = (totals[key] || 0) + 1;
-  });
-
-  return list.map((item) => {
-    const key = String((item && item.id) || "unknown-id");
-    occurrences[key] = (occurrences[key] || 0) + 1;
-    return {
-      id: key,
-      isDuplicate: totals[key] > 1,
-      index: occurrences[key],
-      total: totals[key]
-    };
-  });
-}
-
-function getTextLength(value) {
-  return textInputPolicy.getTextLength(value);
-}
-
-function getTailPreview(value, maxChars = 20) {
-  return textInputPolicy.getTailPreview(value, maxChars);
+  setEnvDoctorOutput(dom.envDoctorOutput, summarizeParseDebugReport(report));
 }
 
 function enforceLongTextCapacity(inputEl) {
@@ -223,31 +108,18 @@ function insertTextAtCursor(inputEl, rawText) {
 
 function updateTemplateLengthHint() {
   if (!dom.templateLengthHint) return;
-  const titleValue = String((dom.templateTitleInput && dom.templateTitleInput.value) || "");
-  const contentValue = String((dom.templateContentInput && dom.templateContentInput.value) || "");
-  const titleLen = getTextLength(titleValue);
-  const contentLen = getTextLength(contentValue);
-  const tailPreview = getTailPreview(contentValue, 20);
-  const isLarge = titleLen >= LARGE_PROMPT_WARNING_CHARS || contentLen >= LARGE_PROMPT_WARNING_CHARS;
-  const baseMessage = `提示：标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。插件本地不会截断模板内容。`;
-
-  if (isLarge) {
-    dom.templateLengthHint.textContent = `${baseMessage} 建议控制在 4000 字符内，避免 RunningHub 侧拒绝。`;
-    dom.templateLengthHint.style.color = "#ffb74d";
-    return;
-  }
-
-  dom.templateLengthHint.textContent = `${baseMessage} 建议单条提示词控制在 4000 字符内。`;
-  dom.templateLengthHint.style.color = "";
+  const viewModel = buildTemplateLengthHintViewModel({
+    title: dom.templateTitleInput && dom.templateTitleInput.value,
+    content: dom.templateContentInput && dom.templateContentInput.value,
+    warningChars: LARGE_PROMPT_WARNING_CHARS,
+    getTextLength: textInputPolicy.getTextLength,
+    getTailPreview: textInputPolicy.getTailPreview
+  });
+  renderTemplateLengthHint(dom.templateLengthHint, viewModel);
 }
 
 function onTemplateContentPaste(event) {
-  const clipboardText =
-    event &&
-    event.clipboardData &&
-    typeof event.clipboardData.getData === "function"
-      ? event.clipboardData.getData("text/plain")
-      : "";
+  const clipboardText = getClipboardPlainText(event);
   if (!clipboardText || !dom.templateContentInput) return;
   event.preventDefault();
   insertTextAtCursor(dom.templateContentInput, clipboardText);
@@ -341,23 +213,10 @@ async function parseApp() {
 }
 
 function renderParseResult(data) {
-  const html = (data.inputs || [])
-    .map(
-      (input) => `
-        <div class="parse-result-item" style="margin-bottom:2px; font-size:10px; color:#aaa;">
-            - ${escapeHtml(input.label || input.name || input.key || "未命名参数")} (${escapeHtml(input.key || "-")})
-        </div>
-    `
-    )
-    .join("");
-
-  dom.parseResultContainer.innerHTML = `
-        <div style="background:#2a2a2a; padding:8px; border-radius:4px; margin-top:8px;">
-            <div style="color:#4caf50; font-weight:bold; font-size:11px; margin-bottom:4px;">解析成功: ${escapeHtml(data.name)}</div>
-            <div style="max-height:80px; overflow-y:auto; margin-bottom:8px;">${html}</div>
-            <button id="btnSaveParsedApp" class="main-btn main-btn-primary" type="button">保存到工作台</button>
-        </div>
-    `;
+  const viewModel = buildParseSuccessViewModel(data);
+  dom.parseResultContainer.innerHTML = renderParseSuccessHtml(viewModel, {
+    escapeHtml
+  });
 
   const saveBtn = byId("btnSaveParsedApp");
   if (saveBtn) saveBtn.addEventListener("click", saveParsedApp);
@@ -367,23 +226,11 @@ function renderParseResult(data) {
 
 function saveParsedApp() {
   if (!state.parsedAppData) return;
-
-  const normalizedTargetAppId = normalizeAppId(state.parsedAppData.appId);
-  const existing = store.getAiApps().find((item) => normalizeAppId(item && item.appId) === normalizedTargetAppId);
-  let targetAppRecordId = "";
-
-  if (existing && existing.id) {
-    store.updateAiApp(existing.id, state.parsedAppData);
-    targetAppRecordId = String(existing.id);
-  } else {
-    targetAppRecordId = store.addAiApp(state.parsedAppData);
-  }
-
-  emitAppEvent(APP_EVENTS.APPS_CHANGED, {
-    reason: existing ? "updated" : "saved",
-    targetAppId: targetAppRecordId,
-    targetWorkflowId: normalizedTargetAppId
+  const payload = saveParsedAppUsecase({
+    store,
+    parsedAppData: state.parsedAppData
   });
+  emitAppEvent(APP_EVENTS.APPS_CHANGED, payload);
   alert("应用已保存");
 
   clearAppEditorUI();
@@ -391,43 +238,19 @@ function saveParsedApp() {
 }
 
 function showManualConfig(message) {
-  dom.parseResultContainer.innerHTML = `<div style="color:#ff6b6b; font-size:11px; margin:8px 0;">解析失败: ${escapeHtml(message || "未知错误")}</div>`;
+  const viewModel = buildParseFailureViewModel(message);
+  dom.parseResultContainer.innerHTML = renderParseFailureHtml(viewModel, {
+    escapeHtml
+  });
   dom.manualConfigArea.style.display = "block";
 }
 
 function renderSavedAppsList() {
-  const apps = store.getAiApps();
-  const duplicateMeta = getDuplicateMeta(apps);
-
-  if (!apps.length) {
-    dom.savedAppsList.innerHTML = `<div class="empty-state" style="padding:8px; font-size:11px; color:#777;">暂无已保存应用</div>`;
-    return;
-  }
-
-  dom.savedAppsList.innerHTML = apps
-    .map((app, idx) => {
-      const meta = duplicateMeta[idx];
-      const rawId = String((app && app.id) || "");
-      const encodedRawId = encodeDataId(rawId);
-      const duplicateTag = meta.isDuplicate
-        ? `<span style="margin-left:6px; font-size:10px; color:#ffb74d;">重复 ${meta.index}/${meta.total}</span>`
-        : "";
-
-      return `
-            <div class="saved-item" data-id="${encodedRawId}" style="background:#2a2a2a; border:1px solid #333; padding:8px; margin-bottom:6px; border-radius:4px; display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <div style="font-weight:bold;">${escapeHtml(app.name || "未命名应用")}</div>
-                    <div style="font-size:10px; color:#777;">应用ID: ${escapeHtml(app.appId || "-")}</div>
-                    <div style="font-size:10px; color:#777;">记录ID: ${escapeHtml(meta.id)}${duplicateTag}</div>
-                </div>
-                <div style="display:flex; gap:6px;">
-                    <button class="tiny-btn" type="button" data-action="edit-app" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>修改</button>
-                    <button class="tiny-btn" type="button" data-action="delete-app" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>删除</button>
-                </div>
-            </div>
-        `;
-    })
-    .join("");
+  const viewModel = buildSavedAppsListViewModel(store.getAiApps());
+  dom.savedAppsList.innerHTML = renderSavedAppsListHtml(viewModel, {
+    escapeHtml,
+    encodeDataId
+  });
 }
 
 function saveTemplate() {
@@ -447,76 +270,41 @@ function saveTemplate() {
   }
 }
 
-function resolvePickedEntry(picked) {
-  if (!picked) return null;
-  if (Array.isArray(picked)) return picked[0] || null;
-  return picked;
-}
-
-function normalizeReadText(value) {
-  if (typeof value === "string") return value;
-  if (value instanceof ArrayBuffer) {
-    try {
-      return new TextDecoder("utf-8").decode(new Uint8Array(value));
-    } catch (_) {
-      return "";
-    }
-  }
-  if (ArrayBuffer.isView(value)) {
-    try {
-      const view = value;
-      return new TextDecoder("utf-8").decode(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
-    } catch (_) {
-      return "";
-    }
-  }
-  return String(value == null ? "" : value);
-}
-
 async function exportTemplatesJson() {
-  if (!localFileSystem || typeof localFileSystem.getFileForSaving !== "function") {
-    alert("Current environment does not support file export");
-    return;
-  }
-
   try {
-    const exportResult = buildTemplateExportUsecase({
+    const exportResult = await exportTemplatesJsonUsecase({
+      localFileSystem,
       store,
       filenamePrefix: TEMPLATE_EXPORT_FILENAME_PREFIX
     });
-    const bundle = exportResult.bundle;
-    const defaultName = exportResult.defaultName;
-    const targetFile = await localFileSystem.getFileForSaving(defaultName);
-    if (!targetFile) return;
+    if (exportResult.outcome === "unsupported") {
+      alert("Current environment does not support file export");
+      return;
+    }
+    if (exportResult.outcome === "cancelled") return;
 
-    await targetFile.write(JSON.stringify(bundle, null, 2));
-    const savedPath = targetFile.nativePath || targetFile.name || defaultName;
-    appendEnvDoctorOutput(`Template export success: ${savedPath}`);
-    const total = Array.isArray(bundle && bundle.templates) ? bundle.templates.length : 0;
-    alert(`Template export completed: ${total} template(s)`);
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Template export success: ${exportResult.savedPath}`);
+    alert(`Template export completed: ${exportResult.total} template(s)`);
   } catch (error) {
     const message = error && error.message ? error.message : String(error || "unknown");
-    appendEnvDoctorOutput(`Template export failed: ${message}`);
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Template export failed: ${message}`);
     alert(`Template export failed: ${message}`);
   }
 }
 
 async function importTemplatesJson() {
-  if (!localFileSystem || typeof localFileSystem.getFileForOpening !== "function") {
-    alert("Current environment does not support file import");
-    return;
-  }
-
   try {
-    const picked = await localFileSystem.getFileForOpening({ allowMultiple: false, types: ["json"] });
-    const entry = resolvePickedEntry(picked);
-    if (!entry) return;
-
-    const rawText = normalizeReadText(await entry.read());
-    const importResult = importTemplatesUsecase({
+    const importResult = await importTemplatesJsonUsecase({
+      localFileSystem,
       store,
-      payload: rawText
+      importTemplates: importTemplatesUsecase
     });
+    if (importResult.outcome === "unsupported") {
+      alert("Current environment does not support file import");
+      return;
+    }
+    if (importResult.outcome === "cancelled") return;
+
     emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, {
       reason: importResult.reason,
       added: importResult.added,
@@ -525,6 +313,7 @@ async function importTemplatesJson() {
     });
     renderSavedTemplates();
     appendEnvDoctorOutput(
+      dom.envDoctorOutput,
       `Template import success: total=${importResult.total}, added=${importResult.added}, replaced=${importResult.replaced}`
     );
     alert(
@@ -532,94 +321,62 @@ async function importTemplatesJson() {
     );
   } catch (error) {
     const message = error && error.message ? error.message : String(error || "unknown");
-    appendEnvDoctorOutput(`Template import failed: ${message}`);
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Template import failed: ${message}`);
     alert(`Template import failed: ${message}`);
   }
 }
 
 function renderSavedTemplates() {
-  const templates = store.getPromptTemplates();
-  const duplicateMeta = getDuplicateMeta(templates);
-
-  if (!templates.length) {
-    dom.savedTemplatesList.innerHTML = `<div class="empty-state" style="padding:8px; font-size:11px; color:#777;">暂无模板</div>`;
-    return;
-  }
-
-  dom.savedTemplatesList.innerHTML = templates
-    .map((template, idx) => {
-      const meta = duplicateMeta[idx];
-      const rawId = String((template && template.id) || "");
-      const encodedRawId = encodeDataId(rawId);
-      const duplicateTag = meta.isDuplicate
-        ? `<span style="margin-left:6px; font-size:10px; color:#ffb74d;">重复 ${meta.index}/${meta.total}</span>`
-        : "";
-
-      return `
-            <div class="saved-item" data-id="${encodedRawId}" style="background:#2a2a2a; border:1px solid #333; padding:6px; margin-top:4px; border-radius:3px; display:flex; justify-content:space-between; align-items:center;">
-                <div style="max-width:70%;">
-                    <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(template.title || "未命名模板")}</div>
-                    <div style="font-size:10px; color:#777;">记录ID: ${escapeHtml(meta.id)}${duplicateTag}</div>
-                </div>
-                <div style="display:flex; gap:6px;">
-                    <button class="tiny-btn" type="button" data-action="edit-template" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>修改</button>
-                    <button class="tiny-btn" type="button" data-action="delete-template" data-id="${encodedRawId}" ${rawId ? "" : "disabled"}>删除</button>
-                </div>
-            </div>
-        `;
-    })
-    .join("");
+  const viewModel = buildSavedTemplatesListViewModel(store.getPromptTemplates());
+  dom.savedTemplatesList.innerHTML = renderSavedTemplatesListHtml(viewModel, {
+    escapeHtml,
+    encodeDataId
+  });
 }
 
 function onSavedAppsListClick(event) {
-  const button = event.target && event.target.closest ? event.target.closest("button[data-action]") : null;
-  if (!button) return;
-  if (!dom.savedAppsList.contains(button)) return;
+  const action = resolveSavedAppsListAction(event, {
+    container: dom.savedAppsList,
+    findClosestByClass,
+    decodeDataId
+  });
+  if (action.kind === "none") return;
 
-  if (button.dataset.action === "edit-app") {
-    const row = findClosestByClass(button, "saved-item");
-    const idFromButton = decodeDataId(String(button.dataset.id || "").trim());
-    const idFromRow = row ? decodeDataId(String((row.dataset && row.dataset.id) || "").trim()) : "";
-    const id = idFromButton || idFromRow;
+  if (action.kind === "edit-app") {
+    const id = action.id;
     const app = store.getAiApps().find((item) => String(item.id) === String(id));
-    if (!app) {
+    const editable = loadEditableAppUsecase({ app });
+    if (!editable.found) {
       alert("未找到应用记录");
       return;
     }
-    dom.appIdInput.value = String(app.appId || "");
-    dom.appNameInput.value = String(app.name || "");
-    state.currentEditingAppId = String(app.id || "");
-    state.parsedAppData = {
-      appId: app.appId || "",
-      name: app.name || "",
-      description: app.description || "",
-      inputs: Array.isArray(app.inputs) ? app.inputs : []
-    };
+    dom.appIdInput.value = editable.appId;
+    dom.appNameInput.value = editable.appName;
+    state.currentEditingAppId = editable.currentEditingAppId;
+    state.parsedAppData = editable.parsedAppData;
     dom.parseResultContainer.innerHTML = `<div style="color:#aaa; font-size:11px; margin:6px 0;">已载入应用，点击“解析”重新拉取参数后保存。</div>`;
     dom.manualConfigArea.style.display = "none";
     return;
   }
 
-  if (button.dataset.action !== "delete-app") return;
-
-  const row = findClosestByClass(button, "saved-item");
-  const idFromButton = decodeDataId(String(button.dataset.id || "").trim());
-  const idFromRow = row ? decodeDataId(String((row.dataset && row.dataset.id) || "").trim()) : "";
-  const id = idFromButton || idFromRow;
+  const id = action.id;
   if (!id) {
-    appendEnvDoctorOutput("Delete app failed: missing app id in clicked row.");
+    appendEnvDoctorOutput(dom.envDoctorOutput, "Delete app failed: missing app id in clicked row.");
     alert("删除失败：未找到应用 ID");
     return;
   }
 
   if (!safeConfirm("删除此应用？")) return;
 
-  const deleted = store.deleteAiApp(id);
-  if (!deleted) {
-    appendEnvDoctorOutput(`Delete app not found: id=${id}`);
+  const result = deleteAppUsecase({
+    store,
+    id
+  });
+  if (!result.deleted) {
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete app not found: id=${id}`);
     alert("应用不存在或已被删除");
   } else {
-    appendEnvDoctorOutput(`Delete app success: id=${id}`);
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete app success: id=${id}`);
     emitAppEvent(APP_EVENTS.APPS_CHANGED, { reason: "deleted", id });
   }
 
@@ -627,39 +384,43 @@ function onSavedAppsListClick(event) {
 }
 
 function onSavedTemplatesListClick(event) {
-  const button = event.target && event.target.closest ? event.target.closest("button[data-action]") : null;
-  if (!button) return;
-  if (!dom.savedTemplatesList.contains(button)) return;
+  const action = resolveSavedTemplatesListAction(event, {
+    container: dom.savedTemplatesList,
+    decodeDataId
+  });
+  if (action.kind === "none") return;
 
-  if (button.dataset.action === "edit-template") {
-    const id = decodeDataId(String(button.dataset.id || "").trim());
+  if (action.kind === "edit-template") {
+    const id = action.id;
     const template = store.getPromptTemplates().find((item) => String(item.id) === String(id));
-    if (!template) {
+    const editable = loadEditableTemplateUsecase({ template });
+    if (!editable.found) {
       alert("未找到模板记录");
       return;
     }
-    dom.templateTitleInput.value = String(template.title || "");
-    dom.templateContentInput.value = String(template.content || "");
+    dom.templateTitleInput.value = editable.title;
+    dom.templateContentInput.value = editable.content;
     updateTemplateLengthHint();
     return;
   }
 
-  if (button.dataset.action !== "delete-template") return;
-
-  const id = decodeDataId(String(button.dataset.id || "").trim());
+  const id = action.id;
   if (!id) {
-    appendEnvDoctorOutput("Delete template failed: missing template id.");
+    appendEnvDoctorOutput(dom.envDoctorOutput, "Delete template failed: missing template id.");
     return;
   }
 
   if (!safeConfirm("删除此模板？")) return;
 
-  const deleted = store.deletePromptTemplate(id);
-  if (!deleted) {
-    appendEnvDoctorOutput(`Delete template not found: id=${id}`);
+  const result = deleteTemplateUsecase({
+    store,
+    id
+  });
+  if (!result.deleted) {
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete template not found: id=${id}`);
     alert("模板不存在或已被删除");
   } else {
-    appendEnvDoctorOutput(`Delete template success: id=${id}`);
+    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete template success: id=${id}`);
     emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: "deleted", id });
   }
 
@@ -696,33 +457,19 @@ function onToggleApiKey() {
 }
 
 function onAdvancedSettingsToggleClick() {
-  const section = dom.advancedSettingsSection;
-  const btn = dom.advancedSettingsToggle;
-  if (!section || !btn) return;
-
-  const isCollapsed = section.classList.contains("is-collapsed");
-  if (isCollapsed) {
-    section.classList.remove("is-collapsed");
-    btn.textContent = "收起";
-  } else {
-    section.classList.add("is-collapsed");
-    btn.textContent = "展开";
-  }
+  toggleSectionCollapse(dom.advancedSettingsSection, dom.advancedSettingsToggle, {
+    collapsedClass: "is-collapsed",
+    expandText: "展开",
+    collapseText: "收起"
+  });
 }
 
 function onEnvDiagnosticsToggleClick() {
-  const section = dom.envDiagnosticsSection;
-  const btn = dom.envDiagnosticsToggle;
-  if (!section || !btn) return;
-
-  const isCollapsed = section.classList.contains("is-collapsed");
-  if (isCollapsed) {
-    section.classList.remove("is-collapsed");
-    btn.textContent = "收起";
-  } else {
-    section.classList.add("is-collapsed");
-    btn.textContent = "展开";
-  }
+  toggleSectionCollapse(dom.envDiagnosticsSection, dom.envDiagnosticsToggle, {
+    collapsedClass: "is-collapsed",
+    expandText: "展开",
+    collapseText: "收起"
+  });
 }
 
 function initSettingsController() {

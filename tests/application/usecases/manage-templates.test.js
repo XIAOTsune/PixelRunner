@@ -4,7 +4,9 @@ const {
   getTemplateTitleKey,
   saveTemplateUsecase,
   importTemplatesUsecase,
-  buildTemplateExportUsecase
+  buildTemplateExportUsecase,
+  loadEditableTemplateUsecase,
+  deleteTemplateUsecase
 } = require("../../../src/application/usecases/manage-templates");
 
 test("getTemplateTitleKey trims and lower-cases title", () => {
@@ -136,4 +138,68 @@ test("buildTemplateExportUsecase returns bundle and deterministic filename", () 
     bundle: { templates: [{ id: "1" }] },
     defaultName: "my_templates_2026-02-24.json"
   });
+});
+
+test("loadEditableTemplateUsecase builds editable payload and handles missing template", () => {
+  assert.deepEqual(loadEditableTemplateUsecase({ template: null }), {
+    found: false,
+    title: "",
+    content: ""
+  });
+
+  assert.deepEqual(
+    loadEditableTemplateUsecase({
+      template: { title: "Portrait", content: "prompt body" }
+    }),
+    {
+      found: true,
+      title: "Portrait",
+      content: "prompt body"
+    }
+  );
+});
+
+test("deleteTemplateUsecase deletes by id and handles missing id", () => {
+  const called = [];
+  const store = {
+    deletePromptTemplate: (id) => {
+      called.push(id);
+      return id === "t1";
+    }
+  };
+
+  assert.deepEqual(
+    deleteTemplateUsecase({
+      store,
+      id: "t1"
+    }),
+    {
+      deleted: true,
+      id: "t1"
+    }
+  );
+
+  assert.deepEqual(
+    deleteTemplateUsecase({
+      store,
+      id: "missing"
+    }),
+    {
+      deleted: false,
+      id: "missing"
+    }
+  );
+
+  assert.deepEqual(
+    deleteTemplateUsecase({
+      store,
+      id: ""
+    }),
+    {
+      deleted: false,
+      id: ""
+    }
+  );
+
+  assert.deepEqual(called, ["t1", "missing"]);
 });

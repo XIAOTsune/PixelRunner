@@ -8,10 +8,30 @@ const inputSchema = require("../shared/input-schema");
 const { createWorkspaceInputs } = require("./workspace/workspace-inputs");
 const { renderAppPickerListHtml } = require("./workspace/app-picker-view");
 const { renderTemplatePickerListHtml } = require("./workspace/template-picker-view");
+const { renderTaskSummary } = require("./workspace/task-summary-view");
+const {
+  buildLogLine,
+  renderLogLine,
+  clearLogView
+} = require("./workspace/log-view");
 const { createRunGuard } = require("../application/services/run-guard");
 const { createJobScheduler, createJobExecutor } = require("../application/services/job-scheduler");
 const { buildAppPickerViewModel } = require("../application/services/app-picker");
 const { buildPromptLengthLogSummary } = require("../application/services/prompt-log");
+const {
+  buildRunButtonViewModel,
+  createRunButtonPhaseController
+} = require("../application/services/run-button");
+const { submitWorkspaceJobUsecase } = require("../application/usecases/submit-workspace-job");
+const {
+  hasLiveJobs,
+  buildTaskSummaryViewModel
+} = require("../application/services/task-summary");
+const { normalizeUploadMaxEdge, normalizePasteStrategy } = require("../domain/policies/run-settings-policy");
+const {
+  cloneArrayBuffer,
+  cloneBounds
+} = require("../application/services/workspace-run-snapshot");
 const {
   normalizeTemplatePickerConfig,
   sanitizeTemplateSelectionIds,
@@ -42,19 +62,10 @@ const state = {
   taskSummaryHintUntil: 0,
   taskSummaryHintTimerId: null
 };
-const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
-const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const PASTE_STRATEGY_LABELS = {
   normal: "普通（居中铺满）",
   smart: "智能（主体对齐）",
   smartEnhanced: "智能增强（全局+局部补偿）"
-};
-const LEGACY_PASTE_STRATEGY_MAP = {
-  stretch: "normal",
-  contain: "normal",
-  cover: "normal",
-  alphaTrim: "smart",
-  edgeAuto: "smart"
 };
 const MAX_TEMPLATE_COMBINE_COUNT = 5;
 const RH_PROMPT_MAX_CHARS = 4000;
@@ -91,63 +102,7 @@ const runGuard = createRunGuard({
 });
 let jobExecutor = null;
 let jobScheduler = null;
-
-function normalizeUploadMaxEdge(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : 0;
-}
-
-function normalizePasteStrategy(value) {
-  const marker = String(value || "").trim();
-  if (!marker) return "normal";
-  const legacy = LEGACY_PASTE_STRATEGY_MAP[marker];
-  const normalized = legacy || marker;
-  return PASTE_STRATEGY_CHOICES.includes(normalized) ? normalized : "normal";
-}
-
-function cloneArrayBuffer(value) {
-  if (value instanceof ArrayBuffer) return value.slice(0);
-  if (ArrayBuffer.isView(value)) {
-    return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-  }
-  return null;
-}
-
-function cloneDeepValue(value, depth = 0) {
-  if (value == null) return value;
-  if (typeof value !== "object") return value;
-
-  const binary = cloneArrayBuffer(value);
-  if (binary) return binary;
-  if (depth >= 8) return value;
-  if (Array.isArray(value)) return value.map((item) => cloneDeepValue(item, depth + 1));
-
-  const out = {};
-  Object.keys(value).forEach((key) => {
-    out[key] = cloneDeepValue(value[key], depth + 1);
-  });
-  return out;
-}
-
-function cloneInputValues(values) {
-  const source = values && typeof values === "object" ? values : {};
-  const out = {};
-  Object.keys(source).forEach((key) => {
-    out[key] = cloneDeepValue(source[key]);
-  });
-  return out;
-}
-
-function cloneBounds(bounds) {
-  if (!bounds || typeof bounds !== "object") return null;
-  return {
-    left: Number(bounds.left),
-    top: Number(bounds.top),
-    right: Number(bounds.right),
-    bottom: Number(bounds.bottom)
-  };
-}
+let runButtonPhaseController = null;
 
 function getJobTag(job) {
   if (!job) return "Job:-";
@@ -195,45 +150,16 @@ function getWorkspaceInputs() {
   return workspaceInputs;
 }
 
-function getLogText(logDiv) {
-  if (!logDiv) return "";
-  if (typeof logDiv.value === "string") return String(logDiv.value || "");
-  return String(logDiv.textContent || "");
-}
-
-function setLogText(logDiv, text) {
-  if (!logDiv) return;
-  const nextText = String(text || "");
-  if (typeof logDiv.value === "string") {
-    logDiv.value = nextText;
-    return;
-  }
-  logDiv.textContent = nextText;
-}
-
-function isNearLogBottom(logDiv, threshold = 12) {
-  if (!logDiv) return true;
-  const maxScrollTop = Math.max(0, logDiv.scrollHeight - logDiv.clientHeight);
-  return maxScrollTop - logDiv.scrollTop <= threshold;
-}
-
 function log(msg, type = "info") {
   console.log(`[Workspace][${type}] ${msg}`);
   const logDiv = dom.logWindow || byId("logWindow");
   if (!logDiv) return;
   if (msg === "CLEAR") {
-    setLogText(logDiv, "");
+    clearLogView(logDiv);
     return;
   }
-  const time = new Date().toLocaleTimeString();
-  const level = String(type || "info").toUpperCase();
-  const line = `[${time}] [${level}] ${String(msg || "")}`;
-  const stickToBottom = isNearLogBottom(logDiv);
-  const current = getLogText(logDiv);
-  setLogText(logDiv, current ? `${current}\n${line}` : line);
-  if (stickToBottom) {
-    logDiv.scrollTop = logDiv.scrollHeight;
-  }
+  const line = buildLogLine({ message: msg, type, now: new Date() });
+  renderLogLine(logDiv, line);
 }
 
 function onClearLogClick() {
@@ -244,63 +170,26 @@ function getApps() {
   return store.getAiApps().filter((app) => app && typeof app === "object");
 }
 
-function clearRunButtonTimer() {
-  if (!state.runButtonTimerId) return;
-  clearTimeout(state.runButtonTimerId);
-  state.runButtonTimerId = null;
-}
-
-function scheduleRunButtonRecover(delayMs = RUN_SUBMITTED_ACK_MS) {
-  clearRunButtonTimer();
-  const delay = Math.max(0, Number(delayMs) || 0);
-  state.runButtonTimerId = setTimeout(() => {
-    state.runButtonTimerId = null;
-    state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
-    runGuard.clearClickBlock();
-    updateRunButtonUI();
-  }, delay);
-}
-
-function enterRunSubmittingGuard() {
-  clearRunButtonTimer();
-  state.runButtonPhase = RUN_BUTTON_PHASE.SUBMITTING_GUARD;
-  runGuard.blockClickFor(Math.max(RUN_DOUBLE_CLICK_GUARD_MS, RUN_SUBMITTING_MIN_MS));
-  updateRunButtonUI();
-}
-
-function enterRunSubmittedAck() {
-  clearRunButtonTimer();
-  state.runButtonPhase = RUN_BUTTON_PHASE.SUBMITTED_ACK;
-  runGuard.blockClickFor(RUN_SUBMITTED_ACK_MS);
-  updateRunButtonUI();
-  scheduleRunButtonRecover(RUN_SUBMITTED_ACK_MS);
-}
-
-function recoverRunButtonNow() {
-  clearRunButtonTimer();
-  state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
-  runGuard.clearClickBlock();
-  updateRunButtonUI();
-}
-
-function isRunClickGuardActive(now = Date.now()) {
-  return runGuard.isClickGuardActive(now);
-}
-
-function sleepMs(ms) {
-  const delay = Math.max(0, Number(ms) || 0);
-  return new Promise((resolve) => {
-    setTimeout(resolve, delay);
-  });
-}
-
-async function waitRunSubmittingMinDuration(startedAt) {
-  const start = Number(startedAt || 0);
-  const elapsed = start > 0 ? Math.max(0, Date.now() - start) : RUN_SUBMITTING_MIN_MS;
-  const remain = RUN_SUBMITTING_MIN_MS - elapsed;
-  if (remain > 0) {
-    await sleepMs(remain);
+function getRunButtonPhaseController() {
+  if (!runButtonPhaseController) {
+    runButtonPhaseController = createRunButtonPhaseController({
+      runGuard,
+      runButtonPhaseEnum: RUN_BUTTON_PHASE,
+      getPhase: () => state.runButtonPhase,
+      setPhase: (nextPhase) => {
+        state.runButtonPhase = nextPhase;
+      },
+      getTimerId: () => state.runButtonTimerId,
+      setTimerId: (nextTimerId) => {
+        state.runButtonTimerId = nextTimerId;
+      },
+      onPhaseUpdated: updateRunButtonUI,
+      doubleClickGuardMs: RUN_DOUBLE_CLICK_GUARD_MS,
+      submittingMinMs: RUN_SUBMITTING_MIN_MS,
+      submittedAckMs: RUN_SUBMITTED_ACK_MS
+    });
   }
+  return runButtonPhaseController;
 }
 
 function clearTaskSummaryHint() {
@@ -399,29 +288,16 @@ function ensureJobServices() {
 function updateRunButtonUI() {
   const btn = dom.btnRun || byId("btnRun");
   if (!btn) return;
-  if (!state.currentApp) {
-    btn.classList.remove("is-busy");
-    btn.disabled = true;
-    btn.textContent = "开始运行";
-    return;
-  }
 
-  if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTING_GUARD) {
-    btn.classList.add("is-busy");
-    btn.disabled = true;
-    btn.textContent = "提交中...";
-    return;
-  }
-  if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTED_ACK) {
-    btn.classList.add("is-busy");
-    btn.disabled = true;
-    btn.textContent = "已加入队列";
-    return;
-  }
+  const viewModel = buildRunButtonViewModel({
+    currentApp: state.currentApp,
+    runButtonPhase: state.runButtonPhase,
+    runButtonPhaseEnum: RUN_BUTTON_PHASE
+  });
 
-  btn.classList.remove("is-busy");
-  btn.disabled = false;
-  btn.textContent = `运行新任务: ${state.currentApp.name}`;
+  btn.classList.toggle("is-busy", !!viewModel.busy);
+  btn.disabled = !!viewModel.disabled;
+  btn.textContent = viewModel.text;
 }
 
 function getJobStatusLabel(status) {
@@ -436,21 +312,8 @@ function getJobStatusLabel(status) {
   return status || "-";
 }
 
-function getJobElapsedSeconds(job, now = Date.now()) {
-  const start = Number(job && (job.startedAt || job.createdAt) || 0);
-  if (!Number.isFinite(start) || start <= 0) return "0.00";
-  const elapsed = Math.max(0, (now - start) / 1000);
-  return elapsed.toFixed(2);
-}
-
-function hasLiveJobs() {
-  return Array.isArray(state.jobs) && state.jobs.some((job) =>
-    ![JOB_STATUS.DONE, JOB_STATUS.FAILED].includes(job.status)
-  );
-}
-
 function syncTaskSummaryTicker() {
-  if (hasLiveJobs()) {
+  if (hasLiveJobs(state.jobs, JOB_STATUS)) {
     if (state.taskSummaryTimerId) return;
     state.taskSummaryTimerId = setInterval(() => {
       updateTaskStatusSummary();
@@ -468,58 +331,16 @@ function updateTaskStatusSummary() {
   if (!summaryEl) return;
   const now = Date.now();
   const hint = getActiveTaskSummaryHint(now);
-  summaryEl.classList.remove("is-warning", "is-success", "is-info");
-
-  if (!Array.isArray(state.jobs) || state.jobs.length === 0) {
-    const lines = ["后台任务：无"];
-    if (hint) lines.push(hint.text);
-    summaryEl.textContent = lines.join("\n");
-    if (hint && hint.type === "warn") {
-      summaryEl.classList.add("is-warning");
-    } else if (hint && hint.type === "info") {
-      summaryEl.classList.add("is-info");
-    }
-    summaryEl.title = "";
-    syncTaskSummaryTicker();
-    return;
-  }
-
-  const running = state.jobs.filter((job) =>
-    [JOB_STATUS.SUBMITTING, JOB_STATUS.REMOTE_RUNNING, JOB_STATUS.DOWNLOADING, JOB_STATUS.APPLYING].includes(job.status)
-  ).length;
-  const queued = state.jobs.filter((job) => job.status === JOB_STATUS.QUEUED).length;
-  const timeout = state.jobs.filter((job) => job.status === JOB_STATUS.TIMEOUT_TRACKING).length;
-  const done = state.jobs.filter((job) => job.status === JOB_STATUS.DONE).length;
-  const failed = state.jobs.filter((job) => job.status === JOB_STATUS.FAILED).length;
-
-  const line1 =
-    `后台任务：运行 ${running}｜排队 ${queued}｜完成 ${done}｜失败 ${failed}` +
-    (timeout > 0 ? `｜超时跟踪 ${timeout}` : "");
-  const activeJobs = state.jobs.filter((job) =>
-    ![JOB_STATUS.DONE, JOB_STATUS.FAILED].includes(job.status)
-  );
-  const line2 = activeJobs.length > 0
-    ? activeJobs
-      .slice(0, 6)
-      .map((job) => `${job.jobId} ${getJobStatusLabel(job.status)} ${getJobElapsedSeconds(job, now)}s`)
-      .join("｜")
-    : "";
-  const lines = [line1];
-  if (line2) lines.push(line2);
-  if (hint) lines.push(hint.text);
-  summaryEl.textContent = lines.join("\n");
-
-  const hasWarning = failed > 0 || timeout > 0 || (hint && hint.type === "warn");
-  const hasSuccess = !hasWarning && failed === 0 && timeout === 0 && running === 0 && queued === 0 && done > 0;
-  if (hasWarning) summaryEl.classList.add("is-warning");
-  if (hasSuccess) summaryEl.classList.add("is-success");
-  if (!hasWarning && !hasSuccess && hint && hint.type === "info") summaryEl.classList.add("is-info");
-
-  const preview = state.jobs.slice(0, 8).map((job) =>
-    `${job.jobId} | ${job.appName || "-"} | ${getJobStatusLabel(job.status)} | ${getJobElapsedSeconds(job, now)}s${job.remoteTaskId ? ` | ${job.remoteTaskId}` : ""}`
-  );
-  if (hint) preview.unshift(`Hint | ${hint.text}`);
-  summaryEl.title = preview.join("\n");
+  const viewModel = buildTaskSummaryViewModel({
+    jobs: state.jobs,
+    hint,
+    now,
+    jobStatus: JOB_STATUS,
+    activeLimit: 6,
+    previewLimit: 8,
+    resolveJobStatusLabel: getJobStatusLabel
+  });
+  renderTaskSummary(summaryEl, viewModel);
   syncTaskSummaryTicker();
 }
 function updateCurrentAppMeta() {
@@ -608,8 +429,9 @@ async function handleRun() {
     return;
   }
 
+  const runButtonCtrl = getRunButtonPhaseController();
   const now = Date.now();
-  if (runGuard.isSubmitInFlight() || isRunClickGuardActive(now)) {
+  if (runGuard.isSubmitInFlight() || runButtonCtrl.isClickGuardActive(now)) {
     emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
     return;
   }
@@ -618,82 +440,51 @@ async function handleRun() {
     emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
     return;
   }
-  enterRunSubmittingGuard();
+  runButtonCtrl.enterSubmittingGuard();
   const runSubmittingStartedAt = Date.now();
 
   try {
-    const settings = store.getSettings();
-    const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
-    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
-    const pollSettings = {
-      pollInterval: Number(settings.pollInterval) || 2,
-      timeout: Number(settings.timeout) || 180
-    };
-    const appItem = cloneDeepValue(state.currentApp);
-    const inputValues = cloneInputValues(state.inputValues);
-    const targetBounds = cloneBounds(resolveTargetBounds());
-    const sourceBuffer = cloneArrayBuffer(resolveSourceImageBuffer());
-    const runFingerprint = runGuard.buildRunFingerprint({
-      appItem,
-      inputValues,
-      targetBounds,
-      sourceBuffer,
-      pasteStrategy,
-      uploadMaxEdge,
-      pollSettings
+    const submitResult = submitWorkspaceJobUsecase({
+      runGuard,
+      now,
+      createdAt: Date.now(),
+      nextJobSeq: state.nextJobSeq,
+      apiKey,
+      currentApp: state.currentApp,
+      inputValues: state.inputValues,
+      targetBounds: resolveTargetBounds(),
+      sourceBuffer: resolveSourceImageBuffer(),
+      settings: store.getSettings(),
+      queuedStatus: JOB_STATUS.QUEUED
     });
 
-    if (runGuard.isRecentDuplicateFingerprint(runFingerprint, now)) {
+    if (submitResult.outcome === "duplicate") {
       emitRunGuardFeedback("检测到短时间重复提交，已自动拦截。", "warn", 1800);
-      await waitRunSubmittingMinDuration(runSubmittingStartedAt);
-      enterRunSubmittedAck();
+      await runButtonCtrl.waitSubmittingMinDuration(runSubmittingStartedAt);
+      runButtonCtrl.enterSubmittedAck();
       return;
     }
 
-    const createdAt = Date.now();
-    const job = {
-      jobId: `J${createdAt}-${state.nextJobSeq++}`,
-      appName: String(state.currentApp.name || "未命名应用"),
-      apiKey,
-      appItem,
-      inputValues,
-      targetBounds,
-      sourceBuffer,
-      pasteStrategy,
-      uploadMaxEdge,
-      pollSettings,
-      runFingerprint,
-      status: JOB_STATUS.QUEUED,
-      statusReason: "",
-      remoteTaskId: "",
-      resultUrl: "",
-      timeoutRecoveries: 0,
-      nextRunAt: createdAt,
-      startedAt: createdAt,
-      createdAt,
-      updatedAt: createdAt,
-      finishedAt: 0
-    };
-
-    runGuard.rememberFingerprint(runFingerprint, createdAt);
+    const job = submitResult.job;
+    state.nextJobSeq = submitResult.nextJobSeq;
     state.jobs.unshift(job);
     pruneJobHistory();
     updateTaskStatusSummary();
     emitRunGuardFeedback(`任务已提交到队列（${job.jobId}）`, "info", 1400);
     log(`[${getJobTag(job)}] 已加入后台队列: ${job.appName}`, "info");
     logPromptLengthsBeforeRun(job.appItem, job.inputValues, `[${getJobTag(job)}]`);
-    await waitRunSubmittingMinDuration(runSubmittingStartedAt);
-    enterRunSubmittedAck();
+    await runButtonCtrl.waitSubmittingMinDuration(runSubmittingStartedAt);
+    runButtonCtrl.enterSubmittedAck();
     pumpJobScheduler();
   } catch (error) {
     const message = error && error.message ? error.message : String(error || "unknown error");
     emitRunGuardFeedback(`任务提交失败：${message}`, "warn", 2200);
     log(`[RunGuard] 任务提交异常: ${message}`, "error");
-    recoverRunButtonNow();
+    runButtonCtrl.recoverNow();
   } finally {
     runGuard.finishSubmit();
     if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTING_GUARD) {
-      recoverRunButtonNow();
+      runButtonCtrl.recoverNow();
     }
   }
 }
@@ -1093,7 +884,11 @@ function cacheDomRefs() {
 }
 
 function initWorkspaceController() {
-  clearRunButtonTimer();
+  if (runButtonPhaseController) {
+    runButtonPhaseController.dispose();
+    runButtonPhaseController = null;
+  }
+  state.runButtonTimerId = null;
   clearTaskSummaryHint();
   if (state.taskSummaryTimerId) {
     clearInterval(state.taskSummaryTimerId);
@@ -1111,6 +906,7 @@ function initWorkspaceController() {
   state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
 
   cacheDomRefs();
+  getRunButtonPhaseController();
   state.templatePickerMode = "single";
   state.templatePickerMaxSelection = 1;
   state.templatePickerSelectedIds = [];
