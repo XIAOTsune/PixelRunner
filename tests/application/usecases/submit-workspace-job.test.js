@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { submitWorkspaceJobUsecase } = require("../../../src/application/usecases/submit-workspace-job");
 
-test("submitWorkspaceJobUsecase returns duplicate outcome when fingerprint is recently submitted", () => {
+test("submitWorkspaceJobUsecase keeps queueing job when fingerprint is recently submitted", () => {
   const calls = [];
   const runGuard = {
     buildRunFingerprint: () => "fp-1",
@@ -38,9 +38,17 @@ test("submitWorkspaceJobUsecase returns duplicate outcome when fingerprint is re
     })
   });
 
-  assert.equal(result.outcome, "duplicate");
-  assert.equal(result.runFingerprint, "fp-1");
-  assert.deepEqual(calls, [["isRecentDuplicateFingerprint", "fp-1", 123]]);
+  assert.equal(result.outcome, "queued");
+  assert.equal(result.nextJobSeq, 10);
+  assert.equal(result.job.runFingerprint, "fp-1");
+  assert.deepEqual(result.duplicateHint, {
+    type: "recent-fingerprint",
+    runFingerprint: "fp-1"
+  });
+  assert.deepEqual(calls, [
+    ["isRecentDuplicateFingerprint", "fp-1", 123],
+    ["rememberFingerprint", "fp-1", 456]
+  ]);
 });
 
 test("submitWorkspaceJobUsecase creates queued job and advances seq", () => {
@@ -85,6 +93,7 @@ test("submitWorkspaceJobUsecase creates queued job and advances seq", () => {
   assert.equal(result.job.apiKey, "api-key");
   assert.equal(result.job.appName, "App A");
   assert.equal(result.job.runFingerprint, "fp-2");
+  assert.equal(result.duplicateHint, null);
   assert.deepEqual(result.job.pollSettings, { pollInterval: 5, timeout: 240 });
   assert.deepEqual(calls, [["rememberFingerprint", "fp-2", 1500]]);
 });

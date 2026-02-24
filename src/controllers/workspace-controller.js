@@ -91,7 +91,7 @@ const RUN_BUTTON_PHASE = {
 const RUN_DOUBLE_CLICK_GUARD_MS = 450;
 const RUN_SUBMITTING_MIN_MS = 1000;
 const RUN_SUBMITTED_ACK_MS = 1000;
-const RUN_DEDUP_WINDOW_MS = 4000;
+const RUN_DEDUP_WINDOW_MS = 800;
 const RUN_DEDUP_CACHE_LIMIT = 80;
 const RUN_SUMMARY_HINT_MS = 1800;
 
@@ -458,19 +458,15 @@ async function handleRun() {
       queuedStatus: JOB_STATUS.QUEUED
     });
 
-    if (submitResult.outcome === "duplicate") {
-      emitRunGuardFeedback("检测到短时间重复提交，已自动拦截。", "warn", 1800);
-      await runButtonCtrl.waitSubmittingMinDuration(runSubmittingStartedAt);
-      runButtonCtrl.enterSubmittedAck();
-      return;
-    }
-
     const job = submitResult.job;
     state.nextJobSeq = submitResult.nextJobSeq;
     state.jobs.unshift(job);
     pruneJobHistory();
     updateTaskStatusSummary();
     emitRunGuardFeedback(`任务已提交到队列（${job.jobId}）`, "info", 1400);
+    if (submitResult.duplicateHint) {
+      emitRunGuardFeedback("检测到短时间重复提交，已继续入队。", "warn", 1800);
+    }
     log(`[${getJobTag(job)}] 已加入后台队列: ${job.appName}`, "info");
     logPromptLengthsBeforeRun(job.appItem, job.inputValues, `[${getJobTag(job)}]`);
     await runButtonCtrl.waitSubmittingMinDuration(runSubmittingStartedAt);

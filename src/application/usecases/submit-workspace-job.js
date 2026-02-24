@@ -53,13 +53,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     uploadMaxEdge,
     pollSettings
   });
-
-  if (runGuard.isRecentDuplicateFingerprint(runFingerprint, now)) {
-    return {
-      outcome: "duplicate",
-      runFingerprint
-    };
-  }
+  const isRecentDuplicateFingerprint = runGuard.isRecentDuplicateFingerprint(runFingerprint, now);
 
   const job = {
     jobId: `J${createdAt}-${nextJobSeq}`,
@@ -89,7 +83,13 @@ function submitWorkspaceJobUsecase(options = {}) {
   return {
     outcome: "queued",
     job,
-    nextJobSeq: nextJobSeq + 1
+    nextJobSeq: nextJobSeq + 1,
+    duplicateHint: isRecentDuplicateFingerprint
+      ? {
+          type: "recent-fingerprint",
+          runFingerprint
+        }
+      : null
   };
 }
 

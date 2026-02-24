@@ -1,4 +1,4 @@
-const DEFAULT_DEDUP_WINDOW_MS = 4000;
+const DEFAULT_DEDUP_WINDOW_MS = 800;
 const DEFAULT_DEDUP_CACHE_LIMIT = 80;
 
 function toPositiveNumber(value, fallback) {

@@ -20,6 +20,20 @@ test("run guard blocks duplicate fingerprints in the dedup window", () => {
   assert.equal(guard.isRecentDuplicateFingerprint(fingerprint), false);
 });
 
+test("run guard default dedup window is short-lived for weak dedup", () => {
+  let now = 1000;
+  const guard = createRunGuard({ now: () => now });
+  const fingerprint = "fp:weak";
+
+  guard.rememberFingerprint(fingerprint);
+
+  now = 1700;
+  assert.equal(guard.isRecentDuplicateFingerprint(fingerprint), true);
+
+  now = 1801;
+  assert.equal(guard.isRecentDuplicateFingerprint(fingerprint), false);
+});
+
 test("run guard manages submit lock and click lock", () => {
   let now = 0;
   const guard = createRunGuard({ now: () => now });

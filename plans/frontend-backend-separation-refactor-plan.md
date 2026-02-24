@@ -704,7 +704,7 @@ src/
 | ID | 问题 | 优先级 | 状态 | 依赖 |
 | --- | --- | --- | --- | --- |
 | AR-01 | 手动参数配置链路下线（统一自动解析） | P0 | DONE | 无 |
-| AR-02 | 去重策略过强且指纹误判风险（改弱去重） | P1 | TODO | 无 |
+| AR-02 | 去重策略过强且指纹误判风险（改弱去重） | P1 | DONE | 无 |
 | AR-03 | 结构化解析错误在 usecase 层被降级丢失 | P1 | TODO | 无 |
 | AR-04 | controller 仍直连 services，分层规则未收口 | P0 | TODO | AR-03 |
 | AR-05 | 冗余文件：`src/services/ps/index.js` | P2 | TODO | AR-04 |
@@ -839,6 +839,30 @@ src/
   - 手动兜底链路已移除；解析失败时只能通过修正 appId/API key、查看 parse debug、等待 AR-03 错误透传优化来定位问题。
 - 下一步：
   - 进入 AR-02（弱去重策略改造）。
+
+### [AR-02] 进度快照（2026-02-24）
+- 本次完成：
+  - 去重策略从“强阻断”改为“弱去重提示”：`submit-workspace-job` 不再因短时重复指纹返回 `duplicate` 阻断，而是继续创建并入队任务。
+  - 保留指纹检测用于提示语义：当命中短时重复指纹时返回 `duplicateHint`，控制层仅提示“短时重复提交，已继续入队”。
+  - 将 dedup 窗口收敛为极短窗口（`800ms`），用于误触防护，不再阻断用户主动重复提交。
+  - 补齐 AR-02 相关自动化断言：`run-guard` 与 `submit-workspace-job` 行为测试覆盖弱去重路径。
+- 变更文件：
+  - `src/application/services/run-guard.js`
+  - `src/application/usecases/submit-workspace-job.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/application/services/run-guard.test.js`
+  - `tests/application/usecases/submit-workspace-job.test.js`
+  - `plans/frontend-backend-separation-refactor-plan.md`
+- 校验命令：
+  - `node --test tests/application/services/run-guard.test.js tests/application/usecases/submit-workspace-job.test.js tests/application/services/run-button.test.js tests/controllers/workspace/*.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/workspace/*.test.js`
+- 结果：
+  - `27 passed, 0 failed`
+  - `114 passed, 0 failed`
+- 风险/遗留：
+  - 目前 `workspace-controller` 仍无 Node 层控制器级自动化（受 DOM/运行时依赖限制），`duplicateHint` 的 UI 提示分支主要依赖集成运行验证。
+- 下一步：
+  - 进入 AR-03（结构化错误透传），保持 parser 错误元信息跨层可见。
 
 ---
 
