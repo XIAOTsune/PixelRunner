@@ -1,13 +1,14 @@
-const { initWorkspaceController } = require("./src/controllers/workspace-controller");
-const { initSettingsController } = require("./src/controllers/settings-controller");
-const { initToolsController } = require("./src/controllers/tools-controller");
-const { runPsEnvironmentDoctor } = require("./src/diagnostics/ps-env-doctor");
-
 document.addEventListener("DOMContentLoaded", () => {
   console.log("Plugin Loaded. Initializing Controllers...");
 
   let initError = null;
+  let runPsEnvironmentDoctor = null;
   try {
+    const { initWorkspaceController } = require("./src/controllers/workspace-controller");
+    const { initSettingsController } = require("./src/controllers/settings-controller");
+    const { initToolsController } = require("./src/controllers/tools-controller");
+    ({ runPsEnvironmentDoctor } = require("./src/diagnostics/ps-env-doctor"));
+
     initWorkspaceController();
     initSettingsController();
     initToolsController();
@@ -18,19 +19,21 @@ document.addEventListener("DOMContentLoaded", () => {
     console.error("Initialization Failed:", error);
   }
 
-  runPsEnvironmentDoctor({ stage: "startup", initError })
-    .then((report) => {
-      console.log(`[Diag] Startup report generated: ${report.runId}`);
-      if (report && report.persisted) {
-        const { jsonPath, textPath } = report.persisted;
-        if (jsonPath || textPath) {
-          console.log(`[Diag] Report paths => json: ${jsonPath || "n/a"}, txt: ${textPath || "n/a"}`);
+  if (typeof runPsEnvironmentDoctor === "function") {
+    runPsEnvironmentDoctor({ stage: "startup", initError })
+      .then((report) => {
+        console.log(`[Diag] Startup report generated: ${report.runId}`);
+        if (report && report.persisted) {
+          const { jsonPath, textPath } = report.persisted;
+          if (jsonPath || textPath) {
+            console.log(`[Diag] Report paths => json: ${jsonPath || "n/a"}, txt: ${textPath || "n/a"}`);
+          }
         }
-      }
-    })
-    .catch((error) => {
-      console.error("[Diag] Failed to run startup diagnostics:", error);
-    });
+      })
+      .catch((error) => {
+        console.error("[Diag] Failed to run startup diagnostics:", error);
+      });
+  }
 });
 
 function setupTabs() {
