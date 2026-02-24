@@ -5,6 +5,17 @@ const runninghub = require("../services/runninghub");
 const ps = require("../services/ps.js");
 
 const DIAGNOSTIC_STORAGE_KEY = "rh_env_diagnostic_latest";
+const REQUIRED_PS_EXPORTS = [
+  "captureSelection",
+  "placeImage",
+  "createNeutralGrayLayer",
+  "createObserverLayer",
+  "stampVisibleLayers",
+  "runGaussianBlur",
+  "runSharpen",
+  "runHighPass",
+  "runContentAwareFill"
+];
 
 function nowIso() {
   return new Date().toISOString();
@@ -414,14 +425,7 @@ async function runPsEnvironmentDoctor(options = {}) {
         "fetchAccountStatus"
       ]),
       checkModuleExports("ps", ps, [
-        "captureSelection",
-        "placeImage",
-        "createNeutralGrayLayer",
-        "createObserverLayer",
-        "stampVisibleLayers",
-        "createFrequencySeparation",
-        "gaussianBlur",
-        "sharpen"
+        ...REQUIRED_PS_EXPORTS
       ])
     ],
     dataHealth: inspectDataHealth(),
@@ -447,5 +451,6 @@ async function runPsEnvironmentDoctor(options = {}) {
 
 module.exports = {
   runPsEnvironmentDoctor,
-  DIAGNOSTIC_STORAGE_KEY
+  DIAGNOSTIC_STORAGE_KEY,
+  REQUIRED_PS_EXPORTS
 };

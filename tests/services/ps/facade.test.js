@@ -18,7 +18,11 @@ function clearPsModuleCache() {
   const keys = Object.keys(require.cache);
   keys.forEach((key) => {
     const normalized = String(key || "").replace(/\\/g, "/");
-    if (normalized.includes("/src/services/ps.js") || normalized.includes("/src/services/ps/")) {
+    if (
+      normalized.includes("/src/services/ps.js")
+      || normalized.includes("/src/services/ps/")
+      || normalized.includes("/src/diagnostics/ps-env-doctor.js")
+    ) {
       delete require.cache[key];
     }
   });
@@ -81,5 +85,13 @@ test("ps facade re-exports functions from split modules", () => {
     assert.equal(psFacade.runSharpen, tools.runSharpen);
     assert.equal(psFacade.runHighPass, tools.runHighPass);
     assert.equal(psFacade.runContentAwareFill, tools.runContentAwareFill);
+  });
+});
+
+test("ps facade contract stays in sync with diagnostics export checks", () => {
+  withMockedPsHostModules(() => {
+    const psFacade = require("../../../src/services/ps");
+    const { REQUIRED_PS_EXPORTS } = require("../../../src/diagnostics/ps-env-doctor");
+    assert.deepEqual([...REQUIRED_PS_EXPORTS].sort(), Object.keys(psFacade).sort());
   });
 });
