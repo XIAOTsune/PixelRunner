@@ -1,5 +1,8 @@
-const ps = require("../services/ps.js");
+const { createWorkspaceGateway } = require("../infrastructure/gateways/workspace-gateway");
 const { byId, rebindEvent } = require("../shared/dom-utils");
+
+const workspaceGateway = createWorkspaceGateway();
+const ps = workspaceGateway.photoshop;
 
 async function onNeutralGrayClick() {
   try {

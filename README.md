@@ -190,6 +190,7 @@ flowchart LR
    - `tests/services/ps/facade.test.js`
    - `src/diagnostics/ps-env-doctor.js`（`REQUIRED_PS_EXPORTS`）
 4. 合同测试不通过时，不允许发布。
+5. `controller` 禁止直连 `src/services/*`，必须通过 `usecase/application service/gateway` 间接访问。
 
 <a name="smoke-checklist"></a>
 ## 手工 Smoke Checklist（UXP）
@@ -241,7 +242,8 @@ for (const f of files) {
 ### R4（建议）发布前最小预检
 1. `node --check index.js src/services/ps.js src/controllers/workspace-controller.js`
 2. `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js`
-3. 执行 R1 的 BOM 检查
+3. `node scripts/check-controller-service-deps.js`
+4. 执行 R1 的 BOM 检查
 
 <a name="development"></a>
 ## 开发与调试 / Development

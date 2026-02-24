@@ -706,7 +706,7 @@ src/
 | AR-01 | 手动参数配置链路下线（统一自动解析） | P0 | DONE | 无 |
 | AR-02 | 去重策略过强且指纹误判风险（改弱去重） | P1 | DONE | 无 |
 | AR-03 | 结构化解析错误在 usecase 层被降级丢失 | P1 | DONE | 无 |
-| AR-04 | controller 仍直连 services，分层规则未收口 | P0 | TODO | AR-03 |
+| AR-04 | controller 仍直连 services，分层规则未收口 | P0 | DONE | AR-03 |
 | AR-05 | 冗余文件：`src/services/ps/index.js` | P2 | TODO | AR-04 |
 | AR-06 | README 项目结构描述与代码现状不一致 | P2 | TODO | AR-04, AR-05 |
 
@@ -889,6 +889,36 @@ src/
   - `settings-controller` 仍缺少 Node 侧控制器级自动化，当前对“失败后 Env Doctor 输出写入”的验证主要通过服务层与视图层单测间接覆盖。
 - 下一步：
   - 进入 AR-04（controller 禁止直连 services 硬规则落地）。
+
+### [AR-04] 进度快照（2026-02-24）
+- 本次完成：
+  - 移除 controller 对 `services` 的直连依赖：
+    - `workspace-controller` 不再直接 `require("../services/store|runninghub|ps")`，改为通过 `workspace-gateway` 获取依赖。
+    - `tools-controller` 不再直接 `require("../services/ps.js")`，改为通过 `workspace-gateway` 获取 Photoshop 能力。
+  - 新增硬规则检查脚本：`scripts/check-controller-service-deps.js`，静态扫描 `src/controllers/**/*.js`，若出现 `../services/*` 直连则失败退出。
+  - 将规则纳入预检文档：`README` 补充“controller 禁止直连 services”强制约束，并把检查脚本加入发布前最小预检命令。
+  - 补齐检查脚本自动化测试：覆盖“合法依赖通过 / 非法依赖报错 / 输出格式”。
+- 变更文件：
+  - `src/infrastructure/gateways/workspace-gateway.js`
+  - `src/controllers/workspace-controller.js`
+  - `src/controllers/tools-controller.js`
+  - `scripts/check-controller-service-deps.js`
+  - `tests/scripts/check-controller-service-deps.test.js`
+  - `README.md`
+  - `plans/frontend-backend-separation-refactor-plan.md`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`
+  - `node --test tests/scripts/check-controller-service-deps.test.js`
+  - `node --check src/controllers/workspace-controller.js src/controllers/tools-controller.js src/infrastructure/gateways/workspace-gateway.js scripts/check-controller-service-deps.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/domain/policies/*.test.js tests/scripts/*.test.js`
+- 结果：
+  - `Controller dependency check passed: no direct services import.`
+  - `3 passed, 0 failed`
+  - `148 passed, 0 failed`
+- 风险/遗留：
+  - 当前“纳入 CI”先以预检脚本落地，仓库尚无现成 CI workflow；若后续接入 CI，需要将该脚本加入 pipeline 必跑阶段。
+- 下一步：
+  - 进入 AR-05（清理冗余文件 `src/services/ps/index.js`）。
 
 ---
 
