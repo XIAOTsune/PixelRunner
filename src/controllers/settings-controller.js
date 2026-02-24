@@ -4,6 +4,14 @@ const { normalizeAppId, escapeHtml } = require("../utils");
 const { APP_EVENTS, emitAppEvent } = require("../events");
 const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
+const textInputPolicy = require("../domain/policies/text-input-policy");
+const { saveSettingsUsecase } = require("../application/usecases/manage-settings");
+const { parseRunninghubAppUsecase } = require("../application/usecases/parse-runninghub-app");
+const {
+  saveTemplateUsecase,
+  importTemplatesUsecase,
+  buildTemplateExportUsecase
+} = require("../application/usecases/manage-templates");
 let localFileSystem = null;
 try {
   const { storage } = require("uxp");
@@ -13,8 +21,8 @@ try {
 }
 
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
-const LARGE_PROMPT_WARNING_CHARS = 4000;
-const TEXT_INPUT_HARD_MAX_CHARS = 20000;
+const LARGE_PROMPT_WARNING_CHARS = textInputPolicy.LARGE_PROMPT_WARNING_CHARS;
+const TEXT_INPUT_HARD_MAX_CHARS = textInputPolicy.TEXT_INPUT_HARD_MAX_CHARS;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
 const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
 const dom = {};
@@ -198,39 +206,19 @@ function getDuplicateMeta(list) {
 }
 
 function getTextLength(value) {
-  return Array.from(String(value == null ? "" : value)).length;
+  return textInputPolicy.getTextLength(value);
 }
 
 function getTailPreview(value, maxChars = 20) {
-  const chars = Array.from(String(value == null ? "" : value));
-  if (chars.length === 0) return "(空)";
-  const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
-  const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
-  return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
+  return textInputPolicy.getTailPreview(value, maxChars);
 }
 
 function enforceLongTextCapacity(inputEl) {
-  if (!inputEl) return;
-  try {
-    inputEl.maxLength = TEXT_INPUT_HARD_MAX_CHARS;
-  } catch (_) {}
-  try {
-    inputEl.setAttribute("maxlength", String(TEXT_INPUT_HARD_MAX_CHARS));
-  } catch (_) {}
+  textInputPolicy.enforceLongTextCapacity(inputEl, TEXT_INPUT_HARD_MAX_CHARS);
 }
 
 function insertTextAtCursor(inputEl, rawText) {
-  if (!inputEl) return;
-  const text = String(rawText == null ? "" : rawText);
-  const current = String(inputEl.value || "");
-  const start = Number.isFinite(inputEl.selectionStart) ? inputEl.selectionStart : current.length;
-  const end = Number.isFinite(inputEl.selectionEnd) ? inputEl.selectionEnd : start;
-  const next = `${current.slice(0, start)}${text}${current.slice(end)}`;
-  inputEl.value = next;
-  const cursor = start + text.length;
-  if (typeof inputEl.setSelectionRange === "function") {
-    inputEl.setSelectionRange(cursor, cursor);
-  }
+  textInputPolicy.insertTextAtCursor(inputEl, rawText);
 }
 
 function updateTemplateLengthHint() {
@@ -287,14 +275,15 @@ function saveApiKeyAndSettings() {
     dom.uploadMaxEdgeSettingSelect ? dom.uploadMaxEdgeSettingSelect.value : currentSettings.uploadMaxEdge
   );
 
-  store.saveApiKey(apiKey);
-  store.saveSettings({
+  const payload = saveSettingsUsecase({
+    store,
+    apiKey,
     pollInterval,
     timeout,
     uploadMaxEdge,
     pasteStrategy: currentSettings.pasteStrategy
   });
-  emitAppEvent(APP_EVENTS.SETTINGS_CHANGED, { apiKeyChanged: true, settingsChanged: true });
+  emitAppEvent(APP_EVENTS.SETTINGS_CHANGED, payload);
   alert("设置已保存");
 }
 
@@ -334,18 +323,13 @@ async function parseApp() {
 
   try {
     dom.appIdInput.value = appId;
-    const data = await runninghub.fetchAppInfo(appId, apiKey, { log });
-    if (!data || !Array.isArray(data.inputs) || data.inputs.length === 0) {
-      throw new Error("未识别到可用输入参数，请先点击“Load Parse Debug”检查解析详情。");
-    }
-
-    state.parsedAppData = {
+    state.parsedAppData = await parseRunninghubAppUsecase({
+      runninghub,
       appId,
-      name: dom.appNameInput.value.trim() || data.name || "未命名应用",
-      description: data.description || "",
-      inputs: data.inputs || []
-    };
-
+      apiKey,
+      preferredName: dom.appNameInput.value.trim(),
+      log
+    });
     renderParseResult(state.parsedAppData);
   } catch (error) {
     console.error(error);
@@ -447,28 +431,20 @@ function renderSavedAppsList() {
 }
 
 function saveTemplate() {
-  const title = String(dom.templateTitleInput.value || "").trim();
-  const content = String(dom.templateContentInput.value || "");
-
-  if (!title || !content.trim()) {
-    alert("标题和内容不能为空");
-    return;
+  try {
+    const result = saveTemplateUsecase({
+      store,
+      title: String(dom.templateTitleInput.value || ""),
+      content: String(dom.templateContentInput.value || "")
+    });
+    emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: result.reason });
+    dom.templateTitleInput.value = "";
+    dom.templateContentInput.value = "";
+    updateTemplateLengthHint();
+    renderSavedTemplates();
+  } catch (error) {
+    alert(error && error.message ? error.message : String(error || "unknown"));
   }
-
-  const existingByTitle = store.getPromptTemplates().find((item) => String(item.title || "").trim() === title);
-  if (existingByTitle && existingByTitle.id) {
-    store.deletePromptTemplate(existingByTitle.id);
-  }
-  store.addPromptTemplate({ title, content });
-  emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: existingByTitle ? "updated" : "saved" });
-  dom.templateTitleInput.value = "";
-  dom.templateContentInput.value = "";
-  updateTemplateLengthHint();
-  renderSavedTemplates();
-}
-
-function getTemplateTitleKey(title) {
-  return String(title || "").trim().toLowerCase();
 }
 
 function resolvePickedEntry(picked) {
@@ -499,31 +475,35 @@ function normalizeReadText(value) {
 
 async function exportTemplatesJson() {
   if (!localFileSystem || typeof localFileSystem.getFileForSaving !== "function") {
-    alert("当前环境不支持导出文件");
+    alert("Current environment does not support file export");
     return;
   }
 
   try {
-    const bundle = store.buildPromptTemplatesBundle();
-    const dateTag = new Date().toISOString().slice(0, 10);
-    const defaultName = `${TEMPLATE_EXPORT_FILENAME_PREFIX}_${dateTag}.json`;
+    const exportResult = buildTemplateExportUsecase({
+      store,
+      filenamePrefix: TEMPLATE_EXPORT_FILENAME_PREFIX
+    });
+    const bundle = exportResult.bundle;
+    const defaultName = exportResult.defaultName;
     const targetFile = await localFileSystem.getFileForSaving(defaultName);
     if (!targetFile) return;
 
     await targetFile.write(JSON.stringify(bundle, null, 2));
     const savedPath = targetFile.nativePath || targetFile.name || defaultName;
     appendEnvDoctorOutput(`Template export success: ${savedPath}`);
-    alert(`导出完成：${bundle.templates.length} 条模板`);
+    const total = Array.isArray(bundle && bundle.templates) ? bundle.templates.length : 0;
+    alert(`Template export completed: ${total} template(s)`);
   } catch (error) {
     const message = error && error.message ? error.message : String(error || "unknown");
     appendEnvDoctorOutput(`Template export failed: ${message}`);
-    alert(`导出失败: ${message}`);
+    alert(`Template export failed: ${message}`);
   }
 }
 
 async function importTemplatesJson() {
   if (!localFileSystem || typeof localFileSystem.getFileForOpening !== "function") {
-    alert("当前环境不支持导入文件");
+    alert("Current environment does not support file import");
     return;
   }
 
@@ -533,51 +513,27 @@ async function importTemplatesJson() {
     if (!entry) return;
 
     const rawText = normalizeReadText(await entry.read());
-    const importedTemplates = store.parsePromptTemplatesBundle(rawText);
-    const mergedTemplates = [...store.getPromptTemplates()];
-    const titleIndexMap = new Map();
-    mergedTemplates.forEach((template, index) => {
-      const key = getTemplateTitleKey(template.title);
-      if (!key) return;
-      if (!titleIndexMap.has(key)) titleIndexMap.set(key, index);
+    const importResult = importTemplatesUsecase({
+      store,
+      payload: rawText
     });
-
-    let addedCount = 0;
-    let replacedCount = 0;
-    importedTemplates.forEach((template) => {
-      const key = getTemplateTitleKey(template.title);
-      if (key && titleIndexMap.has(key)) {
-        const targetIndex = titleIndexMap.get(key);
-        const previous = mergedTemplates[targetIndex] || {};
-        mergedTemplates[targetIndex] = {
-          ...template,
-          id: previous.id || template.id,
-          createdAt: previous.createdAt || template.createdAt
-        };
-        replacedCount += 1;
-        return;
-      }
-      mergedTemplates.push(template);
-      if (key) titleIndexMap.set(key, mergedTemplates.length - 1);
-      addedCount += 1;
-    });
-
-    store.savePromptTemplates(mergedTemplates);
     emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, {
-      reason: "imported",
-      added: addedCount,
-      replaced: replacedCount,
-      total: mergedTemplates.length
+      reason: importResult.reason,
+      added: importResult.added,
+      replaced: importResult.replaced,
+      total: importResult.total
     });
     renderSavedTemplates();
     appendEnvDoctorOutput(
-      `Template import success: total=${mergedTemplates.length}, added=${addedCount}, replaced=${replacedCount}`
+      `Template import success: total=${importResult.total}, added=${importResult.added}, replaced=${importResult.replaced}`
     );
-    alert(`导入完成：新增 ${addedCount}，覆盖 ${replacedCount}，当前共 ${mergedTemplates.length} 条模板`);
+    alert(
+      `Template import completed: added ${importResult.added}, replaced ${importResult.replaced}, total ${importResult.total}`
+    );
   } catch (error) {
     const message = error && error.message ? error.message : String(error || "unknown");
     appendEnvDoctorOutput(`Template import failed: ${message}`);
-    alert(`导入失败: ${message}`);
+    alert(`Template import failed: ${message}`);
   }
 }
 
