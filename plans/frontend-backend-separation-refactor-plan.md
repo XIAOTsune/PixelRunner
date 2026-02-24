@@ -705,7 +705,7 @@ src/
 | --- | --- | --- | --- | --- |
 | AR-01 | 手动参数配置链路下线（统一自动解析） | P0 | DONE | 无 |
 | AR-02 | 去重策略过强且指纹误判风险（改弱去重） | P1 | DONE | 无 |
-| AR-03 | 结构化解析错误在 usecase 层被降级丢失 | P1 | TODO | 无 |
+| AR-03 | 结构化解析错误在 usecase 层被降级丢失 | P1 | DONE | 无 |
 | AR-04 | controller 仍直连 services，分层规则未收口 | P0 | TODO | AR-03 |
 | AR-05 | 冗余文件：`src/services/ps/index.js` | P2 | TODO | AR-04 |
 | AR-06 | README 项目结构描述与代码现状不一致 | P2 | TODO | AR-04, AR-05 |
@@ -863,6 +863,32 @@ src/
   - 目前 `workspace-controller` 仍无 Node 层控制器级自动化（受 DOM/运行时依赖限制），`duplicateHint` 的 UI 提示分支主要依赖集成运行验证。
 - 下一步：
   - 进入 AR-03（结构化错误透传），保持 parser 错误元信息跨层可见。
+
+### [AR-03] 进度快照（2026-02-24）
+- 本次完成：
+  - 修复 usecase 层错误降级：`parse-runninghub-app` 捕获 `runninghub.fetchAppInfo` 异常时，不再 `new Error(message)` 覆盖原错误，而是透传并保留 `code/retryable/reasons/appId/endpoint` 元信息。
+  - 控制层增强失败可观测性：设置页解析失败时除用户可读失败提示外，新增结构化诊断输出（`code/appId/endpoint/retryable/reasons`）到 Env Doctor 输出区。
+  - 失败视图增强：解析失败结果区域支持展示结构化错误元信息（错误码、可重试标记、原因列表）。
+  - 补齐跨层失败链路测试：覆盖“parser 结构化错误 -> usecase 透传 -> 控制层展示/诊断映射”关键断言。
+- 变更文件：
+  - `src/application/usecases/parse-runninghub-app.js`
+  - `src/application/services/settings-parse-result.js`
+  - `src/controllers/settings-controller.js`
+  - `src/controllers/settings/parse-result-view.js`
+  - `tests/application/usecases/parse-runninghub-app.test.js`
+  - `tests/application/services/settings-parse-result.test.js`
+  - `tests/controllers/settings/parse-result-view.test.js`
+  - `plans/frontend-backend-separation-refactor-plan.md`
+- 校验命令：
+  - `node --test tests/application/usecases/parse-runninghub-app.test.js tests/application/services/settings-parse-result.test.js tests/controllers/settings/parse-result-view.test.js tests/controllers/settings/*.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/domain/policies/*.test.js`
+- 结果：
+  - `28 passed, 0 failed`
+  - `145 passed, 0 failed`
+- 风险/遗留：
+  - `settings-controller` 仍缺少 Node 侧控制器级自动化，当前对“失败后 Env Doctor 输出写入”的验证主要通过服务层与视图层单测间接覆盖。
+- 下一步：
+  - 进入 AR-04（controller 禁止直连 services 硬规则落地）。
 
 ---
 

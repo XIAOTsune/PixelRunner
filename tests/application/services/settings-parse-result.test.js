@@ -2,8 +2,10 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   normalizeParseResultInputs,
+  normalizeParseFailure,
   buildParseSuccessViewModel,
-  buildParseFailureViewModel
+  buildParseFailureViewModel,
+  buildParseFailureDiagnostics
 } = require("../../../src/application/services/settings-parse-result");
 
 test("normalizeParseResultInputs maps labels and keys with defaults", () => {
@@ -30,10 +32,53 @@ test("buildParseSuccessViewModel builds title and action label", () => {
 });
 
 test("buildParseFailureViewModel includes fallback message", () => {
-  assert.deepEqual(buildParseFailureViewModel("网络错误"), {
-    message: "解析失败: 网络错误"
+  const vm1 = buildParseFailureViewModel("network error");
+  assert.match(vm1.message, /network error/);
+  assert.equal(vm1.code, "");
+  assert.equal(vm1.retryable, null);
+  assert.deepEqual(vm1.reasons, []);
+
+  const vm2 = buildParseFailureViewModel("");
+  assert.match(vm2.message, /unknown error/);
+});
+
+test("normalizeParseFailure extracts structured parse error fields", () => {
+  const parsed = normalizeParseFailure({
+    message: "parse failed",
+    code: "PARSE_APP_FAILED",
+    appId: "app-1",
+    endpoint: "apiCallDemo",
+    retryable: true,
+    reasons: ["r1", "r2"]
   });
-  assert.deepEqual(buildParseFailureViewModel(""), {
-    message: "解析失败: 未知错误"
+
+  assert.deepEqual(parsed, {
+    message: "parse failed",
+    code: "PARSE_APP_FAILED",
+    appId: "app-1",
+    endpoint: "apiCallDemo",
+    retryable: true,
+    reasons: ["r1", "r2"]
   });
+});
+
+test("buildParseFailureDiagnostics keeps structured fields for diagnostics", () => {
+  const lines = buildParseFailureDiagnostics({
+    message: "parse failed",
+    code: "PARSE_APP_FAILED",
+    appId: "app-err",
+    endpoint: "/api/v2",
+    retryable: false,
+    reasons: ["HTTP 500", "schema mismatch"]
+  });
+
+  assert.deepEqual(lines, [
+    "Parse failed: parse failed",
+    "code=PARSE_APP_FAILED",
+    "appId=app-err",
+    "endpoint=/api/v2",
+    "retryable=false",
+    "reason[1]=HTTP 500",
+    "reason[2]=schema mismatch"
+  ]);
 });

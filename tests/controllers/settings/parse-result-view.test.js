@@ -7,7 +7,7 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -39,4 +39,21 @@ test("renderParseFailureHtml renders escaped error text", () => {
     { escapeHtml }
   );
   assert.match(html, /解析失败: &lt;error&gt;/);
+});
+
+test("renderParseFailureHtml renders structured parse error meta", () => {
+  const html = renderParseFailureHtml(
+    {
+      message: "解析失败: parse failed",
+      code: "PARSE_APP_FAILED",
+      retryable: true,
+      reasons: ["<r1>", "r2"]
+    },
+    { escapeHtml }
+  );
+
+  assert.match(html, /Code: PARSE_APP_FAILED/);
+  assert.match(html, /Retryable: Yes/);
+  assert.match(html, /1\. &lt;r1&gt;/);
+  assert.match(html, /2\. r2/);
 });

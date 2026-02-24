@@ -5,7 +5,11 @@ const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = re
 const textInputPolicy = require("../domain/policies/text-input-policy");
 const { normalizeUploadMaxEdge } = require("../domain/policies/run-settings-policy");
 const { buildSavedAppsListViewModel, buildSavedTemplatesListViewModel } = require("../application/services/settings-lists");
-const { buildParseSuccessViewModel, buildParseFailureViewModel } = require("../application/services/settings-parse-result");
+const {
+  buildParseSuccessViewModel,
+  buildParseFailureViewModel,
+  buildParseFailureDiagnostics
+} = require("../application/services/settings-parse-result");
 const {
   summarizeDiagnosticReport,
   summarizeParseDebugReport,
@@ -218,7 +222,9 @@ async function parseApp() {
     renderParseResult(state.parsedAppData);
   } catch (error) {
     console.error(error);
-    showParseFailure(error.message || "未知错误");
+    showParseFailure(error);
+    const diagnosticLines = buildParseFailureDiagnostics(error);
+    diagnosticLines.forEach((line) => appendEnvDoctorOutput(dom.envDoctorOutput, line));
   } finally {
     dom.btnParseApp.disabled = false;
     dom.btnParseApp.textContent = "解析";
@@ -248,8 +254,8 @@ function saveParsedApp() {
   renderSavedAppsList();
 }
 
-function showParseFailure(message) {
-  const viewModel = buildParseFailureViewModel(message);
+function showParseFailure(errorOrMessage) {
+  const viewModel = buildParseFailureViewModel(errorOrMessage);
   dom.parseResultContainer.innerHTML = renderParseFailureHtml(viewModel, {
     escapeHtml
   });

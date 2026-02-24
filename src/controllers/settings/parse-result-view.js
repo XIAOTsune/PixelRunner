@@ -31,9 +31,24 @@ function renderParseSuccessHtml(viewModel = {}, helpers = {}) {
 
 function renderParseFailureHtml(viewModel = {}, helpers = {}) {
   const escapeHtml = getEscapeHtml(helpers.escapeHtml);
+  const reasons = Array.isArray(viewModel.reasons) ? viewModel.reasons : [];
+  const metaRows = [];
+  if (viewModel.code) metaRows.push(`Code: ${String(viewModel.code)}`);
+  if (typeof viewModel.retryable === "boolean") {
+    metaRows.push(`Retryable: ${viewModel.retryable ? "Yes" : "No"}`);
+  }
+  const metaHtml = metaRows.length
+    ? `<div style="margin-top:4px; color:#ffb3b3; font-size:10px;">${metaRows.map((line) => escapeHtml(line)).join("<br/>")}</div>`
+    : "";
+  const reasonHtml = reasons.length
+    ? `<div style="margin-top:4px; color:#ffb3b3; font-size:10px;">${reasons
+        .map((reason, index) => `${index + 1}. ${escapeHtml(reason)}`)
+        .join("<br/>")}</div>`
+    : "";
+
   return `<div style="color:#ff6b6b; font-size:11px; margin:8px 0;">${escapeHtml(
     viewModel.message || "解析失败: 未知错误"
-  )}</div>`;
+  )}${metaHtml}${reasonHtml}</div>`;
 }
 
 module.exports = {

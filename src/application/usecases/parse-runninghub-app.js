@@ -2,6 +2,28 @@ function toMessage(error) {
   return error && error.message ? error.message : String(error || "unknown error");
 }
 
+function cloneParseErrorMeta(source, target) {
+  if (!source || typeof source !== "object" || !target || typeof target !== "object") return target;
+  if (source.code) target.code = String(source.code);
+  if (typeof source.retryable === "boolean") target.retryable = source.retryable;
+  if (source.appId) target.appId = String(source.appId);
+  if (source.endpoint) target.endpoint = String(source.endpoint);
+  if (Array.isArray(source.reasons)) {
+    target.reasons = source.reasons
+      .filter((item) => item !== undefined && item !== null && item !== "")
+      .map((item) => String(item));
+  }
+  return target;
+}
+
+function toStructuredError(error) {
+  if (error instanceof Error) {
+    return cloneParseErrorMeta(error, error);
+  }
+  const wrapped = new Error(toMessage(error));
+  return cloneParseErrorMeta(error, wrapped);
+}
+
 async function parseRunninghubAppUsecase(options = {}) {
   const runninghub = options.runninghub;
   const appId = String(options.appId || "").trim();
@@ -19,7 +41,7 @@ async function parseRunninghubAppUsecase(options = {}) {
   try {
     data = await runninghub.fetchAppInfo(appId, apiKey, { log });
   } catch (error) {
-    throw new Error(toMessage(error));
+    throw toStructuredError(error);
   }
 
   if (!data || !Array.isArray(data.inputs) || data.inputs.length === 0) {
