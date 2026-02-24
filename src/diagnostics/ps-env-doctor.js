@@ -2,7 +2,7 @@ const manifest = require("../../manifest.json");
 const { API } = require("../config");
 const store = require("../services/store");
 const runninghub = require("../services/runninghub");
-const ps = require("../services/ps");
+const ps = require("../services/ps.js");
 
 const DIAGNOSTIC_STORAGE_KEY = "rh_env_diagnostic_latest";
 

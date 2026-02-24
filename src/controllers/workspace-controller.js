@@ -1,6 +1,6 @@
 const store = require("../services/store");
 const runninghub = require("../services/runninghub");
-const ps = require("../services/ps");
+const ps = require("../services/ps.js");
 const { escapeHtml, isPromptLikeInput, isEmptyValue } = require("../utils");
 const { APP_EVENTS } = require("../events");
 const { byId, encodeDataId, decodeDataId, getRenderedElementCount, rebindEvent } = require("../shared/dom-utils");

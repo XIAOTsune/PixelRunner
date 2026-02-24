@@ -1,4 +1,4 @@
-const ps = require("../services/ps");
+const ps = require("../services/ps.js");
 const { byId, rebindEvent } = require("../shared/dom-utils");
 
 async function onNeutralGrayClick() {
