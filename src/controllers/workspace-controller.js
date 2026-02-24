@@ -6,21 +6,6 @@ const { APP_EVENTS } = require("../events");
 const { byId, encodeDataId, decodeDataId, getRenderedElementCount, rebindEvent } = require("../shared/dom-utils");
 const inputSchema = require("../shared/input-schema");
 const { createWorkspaceInputs } = require("./workspace/workspace-inputs");
-const { renderAppPickerListHtml } = require("./workspace/app-picker-view");
-const { renderTemplatePickerListHtml } = require("./workspace/template-picker-view");
-const { createRunGuard } = require("../application/services/run-guard");
-const { createJobScheduler, createJobExecutor } = require("../application/services/job-scheduler");
-const { buildAppPickerViewModel } = require("../application/services/app-picker");
-const { buildPromptLengthLogSummary } = require("../application/services/prompt-log");
-const {
-  normalizeTemplatePickerConfig,
-  sanitizeTemplateSelectionIds,
-  toggleTemplateSelection: toggleTemplateSelectionState,
-  buildSingleTemplateSelectionPayload,
-  buildMultipleTemplateSelectionPayload,
-  buildTemplatePickerUiState,
-  buildTemplatePickerListViewModel
-} = require("../application/services/template-picker");
 
 const dom = {};
 const state = {
@@ -29,14 +14,20 @@ const state = {
   imageBounds: {},
   jobs: [],
   nextJobSeq: 1,
+  schedulerRunningCount: 0,
+  schedulerTimerId: null,
   taskSummaryTimerId: null,
+  applyQueue: Promise.resolve(),
   appPickerKeyword: "",
   templateSelectCallback: null,
   templatePickerMode: "single",
   templatePickerMaxSelection: 1,
   templatePickerSelectedIds: [],
+  runSubmitInFlight: false,
   runButtonPhase: "IDLE",
+  runClickBlockedUntil: 0,
   runButtonTimerId: null,
+  recentRunFingerprints: new Map(),
   taskSummaryHintText: "",
   taskSummaryHintType: "info",
   taskSummaryHintUntil: 0,
@@ -85,12 +76,6 @@ const RUN_DEDUP_CACHE_LIMIT = 80;
 const RUN_SUMMARY_HINT_MS = 1800;
 
 let workspaceInputs = null;
-const runGuard = createRunGuard({
-  dedupWindowMs: RUN_DEDUP_WINDOW_MS,
-  dedupCacheLimit: RUN_DEDUP_CACHE_LIMIT
-});
-let jobExecutor = null;
-let jobScheduler = null;
 
 function normalizeUploadMaxEdge(value) {
   const num = Number(value);
@@ -256,7 +241,7 @@ function scheduleRunButtonRecover(delayMs = RUN_SUBMITTED_ACK_MS) {
   state.runButtonTimerId = setTimeout(() => {
     state.runButtonTimerId = null;
     state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
-    runGuard.clearClickBlock();
+    state.runClickBlockedUntil = 0;
     updateRunButtonUI();
   }, delay);
 }
@@ -264,14 +249,14 @@ function scheduleRunButtonRecover(delayMs = RUN_SUBMITTED_ACK_MS) {
 function enterRunSubmittingGuard() {
   clearRunButtonTimer();
   state.runButtonPhase = RUN_BUTTON_PHASE.SUBMITTING_GUARD;
-  runGuard.blockClickFor(Math.max(RUN_DOUBLE_CLICK_GUARD_MS, RUN_SUBMITTING_MIN_MS));
+  state.runClickBlockedUntil = Date.now() + Math.max(RUN_DOUBLE_CLICK_GUARD_MS, RUN_SUBMITTING_MIN_MS);
   updateRunButtonUI();
 }
 
 function enterRunSubmittedAck() {
   clearRunButtonTimer();
   state.runButtonPhase = RUN_BUTTON_PHASE.SUBMITTED_ACK;
-  runGuard.blockClickFor(RUN_SUBMITTED_ACK_MS);
+  state.runClickBlockedUntil = Date.now() + RUN_SUBMITTED_ACK_MS;
   updateRunButtonUI();
   scheduleRunButtonRecover(RUN_SUBMITTED_ACK_MS);
 }
@@ -279,12 +264,12 @@ function enterRunSubmittedAck() {
 function recoverRunButtonNow() {
   clearRunButtonTimer();
   state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
-  runGuard.clearClickBlock();
+  state.runClickBlockedUntil = 0;
   updateRunButtonUI();
 }
 
 function isRunClickGuardActive(now = Date.now()) {
-  return runGuard.isClickGuardActive(now);
+  return Number(state.runClickBlockedUntil || 0) > now;
 }
 
 function sleepMs(ms) {
@@ -355,45 +340,106 @@ function emitRunGuardFeedback(message, level = "info", ttlMs = RUN_SUMMARY_HINT_
   setTaskSummaryHint(`最近操作：${text}`, type, ttlMs);
 }
 
-function ensureJobServices() {
-  if (!jobExecutor) {
-    jobExecutor = createJobExecutor({
-      runninghub,
-      ps,
-      setJobStatus,
-      createJobLogger: createJobScopedLogger,
-      cloneBounds,
-      cloneArrayBuffer,
-      isJobTimeoutLikeError,
-      onJobCompleted: () => {
-        updateAccountStatus();
-      },
-      jobStatus: JOB_STATUS,
-      timeoutRetryDelayMs: JOB_TIMEOUT_RETRY_DELAY_MS,
-      maxTimeoutRecoveries: JOB_MAX_TIMEOUT_RECOVERIES
-    });
+function getArrayBufferByteLength(value) {
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  return 0;
+}
+
+function normalizeBoundsForFingerprint(bounds) {
+  if (!bounds || typeof bounds !== "object") return null;
+  const pick = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return Math.round(num * 1000) / 1000;
+  };
+  return {
+    left: pick(bounds.left),
+    top: pick(bounds.top),
+    right: pick(bounds.right),
+    bottom: pick(bounds.bottom)
+  };
+}
+
+function normalizeFingerprintValue(value, depth = 0, seen = new WeakSet()) {
+  if (value == null) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "bigint") return `bigint:${value.toString()}`;
+  if (typeof value === "function") return "[function]";
+
+  const binaryBytes = getArrayBufferByteLength(value);
+  if (binaryBytes > 0) return `[binary:${binaryBytes}]`;
+  if (depth >= 4) return "[max-depth]";
+
+  if (Array.isArray(value)) {
+    const maxItems = 20;
+    const items = value.slice(0, maxItems).map((item) => normalizeFingerprintValue(item, depth + 1, seen));
+    if (value.length > maxItems) items.push(`[+${value.length - maxItems}]`);
+    return items;
   }
 
-  if (!jobScheduler) {
-    jobScheduler = createJobScheduler({
-      getJobs: () => state.jobs,
-      maxConcurrent: LOCAL_MAX_CONCURRENT_JOBS,
-      executeJob: (job) => jobExecutor.execute(job),
-      runnableStatuses: [JOB_STATUS.QUEUED, JOB_STATUS.TIMEOUT_TRACKING],
-      onRunningCountChange: () => {
-        updateTaskStatusSummary();
-      },
-      onJobExecutionError: (job, error) => {
-        const message = error && error.message ? error.message : String(error || "unknown error");
-        setJobStatus(job, JOB_STATUS.FAILED, message);
-        createJobScopedLogger(job)(`任务失败: ${message}`, "error");
-      },
-      onJobSettled: () => {
-        pruneJobHistory();
-        updateTaskStatusSummary();
-      }
+  if (typeof value === "object") {
+    if (seen.has(value)) return "[circular]";
+    seen.add(value);
+    const out = {};
+    const keys = Object.keys(value).sort();
+    const maxKeys = 40;
+    keys.slice(0, maxKeys).forEach((key) => {
+      const item = value[key];
+      if (typeof item === "function") return;
+      out[key] = normalizeFingerprintValue(item, depth + 1, seen);
     });
+    if (keys.length > maxKeys) out.__truncatedKeys = keys.length - maxKeys;
+    seen.delete(value);
+    return out;
   }
+
+  return String(value);
+}
+
+function buildRunFingerprint({ appItem, inputValues, targetBounds, sourceBuffer, pasteStrategy, uploadMaxEdge, pollSettings }) {
+  const payload = {
+    appId: String((appItem && (appItem.id || appItem.appId || appItem.name)) || ""),
+    pasteStrategy: String(pasteStrategy || ""),
+    uploadMaxEdge: Number(uploadMaxEdge) || 0,
+    pollInterval: Number(pollSettings && pollSettings.pollInterval) || 0,
+    timeout: Number(pollSettings && pollSettings.timeout) || 0,
+    targetBounds: normalizeBoundsForFingerprint(targetBounds),
+    sourceBytes: getArrayBufferByteLength(sourceBuffer),
+    inputValues: normalizeFingerprintValue(inputValues)
+  };
+  return JSON.stringify(payload);
+}
+
+function pruneRecentRunFingerprints(now = Date.now()) {
+  if (!(state.recentRunFingerprints instanceof Map)) {
+    state.recentRunFingerprints = new Map();
+    return;
+  }
+  for (const [fingerprint, ts] of state.recentRunFingerprints.entries()) {
+    const time = Number(ts || 0);
+    if (!Number.isFinite(time) || now - time > RUN_DEDUP_WINDOW_MS) {
+      state.recentRunFingerprints.delete(fingerprint);
+    }
+  }
+  while (state.recentRunFingerprints.size > RUN_DEDUP_CACHE_LIMIT) {
+    const oldest = state.recentRunFingerprints.keys().next();
+    if (oldest.done) break;
+    state.recentRunFingerprints.delete(oldest.value);
+  }
+}
+
+function isRecentDuplicateRunFingerprint(fingerprint, now = Date.now()) {
+  if (!fingerprint) return false;
+  pruneRecentRunFingerprints(now);
+  const previous = Number(state.recentRunFingerprints.get(fingerprint) || 0);
+  return previous > 0 && now - previous <= RUN_DEDUP_WINDOW_MS;
+}
+
+function rememberRunFingerprint(fingerprint, now = Date.now()) {
+  if (!fingerprint) return;
+  pruneRecentRunFingerprints(now);
+  state.recentRunFingerprints.set(fingerprint, now);
 }
 
 function updateRunButtonUI() {
@@ -592,9 +638,125 @@ function pruneJobHistory() {
   state.jobs = [...active, ...finished].sort((a, b) => b.createdAt - a.createdAt);
 }
 
+function scheduleJobPump(delayMs = 0) {
+  const delay = Math.max(0, Number(delayMs) || 0);
+  if (state.schedulerTimerId) {
+    clearTimeout(state.schedulerTimerId);
+    state.schedulerTimerId = null;
+  }
+  state.schedulerTimerId = setTimeout(() => {
+    state.schedulerTimerId = null;
+    pumpJobScheduler();
+  }, delay);
+}
+
+function findRunnableJob(now = Date.now()) {
+  return state.jobs.find((job) =>
+    (job.status === JOB_STATUS.QUEUED || job.status === JOB_STATUS.TIMEOUT_TRACKING) &&
+    Number(job.nextRunAt || 0) <= now
+  ) || null;
+}
+
+function findNextWakeDelay(now = Date.now()) {
+  let nextAt = null;
+  state.jobs.forEach((job) => {
+    if (job.status !== JOB_STATUS.QUEUED && job.status !== JOB_STATUS.TIMEOUT_TRACKING) return;
+    const ts = Number(job.nextRunAt || 0);
+    if (!Number.isFinite(ts) || ts <= now) return;
+    if (nextAt === null || ts < nextAt) nextAt = ts;
+  });
+  return nextAt === null ? null : Math.max(0, nextAt - now);
+}
+
+function enqueueApplyWork(job, buffer) {
+  const task = async () => {
+    await ps.placeImage(buffer, {
+      log: createJobScopedLogger(job),
+      targetBounds: cloneBounds(job.targetBounds),
+      pasteStrategy: job.pasteStrategy,
+      sourceBuffer: cloneArrayBuffer(job.sourceBuffer)
+    });
+  };
+  const queuedTask = state.applyQueue.then(task, task);
+  state.applyQueue = queuedTask.catch(() => {});
+  return queuedTask;
+}
+
+async function executeJob(job) {
+  const jobLog = createJobScopedLogger(job);
+  const signalController = new AbortController();
+  const signal = signalController.signal;
+  const runOptions = { log: jobLog, signal, uploadMaxEdge: job.uploadMaxEdge };
+
+  try {
+    if (!job.remoteTaskId) {
+      setJobStatus(job, JOB_STATUS.SUBMITTING);
+      const taskId = await runninghub.runAppTask(job.apiKey, job.appItem, job.inputValues, runOptions);
+      job.remoteTaskId = String(taskId || "");
+      jobLog(`任务已提交: ${job.remoteTaskId}`, "success");
+    }
+
+    setJobStatus(job, JOB_STATUS.REMOTE_RUNNING);
+    const resultUrl = await runninghub.pollTaskOutput(job.apiKey, job.remoteTaskId, job.pollSettings, runOptions);
+    job.resultUrl = String(resultUrl || "");
+
+    setJobStatus(job, JOB_STATUS.DOWNLOADING);
+    const buffer = await runninghub.downloadResultBinary(job.resultUrl, runOptions);
+
+    setJobStatus(job, JOB_STATUS.APPLYING);
+    await enqueueApplyWork(job, buffer);
+
+    setJobStatus(job, JOB_STATUS.DONE);
+    job.finishedAt = Date.now();
+    jobLog("处理完成，结果已回贴", "success");
+    updateAccountStatus();
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error || "unknown error");
+    if (isJobTimeoutLikeError(error) && job.remoteTaskId && job.timeoutRecoveries < JOB_MAX_TIMEOUT_RECOVERIES) {
+      job.timeoutRecoveries += 1;
+      job.nextRunAt = Date.now() + JOB_TIMEOUT_RETRY_DELAY_MS;
+      setJobStatus(job, JOB_STATUS.TIMEOUT_TRACKING, message);
+      jobLog(
+        `本地跟踪超时，${Math.round(JOB_TIMEOUT_RETRY_DELAY_MS / 1000)}s 后继续后台跟踪（第 ${job.timeoutRecoveries} 次）`,
+        "warn"
+      );
+      return;
+    }
+    setJobStatus(job, JOB_STATUS.FAILED, message);
+    job.finishedAt = Date.now();
+    jobLog(`任务失败: ${message}`, "error");
+  }
+}
+
+function runJobInBackground(job) {
+  state.schedulerRunningCount += 1;
+  updateTaskStatusSummary();
+  executeJob(job)
+    .catch((error) => {
+      const message = error && error.message ? error.message : String(error || "unknown error");
+      setJobStatus(job, JOB_STATUS.FAILED, message);
+      createJobScopedLogger(job)(`任务失败: ${message}`, "error");
+    })
+    .finally(() => {
+      state.schedulerRunningCount = Math.max(0, state.schedulerRunningCount - 1);
+      pruneJobHistory();
+      updateTaskStatusSummary();
+      pumpJobScheduler();
+    });
+}
+
 function pumpJobScheduler() {
-  ensureJobServices();
-  jobScheduler.pump();
+  const now = Date.now();
+  while (state.schedulerRunningCount < LOCAL_MAX_CONCURRENT_JOBS) {
+    const nextJob = findRunnableJob(now);
+    if (!nextJob) break;
+    runJobInBackground(nextJob);
+  }
+
+  const nextDelay = findNextWakeDelay(now);
+  if (nextDelay !== null) {
+    scheduleJobPump(nextDelay);
+  }
 }
 
 async function handleRun() {
@@ -609,15 +771,12 @@ async function handleRun() {
   }
 
   const now = Date.now();
-  if (runGuard.isSubmitInFlight() || isRunClickGuardActive(now)) {
+  if (state.runSubmitInFlight || isRunClickGuardActive(now)) {
     emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
     return;
   }
 
-  if (!runGuard.beginSubmit(now)) {
-    emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
-    return;
-  }
+  state.runSubmitInFlight = true;
   enterRunSubmittingGuard();
   const runSubmittingStartedAt = Date.now();
 
@@ -633,7 +792,7 @@ async function handleRun() {
     const inputValues = cloneInputValues(state.inputValues);
     const targetBounds = cloneBounds(resolveTargetBounds());
     const sourceBuffer = cloneArrayBuffer(resolveSourceImageBuffer());
-    const runFingerprint = runGuard.buildRunFingerprint({
+    const runFingerprint = buildRunFingerprint({
       appItem,
       inputValues,
       targetBounds,
@@ -643,7 +802,7 @@ async function handleRun() {
       pollSettings
     });
 
-    if (runGuard.isRecentDuplicateFingerprint(runFingerprint, now)) {
+    if (isRecentDuplicateRunFingerprint(runFingerprint, now)) {
       emitRunGuardFeedback("检测到短时间重复提交，已自动拦截。", "warn", 1800);
       await waitRunSubmittingMinDuration(runSubmittingStartedAt);
       enterRunSubmittedAck();
@@ -675,7 +834,7 @@ async function handleRun() {
       finishedAt: 0
     };
 
-    runGuard.rememberFingerprint(runFingerprint, createdAt);
+    rememberRunFingerprint(runFingerprint, createdAt);
     state.jobs.unshift(job);
     pruneJobHistory();
     updateTaskStatusSummary();
@@ -691,7 +850,7 @@ async function handleRun() {
     log(`[RunGuard] 任务提交异常: ${message}`, "error");
     recoverRunButtonNow();
   } finally {
-    runGuard.finishSubmit();
+    state.runSubmitInFlight = false;
     if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTING_GUARD) {
       recoverRunButtonNow();
     }
@@ -700,20 +859,42 @@ async function handleRun() {
 function renderAppPickerList() {
   if (!dom.appPickerList) return;
 
-  const viewModel = buildAppPickerViewModel({
-    apps: getApps(),
-    keyword: state.appPickerKeyword,
-    currentAppId: state.currentApp && state.currentApp.id
-  });
+  const apps = getApps();
+  const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
+  const visibleApps = keyword ? apps.filter((app) => String(app.name || "").toLowerCase().includes(keyword)) : apps;
 
   if (dom.appPickerStats) {
-    dom.appPickerStats.textContent = `${viewModel.visibleCount} / ${viewModel.totalCount}`;
+    dom.appPickerStats.textContent = `${visibleApps.length} / ${apps.length}`;
   }
 
-  dom.appPickerList.innerHTML = renderAppPickerListHtml(viewModel, {
-    escapeHtml,
-    encodeDataId
-  });
+  if (visibleApps.length === 0) {
+    if (apps.length === 0) {
+      dom.appPickerList.innerHTML = `
+        <div class="empty-state">
+          <div style="margin-bottom:10px;">暂无已保存应用</div>
+          <button class="main-btn" type="button" data-action="goto-settings">去设置页解析</button>
+        </div>
+      `;
+    } else {
+      dom.appPickerList.innerHTML = `<div class="empty-state">没有匹配的应用</div>`;
+    }
+    return;
+  }
+
+  dom.appPickerList.innerHTML = visibleApps
+    .map((app) => {
+      const active = state.currentApp && state.currentApp.id === app.id;
+      return `
+        <button type="button" class="app-picker-item ${active ? "active" : ""}" data-id="${encodeDataId(app.id)}">
+          <div>
+            <div style="font-weight:bold; font-size:12px;">${escapeHtml(app.name || "未命名应用")}</div>
+            <div style="font-size:10px; opacity:0.6;">${escapeHtml(app.appId || "-")}</div>
+          </div>
+          <div style="font-size:12px; color:#aaa;">${Array.isArray(app.inputs) ? app.inputs.length : 0} 参数</div>
+        </button>
+      `;
+    })
+    .join("");
 }
 
 function closeAppPickerModal() {
@@ -804,24 +985,57 @@ function handleAppPickerListClick(event) {
   selectAppInternal(id);
 }
 
+function getTextLength(value) {
+  return Array.from(String(value == null ? "" : value)).length;
+}
+
+function getTailPreview(value, maxChars = 20) {
+  const chars = Array.from(String(value == null ? "" : value));
+  if (chars.length === 0) return "(空)";
+  const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
+  const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
+  return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
+}
+
+function resolvePromptLogValue(input, inputValues = state.inputValues) {
+  const key = String((input && input.key) || "").trim();
+  if (!key) return { key: "", value: "" };
+  const aliasKey = key.includes(":") ? key.split(":").pop() : "";
+  const values = inputValues && typeof inputValues === "object" ? inputValues : {};
+  let value = values[key];
+  if (isEmptyValue(value) && aliasKey) value = values[aliasKey];
+  return { key, value: String(value == null ? "" : value) };
+}
+
+function isPromptLikeForLog(input) {
+  const resolvedType = inputSchema.resolveInputType(input || {});
+  if (resolvedType === "image") return false;
+  const key = String((input && input.key) || "").toLowerCase();
+  const label = String((input && (input.label || input.name || "")) || "").toLowerCase();
+  const typeHint = String((input && (input.type || input.fieldType || "")) || "").toLowerCase();
+  return (
+    isPromptLikeInput(input) ||
+    (resolvedType === "text" && (key.includes("prompt") || label.includes("提示"))) ||
+    /prompt|text|string/.test(typeHint)
+  );
+}
+
 function logPromptLengthsBeforeRun(appItem = state.currentApp, inputValues = state.inputValues, prefix = "") {
-  const summary = buildPromptLengthLogSummary({
-    appItem,
-    inputValues,
-    inputSchema,
-    isPromptLikeInput,
-    isEmptyValue,
-    maxItems: 12
-  });
-  if (!summary) return;
+  if (!appItem || !Array.isArray(appItem.inputs)) return;
+  const promptInputs = appItem.inputs.filter((input) => isPromptLikeForLog(input));
+  if (promptInputs.length === 0) return;
 
   const head = prefix ? `${prefix} ` : "";
-  log(`${head}Prompt length check before run: ${summary.totalPromptInputs} prompt input(s)`, "info");
-  summary.entries.forEach((item) => {
-    log(`${head}Input ${item.label} (${item.key}): length ${item.length}, tail ${item.tail}`, "info");
+  log(`${head}运行前长度检查：共 ${promptInputs.length} 个文本参数`, "info");
+  promptInputs.slice(0, 12).forEach((input) => {
+    const { key, value } = resolvePromptLogValue(input, inputValues);
+    const label = String(input.label || input.name || key || "未命名参数");
+    const length = getTextLength(value);
+    const tail = getTailPreview(value, 20);
+    log(`${head}参数 ${label} (${key}): 长度 ${length}，末尾 ${tail}`, "info");
   });
-  if (summary.hiddenCount > 0) {
-    log(`${head}${summary.hiddenCount} additional prompt input(s) not expanded`, "info");
+  if (promptInputs.length > 12) {
+    log(`${head}其余 ${promptInputs.length - 12} 个文本参数未展开`, "info");
   }
 }
 
@@ -831,44 +1045,61 @@ function isTemplatePickerMultipleMode() {
 
 function updateTemplateSelectionInfo() {
   if (!dom.templateModalSelectionInfo) return;
-  const uiState = buildTemplatePickerUiState({
-    mode: state.templatePickerMode,
-    selectedCount: state.templatePickerSelectedIds.length,
-    maxSelection: state.templatePickerMaxSelection
-  });
-  dom.templateModalSelectionInfo.textContent = uiState.selectionInfoText;
-  if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = uiState.applyDisabled;
+  if (!isTemplatePickerMultipleMode()) {
+    dom.templateModalSelectionInfo.textContent = "";
+    if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = true;
+    return;
+  }
+  const current = state.templatePickerSelectedIds.length;
+  const limit = state.templatePickerMaxSelection;
+  dom.templateModalSelectionInfo.textContent = `已选择 ${current} / ${limit}`;
+  if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = current === 0;
 }
 
 function syncTemplatePickerUiState() {
-  const uiState = buildTemplatePickerUiState({
-    mode: state.templatePickerMode,
-    selectedCount: state.templatePickerSelectedIds.length,
-    maxSelection: state.templatePickerMaxSelection
-  });
   if (dom.templateModalTitle) {
-    dom.templateModalTitle.textContent = uiState.title;
+    dom.templateModalTitle.textContent = isTemplatePickerMultipleMode() ? "选择提示词模板（可组合）" : "选择提示词模板";
   }
   if (dom.templateModalActions) {
-    dom.templateModalActions.style.display = uiState.actionsDisplay;
+    dom.templateModalActions.style.display = isTemplatePickerMultipleMode() ? "flex" : "none";
   }
-  if (dom.templateModalSelectionInfo) {
-    dom.templateModalSelectionInfo.textContent = uiState.selectionInfoText;
-  }
-  if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = uiState.applyDisabled;
+  updateTemplateSelectionInfo();
 }
 
 function renderTemplatePickerList() {
   if (!dom.templateList) return;
-  const viewModel = buildTemplatePickerListViewModel({
-    templates: store.getPromptTemplates(),
-    selectedIds: state.templatePickerSelectedIds,
-    multipleMode: isTemplatePickerMultipleMode()
-  });
-  dom.templateList.innerHTML = renderTemplatePickerListHtml(viewModel, {
-    escapeHtml,
-    encodeDataId
-  });
+  const templates = store.getPromptTemplates();
+  const selectedSet = new Set(state.templatePickerSelectedIds.map((id) => String(id)));
+  const multipleMode = isTemplatePickerMultipleMode();
+
+  if (!templates.length) {
+    dom.templateList.innerHTML = `
+      <div class="empty-state">
+        暂无模板，请前往设置页添加
+        <br><button class="tiny-btn" style="margin-top:8px" type="button" data-action="goto-settings">去添加</button>
+      </div>
+    `;
+    updateTemplateSelectionInfo();
+    return;
+  }
+
+  dom.templateList.innerHTML = templates
+    .map((template) => {
+      const templateId = String(template.id || "");
+      const selected = selectedSet.has(templateId);
+      const selectedClass = selected ? "active" : "";
+      const actionLabel = multipleMode ? (selected ? "已选" : "选择") : "选择";
+      return `
+        <button type="button" class="app-picker-item ${selectedClass}" data-template-id="${encodeDataId(templateId)}">
+          <div>
+            <div style="font-weight:bold;font-size:12px">${escapeHtml(template.title)}</div>
+            <div style="font-size:10px;color:#777; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${escapeHtml(template.content)}</div>
+          </div>
+          <div style="font-size:12px;color:var(--accent-color)">${actionLabel}</div>
+        </button>
+      `;
+    })
+    .join("");
   updateTemplateSelectionInfo();
 }
 
@@ -883,13 +1114,21 @@ function closeTemplatePicker() {
 }
 
 function openTemplatePicker(config = {}) {
-  const next = normalizeTemplatePickerConfig(config, {
-    maxCombineCount: MAX_TEMPLATE_COMBINE_COUNT
-  });
+  const options =
+    typeof config === "function"
+      ? { onApply: config, mode: "single", maxSelection: 1 }
+      : config && typeof config === "object"
+      ? config
+      : {};
+  const mode = options.mode === "multiple" ? "multiple" : "single";
+  const rawMaxSelection = Number(options.maxSelection);
+  const maxSelection = mode === "multiple"
+    ? Math.max(1, Math.min(MAX_TEMPLATE_COMBINE_COUNT, Number.isFinite(rawMaxSelection) ? Math.floor(rawMaxSelection) : MAX_TEMPLATE_COMBINE_COUNT))
+    : 1;
 
-  state.templateSelectCallback = next.onApply;
-  state.templatePickerMode = next.mode;
-  state.templatePickerMaxSelection = next.maxSelection;
+  state.templateSelectCallback = typeof options.onApply === "function" ? options.onApply : null;
+  state.templatePickerMode = mode;
+  state.templatePickerMaxSelection = maxSelection;
   state.templatePickerSelectedIds = [];
   syncTemplatePickerUiState();
   renderTemplatePickerList();
@@ -903,50 +1142,57 @@ function refreshModalOpenState() {
 }
 
 function toggleTemplateSelection(id) {
-  const next = toggleTemplateSelectionState({
-    selectedIds: state.templatePickerSelectedIds,
-    id,
-    maxSelection: state.templatePickerMaxSelection
-  });
-
-  if (next.limitReached) {
-    alert(`You can select up to ${state.templatePickerMaxSelection} template(s).`);
+  const marker = String(id || "");
+  if (!marker) return;
+  const selected = state.templatePickerSelectedIds.map((item) => String(item));
+  const index = selected.indexOf(marker);
+  if (index >= 0) {
+    selected.splice(index, 1);
+    state.templatePickerSelectedIds = selected;
+    renderTemplatePickerList();
     return;
   }
-  if (!next.changed) return;
 
-  state.templatePickerSelectedIds = next.selectedIds;
+  if (selected.length >= state.templatePickerMaxSelection) {
+    alert(`最多可选择 ${state.templatePickerMaxSelection} 个模板`);
+    return;
+  }
+  selected.push(marker);
+  state.templatePickerSelectedIds = selected;
   renderTemplatePickerList();
 }
 
 function applyTemplateSelection() {
   if (!isTemplatePickerMultipleMode()) return;
+  if (state.templatePickerSelectedIds.length === 0) {
+    alert("请至少选择一个模板");
+    return;
+  }
 
-  const result = buildMultipleTemplateSelectionPayload({
-    templates: store.getPromptTemplates(),
-    selectedIds: state.templatePickerSelectedIds,
-    maxChars: RH_PROMPT_MAX_CHARS
-  });
+  const templates = store.getPromptTemplates();
+  const selectedTemplates = state.templatePickerSelectedIds
+    .map((id) => templates.find((template) => String(template.id) === String(id)))
+    .filter(Boolean);
+  if (selectedTemplates.length === 0) {
+    alert("未找到已选择模板，请重试");
+    return;
+  }
 
-  if (!result.ok) {
-    if (result.reason === "empty_selection") {
-      alert("Please select at least one template.");
-      return;
-    }
-    if (result.reason === "templates_not_found") {
-      alert("Selected templates were not found. Please refresh and retry.");
-      return;
-    }
-    if (result.reason === "too_long") {
-      alert(`Combined prompt length ${result.length} exceeds limit ${result.limit}.`);
-      return;
-    }
-    alert("Failed to apply template selection.");
+  const combinedContent = selectedTemplates.map((template) => String(template.content || "")).join("\n");
+  const combinedLength = getTextLength(combinedContent);
+  if (combinedLength > RH_PROMPT_MAX_CHARS) {
+    alert(`组合后长度为 ${combinedLength}，超过 ${RH_PROMPT_MAX_CHARS} 字符上限，请减少选择数量`);
     return;
   }
 
   if (state.templateSelectCallback) {
-    state.templateSelectCallback(result.payload);
+    state.templateSelectCallback({
+      mode: "multiple",
+      templates: selectedTemplates,
+      content: combinedContent,
+      length: combinedLength,
+      limit: RH_PROMPT_MAX_CHARS
+    });
   }
   closeTemplatePicker();
 }
@@ -973,12 +1219,15 @@ function handleTemplateListClick(event) {
     return;
   }
 
-  const payload = buildSingleTemplateSelectionPayload({
-    template,
-    maxChars: RH_PROMPT_MAX_CHARS
-  });
+  const content = String(template.content || "");
   if (state.templateSelectCallback) {
-    state.templateSelectCallback(payload);
+    state.templateSelectCallback({
+      mode: "single",
+      templates: [template],
+      content,
+      length: getTextLength(content),
+      limit: RH_PROMPT_MAX_CHARS
+    });
   }
   closeTemplatePicker();
 }
@@ -1046,10 +1295,8 @@ function onAppsChanged() {
 
 function onTemplatesChanged() {
   if (dom.templateModal && dom.templateModal.classList.contains("active")) {
-    state.templatePickerSelectedIds = sanitizeTemplateSelectionIds(
-      state.templatePickerSelectedIds,
-      store.getPromptTemplates()
-    );
+    const currentIds = new Set(store.getPromptTemplates().map((template) => String(template.id || "")));
+    state.templatePickerSelectedIds = state.templatePickerSelectedIds.filter((id) => currentIds.has(String(id)));
     renderTemplatePickerList();
   }
 }
@@ -1099,16 +1346,14 @@ function initWorkspaceController() {
     clearInterval(state.taskSummaryTimerId);
     state.taskSummaryTimerId = null;
   }
-  if (jobScheduler) {
-    jobScheduler.dispose();
-    jobScheduler = null;
+  if (state.schedulerTimerId) {
+    clearTimeout(state.schedulerTimerId);
+    state.schedulerTimerId = null;
   }
-  if (jobExecutor) {
-    jobExecutor.reset();
-    jobExecutor = null;
-  }
-  runGuard.reset();
+  state.runSubmitInFlight = false;
   state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
+  state.runClickBlockedUntil = 0;
+  state.recentRunFingerprints = new Map();
 
   cacheDomRefs();
   state.templatePickerMode = "single";
