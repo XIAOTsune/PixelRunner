@@ -1,3 +1,5 @@
+const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
+
 function fallbackToMessage(result, fallback = "Request failed") {
   if (!result || typeof result !== "object") return fallback;
   return String(result.msg || result.message || fallback);
@@ -51,7 +53,7 @@ function isParameterShapeError(message) {
 
 function createAiAppRejectedError(message, apiResult) {
   const terminalError = new Error(String(message || "AI app request rejected"));
-  terminalError.code = "AI_APP_REJECTED";
+  terminalError.code = RUNNINGHUB_ERROR_CODES.AI_APP_REJECTED;
   terminalError.apiResult = apiResult;
   return terminalError;
 }

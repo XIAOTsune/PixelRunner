@@ -1,12 +1,12 @@
 const { API } = require("../config");
 const { isEmptyValue } = require("../utils");
+const { RUNNINGHUB_ERROR_CODES } = require("./runninghub-error-codes");
 const {
   normalizeUploadMaxEdge,
   getUploadMaxEdgeLabel,
   buildUploadMaxEdgeCandidates,
   shouldRetryWithNextUploadEdge
 } = require("./runninghub-runner/upload-edge-strategy");
-const { fetchWithTimeout } = require("./runninghub-runner/request-strategy");
 const { uploadImage } = require("./runninghub-runner/upload-strategy");
 const {
   isAiInput,
@@ -24,7 +24,6 @@ const {
   getTaskCreationOutcome
 } = require("./runninghub-runner/task-request-strategy");
 const {
-  fallbackToMessage,
   createAiAppRejectedError,
   normalizeAiAppFailure,
   buildAiAppExceptionReason
@@ -39,24 +38,26 @@ const {
   emitTextPayloadDebugLog
 } = require("./runninghub-runner/text-payload-log-strategy");
 const { createBlankImageTokenProvider } = require("./runninghub-runner/blank-image-strategy");
+const { submitTaskWithAiFallback } = require("./runninghub-runner/submit-decision-strategy");
+const {
+  resolveRunnerHelpers,
+  postJsonRequest
+} = require("./runninghub-runner/request-executor-strategy");
+const {
+  createAiAppTaskCreationError,
+  createLegacyTaskCreationError,
+  createTaskSubmissionFailedError
+} = require("./runninghub-runner/error-shape-strategy");
 
 const BLANK_IMAGE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2fJ0QAAAAASUVORK5CYII=";
 
 async function createAiAppTask(apiKey, appId, nodeInfoList, options = {}, helpers = {}) {
+  const helperContext = resolveRunnerHelpers(helpers);
   const {
-    fetchImpl,
-    parseJsonResponse,
-    toMessage,
-    throwIfCancelled
-  } = helpers;
-  const safeFetch = typeof fetchImpl === "function" ? fetchImpl : fetch;
-  const safeParseJsonResponse =
-    typeof parseJsonResponse === "function"
-      ? parseJsonResponse
-      : async (response) => response.json().catch(() => null);
-  const safeToMessage = typeof toMessage === "function" ? toMessage : fallbackToMessage;
-  const safeThrowIfCancelled = typeof throwIfCancelled === "function" ? throwIfCancelled : () => {};
+    safeToMessage,
+    safeThrowIfCancelled
+  } = helperContext;
 
   const log = options.log || (() => {});
   const candidates = buildAiAppRunBodyCandidates(apiKey, appId, nodeInfoList);
@@ -65,17 +66,13 @@ async function createAiAppTask(apiKey, appId, nodeInfoList, options = {}, helper
   for (const body of candidates) {
     safeThrowIfCancelled(options);
     try {
-      const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${API.ENDPOINTS.AI_APP_RUN}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: options.signal
-      }, {
-        timeoutMs: options.requestTimeoutMs
+      const { response, result } = await postJsonRequest({
+        apiKey,
+        url: `${API.BASE_URL}${API.ENDPOINTS.AI_APP_RUN}`,
+        body,
+        options,
+        helperContext
       });
-      safeThrowIfCancelled(options);
-      const result = await safeParseJsonResponse(response);
-      safeThrowIfCancelled(options);
       const outcome = getTaskCreationOutcome(response, result);
       if (outcome.success) return outcome.taskId;
 
@@ -90,45 +87,37 @@ async function createAiAppTask(apiKey, appId, nodeInfoList, options = {}, helper
       }
       reasons.push(failure.reason);
     } catch (error) {
-      if (error && error.code === "RUN_CANCELLED") throw error;
-      if (error && error.code === "AI_APP_REJECTED") throw error;
+      if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
+      if (error && error.code === RUNNINGHUB_ERROR_CODES.AI_APP_REJECTED) throw error;
       reasons.push(buildAiAppExceptionReason(error));
     }
   }
 
   log(reasons.join(" | "), "warn");
-  throw new Error("AI app task creation failed");
+  throw createAiAppTaskCreationError(reasons);
 }
 
 async function createLegacyTask(apiKey, appId, nodeParams, options = {}, helpers = {}) {
-  const {
-    fetchImpl,
-    parseJsonResponse,
-    toMessage,
-    throwIfCancelled
-  } = helpers;
-  const safeFetch = typeof fetchImpl === "function" ? fetchImpl : fetch;
-  const safeParseJsonResponse =
-    typeof parseJsonResponse === "function"
-      ? parseJsonResponse
-      : async (response) => response.json().catch(() => null);
-  const safeToMessage = typeof toMessage === "function" ? toMessage : fallbackToMessage;
-  const safeThrowIfCancelled = typeof throwIfCancelled === "function" ? throwIfCancelled : () => {};
+  const helperContext = resolveRunnerHelpers(helpers);
+  const { safeToMessage } = helperContext;
 
-  safeThrowIfCancelled(options);
-  const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${API.ENDPOINTS.LEGACY_CREATE_TASK}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(buildLegacyCreateTaskBody(apiKey, appId, nodeParams)),
-    signal: options.signal
-  }, {
-    timeoutMs: options.requestTimeoutMs
+  const { response, result } = await postJsonRequest({
+    apiKey,
+    url: `${API.BASE_URL}${API.ENDPOINTS.LEGACY_CREATE_TASK}`,
+    body: buildLegacyCreateTaskBody(apiKey, appId, nodeParams),
+    options,
+    helperContext
   });
-  safeThrowIfCancelled(options);
-  const result = await safeParseJsonResponse(response);
-  safeThrowIfCancelled(options);
   const outcome = getTaskCreationOutcome(response, result);
-  if (!outcome.success) throw new Error(safeToMessage(result, `Create task failed (HTTP ${response.status})`));
+  if (!outcome.success) {
+    throw createLegacyTaskCreationError(
+      safeToMessage(result, `Create task failed (HTTP ${response.status})`),
+      {
+        responseStatus: response.status,
+        apiResult: result
+      }
+    );
+  }
   return outcome.taskId;
 }
 
@@ -182,7 +171,7 @@ async function submitTaskAttempt(params = {}) {
   if (missingRequiredImages.length > 0) {
     throw createLocalValidationError(
       `Missing required image parameters: ${missingRequiredImages.join(", ")}. Please capture or provide images before running.`,
-      "MISSING_REQUIRED_IMAGE"
+      RUNNINGHUB_ERROR_CODES.MISSING_REQUIRED_IMAGE
     );
   }
 
@@ -202,7 +191,7 @@ async function submitTaskAttempt(params = {}) {
         } catch (error) {
           throw createLocalValidationError(
             `Failed to upload blank placeholder for ${input.label || input.name || key}: ${error.message}`,
-            "BLANK_IMAGE_UPLOAD_FAILED"
+            RUNNINGHUB_ERROR_CODES.BLANK_IMAGE_UPLOAD_FAILED
           );
         }
       } else {
@@ -244,38 +233,24 @@ async function submitTaskAttempt(params = {}) {
 
   emitTextPayloadDebugLog(log, textPayloadDebug, { previewLimit: 12 });
 
-  let lastErr = null;
-  if (nodeInfoList.length > 0) {
-    try {
-      safeThrowIfCancelled(attemptOptions);
-      log(`Submitting task: AI app API (${nodeInfoList.length} params)`, "info");
-      return await createAiAppTask(apiKey, appItem.appId, nodeInfoList, attemptOptions, {
-        fetchImpl,
-        parseJsonResponse,
-        toMessage,
-        throwIfCancelled: safeThrowIfCancelled
-      });
-    } catch (error) {
-      if (error && error.code === "RUN_CANCELLED") throw error;
-      if (error && error.code === "AI_APP_REJECTED") throw error;
-      lastErr = error;
-      log(`AI app API failed, fallback to legacy API: ${error.message}`, "warn");
-    }
-  }
-
-  if (Object.keys(nodeParams).length > 0) {
-    safeThrowIfCancelled(attemptOptions);
-    log("Submitting task: legacy workflow API", "info");
-    return createLegacyTask(apiKey, appItem.appId, nodeParams, attemptOptions, {
+  const taskId = await submitTaskWithAiFallback({
+    nodeInfoList,
+    nodeParams,
+    appId: appItem.appId,
+    apiKey,
+    attemptOptions,
+    helpers: {
       fetchImpl,
       parseJsonResponse,
       toMessage,
       throwIfCancelled: safeThrowIfCancelled
-    });
-  }
-
-  if (lastErr) throw lastErr;
-  throw createLocalValidationError("No parameters to submit", "NO_PARAMETERS_TO_SUBMIT");
+    },
+    log,
+    createAiAppTask,
+    createLegacyTask
+  });
+  if (taskId) return taskId;
+  throw createLocalValidationError("No parameters to submit", RUNNINGHUB_ERROR_CODES.NO_PARAMETERS_TO_SUBMIT);
 }
 
 async function runAppTaskCore(params = {}) {
@@ -311,7 +286,7 @@ async function runAppTaskCore(params = {}) {
         helpers
       });
     } catch (error) {
-      if (error && error.code === "RUN_CANCELLED") throw error;
+      if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
       lastErr = error;
       const hasNextCandidate = index < uploadMaxEdgeCandidates.length - 1;
       if (!hasNextCandidate || !shouldRetryWithNextUploadEdge(error)) {
@@ -324,7 +299,7 @@ async function runAppTaskCore(params = {}) {
   }
 
   if (lastErr) throw lastErr;
-  throw new Error("Task submission failed");
+  throw createTaskSubmissionFailedError("Task submission failed");
 }
 
 module.exports = { runAppTaskCore };

@@ -2,6 +2,7 @@ const { API } = require("../config");
 const { normalizeAppId, inferInputType } = require("../utils");
 const { parseJsonFromEscapedText } = require("./runninghub-parser/json-utils");
 const { collectSourceCandidates } = require("./runninghub-parser/source-candidate-strategy");
+const { createParseAppFailedError } = require("./runninghub-parser/parse-error-strategy");
 const {
   normalizeInput,
   isGhostSchemaInput,
@@ -607,7 +608,11 @@ async function fetchAppInfoCore(params = {}) {
       generatedAt: new Date().toISOString()
     });
   }
-  throw new Error(message);
+  throw createParseAppFailedError(message, {
+    appId: normalizedId,
+    endpoint: API.ENDPOINTS.PARSE_APP,
+    reasons
+  });
 }
 
 module.exports = {

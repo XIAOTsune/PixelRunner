@@ -1,3 +1,5 @@
+const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
+
 const UPLOAD_MAX_EDGE_CHOICES = [0, 1024, 2048, 4096];
 const UPLOAD_MAX_EDGE_RETRY_CHAIN = [1024, 2048, 4096, 0];
 
@@ -22,7 +24,7 @@ function buildUploadMaxEdgeCandidates(rawValue) {
 
 function shouldRetryWithNextUploadEdge(error) {
   if (!error) return true;
-  if (error.code === "RUN_CANCELLED") return false;
+  if (error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) return false;
   if (error.localValidation) return false;
 
   const message = String(error.message || error || "").toLowerCase();

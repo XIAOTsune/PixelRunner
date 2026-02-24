@@ -1,8 +1,10 @@
+const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
+
 const REQUEST_TIMEOUT_MS = 45000;
 
 function createRunCancelledError(message = "Run cancelled") {
   const err = new Error(message);
-  err.code = "RUN_CANCELLED";
+  err.code = RUNNINGHUB_ERROR_CODES.RUN_CANCELLED;
   return err;
 }
 

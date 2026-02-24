@@ -1,6 +1,7 @@
 const { isEmptyValue } = require("../../utils");
+const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
 
-function createLocalValidationError(message, code = "LOCAL_VALIDATION") {
+function createLocalValidationError(message, code = RUNNINGHUB_ERROR_CODES.LOCAL_VALIDATION) {
   const error = new Error(String(message || "Validation failed"));
   error.code = code;
   error.localValidation = true;
@@ -53,7 +54,7 @@ function coerceNonImageInputValue(params = {}) {
   if (type !== "image" && input && input.required && isEmptyValue(value)) {
     throw createLocalValidationError(
       `Missing required parameter: ${displayName}`,
-      "MISSING_REQUIRED_PARAMETER"
+      RUNNINGHUB_ERROR_CODES.MISSING_REQUIRED_PARAMETER
     );
   }
 
@@ -64,7 +65,10 @@ function coerceNonImageInputValue(params = {}) {
   if (type === "number" && !isEmptyValue(value)) {
     const n = Number(value);
     if (!Number.isFinite(n)) {
-      throw createLocalValidationError(`Invalid number parameter: ${displayName}`, "INVALID_NUMBER_PARAMETER");
+      throw createLocalValidationError(
+        `Invalid number parameter: ${displayName}`,
+        RUNNINGHUB_ERROR_CODES.INVALID_NUMBER_PARAMETER
+      );
     }
     return n;
   }
@@ -72,7 +76,10 @@ function coerceNonImageInputValue(params = {}) {
   if (type === "boolean") {
     const boolValue = safeParseBooleanValue(value);
     if (boolValue === null) {
-      throw createLocalValidationError(`Invalid boolean parameter: ${displayName}`, "INVALID_BOOLEAN_PARAMETER");
+      throw createLocalValidationError(
+        `Invalid boolean parameter: ${displayName}`,
+        RUNNINGHUB_ERROR_CODES.INVALID_BOOLEAN_PARAMETER
+      );
     }
     return boolValue;
   }
