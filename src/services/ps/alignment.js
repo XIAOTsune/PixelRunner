@@ -1,4 +1,4 @@
-﻿const { app, action } = require("photoshop");
+const { app, action } = require("photoshop");
 const {
   createAbortError,
   isAbortError,

@@ -1,4 +1,4 @@
-﻿const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
+const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const LEGACY_PASTE_STRATEGY_MAP = {
   stretch: "normal",
   contain: "normal",

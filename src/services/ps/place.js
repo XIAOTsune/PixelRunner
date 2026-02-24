@@ -1,4 +1,4 @@
-﻿const { app, core, action } = require("photoshop");
+const { app, core, action } = require("photoshop");
 const { storage } = require("uxp");
 const {
   createAbortError,

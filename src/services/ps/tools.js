@@ -1,4 +1,4 @@
-﻿const { app, core, action } = require("photoshop");
+const { app, core, action } = require("photoshop");
 
 function ensureActiveDocument() {
   const doc = app.activeDocument;

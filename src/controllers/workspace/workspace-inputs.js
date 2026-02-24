@@ -1,4 +1,4 @@
-﻿const textInputPolicy = require("../../domain/policies/text-input-policy");
+const textInputPolicy = require("../../domain/policies/text-input-policy");
 const { createInputPolicy } = require("../../domain/policies/input-policy");
 const { createInputRenderer } = require("./input-renderer");
 const { createWorkspaceInputStateService } = require("../../application/services/workspace-input-state");

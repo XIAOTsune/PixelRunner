@@ -1,4 +1,4 @@
-﻿const capture = require("./ps/capture");
+const capture = require("./ps/capture");
 const place = require("./ps/place");
 const tools = require("./ps/tools");
 
