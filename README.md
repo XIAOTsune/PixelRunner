@@ -163,13 +163,25 @@ flowchart LR
 ├─ index.html             # 面板 UI 结构
 ├─ index.js               # 启动与控制器初始化
 ├─ style.css              # UI 样式
+├─ plans/                 # 重构与审查计划文档
+├─ scripts/               # 预检与静态检查脚本
 ├─ src/
-│  ├─ controllers/        # 工作台 / 设置 / 工具箱控制器
-│  ├─ services/           # RunningHub API、PS 操作、存储逻辑
+│  ├─ application/        # 用例与应用服务（编排层）
+│  ├─ controllers/        # 工作台 / 设置 / 工具箱控制器（展示层）
 │  ├─ diagnostics/        # 环境诊断
+│  ├─ domain/             # 纯策略与规则
+│  ├─ infrastructure/     # gateway 适配层
+│  ├─ legacy/             # 已下线/历史资产
+│  ├─ services/           # RunningHub 与 Photoshop 服务实现
 │  └─ shared/             # 输入规范与 DOM 工具
-└─ tools/                 # 辅助脚本
+└─ tests/                 # Node 自动化测试
 ```
+
+### 分层依赖规则（强制）
+1. `src/controllers/**/*.js` 禁止直接依赖 `src/services/*`。
+2. 控制层访问能力必须经由 `src/application/*` 或 `src/infrastructure/gateways/*`。
+3. 检查命令：`node scripts/check-controller-service-deps.js`。
+4. 命中违规依赖时，视为发布阻断项，必须先修复后再继续。
 
 <a name="ps-modules"></a>
 ## PS 模块边界与二开入口 / PS Module Boundaries
@@ -190,7 +202,6 @@ flowchart LR
    - `tests/services/ps/facade.test.js`
    - `src/diagnostics/ps-env-doctor.js`（`REQUIRED_PS_EXPORTS`）
 4. 合同测试不通过时，不允许发布。
-5. `controller` 禁止直连 `src/services/*`，必须通过 `usecase/application service/gateway` 间接访问。
 
 <a name="smoke-checklist"></a>
 ## 手工 Smoke Checklist（UXP）
@@ -239,7 +250,12 @@ for (const f of files) {
   - `tests/services/ps/facade.test.js`
   - `src/diagnostics/ps-env-doctor.js` 的 `REQUIRED_PS_EXPORTS`
 
-### R4（建议）发布前最小预检
+### R4（强制）controller 禁止直连 services
+- 规则：`src/controllers/**/*.js` 中不允许出现 `../services/*`（`require`/`import`）依赖。
+- 检查命令：`node scripts/check-controller-service-deps.js`
+- 处置：发现违规即阻断发布，必须先迁移到 `usecase/application service/gateway`。
+
+### R5（建议）发布前最小预检
 1. `node --check index.js src/services/ps.js src/controllers/workspace-controller.js`
 2. `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js`
 3. `node scripts/check-controller-service-deps.js`
@@ -248,7 +264,7 @@ for (const f of files) {
 <a name="development"></a>
 ## 开发与调试 / Development
 - 无需构建步骤，直接由 UXP Developer Tool 加载
-- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/services`
+- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/application/usecases`, `src/infrastructure/gateways`, `src/services/ps.js`
 - 日志查看：使用 UXP Developer Console
 - 解析调试：设置页提供 “Load Parse Debug”
 
@@ -292,7 +308,7 @@ for (const f of files) {
 
 <a name="roadmap"></a>
 ## 路线图 / Roadmap
-- 失败场景的手动参数编辑器
+- 失败场景的诊断可观测性增强
 - 更多 PS 工具与预设
 
 <a name="version"></a>

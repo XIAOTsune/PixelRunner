@@ -707,8 +707,8 @@ src/
 | AR-02 | 去重策略过强且指纹误判风险（改弱去重） | P1 | DONE | 无 |
 | AR-03 | 结构化解析错误在 usecase 层被降级丢失 | P1 | DONE | 无 |
 | AR-04 | controller 仍直连 services，分层规则未收口 | P0 | DONE | AR-03 |
-| AR-05 | 冗余文件：`src/services/ps/index.js` | P2 | TODO | AR-04 |
-| AR-06 | README 项目结构描述与代码现状不一致 | P2 | TODO | AR-04, AR-05 |
+| AR-05 | 冗余文件：`src/services/ps/index.js` | P2 | DONE | AR-04 |
+| AR-06 | README 项目结构描述与代码现状不一致 | P2 | DONE | AR-04, AR-05 |
 
 ### 11.3 任务明细与验收
 
@@ -919,6 +919,45 @@ src/
   - 当前“纳入 CI”先以预检脚本落地，仓库尚无现成 CI workflow；若后续接入 CI，需要将该脚本加入 pipeline 必跑阶段。
 - 下一步：
   - 进入 AR-05（清理冗余文件 `src/services/ps/index.js`）。
+
+### [AR-05] 进度快照（2026-02-24）
+- 本次完成：
+  - 删除冗余入口文件 `src/services/ps/index.js`，统一 Photoshop 能力入口为 `src/services/ps.js` facade。
+  - 扫描 `src` / `tests` / `scripts` / `README.md` 下 `ps/index` 关键字，确认无运行时依赖残留。
+- 变更文件：
+  - `src/services/ps/index.js`（删除）
+  - `plans/frontend-backend-separation-refactor-plan.md`
+- 校验命令：
+  - `rg -n "ps/index" src tests scripts README.md`
+  - `node scripts/check-controller-service-deps.js`
+  - `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/scripts/*.test.js`
+- 结果：
+  - `No runtime references to ps/index`
+  - `Controller dependency check passed: no direct services import.`
+  - `45 passed, 0 failed`
+- 风险/遗留：
+  - 当前无 `ps/index` 直接依赖；后续如新增目录入口，需继续以 `src/services/ps.js` 作为唯一 facade 导出。
+- 下一步：
+  - 进入 AR-06（README 结构与规则同步收口）。
+
+### [AR-06] 进度快照（2026-02-24）
+- 本次完成：
+  - README 项目结构图同步到当前仓库分层（`application/domain/infrastructure/legacy/scripts/tests`）。
+  - 新增“分层依赖规则（强制）”段落，明确 `controller` 禁止直连 `services`，并写明检查命令 `node scripts/check-controller-service-deps.js`。
+  - 发布预检章节新增强制规则 `R4`（controller 依赖方向），并将最小预检顺延为 `R5`。
+- 变更文件：
+  - `README.md`
+  - `plans/frontend-backend-separation-refactor-plan.md`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`
+  - `node --test tests/scripts/check-controller-service-deps.test.js`
+- 结果：
+  - `Controller dependency check passed: no direct services import.`
+  - `3 passed, 0 failed`
+- 风险/遗留：
+  - README 已与当前目录和依赖规则对齐；如后续继续重构目录，需同步更新“项目结构 / 分层依赖规则 / 发布预检”三处文档。
+- 下一步：
+  - AR-05 与 AR-06 已完成，进入治理阶段归档或下一轮审查项。
 
 ---
 
