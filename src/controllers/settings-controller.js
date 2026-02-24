@@ -1,5 +1,3 @@
-const store = require("../services/store");
-const runninghub = require("../services/runninghub");
 const { normalizeAppId, escapeHtml } = require("../utils");
 const { APP_EVENTS, emitAppEvent } = require("../events");
 const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
@@ -17,16 +15,30 @@ const {
   buildTemplateLengthHintViewModel,
   getClipboardPlainText
 } = require("../application/services/settings-template-editor");
-const { saveSettingsUsecase } = require("../application/usecases/manage-settings");
+const {
+  loadSettingsSnapshotUsecase,
+  getSavedApiKeyUsecase,
+  testApiKeyUsecase,
+  saveSettingsUsecase
+} = require("../application/usecases/manage-settings");
 const { parseRunninghubAppUsecase } = require("../application/usecases/parse-runninghub-app");
-const { saveParsedAppUsecase, loadEditableAppUsecase, deleteAppUsecase } = require("../application/usecases/manage-apps");
+const {
+  listSavedAppsUsecase,
+  findSavedAppByIdUsecase,
+  saveParsedAppUsecase,
+  loadEditableAppUsecase,
+  deleteAppUsecase
+} = require("../application/usecases/manage-apps");
 const { exportTemplatesJsonUsecase, importTemplatesJsonUsecase } = require("../application/usecases/manage-template-transfer");
 const {
+  listSavedTemplatesUsecase,
+  findSavedTemplateByIdUsecase,
   saveTemplateUsecase,
   importTemplatesUsecase,
   loadEditableTemplateUsecase,
   deleteTemplateUsecase
 } = require("../application/usecases/manage-templates");
+const { createSettingsGateway } = require("../infrastructure/gateways/settings-gateway");
 const { renderParseSuccessHtml, renderParseFailureHtml } = require("./settings/parse-result-view");
 const { renderSavedAppsListHtml } = require("./settings/saved-apps-view");
 const { renderSavedTemplatesListHtml } = require("./settings/saved-templates-view");
@@ -47,6 +59,7 @@ const LARGE_PROMPT_WARNING_CHARS = textInputPolicy.LARGE_PROMPT_WARNING_CHARS;
 const TEXT_INPUT_HARD_MAX_CHARS = textInputPolicy.TEXT_INPUT_HARD_MAX_CHARS;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
 const dom = {};
+const settingsGateway = createSettingsGateway();
 
 function log(msg) {
   console.log(`[Settings] ${msg}`);
@@ -77,7 +90,7 @@ async function runEnvironmentDoctorManual() {
 }
 
 function loadLatestDiagnosticReport() {
-  const report = loadStoredJsonReport(localStorage, DIAGNOSTIC_STORAGE_KEY);
+  const report = loadStoredJsonReport(settingsGateway.getStorage(), DIAGNOSTIC_STORAGE_KEY);
 
   if (!report) {
     setEnvDoctorOutput(dom.envDoctorOutput, "未找到最近报告，请先点击“运行环境检测”。");
@@ -88,7 +101,7 @@ function loadLatestDiagnosticReport() {
 }
 
 function loadParseDebugReport() {
-  const report = loadStoredJsonReport(localStorage, PARSE_DEBUG_STORAGE_KEY);
+  const report = loadStoredJsonReport(settingsGateway.getStorage(), PARSE_DEBUG_STORAGE_KEY);
 
   if (!report) {
     setEnvDoctorOutput(dom.envDoctorOutput, "No parse debug found. Parse and save an app first, then click this button again.");
@@ -142,13 +155,13 @@ function saveApiKeyAndSettings() {
   const apiKey = String(dom.apiKeyInput.value || "").trim();
   const pollInterval = Number(dom.pollIntervalInput.value) || 2;
   const timeout = Number(dom.timeoutInput.value) || 180;
-  const currentSettings = store.getSettings();
+  const currentSettings = loadSettingsSnapshotUsecase({ store: settingsGateway });
   const uploadMaxEdge = normalizeUploadMaxEdge(
     dom.uploadMaxEdgeSettingSelect ? dom.uploadMaxEdgeSettingSelect.value : currentSettings.uploadMaxEdge
   );
 
   const payload = saveSettingsUsecase({
-    store,
+    store: settingsGateway,
     apiKey,
     pollInterval,
     timeout,
@@ -165,10 +178,12 @@ async function testApiKey() {
     alert("请输入 API Key");
     return;
   }
-
   dom.btnTestApiKey.textContent = "测试中...";
   try {
-    const result = await runninghub.testApiKey(apiKey);
+    const result = await testApiKeyUsecase({
+      runninghub: settingsGateway,
+      apiKey
+    });
     alert(result.message);
   } catch (error) {
     alert(`测试出错: ${error.message}`);
@@ -178,7 +193,7 @@ async function testApiKey() {
 }
 
 async function parseApp() {
-  const apiKey = store.getApiKey();
+  const apiKey = getSavedApiKeyUsecase({ store: settingsGateway });
   const appId = normalizeAppId(dom.appIdInput.value);
 
   if (!appId) {
@@ -189,14 +204,13 @@ async function parseApp() {
     alert("请先保存 API Key");
     return;
   }
-
   dom.btnParseApp.disabled = true;
   dom.btnParseApp.textContent = "解析中...";
 
   try {
     dom.appIdInput.value = appId;
     state.parsedAppData = await parseRunninghubAppUsecase({
-      runninghub,
+      runninghub: settingsGateway,
       appId,
       apiKey,
       preferredName: dom.appNameInput.value.trim(),
@@ -227,7 +241,7 @@ function renderParseResult(data) {
 function saveParsedApp() {
   if (!state.parsedAppData) return;
   const payload = saveParsedAppUsecase({
-    store,
+    store: settingsGateway,
     parsedAppData: state.parsedAppData
   });
   emitAppEvent(APP_EVENTS.APPS_CHANGED, payload);
@@ -246,7 +260,11 @@ function showManualConfig(message) {
 }
 
 function renderSavedAppsList() {
-  const viewModel = buildSavedAppsListViewModel(store.getAiApps());
+  const viewModel = buildSavedAppsListViewModel(
+    listSavedAppsUsecase({
+      store: settingsGateway
+    })
+  );
   dom.savedAppsList.innerHTML = renderSavedAppsListHtml(viewModel, {
     escapeHtml,
     encodeDataId
@@ -256,7 +274,7 @@ function renderSavedAppsList() {
 function saveTemplate() {
   try {
     const result = saveTemplateUsecase({
-      store,
+      store: settingsGateway,
       title: String(dom.templateTitleInput.value || ""),
       content: String(dom.templateContentInput.value || "")
     });
@@ -274,7 +292,7 @@ async function exportTemplatesJson() {
   try {
     const exportResult = await exportTemplatesJsonUsecase({
       localFileSystem,
-      store,
+      store: settingsGateway,
       filenamePrefix: TEMPLATE_EXPORT_FILENAME_PREFIX
     });
     if (exportResult.outcome === "unsupported") {
@@ -296,7 +314,7 @@ async function importTemplatesJson() {
   try {
     const importResult = await importTemplatesJsonUsecase({
       localFileSystem,
-      store,
+      store: settingsGateway,
       importTemplates: importTemplatesUsecase
     });
     if (importResult.outcome === "unsupported") {
@@ -327,7 +345,11 @@ async function importTemplatesJson() {
 }
 
 function renderSavedTemplates() {
-  const viewModel = buildSavedTemplatesListViewModel(store.getPromptTemplates());
+  const viewModel = buildSavedTemplatesListViewModel(
+    listSavedTemplatesUsecase({
+      store: settingsGateway
+    })
+  );
   dom.savedTemplatesList.innerHTML = renderSavedTemplatesListHtml(viewModel, {
     escapeHtml,
     encodeDataId
@@ -344,7 +366,10 @@ function onSavedAppsListClick(event) {
 
   if (action.kind === "edit-app") {
     const id = action.id;
-    const app = store.getAiApps().find((item) => String(item.id) === String(id));
+    const app = findSavedAppByIdUsecase({
+      store: settingsGateway,
+      id
+    });
     const editable = loadEditableAppUsecase({ app });
     if (!editable.found) {
       alert("未找到应用记录");
@@ -369,7 +394,7 @@ function onSavedAppsListClick(event) {
   if (!safeConfirm("删除此应用？")) return;
 
   const result = deleteAppUsecase({
-    store,
+    store: settingsGateway,
     id
   });
   if (!result.deleted) {
@@ -392,7 +417,10 @@ function onSavedTemplatesListClick(event) {
 
   if (action.kind === "edit-template") {
     const id = action.id;
-    const template = store.getPromptTemplates().find((item) => String(item.id) === String(id));
+    const template = findSavedTemplateByIdUsecase({
+      store: settingsGateway,
+      id
+    });
     const editable = loadEditableTemplateUsecase({ template });
     if (!editable.found) {
       alert("未找到模板记录");
@@ -413,7 +441,7 @@ function onSavedTemplatesListClick(event) {
   if (!safeConfirm("删除此模板？")) return;
 
   const result = deleteTemplateUsecase({
-    store,
+    store: settingsGateway,
     id
   });
   if (!result.deleted) {
@@ -524,12 +552,12 @@ function initSettingsController() {
     dom.envDiagnosticsToggle.textContent = "展开";
   }
 
-  dom.apiKeyInput.value = store.getApiKey();
-  const settings = store.getSettings();
-  dom.pollIntervalInput.value = settings.pollInterval;
-  dom.timeoutInput.value = settings.timeout;
+  const settingsSnapshot = loadSettingsSnapshotUsecase({ store: settingsGateway });
+  dom.apiKeyInput.value = settingsSnapshot.apiKey;
+  dom.pollIntervalInput.value = settingsSnapshot.pollInterval;
+  dom.timeoutInput.value = settingsSnapshot.timeout;
   if (dom.uploadMaxEdgeSettingSelect) {
-    dom.uploadMaxEdgeSettingSelect.value = String(normalizeUploadMaxEdge(settings.uploadMaxEdge));
+    dom.uploadMaxEdgeSettingSelect.value = String(normalizeUploadMaxEdge(settingsSnapshot.uploadMaxEdge));
   }
   enforceLongTextCapacity(dom.templateContentInput);
 

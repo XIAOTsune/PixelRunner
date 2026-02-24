@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   toSavedParsedAppData,
+  listSavedAppsUsecase,
+  findSavedAppByIdUsecase,
   saveParsedAppUsecase,
   loadEditableAppUsecase,
   deleteAppUsecase
@@ -14,6 +16,36 @@ test("toSavedParsedAppData normalizes missing fields", () => {
     description: "",
     inputs: []
   });
+});
+
+test("listSavedAppsUsecase filters invalid app items", () => {
+  const result = listSavedAppsUsecase({
+    store: {
+      getAiApps: () => [{ id: "a1" }, null, 1, { id: "a2" }]
+    }
+  });
+  assert.deepEqual(result, [{ id: "a1" }, { id: "a2" }]);
+});
+
+test("findSavedAppByIdUsecase finds app by id", () => {
+  const store = {
+    getAiApps: () => [{ id: "a1", name: "App 1" }, { id: "a2", name: "App 2" }]
+  };
+
+  assert.deepEqual(
+    findSavedAppByIdUsecase({
+      store,
+      id: "a2"
+    }),
+    { id: "a2", name: "App 2" }
+  );
+  assert.equal(
+    findSavedAppByIdUsecase({
+      store,
+      id: "missing"
+    }),
+    null
+  );
 });
 
 test("saveParsedAppUsecase updates existing record by normalized app id", () => {

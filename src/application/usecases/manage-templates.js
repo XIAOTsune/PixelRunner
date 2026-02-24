@@ -10,6 +10,20 @@ function getTemplateTitleKey(title) {
   return String(title || "").trim().toLowerCase();
 }
 
+function listSavedTemplatesUsecase(options = {}) {
+  const store = options.store;
+  requireStoreMethod(store, "getPromptTemplates");
+  const list = store.getPromptTemplates();
+  return Array.isArray(list) ? list.filter((item) => item && typeof item === "object") : [];
+}
+
+function findSavedTemplateByIdUsecase(options = {}) {
+  const id = String(options.id || "").trim();
+  if (!id) return null;
+  const templates = listSavedTemplatesUsecase(options);
+  return templates.find((item) => String(item.id || "") === id) || null;
+}
+
 function saveTemplateUsecase(options = {}) {
   const store = options.store;
   requireStoreMethod(store, "getPromptTemplates");
@@ -131,6 +145,8 @@ function deleteTemplateUsecase(options = {}) {
 
 module.exports = {
   getTemplateTitleKey,
+  listSavedTemplatesUsecase,
+  findSavedTemplateByIdUsecase,
   saveTemplateUsecase,
   importTemplatesUsecase,
   buildTemplateExportUsecase,

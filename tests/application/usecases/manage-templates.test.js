@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   getTemplateTitleKey,
+  listSavedTemplatesUsecase,
+  findSavedTemplateByIdUsecase,
   saveTemplateUsecase,
   importTemplatesUsecase,
   buildTemplateExportUsecase,
@@ -12,6 +14,35 @@ const {
 test("getTemplateTitleKey trims and lower-cases title", () => {
   assert.equal(getTemplateTitleKey("  Hello World  "), "hello world");
   assert.equal(getTemplateTitleKey(""), "");
+});
+
+test("listSavedTemplatesUsecase filters invalid template items", () => {
+  const result = listSavedTemplatesUsecase({
+    store: {
+      getPromptTemplates: () => [{ id: "t1" }, null, "x", { id: "t2" }]
+    }
+  });
+  assert.deepEqual(result, [{ id: "t1" }, { id: "t2" }]);
+});
+
+test("findSavedTemplateByIdUsecase finds template by id", () => {
+  const store = {
+    getPromptTemplates: () => [{ id: "t1", title: "A" }, { id: "t2", title: "B" }]
+  };
+  assert.deepEqual(
+    findSavedTemplateByIdUsecase({
+      store,
+      id: "t2"
+    }),
+    { id: "t2", title: "B" }
+  );
+  assert.equal(
+    findSavedTemplateByIdUsecase({
+      store,
+      id: "missing"
+    }),
+    null
+  );
 });
 
 test("saveTemplateUsecase saves new template", () => {

@@ -16,6 +16,20 @@ function toSavedParsedAppData(app) {
   };
 }
 
+function listSavedAppsUsecase(options = {}) {
+  const store = options.store;
+  requireStoreMethod(store, "getAiApps");
+  const list = store.getAiApps();
+  return Array.isArray(list) ? list.filter((item) => item && typeof item === "object") : [];
+}
+
+function findSavedAppByIdUsecase(options = {}) {
+  const id = String(options.id || "").trim();
+  if (!id) return null;
+  const apps = listSavedAppsUsecase(options);
+  return apps.find((item) => String(item.id || "") === id) || null;
+}
+
 function saveParsedAppUsecase(options = {}) {
   const store = options.store;
   const parsedAppData = options.parsedAppData;
@@ -87,6 +101,8 @@ function deleteAppUsecase(options = {}) {
 
 module.exports = {
   toSavedParsedAppData,
+  listSavedAppsUsecase,
+  findSavedAppByIdUsecase,
   saveParsedAppUsecase,
   loadEditableAppUsecase,
   deleteAppUsecase
