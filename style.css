@@ -442,6 +442,7 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   height: 32px; /* 固定高度，看起来更整齐 */
+  min-width: 0;
 }
 
 .card-title, .card-title-tools {
@@ -458,12 +459,14 @@ textarea {
 .card-title-tools {
   display: flex;
   gap: 6px;
+  white-space: nowrap;
 }
 
 /* --- [修改] 中间的应用名称区域 (自适应宽度) --- */
 .app-picker-meta {
-  flex: 1; /* 占据剩余所有空间 */
+  flex: 1 1 auto; /* 占据剩余所有空间，允许在窄宽度下收缩 */
   min-width: 0; /* 防止内容过长撑破容器 */
+  max-width: 100%;
   text-align: center;
   font-size: 14px; /* 字体加大 */
   font-weight: bold;
@@ -482,6 +485,24 @@ textarea {
   color: #666;
   font-weight: normal;
   font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .card-title-row {
+    height: auto;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .card-title-tools {
+    margin-left: auto;
+  }
+
+  .app-picker-meta {
+    order: 3;
+    width: 100%;
+    text-align: left;
+  }
 }
 
 /* === 6. 动态参数生成区域 === */
