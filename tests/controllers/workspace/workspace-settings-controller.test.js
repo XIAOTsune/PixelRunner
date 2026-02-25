@@ -15,21 +15,59 @@ function createClassList(initialValues = []) {
   };
 }
 
-test("workspace settings controller syncs paste strategy select from settings", () => {
-  const select = { value: "normal" };
+test("workspace settings controller forces paste strategy to normal", () => {
+  const saved = [];
+  const logs = [];
   const controller = createWorkspaceSettingsController({
-    dom: {
-      pasteStrategySelect: select
-    },
     store: {
-      getSettings: () => ({ pasteStrategy: "smartEnhanced" })
+      getSettings: () => ({
+        pollInterval: 2,
+        timeout: 180,
+        uploadMaxEdge: "1024",
+        uploadRetryCount: "2",
+        cloudConcurrentJobs: "7",
+        pasteStrategy: "smartEnhanced"
+      }),
+      saveSettings: (payload) => {
+        saved.push(payload);
+      }
     },
-    normalizePasteStrategy: (value) => (value ? String(value) : "normal")
+    normalizeUploadMaxEdge: (value) => Number(value) || 0,
+    normalizeUploadRetryCount: (value) => Number(value) || 2,
+    normalizeCloudConcurrentJobs: (value) => Number(value) || 2,
+    log: (message, type) => {
+      logs.push({ message, type });
+    }
   });
 
   controller.syncPasteStrategySelect();
 
-  assert.equal(select.value, "smartEnhanced");
+  assert.equal(saved.length, 1);
+  assert.deepEqual(saved[0], {
+    pollInterval: 2,
+    timeout: 180,
+    uploadMaxEdge: 1024,
+    uploadRetryCount: 2,
+    cloudConcurrentJobs: 7,
+    pasteStrategy: "normal"
+  });
+  assert.deepEqual(logs, [{ message: "回贴策略已固定为: 普通（居中铺满）", type: "info" }]);
+});
+
+test("workspace settings controller keeps settings unchanged when paste strategy already normal", () => {
+  const saved = [];
+  const controller = createWorkspaceSettingsController({
+    store: {
+      getSettings: () => ({ pasteStrategy: "normal" }),
+      saveSettings: (payload) => {
+        saved.push(payload);
+      }
+    }
+  });
+
+  controller.syncPasteStrategySelect();
+
+  assert.deepEqual(saved, []);
 });
 
 test("workspace settings controller updates account view when api key is missing", async () => {
@@ -87,71 +125,35 @@ test("workspace settings controller fetches account status when api key exists",
   assert.equal(coins.textContent, "34");
 });
 
-test("workspace settings controller persists paste strategy changes and logs marker", () => {
-  const saved = [];
-  const logs = [];
-  const controller = createWorkspaceSettingsController({
-    store: {
-      getSettings: () => ({
-        pollInterval: 2,
-        timeout: 180,
-        uploadMaxEdge: "1024",
-        uploadRetryCount: "2",
-        cloudConcurrentJobs: "7",
-        pasteStrategy: "normal"
-      }),
-      saveSettings: (payload) => {
-        saved.push(payload);
-      }
-    },
-    normalizePasteStrategy: (value) => (value === "smart" ? "smart" : "normal"),
-    normalizeUploadMaxEdge: (value) => Number(value) || 0,
-    normalizeUploadRetryCount: (value) => Number(value) || 2,
-    normalizeCloudConcurrentJobs: (value) => Number(value) || 2,
-    pasteStrategyLabels: {
-      smart: "智能（主体对齐）"
-    },
-    log: (message, type) => {
-      logs.push({ message, type });
-    }
-  });
-
-  controller.onPasteStrategyChange({
-    target: { value: "smart" }
-  });
-
-  assert.equal(saved.length, 1);
-  assert.deepEqual(saved[0], {
-    pollInterval: 2,
-    timeout: 180,
-    uploadMaxEdge: 1024,
-    uploadRetryCount: 2,
-    cloudConcurrentJobs: 7,
-    pasteStrategy: "smart"
-  });
-  assert.deepEqual(logs, [{ message: "回贴策略已切换: 智能（主体对齐）", type: "info" }]);
-});
-
-test("workspace settings controller refresh and settings change keep list and account in sync", async () => {
+test("workspace settings controller refresh and settings change keep list/account in sync", async () => {
   const calls = {
     syncWorkspaceApps: [],
     logs: [],
-    fetchAccountStatus: 0
+    fetchAccountStatus: 0,
+    saveSettings: 0
   };
   const summary = { classList: createClassList(["is-empty"]) };
   const balance = { textContent: "" };
   const coins = { textContent: "" };
-  const select = { value: "normal" };
   const controller = createWorkspaceSettingsController({
     dom: {
       accountSummary: summary,
       accountBalanceValue: balance,
-      accountCoinsValue: coins,
-      pasteStrategySelect: select
+      accountCoinsValue: coins
     },
     store: {
       getApiKey: () => "api-key",
-      getSettings: () => ({ pasteStrategy: "smart" })
+      getSettings: () => ({
+        pollInterval: 2,
+        timeout: 180,
+        uploadMaxEdge: 0,
+        uploadRetryCount: 2,
+        cloudConcurrentJobs: 2,
+        pasteStrategy: "smart"
+      }),
+      saveSettings: () => {
+        calls.saveSettings += 1;
+      }
     },
     runninghub: {
       fetchAccountStatus: async () => {
@@ -159,7 +161,6 @@ test("workspace settings controller refresh and settings change keep list and ac
         return { remainMoney: "8.8", remainCoins: "21" };
       }
     },
-    normalizePasteStrategy: (value) => String(value || "normal"),
     syncWorkspaceApps: (options) => {
       calls.syncWorkspaceApps.push(options);
     },
@@ -176,8 +177,9 @@ test("workspace settings controller refresh and settings change keep list and ac
 
   assert.deepEqual(calls.syncWorkspaceApps, [{ forceRerender: false }]);
   assert.equal(calls.logs.some((item) => item.message === "应用列表已刷新" && item.type === "info"), true);
+  assert.equal(calls.logs.some((item) => item.message.includes("回贴策略已固定为")), true);
   assert.equal(calls.fetchAccountStatus, 2);
-  assert.equal(select.value, "smart");
+  assert.equal(calls.saveSettings, 1);
   assert.equal(balance.textContent, "8.8");
   assert.equal(coins.textContent, "21");
   assert.equal(summary.classList.contains("is-empty"), false);

@@ -21,7 +21,6 @@ function createHandlers() {
     onAppPickerListClick: () => {},
     onAppPickerSearchInput: () => {},
     onRefreshWorkspaceClick: () => {},
-    onPasteStrategyChange: () => {},
     onCloseTemplatePicker: () => {},
     onTemplateModalClick: () => {},
     onTemplateListClick: () => {},
@@ -42,7 +41,6 @@ function createDelegates(handlers) {
     handleAppPickerListClick: handlers.onAppPickerListClick,
     onAppPickerSearchInput: handlers.onAppPickerSearchInput,
     onRefreshWorkspaceClick: handlers.onRefreshWorkspaceClick,
-    onPasteStrategyChange: handlers.onPasteStrategyChange,
     closeTemplatePicker: handlers.onCloseTemplatePicker,
     onTemplateModalClick: handlers.onTemplateModalClick,
     handleTemplateListClick: handlers.onTemplateListClick,
@@ -117,7 +115,7 @@ test("workspace init controller bindWorkspaceEvents rebinds all dom and app even
 
   controller.bindWorkspaceEvents(handlers);
 
-  assert.equal(bindings.length, 16);
+  assert.equal(bindings.length, 15);
   assert.deepEqual(
     bindings.map((item) => [item.target && item.target.id, item.eventName]),
     [
@@ -128,7 +126,6 @@ test("workspace init controller bindWorkspaceEvents rebinds all dom and app even
       ["appPickerList", "click"],
       ["appPickerSearchInput", "input"],
       ["btnRefreshWorkspaceApps", "click"],
-      ["pasteStrategySelect", "change"],
       ["templateModalClose", "click"],
       ["templateModal", "click"],
       ["templateList", "click"],
@@ -140,8 +137,8 @@ test("workspace init controller bindWorkspaceEvents rebinds all dom and app even
     ]
   );
   assert.equal(bindings[0].handler, handlers.onRun);
-  assert.equal(bindings[7].handler, handlers.onPasteStrategyChange);
-  assert.equal(bindings[15].handler, handlers.onSettingsChanged);
+  assert.equal(bindings[6].handler, handlers.onRefreshWorkspaceClick);
+  assert.equal(bindings[14].handler, handlers.onSettingsChanged);
 });
 
 test("workspace init controller bindWorkspaceEventsFromDelegates maps delegates to handlers", () => {
@@ -166,9 +163,9 @@ test("workspace init controller bindWorkspaceEventsFromDelegates maps delegates 
 
   controller.bindWorkspaceEventsFromDelegates(delegates);
 
-  assert.equal(bindings.length, 16);
+  assert.equal(bindings.length, 15);
   assert.equal(bindings[0].handler, handlers.onRun);
   assert.equal(bindings[4].handler, handlers.onAppPickerListClick);
-  assert.equal(bindings[10].handler, handlers.onTemplateListClick);
-  assert.equal(bindings[15].handler, handlers.onSettingsChanged);
+  assert.equal(bindings[9].handler, handlers.onTemplateListClick);
+  assert.equal(bindings[14].handler, handlers.onSettingsChanged);
 });

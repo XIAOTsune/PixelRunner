@@ -36,7 +36,6 @@ const {
 } = require("../application/services/task-summary");
 const {
   normalizeUploadMaxEdge,
-  normalizePasteStrategy,
   normalizeCloudConcurrentJobs,
   normalizeUploadRetryCount
 } = require("../domain/policies/run-settings-policy");
@@ -78,11 +77,6 @@ const state = {
   taskSummaryHintType: "info",
   taskSummaryHintUntil: 0,
   taskSummaryHintTimerId: null
-};
-const PASTE_STRATEGY_LABELS = {
-  normal: "普通（居中铺满）",
-  smart: "智能（主体对齐）",
-  smartEnhanced: "智能增强（全局+局部补偿）"
 };
 const MAX_TEMPLATE_COMBINE_COUNT = 5;
 const RH_PROMPT_MAX_CHARS = 4000;
@@ -157,11 +151,9 @@ function getWorkspaceSettingsController() {
       byId,
       store,
       runninghub,
-      normalizePasteStrategy,
       normalizeUploadMaxEdge,
       normalizeCloudConcurrentJobs,
       normalizeUploadRetryCount,
-      pasteStrategyLabels: PASTE_STRATEGY_LABELS,
       syncWorkspaceApps,
       log
     });
@@ -466,10 +458,6 @@ function onRefreshWorkspaceClick() {
   getWorkspaceSettingsController().onRefreshWorkspaceClick();
 }
 
-function onPasteStrategyChange(event) {
-  getWorkspaceSettingsController().onPasteStrategyChange(event);
-}
-
 function onAppsChanged() {
   syncWorkspaceApps({ forceRerender: false });
 }
@@ -491,7 +479,6 @@ function createWorkspaceInitEventDelegates() {
     handleAppPickerListClick,
     onAppPickerSearchInput,
     onRefreshWorkspaceClick,
-    onPasteStrategyChange,
     closeTemplatePicker,
     onTemplateModalClick,
     handleTemplateListClick,

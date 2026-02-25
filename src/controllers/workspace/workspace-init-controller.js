@@ -2,7 +2,6 @@ const WORKSPACE_DOM_IDS = [
   "btnRun",
   "btnOpenAppPicker",
   "btnRefreshWorkspaceApps",
-  "pasteStrategySelect",
   "btnClearLog",
   "taskStatusSummary",
   "appPickerMeta",
@@ -56,7 +55,6 @@ function createWorkspaceInitController(options = {}) {
     rebindEvent(dom.appPickerList, "click", handlers.onAppPickerListClick);
     rebindEvent(dom.appPickerSearchInput, "input", handlers.onAppPickerSearchInput);
     rebindEvent(dom.btnRefreshWorkspaceApps, "click", handlers.onRefreshWorkspaceClick);
-    rebindEvent(dom.pasteStrategySelect, "change", handlers.onPasteStrategyChange);
     rebindEvent(dom.templateModalClose, "click", handlers.onCloseTemplatePicker);
     rebindEvent(dom.templateModal, "click", handlers.onTemplateModalClick);
     rebindEvent(dom.templateList, "click", handlers.onTemplateListClick);
@@ -84,7 +82,6 @@ function createWorkspaceInitController(options = {}) {
       onAppPickerListClick: delegates.handleAppPickerListClick,
       onAppPickerSearchInput: delegates.onAppPickerSearchInput,
       onRefreshWorkspaceClick: delegates.onRefreshWorkspaceClick,
-      onPasteStrategyChange: delegates.onPasteStrategyChange,
       onCloseTemplatePicker: delegates.closeTemplatePicker,
       onTemplateModalClick: delegates.onTemplateModalClick,
       onTemplateListClick: delegates.handleTemplateListClick,

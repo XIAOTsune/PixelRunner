@@ -83,9 +83,7 @@ test("initWorkspaceController uses injected gateway when provided", async () => 
     const originalDocument = global.document;
     const originalAlert = global.alert;
     const originalLocalStorage = global.localStorage;
-    global.document = createMockDocument({
-      pasteStrategySelect: { value: "" }
-    });
+    global.document = createMockDocument();
     global.alert = () => {};
     global.localStorage = createLocalStorageStub();
 
@@ -137,9 +135,7 @@ test("initWorkspaceController keeps default gateway path when no injection provi
     const originalDocument = global.document;
     const originalAlert = global.alert;
     const originalLocalStorage = global.localStorage;
-    global.document = createMockDocument({
-      pasteStrategySelect: { value: "" }
-    });
+    global.document = createMockDocument();
     global.alert = () => {};
     global.localStorage = createLocalStorageStub();
 

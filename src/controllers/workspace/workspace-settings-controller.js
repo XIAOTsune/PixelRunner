@@ -1,10 +1,9 @@
 function createWorkspaceSettingsController(options = {}) {
+  const WORKSPACE_DEFAULT_PASTE_STRATEGY = "normal";
   const dom = options.dom || {};
   const byId = typeof options.byId === "function" ? options.byId : () => null;
   const store = options.store || {};
   const runninghub = options.runninghub || {};
-  const normalizePasteStrategy =
-    typeof options.normalizePasteStrategy === "function" ? options.normalizePasteStrategy : (value) => value;
   const normalizeUploadMaxEdge =
     typeof options.normalizeUploadMaxEdge === "function" ? options.normalizeUploadMaxEdge : (value) => value;
   const normalizeCloudConcurrentJobs =
@@ -23,8 +22,6 @@ function createWorkspaceSettingsController(options = {}) {
           if (!Number.isFinite(num)) return 2;
           return Math.max(0, Math.min(5, Math.floor(num)));
         };
-  const pasteStrategyLabels =
-    options.pasteStrategyLabels && typeof options.pasteStrategyLabels === "object" ? options.pasteStrategyLabels : {};
   const syncWorkspaceApps =
     typeof options.syncWorkspaceApps === "function" ? options.syncWorkspaceApps : () => {};
   const log = typeof options.log === "function" ? options.log : () => {};
@@ -45,13 +42,24 @@ function createWorkspaceSettingsController(options = {}) {
   }
 
   function syncPasteStrategySelect() {
-    const select = dom.pasteStrategySelect || byId("pasteStrategySelect");
-    if (!select) return;
     const settings = getSettingsSnapshot();
-    const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
-    const nextValue = String(pasteStrategy);
-    if (select.value !== nextValue) {
-      select.value = nextValue;
+    const currentPasteStrategy = String(settings.pasteStrategy || "").trim();
+    if (currentPasteStrategy === WORKSPACE_DEFAULT_PASTE_STRATEGY) return;
+
+    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+    const cloudConcurrentJobs = normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs);
+    const uploadRetryCount = normalizeUploadRetryCount(settings.uploadRetryCount);
+
+    if (store && typeof store.saveSettings === "function") {
+      store.saveSettings({
+        pollInterval: settings.pollInterval,
+        timeout: settings.timeout,
+        uploadMaxEdge,
+        uploadRetryCount,
+        pasteStrategy: WORKSPACE_DEFAULT_PASTE_STRATEGY,
+        cloudConcurrentJobs
+      });
+      log("回贴策略已固定为: 普通（居中铺满）", "info");
     }
   }
 
@@ -95,36 +103,15 @@ function createWorkspaceSettingsController(options = {}) {
     log("应用列表已刷新", "info");
   }
 
-  function onPasteStrategyChange(event) {
-    const nextPasteStrategy = normalizePasteStrategy(event && event.target ? event.target.value : "");
-    const settings = getSettingsSnapshot();
-    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
-    const cloudConcurrentJobs = normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs);
-    const uploadRetryCount = normalizeUploadRetryCount(settings.uploadRetryCount);
-    if (store && typeof store.saveSettings === "function") {
-      store.saveSettings({
-        pollInterval: settings.pollInterval,
-        timeout: settings.timeout,
-        uploadMaxEdge,
-        uploadRetryCount,
-        pasteStrategy: nextPasteStrategy,
-        cloudConcurrentJobs
-      });
-    }
-    const marker = pasteStrategyLabels[nextPasteStrategy] || nextPasteStrategy;
-    log(`回贴策略已切换: ${marker}`, "info");
-  }
-
   function onSettingsChanged() {
-    updateAccountStatus();
     syncPasteStrategySelect();
+    updateAccountStatus();
   }
 
   return {
     syncPasteStrategySelect,
     updateAccountStatus,
     onRefreshWorkspaceClick,
-    onPasteStrategyChange,
     onSettingsChanged
   };
 }
