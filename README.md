@@ -17,6 +17,9 @@
   <a href="#workflow">工作流</a> ·
   <a href="#integration">集成细节</a> ·
   <a href="#data-privacy">数据与隐私</a> ·
+  <a href="#ps-modules">PS模块边界</a> ·
+  <a href="#smoke-checklist">冒烟清单</a> ·
+  <a href="#release-guardrails">发布预检</a> ·
   <a href="#development">开发与调试</a>
 </p>
 
@@ -160,18 +163,108 @@ flowchart LR
 ├─ index.html             # 面板 UI 结构
 ├─ index.js               # 启动与控制器初始化
 ├─ style.css              # UI 样式
+├─ plans/                 # 重构与审查计划文档
+├─ scripts/               # 预检与静态检查脚本
 ├─ src/
-│  ├─ controllers/        # 工作台 / 设置 / 工具箱控制器
-│  ├─ services/           # RunningHub API、PS 操作、存储逻辑
+│  ├─ application/        # 用例与应用服务（编排层）
+│  ├─ controllers/        # 工作台 / 设置 / 工具箱控制器（展示层）
 │  ├─ diagnostics/        # 环境诊断
+│  ├─ domain/             # 纯策略与规则
+│  ├─ infrastructure/     # gateway 适配层
+│  ├─ legacy/             # 已下线/历史资产
+│  ├─ services/           # RunningHub 与 Photoshop 服务实现
 │  └─ shared/             # 输入规范与 DOM 工具
-└─ tools/                 # 辅助脚本
+└─ tests/                 # Node 自动化测试
 ```
+
+### 分层依赖规则（强制）
+1. `src/controllers/**/*.js` 禁止直接依赖 `src/services/*`。
+2. 控制层访问能力必须经由 `src/application/*` 或 `src/infrastructure/gateways/*`。
+3. 检查命令：`node scripts/check-controller-service-deps.js`。
+4. 命中违规依赖时，视为发布阻断项，必须先修复后再继续。
+
+<a name="ps-modules"></a>
+## PS 模块边界与二开入口 / PS Module Boundaries
+
+| 模块 | 职责边界 | 什么时候改这里 |
+| --- | --- | --- |
+| `src/services/ps/capture.js` | 选区捕获与图像导出 | 调整“从 PS 获取输入图像”的行为 |
+| `src/services/ps/place.js` | 回贴编排与入口策略选择 | 调整“结果放置回画布”的主流程 |
+| `src/services/ps/alignment.js` | 几何对齐与智能对齐策略 | 调整智能回贴算法或对齐参数 |
+| `src/services/ps/tools.js` | 工具菜单能力（观察层/锐化等） | 新增或修改工具箱按钮对应动作 |
+| `src/services/ps/shared.js` | 通用工具函数（超时、数值、策略归一化） | 需要跨 capture/place/tools 复用的纯函数 |
+| `src/services/ps.js` | facade 兼容导出层 | 仅做聚合导出，不放业务逻辑 |
+
+### 二开入口约束（强制）
+1. 新增工具功能时，优先改 `src/services/ps/tools.js` 与 `src/controllers/tools-controller.js`，再补 UI 按钮。
+2. `src/services/ps.js` 的对外函数签名视为稳定契约，禁止随意改名或删除。
+3. 若确需变更 facade 契约，必须同步更新：
+   - `tests/services/ps/facade.test.js`
+   - `src/diagnostics/ps-env-doctor.js`（`REQUIRED_PS_EXPORTS`）
+4. 合同测试不通过时，不允许发布。
+
+<a name="smoke-checklist"></a>
+## 手工 Smoke Checklist（UXP）
+
+1. 加载插件：用 UXP Developer Tool 加载 `manifest.json`，确认面板可见且不白屏。
+2. Workspace 主流程：
+   - 打开工作台，选择已保存应用；
+   - 捕获选区图像并运行任务；
+   - 确认日志有提交/轮询/完成或可读失败信息。
+3. Tools 按钮回归：
+   - 至少验证 `中性灰图层`、`高斯模糊`、`内容识别填充` 可触发；
+   - 无文档/无选区时应给出可读错误提示，不得无响应。
+4. Settings 关键链路：
+   - API Key 可保存并测试；
+   - 应用可解析并保存；
+   - 模板可新增和删除。
+5. 失败链路：
+   - 空 API Key / 非法应用 ID / 网络失败时，界面出现明确提示，不允许静默失败。
+
+<a name="release-guardrails"></a>
+## 发布前预检与踩坑规则 / Release Guardrails
+
+### R1（强制）Manifest/入口文件必须 UTF-8 无 BOM
+- 适用：`manifest.json`, `index.html`, `index.js`（以及其它入口级脚本）
+- 检查命令：
+
+```powershell
+@'
+const fs = require('fs');
+const files = ['manifest.json', 'index.html', 'index.js'];
+for (const f of files) {
+  const b = fs.readFileSync(f);
+  const hasBom = b.length >= 3 && b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF;
+  console.log(`${f}: ${hasBom ? 'BOM' : 'no BOM'}`);
+}
+'@ | node -
+```
+
+### R2（强制）启动链路必须容错加载
+- 控制器初始化必须在 `DOMContentLoaded` 后执行。
+- 可选模块调用前必须做 `typeof fn === "function"` 判定。
+- 单模块失败不能拖垮整体启动，至少保留错误日志。
+
+### R3（强制）导出契约与诊断检查保持一致
+- `ps` facade 变更时，必须同步更新：
+  - `tests/services/ps/facade.test.js`
+  - `src/diagnostics/ps-env-doctor.js` 的 `REQUIRED_PS_EXPORTS`
+
+### R4（强制）controller 禁止直连 services
+- 规则：`src/controllers/**/*.js` 中不允许出现 `../services/*`（`require`/`import`）依赖。
+- 检查命令：`node scripts/check-controller-service-deps.js`
+- 处置：发现违规即阻断发布，必须先迁移到 `usecase/application service/gateway`。
+
+### R5（建议）发布前最小预检
+1. `node --check index.js src/services/ps.js src/controllers/workspace-controller.js`
+2. `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+3. `node scripts/check-controller-service-deps.js`
+4. 执行 R1 的 BOM 检查
 
 <a name="development"></a>
 ## 开发与调试 / Development
 - 无需构建步骤，直接由 UXP Developer Tool 加载
-- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/services`
+- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/application/usecases`, `src/infrastructure/gateways`, `src/services/ps.js`
 - 日志查看：使用 UXP Developer Console
 - 解析调试：设置页提供 “Load Parse Debug”
 
@@ -215,7 +308,7 @@ flowchart LR
 
 <a name="roadmap"></a>
 ## 路线图 / Roadmap
-- 失败场景的手动参数编辑器
+- 失败场景的诊断可观测性增强
 - 更多 PS 工具与预设
 
 <a name="version"></a>

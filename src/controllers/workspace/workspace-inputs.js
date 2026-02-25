@@ -1,3 +1,8 @@
+const textInputPolicy = require("../../domain/policies/text-input-policy");
+const { createInputPolicy } = require("../../domain/policies/input-policy");
+const { createInputRenderer } = require("./input-renderer");
+const { createWorkspaceInputStateService } = require("../../application/services/workspace-input-state");
+
 function createWorkspaceInputs(deps) {
   const {
     state,
@@ -9,49 +14,18 @@ function createWorkspaceInputs(deps) {
     escapeHtml,
     isPromptLikeInput,
     isEmptyValue,
-    getRenderedElementCount,
     updateCurrentAppMeta,
     updateRunButtonUI,
     openTemplatePicker
   } = deps;
-  const LARGE_PROMPT_WARNING_CHARS = 4000;
-  const TEXT_INPUT_HARD_MAX_CHARS = 20000;
+
+  const LARGE_PROMPT_WARNING_CHARS = textInputPolicy.LARGE_PROMPT_WARNING_CHARS;
+  const inputPolicy = createInputPolicy({ inputSchema, isPromptLikeInput });
   const warnedPromptKeys = new Set();
+  const inputState = createWorkspaceInputStateService({ state });
 
   function getTextLength(value) {
-    return Array.from(String(value == null ? "" : value)).length;
-  }
-
-  function getTailPreview(value, maxChars = 20) {
-    const chars = Array.from(String(value == null ? "" : value));
-    if (chars.length === 0) return "(空)";
-    const tail = chars.slice(Math.max(0, chars.length - maxChars)).join("");
-    const singleLineTail = tail.replace(/\r/g, "").replace(/\n/g, "\\n");
-    return chars.length > maxChars ? `...${singleLineTail}` : singleLineTail;
-  }
-
-  function enforceLongTextCapacity(inputEl) {
-    if (!inputEl) return;
-    try {
-      inputEl.maxLength = TEXT_INPUT_HARD_MAX_CHARS;
-    } catch (_) {}
-    try {
-      inputEl.setAttribute("maxlength", String(TEXT_INPUT_HARD_MAX_CHARS));
-    } catch (_) {}
-  }
-
-  function insertTextAtCursor(inputEl, rawText) {
-    if (!inputEl) return;
-    const text = String(rawText == null ? "" : rawText);
-    const current = String(inputEl.value || "");
-    const start = Number.isFinite(inputEl.selectionStart) ? inputEl.selectionStart : current.length;
-    const end = Number.isFinite(inputEl.selectionEnd) ? inputEl.selectionEnd : start;
-    const next = `${current.slice(0, start)}${text}${current.slice(end)}`;
-    inputEl.value = next;
-    const cursor = start + text.length;
-    if (typeof inputEl.setSelectionRange === "function") {
-      inputEl.setSelectionRange(cursor, cursor);
-    }
+    return textInputPolicy.getTextLength(value);
   }
 
   function warnLargePromptLength(key, value) {
@@ -62,10 +36,7 @@ function createWorkspaceInputs(deps) {
     }
     if (warnedPromptKeys.has(key)) return;
     warnedPromptKeys.add(key);
-    log(
-      `提示词长度已达到 ${length} 字符。建议控制在 4000 字符内，避免 RunningHub 侧拒绝。`,
-      "warn"
-    );
+    log(`Prompt length reached ${length} chars. Keep under 4000 to avoid RunningHub rejection.`, "warn");
   }
 
   function revokePreviewUrl(value) {
@@ -97,422 +68,40 @@ function createWorkspaceInputs(deps) {
     }
   }
 
+  const inputRenderer = createInputRenderer({
+    state,
+    ps,
+    log,
+    escapeHtml,
+    inputPolicy,
+    isEmptyValue,
+    openTemplatePicker,
+    onPromptLargeValue: warnLargePromptLength,
+    setInputValueByKey: inputState.setInputValueByKey,
+    deleteInputValueByKey: inputState.deleteInputValueByKey,
+    getInputValueByKey: inputState.getInputValueByKey,
+    clearImageInputByKey: inputState.clearImageInputByKey,
+    applyCapturedImageByKey: inputState.applyCapturedImageByKey,
+    revokePreviewUrl,
+    createPreviewUrlFromBuffer
+  });
+
   function getInputOptions(input) {
-    return inputSchema.getInputOptions(input);
+    return inputPolicy.getInputOptions(input);
   }
 
   function getInputOptionEntries(input) {
-    if (inputSchema && typeof inputSchema.getInputOptionEntries === "function") {
-      return inputSchema.getInputOptionEntries(input);
-    }
-    const options = getInputOptions(input);
-    return (Array.isArray(options) ? options : []).map((value) => ({ value, label: String(value) }));
+    return inputPolicy.getInputOptionEntries(input);
   }
 
   function resolveUiInputType(input) {
-    return inputSchema.resolveInputType(input || {});
-  }
-
-  function setInputValueByKey(key, value) {
-    state.inputValues[key] = value;
-    state.inputValues[key.split(":").pop()] = value;
-  }
-
-  function applyInputGridLayout(grid) {
-    if (!grid) return;
-    const supportsGrid =
-      typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("display", "grid");
-    if (!supportsGrid) {
-      grid.style.display = "flex";
-      grid.style.flexDirection = "column";
-      grid.style.gap = "8px";
-    }
-  }
-
-  function createInputField(input, idx) {
-    const key = String(input.key || `param_${idx}`);
-    const type = resolveUiInputType(input);
-    const labelText = input.label || input.name || key;
-    const labelHint = input.labelConfidence !== undefined && input.labelConfidence < 0.5
-      ? `${labelText} (${input.fieldName || key})`
-      : labelText;
-    const isUiRequired = type === "image"
-      ? Boolean(input && input.required && input.requiredExplicit === true)
-      : Boolean(input && input.required);
-
-    if (type === "image") {
-      const container = document.createElement("div");
-      container.style.marginBottom = "12px";
-      container.className = "full-width";
-
-      const labelEl = document.createElement("div");
-      labelEl.className = "dynamic-input-label";
-      labelEl.innerHTML = `${escapeHtml(labelHint)} ${isUiRequired ? '<span style="color:#ff6b6b">*</span>' : ""}`;
-
-      const wrapper = document.createElement("div");
-      wrapper.className = "image-input-wrapper";
-      wrapper.innerHTML = `
-        <img class="image-preview" />
-        <div class="image-input-overlay-content">
-          <div class="image-input-icon">📷</div>
-          <div class="image-input-text">点击从 PS 选区获取</div>
-        </div>
-      `;
-
-      const clearBtn = document.createElement("button");
-      clearBtn.type = "button";
-      clearBtn.textContent = "清除";
-      clearBtn.className = "image-input-clear-btn";
-      clearBtn.style.position = "absolute";
-      clearBtn.style.top = "8px";
-      clearBtn.style.right = "8px";
-      clearBtn.style.zIndex = "3";
-      clearBtn.style.padding = "2px 6px";
-      clearBtn.style.fontSize = "10px";
-      clearBtn.style.borderRadius = "2px";
-      clearBtn.style.border = "1px solid #555";
-      clearBtn.style.background = "rgba(0,0,0,0.5)";
-      clearBtn.style.color = "#ddd";
-      clearBtn.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const statusText = wrapper.querySelector(".image-input-text");
-        const previewImg = wrapper.querySelector(".image-preview");
-        revokePreviewUrl(state.inputValues[key]);
-        delete state.inputValues[key];
-        delete state.imageBounds[key];
-        if (previewImg) {
-          previewImg.src = "";
-          previewImg.classList.remove("has-image");
-        }
-        if (statusText) statusText.textContent = "点击从 PS 选区获取";
-      });
-      wrapper.appendChild(clearBtn);
-
-      wrapper.addEventListener("click", async () => {
-        const statusText = wrapper.querySelector(".image-input-text");
-        const previewImg = wrapper.querySelector(".image-preview");
-        if (!statusText || !previewImg) return;
-
-        statusText.textContent = "正在获取图像中...";
-        try {
-          const capture = await ps.captureSelection({ log });
-          if (!capture || !capture.arrayBuffer) {
-            statusText.textContent = "获取失败";
-            return;
-          }
-
-          revokePreviewUrl(state.inputValues[key]);
-          const previewUrl = createPreviewUrlFromBuffer(capture.arrayBuffer);
-          state.inputValues[key] = { arrayBuffer: capture.arrayBuffer, previewUrl };
-          if (capture.selectionBounds) state.imageBounds[key] = capture.selectionBounds;
-
-          previewImg.src = previewUrl;
-          previewImg.classList.add("has-image");
-          statusText.textContent = "已捕获，点击重新获取";
-        } catch (error) {
-          console.error(error);
-          statusText.textContent = "获取失败";
-        }
-      });
-
-      container.appendChild(labelEl);
-      container.appendChild(wrapper);
-      return container;
-    }
-
-    const wrapper = document.createElement("div");
-    wrapper.className = "dynamic-input-field";
-    wrapper.dataset.inputKey = key;
-
-    const headerRow = document.createElement("div");
-    headerRow.className = "input-label-row";
-
-    const labelEl = document.createElement("span");
-    labelEl.className = "dynamic-input-label";
-    labelEl.innerHTML = escapeHtml(labelHint);
-    headerRow.appendChild(labelEl);
-
-    const typeHint = String(input.type || input.fieldType || "").toLowerCase();
-    const promptLike =
-      isPromptLikeInput(input) ||
-      (type === "text" && (key.toLowerCase().includes("prompt") || String(labelText).includes("提示"))) ||
-      /prompt|text|string/.test(typeHint);
-    let inputEl;
-    let promptLengthHintEl = null;
-    let updatePromptLengthHint = null;
-
-    const fieldTypeHint = String(input.fieldType || input.type || "").toLowerCase();
-    if (type === "select" || /select|enum|list/.test(fieldTypeHint)) {
-      const optionEntries = getInputOptionEntries(input);
-      if (optionEntries.length <= 1 && !promptLike) {
-        inputEl = document.createElement("input");
-        inputEl.type = "text";
-        inputEl.placeholder = String(input.default || "");
-        inputEl.value = String(input.default || "");
-        const defaultNumeric = input.default !== undefined && input.default !== null ? Number(input.default) : NaN;
-        if (Number.isFinite(defaultNumeric)) {
-          setInputValueByKey(key, defaultNumeric);
-        } else {
-          setInputValueByKey(key, inputEl.value);
-        }
-        inputEl.addEventListener("input", (event) => {
-          const nextValue = event.target.value;
-          const numeric = Number(nextValue);
-          const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
-          setInputValueByKey(key, storedValue);
-        });
-        wrapper.appendChild(headerRow);
-        wrapper.appendChild(inputEl);
-        return wrapper;
-      }
-
-      if (optionEntries.length > 1) {
-        inputEl = document.createElement("select");
-        const optionValueMap = new Map();
-        optionEntries.forEach((entry) => {
-          const rawValue = entry && Object.prototype.hasOwnProperty.call(entry, "value") ? entry.value : "";
-          const rawLabel = entry && Object.prototype.hasOwnProperty.call(entry, "label") ? entry.label : rawValue;
-          const domValue = String(rawValue);
-          const option = document.createElement("option");
-          option.value = domValue;
-          option.textContent = String(rawLabel || rawValue || "");
-          inputEl.appendChild(option);
-          if (!optionValueMap.has(domValue)) {
-            optionValueMap.set(domValue, rawValue);
-          }
-        });
-
-        const firstOption = optionEntries[0];
-        const rawDefaultValue = !isEmptyValue(input.default) ? input.default : firstOption && firstOption.value;
-        const defaultDomValue = String(rawDefaultValue == null ? "" : rawDefaultValue);
-        const selectedDomValue = optionValueMap.has(defaultDomValue)
-          ? defaultDomValue
-          : String(firstOption && firstOption.value != null ? firstOption.value : "");
-        inputEl.value = selectedDomValue;
-        const typedDefaultValue = optionValueMap.has(selectedDomValue) ? optionValueMap.get(selectedDomValue) : selectedDomValue;
-        setInputValueByKey(key, typedDefaultValue);
-
-        inputEl.addEventListener("change", (event) => {
-          const selectedValue = event.target.value;
-          const typedValue = optionValueMap.has(selectedValue) ? optionValueMap.get(selectedValue) : selectedValue;
-          setInputValueByKey(key, typedValue);
-        });
-      }
-    }
-
-    if (!inputEl && type === "boolean") {
-      inputEl = document.createElement("select");
-      inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
-      const defaultMarker = String(input.default == null ? "" : input.default).trim().toLowerCase();
-      inputEl.value = defaultMarker === "true" || defaultMarker === "1" || defaultMarker === "yes" ? "true" : "false";
-      const boolValue = inputEl.value === "true";
-      setInputValueByKey(key, boolValue);
-      inputEl.addEventListener("change", (event) => {
-        const nextValue = event.target.value === "true";
-        setInputValueByKey(key, nextValue);
-      });
-    }
-
-    if (!inputEl) {
-      const isLongText = promptLike || (type === "text" && getInputOptions(input).length === 0);
-      if (isLongText) {
-        inputEl = document.createElement("textarea");
-        inputEl.rows = promptLike ? 6 : 2;
-        inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
-        inputEl.wrap = "soft";
-        enforceLongTextCapacity(inputEl);
-        inputEl.style.paddingRight = "14px";
-        inputEl.style.overflowX = "hidden";
-        if (promptLike) {
-          inputEl.classList.add("prompt-input-textarea");
-          inputEl.style.fontFamily = `"Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif`;
-          inputEl.style.minHeight = "120px";
-          inputEl.style.maxHeight = "260px";
-          inputEl.style.overflowY = "auto";
-          promptLengthHintEl = document.createElement("div");
-          promptLengthHintEl.className = "prompt-length-hint";
-          updatePromptLengthHint = (nextValue) => {
-            const length = getTextLength(nextValue);
-            const tailPreview = getTailPreview(nextValue, 20);
-            promptLengthHintEl.textContent = `长度 ${length} 字符 | 末尾预览 ${tailPreview}`;
-            promptLengthHintEl.classList.toggle("is-warning", length >= LARGE_PROMPT_WARNING_CHARS);
-          };
-        }
-        wrapper.classList.add("full-width");
-
-        if (promptLike) {
-          const btnTemplate = document.createElement("button");
-          btnTemplate.className = "template-btn";
-          btnTemplate.type = "button";
-          btnTemplate.textContent = "预设";
-          btnTemplate.addEventListener("click", () => {
-            openTemplatePicker({
-              mode: "multiple",
-              maxSelection: 5,
-              onApply: (result) => {
-                const templateContent = String(
-                  result && Object.prototype.hasOwnProperty.call(result, "content") ? result.content : ""
-                );
-                if (!templateContent.trim()) return;
-                inputEl.value = templateContent;
-                setInputValueByKey(key, templateContent);
-                if (promptLike) warnLargePromptLength(key, templateContent);
-                if (updatePromptLengthHint) updatePromptLengthHint(templateContent);
-                inputEl.style.borderColor = "#4caf50";
-                setTimeout(() => {
-                  inputEl.style.borderColor = "";
-                }, 300);
-              }
-            });
-          });
-          headerRow.appendChild(btnTemplate);
-        }
-      } else {
-        inputEl = document.createElement("input");
-        inputEl.type = type === "number" ? "number" : "text";
-        inputEl.placeholder = String(input.default || "");
-        if (type === "number") {
-          if (Number.isFinite(input.min)) inputEl.min = String(input.min);
-          if (Number.isFinite(input.max)) inputEl.max = String(input.max);
-          if (Number.isFinite(input.step)) inputEl.step = String(input.step);
-        }
-      }
-
-      const initialTextValue = String(input.default || "");
-      inputEl.value = initialTextValue;
-      if (type === "number") {
-        const numericDefault = Number(input.default);
-        const storedValue = Number.isFinite(numericDefault) ? numericDefault : 0;
-        setInputValueByKey(key, storedValue);
-      } else {
-        setInputValueByKey(key, inputEl.value);
-        if (promptLike) {
-          warnLargePromptLength(key, inputEl.value);
-          if (updatePromptLengthHint) updatePromptLengthHint(inputEl.value);
-        }
-      }
-      inputEl.addEventListener("input", (event) => {
-        const nextValue = event.target.value;
-        const numeric = Number(nextValue);
-        const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
-        setInputValueByKey(key, storedValue);
-        if (promptLike) {
-          warnLargePromptLength(key, nextValue);
-          if (updatePromptLengthHint) updatePromptLengthHint(nextValue);
-        }
-      });
-      if (promptLike && typeof inputEl.addEventListener === "function") {
-        inputEl.addEventListener("paste", (event) => {
-          const clipboardText =
-            event &&
-            event.clipboardData &&
-            typeof event.clipboardData.getData === "function"
-              ? event.clipboardData.getData("text/plain")
-              : "";
-          if (!clipboardText) return;
-          event.preventDefault();
-          insertTextAtCursor(inputEl, clipboardText);
-          const nextValue = String(inputEl.value || "");
-          setInputValueByKey(key, nextValue);
-          warnLargePromptLength(key, nextValue);
-          if (updatePromptLengthHint) updatePromptLengthHint(nextValue);
-        });
-      }
-    }
-
-    wrapper.appendChild(headerRow);
-    wrapper.appendChild(inputEl);
-    if (promptLengthHintEl) wrapper.appendChild(promptLengthHintEl);
-    return wrapper;
-  }
-
-  function createFallbackInputField(input, idx) {
-    const key = String((input && input.key) || `param_${idx}`);
-    const labelText = (input && (input.label || input.name || key)) || key;
-
-    const wrapper = document.createElement("div");
-    wrapper.className = "dynamic-input-field";
-
-    const headerRow = document.createElement("div");
-    headerRow.className = "input-label-row";
-
-    const labelEl = document.createElement("span");
-    labelEl.className = "dynamic-input-label";
-    labelEl.innerHTML = `${escapeHtml(labelText)} <span style="opacity:.6;">(fallback)</span>`;
-    headerRow.appendChild(labelEl);
-
-    const inputEl = document.createElement("input");
-    inputEl.type = "text";
-    inputEl.placeholder = "";
-    inputEl.value = String((input && input.default) || "");
-    state.inputValues[key] = inputEl.value;
-    inputEl.addEventListener("input", (event) => {
-      state.inputValues[key] = event.target.value;
-    });
-
-    wrapper.appendChild(headerRow);
-    wrapper.appendChild(inputEl);
-    return wrapper;
-  }
-
-  function createMinimalFallbackField(input, idx) {
-    const key = String((input && input.key) || `param_${idx}`);
-    const labelText = (input && (input.label || input.name || key)) || key;
-
-    const wrapper = document.createElement("div");
-    wrapper.className = "dynamic-input-field";
-
-    const labelEl = document.createElement("div");
-    labelEl.className = "dynamic-input-label";
-    labelEl.textContent = String(labelText || "参数");
-
-    const inputEl = document.createElement("input");
-    inputEl.type = "text";
-    inputEl.value = String((input && input.default) || "");
-    state.inputValues[key] = inputEl.value;
-    inputEl.addEventListener("input", (event) => {
-      state.inputValues[key] = event.target.value;
-    });
-
-    wrapper.appendChild(labelEl);
-    wrapper.appendChild(inputEl);
-    return wrapper;
-  }
-
-  function renderFallbackInputs(inputs, container) {
-    if (!container) return 0;
-    const fallbackList = document.createElement("div");
-    fallbackList.className = "input-grid";
-    fallbackList.style.display = "flex";
-    fallbackList.style.flexDirection = "column";
-    fallbackList.style.gap = "8px";
-    let fallbackCount = 0;
-
-    inputs.forEach((input, idx) => {
-      try {
-        fallbackList.appendChild(createFallbackInputField(input, idx));
-        fallbackCount += 1;
-      } catch (error) {
-        console.error("[Workspace] render minimal fallback failed", input, error);
-        try {
-          fallbackList.appendChild(createMinimalFallbackField(input, idx));
-          fallbackCount += 1;
-        } catch (finalError) {
-          console.error("[Workspace] render minimal fallback hard failed", input, finalError);
-        }
-      }
-    });
-
-    container.appendChild(fallbackList);
-    return fallbackCount;
+    return inputPolicy.resolveUiInputType(input || {});
   }
 
   function renderDynamicInputs(appItem) {
     warnedPromptKeys.clear();
-    Object.values(state.inputValues || {}).forEach(revokePreviewUrl);
+    inputState.resetRuntimeValues({ revokePreviewUrl });
     state.currentApp = appItem || null;
-    state.inputValues = {};
-    state.imageBounds = {};
 
     const container = dom.dynamicInputContainer || byId("dynamicInputContainer");
     const imgContainer = dom.imageInputContainer || byId("imageInputContainer");
@@ -531,20 +120,19 @@ function createWorkspaceInputs(deps) {
     }
 
     if (!appItem) {
-      if (container) container.innerHTML = `<div class="empty-state">请点击上方“切换”选择应用</div>`;
+      if (container) container.innerHTML = `<div class="empty-state">璇风偣鍑讳笂鏂光€滃垏鎹⑩€濋€夋嫨搴旂敤</div>`;
       updateRunButtonUI();
       return;
     }
 
     const inputs = Array.isArray(appItem.inputs) ? appItem.inputs : [];
-    const imageInputs = inputs.filter((input) => resolveUiInputType(input) === "image");
-    const otherInputs = inputs.filter((input) => resolveUiInputType(input) !== "image");
+    const { imageInputs, otherInputs } = inputPolicy.splitImageAndOtherInputs(inputs);
     log(`render inputs: image=${imageInputs.length}, other=${otherInputs.length}`, "info");
 
     if (imageInputs.length > 0 && imgContainer) {
       imgContainer.style.display = "block";
       imageInputs.forEach((input, idx) => {
-        const field = createInputField(input, idx);
+        const field = inputRenderer.createInputField(input, idx);
         imgContainer.appendChild(field);
       });
     }
@@ -552,21 +140,15 @@ function createWorkspaceInputs(deps) {
     if (otherInputs.length > 0 && container) {
       const grid = document.createElement("div");
       grid.className = "input-grid";
-      applyInputGridLayout(grid);
+      inputRenderer.applyInputGridLayout(grid);
       let renderedCount = 0;
 
       otherInputs.forEach((input, idx) => {
         const fieldKey = String((input && input.key) || `param_${idx}`);
         try {
-          const field = createInputField(input, idx);
-          const inputType = resolveUiInputType(input);
-          const isLongText = inputType === "text" && getInputOptions(input).length === 0;
-          let isPrompt = false;
-          try {
-            isPrompt = isPromptLikeInput(input);
-          } catch (_) {
-            isPrompt = false;
-          }
+          const field = inputRenderer.createInputField(input, idx);
+          const isLongText = inputPolicy.isLongTextInput(input);
+          const isPrompt = inputPolicy.isPromptLikeField(input);
           if (isLongText || isPrompt) {
             field.classList.add("full-width");
             field.style.gridColumn = "span 2";
@@ -575,10 +157,13 @@ function createWorkspaceInputs(deps) {
           renderedCount += 1;
         } catch (error) {
           console.error("[Workspace] render input failed", input, error);
-          const fieldName = input && (input.label || input.name || input.key) ? input.label || input.name || input.key : "unknown";
+          const fieldName =
+            input && (input.label || input.name || input.key)
+              ? input.label || input.name || input.key
+              : "unknown";
           log(`render input failed: ${fieldName} | ${error && error.message ? error.message : error}`, "warn");
           try {
-            grid.appendChild(createFallbackInputField(input, idx));
+            grid.appendChild(inputRenderer.createFallbackInputField(input, idx));
             renderedCount += 1;
             log(`render field fallback: ${fieldKey}`, "warn");
           } catch (fallbackError) {
@@ -591,15 +176,15 @@ function createWorkspaceInputs(deps) {
         container.appendChild(grid);
         log(`rendered non-image inputs: ${renderedCount}`, "info");
       } else {
-        const fallbackCount = renderFallbackInputs(otherInputs, container);
+        const fallbackCount = inputRenderer.renderFallbackInputs(otherInputs, container);
         if (fallbackCount > 0) {
           log(`rendered fallback inputs: ${fallbackCount}`, "warn");
         } else {
-          container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">参数渲染失败，请重新解析应用后重试</div>`;
+          container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">鍙傛暟娓叉煋澶辫触锛岃閲嶆柊瑙ｆ瀽搴旂敤鍚庨噸璇?/div>`;
         }
       }
     } else if (imageInputs.length === 0 && container) {
-      container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">该应用没有可配置参数，请直接运行</div>`;
+      container.innerHTML = `<div class="empty-state" style="padding:10px; font-size:12px;">璇ュ簲鐢ㄦ病鏈夊彲閰嶇疆鍙傛暟锛岃鐩存帴杩愯</div>`;
     }
 
     updateRunButtonUI();
@@ -608,16 +193,18 @@ function createWorkspaceInputs(deps) {
   function resolveTargetBounds() {
     if (!state.currentApp) return null;
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
-    const imageInputs = inputs.filter((input) => resolveUiInputType(input) === "image");
+    const { imageInputs } = inputPolicy.splitImageAndOtherInputs(inputs);
     const firstImage = imageInputs[0];
     if (firstImage) {
       const key = String(firstImage.key || "").trim();
-      if (key && state.imageBounds[key]) return state.imageBounds[key];
+      const firstBounds = inputState.getImageBoundsByKey(key);
+      if (key && firstBounds) return firstBounds;
     }
     for (const input of imageInputs) {
       const key = String(input.key || "").trim();
       if (!key) continue;
-      if (state.imageBounds[key]) return state.imageBounds[key];
+      const bounds = inputState.getImageBoundsByKey(key);
+      if (bounds) return bounds;
     }
     return null;
   }
@@ -625,28 +212,19 @@ function createWorkspaceInputs(deps) {
   function resolveSourceImageBuffer() {
     if (!state.currentApp) return null;
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
-    const imageInputs = inputs.filter((input) => resolveUiInputType(input) === "image");
-    const firstImage = imageInputs[0];
-    const pickBuffer = (key) => {
-      const value = key ? state.inputValues[key] : null;
-      if (value && value.arrayBuffer instanceof ArrayBuffer) return value.arrayBuffer;
-      if (value && ArrayBuffer.isView(value.arrayBuffer)) {
-        const view = value.arrayBuffer;
-        return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
-      }
-      return null;
-    };
+    const { imageInputs } = inputPolicy.splitImageAndOtherInputs(inputs);
 
+    const firstImage = imageInputs[0];
     if (firstImage) {
       const key = String(firstImage.key || "").trim();
-      const buffer = pickBuffer(key);
+      const buffer = inputState.pickImageArrayBufferByKey(key);
       if (buffer) return buffer;
     }
 
     for (const input of imageInputs) {
       const key = String(input.key || "").trim();
       if (!key) continue;
-      const buffer = pickBuffer(key);
+      const buffer = inputState.pickImageArrayBufferByKey(key);
       if (buffer) return buffer;
     }
     return null;
@@ -656,9 +234,10 @@ function createWorkspaceInputs(deps) {
     revokePreviewUrl,
     createPreviewUrlFromBuffer,
     getInputOptions,
+    getInputOptionEntries,
     resolveUiInputType,
-    createInputField,
-    createFallbackInputField,
+    createInputField: inputRenderer.createInputField,
+    createFallbackInputField: inputRenderer.createFallbackInputField,
     renderDynamicInputs,
     resolveTargetBounds,
     resolveSourceImageBuffer

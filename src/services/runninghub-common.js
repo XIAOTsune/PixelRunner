@@ -1,3 +1,5 @@
+const { RUNNINGHUB_ERROR_CODES } = require('./runninghub-error-codes');
+
 function toMessage(result, fallback = "请求失败") {
   if (!result || typeof result !== "object") return fallback;
   return String(result.msg || result.message || fallback);
@@ -14,7 +16,7 @@ async function parseJsonResponse(response) {
 
 function makeRunCancelledError(message = "用户取消运行") {
   const err = new Error(message);
-  err.code = "RUN_CANCELLED";
+  err.code = RUNNINGHUB_ERROR_CODES.RUN_CANCELLED;
   return err;
 }
 
@@ -33,3 +35,4 @@ module.exports = {
   makeRunCancelledError,
   throwIfCancelled
 };
+

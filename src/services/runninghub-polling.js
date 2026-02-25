@@ -1,3 +1,6 @@
+const { RUNNINGHUB_ERROR_CODES } = require("./runninghub-error-codes");
+const { fetchWithTimeout: defaultFetchWithTimeout } = require("./runninghub-runner/request-strategy");
+
 async function pollTaskOutputCore(params) {
   const {
     apiKey,
@@ -12,6 +15,7 @@ async function pollTaskOutputCore(params) {
     api,
     sleep,
     throwIfCancelled,
+    fetchWithTimeout,
     parseJsonResponse,
     toMessage,
     extractOutputUrl,
@@ -21,6 +25,8 @@ async function pollTaskOutputCore(params) {
     isPendingMessage
   } = helpers || {};
 
+  const safeFetchWithTimeout =
+    typeof fetchWithTimeout === "function" ? fetchWithTimeout : defaultFetchWithTimeout;
   const log = options.log || (() => {});
   const pollIntervalMs = Math.max(1, Number(settings && settings.pollInterval) || 2) * 1000;
   const timeoutMs = Math.max(10, Number(settings && settings.timeout) || 180) * 1000;
@@ -29,12 +35,19 @@ async function pollTaskOutputCore(params) {
   while (Date.now() - start < timeoutMs) {
     throwIfCancelled(options);
     try {
-      const response = await fetchImpl(`${api.BASE_URL}${api.ENDPOINTS.TASK_OUTPUTS}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey, taskId }),
-        signal: options.signal
-      });
+      const response = await safeFetchWithTimeout(
+        fetchImpl,
+        `${api.BASE_URL}${api.ENDPOINTS.TASK_OUTPUTS}`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey, taskId }),
+          signal: options.signal
+        },
+        {
+          timeoutMs: options.requestTimeoutMs
+        }
+      );
       throwIfCancelled(options);
       const result = await parseJsonResponse(response);
       throwIfCancelled(options);
@@ -63,7 +76,7 @@ async function pollTaskOutputCore(params) {
 
       throw new Error(message);
     } catch (error) {
-      if (error && error.code === "RUN_CANCELLED") throw error;
+      if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
       if (isPendingMessage(error && error.message)) {
         await sleep(pollIntervalMs);
         throwIfCancelled(options);
