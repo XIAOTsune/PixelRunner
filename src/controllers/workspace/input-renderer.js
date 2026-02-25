@@ -12,6 +12,7 @@ function createInputRenderer(deps = {}) {
     openTemplatePicker,
     onPromptLargeValue,
     setInputValueByKey,
+    deleteInputValueByKey,
     getInputValueByKey,
     clearImageInputByKey,
     applyCapturedImageByKey,
@@ -61,6 +62,14 @@ function createInputRenderer(deps = {}) {
     if (typeof updatePromptLengthHint === "function") {
       updatePromptLengthHint(value);
     }
+  }
+
+  function unsetInputValueByKey(key) {
+    if (typeof deleteInputValueByKey === "function") {
+      deleteInputValueByKey(key);
+      return;
+    }
+    setInputValueByKey(key, undefined);
   }
 
   function applyInputGridLayout(grid) {
@@ -243,13 +252,27 @@ function createInputRenderer(deps = {}) {
 
     if (!inputEl && type === "boolean") {
       inputEl = document.createElement("select");
-      inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
-      const defaultMarker = String(input.default == null ? "" : input.default).trim().toLowerCase();
-      inputEl.value = defaultMarker === "true" || defaultMarker === "1" || defaultMarker === "yes" ? "true" : "false";
-      const boolValue = inputEl.value === "true";
-      setInputValueByKey(key, boolValue);
+      const hasDefaultValue = !isEmptyValue(input.default);
+      const optionalWithoutDefault = !Boolean(input && input.required) && !hasDefaultValue;
+      if (optionalWithoutDefault) {
+        inputEl.innerHTML =
+          `<option value="">未设置</option><option value="true">是 (True)</option><option value="false">否 (False)</option>`;
+        inputEl.value = "";
+      } else {
+        inputEl.innerHTML = `<option value="true">是 (True)</option><option value="false">否 (False)</option>`;
+        const defaultMarker = String(input.default == null ? "" : input.default).trim().toLowerCase();
+        inputEl.value =
+          defaultMarker === "true" || defaultMarker === "1" || defaultMarker === "yes" ? "true" : "false";
+        const boolValue = inputEl.value === "true";
+        setInputValueByKey(key, boolValue);
+      }
       inputEl.addEventListener("change", (event) => {
-        const nextValue = event.target.value === "true";
+        const nextMarker = String(event.target.value || "").trim().toLowerCase();
+        if (!nextMarker) {
+          unsetInputValueByKey(key);
+          return;
+        }
+        const nextValue = nextMarker === "true";
         setInputValueByKey(key, nextValue);
       });
     }
@@ -318,12 +341,16 @@ function createInputRenderer(deps = {}) {
         }
       }
 
-      const initialTextValue = String(input.default || "");
+      const hasDefaultValue = !isEmptyValue(input.default);
+      const initialTextValue = hasDefaultValue ? String(input.default) : "";
       inputEl.value = initialTextValue;
       if (type === "number") {
-        const numericDefault = Number(input.default);
-        const storedValue = Number.isFinite(numericDefault) ? numericDefault : 0;
-        setInputValueByKey(key, storedValue);
+        const optionalWithoutDefault = !Boolean(input && input.required) && !hasDefaultValue;
+        if (!optionalWithoutDefault) {
+          const numericDefault = Number(input.default);
+          const storedValue = Number.isFinite(numericDefault) ? numericDefault : 0;
+          setInputValueByKey(key, storedValue);
+        }
       } else {
         setInputValueByKey(key, inputEl.value);
         if (promptLike) {
@@ -332,8 +359,19 @@ function createInputRenderer(deps = {}) {
       }
       inputEl.addEventListener("input", (event) => {
         const nextValue = event.target.value;
-        const numeric = Number(nextValue);
-        const storedValue = type === "number" && Number.isFinite(numeric) ? numeric : nextValue;
+        let storedValue = nextValue;
+        if (type === "number") {
+          const marker = String(nextValue == null ? "" : nextValue).trim();
+          if (!marker) {
+            unsetInputValueByKey(key);
+            if (promptLike) {
+              notifyPromptValueChange(key, nextValue, updatePromptLengthHint);
+            }
+            return;
+          }
+          const numeric = Number(nextValue);
+          storedValue = Number.isFinite(numeric) ? numeric : nextValue;
+        }
         setInputValueByKey(key, storedValue);
         if (promptLike) {
           notifyPromptValueChange(key, nextValue, updatePromptLengthHint);

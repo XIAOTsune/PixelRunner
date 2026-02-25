@@ -7,6 +7,7 @@ const { createWorkspaceInputs } = require("./workspace/workspace-inputs");
 const { renderAppPickerListHtml } = require("./workspace/app-picker-view");
 const { renderTemplatePickerListHtml } = require("./workspace/template-picker-view");
 const { renderTaskSummary } = require("./workspace/task-summary-view");
+const { createTemplatePickerController } = require("./workspace/template-picker-controller");
 const {
   buildLogLine,
   renderLogLine,
@@ -40,10 +41,12 @@ const {
   buildTemplatePickerListViewModel
 } = require("../application/services/template-picker");
 
-const workspaceGateway = createWorkspaceGateway();
-const store = workspaceGateway.store;
-const runninghub = workspaceGateway.runninghub;
-const ps = workspaceGateway.photoshop;
+const REQUEST_TIMEOUT_ERROR_CODE = "REQUEST_TIMEOUT";
+
+let workspaceGateway = createWorkspaceGateway();
+let store = workspaceGateway.store;
+let runninghub = workspaceGateway.runninghub;
+let ps = workspaceGateway.photoshop;
 
 const dom = {};
 const state = {
@@ -99,6 +102,7 @@ const RUN_DEDUP_CACHE_LIMIT = 80;
 const RUN_SUMMARY_HINT_MS = 1800;
 
 let workspaceInputs = null;
+let templatePickerController = null;
 const runGuard = createRunGuard({
   dedupWindowMs: RUN_DEDUP_WINDOW_MS,
   dedupCacheLimit: RUN_DEDUP_CACHE_LIMIT
@@ -113,6 +117,7 @@ function getJobTag(job) {
 }
 
 function isJobTimeoutLikeError(error) {
+  if (error && error.code === REQUEST_TIMEOUT_ERROR_CODE) return true;
   const message = String((error && error.message) || error || "").toLowerCase();
   return /timeout|超时/.test(message);
 }
@@ -151,6 +156,33 @@ function getWorkspaceInputs() {
     });
   }
   return workspaceInputs;
+}
+
+function getTemplatePickerController() {
+  if (!templatePickerController) {
+    templatePickerController = createTemplatePickerController({
+      state,
+      dom,
+      store,
+      byId,
+      decodeDataId,
+      escapeHtml,
+      encodeDataId,
+      renderTemplatePickerListHtml,
+      normalizeTemplatePickerConfig,
+      toggleTemplateSelectionState,
+      sanitizeTemplateSelectionIds,
+      buildSingleTemplateSelectionPayload,
+      buildMultipleTemplateSelectionPayload,
+      buildTemplatePickerUiState,
+      buildTemplatePickerListViewModel,
+      maxTemplateCombineCount: MAX_TEMPLATE_COMBINE_COUNT,
+      promptMaxChars: RH_PROMPT_MAX_CHARS,
+      refreshModalOpenState,
+      alert: typeof alert === "function" ? alert : () => {}
+    });
+  }
+  return templatePickerController;
 }
 
 function log(msg, type = "info") {
@@ -615,76 +647,12 @@ function logPromptLengthsBeforeRun(appItem = state.currentApp, inputValues = sta
   }
 }
 
-function isTemplatePickerMultipleMode() {
-  return state.templatePickerMode === "multiple";
-}
-
-function updateTemplateSelectionInfo() {
-  if (!dom.templateModalSelectionInfo) return;
-  const uiState = buildTemplatePickerUiState({
-    mode: state.templatePickerMode,
-    selectedCount: state.templatePickerSelectedIds.length,
-    maxSelection: state.templatePickerMaxSelection
-  });
-  dom.templateModalSelectionInfo.textContent = uiState.selectionInfoText;
-  if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = uiState.applyDisabled;
-}
-
-function syncTemplatePickerUiState() {
-  const uiState = buildTemplatePickerUiState({
-    mode: state.templatePickerMode,
-    selectedCount: state.templatePickerSelectedIds.length,
-    maxSelection: state.templatePickerMaxSelection
-  });
-  if (dom.templateModalTitle) {
-    dom.templateModalTitle.textContent = uiState.title;
-  }
-  if (dom.templateModalActions) {
-    dom.templateModalActions.style.display = uiState.actionsDisplay;
-  }
-  if (dom.templateModalSelectionInfo) {
-    dom.templateModalSelectionInfo.textContent = uiState.selectionInfoText;
-  }
-  if (dom.btnApplyTemplateSelection) dom.btnApplyTemplateSelection.disabled = uiState.applyDisabled;
-}
-
-function renderTemplatePickerList() {
-  if (!dom.templateList) return;
-  const viewModel = buildTemplatePickerListViewModel({
-    templates: store.getPromptTemplates(),
-    selectedIds: state.templatePickerSelectedIds,
-    multipleMode: isTemplatePickerMultipleMode()
-  });
-  dom.templateList.innerHTML = renderTemplatePickerListHtml(viewModel, {
-    escapeHtml,
-    encodeDataId
-  });
-  updateTemplateSelectionInfo();
-}
-
 function closeTemplatePicker() {
-  if (dom.templateModal) dom.templateModal.classList.remove("active");
-  state.templateSelectCallback = null;
-  state.templatePickerMode = "single";
-  state.templatePickerMaxSelection = 1;
-  state.templatePickerSelectedIds = [];
-  syncTemplatePickerUiState();
-  refreshModalOpenState();
+  getTemplatePickerController().close();
 }
 
 function openTemplatePicker(config = {}) {
-  const next = normalizeTemplatePickerConfig(config, {
-    maxCombineCount: MAX_TEMPLATE_COMBINE_COUNT
-  });
-
-  state.templateSelectCallback = next.onApply;
-  state.templatePickerMode = next.mode;
-  state.templatePickerMaxSelection = next.maxSelection;
-  state.templatePickerSelectedIds = [];
-  syncTemplatePickerUiState();
-  renderTemplatePickerList();
-  if (dom.templateModal) dom.templateModal.classList.add("active");
-  refreshModalOpenState();
+  getTemplatePickerController().open(config);
 }
 
 function refreshModalOpenState() {
@@ -692,85 +660,8 @@ function refreshModalOpenState() {
   document.body.classList.toggle("modal-open", isOpen);
 }
 
-function toggleTemplateSelection(id) {
-  const next = toggleTemplateSelectionState({
-    selectedIds: state.templatePickerSelectedIds,
-    id,
-    maxSelection: state.templatePickerMaxSelection
-  });
-
-  if (next.limitReached) {
-    alert(`You can select up to ${state.templatePickerMaxSelection} template(s).`);
-    return;
-  }
-  if (!next.changed) return;
-
-  state.templatePickerSelectedIds = next.selectedIds;
-  renderTemplatePickerList();
-}
-
-function applyTemplateSelection() {
-  if (!isTemplatePickerMultipleMode()) return;
-
-  const result = buildMultipleTemplateSelectionPayload({
-    templates: store.getPromptTemplates(),
-    selectedIds: state.templatePickerSelectedIds,
-    maxChars: RH_PROMPT_MAX_CHARS
-  });
-
-  if (!result.ok) {
-    if (result.reason === "empty_selection") {
-      alert("Please select at least one template.");
-      return;
-    }
-    if (result.reason === "templates_not_found") {
-      alert("Selected templates were not found. Please refresh and retry.");
-      return;
-    }
-    if (result.reason === "too_long") {
-      alert(`Combined prompt length ${result.length} exceeds limit ${result.limit}.`);
-      return;
-    }
-    alert("Failed to apply template selection.");
-    return;
-  }
-
-  if (state.templateSelectCallback) {
-    state.templateSelectCallback(result.payload);
-  }
-  closeTemplatePicker();
-}
-
 function handleTemplateListClick(event) {
-  const gotoSettingsBtn = event.target.closest("button[data-action='goto-settings']");
-  if (gotoSettingsBtn) {
-    closeTemplatePicker();
-    const tabSettings = byId("tabSettings");
-    if (tabSettings) tabSettings.click();
-    return;
-  }
-
-  const item = event.target.closest(".app-picker-item[data-template-id]");
-  if (!item || !dom.templateList.contains(item)) return;
-
-  const id = decodeDataId(item.dataset.templateId || "");
-  if (!id) return;
-  const template = store.getPromptTemplates().find((tpl) => String(tpl.id) === String(id));
-  if (!template) return;
-
-  if (isTemplatePickerMultipleMode()) {
-    toggleTemplateSelection(id);
-    return;
-  }
-
-  const payload = buildSingleTemplateSelectionPayload({
-    template,
-    maxChars: RH_PROMPT_MAX_CHARS
-  });
-  if (state.templateSelectCallback) {
-    state.templateSelectCallback(payload);
-  }
-  closeTemplatePicker();
+  getTemplatePickerController().handleListClick(event);
 }
 
 function onAppPickerSearchInput() {
@@ -783,11 +674,11 @@ function onAppPickerModalClick(event) {
 }
 
 function onTemplateModalClick(event) {
-  if (event.target === dom.templateModal) closeTemplatePicker();
+  getTemplatePickerController().onModalClick(event);
 }
 
 function onApplyTemplateSelectionClick() {
-  applyTemplateSelection();
+  getTemplatePickerController().onApplyButtonClick();
 }
 
 function onRefreshWorkspaceClick() {
@@ -835,13 +726,7 @@ function onAppsChanged() {
 }
 
 function onTemplatesChanged() {
-  if (dom.templateModal && dom.templateModal.classList.contains("active")) {
-    state.templatePickerSelectedIds = sanitizeTemplateSelectionIds(
-      state.templatePickerSelectedIds,
-      store.getPromptTemplates()
-    );
-    renderTemplatePickerList();
-  }
+  getTemplatePickerController().onTemplatesChanged();
 }
 
 function onSettingsChanged() {
@@ -882,7 +767,19 @@ function cacheDomRefs() {
   });
 }
 
-function initWorkspaceController() {
+function resolveWorkspaceGateway(options = {}) {
+  if (options && options.gateway && typeof options.gateway === "object") {
+    return options.gateway;
+  }
+  return createWorkspaceGateway();
+}
+
+function initWorkspaceController(options = {}) {
+  workspaceGateway = resolveWorkspaceGateway(options);
+  store = workspaceGateway.store;
+  runninghub = workspaceGateway.runninghub;
+  ps = workspaceGateway.photoshop;
+
   if (runButtonPhaseController) {
     runButtonPhaseController.dispose();
     runButtonPhaseController = null;
@@ -903,13 +800,11 @@ function initWorkspaceController() {
   }
   runGuard.reset();
   state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
+  templatePickerController = null;
 
   cacheDomRefs();
   getRunButtonPhaseController();
-  state.templatePickerMode = "single";
-  state.templatePickerMaxSelection = 1;
-  state.templatePickerSelectedIds = [];
-  syncTemplatePickerUiState();
+  getTemplatePickerController().reset();
   syncPasteStrategySelect();
   workspaceInputs = null;
   getWorkspaceInputs();
@@ -918,6 +813,8 @@ function initWorkspaceController() {
   syncWorkspaceApps({ forceRerender: true });
   updateRunButtonUI();
   updateTaskStatusSummary();
+
+  return workspaceGateway;
 }
 
 module.exports = { initWorkspaceController };

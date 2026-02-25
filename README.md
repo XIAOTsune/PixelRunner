@@ -257,7 +257,7 @@ for (const f of files) {
 
 ### R5（建议）发布前最小预检
 1. `node --check index.js src/services/ps.js src/controllers/workspace-controller.js`
-2. `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js`
+2. `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
 3. `node scripts/check-controller-service-deps.js`
 4. 执行 R1 的 BOM 检查
 

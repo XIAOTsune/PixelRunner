@@ -3,6 +3,7 @@ const { sleep } = require("../utils");
 const taskStatus = require("./runninghub-task-status");
 const { pollTaskOutputCore } = require("./runninghub-polling");
 const { runAppTaskCore } = require("./runninghub-runner");
+const { fetchWithTimeout } = require("./runninghub-runner/request-strategy");
 const { testApiKeyCore, fetchAccountStatusCore } = require("./runninghub-account");
 const { toMessage, parseJsonResponse, throwIfCancelled } = require("./runninghub-common");
 const { fetchAppInfoCore } = require("./runninghub-parser");
@@ -31,6 +32,7 @@ async function pollTaskOutput(apiKey, taskId, settings, options = {}) {
       api: API,
       sleep,
       throwIfCancelled,
+      fetchWithTimeout,
       parseJsonResponse,
       toMessage,
       extractOutputUrl: taskStatus.extractOutputUrl,
@@ -59,7 +61,12 @@ async function runAppTask(apiKey, appItem, inputValues, options = {}) {
 
 async function downloadResultBinary(url, options = {}) {
   throwIfCancelled(options);
-  const response = await fetch(url, { signal: options.signal });
+  const response = await fetchWithTimeout(
+    fetch,
+    url,
+    { signal: options.signal },
+    { timeoutMs: options.requestTimeoutMs }
+  );
   throwIfCancelled(options);
   if (!response.ok) throw new Error(`下载结果失败 (HTTP ${response.status})`);
   return response.arrayBuffer();

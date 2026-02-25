@@ -959,6 +959,48 @@ src/
 - 下一步：
   - AR-05 与 AR-06 已完成，进入治理阶段归档或下一轮审查项。
 
+### 11.6 补充进度快照（2026-02-25）
+- 本次完成：
+  - 对照 `plans/refactor-post-review-report-2026-02-25.md` 落地 P0/P1 修复并通过回归：
+    - P0：RunningHub 轮询/下载统一硬超时 + timeout 错误码标准化（`REQUEST_TIMEOUT`）。
+    - P1：`safeConfirm` fallback 改为“阻断删除并提示”；optional number/boolean 无默认值时不再隐式注入。
+  - 为上述问题补齐针对性自动化用例（polling/download timeout、safeConfirm、input-renderer optional 语义）。
+- 关键校验：
+  - `node scripts/check-controller-service-deps.js` 通过。
+  - P0/P1 定向回归均为 `0 failed`（详见审查报告第 7 节执行记录）。
+- 下一步（建议直接接续）：
+  1. 进入 P2：controller 可选依赖注入改造（`init*Controller({ gateway })`）。
+  2. 以不改入口行为为前提，先从 `workspace/settings/tools` 三个控制器收口。
+  3. 同步补控制器注入分支测试并纳入最小回归命令。
+
+### 11.7 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第一阶段收口完成：`workspace/settings/tools` 三个 controller 已支持 `init*Controller({ gateway })` 可选注入，默认工厂路径保持兼容，不改 `index.js` 入口行为。
+  - P2 大文件拆分已启动并落一刀：
+    - 新增 `src/controllers/workspace/template-picker-controller.js`，将模板选择器编排（open/close/select/apply/onTemplatesChanged）从 `workspace-controller` 下沉。
+    - `workspace-controller` 改为通过 `getTemplatePickerController()` 委托上述逻辑，主文件行数由 `923` 收敛到 `739`（当前快照）。
+  - P2 关键路径测试补齐：
+    - 新增注入分支测试：
+      - `tests/controllers/workspace/controller-init.test.js`
+      - `tests/controllers/settings/controller-init.test.js`
+      - `tests/controllers/tools-controller-init.test.js`
+    - 新增模板选择器编排测试：
+      - `tests/controllers/workspace/template-picker-controller.test.js`
+- 关键校验：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`
+    - `45 passed, 0 failed`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+    - `224 passed, 0 failed`
+  - `node scripts/check-controller-service-deps.js`
+    - `Controller dependency check passed`
+- 风险/遗留：
+  - `workspace-controller` 与 `settings-controller` 体积仍偏大（当前约 `739` / `525` 行），后续仍需继续按“副作用编排 / 纯策略 / 视图更新”边界拆分。
+  - `tests/controllers/tools-controller-init.test.js` 位于 `tests/controllers/` 根目录，文档化回归命令需显式包含，避免遗漏。
+- 下一步（建议直接接续）：
+  1. 继续 P2 大文件拆分：优先抽离 `workspace-controller` 的 app-picker 编排块（打开/搜索/选择/同步）。
+  2. `settings-controller` 继续抽离“应用/模板列表操作编排”。
+  3. README 的最小预检命令同步补上 `tests/controllers/tools-controller-init.test.js`。
+
 ---
 
 如果按本方案执行，重构将是“逐层替换”而不是“整包重写”，能在不中断现有插件可用性的前提下，持续降低复杂度并提升后续页面优化效率。

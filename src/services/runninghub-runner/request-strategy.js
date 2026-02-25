@@ -8,6 +8,15 @@ function createRunCancelledError(message = "Run cancelled") {
   return err;
 }
 
+function createRequestTimeoutError(timeoutMs = REQUEST_TIMEOUT_MS) {
+  const msRaw = Number(timeoutMs);
+  const ms = Number.isFinite(msRaw) && msRaw > 0 ? Math.round(msRaw) : REQUEST_TIMEOUT_MS;
+  const err = new Error(`Request timeout after ${ms}ms`);
+  err.code = RUNNINGHUB_ERROR_CODES.REQUEST_TIMEOUT;
+  err.name = "TimeoutError";
+  return err;
+}
+
 async function fetchWithTimeout(fetchImpl, url, init = {}, options = {}) {
   const safeFetch = typeof fetchImpl === "function" ? fetchImpl : fetch;
   const timeoutRaw = Number(options.timeoutMs);
@@ -56,7 +65,7 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, options = {}) {
       throw createRunCancelledError("Run cancelled");
     }
     if (abortCause === "timeout") {
-      throw new Error(`Request timeout after ${Math.round(timeoutMs)}ms`);
+      throw createRequestTimeoutError(timeoutMs);
     }
     throw error;
   } finally {
@@ -72,5 +81,6 @@ async function fetchWithTimeout(fetchImpl, url, init = {}, options = {}) {
 
 module.exports = {
   createRunCancelledError,
+  createRequestTimeoutError,
   fetchWithTimeout
 };

@@ -95,4 +95,13 @@ test("coerceNonImageInputValue validates required/number/boolean and converts va
     parseBooleanValue
   });
   assert.equal(boolValue, true);
+
+  const optionalBoolEmpty = coerceNonImageInputValue({
+    input: { label: "Optional Enabled", required: false },
+    type: "boolean",
+    value: undefined,
+    key: "optionalEnabled",
+    parseBooleanValue
+  });
+  assert.equal(optionalBoolEmpty, undefined);
 });

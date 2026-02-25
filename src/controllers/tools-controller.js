@@ -1,8 +1,8 @@
 const { createWorkspaceGateway } = require("../infrastructure/gateways/workspace-gateway");
 const { byId, rebindEvent } = require("../shared/dom-utils");
 
-const workspaceGateway = createWorkspaceGateway();
-const ps = workspaceGateway.photoshop;
+let workspaceGateway = createWorkspaceGateway();
+let ps = workspaceGateway.photoshop;
 
 async function onNeutralGrayClick() {
   try {
@@ -92,7 +92,17 @@ const onSharpenClickWrapped = wrapToolClick(onSharpenClick);
 const onHighPassClickWrapped = wrapToolClick(onHighPassClick);
 const onContentAwareFillClickWrapped = wrapToolClick(onContentAwareFillClick);
 
-function initToolsController() {
+function resolveToolsGateway(options = {}) {
+  if (options && options.gateway && typeof options.gateway === "object") {
+    return options.gateway;
+  }
+  return createWorkspaceGateway();
+}
+
+function initToolsController(options = {}) {
+  workspaceGateway = resolveToolsGateway(options);
+  ps = workspaceGateway.photoshop;
+
   const btnNeutralGray = byId("btnNeutralGray");
   const btnObserver = byId("btnObserver");
   const btnStamp = byId("btnStamp");
@@ -132,6 +142,8 @@ function initToolsController() {
   rebindEvent(btnSharpen, "keypress", preventSpaceTrigger);
   rebindEvent(btnHighPass, "keypress", preventSpaceTrigger);
   rebindEvent(btnContentAwareFill, "keypress", preventSpaceTrigger);
+
+  return workspaceGateway;
 }
 
 module.exports = { initToolsController };

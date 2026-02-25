@@ -46,6 +46,10 @@ function createWorkspaceInputStateService(deps = {}) {
     setValueOnMap(state.inputValues, key, value);
   }
 
+  function deleteInputValueByKey(key) {
+    deleteValueOnMap(state.inputValues, key);
+  }
+
   function getInputValueByKey(key) {
     return getValueFromMap(state.inputValues, key);
   }
@@ -104,6 +108,7 @@ function createWorkspaceInputStateService(deps = {}) {
 
   return {
     setInputValueByKey,
+    deleteInputValueByKey,
     getInputValueByKey,
     setImageBoundsByKey,
     getImageBoundsByKey,

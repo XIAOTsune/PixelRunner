@@ -17,6 +17,22 @@ test("workspace input state service writes and reads key + alias", () => {
   assert.equal(service.getInputValueByKey("prompt"), "hello");
 });
 
+test("workspace input state service deletes key + alias values", () => {
+  const state = {
+    inputValues: {},
+    imageBounds: {}
+  };
+  const service = createWorkspaceInputStateService({ state });
+
+  service.setInputValueByKey("group:prompt", "hello");
+  service.deleteInputValueByKey("group:prompt");
+
+  assert.equal(state.inputValues["group:prompt"], undefined);
+  assert.equal(state.inputValues.prompt, undefined);
+  assert.equal(service.getInputValueByKey("group:prompt"), undefined);
+  assert.equal(service.getInputValueByKey("prompt"), undefined);
+});
+
 test("workspace input state service clears image value and alias", () => {
   const revoked = [];
   const state = {

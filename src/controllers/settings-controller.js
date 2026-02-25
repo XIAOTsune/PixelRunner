@@ -50,6 +50,7 @@ const { resolveSavedAppsListAction, resolveSavedTemplatesListAction } = require(
 const { setEnvDoctorOutput, appendEnvDoctorOutput } = require("./settings/env-doctor-view");
 const { renderTemplateLengthHint } = require("./settings/template-editor-view");
 const { toggleSectionCollapse } = require("./settings/section-toggle-view");
+const { safeConfirm } = require("./settings/safe-confirm");
 let localFileSystem = null;
 try {
   const { storage } = require("uxp");
@@ -63,7 +64,7 @@ const LARGE_PROMPT_WARNING_CHARS = textInputPolicy.LARGE_PROMPT_WARNING_CHARS;
 const TEXT_INPUT_HARD_MAX_CHARS = textInputPolicy.TEXT_INPUT_HARD_MAX_CHARS;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
 const dom = {};
-const settingsGateway = createSettingsGateway();
+let settingsGateway = createSettingsGateway();
 
 function log(msg) {
   console.log(`[Settings] ${msg}`);
@@ -140,18 +141,6 @@ function onTemplateContentPaste(event) {
   event.preventDefault();
   insertTextAtCursor(dom.templateContentInput, clipboardText);
   updateTemplateLengthHint();
-}
-
-function safeConfirm(message) {
-  try {
-    if (typeof confirm === "function") {
-      return confirm(message);
-    }
-  } catch (error) {
-    log(`confirm not available: ${error && error.message ? error.message : error}`);
-  }
-  // UXP 某些环境下可能没有 confirm，默认放行并继续删除。
-  return true;
 }
 
 function saveApiKeyAndSettings() {
@@ -392,7 +381,7 @@ function onSavedAppsListClick(event) {
     return;
   }
 
-  if (!safeConfirm("删除此应用？")) return;
+  if (!safeConfirm("删除此应用？", { log })) return;
 
   const result = deleteAppUsecase({
     store: settingsGateway,
@@ -439,7 +428,7 @@ function onSavedTemplatesListClick(event) {
     return;
   }
 
-  if (!safeConfirm("删除此模板？")) return;
+  if (!safeConfirm("删除此模板？", { log })) return;
 
   const result = deleteTemplateUsecase({
     store: settingsGateway,
@@ -499,7 +488,16 @@ function onEnvDiagnosticsToggleClick() {
   });
 }
 
-function initSettingsController() {
+function resolveSettingsGateway(options = {}) {
+  if (options && options.gateway && typeof options.gateway === "object") {
+    return options.gateway;
+  }
+  return createSettingsGateway();
+}
+
+function initSettingsController(options = {}) {
+  settingsGateway = resolveSettingsGateway(options);
+
   const ids = [
     "apiKeyInput",
     "pollIntervalInput",
@@ -584,6 +582,8 @@ function initSettingsController() {
   syncSettingsLists();
   updateTemplateLengthHint();
   loadLatestDiagnosticReport();
+
+  return settingsGateway;
 }
 
 module.exports = { initSettingsController };

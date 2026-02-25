@@ -78,6 +78,7 @@ function createWorkspaceInputs(deps) {
     openTemplatePicker,
     onPromptLargeValue: warnLargePromptLength,
     setInputValueByKey: inputState.setInputValueByKey,
+    deleteInputValueByKey: inputState.deleteInputValueByKey,
     getInputValueByKey: inputState.getInputValueByKey,
     clearImageInputByKey: inputState.clearImageInputByKey,
     applyCapturedImageByKey: inputState.applyCapturedImageByKey,

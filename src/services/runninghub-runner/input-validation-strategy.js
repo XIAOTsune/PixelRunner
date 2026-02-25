@@ -73,6 +73,10 @@ function coerceNonImageInputValue(params = {}) {
     return n;
   }
 
+  if (type === "boolean" && isEmptyValue(value)) {
+    return value;
+  }
+
   if (type === "boolean") {
     const boolValue = safeParseBooleanValue(value);
     if (boolValue === null) {
