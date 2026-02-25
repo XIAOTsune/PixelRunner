@@ -1108,6 +1108,237 @@ src/
   1. 拆分 `settings-controller` 的“环境诊断/模板导入导出编排”并补模块测试。
   2. 保持快照格式持续更新，便于多轮交接。
 
+### 11.12 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 5 项完成：`settings-controller` 的“环境诊断/模板导入导出编排”已下沉到独立模块 `src/controllers/settings/settings-diagnostics-transfer-controller.js`。
+  - `settings-controller` 改为通过 `getSettingsDiagnosticsTransferController()` 委托该逻辑，`index.js` 入口行为保持不变。
+  - controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/settings/settings-diagnostics-transfer-controller.test.js`。
+  - 主控制器体积继续收敛：`settings-controller` 由 `521` 行降到 `429` 行（本轮快照）。
+- 变更文件：
+  - `src/controllers/settings/settings-diagnostics-transfer-controller.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-diagnostics-transfer-controller.test.js`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`（改动前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动前控制器回归：`64 passed, 0 failed`。
+  - 改动后控制器回归：`72 passed, 0 failed`。
+  - 改动后回归：`251 passed, 0 failed`。
+  - 依赖方向检查改动前后均通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `settings-controller` 仍有可继续下沉的解析/保存编排逻辑（`parse/save` 与 UI 同步链路）。
+- 下一步（建议直接接续）：
+  1. 拆分 `settings-controller` 的解析/保存编排块并补模块测试。
+  2. 保持快照格式持续更新，便于多轮交接。
+
+### 11.13 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 6 项完成：`settings-controller` 的应用解析/保存编排已下沉到独立模块 `src/controllers/settings/settings-parse-controller.js`。
+  - `settings-controller` 改为通过 `getSettingsParseController()` 委托该逻辑，`index.js` 入口行为保持不变。
+  - controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/settings/settings-parse-controller.test.js`。
+  - 主控制器体积继续收敛：`settings-controller` 由 `429` 行降到 `413` 行（本轮快照）。
+- 变更文件：
+  - `src/controllers/settings/settings-parse-controller.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-parse-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动后控制器回归：`78 passed, 0 failed`。
+  - 改动后回归：`257 passed, 0 failed`。
+  - 依赖方向检查通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `settings-controller` 仍有可继续下沉的设置保存/模板编辑交互编排。
+- 下一步（建议直接接续）：
+  1. 拆分 `settings-controller` 的设置保存与模板编辑交互编排块并补模块测试。
+  2. 保持快照格式持续更新，便于多轮交接。
+
+### 11.14 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 7 项完成：`settings-controller` 的“设置保存 + 模板编辑交互编排”已下沉到独立模块 `src/controllers/settings/settings-editor-controller.js`。
+  - `settings-controller` 改为通过 `getSettingsEditorController()` 委托该逻辑，初始化设置快照加载也由该模块承接。
+  - `index.js` 入口行为保持不变，controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/settings/settings-editor-controller.test.js`。
+  - 主控制器体积继续收敛：`settings-controller` 由 `413` 行降到 `377` 行（本轮快照）。
+- 变更文件：
+  - `src/controllers/settings/settings-editor-controller.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-editor-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动后控制器回归：`86 passed, 0 failed`。
+  - 改动后回归：`265 passed, 0 failed`。
+  - 依赖方向检查通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `settings-controller` 仍有少量可继续下沉的 UI 状态/事件编排（如折叠区与 tab 同步绑定）。
+- 下一步（建议直接接续）：
+  1. 评估是否将 `settings-controller` 的折叠区与 tab 绑定编排进一步模块化。
+  2. 保持快照格式持续更新，便于多轮交接。
+
+### 11.15 交接快照（2026-02-25）
+- 当前状态（用于新对话续做）：
+  - P2 第二阶段已完成第 7 项，`settings-controller` 拆分已覆盖：
+    - 列表编排：`settings-lists-controller`
+    - 环境诊断/导入导出编排：`settings-diagnostics-transfer-controller`
+    - 解析/保存编排：`settings-parse-controller`
+    - 设置保存/模板编辑编排：`settings-editor-controller`
+  - `settings-controller` 当前行数快照：`377`。
+  - `index.js` 入口行为保持不变；`init*Controller({ gateway })` 可选注入模式保持兼容。
+  - 最近一次回归：
+    - 控制器回归：`86 passed, 0 failed`
+    - 全量回归（本轮命令集）：`265 passed, 0 failed`
+    - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）
+- 下一段建议起点：
+  1. 继续 P2：评估并拆分 `settings-controller` 的“折叠区 + tab 同步绑定”UI 事件编排。
+  2. 保持“本次完成 / 变更文件 / 校验命令 / 结果 / 下一步”快照格式持续更新。
+
+### 11.16 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 8 项完成：`settings-controller` 的“折叠区 + tab 同步绑定”UI 编排已下沉到独立模块 `src/controllers/settings/settings-collapse-tab-controller.js`。
+  - `settings-controller` 改为通过 `getSettingsCollapseTabController()` 委托折叠区默认态初始化、折叠点击处理以及 `tabSettings` 点击后的列表同步绑定。
+  - `index.js` 入口行为保持不变，controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/settings/settings-collapse-tab-controller.test.js`。
+  - 主控制器体积继续收敛：`settings-controller` 由 `420` 行降到 `404` 行（当前工作区统计）。
+- 变更文件：
+  - `src/controllers/settings/settings-collapse-tab-controller.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-collapse-tab-controller.test.js`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`（执行前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（执行前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 执行前依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+  - 执行前控制器回归：`86 passed, 0 failed`。
+  - 改动后控制器回归：`89 passed, 0 failed`。
+  - 改动后回归（本轮命令集）：`268 passed, 0 failed`。
+  - 改动后依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - `settings-controller` 仍保留较多初始化绑定与委托分发函数，可继续评估下沉边界。
+- 下一步（建议直接接续）：
+  1. 继续 P2：评估 `settings-controller` 剩余 UI 初始化/绑定编排是否继续模块化。
+  2. 保持快照格式持续更新，便于多轮交接。
+
+### 11.17 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 9 项完成：`settings-controller` 的“DOM 初始化 + 核心事件绑定编排”已下沉到独立模块 `src/controllers/settings/settings-init-controller.js`。
+  - `settings-controller` 改为通过 `getSettingsInitController().initialize()` 委托初始化流程（DOM 缓存、折叠区初始化、设置快照同步、核心事件绑定、首轮列表/提示/诊断同步）。
+  - 清理主控制器内不再使用的委托壳函数（`renderParseResult/saveParsedApp/showParseFailure/clearAppEditorUI`），保持行为不变。
+  - `index.js` 入口行为保持不变，controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/settings/settings-init-controller.test.js`。
+  - 主控制器体积继续收敛：`settings-controller` 由 `404` 行降到 `389` 行（当前工作区统计）。
+- 变更文件：
+  - `src/controllers/settings/settings-init-controller.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-init-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动后控制器回归：`92 passed, 0 failed`。
+  - 改动后回归（本轮命令集）：`271 passed, 0 failed`。
+  - 改动后依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - `settings-controller` 仍保留较多子控制器构建与委托分发代码，后续可继续评估收口边界。
+- 下一步（建议直接接续）：
+  1. 继续 P2：评估 `settings-controller` 剩余“子控制器装配/委托分发”是否继续下沉。
+  2. 保持快照格式持续更新，便于多轮交接。
+
+### 11.18 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 10 项完成：`settings-controller` 的“子控制器装配/缓存编排”已下沉到独立模块 `src/controllers/settings/settings-subcontrollers-registry.js`。
+  - 主控制器改为通过 `getSettingsSubcontrollersRegistry()` 统一获取 `lists/diagnostics/parse/editor/collapse/init` 子控制器并执行委托。
+  - `initSettingsController` 简化为“重置 registry + 初始化”，`index.js` 入口行为保持不变，`init*Controller({ gateway })` 注入兼容未回退。
+  - 子控制器事件桥接与 init handlers 装配迁移到 registry，减少主控制器装配细节噪音。
+  - 新增模块级测试：`tests/controllers/settings/settings-subcontrollers-registry.test.js`。
+  - 主控制器体积继续收敛：`settings-controller` 由 `389` 行降到 `316` 行（当前工作区统计）。
+- 变更文件：
+  - `src/controllers/settings/settings-subcontrollers-registry.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-subcontrollers-registry.test.js`
+- 校验命令：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动后控制器回归：`95 passed, 0 failed`。
+  - 改动后回归（本轮命令集）：`274 passed, 0 failed`。
+  - 改动后依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - `settings-controller` 仍有薄委托函数层，可继续评估“进一步收敛”与“可读性”之间的平衡。
+- 下一步（建议直接接续）：
+  1. 继续 P2：评估并收敛 `settings-controller` 剩余薄封装委托函数（保持对外行为不变）。
+  2. 保持快照格式持续更新，便于多轮交接。
+
+### 11.19 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 11 项完成：`settings-controller` 剩余薄委托函数进一步收敛，改为 `buildSettingsDelegates()` 统一组装委托入口，减少单行转发噪音。
+  - 新增初始化链路集成测试：`tests/controllers/settings/settings-init-chain-integration.test.js`，覆盖 `init -> bind -> 子控制器联动` 关键路径。
+  - `initSettingsController` 仍保持“解析 gateway + 初始化”的稳定入口；`index.js` 入口行为和注入兼容性不变。
+  - 主控制器体积继续收敛：`settings-controller` 由 `316` 行降到 `241` 行（当前工作区统计）。
+- 变更文件：
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-init-chain-integration.test.js`
+- 校验命令：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动后）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动后控制器回归：`96 passed, 0 failed`。
+  - 改动后回归（本轮命令集）：`275 passed, 0 failed`。
+  - 改动后依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 后续继续拆分的边际收益已低于可读性成本，需要控制拆分冲动。
+- 阶段结论：
+  - P2（当前聚焦的 settings 控制器拆分链路）可收口，后续以稳定性回归与文档归档为主。
+- 下一步（建议直接接续）：
+  1. 标记 P2 收口完成并冻结 `settings-controller` 的结构性拆分。
+  2. 将后续重构重点转移到高收益低风险项（例如验收清单、稳定性回归、必要文档补丁）。
+
+### 11.20 收口校验快照（2026-02-25）
+- 本次完成：
+  - 按 README `R5` 执行最小预检（含 `R1` BOM 检查），并补跑指定全量回归命令集。
+  - 两轮依赖方向检查均通过，持续满足 `R4`（controller 禁止直连 services）。
+  - 输出 UXP 手工冒烟清单与结果记录：`plans/uxp-manual-smoke-checklist-2026-02-25.md`（当前环境阻塞项已注明）。
+  - 明确里程碑状态：`P2（settings 控制器拆分链路）已收口/冻结结构性拆分`。
+- 变更文件：
+  - `plans/refactor-post-review-report-2026-02-25.md`
+  - `plans/frontend-backend-separation-refactor-plan.md`
+  - `plans/uxp-manual-smoke-checklist-2026-02-25.md`
+- 校验命令：
+  - `node --check index.js src/services/ps.js src/controllers/workspace-controller.js`
+  - `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node scripts/check-controller-service-deps.js`
+  - README `R1` BOM 检查脚本（`manifest.json/index.html/index.js`）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - R5 最小预检：通过（测试 `108 passed, 0 failed`）。
+  - R1 BOM：通过（均为 `no BOM`）。
+  - 全量回归：通过（`275 passed, 0 failed`）。
+  - R4 依赖方向：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/阻塞：
+  - 自动化回归已闭环，但 UXP 手工冒烟仍依赖本地 Photoshop + UXP 面板交互环境，当前 CLI 会话无法直接执行点击验证。
+- 阶段结论：
+  - `P2（settings 控制器拆分链路）已收口/冻结结构性拆分`，后续仅保留稳定性与归档类工作。
+- 下一步（建议直接接续）：
+  1. 后续仅做低风险稳定性修正与文档归档，不再推进结构性拆分。
+  2. 在具备 UXP 可交互环境后执行冒烟清单并回填实测结果，作为 P2 收口验收附件。
+
 ---
 
 如果按本方案执行，重构将是“逐层替换”而不是“整包重写”，能在不中断现有插件可用性的前提下，持续降低复杂度并提升后续页面优化效率。
