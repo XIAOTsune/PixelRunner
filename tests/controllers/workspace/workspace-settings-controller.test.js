@@ -96,6 +96,7 @@ test("workspace settings controller persists paste strategy changes and logs mar
         pollInterval: 2,
         timeout: 180,
         uploadMaxEdge: "1024",
+        uploadRetryCount: "2",
         cloudConcurrentJobs: "7",
         pasteStrategy: "normal"
       }),
@@ -105,6 +106,7 @@ test("workspace settings controller persists paste strategy changes and logs mar
     },
     normalizePasteStrategy: (value) => (value === "smart" ? "smart" : "normal"),
     normalizeUploadMaxEdge: (value) => Number(value) || 0,
+    normalizeUploadRetryCount: (value) => Number(value) || 2,
     normalizeCloudConcurrentJobs: (value) => Number(value) || 2,
     pasteStrategyLabels: {
       smart: "智能（主体对齐）"
@@ -123,6 +125,7 @@ test("workspace settings controller persists paste strategy changes and logs mar
     pollInterval: 2,
     timeout: 180,
     uploadMaxEdge: 1024,
+    uploadRetryCount: 2,
     cloudConcurrentJobs: 7,
     pasteStrategy: "smart"
   });

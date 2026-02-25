@@ -10,6 +10,7 @@ function createSettingsEditorController(options = {}) {
           pollInterval: 2,
           timeout: 180,
           uploadMaxEdge: 0,
+          uploadRetryCount: 2,
           pasteStrategy: "",
           cloudConcurrentJobs: 2
         });
@@ -28,6 +29,14 @@ function createSettingsEditorController(options = {}) {
           const num = Number(value);
           if (!Number.isFinite(num)) return 2;
           return Math.max(1, Math.min(100, Math.floor(num)));
+        };
+  const normalizeUploadRetryCount =
+    typeof options.normalizeUploadRetryCount === "function"
+      ? options.normalizeUploadRetryCount
+      : (value) => {
+          const num = Number(value);
+          if (!Number.isFinite(num)) return 2;
+          return Math.max(0, Math.min(5, Math.floor(num)));
         };
   const buildTemplateLengthHintViewModel =
     typeof options.buildTemplateLengthHintViewModel === "function"
@@ -91,6 +100,9 @@ function createSettingsEditorController(options = {}) {
     if (dom.uploadMaxEdgeSettingSelect) {
       dom.uploadMaxEdgeSettingSelect.value = String(normalizeUploadMaxEdge(settingsSnapshot.uploadMaxEdge));
     }
+    if (dom.uploadRetryCountInput) {
+      dom.uploadRetryCountInput.value = String(normalizeUploadRetryCount(settingsSnapshot.uploadRetryCount));
+    }
     enforceLongTextCapacity(dom.templateContentInput);
     return settingsSnapshot;
   }
@@ -131,6 +143,9 @@ function createSettingsEditorController(options = {}) {
     const cloudConcurrentJobs = normalizeCloudConcurrentJobs(
       dom.cloudConcurrentJobsInput ? dom.cloudConcurrentJobsInput.value : currentSettings.cloudConcurrentJobs
     );
+    const uploadRetryCount = normalizeUploadRetryCount(
+      dom.uploadRetryCountInput ? dom.uploadRetryCountInput.value : currentSettings.uploadRetryCount
+    );
 
     const payload = saveSettingsUsecase({
       store,
@@ -138,6 +153,7 @@ function createSettingsEditorController(options = {}) {
       pollInterval,
       timeout,
       uploadMaxEdge,
+      uploadRetryCount,
       pasteStrategy: currentSettings.pasteStrategy,
       cloudConcurrentJobs
     });

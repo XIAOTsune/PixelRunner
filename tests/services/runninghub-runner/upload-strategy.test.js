@@ -91,3 +91,61 @@ test("uploadImage throws when all endpoints fail", async () => {
   assert.ok(warnLine);
   assert.match(warnLine.line, /HTTP 500/);
 });
+
+test("uploadImage retries network failures when uploadRetryCount is enabled", async () => {
+  const calls = [];
+  const logs = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (calls.length <= 2) {
+      throw new Error("Network request failed");
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { code: 0, data: { fileName: "token-retried" } }
+    };
+  };
+
+  const result = await uploadImage(
+    "api-key",
+    new Uint8Array([1, 2, 3]).buffer,
+    {
+      uploadRetryCount: 1,
+      log: (line, level) => logs.push({ line, level })
+    },
+    {
+      fetchImpl,
+      parseJsonResponse: async (response) => response.payload
+    }
+  );
+
+  assert.equal(result.value, "token-retried");
+  assert.equal(calls.length, 3);
+  assert.ok(logs.some((entry) => entry.level === "warn" && /retrying in/.test(entry.line)));
+});
+
+test("uploadImage does not retry for non-retryable http status", async () => {
+  const calls = [];
+  const fetchImpl = async () => {
+    calls.push(true);
+    return { ok: false, status: 400, payload: { message: "bad request" } };
+  };
+
+  await assert.rejects(
+    () =>
+      uploadImage(
+        "api-key",
+        new Uint8Array([1, 2, 3]).buffer,
+        { uploadRetryCount: 3 },
+        {
+          fetchImpl,
+          parseJsonResponse: async (response) => response.payload
+        }
+      ),
+    /Image upload failed/
+  );
+
+  // only one round (v2 + legacy) should run
+  assert.equal(calls.length, 2);
+});

@@ -5,7 +5,8 @@ const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = re
 const textInputPolicy = require("../domain/policies/text-input-policy");
 const {
   normalizeUploadMaxEdge,
-  normalizeCloudConcurrentJobs
+  normalizeCloudConcurrentJobs,
+  normalizeUploadRetryCount
 } = require("../domain/policies/run-settings-policy");
 const { buildSavedAppsListViewModel, buildSavedTemplatesListViewModel } = require("../application/services/settings-lists");
 const {
@@ -203,6 +204,7 @@ function getSettingsSubcontrollersRegistry() {
         saveTemplateUsecase,
         normalizeUploadMaxEdge,
         normalizeCloudConcurrentJobs,
+        normalizeUploadRetryCount,
         buildTemplateLengthHintViewModel,
         getClipboardPlainText,
         enforceLongTextCapacity: textInputPolicy.enforceLongTextCapacity,

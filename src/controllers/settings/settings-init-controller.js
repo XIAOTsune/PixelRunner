@@ -4,6 +4,7 @@ const SETTINGS_DOM_IDS = [
   "timeoutInput",
   "cloudConcurrentJobsInput",
   "uploadMaxEdgeSettingSelect",
+  "uploadRetryCountInput",
   "toggleApiKey",
   "btnSaveApiKey",
   "btnTestApiKey",

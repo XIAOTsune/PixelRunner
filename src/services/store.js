@@ -1,8 +1,11 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
-const { normalizeCloudConcurrentJobs } = require("../domain/policies/run-settings-policy");
+const {
+  normalizeCloudConcurrentJobs,
+  normalizeUploadRetryCount
+} = require("../domain/policies/run-settings-policy");
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
-const SETTINGS_SCHEMA_VERSION = 4;
+const SETTINGS_SCHEMA_VERSION = 5;
 const PROMPT_TEMPLATE_BUNDLE_FORMAT = "pixelrunner.prompt-templates";
 const PROMPT_TEMPLATE_BUNDLE_VERSION = 1;
 const LEGACY_PASTE_STRATEGY_MAP = {
@@ -54,6 +57,10 @@ function getSettings() {
   const value = rawValue && typeof rawValue === "object" ? rawValue : {};
   const uploadMaxEdgeRaw = Number(value.uploadMaxEdge);
   let uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
+  let uploadRetryCount = normalizeUploadRetryCount(
+    value.uploadRetryCount,
+    DEFAULT_SETTINGS.uploadRetryCount
+  );
   let pasteStrategy = String(value.pasteStrategy || "").trim();
   if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
     pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
@@ -70,6 +77,7 @@ function getSettings() {
     if (timeout < DEFAULT_SETTINGS.timeout) timeout = DEFAULT_SETTINGS.timeout;
     // Since upload resolution cap moved to advanced settings, reset legacy values to default unlimited once.
     if (schemaVersion < 3) uploadMaxEdge = DEFAULT_SETTINGS.uploadMaxEdge;
+    if (schemaVersion < 5) uploadRetryCount = DEFAULT_SETTINGS.uploadRetryCount;
     shouldPersistMigration = true;
   }
 
@@ -77,6 +85,7 @@ function getSettings() {
     pollInterval: normalizePollInterval(value.pollInterval),
     timeout,
     uploadMaxEdge,
+    uploadRetryCount,
     pasteStrategy,
     cloudConcurrentJobs
   };
@@ -94,6 +103,10 @@ function getSettings() {
 function saveSettings(settings) {
   const uploadMaxEdgeRaw = Number(settings.uploadMaxEdge);
   const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
+  const uploadRetryCount = normalizeUploadRetryCount(
+    settings.uploadRetryCount,
+    DEFAULT_SETTINGS.uploadRetryCount
+  );
   let pasteStrategy = String(settings.pasteStrategy || "").trim();
   if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
     pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
@@ -103,6 +116,7 @@ function saveSettings(settings) {
     pollInterval: normalizePollInterval(settings.pollInterval),
     timeout: normalizeTimeout(settings.timeout),
     uploadMaxEdge,
+    uploadRetryCount,
     pasteStrategy,
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs, DEFAULT_SETTINGS.cloudConcurrentJobs),
     schemaVersion: SETTINGS_SCHEMA_VERSION

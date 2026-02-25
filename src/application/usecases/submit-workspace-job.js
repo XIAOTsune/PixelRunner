@@ -42,7 +42,16 @@ function submitWorkspaceJobUsecase(options = {}) {
     sourceBuffer: options.sourceBuffer,
     settings: options.settings
   });
-  const { appItem, inputValues, targetBounds, sourceBuffer, pasteStrategy, uploadMaxEdge, pollSettings } = runSnapshot;
+  const {
+    appItem,
+    inputValues,
+    targetBounds,
+    sourceBuffer,
+    pasteStrategy,
+    uploadMaxEdge,
+    uploadRetryCount,
+    pollSettings
+  } = runSnapshot;
 
   const runFingerprint = runGuard.buildRunFingerprint({
     appItem,
@@ -51,6 +60,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     sourceBuffer,
     pasteStrategy,
     uploadMaxEdge,
+    uploadRetryCount,
     pollSettings
   });
   const isRecentDuplicateFingerprint = runGuard.isRecentDuplicateFingerprint(runFingerprint, now);
@@ -65,6 +75,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     sourceBuffer,
     pasteStrategy,
     uploadMaxEdge,
+    uploadRetryCount,
     pollSettings,
     runFingerprint,
     status: queuedStatus,

@@ -1,9 +1,15 @@
 const { API } = require("../../config");
+const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
 const { normalizeUploadMaxEdge } = require("./upload-edge-strategy");
 const { createRunCancelledError, fetchWithTimeout } = require("./request-strategy");
 
 const IMAGE_RESIZE_DECODE_TIMEOUT_MS = 3500;
 const IMAGE_RESIZE_ENCODE_TIMEOUT_MS = 3000;
+const UPLOAD_RETRY_COUNT_MIN = 0;
+const UPLOAD_RETRY_COUNT_MAX = 5;
+const UPLOAD_RETRY_DELAY_BASE_MS = 800;
+const UPLOAD_RETRY_DELAY_MAX_MS = 5000;
+const UPLOAD_RETRY_JITTER_RATIO = 0.2;
 
 function fallbackToMessage(result, fallback = "Request failed") {
   if (!result || typeof result !== "object") return fallback;
@@ -241,6 +247,132 @@ function pickUploadedValue(data) {
   return { value: token || url, token: token || "", url: url || "" };
 }
 
+function normalizeUploadRetryCount(value, fallback = 0) {
+  const fallbackNum = Number(fallback);
+  const fallbackNormalized = Number.isFinite(fallbackNum)
+    ? Math.max(UPLOAD_RETRY_COUNT_MIN, Math.min(UPLOAD_RETRY_COUNT_MAX, Math.floor(fallbackNum)))
+    : 0;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallbackNormalized;
+  return Math.max(UPLOAD_RETRY_COUNT_MIN, Math.min(UPLOAD_RETRY_COUNT_MAX, Math.floor(num)));
+}
+
+function isRetryableNetworkMessage(message) {
+  const marker = String(message || "").toLowerCase();
+  if (!marker) return false;
+  return (
+    marker.includes("network request failed") ||
+    marker.includes("failed to fetch") ||
+    marker.includes("networkerror") ||
+    marker.includes("network error") ||
+    marker.includes("request timeout") ||
+    marker.includes("timeout") ||
+    marker.includes("timed out")
+  );
+}
+
+function isRetryableHttpStatus(status) {
+  return [408, 429, 500, 502, 503, 504].includes(Number(status));
+}
+
+function isNonRetryableApiMessage(message) {
+  const marker = String(message || "").toLowerCase();
+  if (!marker) return false;
+  const nonRetryableMarkers = [
+    "api key is required",
+    "param apikey is required",
+    "param api key is required",
+    "invalid api key",
+    "unauthorized",
+    "forbidden",
+    "missing required parameter",
+    "invalid number parameter",
+    "invalid boolean parameter",
+    "image input is invalid",
+    "not found"
+  ];
+  return nonRetryableMarkers.some((item) => marker.includes(item));
+}
+
+function isRetryableApiMessage(message) {
+  const marker = String(message || "").toLowerCase();
+  if (!marker) return true;
+  if (isRetryableNetworkMessage(marker)) return true;
+  if (isNonRetryableApiMessage(marker)) return false;
+  const retryableMarkers = [
+    "rate limit",
+    "too many requests",
+    "temporarily unavailable",
+    "service unavailable",
+    "gateway",
+    "upstream",
+    "try again",
+    "busy"
+  ];
+  return retryableMarkers.some((item) => marker.includes(item));
+}
+
+function isRetryableError(error) {
+  if (!error) return true;
+  if (error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) return false;
+  if (error.code === RUNNINGHUB_ERROR_CODES.REQUEST_TIMEOUT) return true;
+  const message = error && error.message ? error.message : String(error || "");
+  if (isRetryableNetworkMessage(message)) return true;
+  return !isNonRetryableApiMessage(message);
+}
+
+function computeRetryDelayMs(retryIndex) {
+  const index = Math.max(0, Number(retryIndex) || 0);
+  const withoutJitter = Math.min(UPLOAD_RETRY_DELAY_BASE_MS * Math.pow(2, index), UPLOAD_RETRY_DELAY_MAX_MS);
+  const jitterScale = 1 + (Math.random() * 2 - 1) * UPLOAD_RETRY_JITTER_RATIO;
+  return Math.max(100, Math.round(withoutJitter * jitterScale));
+}
+
+async function waitRetryDelay(delayMs, options = {}) {
+  const ms = Math.max(0, Number(delayMs) || 0);
+  if (ms <= 0) return;
+  const signal = options.signal || null;
+  await new Promise((resolve, reject) => {
+    let done = false;
+    let timerId = null;
+    const cleanup = () => {
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (signal && typeof signal.removeEventListener === "function") {
+        signal.removeEventListener("abort", onAbort);
+      }
+    };
+    const finishResolve = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve();
+    };
+    const finishReject = (error) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(error);
+    };
+    const onAbort = () => {
+      finishReject(createRunCancelledError("Run cancelled during upload retry delay"));
+    };
+
+    if (signal && signal.aborted) {
+      onAbort();
+      return;
+    }
+    if (signal && typeof signal.addEventListener === "function") {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    timerId = setTimeout(() => {
+      finishResolve();
+    }, ms);
+  });
+}
+
 async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
   const {
     fetchImpl,
@@ -264,48 +396,84 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
   const uploadMime = detectedMime.startsWith("image/") ? detectedMime : "image/png";
   const uploadFileName = uploadMime === "image/jpeg" ? "image.jpg" : uploadMime === "image/webp" ? "image.webp" : "image.png";
   const blob = new Blob([buffer], { type: uploadMime });
-  const reasons = [];
+  const uploadRetryCount = normalizeUploadRetryCount(options.uploadRetryCount, 0);
+  const maxAttempts = uploadRetryCount + 1;
+  const attemptSummaries = [];
 
-  for (const endpoint of endpoints) {
+  for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
     safeThrowIfCancelled(options);
-    try {
-      const formData = new FormData();
-      formData.append("file", blob, uploadFileName);
+    const failures = [];
 
-      const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${endpoint}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: formData,
-        signal: options.signal
-      }, {
-        timeoutMs: options.requestTimeoutMs
-      });
+    for (const endpoint of endpoints) {
       safeThrowIfCancelled(options);
-      const result = await safeParseJsonResponse(response);
-      safeThrowIfCancelled(options);
+      try {
+        const formData = new FormData();
+        formData.append("file", blob, uploadFileName);
 
-      if (!response.ok) {
-        reasons.push(`${endpoint}: HTTP ${response.status}`);
-        continue;
+        const response = await fetchWithTimeout(safeFetch, `${API.BASE_URL}${endpoint}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: formData,
+          signal: options.signal
+        }, {
+          timeoutMs: options.requestTimeoutMs
+        });
+        safeThrowIfCancelled(options);
+        const result = await safeParseJsonResponse(response);
+        safeThrowIfCancelled(options);
+
+        if (!response.ok) {
+          failures.push({
+            reason: `${endpoint}: HTTP ${response.status}`,
+            retryable: isRetryableHttpStatus(response.status)
+          });
+          continue;
+        }
+
+        const success = result && (result.code === 0 || result.success === true);
+        if (!success) {
+          const message = safeToMessage(result);
+          failures.push({
+            reason: `${endpoint}: ${message}`,
+            retryable: isRetryableApiMessage(message)
+          });
+          continue;
+        }
+
+        const data = result.data || result.result || {};
+        const picked = pickUploadedValue(data);
+        if (picked.value) return picked;
+        failures.push({
+          reason: `${endpoint}: upload success but no usable file token/url`,
+          retryable: true
+        });
+      } catch (error) {
+        if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
+        const message = error && error.message ? error.message : String(error || "unknown");
+        failures.push({
+          reason: `${endpoint}: ${message}`,
+          retryable: isRetryableError(error)
+        });
       }
-
-      const success = result && (result.code === 0 || result.success === true);
-      if (!success) {
-        reasons.push(`${endpoint}: ${safeToMessage(result)}`);
-        continue;
-      }
-
-      const data = result.data || result.result || {};
-      const picked = pickUploadedValue(data);
-      if (picked.value) return picked;
-      reasons.push(`${endpoint}: upload success but no usable file token/url`);
-    } catch (error) {
-      if (error && error.code === "RUN_CANCELLED") throw error;
-      reasons.push(`${endpoint}: ${error.message}`);
     }
+
+    const summary = failures.length > 0
+      ? failures.map((item) => item.reason).join(" | ")
+      : "Image upload failed for unknown reason";
+    attemptSummaries.push(`attempt ${attemptIndex + 1}/${maxAttempts}: ${summary}`);
+    const hasMoreAttempts = attemptIndex < maxAttempts - 1;
+    const canRetry = hasMoreAttempts && failures.length > 0 && failures.every((item) => item.retryable);
+    if (!canRetry) break;
+
+    const delayMs = computeRetryDelayMs(attemptIndex);
+    log(
+      `Upload failed (attempt ${attemptIndex + 1}/${maxAttempts}), retrying in ${delayMs}ms: ${summary}`,
+      "warn"
+    );
+    await waitRetryDelay(delayMs, options);
   }
 
-  log(reasons.join(" | "), "warn");
+  log(attemptSummaries.join(" || "), "warn");
   throw new Error("Image upload failed");
 }
 

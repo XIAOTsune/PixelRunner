@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS = {
   pollInterval: 2,
   timeout: 180,
   uploadMaxEdge: 0,
+  uploadRetryCount: 2,
   pasteStrategy: "normal",
   cloudConcurrentJobs: 2
 };

@@ -1,4 +1,7 @@
-const { normalizeCloudConcurrentJobs } = require("../../domain/policies/run-settings-policy");
+const {
+  normalizeCloudConcurrentJobs,
+  normalizeUploadRetryCount
+} = require("../../domain/policies/run-settings-policy");
 
 function requireMethod(target, methodName, ownerName) {
   if (!target || typeof target !== "object" || typeof target[methodName] !== "function") {
@@ -17,6 +20,7 @@ function loadSettingsSnapshotUsecase(options = {}) {
     pollInterval: Number(settings && settings.pollInterval) || 2,
     timeout: Number(settings && settings.timeout) || 180,
     uploadMaxEdge: Number(settings && settings.uploadMaxEdge) || 0,
+    uploadRetryCount: normalizeUploadRetryCount(settings && settings.uploadRetryCount, 2),
     pasteStrategy: String((settings && settings.pasteStrategy) || ""),
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(
       settings && settings.cloudConcurrentJobs,
@@ -49,6 +53,7 @@ function saveSettingsUsecase(options = {}) {
   const pollInterval = Number(options.pollInterval) || 2;
   const timeout = Number(options.timeout) || 180;
   const uploadMaxEdge = Number.isFinite(Number(options.uploadMaxEdge)) ? Number(options.uploadMaxEdge) : 0;
+  const uploadRetryCount = normalizeUploadRetryCount(options.uploadRetryCount, 2);
   const pasteStrategy = String(options.pasteStrategy || "").trim();
   const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 2);
 
@@ -57,6 +62,7 @@ function saveSettingsUsecase(options = {}) {
     pollInterval,
     timeout,
     uploadMaxEdge,
+    uploadRetryCount,
     pasteStrategy,
     cloudConcurrentJobs
   });

@@ -341,6 +341,11 @@
           <input id="cloudConcurrentJobsInput" type="number" min="1" max="100" value="2" />
           <div class="setting-hint">默认 2。仅当账号支持更高并发时再提高。</div>
         </div>
+        <div class="control-group">
+          <label for="uploadRetryCountInput">上传自动重试次数（0-5）</label>
+          <input id="uploadRetryCountInput" type="number" min="0" max="5" value="2" />
+          <div class="setting-hint">仅用于图片上传阶段。0 表示不重试，2 表示最多 3 轮尝试。</div>
+        </div>
       </div>
     </div>
 

@@ -64,11 +64,21 @@ function normalizeFingerprintValue(value, depth = 0, seen = new WeakSet()) {
   return String(value);
 }
 
-function buildRunFingerprint({ appItem, inputValues, targetBounds, sourceBuffer, pasteStrategy, uploadMaxEdge, pollSettings }) {
+function buildRunFingerprint({
+  appItem,
+  inputValues,
+  targetBounds,
+  sourceBuffer,
+  pasteStrategy,
+  uploadMaxEdge,
+  uploadRetryCount,
+  pollSettings
+}) {
   const payload = {
     appId: String((appItem && (appItem.id || appItem.appId || appItem.name)) || ""),
     pasteStrategy: String(pasteStrategy || ""),
     uploadMaxEdge: Number(uploadMaxEdge) || 0,
+    uploadRetryCount: Number(uploadRetryCount) || 0,
     pollInterval: Number(pollSettings && pollSettings.pollInterval) || 0,
     timeout: Number(pollSettings && pollSettings.timeout) || 0,
     targetBounds: normalizeBoundsForFingerprint(targetBounds),

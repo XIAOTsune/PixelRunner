@@ -69,7 +69,12 @@ function createJobExecutor(options = {}) {
     const jobLog = createJobLogger(job);
     const signalController = new AbortController();
     const signal = signalController.signal;
-    const runOptions = { log: jobLog, signal, uploadMaxEdge: job.uploadMaxEdge };
+    const runOptions = {
+      log: jobLog,
+      signal,
+      uploadMaxEdge: job.uploadMaxEdge,
+      uploadRetryCount: job.uploadRetryCount
+    };
 
     try {
       if (!job.remoteTaskId) {

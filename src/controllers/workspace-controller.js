@@ -37,7 +37,8 @@ const {
 const {
   normalizeUploadMaxEdge,
   normalizePasteStrategy,
-  normalizeCloudConcurrentJobs
+  normalizeCloudConcurrentJobs,
+  normalizeUploadRetryCount
 } = require("../domain/policies/run-settings-policy");
 const {
   cloneArrayBuffer,
@@ -159,6 +160,7 @@ function getWorkspaceSettingsController() {
       normalizePasteStrategy,
       normalizeUploadMaxEdge,
       normalizeCloudConcurrentJobs,
+      normalizeUploadRetryCount,
       pasteStrategyLabels: PASTE_STRATEGY_LABELS,
       syncWorkspaceApps,
       log

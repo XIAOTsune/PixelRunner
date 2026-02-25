@@ -15,6 +15,14 @@ function createWorkspaceSettingsController(options = {}) {
           if (!Number.isFinite(num)) return 2;
           return Math.max(1, Math.min(100, Math.floor(num)));
         };
+  const normalizeUploadRetryCount =
+    typeof options.normalizeUploadRetryCount === "function"
+      ? options.normalizeUploadRetryCount
+      : (value) => {
+          const num = Number(value);
+          if (!Number.isFinite(num)) return 2;
+          return Math.max(0, Math.min(5, Math.floor(num)));
+        };
   const pasteStrategyLabels =
     options.pasteStrategyLabels && typeof options.pasteStrategyLabels === "object" ? options.pasteStrategyLabels : {};
   const syncWorkspaceApps =
@@ -92,11 +100,13 @@ function createWorkspaceSettingsController(options = {}) {
     const settings = getSettingsSnapshot();
     const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
     const cloudConcurrentJobs = normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs);
+    const uploadRetryCount = normalizeUploadRetryCount(settings.uploadRetryCount);
     if (store && typeof store.saveSettings === "function") {
       store.saveSettings({
         pollInterval: settings.pollInterval,
         timeout: settings.timeout,
         uploadMaxEdge,
+        uploadRetryCount,
         pasteStrategy: nextPasteStrategy,
         cloudConcurrentJobs
       });

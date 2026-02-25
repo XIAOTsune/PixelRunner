@@ -3,6 +3,9 @@ const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const CLOUD_CONCURRENT_JOBS_MIN = 1;
 const CLOUD_CONCURRENT_JOBS_MAX = 100;
 const DEFAULT_CLOUD_CONCURRENT_JOBS = 2;
+const UPLOAD_RETRY_COUNT_MIN = 0;
+const UPLOAD_RETRY_COUNT_MAX = 5;
+const DEFAULT_UPLOAD_RETRY_COUNT = 2;
 const LEGACY_PASTE_STRATEGY_MAP = {
   stretch: "normal",
   contain: "normal",
@@ -34,14 +37,28 @@ function normalizeCloudConcurrentJobs(value, fallback = DEFAULT_CLOUD_CONCURRENT
   return Math.max(CLOUD_CONCURRENT_JOBS_MIN, Math.min(CLOUD_CONCURRENT_JOBS_MAX, Math.floor(num)));
 }
 
+function normalizeUploadRetryCount(value, fallback = DEFAULT_UPLOAD_RETRY_COUNT) {
+  const fallbackNum = Number(fallback);
+  const fallbackNormalized = Number.isFinite(fallbackNum)
+    ? Math.max(UPLOAD_RETRY_COUNT_MIN, Math.min(UPLOAD_RETRY_COUNT_MAX, Math.floor(fallbackNum)))
+    : DEFAULT_UPLOAD_RETRY_COUNT;
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallbackNormalized;
+  return Math.max(UPLOAD_RETRY_COUNT_MIN, Math.min(UPLOAD_RETRY_COUNT_MAX, Math.floor(num)));
+}
+
 module.exports = {
   UPLOAD_MAX_EDGE_CHOICES,
   PASTE_STRATEGY_CHOICES,
   CLOUD_CONCURRENT_JOBS_MIN,
   CLOUD_CONCURRENT_JOBS_MAX,
   DEFAULT_CLOUD_CONCURRENT_JOBS,
+  UPLOAD_RETRY_COUNT_MIN,
+  UPLOAD_RETRY_COUNT_MAX,
+  DEFAULT_UPLOAD_RETRY_COUNT,
   LEGACY_PASTE_STRATEGY_MAP,
   normalizeUploadMaxEdge,
   normalizePasteStrategy,
-  normalizeCloudConcurrentJobs
+  normalizeCloudConcurrentJobs,
+  normalizeUploadRetryCount
 };

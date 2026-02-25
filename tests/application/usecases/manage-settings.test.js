@@ -15,6 +15,7 @@ test("loadSettingsSnapshotUsecase reads api key and settings", () => {
         pollInterval: 3,
         timeout: 210,
         uploadMaxEdge: 2048,
+        uploadRetryCount: 4,
         pasteStrategy: "smart",
         cloudConcurrentJobs: 8
       })
@@ -26,6 +27,7 @@ test("loadSettingsSnapshotUsecase reads api key and settings", () => {
     pollInterval: 3,
     timeout: 210,
     uploadMaxEdge: 2048,
+    uploadRetryCount: 4,
     pasteStrategy: "smart",
     cloudConcurrentJobs: 8
   });
@@ -75,6 +77,7 @@ test("saveSettingsUsecase saves api key and settings payload", () => {
     pollInterval: 5,
     timeout: 240,
     uploadMaxEdge: 2048,
+    uploadRetryCount: 3,
     pasteStrategy: "smart",
     cloudConcurrentJobs: 6
   });
@@ -87,6 +90,7 @@ test("saveSettingsUsecase saves api key and settings payload", () => {
       pollInterval: 5,
       timeout: 240,
       uploadMaxEdge: 2048,
+      uploadRetryCount: 3,
       pasteStrategy: "smart",
       cloudConcurrentJobs: 6
     }
@@ -109,6 +113,7 @@ test("saveSettingsUsecase falls back to defaults for invalid values", () => {
     pollInterval: "invalid",
     timeout: null,
     uploadMaxEdge: undefined,
+    uploadRetryCount: "oops",
     pasteStrategy: "",
     cloudConcurrentJobs: "oops"
   });
@@ -117,6 +122,7 @@ test("saveSettingsUsecase falls back to defaults for invalid values", () => {
     pollInterval: 2,
     timeout: 180,
     uploadMaxEdge: 0,
+    uploadRetryCount: 2,
     pasteStrategy: "",
     cloudConcurrentJobs: 2
   });
