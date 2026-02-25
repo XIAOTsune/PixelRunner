@@ -1055,6 +1055,59 @@ src/
   2. 继续收敛 `settings-controller` 的非列表编排块（环境诊断与导入导出流程）。
   3. 保持快照格式持续更新，便于多轮交接。
 
+### 11.10 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 3 项完成：`workspace-controller` 的运行状态相关编排（任务摘要 hint/ticker、状态更新、历史裁剪）已下沉到独立模块 `src/controllers/workspace/run-status-controller.js`。
+  - `workspace-controller` 改为通过 `getRunStatusController()` 委托该逻辑，`index.js` 入口行为保持不变。
+  - controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/workspace/run-status-controller.test.js`。
+  - 主控制器体积继续收敛：`workspace-controller` 由 `679` 行降到 `621` 行（本轮快照）。
+- 变更文件：
+  - `src/controllers/workspace/run-status-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/run-status-controller.test.js`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`（改动前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动前）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动前控制器回归：`56 passed, 0 failed`。
+  - 改动后回归：`239 passed, 0 failed`。
+  - 依赖方向检查改动前后均通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `workspace-controller` 仍有可继续下沉的副作用编排（运行触发、队列调度、日志反馈链路）。
+  - `settings-controller` 仍可继续拆分“环境诊断/模板导入导出编排”。
+- 下一步（建议直接接续）：
+  1. 拆分 `workspace-controller` 的“运行触发/队列调度”编排块并补模块测试。
+  2. 继续收敛 `settings-controller` 非列表编排块（环境诊断与导入导出流程）。
+  3. 保持快照格式持续更新，便于多轮交接。
+
+### 11.11 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 4 项完成：`workspace-controller` 的运行触发/队列调度编排（`handleRun` 与 `scheduler/executor` 生命周期）已下沉到独立模块 `src/controllers/workspace/run-workflow-controller.js`。
+  - `workspace-controller` 改为通过 `getRunWorkflowController()` 委托该逻辑，`index.js` 入口行为保持不变。
+  - controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/workspace/run-workflow-controller.test.js`。
+  - 主控制器体积继续收敛：`workspace-controller` 由 `621` 行降到 `535` 行（本轮快照）。
+- 变更文件：
+  - `src/controllers/workspace/run-workflow-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/run-workflow-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 改动后控制器回归：`64 passed, 0 failed`。
+  - 改动后回归：`243 passed, 0 failed`。
+  - 依赖方向检查通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `settings-controller` 仍可继续拆分“环境诊断/模板导入导出编排”。
+- 下一步（建议直接接续）：
+  1. 拆分 `settings-controller` 的“环境诊断/模板导入导出编排”并补模块测试。
+  2. 保持快照格式持续更新，便于多轮交接。
+
 ---
 
 如果按本方案执行，重构将是“逐层替换”而不是“整包重写”，能在不中断现有插件可用性的前提下，持续降低复杂度并提升后续页面优化效率。

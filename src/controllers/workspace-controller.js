@@ -9,6 +9,8 @@ const { renderTemplatePickerListHtml } = require("./workspace/template-picker-vi
 const { renderTaskSummary } = require("./workspace/task-summary-view");
 const { createAppPickerController } = require("./workspace/app-picker-controller");
 const { createTemplatePickerController } = require("./workspace/template-picker-controller");
+const { createRunStatusController } = require("./workspace/run-status-controller");
+const { createRunWorkflowController } = require("./workspace/run-workflow-controller");
 const {
   buildLogLine,
   renderLogLine,
@@ -41,8 +43,6 @@ const {
   buildTemplatePickerUiState,
   buildTemplatePickerListViewModel
 } = require("../application/services/template-picker");
-
-const REQUEST_TIMEOUT_ERROR_CODE = "REQUEST_TIMEOUT";
 
 let workspaceGateway = createWorkspaceGateway();
 let store = workspaceGateway.store;
@@ -109,26 +109,9 @@ const runGuard = createRunGuard({
   dedupWindowMs: RUN_DEDUP_WINDOW_MS,
   dedupCacheLimit: RUN_DEDUP_CACHE_LIMIT
 });
-let jobExecutor = null;
-let jobScheduler = null;
 let runButtonPhaseController = null;
-
-function getJobTag(job) {
-  if (!job) return "Job:-";
-  return `Job:${job.jobId}`;
-}
-
-function isJobTimeoutLikeError(error) {
-  if (error && error.code === REQUEST_TIMEOUT_ERROR_CODE) return true;
-  const message = String((error && error.message) || error || "").toLowerCase();
-  return /timeout|超时/.test(message);
-}
-
-function createJobScopedLogger(job) {
-  return (msg, type = "info") => {
-    log(`[${getJobTag(job)}] ${String(msg || "")}`, type);
-  };
-}
+let runStatusController = null;
+let runWorkflowController = null;
 
 function syncPasteStrategySelect() {
   const select = dom.pasteStrategySelect || byId("pasteStrategySelect");
@@ -247,48 +230,77 @@ function getAppPickerController() {
   return appPickerController;
 }
 
-function clearTaskSummaryHint() {
-  if (state.taskSummaryHintTimerId) {
-    clearTimeout(state.taskSummaryHintTimerId);
-    state.taskSummaryHintTimerId = null;
+function getRunStatusController() {
+  if (!runStatusController) {
+    runStatusController = createRunStatusController({
+      state,
+      dom,
+      byId,
+      hasLiveJobs,
+      buildTaskSummaryViewModel,
+      renderTaskSummary,
+      jobStatus: JOB_STATUS,
+      runSummaryHintMs: RUN_SUMMARY_HINT_MS,
+      maxHistory: JOB_MAX_HISTORY
+    });
   }
-  state.taskSummaryHintText = "";
-  state.taskSummaryHintType = "info";
-  state.taskSummaryHintUntil = 0;
+  return runStatusController;
+}
+
+function getRunWorkflowController() {
+  if (!runWorkflowController) {
+    runWorkflowController = createRunWorkflowController({
+      state,
+      store,
+      runGuard,
+      getRunButtonPhaseController,
+      runButtonPhaseEnum: RUN_BUTTON_PHASE,
+      submitWorkspaceJobUsecase,
+      resolveTargetBounds,
+      resolveSourceImageBuffer,
+      runninghub,
+      ps,
+      setJobStatus,
+      cloneBounds,
+      cloneArrayBuffer,
+      createJobExecutor,
+      createJobScheduler,
+      updateTaskStatusSummary,
+      pruneJobHistory,
+      emitRunGuardFeedback,
+      log,
+      logPromptLengthsBeforeRun,
+      onJobCompleted: () => {
+        updateAccountStatus();
+      },
+      jobStatus: JOB_STATUS,
+      localMaxConcurrentJobs: LOCAL_MAX_CONCURRENT_JOBS,
+      timeoutRetryDelayMs: JOB_TIMEOUT_RETRY_DELAY_MS,
+      maxTimeoutRecoveries: JOB_MAX_TIMEOUT_RECOVERIES,
+      alert: typeof alert === "function" ? alert : () => {}
+    });
+  }
+  return runWorkflowController;
+}
+
+function clearTaskSummaryHint() {
+  getRunStatusController().clearTaskSummaryHint();
 }
 
 function setTaskSummaryHint(text, type = "info", ttlMs = RUN_SUMMARY_HINT_MS) {
-  const hintText = String(text || "").trim();
-  if (!hintText) {
-    clearTaskSummaryHint();
-    updateTaskStatusSummary();
-    return;
-  }
-
-  const safeTtl = Math.max(300, Number(ttlMs) || RUN_SUMMARY_HINT_MS);
-  state.taskSummaryHintText = hintText;
-  state.taskSummaryHintType = type === "warn" ? "warn" : "info";
-  state.taskSummaryHintUntil = Date.now() + safeTtl;
-  if (state.taskSummaryHintTimerId) clearTimeout(state.taskSummaryHintTimerId);
-  state.taskSummaryHintTimerId = setTimeout(() => {
-    clearTaskSummaryHint();
-    updateTaskStatusSummary();
-  }, safeTtl + 20);
-  updateTaskStatusSummary();
+  getRunStatusController().setTaskSummaryHint(text, type, ttlMs);
 }
 
-function getActiveTaskSummaryHint(now = Date.now()) {
-  const hintText = String(state.taskSummaryHintText || "").trim();
-  if (!hintText) return null;
-  const expiresAt = Number(state.taskSummaryHintUntil || 0);
-  if (expiresAt > 0 && expiresAt <= now) {
-    clearTaskSummaryHint();
-    return null;
-  }
-  return {
-    text: hintText,
-    type: state.taskSummaryHintType === "warn" ? "warn" : "info"
-  };
+function updateTaskStatusSummary() {
+  getRunStatusController().updateTaskStatusSummary();
+}
+
+function setJobStatus(job, status, reason = "") {
+  getRunStatusController().setJobStatus(job, status, reason);
+}
+
+function pruneJobHistory() {
+  getRunStatusController().pruneJobHistory();
 }
 
 function emitRunGuardFeedback(message, level = "info", ttlMs = RUN_SUMMARY_HINT_MS) {
@@ -297,47 +309,6 @@ function emitRunGuardFeedback(message, level = "info", ttlMs = RUN_SUMMARY_HINT_
   const type = level === "warn" ? "warn" : "info";
   log(`[RunGuard] ${text}`, type);
   setTaskSummaryHint(`最近操作：${text}`, type, ttlMs);
-}
-
-function ensureJobServices() {
-  if (!jobExecutor) {
-    jobExecutor = createJobExecutor({
-      runninghub,
-      ps,
-      setJobStatus,
-      createJobLogger: createJobScopedLogger,
-      cloneBounds,
-      cloneArrayBuffer,
-      isJobTimeoutLikeError,
-      onJobCompleted: () => {
-        updateAccountStatus();
-      },
-      jobStatus: JOB_STATUS,
-      timeoutRetryDelayMs: JOB_TIMEOUT_RETRY_DELAY_MS,
-      maxTimeoutRecoveries: JOB_MAX_TIMEOUT_RECOVERIES
-    });
-  }
-
-  if (!jobScheduler) {
-    jobScheduler = createJobScheduler({
-      getJobs: () => state.jobs,
-      maxConcurrent: LOCAL_MAX_CONCURRENT_JOBS,
-      executeJob: (job) => jobExecutor.execute(job),
-      runnableStatuses: [JOB_STATUS.QUEUED, JOB_STATUS.TIMEOUT_TRACKING],
-      onRunningCountChange: () => {
-        updateTaskStatusSummary();
-      },
-      onJobExecutionError: (job, error) => {
-        const message = error && error.message ? error.message : String(error || "unknown error");
-        setJobStatus(job, JOB_STATUS.FAILED, message);
-        createJobScopedLogger(job)(`任务失败: ${message}`, "error");
-      },
-      onJobSettled: () => {
-        pruneJobHistory();
-        updateTaskStatusSummary();
-      }
-    });
-  }
 }
 
 function updateRunButtonUI() {
@@ -355,49 +326,6 @@ function updateRunButtonUI() {
   btn.textContent = viewModel.text;
 }
 
-function getJobStatusLabel(status) {
-  if (status === JOB_STATUS.QUEUED) return "排队";
-  if (status === JOB_STATUS.SUBMITTING) return "提交";
-  if (status === JOB_STATUS.REMOTE_RUNNING) return "运行";
-  if (status === JOB_STATUS.DOWNLOADING) return "下载";
-  if (status === JOB_STATUS.APPLYING) return "回贴";
-  if (status === JOB_STATUS.TIMEOUT_TRACKING) return "超时跟踪";
-  if (status === JOB_STATUS.DONE) return "完成";
-  if (status === JOB_STATUS.FAILED) return "失败";
-  return status || "-";
-}
-
-function syncTaskSummaryTicker() {
-  if (hasLiveJobs(state.jobs, JOB_STATUS)) {
-    if (state.taskSummaryTimerId) return;
-    state.taskSummaryTimerId = setInterval(() => {
-      updateTaskStatusSummary();
-    }, 100);
-    return;
-  }
-  if (state.taskSummaryTimerId) {
-    clearInterval(state.taskSummaryTimerId);
-    state.taskSummaryTimerId = null;
-  }
-}
-
-function updateTaskStatusSummary() {
-  const summaryEl = dom.taskStatusSummary || byId("taskStatusSummary");
-  if (!summaryEl) return;
-  const now = Date.now();
-  const hint = getActiveTaskSummaryHint(now);
-  const viewModel = buildTaskSummaryViewModel({
-    jobs: state.jobs,
-    hint,
-    now,
-    jobStatus: JOB_STATUS,
-    activeLimit: 6,
-    previewLimit: 8,
-    resolveJobStatusLabel: getJobStatusLabel
-  });
-  renderTaskSummary(summaryEl, viewModel);
-  syncTaskSummaryTicker();
-}
 function updateCurrentAppMeta() {
   const metaEl = dom.appPickerMeta || byId("appPickerMeta");
   if (!metaEl) return;
@@ -449,96 +377,10 @@ function resolveSourceImageBuffer() {
   return getWorkspaceInputs().resolveSourceImageBuffer();
 }
 
-function setJobStatus(job, status, reason = "") {
-  if (!job) return;
-  job.status = status;
-  job.statusReason = String(reason || "");
-  job.updatedAt = Date.now();
-  updateTaskStatusSummary();
+function handleRun() {
+  getRunWorkflowController().handleRun();
 }
 
-function pruneJobHistory() {
-  if (!Array.isArray(state.jobs) || state.jobs.length <= JOB_MAX_HISTORY) return;
-  const active = state.jobs.filter((job) =>
-    [JOB_STATUS.QUEUED, JOB_STATUS.SUBMITTING, JOB_STATUS.REMOTE_RUNNING, JOB_STATUS.DOWNLOADING, JOB_STATUS.APPLYING, JOB_STATUS.TIMEOUT_TRACKING].includes(job.status)
-  );
-  const finished = state.jobs
-    .filter((job) => !active.includes(job))
-    .slice(0, Math.max(0, JOB_MAX_HISTORY - active.length));
-  state.jobs = [...active, ...finished].sort((a, b) => b.createdAt - a.createdAt);
-}
-
-function pumpJobScheduler() {
-  ensureJobServices();
-  jobScheduler.pump();
-}
-
-async function handleRun() {
-  const apiKey = store.getApiKey();
-  if (!apiKey) {
-    alert("请先在设置页配置 API Key");
-    return;
-  }
-  if (!state.currentApp) {
-    alert("请先选择一个应用");
-    return;
-  }
-
-  const runButtonCtrl = getRunButtonPhaseController();
-  const now = Date.now();
-  if (runGuard.isSubmitInFlight() || runButtonCtrl.isClickGuardActive(now)) {
-    emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
-    return;
-  }
-
-  if (!runGuard.beginSubmit(now)) {
-    emitRunGuardFeedback("任务已提交，请稍候...", "info", 1200);
-    return;
-  }
-  runButtonCtrl.enterSubmittingGuard();
-  const runSubmittingStartedAt = Date.now();
-
-  try {
-    const submitResult = submitWorkspaceJobUsecase({
-      runGuard,
-      now,
-      createdAt: Date.now(),
-      nextJobSeq: state.nextJobSeq,
-      apiKey,
-      currentApp: state.currentApp,
-      inputValues: state.inputValues,
-      targetBounds: resolveTargetBounds(),
-      sourceBuffer: resolveSourceImageBuffer(),
-      settings: store.getSettings(),
-      queuedStatus: JOB_STATUS.QUEUED
-    });
-
-    const job = submitResult.job;
-    state.nextJobSeq = submitResult.nextJobSeq;
-    state.jobs.unshift(job);
-    pruneJobHistory();
-    updateTaskStatusSummary();
-    emitRunGuardFeedback(`任务已提交到队列（${job.jobId}）`, "info", 1400);
-    if (submitResult.duplicateHint) {
-      emitRunGuardFeedback("检测到短时间重复提交，已继续入队。", "warn", 1800);
-    }
-    log(`[${getJobTag(job)}] 已加入后台队列: ${job.appName}`, "info");
-    logPromptLengthsBeforeRun(job.appItem, job.inputValues, `[${getJobTag(job)}]`);
-    await runButtonCtrl.waitSubmittingMinDuration(runSubmittingStartedAt);
-    runButtonCtrl.enterSubmittedAck();
-    pumpJobScheduler();
-  } catch (error) {
-    const message = error && error.message ? error.message : String(error || "unknown error");
-    emitRunGuardFeedback(`任务提交失败：${message}`, "warn", 2200);
-    log(`[RunGuard] 任务提交异常: ${message}`, "error");
-    runButtonCtrl.recoverNow();
-  } finally {
-    runGuard.finishSubmit();
-    if (state.runButtonPhase === RUN_BUTTON_PHASE.SUBMITTING_GUARD) {
-      runButtonCtrl.recoverNow();
-    }
-  }
-}
 function closeAppPickerModal() {
   getAppPickerController().close();
 }
@@ -713,18 +555,21 @@ function initWorkspaceController(options = {}) {
     runButtonPhaseController = null;
   }
   state.runButtonTimerId = null;
-  clearTaskSummaryHint();
+  if (runStatusController) {
+    runStatusController.dispose();
+    runStatusController = null;
+  }
+  if (runWorkflowController) {
+    runWorkflowController.dispose();
+    runWorkflowController = null;
+  }
+  state.taskSummaryHintText = "";
+  state.taskSummaryHintType = "info";
+  state.taskSummaryHintUntil = 0;
+  state.taskSummaryHintTimerId = null;
   if (state.taskSummaryTimerId) {
     clearInterval(state.taskSummaryTimerId);
     state.taskSummaryTimerId = null;
-  }
-  if (jobScheduler) {
-    jobScheduler.dispose();
-    jobScheduler = null;
-  }
-  if (jobExecutor) {
-    jobExecutor.reset();
-    jobExecutor = null;
   }
   runGuard.reset();
   state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
