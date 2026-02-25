@@ -7,19 +7,46 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!--
+    Phase 0 DOM Contract Freeze (2026-02-25)
+    Rule:
+    1) Keep controller-bound ids stable.
+    2) Keep modal hooks and critical tag types stable.
+    3) UI optimization can change visual style/layout only, not business behavior.
+    Core workspace ids:
+    btnRun, btnOpenAppPicker, btnRefreshWorkspaceApps, pasteStrategySelect, btnClearLog,
+    taskStatusSummary, appPickerMeta, dynamicInputContainer, imageInputContainer, logWindow,
+    appPickerModal, appPickerModalClose, appPickerSearchInput, appPickerStats, appPickerList,
+    templateModal, templateModalTitle, templateList, templateModalActions,
+    templateModalSelectionInfo, btnApplyTemplateSelection, templateModalClose,
+    accountSummary, accountBalanceValue, accountCoinsValue
+  -->
   <div class="nav-tabs">
       <div class="nav-brand" title="Plugin Logo">
         <img class="nav-brand-logo" src="icons/icon.png" alt="logo" />
         <sp-button id="btnDonate" variant="primary" size="s" quiet>打赏</sp-button>
       </div>
-      <button id="tabWorkspace" class="nav-item active" type="button">RH 工作台</button>
-      <button id="tabTools" class="nav-item" type="button">工具箱</button>
-      <button id="tabSettings" class="nav-item" type="button">设置</button>
+      <button id="tabWorkspace" class="nav-item active" type="button">
+        <span class="nav-item-icon nav-item-icon-workspace" aria-hidden="true"></span>
+        <span class="nav-item-label">RH 工作台</span>
+      </button>
+      <button id="tabTools" class="nav-item" type="button">
+        <span class="nav-item-icon nav-item-icon-tools" aria-hidden="true"></span>
+        <span class="nav-item-label">工具箱</span>
+      </button>
+      <button id="tabSettings" class="nav-item" type="button">
+        <span class="nav-item-icon nav-item-icon-settings" aria-hidden="true"></span>
+        <span class="nav-item-label">设置</span>
+      </button>
   </div>
   
-  <section id="viewTools" class="tab-content">
-    <div class="tools-intro">
-      <div class="tools-title">工具箱</div>
+  <section id="viewTools" class="tab-content view-shell view-tools-shell">
+    <div class="view-stack view-tools-stack">
+    <div class="tools-intro section-intro">
+      <div class="tools-title-row">
+        <span class="section-icon section-icon-tools" aria-hidden="true"></span>
+        <div class="tools-title">工具箱</div>
+      </div>
       <div class="tools-subtitle">常用 PS 功能入口，后续会加入更多工具与可选参数。</div>
     </div>
 
@@ -145,12 +172,16 @@
         </div>
       </div>
     </div>
+    </div>
 </section>
 
-  <section id="viewWorkspace" class="tab-content active">
-    <header class="header">
+  <section id="viewWorkspace" class="tab-content active view-shell view-workspace-shell">
+    <header class="header workspace-header">
       <div class="header-main">
-        <h3>RunningHub AI 助手</h3>
+        <div class="workspace-title-row">
+          <span class="section-icon section-icon-workspace" aria-hidden="true"></span>
+          <h3>RunningHub AI 助手</h3>
+        </div>
         <div id="accountSummary" class="account-summary is-empty" title="请先设置 API Key">
           <span class="account-pill">
             <span class="account-pill-label">余额</span>
@@ -173,7 +204,8 @@
       <span class="version">V2.2.1</span>
     </header>
 
-    <div class="card app-select-card">
+    <div class="workspace-flow">
+    <div class="card app-select-card workspace-stage workspace-stage-app">
       <div class="card-title-row">
         <div class="card-title">选择应用</div>
         
@@ -188,7 +220,7 @@
       </div>
       </div>
 
-    <div id="workspaceInputArea" class="workspace-input-area">
+    <div id="workspaceInputArea" class="workspace-input-area workspace-stage workspace-stage-input">
       <div id="imageInputContainer" class="image-input-container"></div>
       <div id="dynamicInputContainer" class="dynamic-input-container">
         <div class="empty-state">
@@ -198,9 +230,12 @@
       </div>
     </div>
 
-    <button id="btnRun" class="main-btn main-btn-primary" type="button" disabled>开始运行</button>
-    <div id="taskStatusSummary" class="task-status-summary">后台任务：无</div>
+    <div class="workspace-stage workspace-stage-run">
+      <button id="btnRun" class="main-btn main-btn-primary" type="button" disabled>开始运行</button>
+      <div id="taskStatusSummary" class="task-status-summary">后台任务：无</div>
+    </div>
 
+    <div class="workspace-stage workspace-stage-log">
     <div class="log-toolbar">
       <div class="log-toolbar-title">运行日志</div>
       <div class="log-toolbar-actions">
@@ -209,15 +244,21 @@
     </div>
     <textarea id="logWindow" readonly>[系统] 插件已加载，等待操作...</textarea>
     <div class="log-hint">可选中文本后直接复制。</div>
+    </div>
+    </div>
   </section>
 
-  <section id="viewSettings" class="tab-content">
+  <section id="viewSettings" class="tab-content view-shell view-settings-shell">
     <header class="header">
-      <h3>系统设置</h3>
+      <div class="settings-title-row">
+        <span class="section-icon section-icon-settings" aria-hidden="true"></span>
+        <h3>系统设置</h3>
+      </div>
       <span class="version">V2.2.1</span>
     </header>
 
-    <div class="setting-section">
+    <div class="settings-flow">
+    <div class="setting-section setting-section-core">
       <div class="setting-section-title">API Key</div>
       <div class="control-group">
         <label for="apiKeyInput">RunningHub API Key</label>
@@ -233,7 +274,7 @@
       <div class="setting-hint">API Key 仅保存在本地，不会上传到第三方。</div>
     </div>
 
-    <div class="setting-section">
+    <div class="setting-section setting-section-core">
       <div class="setting-section-title">AI 应用管理</div>
       <div class="control-group">
         <label for="appIdInput">应用 ID / URL</label>
@@ -252,7 +293,7 @@
       <div id="savedAppsList" class="saved-list"></div>
     </div>
 
-    <div class="setting-section">
+    <div class="setting-section setting-section-core">
       <div class="setting-section-title">提示词模板</div>
       <div class="control-group">
         <label for="templateTitleInput">模板标题</label>
@@ -271,7 +312,7 @@
       <div id="savedTemplatesList" class="saved-list"></div>
     </div>
 
-    <div id="advancedSettingsSection" class="setting-section setting-section-collapsible setting-section-compact is-collapsed">
+    <div id="advancedSettingsSection" class="setting-section setting-section-collapsible setting-section-compact setting-section-aux is-collapsed">
       <div id="advancedSettingsHeader" class="setting-section-title setting-section-toggle" role="button" tabindex="0" aria-expanded="false">
         <span>高级设置</span>
         <button id="advancedSettingsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
@@ -298,7 +339,7 @@
       </div>
     </div>
 
-    <div id="envDiagnosticsSection" class="setting-section setting-section-collapsible setting-section-compact is-collapsed">
+    <div id="envDiagnosticsSection" class="setting-section setting-section-collapsible setting-section-compact setting-section-aux is-collapsed">
       <div id="envDiagnosticsHeader" class="setting-section-title setting-section-toggle" role="button" tabindex="0" aria-expanded="false">
         <span>环境诊断</span>
         <button id="envDiagnosticsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
@@ -314,6 +355,7 @@
           <textarea id="envDoctorOutput" rows="10" placeholder="点击“运行环境检测”后会显示报告摘要与文件路径"></textarea>
         </div>
       </div>
+    </div>
     </div>
   </section>
 

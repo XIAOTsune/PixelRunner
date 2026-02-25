@@ -117,18 +117,8 @@ function createInputRenderer(deps = {}) {
 
       const clearBtn = document.createElement("button");
       clearBtn.type = "button";
-      clearBtn.textContent = "清除";
+      clearBtn.textContent = "清空";
       clearBtn.className = "image-input-clear-btn";
-      clearBtn.style.position = "absolute";
-      clearBtn.style.top = "8px";
-      clearBtn.style.right = "8px";
-      clearBtn.style.zIndex = "3";
-      clearBtn.style.padding = "2px 6px";
-      clearBtn.style.fontSize = "10px";
-      clearBtn.style.borderRadius = "2px";
-      clearBtn.style.border = "1px solid #555";
-      clearBtn.style.background = "rgba(0,0,0,0.5)";
-      clearBtn.style.color = "#ddd";
       clearBtn.addEventListener("click", (event) => {
         event.stopPropagation();
         const statusText = wrapper.querySelector(".image-input-text");

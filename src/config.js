@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS = {
   pollInterval: 2,
   timeout: 180,
   uploadMaxEdge: 0,
-  pasteStrategy: "smart"
+  pasteStrategy: "normal"
 };
 
 const DEFAULT_PROMPT_TEMPLATES = [
