@@ -1001,6 +1001,60 @@ src/
   2. `settings-controller` 继续抽离“应用/模板列表操作编排”。
   3. README 的最小预检命令同步补上 `tests/controllers/tools-controller-init.test.js`。
 
+### 11.8 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 1 项完成：`workspace-controller` 的 app-picker 编排（打开/搜索/选择/同步）已下沉到独立模块 `src/controllers/workspace/app-picker-controller.js`。
+  - `workspace-controller` 已改为通过 `getAppPickerController()` 委托 app-picker 逻辑，`index.js` 入口行为保持不变。
+  - controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增 app-picker 编排模块测试：`tests/controllers/workspace/app-picker-controller.test.js`。
+- 变更文件：
+  - `src/controllers/workspace/app-picker-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/app-picker-controller.test.js`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`（改动前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动前）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动前控制器回归：`45 passed, 0 failed`。
+  - 改动后回归：`230 passed, 0 failed`。
+  - 依赖方向检查改动前后均通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `settings-controller` 仍为 P2 下一刀主目标（列表操作编排尚未下沉）。
+  - `workspace-controller` 体积已继续收敛，但仍需按“副作用编排 / 纯策略 / 视图更新”进一步拆分。
+- 下一步（建议直接接续）：
+  1. 拆分 `settings-controller` 的应用/模板列表操作编排块并补模块测试。
+  2. 评估 `workspace-controller` 下一刀候选（例如日志/任务摘要相关编排）并按同模式拆分。
+  3. 继续维护“本次完成 / 变更文件 / 校验命令 / 结果 / 下一步”快照格式，保证可交接。
+
+### 11.9 补充进度快照（2026-02-25）
+- 本次完成：
+  - P2 第二阶段第 2 项完成：`settings-controller` 的列表操作编排（应用/模板列表渲染 + 编辑/删除流）已下沉到独立模块 `src/controllers/settings/settings-lists-controller.js`。
+  - `settings-controller` 改为通过 `getSettingsListsController()` 委托列表操作，`index.js` 入口行为保持不变。
+  - controller 注入模式保持兼容，未回退 `init*Controller({ gateway })` 设计。
+  - 新增模块级测试：`tests/controllers/settings/settings-lists-controller.test.js`。
+- 变更文件：
+  - `src/controllers/settings/settings-lists-controller.js`
+  - `src/controllers/settings-controller.js`
+  - `tests/controllers/settings/settings-lists-controller.test.js`
+- 校验命令：
+  - `node scripts/check-controller-service-deps.js`（改动前）
+  - `node --test tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js`（改动前）
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`（改动后）
+  - `node scripts/check-controller-service-deps.js`（改动后）
+- 结果：
+  - 改动前控制器回归：`56 passed, 0 failed`。
+  - 改动后回归：`235 passed, 0 failed`。
+  - 依赖方向检查改动前后均通过：`Controller dependency check passed: no direct services import.`。
+- 风险/遗留：
+  - `workspace-controller` 仍有可下沉编排块（任务摘要/日志/运行状态相关逻辑）。
+  - `settings-controller` 仍可继续拆分“环境诊断/模板导入导出编排”。
+- 下一步（建议直接接续）：
+  1. 拆分 `workspace-controller` 下一块编排并补模块测试。
+  2. 继续收敛 `settings-controller` 的非列表编排块（环境诊断与导入导出流程）。
+  3. 保持快照格式持续更新，便于多轮交接。
+
 ---
 
 如果按本方案执行，重构将是“逐层替换”而不是“整包重写”，能在不中断现有插件可用性的前提下，持续降低复杂度并提升后续页面优化效率。

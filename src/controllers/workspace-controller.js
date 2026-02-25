@@ -7,6 +7,7 @@ const { createWorkspaceInputs } = require("./workspace/workspace-inputs");
 const { renderAppPickerListHtml } = require("./workspace/app-picker-view");
 const { renderTemplatePickerListHtml } = require("./workspace/template-picker-view");
 const { renderTaskSummary } = require("./workspace/task-summary-view");
+const { createAppPickerController } = require("./workspace/app-picker-controller");
 const { createTemplatePickerController } = require("./workspace/template-picker-controller");
 const {
   buildLogLine,
@@ -102,6 +103,7 @@ const RUN_DEDUP_CACHE_LIMIT = 80;
 const RUN_SUMMARY_HINT_MS = 1800;
 
 let workspaceInputs = null;
+let appPickerController = null;
 let templatePickerController = null;
 const runGuard = createRunGuard({
   dedupWindowMs: RUN_DEDUP_WINDOW_MS,
@@ -201,10 +203,6 @@ function onClearLogClick() {
   log("CLEAR");
 }
 
-function getApps() {
-  return store.getAiApps().filter((app) => app && typeof app === "object");
-}
-
 function getRunButtonPhaseController() {
   if (!runButtonPhaseController) {
     runButtonPhaseController = createRunButtonPhaseController({
@@ -225,6 +223,28 @@ function getRunButtonPhaseController() {
     });
   }
   return runButtonPhaseController;
+}
+
+function getAppPickerController() {
+  if (!appPickerController) {
+    appPickerController = createAppPickerController({
+      state,
+      dom,
+      store,
+      byId,
+      decodeDataId,
+      escapeHtml,
+      encodeDataId,
+      renderAppPickerListHtml,
+      buildAppPickerViewModel,
+      renderDynamicInputs,
+      updateCurrentAppMeta,
+      updateRunButtonUI,
+      refreshModalOpenState,
+      alert: typeof alert === "function" ? alert : () => {}
+    });
+  }
+  return appPickerController;
 }
 
 function clearTaskSummaryHint() {
@@ -519,111 +539,20 @@ async function handleRun() {
     }
   }
 }
-function renderAppPickerList() {
-  if (!dom.appPickerList) return;
-
-  const viewModel = buildAppPickerViewModel({
-    apps: getApps(),
-    keyword: state.appPickerKeyword,
-    currentAppId: state.currentApp && state.currentApp.id
-  });
-
-  if (dom.appPickerStats) {
-    dom.appPickerStats.textContent = `${viewModel.visibleCount} / ${viewModel.totalCount}`;
-  }
-
-  dom.appPickerList.innerHTML = renderAppPickerListHtml(viewModel, {
-    escapeHtml,
-    encodeDataId
-  });
-}
-
 function closeAppPickerModal() {
-  if (dom.appPickerModal) dom.appPickerModal.classList.remove("active");
-  refreshModalOpenState();
+  getAppPickerController().close();
 }
 
 function openAppPickerModal() {
-  state.appPickerKeyword = "";
-  if (dom.appPickerSearchInput) dom.appPickerSearchInput.value = "";
-  renderAppPickerList();
-  if (dom.appPickerModal) dom.appPickerModal.classList.add("active");
-  refreshModalOpenState();
-}
-
-function selectAppInternal(id, options = {}) {
-  const quiet = !!options.quiet;
-  const closeModal = options.closeModal !== false;
-  try {
-    const app = getApps().find((item) => String(item.id) === String(id));
-    if (!app) {
-      if (!quiet) alert("应用不存在，请刷新后重试");
-      return false;
-    }
-    renderDynamicInputs(app);
-    if (closeModal) closeAppPickerModal();
-    return true;
-  } catch (error) {
-    console.error(error);
-    if (!quiet) alert(`加载应用失败: ${error.message}`);
-    return false;
-  }
+  getAppPickerController().open();
 }
 
 function syncWorkspaceApps(options = {}) {
-  const forceRerender = !!options.forceRerender;
-  const apps = getApps();
-
-  if (apps.length === 0) {
-    if (state.currentApp || forceRerender) {
-      renderDynamicInputs(null);
-    } else {
-      updateCurrentAppMeta();
-      updateRunButtonUI();
-    }
-    renderAppPickerList();
-    return;
-  }
-
-  const currentId = state.currentApp && state.currentApp.id;
-  if (!currentId) {
-    selectAppInternal(apps[0].id, { quiet: true, closeModal: false });
-    renderAppPickerList();
-    return;
-  }
-
-  const matched = apps.find((item) => item.id === currentId);
-  if (!matched) {
-    selectAppInternal(apps[0].id, { quiet: true, closeModal: false });
-    renderAppPickerList();
-    return;
-  }
-
-  state.currentApp = matched;
-  if (forceRerender) {
-    renderDynamicInputs(matched);
-  } else {
-    updateCurrentAppMeta();
-    updateRunButtonUI();
-  }
-  renderAppPickerList();
+  getAppPickerController().sync(options);
 }
 
 function handleAppPickerListClick(event) {
-  const gotoSettingsBtn = event.target.closest("button[data-action='goto-settings']");
-  if (gotoSettingsBtn) {
-    closeAppPickerModal();
-    const tabSettings = byId("tabSettings");
-    if (tabSettings) tabSettings.click();
-    return;
-  }
-
-  const item = event.target.closest(".app-picker-item[data-id]");
-  if (!item || !dom.appPickerList.contains(item)) return;
-
-  const id = decodeDataId(item.dataset.id || "");
-  if (!id) return;
-  selectAppInternal(id);
+  getAppPickerController().handleListClick(event);
 }
 
 function logPromptLengthsBeforeRun(appItem = state.currentApp, inputValues = state.inputValues, prefix = "") {
@@ -665,12 +594,11 @@ function handleTemplateListClick(event) {
 }
 
 function onAppPickerSearchInput() {
-  state.appPickerKeyword = String(dom.appPickerSearchInput.value || "");
-  renderAppPickerList();
+  getAppPickerController().onSearchInput();
 }
 
 function onAppPickerModalClick(event) {
-  if (event.target === dom.appPickerModal) closeAppPickerModal();
+  getAppPickerController().onModalClick(event);
 }
 
 function onTemplateModalClick(event) {
@@ -800,6 +728,7 @@ function initWorkspaceController(options = {}) {
   }
   runGuard.reset();
   state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
+  appPickerController = null;
   templatePickerController = null;
 
   cacheDomRefs();

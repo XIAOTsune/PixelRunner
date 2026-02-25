@@ -47,6 +47,7 @@ const { renderParseSuccessHtml, renderParseFailureHtml } = require("./settings/p
 const { renderSavedAppsListHtml } = require("./settings/saved-apps-view");
 const { renderSavedTemplatesListHtml } = require("./settings/saved-templates-view");
 const { resolveSavedAppsListAction, resolveSavedTemplatesListAction } = require("./settings/settings-list-actions");
+const { createSettingsListsController } = require("./settings/settings-lists-controller");
 const { setEnvDoctorOutput, appendEnvDoctorOutput } = require("./settings/env-doctor-view");
 const { renderTemplateLengthHint } = require("./settings/template-editor-view");
 const { toggleSectionCollapse } = require("./settings/section-toggle-view");
@@ -65,6 +66,7 @@ const TEXT_INPUT_HARD_MAX_CHARS = textInputPolicy.TEXT_INPUT_HARD_MAX_CHARS;
 const TEMPLATE_EXPORT_FILENAME_PREFIX = "pixelrunner_prompt_templates";
 const dom = {};
 let settingsGateway = createSettingsGateway();
+let settingsListsController = null;
 
 function log(msg) {
   console.log(`[Settings] ${msg}`);
@@ -74,6 +76,42 @@ const state = {
   parsedAppData: null,
   currentEditingAppId: null
 };
+
+function getSettingsListsController() {
+  if (!settingsListsController) {
+    settingsListsController = createSettingsListsController({
+      state,
+      dom,
+      getStore: () => settingsGateway,
+      appEvents: APP_EVENTS,
+      emitAppEvent,
+      buildSavedAppsListViewModel,
+      buildSavedTemplatesListViewModel,
+      listSavedAppsUsecase,
+      findSavedAppByIdUsecase,
+      loadEditableAppUsecase,
+      deleteAppUsecase,
+      listSavedTemplatesUsecase,
+      findSavedTemplateByIdUsecase,
+      loadEditableTemplateUsecase,
+      deleteTemplateUsecase,
+      renderSavedAppsListHtml,
+      renderSavedTemplatesListHtml,
+      resolveSavedAppsListAction,
+      resolveSavedTemplatesListAction,
+      findClosestByClass,
+      decodeDataId,
+      escapeHtml,
+      encodeDataId,
+      appendEnvDoctorOutput,
+      updateTemplateLengthHint,
+      safeConfirm,
+      log,
+      alert: typeof alert === "function" ? alert : () => {}
+    });
+  }
+  return settingsListsController;
+}
 
 async function runEnvironmentDoctorManual() {
   if (!dom.btnRunEnvDoctor) return;
@@ -251,15 +289,7 @@ function showParseFailure(errorOrMessage) {
 }
 
 function renderSavedAppsList() {
-  const viewModel = buildSavedAppsListViewModel(
-    listSavedAppsUsecase({
-      store: settingsGateway
-    })
-  );
-  dom.savedAppsList.innerHTML = renderSavedAppsListHtml(viewModel, {
-    escapeHtml,
-    encodeDataId
-  });
+  getSettingsListsController().renderSavedAppsList();
 }
 
 function saveTemplate() {
@@ -336,113 +366,15 @@ async function importTemplatesJson() {
 }
 
 function renderSavedTemplates() {
-  const viewModel = buildSavedTemplatesListViewModel(
-    listSavedTemplatesUsecase({
-      store: settingsGateway
-    })
-  );
-  dom.savedTemplatesList.innerHTML = renderSavedTemplatesListHtml(viewModel, {
-    escapeHtml,
-    encodeDataId
-  });
+  getSettingsListsController().renderSavedTemplates();
 }
 
 function onSavedAppsListClick(event) {
-  const action = resolveSavedAppsListAction(event, {
-    container: dom.savedAppsList,
-    findClosestByClass,
-    decodeDataId
-  });
-  if (action.kind === "none") return;
-
-  if (action.kind === "edit-app") {
-    const id = action.id;
-    const app = findSavedAppByIdUsecase({
-      store: settingsGateway,
-      id
-    });
-    const editable = loadEditableAppUsecase({ app });
-    if (!editable.found) {
-      alert("未找到应用记录");
-      return;
-    }
-    dom.appIdInput.value = editable.appId;
-    dom.appNameInput.value = editable.appName;
-    state.currentEditingAppId = editable.currentEditingAppId;
-    state.parsedAppData = editable.parsedAppData;
-    dom.parseResultContainer.innerHTML = `<div style="color:#aaa; font-size:11px; margin:6px 0;">已载入应用，点击“解析”重新拉取参数后保存。</div>`;
-    return;
-  }
-
-  const id = action.id;
-  if (!id) {
-    appendEnvDoctorOutput(dom.envDoctorOutput, "Delete app failed: missing app id in clicked row.");
-    alert("删除失败：未找到应用 ID");
-    return;
-  }
-
-  if (!safeConfirm("删除此应用？", { log })) return;
-
-  const result = deleteAppUsecase({
-    store: settingsGateway,
-    id
-  });
-  if (!result.deleted) {
-    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete app not found: id=${id}`);
-    alert("应用不存在或已被删除");
-  } else {
-    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete app success: id=${id}`);
-    emitAppEvent(APP_EVENTS.APPS_CHANGED, { reason: "deleted", id });
-  }
-
-  renderSavedAppsList();
+  getSettingsListsController().onSavedAppsListClick(event);
 }
 
 function onSavedTemplatesListClick(event) {
-  const action = resolveSavedTemplatesListAction(event, {
-    container: dom.savedTemplatesList,
-    decodeDataId
-  });
-  if (action.kind === "none") return;
-
-  if (action.kind === "edit-template") {
-    const id = action.id;
-    const template = findSavedTemplateByIdUsecase({
-      store: settingsGateway,
-      id
-    });
-    const editable = loadEditableTemplateUsecase({ template });
-    if (!editable.found) {
-      alert("未找到模板记录");
-      return;
-    }
-    dom.templateTitleInput.value = editable.title;
-    dom.templateContentInput.value = editable.content;
-    updateTemplateLengthHint();
-    return;
-  }
-
-  const id = action.id;
-  if (!id) {
-    appendEnvDoctorOutput(dom.envDoctorOutput, "Delete template failed: missing template id.");
-    return;
-  }
-
-  if (!safeConfirm("删除此模板？", { log })) return;
-
-  const result = deleteTemplateUsecase({
-    store: settingsGateway,
-    id
-  });
-  if (!result.deleted) {
-    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete template not found: id=${id}`);
-    alert("模板不存在或已被删除");
-  } else {
-    appendEnvDoctorOutput(dom.envDoctorOutput, `Delete template success: id=${id}`);
-    emitAppEvent(APP_EVENTS.TEMPLATES_CHANGED, { reason: "deleted", id });
-  }
-
-  renderSavedTemplates();
+  getSettingsListsController().onSavedTemplatesListClick(event);
 }
 
 function clearAppEditorUI() {
@@ -455,16 +387,15 @@ function clearAppEditorUI() {
 }
 
 function syncSettingsLists() {
-  renderSavedAppsList();
-  renderSavedTemplates();
+  getSettingsListsController().syncSettingsLists();
 }
 
 function onAppsChanged() {
-  renderSavedAppsList();
+  getSettingsListsController().onAppsChanged();
 }
 
 function onTemplatesChanged() {
-  renderSavedTemplates();
+  getSettingsListsController().onTemplatesChanged();
 }
 
 function onToggleApiKey() {
@@ -497,6 +428,7 @@ function resolveSettingsGateway(options = {}) {
 
 function initSettingsController(options = {}) {
   settingsGateway = resolveSettingsGateway(options);
+  settingsListsController = null;
 
   const ids = [
     "apiKeyInput",
