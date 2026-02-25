@@ -63,8 +63,6 @@
     typeof options.appendEnvDoctorOutput === "function" ? options.appendEnvDoctorOutput : () => {};
   const updateTemplateLengthHint =
     typeof options.updateTemplateLengthHint === "function" ? options.updateTemplateLengthHint : () => {};
-  const safeConfirm =
-    typeof options.safeConfirm === "function" ? options.safeConfirm : () => true;
   const log = typeof options.log === "function" ? options.log : () => {};
   const alertFn =
     typeof options.alert === "function"
@@ -136,7 +134,7 @@
       return;
     }
 
-    if (!safeConfirm("Delete this app?", { log })) return;
+    log(`Delete app requested: id=${id}`);
 
     const result = deleteAppUsecase({
       store: getStore(),
@@ -183,7 +181,7 @@
       return;
     }
 
-    if (!safeConfirm("Delete this template?", { log })) return;
+    log(`Delete template requested: id=${id}`);
 
     const result = deleteTemplateUsecase({
       store: getStore(),

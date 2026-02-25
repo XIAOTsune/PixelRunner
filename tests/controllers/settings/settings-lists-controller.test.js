@@ -37,7 +37,6 @@ function createFixture(options = {}) {
     emitEvents: [],
     appends: [],
     alerts: [],
-    confirmPrompts: [],
     updateTemplateLengthHint: 0,
     deleteTemplateCalls: 0
   };
@@ -116,10 +115,7 @@ function createFixture(options = {}) {
     updateTemplateLengthHint: () => {
       calls.updateTemplateLengthHint += 1;
     },
-    safeConfirm: (prompt) => {
-      calls.confirmPrompts.push(String(prompt || ""));
-      return options.confirmResult !== undefined ? !!options.confirmResult : true;
-    },
+    safeConfirm: () => false,
     log: () => {},
     alert: (message) => {
       calls.alerts.push(String(message || ""));
@@ -165,13 +161,12 @@ test("settings lists controller edit app action loads editable data into editor 
 });
 
 test("settings lists controller delete app action emits APPS_CHANGED and rerenders list", () => {
-  const fixture = createFixture({ confirmResult: true });
+  const fixture = createFixture();
   const { controller, dom, calls, setSavedAppsAction } = fixture;
   setSavedAppsAction({ kind: "delete-app", id: "app-1" });
 
   controller.onSavedAppsListClick({});
 
-  assert.equal(calls.confirmPrompts.length, 1);
   assert.equal(calls.emitEvents.length, 1);
   assert.equal(calls.emitEvents[0].eventName, "apps_changed");
   assert.equal(calls.emitEvents[0].payload.id, "app-1");
@@ -191,15 +186,16 @@ test("settings lists controller edit template action updates editor and length h
   assert.equal(calls.updateTemplateLengthHint, 1);
 });
 
-test("settings lists controller delete template action respects confirm and skips delete when cancelled", () => {
-  const fixture = createFixture({ confirmResult: false });
+test("settings lists controller delete template action deletes immediately without confirm", () => {
+  const fixture = createFixture();
   const { controller, dom, calls, setSavedTemplatesAction } = fixture;
   setSavedTemplatesAction({ kind: "delete-template", id: "tpl-2" });
 
   controller.onSavedTemplatesListClick({});
 
-  assert.equal(calls.confirmPrompts.length, 1);
-  assert.equal(calls.deleteTemplateCalls, 0);
-  assert.equal(calls.emitEvents.length, 0);
-  assert.equal(dom.savedTemplatesList.innerHTML, "");
+  assert.equal(calls.deleteTemplateCalls, 1);
+  assert.equal(calls.emitEvents.length, 1);
+  assert.equal(calls.emitEvents[0].eventName, "templates_changed");
+  assert.equal(calls.emitEvents[0].payload.id, "tpl-2");
+  assert.equal(dom.savedTemplatesList.innerHTML, "templates:1");
 });
