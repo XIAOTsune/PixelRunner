@@ -336,6 +336,11 @@
           <label for="timeoutInput">超时时间（秒）</label>
           <input id="timeoutInput" type="number" min="10" max="600" value="180" />
         </div>
+        <div class="control-group">
+          <label for="cloudConcurrentJobsInput">云端任务并发数（1-100）</label>
+          <input id="cloudConcurrentJobsInput" type="number" min="1" max="100" value="2" />
+          <div class="setting-hint">默认 2。仅当账号支持更高并发时再提高。</div>
+        </div>
       </div>
     </div>
 
@@ -346,13 +351,11 @@
       </div>
       <div class="setting-section-body">
         <div class="inline-row">
-          <button id="btnRunEnvDoctor" type="button" class="main-btn main-btn-secondary">运行环境检测</button>
-          <button id="btnLoadLatestDiag" type="button" class="main-btn">读取最近报告</button>
-          <button id="btnLoadParseDebug" type="button" class="main-btn">Load Parse Debug</button>
+          <button id="btnLoadDiagnosticsSummary" type="button" class="main-btn main-btn-secondary">读取诊断摘要</button>
         </div>
         <div class="control-group">
           <label for="envDoctorOutput">诊断输出</label>
-          <textarea id="envDoctorOutput" rows="10" placeholder="点击“运行环境检测”后会显示报告摘要与文件路径"></textarea>
+          <textarea id="envDoctorOutput" rows="10" placeholder="点击“读取诊断摘要”查看环境诊断与解析调试信息"></textarea>
         </div>
       </div>
     </div>

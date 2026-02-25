@@ -98,7 +98,7 @@ test("initWorkspaceController uses injected gateway when provided", async () => 
       store: {
         getSettings: () => {
           calls.getSettings += 1;
-          return { pollInterval: 2, timeout: 180, uploadMaxEdge: 0, pasteStrategy: "normal" };
+          return { pollInterval: 2, timeout: 180, uploadMaxEdge: 0, pasteStrategy: "normal", cloudConcurrentJobs: 2 };
         },
         getApiKey: () => {
           calls.getApiKey += 1;

@@ -1,9 +1,12 @@
 const { normalizeAppId, escapeHtml } = require("../utils");
 const { APP_EVENTS, emitAppEvent } = require("../events");
-const { runPsEnvironmentDoctor, DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
+const { DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
 const textInputPolicy = require("../domain/policies/text-input-policy");
-const { normalizeUploadMaxEdge } = require("../domain/policies/run-settings-policy");
+const {
+  normalizeUploadMaxEdge,
+  normalizeCloudConcurrentJobs
+} = require("../domain/policies/run-settings-policy");
 const { buildSavedAppsListViewModel, buildSavedTemplatesListViewModel } = require("../application/services/settings-lists");
 const {
   buildParseSuccessViewModel,
@@ -102,12 +105,8 @@ function buildSettingsDelegates() {
       getSettingsSubcontrollersRegistry().getSettingsDiagnosticsTransferController().exportTemplatesJson(),
     importTemplatesJson: () =>
       getSettingsSubcontrollersRegistry().getSettingsDiagnosticsTransferController().importTemplatesJson(),
-    runEnvironmentDoctorManual: () =>
-      getSettingsSubcontrollersRegistry().getSettingsDiagnosticsTransferController().runEnvironmentDoctorManual(),
-    loadLatestDiagnosticReport: () =>
-      getSettingsSubcontrollersRegistry().getSettingsDiagnosticsTransferController().loadLatestDiagnosticReport(),
-    loadParseDebugReport: () =>
-      getSettingsSubcontrollersRegistry().getSettingsDiagnosticsTransferController().loadParseDebugReport(),
+    loadDiagnosticsSummary: () =>
+      getSettingsSubcontrollersRegistry().getSettingsDiagnosticsTransferController().loadDiagnosticsSummary(),
     updateTemplateLengthHint: () =>
       getSettingsSubcontrollersRegistry().getSettingsEditorController().updateTemplateLengthHint(),
     onTemplateContentPaste: (event) =>
@@ -167,7 +166,6 @@ function getSettingsSubcontrollersRegistry() {
         safeConfirm
       },
       diagnosticsTransferDeps: {
-        runPsEnvironmentDoctor,
         summarizeDiagnosticReport,
         summarizeParseDebugReport,
         loadStoredJsonReport,
@@ -204,6 +202,7 @@ function getSettingsSubcontrollersRegistry() {
         testApiKeyUsecase,
         saveTemplateUsecase,
         normalizeUploadMaxEdge,
+        normalizeCloudConcurrentJobs,
         buildTemplateLengthHintViewModel,
         getClipboardPlainText,
         enforceLongTextCapacity: textInputPolicy.enforceLongTextCapacity,

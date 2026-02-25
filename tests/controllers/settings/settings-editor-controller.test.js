@@ -7,6 +7,7 @@ function createFixture(options = {}) {
     apiKeyInput: { value: options.apiKeyInputValue || "" },
     pollIntervalInput: { value: options.pollIntervalInputValue || "" },
     timeoutInput: { value: options.timeoutInputValue || "" },
+    cloudConcurrentJobsInput: { value: options.cloudConcurrentJobsInputValue || "" },
     uploadMaxEdgeSettingSelect: { value: options.uploadMaxEdgeInputValue || "" },
     btnTestApiKey: { textContent: "test" },
     templateTitleInput: { value: options.templateTitleValue || "" },
@@ -20,7 +21,8 @@ function createFixture(options = {}) {
       pollInterval: 3,
       timeout: 120,
       uploadMaxEdge: 768,
-      pasteStrategy: "normal"
+      pasteStrategy: "normal",
+      cloudConcurrentJobs: 5
     };
   const calls = {
     loadSnapshotArgs: [],
@@ -28,6 +30,7 @@ function createFixture(options = {}) {
     testApiKeyArgs: [],
     saveTemplateArgs: [],
     normalizeUploadCalls: [],
+    normalizeCloudConcurrentCalls: [],
     enforceCalls: [],
     insertCalls: [],
     buildHintArgs: [],
@@ -74,6 +77,11 @@ function createFixture(options = {}) {
       if (options.normalizedUploadMaxEdge !== undefined) return options.normalizedUploadMaxEdge;
       return Number(value) || 0;
     },
+    normalizeCloudConcurrentJobs: (value) => {
+      calls.normalizeCloudConcurrentCalls.push(value);
+      if (options.normalizedCloudConcurrentJobs !== undefined) return options.normalizedCloudConcurrentJobs;
+      return Number(value) || 2;
+    },
     buildTemplateLengthHintViewModel: (args) => {
       calls.buildHintArgs.push(args);
       return options.hintViewModel || { text: "hint", color: "#999", isLarge: false };
@@ -119,6 +127,7 @@ function createFixture(options = {}) {
 test("settings editor controller syncs settings snapshot to dom and enforces content max length", () => {
   const fixture = createFixture({
     normalizedUploadMaxEdge: 1024,
+    normalizedCloudConcurrentJobs: 9,
     textInputHardMaxChars: 12345
   });
   const { controller, dom, store, snapshot, calls } = fixture;
@@ -131,8 +140,10 @@ test("settings editor controller syncs settings snapshot to dom and enforces con
   assert.equal(dom.apiKeyInput.value, "stored-key");
   assert.equal(dom.pollIntervalInput.value, 3);
   assert.equal(dom.timeoutInput.value, 120);
+  assert.equal(dom.cloudConcurrentJobsInput.value, "9");
   assert.equal(dom.uploadMaxEdgeSettingSelect.value, "1024");
   assert.deepEqual(calls.normalizeUploadCalls, [768]);
+  assert.deepEqual(calls.normalizeCloudConcurrentCalls, [5]);
   assert.equal(calls.enforceCalls.length, 1);
   assert.equal(calls.enforceCalls[0].inputEl, dom.templateContentInput);
   assert.equal(calls.enforceCalls[0].maxChars, 12345);
@@ -186,15 +197,18 @@ test("settings editor controller saves api key/settings and emits settings chang
     apiKeyInputValue: "  key-1  ",
     pollIntervalInputValue: "5",
     timeoutInputValue: "90",
+    cloudConcurrentJobsInputValue: "7",
     uploadMaxEdgeInputValue: "2048",
     settingsSnapshot: {
       apiKey: "stored",
       pollInterval: 2,
       timeout: 180,
       uploadMaxEdge: 512,
-      pasteStrategy: "smart"
+      pasteStrategy: "smart",
+      cloudConcurrentJobs: 3
     },
     normalizedUploadMaxEdge: 1536,
+    normalizedCloudConcurrentJobs: 11,
     saveSettingsPayload: { apiKeyChanged: true, settingsChanged: true }
   });
   const { controller, store, calls } = fixture;
@@ -210,6 +224,7 @@ test("settings editor controller saves api key/settings and emits settings chang
   assert.equal(calls.saveSettingsArgs[0].timeout, 90);
   assert.equal(calls.saveSettingsArgs[0].uploadMaxEdge, 1536);
   assert.equal(calls.saveSettingsArgs[0].pasteStrategy, "smart");
+  assert.equal(calls.saveSettingsArgs[0].cloudConcurrentJobs, 11);
   assert.deepEqual(calls.emitSettings, [{ apiKeyChanged: true, settingsChanged: true }]);
   assert.deepEqual(calls.alerts, ["saved settings"]);
 });

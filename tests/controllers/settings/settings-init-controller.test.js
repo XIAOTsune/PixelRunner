@@ -14,9 +14,7 @@ function createHandlers() {
     onSaveTemplate: () => {},
     onExportTemplatesJson: () => {},
     onImportTemplatesJson: () => {},
-    onRunEnvironmentDoctorManual: () => {},
-    onLoadLatestDiagnosticReport: () => {},
-    onLoadParseDebugReport: () => {},
+    onLoadDiagnosticsSummary: () => {},
     onUpdateTemplateLengthHint: () => {},
     onTemplateContentPaste: () => {},
     onSavedAppsListClick: () => {},
@@ -79,7 +77,7 @@ test("settings init controller bindCoreEvents rebinds core listeners and collaps
 
   controller.bindCoreEvents();
 
-  assert.equal(bindings.length, 17);
+  assert.equal(bindings.length, 15);
   assert.equal(collapseTabBindCalls, 1);
   assert.deepEqual(
     bindings.map((item) => [item.target && item.target.id, item.eventName]),
@@ -91,9 +89,7 @@ test("settings init controller bindCoreEvents rebinds core listeners and collaps
       ["btnSaveTemplate", "click"],
       ["btnExportTemplatesJson", "click"],
       ["btnImportTemplatesJson", "click"],
-      ["btnRunEnvDoctor", "click"],
-      ["btnLoadLatestDiag", "click"],
-      ["btnLoadParseDebug", "click"],
+      ["btnLoadDiagnosticsSummary", "click"],
       ["templateTitleInput", "input"],
       ["templateContentInput", "input"],
       ["templateContentInput", "paste"],
@@ -104,8 +100,8 @@ test("settings init controller bindCoreEvents rebinds core listeners and collaps
     ]
   );
   assert.equal(bindings[0].handler, handlers.onSaveApiKeyAndSettings);
-  assert.equal(bindings[10].handler, handlers.onUpdateTemplateLengthHint);
-  assert.equal(bindings[12].handler, handlers.onTemplateContentPaste);
+  assert.equal(bindings[8].handler, handlers.onUpdateTemplateLengthHint);
+  assert.equal(bindings[10].handler, handlers.onTemplateContentPaste);
 });
 
 test("settings init controller initialize keeps expected setup sequence", () => {
@@ -139,8 +135,8 @@ test("settings init controller initialize keeps expected setup sequence", () => 
     updateTemplateLengthHint: () => {
       order.push("update_hint");
     },
-    loadLatestDiagnosticReport: () => {
-      order.push("load_latest_diag");
+    loadDiagnosticsSummary: () => {
+      order.push("load_diag_summary");
     }
   });
 
@@ -151,7 +147,7 @@ test("settings init controller initialize keeps expected setup sequence", () => 
   assert.equal(order[1], "sync_snapshot");
   assert.equal(order[order.length - 3], "sync_lists");
   assert.equal(order[order.length - 2], "update_hint");
-  assert.equal(order[order.length - 1], "load_latest_diag");
-  assert.equal(order.filter((item) => item === "bind_event").length, 17);
+  assert.equal(order[order.length - 1], "load_diag_summary");
+  assert.equal(order.filter((item) => item === "bind_event").length, 15);
   assert.equal(order.includes("bind_collapse_tab"), true);
 });

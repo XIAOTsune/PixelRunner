@@ -108,7 +108,8 @@ function createFixture(options = {}) {
           pollInterval: 2,
           timeout: 180,
           uploadMaxEdge: 0,
-          pasteStrategy: "normal"
+          pasteStrategy: "normal",
+          cloudConcurrentJobs: 2
         }
     },
     runGuard,
@@ -175,6 +176,7 @@ function createFixture(options = {}) {
       calls.updateAccountStatus += 1;
     },
     jobStatus: JOB_STATUS,
+    getLocalMaxConcurrentJobs: options.getLocalMaxConcurrentJobs,
     alert: (message) => {
       calls.alerts.push(String(message || ""));
     }
@@ -260,6 +262,8 @@ test("run workflow controller wires scheduler callbacks and disposes job service
   assert.equal(typeof captured.schedulerOptions.onJobExecutionError, "function");
   assert.equal(typeof captured.schedulerOptions.onJobSettled, "function");
   assert.equal(captured.schedulerOptions.maxConcurrent, 2);
+  assert.equal(typeof captured.schedulerOptions.getMaxConcurrent, "function");
+  assert.equal(captured.schedulerOptions.getMaxConcurrent(), 2);
 
   captured.schedulerOptions.onRunningCountChange();
   assert.equal(calls.summary, 1);
@@ -282,4 +286,19 @@ test("run workflow controller wires scheduler callbacks and disposes job service
   controller.dispose();
   assert.equal(calls.schedulerDispose, 1);
   assert.equal(calls.executorReset, 1);
+});
+
+test("run workflow controller forwards dynamic local concurrency getter to scheduler", () => {
+  let currentLimit = 6;
+  const fixture = createFixture({
+    getLocalMaxConcurrentJobs: () => currentLimit
+  });
+  const { controller, captured } = fixture;
+
+  controller.pumpJobScheduler();
+
+  assert.equal(typeof captured.schedulerOptions.getMaxConcurrent, "function");
+  assert.equal(captured.schedulerOptions.getMaxConcurrent(), 6);
+  currentLimit = 9;
+  assert.equal(captured.schedulerOptions.getMaxConcurrent(), 9);
 });

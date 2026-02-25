@@ -5,7 +5,14 @@ function createSettingsEditorController(options = {}) {
   const loadSettingsSnapshotUsecase =
     typeof options.loadSettingsSnapshotUsecase === "function"
       ? options.loadSettingsSnapshotUsecase
-      : () => ({ apiKey: "", pollInterval: 2, timeout: 180, uploadMaxEdge: 0, pasteStrategy: "" });
+      : () => ({
+          apiKey: "",
+          pollInterval: 2,
+          timeout: 180,
+          uploadMaxEdge: 0,
+          pasteStrategy: "",
+          cloudConcurrentJobs: 2
+        });
   const saveSettingsUsecase =
     typeof options.saveSettingsUsecase === "function" ? options.saveSettingsUsecase : () => ({});
   const testApiKeyUsecase =
@@ -14,6 +21,14 @@ function createSettingsEditorController(options = {}) {
     typeof options.saveTemplateUsecase === "function" ? options.saveTemplateUsecase : () => ({ reason: "saved" });
   const normalizeUploadMaxEdge =
     typeof options.normalizeUploadMaxEdge === "function" ? options.normalizeUploadMaxEdge : (value) => Number(value) || 0;
+  const normalizeCloudConcurrentJobs =
+    typeof options.normalizeCloudConcurrentJobs === "function"
+      ? options.normalizeCloudConcurrentJobs
+      : (value) => {
+          const num = Number(value);
+          if (!Number.isFinite(num)) return 2;
+          return Math.max(1, Math.min(100, Math.floor(num)));
+        };
   const buildTemplateLengthHintViewModel =
     typeof options.buildTemplateLengthHintViewModel === "function"
       ? options.buildTemplateLengthHintViewModel
@@ -68,6 +83,11 @@ function createSettingsEditorController(options = {}) {
     if (dom.apiKeyInput) dom.apiKeyInput.value = settingsSnapshot.apiKey;
     if (dom.pollIntervalInput) dom.pollIntervalInput.value = settingsSnapshot.pollInterval;
     if (dom.timeoutInput) dom.timeoutInput.value = settingsSnapshot.timeout;
+    if (dom.cloudConcurrentJobsInput) {
+      dom.cloudConcurrentJobsInput.value = String(
+        normalizeCloudConcurrentJobs(settingsSnapshot.cloudConcurrentJobs)
+      );
+    }
     if (dom.uploadMaxEdgeSettingSelect) {
       dom.uploadMaxEdgeSettingSelect.value = String(normalizeUploadMaxEdge(settingsSnapshot.uploadMaxEdge));
     }
@@ -108,6 +128,9 @@ function createSettingsEditorController(options = {}) {
     const uploadMaxEdge = normalizeUploadMaxEdge(
       dom.uploadMaxEdgeSettingSelect ? dom.uploadMaxEdgeSettingSelect.value : currentSettings.uploadMaxEdge
     );
+    const cloudConcurrentJobs = normalizeCloudConcurrentJobs(
+      dom.cloudConcurrentJobsInput ? dom.cloudConcurrentJobsInput.value : currentSettings.cloudConcurrentJobs
+    );
 
     const payload = saveSettingsUsecase({
       store,
@@ -115,7 +138,8 @@ function createSettingsEditorController(options = {}) {
       pollInterval,
       timeout,
       uploadMaxEdge,
-      pasteStrategy: currentSettings.pasteStrategy
+      pasteStrategy: currentSettings.pasteStrategy,
+      cloudConcurrentJobs
     });
     emitSettingsChanged(payload);
     alertFn(messages.saveSettingsSuccess);

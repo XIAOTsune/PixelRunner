@@ -2,6 +2,7 @@ const SETTINGS_DOM_IDS = [
   "apiKeyInput",
   "pollIntervalInput",
   "timeoutInput",
+  "cloudConcurrentJobsInput",
   "uploadMaxEdgeSettingSelect",
   "toggleApiKey",
   "btnSaveApiKey",
@@ -18,9 +19,7 @@ const SETTINGS_DOM_IDS = [
   "btnImportTemplatesJson",
   "savedTemplatesList",
   "templateLengthHint",
-  "btnRunEnvDoctor",
-  "btnLoadLatestDiag",
-  "btnLoadParseDebug",
+  "btnLoadDiagnosticsSummary",
   "envDoctorOutput",
   "advancedSettingsHeader",
   "advancedSettingsToggle",
@@ -50,8 +49,8 @@ function createSettingsInitController(options = {}) {
     typeof options.syncSettingsLists === "function" ? options.syncSettingsLists : () => {};
   const updateTemplateLengthHint =
     typeof options.updateTemplateLengthHint === "function" ? options.updateTemplateLengthHint : () => {};
-  const loadLatestDiagnosticReport =
-    typeof options.loadLatestDiagnosticReport === "function" ? options.loadLatestDiagnosticReport : () => {};
+  const loadDiagnosticsSummary =
+    typeof options.loadDiagnosticsSummary === "function" ? options.loadDiagnosticsSummary : () => {};
 
   function collectDomRefs() {
     SETTINGS_DOM_IDS.forEach((id) => {
@@ -67,9 +66,7 @@ function createSettingsInitController(options = {}) {
     rebindEvent(dom.btnSaveTemplate, "click", handlers.onSaveTemplate);
     rebindEvent(dom.btnExportTemplatesJson, "click", handlers.onExportTemplatesJson);
     rebindEvent(dom.btnImportTemplatesJson, "click", handlers.onImportTemplatesJson);
-    rebindEvent(dom.btnRunEnvDoctor, "click", handlers.onRunEnvironmentDoctorManual);
-    rebindEvent(dom.btnLoadLatestDiag, "click", handlers.onLoadLatestDiagnosticReport);
-    rebindEvent(dom.btnLoadParseDebug, "click", handlers.onLoadParseDebugReport);
+    rebindEvent(dom.btnLoadDiagnosticsSummary, "click", handlers.onLoadDiagnosticsSummary);
     rebindEvent(dom.templateTitleInput, "input", handlers.onUpdateTemplateLengthHint);
     rebindEvent(dom.templateContentInput, "input", handlers.onUpdateTemplateLengthHint);
     rebindEvent(dom.templateContentInput, "paste", handlers.onTemplateContentPaste);
@@ -87,7 +84,7 @@ function createSettingsInitController(options = {}) {
     bindCoreEvents();
     syncSettingsLists();
     updateTemplateLengthHint();
-    loadLatestDiagnosticReport();
+    loadDiagnosticsSummary();
   }
 
   return {

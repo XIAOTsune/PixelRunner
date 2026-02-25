@@ -132,7 +132,8 @@ function createJobScheduler(options = {}) {
   const onJobSettled = typeof options.onJobSettled === "function" ? options.onJobSettled : null;
   const onRunningCountChange = typeof options.onRunningCountChange === "function" ? options.onRunningCountChange : null;
   const nowProvider = typeof options.now === "function" ? options.now : Date.now;
-  const maxConcurrent = toPositiveInteger(options.maxConcurrent, 1);
+  const maxConcurrentFallback = toPositiveInteger(options.maxConcurrent, 1);
+  const getMaxConcurrent = typeof options.getMaxConcurrent === "function" ? options.getMaxConcurrent : null;
   const runnableStatuses = new Set(
     Array.isArray(options.runnableStatuses) && options.runnableStatuses.length > 0
       ? options.runnableStatuses
@@ -141,6 +142,15 @@ function createJobScheduler(options = {}) {
 
   let timerId = null;
   let runningCount = 0;
+
+  function resolveMaxConcurrent() {
+    if (!getMaxConcurrent) return maxConcurrentFallback;
+    try {
+      return toPositiveInteger(getMaxConcurrent(), maxConcurrentFallback);
+    } catch (_) {
+      return maxConcurrentFallback;
+    }
+  }
 
   function schedule(delayMs = 0) {
     const delay = Math.max(0, Number(delayMs) || 0);
@@ -208,7 +218,7 @@ function createJobScheduler(options = {}) {
 
   function pump() {
     const now = nowProvider();
-    while (runningCount < maxConcurrent) {
+    while (runningCount < resolveMaxConcurrent()) {
       const nextJob = pickRunnableJob(now);
       if (!nextJob) break;
       runJobInBackground(nextJob);
@@ -236,6 +246,7 @@ function createJobScheduler(options = {}) {
     schedule,
     dispose,
     getRunningCount,
+    resolveMaxConcurrent,
     pickRunnableJob,
     findNextWakeDelay
   };

@@ -29,7 +29,8 @@ const DEFAULT_SETTINGS = {
   pollInterval: 2,
   timeout: 180,
   uploadMaxEdge: 0,
-  pasteStrategy: "normal"
+  pasteStrategy: "normal",
+  cloudConcurrentJobs: 2
 };
 
 const DEFAULT_PROMPT_TEMPLATES = [

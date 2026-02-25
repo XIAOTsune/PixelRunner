@@ -37,6 +37,10 @@ function createRunWorkflowController(options = {}) {
   const onJobCompleted = typeof options.onJobCompleted === "function" ? options.onJobCompleted : () => {};
   const jobStatus = options.jobStatus && typeof options.jobStatus === "object" ? options.jobStatus : {};
   const localMaxConcurrentJobs = Math.max(1, Number(options.localMaxConcurrentJobs) || 2);
+  const getLocalMaxConcurrentJobs =
+    typeof options.getLocalMaxConcurrentJobs === "function"
+      ? options.getLocalMaxConcurrentJobs
+      : () => localMaxConcurrentJobs;
   const timeoutRetryDelayMs = Math.max(0, Number(options.timeoutRetryDelayMs) || 15000);
   const maxTimeoutRecoveries = Math.max(0, Number(options.maxTimeoutRecoveries) || 40);
   const requestTimeoutErrorCode = String(options.requestTimeoutErrorCode || REQUEST_TIMEOUT_ERROR_CODE);
@@ -89,6 +93,7 @@ function createRunWorkflowController(options = {}) {
       jobScheduler = createJobScheduler({
         getJobs: () => state.jobs,
         maxConcurrent: localMaxConcurrentJobs,
+        getMaxConcurrent: getLocalMaxConcurrentJobs,
         executeJob: (job) => jobExecutor.execute(job),
         runnableStatuses: [jobStatus.QUEUED, jobStatus.TIMEOUT_TRACKING],
         onRunningCountChange: () => {

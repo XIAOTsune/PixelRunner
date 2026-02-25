@@ -2,10 +2,6 @@ function createSettingsDiagnosticsTransferController(options = {}) {
   const dom = options.dom || {};
   const getStore =
     typeof options.getStore === "function" ? options.getStore : () => options.store || null;
-  const runPsEnvironmentDoctor =
-    typeof options.runPsEnvironmentDoctor === "function"
-      ? options.runPsEnvironmentDoctor
-      : async () => null;
   const summarizeDiagnosticReport =
     typeof options.summarizeDiagnosticReport === "function"
       ? options.summarizeDiagnosticReport
@@ -46,11 +42,9 @@ function createSettingsDiagnosticsTransferController(options = {}) {
       : () => {};
   const messages = Object.assign(
     {
-      envDoctorRunning: "\u6b63\u5728\u6267\u884c\u73af\u5883\u68c0\u6d4b\uff0c\u8bf7\u7a0d\u5019...",
-      envDoctorBusyText: "\u68c0\u6d4b\u4e2d...",
-      envDoctorActionText: "\u8fd0\u884c\u73af\u5883\u68c0\u6d4b",
-      envDoctorFailedPrefix: "\u73af\u5883\u68c0\u6d4b\u5931\u8d25: ",
-      noLatestDiagnosticReport: "\u672a\u627e\u5230\u6700\u8fd1\u62a5\u544a\uff0c\u8bf7\u5148\u70b9\u51fb\u201c\u8fd0\u884c\u73af\u5883\u68c0\u6d4b\u201d\u3002",
+      latestDiagnosticTitle: "=== Latest Environment Diagnostic ===",
+      parseDebugTitle: "=== Parse Debug ===",
+      noLatestDiagnosticReport: "No latest environment diagnostic report found.",
       noParseDebugReport:
         "No parse debug found. Parse and save an app first, then click this button again.",
       unsupportedExport: "Current environment does not support file export",
@@ -69,40 +63,29 @@ function createSettingsDiagnosticsTransferController(options = {}) {
     return store.getStorage();
   }
 
-  async function runEnvironmentDoctorManual() {
-    if (!dom.btnRunEnvDoctor) return;
-    dom.btnRunEnvDoctor.disabled = true;
-    dom.btnRunEnvDoctor.textContent = messages.envDoctorBusyText;
-    setEnvDoctorOutput(dom.envDoctorOutput, messages.envDoctorRunning);
+  function loadDiagnosticsSummary() {
+    const storage = resolveStorage();
+    const latestDiagnosticReport = loadStoredJsonReport(storage, diagnosticStorageKey);
+    const parseDebugReport = loadStoredJsonReport(storage, parseDebugStorageKey);
+    const sections = [];
 
-    try {
-      const report = await runPsEnvironmentDoctor({ stage: "manual-settings" });
-      setEnvDoctorOutput(dom.envDoctorOutput, summarizeDiagnosticReport(report));
-    } catch (error) {
-      const message = error && error.message ? error.message : String(error || "unknown");
-      setEnvDoctorOutput(dom.envDoctorOutput, `${messages.envDoctorFailedPrefix}${message}`);
-    } finally {
-      dom.btnRunEnvDoctor.disabled = false;
-      dom.btnRunEnvDoctor.textContent = messages.envDoctorActionText;
+    if (latestDiagnosticReport) {
+      sections.push(messages.latestDiagnosticTitle);
+      sections.push(summarizeDiagnosticReport(latestDiagnosticReport));
+    } else {
+      sections.push(messages.noLatestDiagnosticReport);
     }
-  }
 
-  function loadLatestDiagnosticReport() {
-    const report = loadStoredJsonReport(resolveStorage(), diagnosticStorageKey);
-    if (!report) {
-      setEnvDoctorOutput(dom.envDoctorOutput, messages.noLatestDiagnosticReport);
-      return;
+    if (parseDebugReport) {
+      if (sections.length > 0) sections.push("");
+      sections.push(messages.parseDebugTitle);
+      sections.push(summarizeParseDebugReport(parseDebugReport));
+    } else {
+      if (sections.length > 0) sections.push("");
+      sections.push(messages.noParseDebugReport);
     }
-    setEnvDoctorOutput(dom.envDoctorOutput, summarizeDiagnosticReport(report));
-  }
 
-  function loadParseDebugReport() {
-    const report = loadStoredJsonReport(resolveStorage(), parseDebugStorageKey);
-    if (!report) {
-      setEnvDoctorOutput(dom.envDoctorOutput, messages.noParseDebugReport);
-      return;
-    }
-    setEnvDoctorOutput(dom.envDoctorOutput, summarizeParseDebugReport(report));
+    setEnvDoctorOutput(dom.envDoctorOutput, sections.join("\n"));
   }
 
   async function exportTemplatesJson() {
@@ -162,9 +145,7 @@ function createSettingsDiagnosticsTransferController(options = {}) {
   }
 
   return {
-    runEnvironmentDoctorManual,
-    loadLatestDiagnosticReport,
-    loadParseDebugReport,
+    loadDiagnosticsSummary,
     exportTemplatesJson,
     importTemplatesJson
   };

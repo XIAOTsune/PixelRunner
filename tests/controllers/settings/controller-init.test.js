@@ -109,6 +109,7 @@ function createSettingsDomMap() {
     "apiKeyInput",
     "pollIntervalInput",
     "timeoutInput",
+    "cloudConcurrentJobsInput",
     "uploadMaxEdgeSettingSelect",
     "toggleApiKey",
     "btnSaveApiKey",
@@ -125,9 +126,7 @@ function createSettingsDomMap() {
     "btnImportTemplatesJson",
     "savedTemplatesList",
     "templateLengthHint",
-    "btnRunEnvDoctor",
-    "btnLoadLatestDiag",
-    "btnLoadParseDebug",
+    "btnLoadDiagnosticsSummary",
     "envDoctorOutput",
     "advancedSettingsHeader",
     "advancedSettingsToggle",
@@ -172,7 +171,8 @@ test("initSettingsController uses injected gateway when provided", async () => {
           pollInterval: 2,
           timeout: 180,
           uploadMaxEdge: 0,
-          pasteStrategy: "normal"
+          pasteStrategy: "normal",
+          cloudConcurrentJobs: 2
         };
       },
       getAiApps: () => {

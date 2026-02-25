@@ -105,7 +105,7 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     syncSnapshot: 0,
     syncLists: 0,
     updateHint: 0,
-    loadLatestDiag: 0,
+    loadDiagnosticsSummary: 0,
     toggleSectionCollapse: 0,
     saveApiKeyAndSettings: 0,
     testApiKey: 0,
@@ -113,8 +113,6 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     saveTemplate: 0,
     exportTemplatesJson: 0,
     importTemplatesJson: 0,
-    runEnvironmentDoctorManual: 0,
-    loadParseDebugReport: 0,
     onTemplateContentPaste: 0,
     onSavedAppsListClick: 0,
     onSavedTemplatesListClick: 0,
@@ -145,14 +143,8 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     importTemplatesJson: () => {
       registry.getSettingsDiagnosticsTransferController().importTemplatesJson();
     },
-    runEnvironmentDoctorManual: () => {
-      registry.getSettingsDiagnosticsTransferController().runEnvironmentDoctorManual();
-    },
-    loadLatestDiagnosticReport: () => {
-      registry.getSettingsDiagnosticsTransferController().loadLatestDiagnosticReport();
-    },
-    loadParseDebugReport: () => {
-      registry.getSettingsDiagnosticsTransferController().loadParseDebugReport();
+    loadDiagnosticsSummary: () => {
+      registry.getSettingsDiagnosticsTransferController().loadDiagnosticsSummary();
     },
     updateTemplateLengthHint: () => {
       registry.getSettingsEditorController().updateTemplateLengthHint();
@@ -222,14 +214,8 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
       }
     }),
     createSettingsDiagnosticsTransferController: () => ({
-      runEnvironmentDoctorManual: () => {
-        calls.runEnvironmentDoctorManual += 1;
-      },
-      loadLatestDiagnosticReport: () => {
-        calls.loadLatestDiag += 1;
-      },
-      loadParseDebugReport: () => {
-        calls.loadParseDebugReport += 1;
+      loadDiagnosticsSummary: () => {
+        calls.loadDiagnosticsSummary += 1;
       },
       exportTemplatesJson: () => {
         calls.exportTemplatesJson += 1;
@@ -272,7 +258,7 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     assert.equal(calls.syncSnapshot, 1);
     assert.equal(calls.syncLists, 1);
     assert.equal(calls.updateHint, 1);
-    assert.equal(calls.loadLatestDiag, 1);
+    assert.equal(calls.loadDiagnosticsSummary, 1);
     assert.equal(elementMap.advancedSettingsToggle.textContent, "展开");
     assert.equal(elementMap.envDiagnosticsToggle.textContent, "展开");
 
@@ -282,8 +268,7 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     elementMap.btnSaveTemplate.trigger("click");
     elementMap.btnExportTemplatesJson.trigger("click");
     elementMap.btnImportTemplatesJson.trigger("click");
-    elementMap.btnRunEnvDoctor.trigger("click");
-    elementMap.btnLoadParseDebug.trigger("click");
+    elementMap.btnLoadDiagnosticsSummary.trigger("click");
     elementMap.templateContentInput.trigger("input");
     elementMap.templateContentInput.trigger("paste");
     elementMap.savedAppsList.trigger("click");
@@ -300,8 +285,7 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     assert.equal(calls.saveTemplate, 1);
     assert.equal(calls.exportTemplatesJson, 1);
     assert.equal(calls.importTemplatesJson, 1);
-    assert.equal(calls.runEnvironmentDoctorManual, 1);
-    assert.equal(calls.loadParseDebugReport, 1);
+    assert.equal(calls.loadDiagnosticsSummary, 2);
     assert.equal(calls.updateHint, 2);
     assert.equal(calls.onTemplateContentPaste, 1);
     assert.equal(calls.onSavedAppsListClick, 1);

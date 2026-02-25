@@ -6,10 +6,6 @@ const {
 
 function createFixture(options = {}) {
   const dom = {
-    btnRunEnvDoctor: {
-      disabled: false,
-      textContent: "run"
-    },
     envDoctorOutput: {
       value: ""
     }
@@ -27,7 +23,6 @@ function createFixture(options = {}) {
     options.reportsByKey || {}
   );
   const calls = {
-    runDoctorArgs: [],
     setOutput: [],
     appendOutput: [],
     loadStored: [],
@@ -41,10 +36,8 @@ function createFixture(options = {}) {
     typeof options.importTemplatesUsecase === "function" ? options.importTemplatesUsecase : () => ({});
   const messages = Object.assign(
     {
-      envDoctorRunning: "env running",
-      envDoctorBusyText: "busy",
-      envDoctorActionText: "run",
-      envDoctorFailedPrefix: "env failed: ",
+      latestDiagnosticTitle: "=== Latest Environment Diagnostic ===",
+      parseDebugTitle: "=== Parse Debug ===",
       noLatestDiagnosticReport: "no latest",
       noParseDebugReport: "no parse debug",
       unsupportedExport: "export unsupported",
@@ -55,11 +48,6 @@ function createFixture(options = {}) {
   const controller = createSettingsDiagnosticsTransferController({
     dom,
     getStore: () => store,
-    runPsEnvironmentDoctor: async (args) => {
-      calls.runDoctorArgs.push(args);
-      if (options.runDoctorError) throw options.runDoctorError;
-      return options.runDoctorReport || { runId: "diag-1" };
-    },
     summarizeDiagnosticReport: (report) => `diag:${report && report.runId ? report.runId : "none"}`,
     summarizeParseDebugReport: (report) => `parse:${report && report.id ? report.id : "none"}`,
     loadStoredJsonReport: (storage, key) => {
@@ -108,58 +96,38 @@ function createFixture(options = {}) {
   };
 }
 
-test("settings diagnostics transfer controller runs env doctor and restores button state", async () => {
+test("settings diagnostics transfer controller merges latest diagnostic and parse debug summary", () => {
   const fixture = createFixture({
-    runDoctorReport: { runId: "diag-42" }
-  });
-  const { controller, dom, calls } = fixture;
-
-  await controller.runEnvironmentDoctorManual();
-
-  assert.deepEqual(calls.runDoctorArgs, [{ stage: "manual-settings" }]);
-  assert.deepEqual(calls.setOutput, ["env running", "diag:diag-42"]);
-  assert.equal(dom.btnRunEnvDoctor.disabled, false);
-  assert.equal(dom.btnRunEnvDoctor.textContent, "run");
-});
-
-test("settings diagnostics transfer controller writes env doctor failure output", async () => {
-  const fixture = createFixture({
-    runDoctorError: new Error("doctor failed")
-  });
-  const { controller, dom, calls } = fixture;
-
-  await controller.runEnvironmentDoctorManual();
-
-  assert.equal(calls.setOutput[calls.setOutput.length - 1], "env failed: doctor failed");
-  assert.equal(dom.btnRunEnvDoctor.disabled, false);
-  assert.equal(dom.btnRunEnvDoctor.textContent, "run");
-});
-
-test("settings diagnostics transfer controller loads latest report fallback text", () => {
-  const fixture = createFixture({
-    diagnosticReport: null
+    diagnosticReport: { runId: "diag-42" },
+    parseDebugReport: { id: "parse-7" }
   });
   const { controller, calls, store } = fixture;
 
-  controller.loadLatestDiagnosticReport();
+  controller.loadDiagnosticsSummary();
 
-  assert.equal(calls.loadStored.length, 1);
+  assert.equal(calls.loadStored.length, 2);
   assert.equal(calls.loadStored[0].key, "diag-key");
+  assert.equal(calls.loadStored[1].key, "parse-key");
   assert.deepEqual(calls.loadStored[0].storage, store.getStorage());
-  assert.deepEqual(calls.setOutput, ["no latest"]);
+  assert.deepEqual(calls.loadStored[1].storage, store.getStorage());
+  assert.equal(calls.setOutput.length, 1);
+  assert.match(calls.setOutput[0], /Latest Environment Diagnostic/);
+  assert.match(calls.setOutput[0], /diag:diag-42/);
+  assert.match(calls.setOutput[0], /Parse Debug/);
+  assert.match(calls.setOutput[0], /parse:parse-7/);
 });
 
-test("settings diagnostics transfer controller loads parse debug summary", () => {
+test("settings diagnostics transfer controller writes fallback text when reports are missing", () => {
   const fixture = createFixture({
-    parseDebugReport: { id: "parse-7" }
+    diagnosticReport: null,
+    parseDebugReport: null
   });
   const { controller, calls } = fixture;
 
-  controller.loadParseDebugReport();
+  controller.loadDiagnosticsSummary();
 
-  assert.equal(calls.loadStored.length, 1);
-  assert.equal(calls.loadStored[0].key, "parse-key");
-  assert.deepEqual(calls.setOutput, ["parse:parse-7"]);
+  assert.equal(calls.loadStored.length, 2);
+  assert.deepEqual(calls.setOutput, ["no latest\n\nno parse debug"]);
 });
 
 test("settings diagnostics transfer controller exports templates and writes success feedback", async () => {

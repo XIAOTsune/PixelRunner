@@ -15,7 +15,8 @@ test("loadSettingsSnapshotUsecase reads api key and settings", () => {
         pollInterval: 3,
         timeout: 210,
         uploadMaxEdge: 2048,
-        pasteStrategy: "smart"
+        pasteStrategy: "smart",
+        cloudConcurrentJobs: 8
       })
     }
   });
@@ -25,7 +26,8 @@ test("loadSettingsSnapshotUsecase reads api key and settings", () => {
     pollInterval: 3,
     timeout: 210,
     uploadMaxEdge: 2048,
-    pasteStrategy: "smart"
+    pasteStrategy: "smart",
+    cloudConcurrentJobs: 8
   });
 });
 
@@ -73,7 +75,8 @@ test("saveSettingsUsecase saves api key and settings payload", () => {
     pollInterval: 5,
     timeout: 240,
     uploadMaxEdge: 2048,
-    pasteStrategy: "smart"
+    pasteStrategy: "smart",
+    cloudConcurrentJobs: 6
   });
 
   assert.deepEqual(result, { apiKeyChanged: true, settingsChanged: true });
@@ -84,7 +87,8 @@ test("saveSettingsUsecase saves api key and settings payload", () => {
       pollInterval: 5,
       timeout: 240,
       uploadMaxEdge: 2048,
-      pasteStrategy: "smart"
+      pasteStrategy: "smart",
+      cloudConcurrentJobs: 6
     }
   ]);
 });
@@ -105,13 +109,15 @@ test("saveSettingsUsecase falls back to defaults for invalid values", () => {
     pollInterval: "invalid",
     timeout: null,
     uploadMaxEdge: undefined,
-    pasteStrategy: ""
+    pasteStrategy: "",
+    cloudConcurrentJobs: "oops"
   });
 
   assert.deepEqual(payload, {
     pollInterval: 2,
     timeout: 180,
     uploadMaxEdge: 0,
-    pasteStrategy: ""
+    pasteStrategy: "",
+    cloudConcurrentJobs: 2
   });
 });

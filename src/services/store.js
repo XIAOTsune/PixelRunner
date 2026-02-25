@@ -1,7 +1,8 @@
 const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("../config");
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
+const { normalizeCloudConcurrentJobs } = require("../domain/policies/run-settings-policy");
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
-const SETTINGS_SCHEMA_VERSION = 3;
+const SETTINGS_SCHEMA_VERSION = 4;
 const PROMPT_TEMPLATE_BUNDLE_FORMAT = "pixelrunner.prompt-templates";
 const PROMPT_TEMPLATE_BUNDLE_VERSION = 1;
 const LEGACY_PASTE_STRATEGY_MAP = {
@@ -59,6 +60,7 @@ function getSettings() {
   }
   pasteStrategy = PASTE_STRATEGY_CHOICES.includes(pasteStrategy) ? pasteStrategy : DEFAULT_SETTINGS.pasteStrategy;
   let timeout = normalizeTimeout(value.timeout);
+  const cloudConcurrentJobs = normalizeCloudConcurrentJobs(value.cloudConcurrentJobs, DEFAULT_SETTINGS.cloudConcurrentJobs);
   const schemaVersion = toPositiveInteger(value.schemaVersion, 0);
   let shouldPersistMigration = false;
 
@@ -75,7 +77,8 @@ function getSettings() {
     pollInterval: normalizePollInterval(value.pollInterval),
     timeout,
     uploadMaxEdge,
-    pasteStrategy
+    pasteStrategy,
+    cloudConcurrentJobs
   };
 
   if (shouldPersistMigration) {
@@ -101,6 +104,7 @@ function saveSettings(settings) {
     timeout: normalizeTimeout(settings.timeout),
     uploadMaxEdge,
     pasteStrategy,
+    cloudConcurrentJobs: normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs, DEFAULT_SETTINGS.cloudConcurrentJobs),
     schemaVersion: SETTINGS_SCHEMA_VERSION
   });
 }

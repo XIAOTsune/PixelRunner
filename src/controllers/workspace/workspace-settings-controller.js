@@ -7,6 +7,14 @@ function createWorkspaceSettingsController(options = {}) {
     typeof options.normalizePasteStrategy === "function" ? options.normalizePasteStrategy : (value) => value;
   const normalizeUploadMaxEdge =
     typeof options.normalizeUploadMaxEdge === "function" ? options.normalizeUploadMaxEdge : (value) => value;
+  const normalizeCloudConcurrentJobs =
+    typeof options.normalizeCloudConcurrentJobs === "function"
+      ? options.normalizeCloudConcurrentJobs
+      : (value) => {
+          const num = Number(value);
+          if (!Number.isFinite(num)) return 2;
+          return Math.max(1, Math.min(100, Math.floor(num)));
+        };
   const pasteStrategyLabels =
     options.pasteStrategyLabels && typeof options.pasteStrategyLabels === "object" ? options.pasteStrategyLabels : {};
   const syncWorkspaceApps =
@@ -83,12 +91,14 @@ function createWorkspaceSettingsController(options = {}) {
     const nextPasteStrategy = normalizePasteStrategy(event && event.target ? event.target.value : "");
     const settings = getSettingsSnapshot();
     const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
+    const cloudConcurrentJobs = normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs);
     if (store && typeof store.saveSettings === "function") {
       store.saveSettings({
         pollInterval: settings.pollInterval,
         timeout: settings.timeout,
         uploadMaxEdge,
-        pasteStrategy: nextPasteStrategy
+        pasteStrategy: nextPasteStrategy,
+        cloudConcurrentJobs
       });
     }
     const marker = pasteStrategyLabels[nextPasteStrategy] || nextPasteStrategy;

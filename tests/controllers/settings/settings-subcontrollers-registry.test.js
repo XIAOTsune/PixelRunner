@@ -13,9 +13,7 @@ function createNoopDelegates() {
     saveTemplate: () => {},
     exportTemplatesJson: () => {},
     importTemplatesJson: () => {},
-    runEnvironmentDoctorManual: () => {},
-    loadLatestDiagnosticReport: () => {},
-    loadParseDebugReport: () => {},
+    loadDiagnosticsSummary: () => {},
     updateTemplateLengthHint: () => {},
     onTemplateContentPaste: () => {},
     onSavedAppsListClick: () => {},
@@ -204,10 +202,11 @@ test("settings subcontrollers registry wires init controller to collapse and edi
   assert.equal(typeof initOptions.syncSettingsSnapshot, "function");
   assert.equal(initOptions.syncSettingsLists, delegates.syncSettingsLists);
   assert.equal(initOptions.updateTemplateLengthHint, delegates.updateTemplateLengthHint);
-  assert.equal(initOptions.loadLatestDiagnosticReport, delegates.loadLatestDiagnosticReport);
+  assert.equal(initOptions.loadDiagnosticsSummary, delegates.loadDiagnosticsSummary);
   assert.equal(initOptions.handlers.onSaveApiKeyAndSettings, delegates.saveApiKeyAndSettings);
   assert.equal(initOptions.handlers.onSavedAppsListClick, delegates.onSavedAppsListClick);
   assert.equal(initOptions.handlers.onTemplatesChanged, delegates.onTemplatesChanged);
+  assert.equal(initOptions.handlers.onLoadDiagnosticsSummary, delegates.loadDiagnosticsSummary);
 
   initOptions.initializeCollapseState();
   initOptions.bindCollapseAndTabSyncEvents();

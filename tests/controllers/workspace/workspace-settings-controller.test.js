@@ -96,6 +96,7 @@ test("workspace settings controller persists paste strategy changes and logs mar
         pollInterval: 2,
         timeout: 180,
         uploadMaxEdge: "1024",
+        cloudConcurrentJobs: "7",
         pasteStrategy: "normal"
       }),
       saveSettings: (payload) => {
@@ -104,6 +105,7 @@ test("workspace settings controller persists paste strategy changes and logs mar
     },
     normalizePasteStrategy: (value) => (value === "smart" ? "smart" : "normal"),
     normalizeUploadMaxEdge: (value) => Number(value) || 0,
+    normalizeCloudConcurrentJobs: (value) => Number(value) || 2,
     pasteStrategyLabels: {
       smart: "智能（主体对齐）"
     },
@@ -121,6 +123,7 @@ test("workspace settings controller persists paste strategy changes and logs mar
     pollInterval: 2,
     timeout: 180,
     uploadMaxEdge: 1024,
+    cloudConcurrentJobs: 7,
     pasteStrategy: "smart"
   });
   assert.deepEqual(logs, [{ message: "回贴策略已切换: 智能（主体对齐）", type: "info" }]);

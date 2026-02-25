@@ -34,7 +34,11 @@ const {
   hasLiveJobs,
   buildTaskSummaryViewModel
 } = require("../application/services/task-summary");
-const { normalizeUploadMaxEdge, normalizePasteStrategy } = require("../domain/policies/run-settings-policy");
+const {
+  normalizeUploadMaxEdge,
+  normalizePasteStrategy,
+  normalizeCloudConcurrentJobs
+} = require("../domain/policies/run-settings-policy");
 const {
   cloneArrayBuffer,
   cloneBounds
@@ -154,6 +158,7 @@ function getWorkspaceSettingsController() {
       runninghub,
       normalizePasteStrategy,
       normalizeUploadMaxEdge,
+      normalizeCloudConcurrentJobs,
       pasteStrategyLabels: PASTE_STRATEGY_LABELS,
       syncWorkspaceApps,
       log
@@ -310,6 +315,7 @@ function getRunWorkflowController() {
         updateAccountStatus();
       },
       jobStatus: JOB_STATUS,
+      getLocalMaxConcurrentJobs: resolveLocalMaxConcurrentJobs,
       localMaxConcurrentJobs: LOCAL_MAX_CONCURRENT_JOBS,
       timeoutRetryDelayMs: JOB_TIMEOUT_RETRY_DELAY_MS,
       maxTimeoutRecoveries: JOB_MAX_TIMEOUT_RECOVERIES,
@@ -390,6 +396,11 @@ function resolveTargetBounds() {
 
 function resolveSourceImageBuffer() {
   return getWorkspaceInputs().resolveSourceImageBuffer();
+}
+
+function resolveLocalMaxConcurrentJobs() {
+  const settings = store && typeof store.getSettings === "function" ? store.getSettings() : {};
+  return normalizeCloudConcurrentJobs(settings && settings.cloudConcurrentJobs, LOCAL_MAX_CONCURRENT_JOBS);
 }
 
 function handleRun() {

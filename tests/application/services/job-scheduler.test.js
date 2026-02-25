@@ -42,6 +42,45 @@ test("job scheduler respects max concurrency and continues pumping", async () =>
   scheduler.dispose();
 });
 
+test("job scheduler can resolve concurrency from dynamic getter", async () => {
+  const jobs = [
+    { id: "j1", status: "QUEUED", nextRunAt: 0 },
+    { id: "j2", status: "QUEUED", nextRunAt: 0 }
+  ];
+  const started = [];
+  const resolvers = {};
+  let maxConcurrent = 1;
+
+  const scheduler = createJobScheduler({
+    getJobs: () => jobs,
+    maxConcurrent: 2,
+    getMaxConcurrent: () => maxConcurrent,
+    executeJob: (job) => {
+      started.push(job.id);
+      job.status = "RUNNING";
+      return new Promise((resolve) => {
+        resolvers[job.id] = resolve;
+      });
+    }
+  });
+
+  scheduler.pump();
+  assert.deepEqual(started, ["j1"]);
+  assert.equal(scheduler.resolveMaxConcurrent(), 1);
+
+  maxConcurrent = 2;
+  scheduler.pump();
+  assert.deepEqual(started, ["j1", "j2"]);
+  assert.equal(scheduler.resolveMaxConcurrent(), 2);
+
+  resolvers.j1();
+  resolvers.j2();
+  await flushAsync();
+  assert.equal(scheduler.getRunningCount(), 0);
+
+  scheduler.dispose();
+});
+
 test("job scheduler wakes delayed runnable jobs", async () => {
   const jobs = [
     {
