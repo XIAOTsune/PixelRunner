@@ -98,7 +98,7 @@ function createInputRenderer(deps = {}) {
 
     if (type === "image") {
       const container = document.createElement("div");
-      container.style.marginBottom = "12px";
+      container.style.marginBottom = "6px";
       container.className = "full-width";
 
       const labelEl = document.createElement("div");
@@ -271,7 +271,7 @@ function createInputRenderer(deps = {}) {
       const isLongText = promptLike || inputPolicy.isLongTextInput(input);
       if (isLongText) {
         inputEl = document.createElement("textarea");
-        inputEl.rows = promptLike ? 6 : 2;
+        inputEl.rows = promptLike ? 4 : 2;
         inputEl.placeholder = promptLike ? "输入提示词或选择模板..." : String(input.default || "");
         inputEl.wrap = "soft";
         enforceLongTextCapacity(inputEl);
@@ -280,8 +280,8 @@ function createInputRenderer(deps = {}) {
         if (promptLike) {
           inputEl.classList.add("prompt-input-textarea");
           inputEl.style.fontFamily = `"Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif`;
-          inputEl.style.minHeight = "120px";
-          inputEl.style.maxHeight = "260px";
+          inputEl.style.minHeight = "92px";
+          inputEl.style.maxHeight = "190px";
           inputEl.style.overflowY = "auto";
           promptLengthHintEl = document.createElement("div");
           promptLengthHintEl.className = "prompt-length-hint";
