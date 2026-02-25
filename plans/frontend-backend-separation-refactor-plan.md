@@ -4,6 +4,9 @@
 - 分支：`refactor/plugin-frontend-backend-separation`
 - 日期：2026-02-24
 - 目标：将 UI 层、业务编排层、基础设施层解耦，降低页面改造成本，提升功能扩展能力与可测试性。
+- 迁移说明（2026-02-25）：
+  - UI 架构专项（控制器拆分与初始化链路收敛）的后续进度，已迁移到 `plans/ui-architecture-refactor-tracking-2026-02-25.md`。
+  - 本文保留全量历史与阶段结论，不再作为 UI 专项的主跟踪文档。
 
 ## 1. 现状分析（基于当前代码）
 
@@ -1338,6 +1341,189 @@ src/
 - 下一步（建议直接接续）：
   1. 后续仅做低风险稳定性修正与文档归档，不再推进结构性拆分。
   2. 在具备 UXP 可交互环境后执行冒烟清单并回填实测结果，作为 P2 收口验收附件。
+
+### 11.21 补充进度快照（2026-02-25）
+- 本次完成：
+  - 分支操作完成：已在当前工作区创建 `refactor/frontend-logic`，并删除旧分支 `ui设计`（从该分支最新提交点迁移）。
+  - 按“P2 收口后仅做低风险优化”的口径，继续拆分 `workspace-controller` 中“账户状态 + 设置同步 + 刷新编排”逻辑：
+    - 新增独立子模块：`src/controllers/workspace/workspace-settings-controller.js`
+    - 主控制器改为通过 `getWorkspaceSettingsController()` 委托以下职责：
+      - `syncPasteStrategySelect`
+      - `updateAccountStatus`
+      - `onRefreshWorkspaceClick`
+      - `onPasteStrategyChange`
+      - `onSettingsChanged`
+  - 保持对外行为不变：`index.js` 入口与 `initWorkspaceController` 调用方式未变。
+  - 新增模块级测试：`tests/controllers/workspace/workspace-settings-controller.test.js`。
+  - 主控制器体积继续收敛：`workspace-controller` 由 `594` 行降到 `575` 行（当前工作区统计口径）。
+- 变更文件：
+  - `src/controllers/workspace/workspace-settings-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/workspace-settings-controller.test.js`
+- 校验命令：
+  - `node --check src/controllers/workspace-controller.js src/controllers/workspace/workspace-settings-controller.js tests/controllers/workspace/workspace-settings-controller.test.js`
+  - `node --test tests/controllers/workspace/workspace-settings-controller.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 控制器回归（含新模块测试）：`101 passed, 0 failed`。
+  - 全量回归（本轮命令集）：`280 passed, 0 failed`。
+  - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 当前仍是 CLI 会话，UXP 手工冒烟需要在 Photoshop + UXP Developer Tool 交互环境执行。
+- 下一步（建议直接接续）：
+  1. 继续“低风险拆分”口径，评估 `workspace-controller` 剩余 UI 事件绑定与初始化编排的委托收敛边界（优先可读性，不为行数而拆分）。
+  2. 在具备 UXP 交互环境后执行 `plans/uxp-manual-smoke-checklist-2026-02-25.md` 并回填实测结果，完成本轮收口闭环。
+
+### 11.22 补充进度快照（2026-02-25）
+- 本次完成：
+  - 延续“P2 收口后仅做低风险优化”的口径，继续下沉 `workspace-controller` 的“DOM 缓存 + 事件绑定编排”逻辑：
+    - 新增独立子模块：`src/controllers/workspace/workspace-init-controller.js`
+    - 主控制器改为通过 `getWorkspaceInitController()` 委托：
+      - `collectDomRefs`
+      - `bindWorkspaceEvents`
+  - 事件绑定矩阵与原行为保持一致（包含 `APP_EVENTS.APPS_CHANGED / TEMPLATES_CHANGED / SETTINGS_CHANGED` 三个事件桥接）。
+  - 保持对外行为不变：`index.js` 入口与 `initWorkspaceController` 调用方式未变。
+  - 新增模块级测试：`tests/controllers/workspace/workspace-init-controller.test.js`。
+  - 主控制器体积继续收敛：`workspace-controller` 由 `575` 行降到 `562` 行（当前工作区统计口径）。
+- 变更文件：
+  - `src/controllers/workspace/workspace-init-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/workspace-init-controller.test.js`
+- 校验命令：
+  - `node --check src/controllers/workspace-controller.js src/controllers/workspace/workspace-init-controller.js tests/controllers/workspace/workspace-init-controller.test.js`
+  - `node --test tests/controllers/workspace/workspace-init-controller.test.js tests/controllers/workspace/workspace-settings-controller.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 控制器回归（含新模块测试）：`103 passed, 0 failed`。
+  - 全量回归（本轮命令集）：`282 passed, 0 failed`。
+  - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 当前仍是 CLI 会话，UXP 手工冒烟需要在 Photoshop + UXP Developer Tool 交互环境执行。
+- 下一步（建议直接接续）：
+  1. 继续“低风险拆分”口径，评估 `workspace-controller` 剩余日志编排与初始化重置链路是否继续下沉（优先可读性，不为行数而拆分）。
+  2. 在具备 UXP 交互环境后执行 `plans/uxp-manual-smoke-checklist-2026-02-25.md` 并回填实测结果，完成本轮收口闭环。
+
+### 11.23 补充进度快照（2026-02-25）
+- 本次完成：
+  - 延续“P2 收口后仅做低风险优化”的口径，继续下沉 `workspace-controller` 的“日志编排”逻辑：
+    - 新增独立子模块：`src/controllers/workspace/workspace-log-controller.js`
+    - 主控制器改为通过 `getWorkspaceLogController()` 委托：
+      - `log`
+      - `onClearLogClick`
+      - `logPromptLengthsBeforeRun`
+  - 对外行为保持不变：日志窗口清空、运行前 prompt 长度日志输出、RunGuard 提示链路不变。
+  - 保持对外入口不变：`index.js` 与 `initWorkspaceController` 调用方式未变。
+  - 新增模块级测试：`tests/controllers/workspace/workspace-log-controller.test.js`。
+  - 主控制器体积继续收敛：`workspace-controller` 由 `562` 行降到 `547` 行（当前工作区统计口径）。
+- 变更文件：
+  - `src/controllers/workspace/workspace-log-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/workspace-log-controller.test.js`
+- 校验命令：
+  - `node --check src/controllers/workspace-controller.js src/controllers/workspace/workspace-log-controller.js tests/controllers/workspace/workspace-log-controller.test.js`
+  - `node --test tests/controllers/workspace/workspace-log-controller.test.js tests/controllers/workspace/workspace-init-controller.test.js tests/controllers/workspace/workspace-settings-controller.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 控制器回归（含新模块测试）：`107 passed, 0 failed`。
+  - 全量回归（本轮命令集）：`286 passed, 0 failed`。
+  - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 当前仍是 CLI 会话，UXP 手工冒烟需要在 Photoshop + UXP Developer Tool 交互环境执行。
+- 下一步（建议直接接续）：
+  1. 继续“低风险拆分”口径，评估 `workspace-controller` 剩余“初始化重置链路”是否继续下沉，优先可读性与稳定性。
+  2. 在具备 UXP 交互环境后执行 `plans/uxp-manual-smoke-checklist-2026-02-25.md` 并回填实测结果，完成收口闭环。
+
+### 11.24 补充进度快照（2026-02-25）
+- 本次完成：
+  - 延续“P2 收口后仅做低风险优化”的口径，继续下沉 `workspace-controller` 的“初始化重置链路”：
+    - 新增独立子模块：`src/controllers/workspace/workspace-reset-controller.js`
+    - 主控制器改为通过 `workspaceResetController.resetBeforeInit(...)` 委托初始化前重置：
+      - `runButtonPhaseController / runStatusController / runWorkflowController` 的 `dispose + 置空`
+      - `taskSummary` 相关状态与 `runButtonPhase` 复位
+      - `runGuard.reset()` 调用保持不变
+      - 其余子控制器引用（`appPicker/templatePicker/workspace*`）统一清空
+  - 保持对外行为不变：`index.js` 与 `initWorkspaceController` 调用方式未变，返回值仍为 `workspaceGateway`。
+  - 新增模块级测试：`tests/controllers/workspace/workspace-reset-controller.test.js`。
+  - 主控制器体积继续收敛：`workspace-controller` 由 `547` 行降到 `545` 行（当前工作区统计口径）。
+- 变更文件：
+  - `src/controllers/workspace/workspace-reset-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/workspace-reset-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 控制器回归：`109 passed, 0 failed`。
+  - 全量回归（本轮命令集）：`288 passed, 0 failed`。
+  - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 当前仍是 CLI 会话，UXP 手工冒烟需要在 Photoshop + UXP Developer Tool 交互环境执行。
+- 下一步（建议直接接续）：
+  1. 继续“低风险拆分”口径，评估 `workspace-controller` 初始化链路中“启动编排（DOM 缓存后到首次 UI 刷新）”是否可继续下沉。
+  2. 在具备 UXP 交互环境后执行 `plans/uxp-manual-smoke-checklist-2026-02-25.md` 并回填实测结果，完成收口闭环。
+
+### 11.25 补充进度快照（2026-02-25）
+- 本次完成：
+  - 延续“P2 收口后仅做低风险优化”的口径，继续下沉 `workspace-controller` 的“初始化重置链路（启动编排段）”：
+    - 新增独立子模块：`src/controllers/workspace/workspace-startup-controller.js`
+    - 主控制器改为通过 `createWorkspaceStartupController(...).runInitSequence()` 委托初始化后的启动编排：
+      - DOM 缓存
+      - RunButton 相位控制器预热
+      - 模板选择器重置
+      - 粘贴策略同步
+      - `workspaceInputs` 重新装配
+      - 工作台事件绑定
+      - 首次账户状态 / 应用列表 / 运行按钮 / 任务摘要刷新
+  - 保持对外行为不变：`index.js` 与 `initWorkspaceController` 调用方式未变，返回值仍为 `workspaceGateway`。
+  - 新增模块级测试：`tests/controllers/workspace/workspace-startup-controller.test.js`。
+  - 主控制器体积保持稳定：`workspace-controller` 维持 `545` 行（当前工作区统计口径）。
+- 变更文件：
+  - `src/controllers/workspace/workspace-startup-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/workspace-startup-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 控制器回归：`111 passed, 0 failed`。
+  - 全量回归（本轮命令集）：`290 passed, 0 failed`。
+  - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 当前仍是 CLI 会话，UXP 手工冒烟需要在 Photoshop + UXP Developer Tool 交互环境执行。
+- 下一步（建议直接接续）：
+  1. 继续“低风险拆分”口径，评估 `workspace-controller` 初始化链路中“事件处理器组装（bind handlers map）”是否继续下沉。
+  2. 在具备 UXP 交互环境后执行 `plans/uxp-manual-smoke-checklist-2026-02-25.md` 并回填实测结果，完成收口闭环。
+
+### 11.26 补充进度快照（2026-02-25）
+- 本次完成：
+  - 延续“P2 收口后仅做低风险优化”的口径，继续下沉 `workspace-controller` 的“初始化重置链路（事件处理器组装）”：
+    - 在 `workspace-init-controller` 新增 `bindWorkspaceEventsFromDelegates(delegates)`，由子控制器内部完成 delegates 到事件 handlers 的映射组装。
+    - 主控制器在启动编排中改为调用 `bindWorkspaceEventsFromDelegates(...)`，不再在 `workspace-controller` 内直接构造完整 handlers map。
+  - 保持对外行为不变：`index.js` 与 `initWorkspaceController` 调用方式未变，返回值仍为 `workspaceGateway`。
+  - 补充模块级测试：`tests/controllers/workspace/workspace-init-controller.test.js` 新增 delegates 绑定入口覆盖。
+  - 主控制器体积保持稳定：`workspace-controller` 维持 `545` 行（当前工作区统计口径）。
+- 变更文件：
+  - `src/controllers/workspace/workspace-init-controller.js`
+  - `src/controllers/workspace-controller.js`
+  - `tests/controllers/workspace/workspace-init-controller.test.js`
+- 校验命令：
+  - `node --test tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
+  - `node --test tests/application/services/*.test.js tests/application/usecases/*.test.js tests/controllers/settings/*.test.js tests/controllers/workspace/*.test.js tests/controllers/tools-controller-init.test.js tests/domain/policies/*.test.js tests/services/runninghub-runner/*.test.js tests/services/runninghub-polling.test.js tests/services/runninghub.test.js`
+  - `node scripts/check-controller-service-deps.js`
+- 结果：
+  - 控制器回归：`112 passed, 0 failed`。
+  - 全量回归（本轮命令集）：`291 passed, 0 failed`。
+  - 依赖方向检查：通过（`Controller dependency check passed: no direct services import.`）。
+- 风险/遗留：
+  - 当前仍是 CLI 会话，UXP 手工冒烟需要在 Photoshop + UXP Developer Tool 交互环境执行。
+- 下一步（建议直接接续）：
+  1. 继续“低风险拆分”口径，评估 `workspace-controller` 初始化链路中 `createWorkspaceStartupController(...)` 的 options 装配是否进一步下沉。
+  2. 在具备 UXP 交互环境后执行 `plans/uxp-manual-smoke-checklist-2026-02-25.md` 并回填实测结果，完成收口闭环。
 
 ---
 

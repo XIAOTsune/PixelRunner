@@ -11,15 +11,20 @@ const { createAppPickerController } = require("./workspace/app-picker-controller
 const { createTemplatePickerController } = require("./workspace/template-picker-controller");
 const { createRunStatusController } = require("./workspace/run-status-controller");
 const { createRunWorkflowController } = require("./workspace/run-workflow-controller");
+const { createWorkspaceSettingsController } = require("./workspace/workspace-settings-controller");
+const { createWorkspaceInitController } = require("./workspace/workspace-init-controller");
+const { createWorkspaceLogController } = require("./workspace/workspace-log-controller");
 const {
-  buildLogLine,
-  renderLogLine,
-  clearLogView
-} = require("./workspace/log-view");
+  createWorkspaceResetController,
+  createWorkspaceResetBeforeInitParams
+} = require("./workspace/workspace-reset-controller");
+const {
+  createWorkspaceStartupController,
+  createWorkspaceStartupControllerOptions
+} = require("./workspace/workspace-startup-controller");
 const { createRunGuard } = require("../application/services/run-guard");
 const { createJobScheduler, createJobExecutor } = require("../application/services/job-scheduler");
 const { buildAppPickerViewModel } = require("../application/services/app-picker");
-const { buildPromptLengthLogSummary } = require("../application/services/prompt-log");
 const {
   buildRunButtonViewModel,
   createRunButtonPhaseController
@@ -105,22 +110,19 @@ const RUN_SUMMARY_HINT_MS = 1800;
 let workspaceInputs = null;
 let appPickerController = null;
 let templatePickerController = null;
+let workspaceSettingsController = null;
+let workspaceInitController = null;
+let workspaceLogController = null;
 const runGuard = createRunGuard({
   dedupWindowMs: RUN_DEDUP_WINDOW_MS,
   dedupCacheLimit: RUN_DEDUP_CACHE_LIMIT
 });
+const workspaceResetController = createWorkspaceResetController({
+  clearInterval
+});
 let runButtonPhaseController = null;
 let runStatusController = null;
 let runWorkflowController = null;
-
-function syncPasteStrategySelect() {
-  const select = dom.pasteStrategySelect || byId("pasteStrategySelect");
-  if (!select) return;
-  const settings = store.getSettings();
-  const pasteStrategy = normalizePasteStrategy(settings.pasteStrategy);
-  const nextValue = String(pasteStrategy);
-  if (select.value !== nextValue) select.value = nextValue;
-}
 
 function getWorkspaceInputs() {
   if (!workspaceInputs) {
@@ -141,6 +143,48 @@ function getWorkspaceInputs() {
     });
   }
   return workspaceInputs;
+}
+
+function getWorkspaceSettingsController() {
+  if (!workspaceSettingsController) {
+    workspaceSettingsController = createWorkspaceSettingsController({
+      dom,
+      byId,
+      store,
+      runninghub,
+      normalizePasteStrategy,
+      normalizeUploadMaxEdge,
+      pasteStrategyLabels: PASTE_STRATEGY_LABELS,
+      syncWorkspaceApps,
+      log
+    });
+  }
+  return workspaceSettingsController;
+}
+
+function getWorkspaceInitController() {
+  if (!workspaceInitController) {
+    workspaceInitController = createWorkspaceInitController({
+      dom,
+      byId,
+      rebindEvent,
+      appEvents: APP_EVENTS
+    });
+  }
+  return workspaceInitController;
+}
+
+function getWorkspaceLogController() {
+  if (!workspaceLogController) {
+    workspaceLogController = createWorkspaceLogController({
+      dom,
+      byId,
+      inputSchema,
+      isPromptLikeInput,
+      isEmptyValue
+    });
+  }
+  return workspaceLogController;
 }
 
 function getTemplatePickerController() {
@@ -171,19 +215,11 @@ function getTemplatePickerController() {
 }
 
 function log(msg, type = "info") {
-  console.log(`[Workspace][${type}] ${msg}`);
-  const logDiv = dom.logWindow || byId("logWindow");
-  if (!logDiv) return;
-  if (msg === "CLEAR") {
-    clearLogView(logDiv);
-    return;
-  }
-  const line = buildLogLine({ message: msg, type, now: new Date() });
-  renderLogLine(logDiv, line);
+  getWorkspaceLogController().log(msg, type);
 }
 
 function onClearLogClick() {
-  log("CLEAR");
+  getWorkspaceLogController().onClearLogClick();
 }
 
 function getRunButtonPhaseController() {
@@ -340,29 +376,8 @@ function updateCurrentAppMeta() {
   metaEl.title = String(state.currentApp.name || "");
 }
 
-async function updateAccountStatus() {
-  const apiKey = store.getApiKey();
-  const balanceEl = dom.accountBalanceValue || byId("accountBalanceValue");
-  const coinsEl = dom.accountCoinsValue || byId("accountCoinsValue");
-  const summaryEl = dom.accountSummary || byId("accountSummary");
-  if (!balanceEl || !coinsEl) return;
-
-  if (!apiKey) {
-    if (summaryEl) summaryEl.classList.add("is-empty");
-    balanceEl.textContent = "--";
-    coinsEl.textContent = "--";
-    return;
-  }
-
-  try {
-    if (summaryEl) summaryEl.classList.remove("is-empty");
-    balanceEl.textContent = "...";
-    const status = await runninghub.fetchAccountStatus(apiKey);
-    balanceEl.textContent = status.remainMoney || "0";
-    coinsEl.textContent = status.remainCoins || "0";
-  } catch (error) {
-    console.error("获取账户信息失败", error);
-  }
+function updateAccountStatus() {
+  return getWorkspaceSettingsController().updateAccountStatus();
 }
 
 function renderDynamicInputs(appItem) {
@@ -398,24 +413,7 @@ function handleAppPickerListClick(event) {
 }
 
 function logPromptLengthsBeforeRun(appItem = state.currentApp, inputValues = state.inputValues, prefix = "") {
-  const summary = buildPromptLengthLogSummary({
-    appItem,
-    inputValues,
-    inputSchema,
-    isPromptLikeInput,
-    isEmptyValue,
-    maxItems: 12
-  });
-  if (!summary) return;
-
-  const head = prefix ? `${prefix} ` : "";
-  log(`${head}Prompt length check before run: ${summary.totalPromptInputs} prompt input(s)`, "info");
-  summary.entries.forEach((item) => {
-    log(`${head}Input ${item.label} (${item.key}): length ${item.length}, tail ${item.tail}`, "info");
-  });
-  if (summary.hiddenCount > 0) {
-    log(`${head}${summary.hiddenCount} additional prompt input(s) not expanded`, "info");
-  }
+  getWorkspaceLogController().logPromptLengthsBeforeRun(appItem, inputValues, prefix);
 }
 
 function closeTemplatePicker() {
@@ -452,43 +450,11 @@ function onApplyTemplateSelectionClick() {
 }
 
 function onRefreshWorkspaceClick() {
-  syncWorkspaceApps({ forceRerender: false });
-  updateAccountStatus();
-  log("应用列表已刷新", "info");
+  getWorkspaceSettingsController().onRefreshWorkspaceClick();
 }
 
 function onPasteStrategyChange(event) {
-  const nextPasteStrategy = normalizePasteStrategy(event && event.target ? event.target.value : "");
-  const settings = store.getSettings();
-  const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
-  store.saveSettings({
-    pollInterval: settings.pollInterval,
-    timeout: settings.timeout,
-    uploadMaxEdge,
-    pasteStrategy: nextPasteStrategy
-  });
-  const marker = PASTE_STRATEGY_LABELS[nextPasteStrategy] || nextPasteStrategy;
-  log(`回贴策略已切换: ${marker}`, "info");
-}
-
-function bindWorkspaceEvents() {
-  rebindEvent(dom.btnRun, "click", handleRun);
-  rebindEvent(dom.btnOpenAppPicker, "click", openAppPickerModal);
-  rebindEvent(dom.appPickerModalClose, "click", closeAppPickerModal);
-  rebindEvent(dom.appPickerModal, "click", onAppPickerModalClick);
-  rebindEvent(dom.appPickerList, "click", handleAppPickerListClick);
-  rebindEvent(dom.appPickerSearchInput, "input", onAppPickerSearchInput);
-  rebindEvent(dom.btnRefreshWorkspaceApps, "click", onRefreshWorkspaceClick);
-  rebindEvent(dom.pasteStrategySelect, "change", onPasteStrategyChange);
-  rebindEvent(dom.templateModalClose, "click", closeTemplatePicker);
-  rebindEvent(dom.templateModal, "click", onTemplateModalClick);
-  rebindEvent(dom.templateList, "click", handleTemplateListClick);
-  rebindEvent(dom.btnApplyTemplateSelection, "click", onApplyTemplateSelectionClick);
-  rebindEvent(dom.btnClearLog, "click", onClearLogClick);
-
-  rebindEvent(document, APP_EVENTS.APPS_CHANGED, onAppsChanged);
-  rebindEvent(document, APP_EVENTS.TEMPLATES_CHANGED, onTemplatesChanged);
-  rebindEvent(document, APP_EVENTS.SETTINGS_CHANGED, onSettingsChanged);
+  getWorkspaceSettingsController().onPasteStrategyChange(event);
 }
 
 function onAppsChanged() {
@@ -500,41 +466,65 @@ function onTemplatesChanged() {
 }
 
 function onSettingsChanged() {
-  updateAccountStatus();
-  syncPasteStrategySelect();
+  getWorkspaceSettingsController().onSettingsChanged();
 }
 
-function cacheDomRefs() {
-  const ids = [
-    "btnRun",
-    "btnOpenAppPicker",
-    "btnRefreshWorkspaceApps",
-    "pasteStrategySelect",
-    "btnClearLog",
-    "taskStatusSummary",
-    "appPickerMeta",
-    "dynamicInputContainer",
-    "imageInputContainer",
-    "logWindow",
-    "appPickerModal",
-    "appPickerModalClose",
-    "appPickerSearchInput",
-    "appPickerStats",
-    "appPickerList",
-    "templateModal",
-    "templateModalTitle",
-    "templateList",
-    "templateModalActions",
-    "templateModalSelectionInfo",
-    "btnApplyTemplateSelection",
-    "templateModalClose",
-    "accountSummary",
-    "accountBalanceValue",
-    "accountCoinsValue"
-  ];
-  ids.forEach((id) => {
-    dom[id] = byId(id);
+function createWorkspaceInitEventDelegates() {
+  return {
+    handleRun,
+    openAppPickerModal,
+    closeAppPickerModal,
+    onAppPickerModalClick,
+    handleAppPickerListClick,
+    onAppPickerSearchInput,
+    onRefreshWorkspaceClick,
+    onPasteStrategyChange,
+    closeTemplatePicker,
+    onTemplateModalClick,
+    handleTemplateListClick,
+    onApplyTemplateSelectionClick,
+    onClearLogClick,
+    onAppsChanged,
+    onTemplatesChanged,
+    onSettingsChanged
+  };
+}
+
+function resetWorkspaceInputsForInit() {
+  workspaceInputs = null;
+  getWorkspaceInputs();
+}
+
+function collectWorkspaceControllerRefs() {
+  return {
+    runButtonPhaseController,
+    runStatusController,
+    runWorkflowController,
+    appPickerController,
+    templatePickerController,
+    workspaceSettingsController,
+    workspaceInitController,
+    workspaceLogController
+  };
+}
+
+function resetWorkspaceControllersBeforeInit() {
+  const resetParams = createWorkspaceResetBeforeInitParams({
+    state,
+    runGuard,
+    runButtonPhaseEnum: RUN_BUTTON_PHASE,
+    controllers: collectWorkspaceControllerRefs()
   });
+  ({
+    runButtonPhaseController,
+    runStatusController,
+    runWorkflowController,
+    appPickerController,
+    templatePickerController,
+    workspaceSettingsController,
+    workspaceInitController,
+    workspaceLogController
+  } = workspaceResetController.resetBeforeInit(resetParams));
 }
 
 function resolveWorkspaceGateway(options = {}) {
@@ -550,44 +540,22 @@ function initWorkspaceController(options = {}) {
   runninghub = workspaceGateway.runninghub;
   ps = workspaceGateway.photoshop;
 
-  if (runButtonPhaseController) {
-    runButtonPhaseController.dispose();
-    runButtonPhaseController = null;
-  }
-  state.runButtonTimerId = null;
-  if (runStatusController) {
-    runStatusController.dispose();
-    runStatusController = null;
-  }
-  if (runWorkflowController) {
-    runWorkflowController.dispose();
-    runWorkflowController = null;
-  }
-  state.taskSummaryHintText = "";
-  state.taskSummaryHintType = "info";
-  state.taskSummaryHintUntil = 0;
-  state.taskSummaryHintTimerId = null;
-  if (state.taskSummaryTimerId) {
-    clearInterval(state.taskSummaryTimerId);
-    state.taskSummaryTimerId = null;
-  }
-  runGuard.reset();
-  state.runButtonPhase = RUN_BUTTON_PHASE.IDLE;
-  appPickerController = null;
-  templatePickerController = null;
+  resetWorkspaceControllersBeforeInit();
 
-  cacheDomRefs();
-  getRunButtonPhaseController();
-  getTemplatePickerController().reset();
-  syncPasteStrategySelect();
-  workspaceInputs = null;
-  getWorkspaceInputs();
-  bindWorkspaceEvents();
-  updateAccountStatus();
-  syncWorkspaceApps({ forceRerender: true });
-  updateRunButtonUI();
-  updateTaskStatusSummary();
+  const startupControllerOptions = createWorkspaceStartupControllerOptions({
+    getWorkspaceInitController,
+    ensureRunButtonPhaseController: getRunButtonPhaseController,
+    getTemplatePickerController,
+    getWorkspaceSettingsController,
+    resetWorkspaceInputs: resetWorkspaceInputsForInit,
+    getWorkspaceEventDelegates: createWorkspaceInitEventDelegates,
+    updateAccountStatus,
+    syncWorkspaceApps,
+    updateRunButtonUI,
+    updateTaskStatusSummary
+  });
 
+  createWorkspaceStartupController(startupControllerOptions).runInitSequence();
   return workspaceGateway;
 }
 

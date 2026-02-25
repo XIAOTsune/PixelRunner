@@ -4,7 +4,7 @@
   <p>RunningHub Photoshop Plugin</p>
   <p>把 RunningHub AI 工作流直接放进 Photoshop 的 UXP 插件。自动解析参数、执行任务、下载结果，并回贴到当前画布。</p>
   <p>
-    <img src="https://img.shields.io/badge/version-V2.1.1-0A7BFF" alt="version" />
+    <img src="https://img.shields.io/badge/version-V2.2.1-0A7BFF" alt="version" />
     <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="photoshop" />
     <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="uxp" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-3DA639" alt="license" />
@@ -32,7 +32,7 @@
 | --- | --- |
 | Host | Photoshop (UXP Manifest v5) |
 | Min Photoshop | 23.0 |
-| Version | V2.1.1 |
+| Version | V2.2.1 |
 
 <a name="highlights"></a>
 ## 亮点 / Highlights
@@ -313,11 +313,11 @@ for (const f of files) {
 
 <a name="version"></a>
 ## 版本 / Version
-- 当前版本：`V2.1.1` (见 `manifest.json`)
+- 当前版本：`V2.2.1` (见 `manifest.json`)
 
 
 <a name="release-2-1-1"></a>
-## Release 2.1.1
+## Release 2.2.1
 - Moved upload resolution limit entry from workspace header to Settings > Advanced.
 - Default upload resolution policy is now unlimited, with migration for existing settings.
 - Added safer upload resize fallback and request timeout handling for task submission stability.
