@@ -1,332 +1,256 @@
 <div align="center">
-  <img src="icons/icon.png" width="92" alt="小T修图助手" />
-  <h1>小T修图助手</h1>
-  <p>RunningHub Photoshop Plugin</p>
-  <p>把 RunningHub AI 工作流直接放进 Photoshop 的 UXP 插件。自动解析参数、执行任务、下载结果，并回贴到当前画布。</p>
+  <img src="icons/icon.png" width="96" alt="PixelRunner Logo" />
+  <h1>PixelRunner</h1>
+  <p><strong>RunningHub × Photoshop (UXP) 一体化工作流插件</strong></p>
+  <p>把“应用解析 → 参数填写 → 任务执行 → 结果回贴”压缩在同一个 Photoshop 面板中完成。</p>
   <p>
-    <img src="https://img.shields.io/badge/version-V2.2.1-0A7BFF" alt="version" />
-    <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="photoshop" />
-    <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="uxp" />
+    <img src="https://img.shields.io/badge/version-2.2.1-0A7BFF" alt="version" />
+    <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="Photoshop" />
+    <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="UXP" />
+    <img src="https://img.shields.io/badge/tests-80-2EA043" alt="tests" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-3DA639" alt="license" />
   </p>
 </div>
 
 <p align="center">
-  <a href="#quick-start">快速上手</a> ·
-  <a href="#feature-map">功能一览</a> ·
-  <a href="#workflow">工作流</a> ·
-  <a href="#integration">集成细节</a> ·
-  <a href="#data-privacy">数据与隐私</a> ·
-  <a href="#ps-modules">PS模块边界</a> ·
-  <a href="#smoke-checklist">冒烟清单</a> ·
-  <a href="#release-guardrails">发布预检</a> ·
-  <a href="#development">开发与调试</a>
+  <img src="icons/flat-workspace.svg" width="22%" alt="Workspace" />
+  <img src="icons/flat-tools.svg" width="22%" alt="Tools" />
+  <img src="icons/flat-settings.svg" width="22%" alt="Settings" />
+  <img src="icons/flat-upload.svg" width="22%" alt="Upload" />
 </p>
 
-> 在 Photoshop 内完成 RunningHub AI 应用的解析、参数填写、任务执行与结果回贴，适合高频、可复用、追求效率的修图场景。
+## 目录
+- [项目定位](#项目定位)
+- [核心优势](#核心优势)
+- [功能地图](#功能地图)
+- [快速开始](#快速开始)
+- [完整工作流](#完整工作流)
+- [稳定性与容错设计](#稳定性与容错设计)
+- [架构设计](#架构设计)
+- [关键模块说明](#关键模块说明)
+- [开发与测试](#开发与测试)
+- [数据与权限](#数据与权限)
+- [FAQ](#faq)
+- [License](#license)
 
-<a name="specs"></a>
-## 关键规格 / Specs
+## 项目定位
+PixelRunner 面向两类高频场景：
+- 在 Photoshop 内反复调用 RunningHub 应用进行批量修图/风格化
+- 希望减少“复制参数、切网页、下载图片、拖回 PS”的流程损耗
 
-| 项目 | 值 |
-| --- | --- |
-| Host | Photoshop (UXP Manifest v5) |
-| Min Photoshop | 23.0 |
-| Version | V2.2.1 |
+插件的目标不是替代 Photoshop，而是把 AI 工作流嵌入你已有的 PS 操作链路，保留专业修图习惯，同时提升执行效率与稳定性。
 
-<a name="highlights"></a>
-## 亮点 / Highlights
-- 一键接入 RunningHub 应用，自动解析参数并生成动态表单
-- 图像参数可直接从 PS 选区获取，支持预览与清除
-- 提示词模板一键插入，适合高频重复任务
-- 任务执行、轮询、下载与回贴一体化完成
-- 智能回贴对齐主体位置，低置信度自动回退
-- 打赏弹窗支持静态二维码展示与加载状态提示，提升小面板场景可用性
-- 内置常用修图工具箱，启动即生成环境诊断报告
+## 核心优势
+### 1. 真正的一体化闭环
+- 从 RunningHub App 解析到结果回贴，全部在同一面板完成
+- 图像输入可直接来自当前文档选区，无需手动导出中转
+- 结果自动下载并回贴，减少重复文件操作
 
-<a name="use-cases"></a>
-## 适用场景 / Use Cases
-- 将 RunningHub AI 应用嵌入 PS 修图流程
-- 在 PS 内完成参数配置、任务提交与结果回贴
-- 需要模板化提示词与快速试错的场景
+### 2. 面向生产的容错能力
+- 应用解析多端点自动回退（主解析接口失败自动尝试 fallback）
+- 任务提交支持 AI App API 与 Legacy API 双通道回退
+- 上传支持分辨率候选链路、上传接口回退、指数退避重试
+- 请求层统一超时与取消控制，避免“假死式等待”
 
-<a name="quick-start"></a>
-## 快速上手 / Quick Start
-1. 安装：使用 Adobe UXP Developer Tool 添加插件，选择 `manifest.json`
-2. 启动：在 Photoshop 中打开 “插件面板 -> 小T修图助手”
-3. 配置：在 “设置” 保存 RunningHub API Key 并点击测试
-4. 解析应用：输入 RunningHub 应用 ID 或 URL -> 解析 -> 保存到工作台
-5. 运行任务：选择应用，捕获选区图像，填写参数，点击 “开始运行”
-6. 查看结果：日志区查看进度，结果自动下载并回贴到当前文档
+### 3. 面向高频操作的交互设计
+- Run Guard 防重复提交（双击防抖 + 指纹去重）
+- 后台任务队列与并发调度（可配置并发数）
+- 提示词模板支持单条插入和多条组合（上限控制）
+- 运行日志和任务摘要可快速定位问题阶段
 
-<a name="feature-map"></a>
-## 功能一览 / Feature Map
+### 4. 可持续演进的工程结构
+- 明确分层：`controllers -> application -> services`
+- 通过脚本强制约束 controller 不直接依赖 services
+- `runninghub-runner` 采用策略拆分，便于单测覆盖与增量扩展
+- 启动环境诊断（Env Doctor）可输出报告，降低线上排障成本
 
-| 模块 | 亮点 | 典型用途 |
+## 功能地图
+| 模块 | 你能做什么 | 典型价值 |
 | --- | --- | --- |
-| Workspace | 动态参数表单、图像取样、模板插入 | 解析应用并执行任务 |
-| Tools | 观察层、盖印、高斯模糊、锐化等 | 高频修图操作快捷入口 |
-| Settings | API Key、应用管理、模板管理 | 初始配置与维护 |
-| Diagnostics | 启动诊断、报告导出 | 环境与依赖排查 |
+| Workspace | 选择应用、动态参数填写、捕获图像、提交任务、查看日志 | 主工作流一次完成 |
+| Settings | API Key 管理、应用解析与存储、模板管理、高级参数配置 | 配置集中化与可复用 |
+| Tools | 观察层、中性灰、盖印层、高斯模糊、锐化、高反差保留、内容识别填充 | 高频修图动作快捷入口 |
+| Diagnostics | 启动自检、读取解析调试信息、导出诊断摘要 | 快速定位环境与接口问题 |
 
-<details>
-<summary><strong>Workspace 细节</strong></summary>
+### Workspace 特色
+- 动态参数渲染：根据应用输入自动生成图像/文本/数值/布尔/枚举控件
+- 图像输入联动：捕获选区后立即预览，可清除、可复用
+- 回贴策略：`normal` / `smart` / `smartEnhanced`
+- 任务摘要：实时展示运行、排队、成功、失败与超时跟踪数量
 
-- 应用选择器：搜索、刷新与快速切换
-- 动态参数：图像、文本、数字、选择、布尔等控件自动生成
-- 图像输入：从 PS 选区获取，支持预览与清除
-- 提示词模板：输入框可唤起模板面板
-- 上传分辨率：无限制 / 4k / 2k / 1k 以缩短上传时间
-- 回贴策略：普通(居中填满) 与 智能(主体对齐)
-- 运行日志：支持复制与清空
+### Settings 特色
+- API Key 测试：快速验证凭据状态与可用性
+- 应用解析：支持 App ID / URL，解析结果可保存并回流工作台
+- 模板管理：新增、覆盖、删除、导入/导出 JSON
+- 高级参数：
+  - 轮询间隔（1-15s）
+  - 任务超时（10-600s）
+  - 上传分辨率上限（无限制 / 4k / 2k / 1k）
+  - 上传重试次数（0-5）
+  - 云端并发数（1-100）
 
-</details>
+### Tools 特色
+- 图层辅助：观察组、中性灰、盖印层
+- 滤镜/修复：高斯模糊、锐化、高反差保留、内容识别填充
+- 对原生能力友好：优先调用 Photoshop 原生命令并保留交互体验
 
-<details>
-<summary><strong>Tools 细节</strong></summary>
+## 快速开始
+1. 使用 Adobe UXP Developer Tool 加载 `manifest.json`
+2. 在 Photoshop 打开插件面板 `PixelRunner`
+3. 在 `Settings` 保存并测试 RunningHub API Key
+4. 输入 RunningHub 应用 ID 或 URL，解析并保存应用
+5. 回到 `Workspace`，选择应用并按需捕获图像输入
+6. 点击运行，等待任务完成并自动回贴结果
 
-- 黑白观察层：创建黑白 + 曲线观察组
-- 中性灰图层：50% 灰 + 柔光，用于加深减淡
-- 盖印图层：等同 Ctrl+Alt+Shift+E
-- 高斯模糊：调用原生对话框
-- 锐化：调用智能锐化对话框
-- 高反差保留：调用原生对话框
-- 内容识别填充：需先建立选区
-
-</details>
-
-<details>
-<summary><strong>Settings 细节</strong></summary>
-
-- API Key：保存、显示与测试 RunningHub API Key
-- 应用管理：解析、保存、编辑、删除，重复 ID 自动标记
-- 解析调试：读取最近一次解析的 Debug 信息
-- 提示词模板：新增、覆盖同名、删除模板
-- 高级设置：轮询间隔(1-15s) 与超时(10-600s)
-- 环境诊断：手动运行并查看摘要
-
-</details>
-
-<a name="workflow"></a>
-## 工作流 / Workflow
-
+## 完整工作流
 ```mermaid
 flowchart LR
-  A[RunningHub App ID or URL] --> B[参数解析]
-  B --> C[动态表单]
-  C --> D[选区图像捕获]
-  D --> E[任务提交]
-  E --> F[状态轮询]
-  F --> G[结果下载]
-  G --> H[智能回贴]
+  A[App ID / URL] --> B[多端点解析参数]
+  B --> C[动态表单渲染]
+  C --> D[PS 选区/画布图像捕获]
+  D --> E[参数校验与上传]
+  E --> F[任务提交\nAI App API -> Legacy Fallback]
+  F --> G[轮询状态与结果 URL]
+  G --> H[下载结果二进制]
+  H --> I[回贴至当前文档\nnormal/smart/smartEnhanced]
 ```
 
-<a name="integration"></a>
-## 集成细节 / Integration
+## 稳定性与容错设计
+| 机制 | 位置 | 作用 |
+| --- | --- | --- |
+| 解析多端点回退 | `src/services/runninghub-parser.js` | 主解析失败时自动尝试备用端点，提高兼容性 |
+| 双通道任务提交 | `src/services/runninghub-runner/submit-decision-strategy.js` | 优先 AI App API，失败自动回退 Legacy |
+| 上传弹性链路 | `upload-edge-strategy.js` + `upload-strategy.js` | 分辨率候选链路 + 上传接口回退 + 指数退避重试 |
+| 请求超时与取消 | `request-strategy.js` | 防止请求无响应导致流程卡死 |
+| 轮询容错 | `runninghub-polling.js` | 识别 pending/failed 状态并给出明确分支 |
+| 重复提交防护 | `application/services/run-guard.js` | 双击防抖 + 任务指纹去重 |
+| 后台任务调度 | `application/services/job-scheduler.js` | 队列化执行与并发控制 |
+| 超时恢复跟踪 | `job-scheduler.js` + `run-workflow-controller.js` | 远端已建任务但本地超时时可继续跟踪 |
+| 智能回贴降级 | `services/ps/place.js` + `alignment.js` | 智能对齐低置信度自动回退普通策略 |
+| 启动环境诊断 | `diagnostics/ps-env-doctor.js` | 自动产出诊断报告，减少排障时间 |
 
-### RunningHub 解析与任务
-- 解析端点：优先 `/api/webapp/apiCallDemo`，失败回退 `/uc/openapi/app` 等
-- 参数规范化：自动推断类型、解析选项、优化标签
-- AI App / Legacy 双通道：优先 AI App API，失败回退 Legacy
-- 图片上传：支持 v2/legacy 上传接口，可按设置自动缩放
-- 任务轮询：依据状态与超时配置轮询，失败有清晰提示
+## 架构设计
+```mermaid
+flowchart LR
+  UI[Controllers\nworkspace/settings/tools]
+  APP[Application\nusecases + app services]
+  DOMAIN[Domain Policies\ninput/run/text rules]
+  GW[Infrastructure Gateways]
+  RH[RunningHub Services\nparser/runner/polling/account]
+  PS[Photoshop Services\ncapture/place/tools]
+  STORE[Store\nlocalStorage]
 
-### 图像处理与回贴
-- 选区捕获：有选区时裁剪导出，无选区时导出整幅画面
-- 结果回贴：基于选区边界放置与对齐
-- 智能对齐：基于内容分析计算缩放与偏移，低分数自动降级
-- 兼容处理：异常或超时回退到普通回贴
+  UI --> APP
+  APP --> DOMAIN
+  APP --> GW
+  GW --> RH
+  GW --> PS
+  GW --> STORE
+```
 
-<a name="data-privacy"></a>
-## 数据与隐私 / Data & Privacy
+### 分层约束（强制）
+- `src/controllers/**/*.js` 不允许直接依赖 `src/services/*`
+- 控制层能力需经由 `application` 或 `infrastructure/gateways`
+- 检查命令：`node scripts/check-controller-service-deps.js`
 
-| 类型 | 内容 |
-| --- | --- |
-| LocalStorage | `rh_api_key`, `rh_ai_apps_v2`, `rh_prompt_templates`, `rh_settings` |
-| Parse Debug | `rh_last_parse_debug` |
-| 网络请求 | 仅访问 RunningHub 域名 |
+## 关键模块说明
+### 1) RunningHub Runner（策略化执行核心）
+目录：`src/services/runninghub-runner/`
 
-<a name="permissions"></a>
-## 权限说明 / Permissions
+- `input-validation-strategy`：输入完整性和类型校验
+- `payload-strategy`：参数转换、布尔/枚举/文本处理
+- `upload-strategy`：图像标准化、压缩/缩放、重试上传
+- `task-request-strategy`：任务请求体构建
+- `submit-decision-strategy`：AI App 与 Legacy 提交决策
+- `task-error-strategy` + `error-shape-strategy`：统一错误语义
+- `request-strategy` + `request-executor-strategy`：超时、取消、统一请求执行
 
-| 权限 | 用途 |
-| --- | --- |
-| `localFileSystem: fullAccess` | 临时文件与诊断报告读写 |
-| `launchProcess` | 打开外部链接(如打赏二维码) |
-| `network` | 访问 RunningHub API 与资源域名 |
+### 2) Photoshop Service
+- `ps/capture.js`：选区捕获与 PNG 导出
+- `ps/place.js`：结果回贴主流程
+- `ps/alignment.js`：普通/智能/增强智能对齐与几何修正
+- `ps/tools.js`：工具箱按钮动作封装
+- `ps.js`：稳定 facade 导出
 
-<a name="structure"></a>
-## 项目结构 / Project Structure
+### 3) Diagnostics
+- 启动阶段执行环境体检
+- 检查 DOM、模块导出、网络连通、数据健康
+- 输出 JSON/TXT 报告到 `localStorage` 与 UXP Data Folder
 
+## 开发与测试
+无需构建步骤，直接通过 UXP Developer Tool 调试。
+
+### 常用命令
+```bash
+node --test
+node scripts/check-controller-service-deps.js
+node --check index.js src/controllers/workspace-controller.js src/services/ps.js
+```
+
+### 测试分布（当前）
+- `tests/controllers`: 34
+- `tests/services`: 22
+- `tests/application`: 20
+- `tests/domain`: 3
+- `tests/scripts`: 1
+- 合计：80
+
+### 推荐发布前最小检查
+1. `node scripts/check-controller-service-deps.js`
+2. `node --test`
+3. 手工验证主链路：解析应用 -> 运行任务 -> 结果回贴
+
+## 项目结构
 ```text
 .
-├─ index.html             # 面板 UI 结构
-├─ index.js               # 启动与控制器初始化
-├─ style.css              # UI 样式
-├─ plans/                 # 重构与审查计划文档
-├─ scripts/               # 预检与静态检查脚本
+├─ index.html / index.js / style.css
 ├─ src/
-│  ├─ application/        # 用例与应用服务（编排层）
-│  ├─ controllers/        # 工作台 / 设置 / 工具箱控制器（展示层）
+│  ├─ application/        # 用例编排与应用服务
+│  ├─ controllers/        # Workspace / Settings / Tools 控制器
 │  ├─ diagnostics/        # 环境诊断
-│  ├─ domain/             # 纯策略与规则
+│  ├─ domain/             # 业务规则与策略约束
 │  ├─ infrastructure/     # gateway 适配层
-│  ├─ legacy/             # 已下线/历史资产
-│  ├─ services/           # RunningHub 与 Photoshop 服务实现
-│  └─ shared/             # 输入规范与 DOM 工具
-└─ tests/                 # Node 自动化测试
+│  ├─ services/           # RunningHub / Photoshop / Store 实现
+│  └─ shared/             # DOM / schema 公共模块
+├─ scripts/               # 规则检查脚本
+└─ tests/                 # Node 测试
 ```
 
-### 分层依赖规则（强制）
-1. `src/controllers/**/*.js` 禁止直接依赖 `src/services/*`。
-2. 控制层访问能力必须经由 `src/application/*` 或 `src/infrastructure/gateways/*`。
-3. 检查命令：`node scripts/check-controller-service-deps.js`。
-4. 命中违规依赖时，视为发布阻断项，必须先修复后再继续。
+## 数据与权限
+### 本地存储（localStorage）
+- `rh_api_key`
+- `rh_ai_apps_v2`
+- `rh_prompt_templates`
+- `rh_settings`
+- `rh_last_parse_debug`
+- `rh_env_diagnostic_latest`
 
-<a name="ps-modules"></a>
-## PS 模块边界与二开入口 / PS Module Boundaries
+### UXP 权限（manifest）
+- `localFileSystem: fullAccess`
+- `launchProcess`（`http` / `https` / `file`）
+- `network`
+  - `https://www.runninghub.cn`
+  - `https://runninghub.cn`
+  - `https://rh-images.xiaoyaoyou.com`
 
-| 模块 | 职责边界 | 什么时候改这里 |
-| --- | --- | --- |
-| `src/services/ps/capture.js` | 选区捕获与图像导出 | 调整“从 PS 获取输入图像”的行为 |
-| `src/services/ps/place.js` | 回贴编排与入口策略选择 | 调整“结果放置回画布”的主流程 |
-| `src/services/ps/alignment.js` | 几何对齐与智能对齐策略 | 调整智能回贴算法或对齐参数 |
-| `src/services/ps/tools.js` | 工具菜单能力（观察层/锐化等） | 新增或修改工具箱按钮对应动作 |
-| `src/services/ps/shared.js` | 通用工具函数（超时、数值、策略归一化） | 需要跨 capture/place/tools 复用的纯函数 |
-| `src/services/ps.js` | facade 兼容导出层 | 仅做聚合导出，不放业务逻辑 |
+## FAQ
+### Q1: API Key 测试失败怎么办？
+- 确认 Key 是否有效、账号是否有权限或余额
+- 在 Settings 中重新测试并查看日志提示
 
-### 二开入口约束（强制）
-1. 新增工具功能时，优先改 `src/services/ps/tools.js` 与 `src/controllers/tools-controller.js`，再补 UI 按钮。
-2. `src/services/ps.js` 的对外函数签名视为稳定契约，禁止随意改名或删除。
-3. 若确需变更 facade 契约，必须同步更新：
-   - `tests/services/ps/facade.test.js`
-   - `src/diagnostics/ps-env-doctor.js`（`REQUIRED_PS_EXPORTS`）
-4. 合同测试不通过时，不允许发布。
+### Q2: 应用解析不到参数怎么办？
+- 尝试使用 App ID 和完整 URL 各测试一次
+- 在 Settings 读取 Parse Debug 结果定位字段结构
 
-<a name="smoke-checklist"></a>
-## 手工 Smoke Checklist（UXP）
+### Q3: 任务超时是否会直接丢失？
+- 不一定。对于远端已创建任务，本地支持超时后继续跟踪（timeout tracking）
 
-1. 加载插件：用 UXP Developer Tool 加载 `manifest.json`，确认面板可见且不白屏。
-2. Workspace 主流程：
-   - 打开工作台，选择已保存应用；
-   - 捕获选区图像并运行任务；
-   - 确认日志有提交/轮询/完成或可读失败信息。
-3. Tools 按钮回归：
-   - 至少验证 `中性灰图层`、`高斯模糊`、`内容识别填充` 可触发；
-   - 无文档/无选区时应给出可读错误提示，不得无响应。
-4. Settings 关键链路：
-   - API Key 可保存并测试；
-   - 应用可解析并保存；
-   - 模板可新增和删除。
-5. 失败链路：
-   - 空 API Key / 非法应用 ID / 网络失败时，界面出现明确提示，不允许静默失败。
+### Q4: 智能回贴不理想怎么办？
+- 可切换回 `normal`，或在输入图像质量和构图上做约束
 
-<a name="release-guardrails"></a>
-## 发布前预检与踩坑规则 / Release Guardrails
+## License
+Apache-2.0
 
-### R1（强制）Manifest/入口文件必须 UTF-8 无 BOM
-- 适用：`manifest.json`, `index.html`, `index.js`（以及其它入口级脚本）
-- 检查命令：
-
-```powershell
-@'
-const fs = require('fs');
-const files = ['manifest.json', 'index.html', 'index.js'];
-for (const f of files) {
-  const b = fs.readFileSync(f);
-  const hasBom = b.length >= 3 && b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF;
-  console.log(`${f}: ${hasBom ? 'BOM' : 'no BOM'}`);
-}
-'@ | node -
-```
-
-### R2（强制）启动链路必须容错加载
-- 控制器初始化必须在 `DOMContentLoaded` 后执行。
-- 可选模块调用前必须做 `typeof fn === "function"` 判定。
-- 单模块失败不能拖垮整体启动，至少保留错误日志。
-
-### R3（强制）导出契约与诊断检查保持一致
-- `ps` facade 变更时，必须同步更新：
-  - `tests/services/ps/facade.test.js`
-  - `src/diagnostics/ps-env-doctor.js` 的 `REQUIRED_PS_EXPORTS`
-
-### R4（强制）controller 禁止直连 services
-- 规则：`src/controllers/**/*.js` 中不允许出现 `../services/*`（`require`/`import`）依赖。
-- 检查命令：`node scripts/check-controller-service-deps.js`
-- 处置：发现违规即阻断发布，必须先迁移到 `usecase/application service/gateway`。
-
-### R5（建议）发布前最小预检
-1. `node --check index.js src/services/ps.js src/controllers/workspace-controller.js`
-2. `node --test tests/services/ps/*.test.js tests/controllers/workspace/*.test.js tests/controllers/settings/*.test.js tests/controllers/tools-controller-init.test.js`
-3. `node scripts/check-controller-service-deps.js`
-4. 执行 R1 的 BOM 检查
-
-<a name="development"></a>
-## 开发与调试 / Development
-- 无需构建步骤，直接由 UXP Developer Tool 加载
-- 推荐入口：`index.html`, `index.js`, `src/controllers`, `src/application/usecases`, `src/infrastructure/gateways`, `src/services/ps.js`
-- 日志查看：使用 UXP Developer Console
-- 解析调试：设置页提供 “Load Parse Debug”
-
-<a name="faq"></a>
-## 常见问题 / FAQ
-
-<details>
-<summary><strong>API Key 无效怎么办</strong></summary>
-
-确认 RunningHub 后台生成的 API Key，账户余额与权限正常。
-
-</details>
-
-<details>
-<summary><strong>解析失败怎么办</strong></summary>
-
-尝试不同应用 URL/ID，或查看 Parse Debug 信息。
-
-</details>
-
-<details>
-<summary><strong>任务超时怎么办</strong></summary>
-
-提高超时设置或稍后在 RunningHub 任务列表查看。
-
-</details>
-
-<details>
-<summary><strong>智能回贴不理想</strong></summary>
-
-切换为 “普通” 策略。
-
-</details>
-
-<details>
-<summary><strong>内容识别填充不可用</strong></summary>
-
-确保有有效选区。
-
-</details>
-
-<a name="roadmap"></a>
-## 路线图 / Roadmap
-- 失败场景的诊断可观测性增强
-- 更多 PS 工具与预设
-
-<a name="version"></a>
-## 版本 / Version
-- 当前版本：`V2.2.1` (见 `manifest.json`)
-
-
-<a name="release-2-1-1"></a>
-## Release 2.2.1
-- Moved upload resolution limit entry from workspace header to Settings > Advanced.
-- Default upload resolution policy is now unlimited, with migration for existing settings.
-- Added safer upload resize fallback and request timeout handling for task submission stability.
-- Fixed modal input occlusion issue (input/select/textarea piercing above overlay).
-- Removed log copy button from workspace toolbar (manual copy remains available).
-<a name="license"></a>
-## 许可 / License
-- Apache-2.0
-
-<a name="support"></a>
-## 支持与反馈 / Support
-- GitHub Issues 或联系 QQ: 1048855084
+## Support
+- GitHub Issues
+- QQ: `1048855084`
