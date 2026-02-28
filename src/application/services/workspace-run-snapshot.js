@@ -47,6 +47,17 @@ function cloneBounds(bounds) {
   };
 }
 
+function clonePlacementTarget(value) {
+  if (!value || typeof value !== "object") return null;
+  const documentId = Number(value.documentId);
+  if (!Number.isFinite(documentId) || documentId <= 0) return null;
+  return {
+    documentId: Math.floor(documentId),
+    sourceInputKey: String(value.sourceInputKey || ""),
+    capturedAt: Number(value.capturedAt) || 0
+  };
+}
+
 function buildPollSettings(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
   return {
@@ -62,6 +73,7 @@ function buildWorkspaceRunSnapshot(options = {}) {
     inputValues: cloneInputValues(options.inputValues),
     targetBounds: cloneBounds(options.targetBounds),
     sourceBuffer: cloneArrayBuffer(options.sourceBuffer),
+    placementTarget: clonePlacementTarget(options.placementTarget),
     pollSettings: buildPollSettings(settings),
     uploadMaxEdge: normalizeUploadMaxEdge(settings.uploadMaxEdge),
     uploadRetryCount: normalizeUploadRetryCount(settings.uploadRetryCount),
@@ -74,6 +86,7 @@ module.exports = {
   cloneDeepValue,
   cloneInputValues,
   cloneBounds,
+  clonePlacementTarget,
   buildPollSettings,
   buildWorkspaceRunSnapshot
 };

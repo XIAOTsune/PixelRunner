@@ -25,6 +25,11 @@ test("submitWorkspaceJobUsecase keeps queueing job when fingerprint is recently 
     inputValues: { prompt: "hello" },
     targetBounds: null,
     sourceBuffer: null,
+    placementTarget: {
+      documentId: 12,
+      sourceInputKey: "image:main",
+      capturedAt: 1700000000000
+    },
     settings: {},
     queuedStatus: "QUEUED",
     buildWorkspaceRunSnapshot: () => ({
@@ -32,6 +37,11 @@ test("submitWorkspaceJobUsecase keeps queueing job when fingerprint is recently 
       inputValues: { prompt: "hello" },
       targetBounds: null,
       sourceBuffer: null,
+      placementTarget: {
+        documentId: 12,
+        sourceInputKey: "image:main",
+        capturedAt: 1700000000000
+      },
       pasteStrategy: "normal",
       uploadMaxEdge: 0,
       pollSettings: { pollInterval: 2, timeout: 180 }
@@ -44,6 +54,11 @@ test("submitWorkspaceJobUsecase keeps queueing job when fingerprint is recently 
   assert.deepEqual(result.duplicateHint, {
     type: "recent-fingerprint",
     runFingerprint: "fp-1"
+  });
+  assert.deepEqual(result.job.placementTarget, {
+    documentId: 12,
+    sourceInputKey: "image:main",
+    capturedAt: 1700000000000
   });
   assert.deepEqual(calls, [
     ["isRecentDuplicateFingerprint", "fp-1", 123],
@@ -66,6 +81,11 @@ test("submitWorkspaceJobUsecase creates queued job and advances seq", () => {
     inputValues: { prompt: "run" },
     targetBounds: { left: 1, top: 2, right: 3, bottom: 4 },
     sourceBuffer: new Uint8Array([1, 2, 3]).buffer,
+    placementTarget: {
+      documentId: 66,
+      sourceInputKey: "img",
+      capturedAt: 1700000000999
+    },
     pasteStrategy: "smart",
     uploadMaxEdge: 2048,
     pollSettings: { pollInterval: 5, timeout: 240 }
@@ -81,6 +101,7 @@ test("submitWorkspaceJobUsecase creates queued job and advances seq", () => {
     inputValues: { prompt: "run" },
     targetBounds: { left: 1, top: 2, right: 3, bottom: 4 },
     sourceBuffer: snapshot.sourceBuffer,
+    placementTarget: snapshot.placementTarget,
     settings: {},
     queuedStatus: "QUEUED",
     buildWorkspaceRunSnapshot: () => snapshot
@@ -94,6 +115,11 @@ test("submitWorkspaceJobUsecase creates queued job and advances seq", () => {
   assert.equal(result.job.appName, "App A");
   assert.equal(result.job.runFingerprint, "fp-2");
   assert.equal(result.duplicateHint, null);
+  assert.deepEqual(result.job.placementTarget, {
+    documentId: 66,
+    sourceInputKey: "img",
+    capturedAt: 1700000000999
+  });
   assert.deepEqual(result.job.pollSettings, { pollInterval: 5, timeout: 240 });
   assert.deepEqual(calls, [["rememberFingerprint", "fp-2", 1500]]);
 });

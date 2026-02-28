@@ -83,6 +83,17 @@ function isNearlyFullBounds(bounds, doc) {
   );
 }
 
+function buildCaptureContext(doc) {
+  if (!doc || typeof doc !== "object") return null;
+  const documentId = Number(doc.id);
+  if (!Number.isFinite(documentId) || documentId <= 0) return null;
+  return {
+    documentId: Math.floor(documentId),
+    documentTitle: String(doc.title || doc.name || ""),
+    capturedAt: Date.now()
+  };
+}
+
 async function captureSelection(options = {}) {
   const log = options.log || (() => {});
   try {
@@ -130,7 +141,11 @@ async function captureSelection(options = {}) {
     }, { commandName: "Capture Selection" });
 
     if (!capturedBuffer) return null;
-    return { arrayBuffer: capturedBuffer, selectionBounds };
+    return {
+      arrayBuffer: capturedBuffer,
+      selectionBounds,
+      captureContext: buildCaptureContext(doc)
+    };
   } catch (e) {
     log(`鎹曡幏閫夊尯澶辫触: ${e.message}`, "error");
     return null;

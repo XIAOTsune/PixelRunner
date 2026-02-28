@@ -2,6 +2,17 @@ function toMessage(error) {
   return error && error.message ? error.message : String(error || "unknown error");
 }
 
+function normalizeCaptureContext(value) {
+  if (!value || typeof value !== "object") return null;
+  const documentId = Number(value.documentId);
+  if (!Number.isFinite(documentId) || documentId <= 0) return null;
+  return {
+    documentId: Math.floor(documentId),
+    documentTitle: String(value.documentTitle || ""),
+    capturedAt: Number(value.capturedAt) || Date.now()
+  };
+}
+
 async function captureImageInput(options = {}) {
   const ps = options.ps;
   const log = options.log;
@@ -31,7 +42,8 @@ async function captureImageInput(options = {}) {
       ok: true,
       value: {
         arrayBuffer: capture.arrayBuffer,
-        previewUrl
+        previewUrl,
+        captureContext: normalizeCaptureContext(capture.captureContext)
       },
       selectionBounds: capture.selectionBounds || null
     };

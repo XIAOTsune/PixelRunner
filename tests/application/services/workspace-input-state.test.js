@@ -96,11 +96,47 @@ test("workspace input state service picks image arrayBuffer for ArrayBuffer and 
   assert.deepEqual(Array.from(new Uint8Array(fromView)), [1, 2, 3, 4]);
 });
 
+test("workspace input state service picks image capture context by key and alias", () => {
+  const state = {
+    inputValues: {},
+    imageBounds: {}
+  };
+  const service = createWorkspaceInputStateService({ state });
+  service.setInputValueByKey("group:image", {
+    arrayBuffer: new ArrayBuffer(1),
+    captureContext: {
+      documentId: 123,
+      documentTitle: "Doc-1",
+      capturedAt: 1700000000000
+    }
+  });
+
+  const byFullKey = service.pickImageCaptureContextByKey("group:image");
+  const byAlias = service.pickImageCaptureContextByKey("image");
+
+  assert.deepEqual(byFullKey, {
+    documentId: 123,
+    documentTitle: "Doc-1",
+    capturedAt: 1700000000000
+  });
+  assert.deepEqual(byAlias, {
+    documentId: 123,
+    documentTitle: "Doc-1",
+    capturedAt: 1700000000000
+  });
+});
+
 test("workspace input state service resets runtime values and revokes each value once", () => {
   const revoked = [];
   const state = {
     inputValues: {
-      a: { previewUrl: "blob:1" },
+      a: {
+        previewUrl: "blob:1",
+        captureContext: {
+          documentId: 7,
+          capturedAt: 123
+        }
+      },
       b: { previewUrl: "blob:2" }
     },
     imageBounds: {
@@ -116,4 +152,5 @@ test("workspace input state service resets runtime values and revokes each value
   assert.deepEqual(state.inputValues, {});
   assert.deepEqual(state.imageBounds, {});
   assert.deepEqual(revoked.sort(), ["blob:1", "blob:2"]);
+  assert.equal(service.pickImageCaptureContextByKey("a"), null);
 });

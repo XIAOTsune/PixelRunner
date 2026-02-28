@@ -5,6 +5,7 @@ const {
   cloneDeepValue,
   cloneInputValues,
   cloneBounds,
+  clonePlacementTarget,
   buildPollSettings,
   buildWorkspaceRunSnapshot
 } = require("../../../src/application/services/workspace-run-snapshot");
@@ -58,6 +59,22 @@ test("cloneBounds normalizes numeric coordinates and returns null for invalid in
   assert.equal(cloneBounds(null), null);
 });
 
+test("clonePlacementTarget normalizes payload and ignores invalid document ids", () => {
+  assert.deepEqual(
+    clonePlacementTarget({
+      documentId: "15",
+      sourceInputKey: "image:main",
+      capturedAt: "1700000000000"
+    }),
+    {
+      documentId: 15,
+      sourceInputKey: "image:main",
+      capturedAt: 1700000000000
+    }
+  );
+  assert.equal(clonePlacementTarget({ documentId: 0 }), null);
+});
+
 test("buildPollSettings applies numeric defaults", () => {
   assert.deepEqual(buildPollSettings({ pollInterval: "5", timeout: "240" }), {
     pollInterval: 5,
@@ -87,6 +104,11 @@ test("buildWorkspaceRunSnapshot builds normalized, cloned run payload", () => {
     inputValues,
     targetBounds: { left: "10", top: "20", right: "30", bottom: "40" },
     sourceBuffer,
+    placementTarget: {
+      documentId: 88,
+      sourceInputKey: "image",
+      capturedAt: 1700000000001
+    },
     settings: {
       pollInterval: "4",
       timeout: "150",
@@ -105,6 +127,11 @@ test("buildWorkspaceRunSnapshot builds normalized, cloned run payload", () => {
   });
   assert.notEqual(snapshot.sourceBuffer, sourceBuffer);
   assert.deepEqual(Array.from(new Uint8Array(snapshot.sourceBuffer)), [7, 8, 9]);
+  assert.deepEqual(snapshot.placementTarget, {
+    documentId: 88,
+    sourceInputKey: "image",
+    capturedAt: 1700000000001
+  });
   assert.deepEqual(snapshot.pollSettings, { pollInterval: 4, timeout: 150 });
   assert.equal(snapshot.uploadMaxEdge, 0);
   assert.equal(snapshot.pasteStrategy, "smart");

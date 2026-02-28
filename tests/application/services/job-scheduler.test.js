@@ -166,3 +166,75 @@ test("job executor converts timeout-like errors into tracking retries", async ()
   assert.equal(job.status, "TIMEOUT_TRACKING");
   assert.ok(job.nextRunAt >= before + 14000);
 });
+
+test("job executor forwards placementTarget to ps.placeImage", async () => {
+  const statusHistory = [];
+  const downloadedBuffer = new Uint8Array([9, 8, 7]).buffer;
+  const placeCalls = [];
+  const job = {
+    remoteTaskId: "",
+    timeoutRecoveries: 0,
+    nextRunAt: 0,
+    pollSettings: { pollInterval: 2, timeout: 180 },
+    uploadMaxEdge: 0,
+    uploadRetryCount: 0,
+    sourceBuffer: new Uint8Array([1, 2, 3]).buffer,
+    targetBounds: { left: 1, top: 2, right: 11, bottom: 12 },
+    placementTarget: {
+      documentId: 321,
+      sourceInputKey: "image:main",
+      capturedAt: 1700000000000
+    },
+    pasteStrategy: "smart",
+    appItem: { id: "app-1" },
+    inputValues: { prompt: "hello" },
+    apiKey: "k"
+  };
+
+  const executor = createJobExecutor({
+    runninghub: {
+      runAppTask: async () => "remote-2",
+      pollTaskOutput: async () => "https://example.com/result.png",
+      downloadResultBinary: async () => downloadedBuffer
+    },
+    ps: {
+      placeImage: async (buffer, placeOptions) => {
+        placeCalls.push({ buffer, placeOptions });
+      }
+    },
+    setJobStatus: (targetJob, status) => {
+      targetJob.status = status;
+      statusHistory.push(status);
+    },
+    createJobLogger: () => () => {},
+    cloneBounds: (bounds) => (bounds ? { ...bounds } : null),
+    cloneArrayBuffer: (buffer) => (buffer instanceof ArrayBuffer ? buffer.slice(0) : null),
+    isJobTimeoutLikeError: () => false,
+    jobStatus: {
+      SUBMITTING: "SUBMITTING",
+      REMOTE_RUNNING: "REMOTE_RUNNING",
+      DOWNLOADING: "DOWNLOADING",
+      APPLYING: "APPLYING",
+      DONE: "DONE",
+      FAILED: "FAILED",
+      TIMEOUT_TRACKING: "TIMEOUT_TRACKING"
+    },
+    timeoutRetryDelayMs: 15000,
+    maxTimeoutRecoveries: 2
+  });
+
+  await executor.execute(job);
+
+  assert.deepEqual(statusHistory, ["SUBMITTING", "REMOTE_RUNNING", "DOWNLOADING", "APPLYING", "DONE"]);
+  assert.equal(job.remoteTaskId, "remote-2");
+  assert.equal(job.status, "DONE");
+  assert.equal(placeCalls.length, 1);
+  assert.equal(placeCalls[0].buffer, downloadedBuffer);
+  assert.deepEqual(placeCalls[0].placeOptions.placementTarget, {
+    documentId: 321,
+    sourceInputKey: "image:main",
+    capturedAt: 1700000000000
+  });
+  assert.deepEqual(placeCalls[0].placeOptions.targetBounds, { left: 1, top: 2, right: 11, bottom: 12 });
+  assert.notEqual(placeCalls[0].placeOptions.targetBounds, job.targetBounds);
+});

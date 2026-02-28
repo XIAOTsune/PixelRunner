@@ -106,6 +106,19 @@ function createWorkspaceInputStateService(deps = {}) {
     return null;
   }
 
+  function pickImageCaptureContextByKey(key) {
+    const value = getInputValueByKey(key);
+    const captureContext = value && value.captureContext;
+    if (!captureContext || typeof captureContext !== "object") return null;
+    const documentId = Number(captureContext.documentId);
+    if (!Number.isFinite(documentId) || documentId <= 0) return null;
+    return {
+      documentId: Math.floor(documentId),
+      documentTitle: String(captureContext.documentTitle || ""),
+      capturedAt: Number(captureContext.capturedAt) || 0
+    };
+  }
+
   return {
     setInputValueByKey,
     deleteInputValueByKey,
@@ -115,7 +128,8 @@ function createWorkspaceInputStateService(deps = {}) {
     clearImageInputByKey,
     applyCapturedImageByKey,
     resetRuntimeValues,
-    pickImageArrayBufferByKey
+    pickImageArrayBufferByKey,
+    pickImageCaptureContextByKey
   };
 }
 

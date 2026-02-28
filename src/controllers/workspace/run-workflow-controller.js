@@ -16,6 +16,8 @@ function createRunWorkflowController(options = {}) {
     typeof options.resolveTargetBounds === "function" ? options.resolveTargetBounds : () => ({});
   const resolveSourceImageBuffer =
     typeof options.resolveSourceImageBuffer === "function" ? options.resolveSourceImageBuffer : () => null;
+  const resolvePlacementTarget =
+    typeof options.resolvePlacementTarget === "function" ? options.resolvePlacementTarget : () => null;
   const runninghub = options.runninghub || null;
   const ps = options.ps || null;
   const setJobStatus = typeof options.setJobStatus === "function" ? options.setJobStatus : () => {};
@@ -147,6 +149,12 @@ function createRunWorkflowController(options = {}) {
     const runSubmittingStartedAt = now();
 
     try {
+      const targetBounds = resolveTargetBounds();
+      const sourceBuffer = resolveSourceImageBuffer();
+      const placementTarget = resolvePlacementTarget();
+      if (sourceBuffer && !placementTarget) {
+        log("[RunGuard] placement target unresolved, fallback to current active document", "warn");
+      }
       const submitResult = submitWorkspaceJobUsecase({
         runGuard,
         now: ts,
@@ -155,8 +163,9 @@ function createRunWorkflowController(options = {}) {
         apiKey,
         currentApp: state.currentApp,
         inputValues: state.inputValues,
-        targetBounds: resolveTargetBounds(),
-        sourceBuffer: resolveSourceImageBuffer(),
+        targetBounds,
+        sourceBuffer,
+        placementTarget,
         settings: store && typeof store.getSettings === "function" ? store.getSettings() : {},
         queuedStatus: jobStatus.QUEUED
       });

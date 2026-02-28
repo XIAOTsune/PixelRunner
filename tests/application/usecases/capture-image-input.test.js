@@ -13,7 +13,12 @@ test("captureImageInput returns image payload on success", async () => {
     ps: {
       captureSelection: async () => ({
         arrayBuffer: buffer,
-        selectionBounds: { left: 1, top: 2, right: 3, bottom: 4 }
+        selectionBounds: { left: 1, top: 2, right: 3, bottom: 4 },
+        captureContext: {
+          documentId: 77,
+          documentTitle: "Doc-A",
+          capturedAt: 1700000000000
+        }
       })
     },
     log: () => {},
@@ -31,6 +36,11 @@ test("captureImageInput returns image payload on success", async () => {
   assert.equal(called.revoke, 1);
   assert.equal(result.ok, true);
   assert.equal(result.value.previewUrl, "blob:new");
+  assert.deepEqual(result.value.captureContext, {
+    documentId: 77,
+    documentTitle: "Doc-A",
+    capturedAt: 1700000000000
+  });
   assert.deepEqual(result.selectionBounds, { left: 1, top: 2, right: 3, bottom: 4 });
 });
 

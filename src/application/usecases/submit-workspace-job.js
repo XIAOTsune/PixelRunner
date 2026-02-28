@@ -40,6 +40,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     inputValues: options.inputValues,
     targetBounds: options.targetBounds,
     sourceBuffer: options.sourceBuffer,
+    placementTarget: options.placementTarget,
     settings: options.settings
   });
   const {
@@ -47,6 +48,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     inputValues,
     targetBounds,
     sourceBuffer,
+    placementTarget = null,
     pasteStrategy,
     uploadMaxEdge,
     uploadRetryCount,
@@ -58,6 +60,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     inputValues,
     targetBounds,
     sourceBuffer,
+    placementTarget,
     pasteStrategy,
     uploadMaxEdge,
     uploadRetryCount,
@@ -73,6 +76,7 @@ function submitWorkspaceJobUsecase(options = {}) {
     inputValues,
     targetBounds,
     sourceBuffer,
+    placementTarget,
     pasteStrategy,
     uploadMaxEdge,
     uploadRetryCount,

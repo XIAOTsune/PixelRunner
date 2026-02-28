@@ -230,6 +230,34 @@ function createWorkspaceInputs(deps) {
     return null;
   }
 
+  function resolvePlacementTarget() {
+    if (!state.currentApp) return null;
+    const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
+    const { imageInputs } = inputPolicy.splitImageAndOtherInputs(inputs);
+
+    const toPlacementTarget = (input) => {
+      const key = String((input && input.key) || "").trim();
+      if (!key) return null;
+      const captureContext = inputState.pickImageCaptureContextByKey(key);
+      if (!captureContext) return null;
+      return {
+        documentId: captureContext.documentId,
+        sourceInputKey: key,
+        capturedAt: Number(captureContext.capturedAt) || 0
+      };
+    };
+
+    const firstImage = imageInputs[0];
+    const firstPlacementTarget = toPlacementTarget(firstImage);
+    if (firstPlacementTarget) return firstPlacementTarget;
+
+    for (const input of imageInputs) {
+      const placementTarget = toPlacementTarget(input);
+      if (placementTarget) return placementTarget;
+    }
+    return null;
+  }
+
   return {
     revokePreviewUrl,
     createPreviewUrlFromBuffer,
@@ -240,7 +268,8 @@ function createWorkspaceInputs(deps) {
     createFallbackInputField: inputRenderer.createFallbackInputField,
     renderDynamicInputs,
     resolveTargetBounds,
-    resolveSourceImageBuffer
+    resolveSourceImageBuffer,
+    resolvePlacementTarget
   };
 }
 

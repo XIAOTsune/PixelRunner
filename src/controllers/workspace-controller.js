@@ -293,6 +293,7 @@ function getRunWorkflowController() {
       submitWorkspaceJobUsecase,
       resolveTargetBounds,
       resolveSourceImageBuffer,
+      resolvePlacementTarget,
       runninghub,
       ps,
       setJobStatus,
@@ -390,6 +391,10 @@ function resolveTargetBounds() {
 
 function resolveSourceImageBuffer() {
   return getWorkspaceInputs().resolveSourceImageBuffer();
+}
+
+function resolvePlacementTarget() {
+  return getWorkspaceInputs().resolvePlacementTarget();
 }
 
 function resolveLocalMaxConcurrentJobs() {

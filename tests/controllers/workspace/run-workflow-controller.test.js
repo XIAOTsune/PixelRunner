@@ -138,6 +138,14 @@ function createFixture(options = {}) {
     },
     resolveTargetBounds: () => ({ left: 1, top: 2, width: 3, height: 4 }),
     resolveSourceImageBuffer: () => new Uint8Array([1, 2, 3]).buffer,
+    resolvePlacementTarget:
+      typeof options.resolvePlacementTarget === "function"
+        ? options.resolvePlacementTarget
+        : () => ({
+            documentId: 9,
+            sourceInputKey: "image:main",
+            capturedAt: 1700000000000
+          }),
     runninghub: {},
     ps: {},
     setJobStatus: (job, status, reason = "") => {
@@ -246,6 +254,11 @@ test("run workflow controller submits job, emits duplicate hint and pumps schedu
   assert.match(calls.feedback[0].message, /任务已提交到队列/);
   assert.match(calls.feedback[1].message, /短时间重复提交/);
   assert.equal(calls.logs.some((item) => /已加入后台队列/.test(item.message)), true);
+  assert.deepEqual(calls.submitArgs.placementTarget, {
+    documentId: 9,
+    sourceInputKey: "image:main",
+    capturedAt: 1700000000000
+  });
   assert.equal(calls.promptLogs.length, 1);
   assert.equal(calls.promptLogs[0].prefix, "[Job:J-1]");
 });
@@ -301,4 +314,22 @@ test("run workflow controller forwards dynamic local concurrency getter to sched
   assert.equal(captured.schedulerOptions.getMaxConcurrent(), 6);
   currentLimit = 9;
   assert.equal(captured.schedulerOptions.getMaxConcurrent(), 9);
+});
+
+test("run workflow controller logs warning when placement target is missing", async () => {
+  const fixture = createFixture({
+    resolvePlacementTarget: () => null
+  });
+  const { controller, calls } = fixture;
+
+  await controller.handleRun();
+
+  assert.equal(
+    calls.logs.some(
+      (item) =>
+        item.level === "warn" &&
+        /placement target unresolved, fallback to current active document/.test(item.message)
+    ),
+    true
+  );
 });

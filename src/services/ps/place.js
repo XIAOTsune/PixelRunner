@@ -21,16 +21,102 @@ const {
 
 const fs = storage.localFileSystem;
 const formats = storage.formats;
+
+function normalizePlacementTarget(value) {
+  if (!value || typeof value !== "object") return null;
+  const documentId = Number(value.documentId);
+  if (!Number.isFinite(documentId) || documentId <= 0) return null;
+  return {
+    documentId: Math.floor(documentId),
+    sourceInputKey: String(value.sourceInputKey || ""),
+    capturedAt: Number(value.capturedAt) || 0
+  };
+}
+
+function listOpenDocuments() {
+  const docs = app && app.documents;
+  if (!docs) return [];
+  if (Array.isArray(docs)) return docs;
+  if (typeof docs.length === "number") return Array.from(docs);
+  if (typeof docs.forEach === "function") {
+    const out = [];
+    docs.forEach((item) => out.push(item));
+    return out;
+  }
+  return [];
+}
+
+function findOpenDocumentById(documentId) {
+  const targetId = Number(documentId);
+  if (!Number.isFinite(targetId) || targetId <= 0) return null;
+  const docs = listOpenDocuments();
+  for (let i = 0; i < docs.length; i += 1) {
+    const doc = docs[i];
+    if (!doc || typeof doc !== "object") continue;
+    if (Number(doc.id) === targetId) return doc;
+  }
+  return null;
+}
+
+function formatPlacementTargetMeta(placementTarget) {
+  if (!placementTarget) return "";
+  const key = String(placementTarget.sourceInputKey || "").trim();
+  const capturedAt = Number(placementTarget.capturedAt) || 0;
+  const keyPart = key ? `, sourceInputKey=${key}` : "";
+  const tsPart = capturedAt > 0 ? `, capturedAt=${capturedAt}` : "";
+  return `${keyPart}${tsPart}`;
+}
+
+async function activatePlacementTargetDocument(placementTarget) {
+  const target = findOpenDocumentById(placementTarget.documentId);
+  const targetMeta = formatPlacementTargetMeta(placementTarget);
+  if (!target) {
+    throw new Error(`placement target document unavailable: ${placementTarget.documentId}${targetMeta}`);
+  }
+
+  if (app.activeDocument && Number(app.activeDocument.id) === placementTarget.documentId) {
+    return target;
+  }
+
+  if (typeof target.activate === "function") {
+    await target.activate();
+  }
+  if (app.activeDocument && Number(app.activeDocument.id) === placementTarget.documentId) {
+    return target;
+  }
+
+  try {
+    app.activeDocument = target;
+  } catch (_) {}
+  if (app.activeDocument && Number(app.activeDocument.id) === placementTarget.documentId) {
+    return target;
+  }
+
+  await action.batchPlay([{
+    _obj: "select",
+    _target: [{ _ref: "document", _id: placementTarget.documentId }]
+  }], {});
+  if (app.activeDocument && Number(app.activeDocument.id) === placementTarget.documentId) {
+    return target;
+  }
+
+  throw new Error(`failed to activate placement target document: ${placementTarget.documentId}${targetMeta}`);
+}
+
 async function placeImage(arrayBuffer, options = {}) {
   const log = options.log || (() => {});
   const signal = options.signal || null;
   const targetBoundsRaw = options.targetBounds || null;
   const pasteStrategy = normalizePasteStrategy(options.pasteStrategy);
   const sourceBuffer = options.sourceBuffer || null;
+  const placementTarget = normalizePlacementTarget(options.placementTarget);
   let contentReference = { mode: "cover", sourceSize: null, sourceRefBox: null };
   let smartTransform = null;
   const useSmart = pasteStrategy === "smart" || pasteStrategy === "smartEnhanced";
   const useSmartEnhanced = pasteStrategy === "smartEnhanced";
+  if (options.placementTarget && !placementTarget) {
+    log("placementTarget ignored: invalid documentId", "warn");
+  }
   if (targetBoundsRaw) {
     log("buildContentReference start", "info");
     try {
@@ -59,7 +145,17 @@ async function placeImage(arrayBuffer, options = {}) {
 
   await core.executeAsModal(async () => {
     if (signal && signal.aborted) throw createAbortError("鐢ㄦ埛涓");
+    if (placementTarget) {
+      try {
+        await activatePlacementTargetDocument(placementTarget);
+        log(`placement target activated: documentId=${placementTarget.documentId}`, "info");
+      } catch (error) {
+        const message = error && error.message ? error.message : String(error || "unknown error");
+        log(`placement target activation failed, fallback to active document: ${message}`, "error");
+      }
+    }
     const doc = app.activeDocument;
+    if (!doc) throw new Error("placeImage requires an active document");
     const tempFolder = await fs.getTemporaryFolder();
     const tempFile = await tempFolder.createFile("result.png", { overwrite: true });
     await tempFile.write(arrayBuffer, { format: formats.binary });

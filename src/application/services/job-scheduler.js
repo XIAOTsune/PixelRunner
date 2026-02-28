@@ -57,7 +57,8 @@ function createJobExecutor(options = {}) {
         log: createJobLogger(job),
         targetBounds: cloneBounds(job.targetBounds),
         pasteStrategy: job.pasteStrategy,
-        sourceBuffer: cloneArrayBuffer(job.sourceBuffer)
+        sourceBuffer: cloneArrayBuffer(job.sourceBuffer),
+        placementTarget: job.placementTarget || null
       });
     };
     const queuedTask = applyQueue.then(task, task);
