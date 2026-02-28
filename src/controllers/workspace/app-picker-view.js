@@ -15,7 +15,9 @@ function renderAppPickerEmptyHtml(emptyState = {}, helpers = {}) {
     return `
         <div class="empty-state">
           <div style="margin-bottom:10px;">${escapeHtml(emptyState.message || "No saved apps.")}</div>
-          <button class="main-btn" type="button" data-action="goto-settings">${escapeHtml(emptyState.actionLabel || "Go to Settings")}</button>
+          <button class="main-btn" type="button" data-action="goto-settings">${escapeHtml(
+            emptyState.actionLabel || "Go to Settings"
+          )}</button>
         </div>
       `;
   }
@@ -28,13 +30,10 @@ function renderAppPickerItemsHtml(items = [], helpers = {}) {
   return items
     .map((item) => {
       const active = item && item.active ? "active" : "";
+      const name = escapeHtml(item && item.name ? item.name : "Unnamed App");
       return `
         <button type="button" class="app-picker-item ${active}" data-id="${encodeDataId(item && item.id)}">
-          <div>
-            <div style="font-weight:bold; font-size:12px;">${escapeHtml(item && item.name)}</div>
-            <div style="font-size:10px; opacity:0.6;">${escapeHtml(item && item.appId)}</div>
-          </div>
-          <div style="font-size:12px; color:#aaa;">${Number(item && item.inputCount) || 0} 参数</div>
+          <span class="app-picker-item-label">${name}</span>
         </button>
       `;
     })

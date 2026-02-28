@@ -1427,16 +1427,27 @@ textarea:focus-visible {
   font-size: var(--ui-font-xs);
 }
 
-.app-picker-modal-list {
+.app-picker-modal-list,
+.template-list {
   padding: var(--ui-space-2);
   background: var(--ui-bg-surface-1);
+  display: block;
 }
 
 .app-picker-item {
   border-radius: var(--ui-radius-2);
   background: var(--ui-bg-field);
   border-color: var(--ui-border);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .app-picker-item:hover {
@@ -1447,6 +1458,17 @@ textarea:focus-visible {
 .app-picker-item.active {
   border-color: var(--ui-accent);
   background: var(--ui-bg-active);
+}
+
+.app-picker-item-label {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ui-text-main);
 }
 
 .modal-overlay {
@@ -1755,7 +1777,7 @@ textarea {
 }
 
 .app-picker-item {
-  padding: 8px;
+  padding: 6px 8px;
 }
 
 .modal-content {

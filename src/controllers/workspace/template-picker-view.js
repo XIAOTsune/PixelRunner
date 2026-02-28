@@ -27,13 +27,10 @@ function renderTemplatePickerItemsHtml(items = [], helpers = {}) {
     .map((item) => {
       const selectedClass = item && item.selected ? "active" : "";
       const marker = encodeDataId(item && item.id);
+      const title = escapeHtml(item && item.title ? item.title : "Untitled Template");
       return `
         <button type="button" class="app-picker-item ${selectedClass}" data-template-id="${marker}">
-          <div>
-            <div style="font-weight:bold;font-size:12px">${escapeHtml(item && item.title)}</div>
-            <div style="font-size:10px;color:#777; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${escapeHtml(item && item.content)}</div>
-          </div>
-          <div style="font-size:12px;color:var(--accent-color)">${escapeHtml(item && item.actionLabel)}</div>
+          <span class="app-picker-item-label">${title}</span>
         </button>
       `;
     })

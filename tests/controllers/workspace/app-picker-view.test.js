@@ -51,5 +51,9 @@ test("renderAppPickerListHtml renders app items with encoded ids and active clas
   assert.match(html, /data-id="enc-a\/1"/);
   assert.match(html, /data-id="enc-b\/2"/);
   assert.match(html, /app-picker-item active/);
-  assert.match(html, /5 参数/);
+  assert.match(html, /app-picker-item-label/);
+  assert.match(html, />A</);
+  assert.match(html, />B</);
+  assert.doesNotMatch(html, /inputCount/);
+  assert.doesNotMatch(html, /appId/);
 });

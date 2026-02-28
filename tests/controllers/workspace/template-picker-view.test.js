@@ -49,5 +49,10 @@ test("renderTemplatePickerListHtml renders item list with encoded id and selecte
   assert.match(html, /data-template-id="enc-a\/1"/);
   assert.match(html, /data-template-id="enc-b\/2"/);
   assert.match(html, /app-picker-item active/);
-  assert.match(html, /Selected/);
+  assert.match(html, /app-picker-item-label/);
+  assert.match(html, />A</);
+  assert.match(html, />B</);
+  assert.doesNotMatch(html, /Selected/);
+  assert.doesNotMatch(html, />AA</);
+  assert.doesNotMatch(html, />BB</);
 });
