@@ -14,7 +14,8 @@ const REQUIRED_PS_EXPORTS = [
   "runGaussianBlur",
   "runSharpen",
   "runHighPass",
-  "runContentAwareFill"
+  "runContentAwareFill",
+  "runSelectAndMask"
 ];
 
 function nowIso() {

@@ -4,6 +4,17 @@ const { byId, rebindEvent } = require("../shared/dom-utils");
 let workspaceGateway = createWorkspaceGateway();
 let ps = workspaceGateway.photoshop;
 
+function notifyToolError(message) {
+  const msg = String(message || "Unknown tool error.");
+  if (typeof alert === "function") {
+    try {
+      alert(msg);
+      return;
+    } catch (_) {}
+  }
+  console.warn("[Tools] Alert is unavailable:", msg);
+}
+
 async function onNeutralGrayClick() {
   try {
     await ps.createNeutralGrayLayer();
@@ -65,6 +76,16 @@ async function onContentAwareFillClick() {
   }
 }
 
+async function onSelectAndMaskClick() {
+  try {
+    await ps.runSelectAndMask();
+    console.log("[Tools] Select and Mask triggered");
+  } catch (error) {
+    console.error("[Tools] Failed to run Select and Mask", error);
+    notifyToolError(error && error.message ? error.message : String(error || "Select and Mask failed."));
+  }
+}
+
 function preventSpaceTrigger(event) {
   if (!event) return;
   const key = event.code || event.key || "";
@@ -91,6 +112,7 @@ const onGaussianBlurClickWrapped = wrapToolClick(onGaussianBlurClick);
 const onSharpenClickWrapped = wrapToolClick(onSharpenClick);
 const onHighPassClickWrapped = wrapToolClick(onHighPassClick);
 const onContentAwareFillClickWrapped = wrapToolClick(onContentAwareFillClick);
+const onSelectAndMaskClickWrapped = wrapToolClick(onSelectAndMaskClick);
 
 function resolveToolsGateway(options = {}) {
   if (options && options.gateway && typeof options.gateway === "object") {
@@ -110,6 +132,7 @@ function initToolsController(options = {}) {
   const btnSharpen = byId("btnSharpen");
   const btnHighPass = byId("btnHighPass");
   const btnContentAwareFill = byId("btnContentAwareFill");
+  const btnSelectAndMask = byId("btnSelectAndMask");
 
   rebindEvent(btnNeutralGray, "click", onNeutralGrayClickWrapped);
   rebindEvent(btnObserver, "click", onObserverClickWrapped);
@@ -118,6 +141,7 @@ function initToolsController(options = {}) {
   rebindEvent(btnSharpen, "click", onSharpenClickWrapped);
   rebindEvent(btnHighPass, "click", onHighPassClickWrapped);
   rebindEvent(btnContentAwareFill, "click", onContentAwareFillClickWrapped);
+  rebindEvent(btnSelectAndMask, "click", onSelectAndMaskClickWrapped);
 
   rebindEvent(btnNeutralGray, "keydown", preventSpaceTrigger);
   rebindEvent(btnObserver, "keydown", preventSpaceTrigger);
@@ -126,6 +150,7 @@ function initToolsController(options = {}) {
   rebindEvent(btnSharpen, "keydown", preventSpaceTrigger);
   rebindEvent(btnHighPass, "keydown", preventSpaceTrigger);
   rebindEvent(btnContentAwareFill, "keydown", preventSpaceTrigger);
+  rebindEvent(btnSelectAndMask, "keydown", preventSpaceTrigger);
 
   rebindEvent(btnNeutralGray, "keyup", preventSpaceTrigger);
   rebindEvent(btnObserver, "keyup", preventSpaceTrigger);
@@ -134,6 +159,7 @@ function initToolsController(options = {}) {
   rebindEvent(btnSharpen, "keyup", preventSpaceTrigger);
   rebindEvent(btnHighPass, "keyup", preventSpaceTrigger);
   rebindEvent(btnContentAwareFill, "keyup", preventSpaceTrigger);
+  rebindEvent(btnSelectAndMask, "keyup", preventSpaceTrigger);
 
   rebindEvent(btnNeutralGray, "keypress", preventSpaceTrigger);
   rebindEvent(btnObserver, "keypress", preventSpaceTrigger);
@@ -142,6 +168,7 @@ function initToolsController(options = {}) {
   rebindEvent(btnSharpen, "keypress", preventSpaceTrigger);
   rebindEvent(btnHighPass, "keypress", preventSpaceTrigger);
   rebindEvent(btnContentAwareFill, "keypress", preventSpaceTrigger);
+  rebindEvent(btnSelectAndMask, "keypress", preventSpaceTrigger);
 
   return workspaceGateway;
 }

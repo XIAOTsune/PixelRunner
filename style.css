@@ -2265,3 +2265,71 @@ label {
     min-height: 82px;
   }
 }
+
+/* ==========================================================================
+   Phase 5.1 Tools Dense Layout (2026-02-28)
+   Scope: reduce tool card vertical height for more visible shortcuts
+   ========================================================================== */
+
+.view-tools-shell .tools-group {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin-bottom: 5px;
+}
+
+.view-tools-shell .tools-grid {
+  gap: 4px;
+}
+
+.view-tools-shell .tool-card {
+  padding: 5px 6px;
+  gap: 2px;
+}
+
+.view-tools-shell .tool-card-header {
+  gap: 4px;
+}
+
+.view-tools-shell .tool-card-title {
+  margin-bottom: 0;
+  line-height: 1.2;
+}
+
+.view-tools-shell .tool-card-desc {
+  margin-bottom: 0;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.view-tools-shell .tool-card-options {
+  gap: 2px;
+}
+
+.view-tools-shell .tool-chip {
+  padding: 1px 4px;
+  line-height: 1.1;
+}
+
+.view-tools-shell .tool-action-btn {
+  min-height: 20px;
+  padding: 0 10px;
+  line-height: 1.1;
+}
+
+@media (max-width: 520px) {
+  .view-tools-shell .tool-card {
+    padding: 4px 5px;
+  }
+
+  .view-tools-shell .tool-action-btn {
+    min-height: 18px;
+    padding: 0 8px;
+  }
+
+  .view-tools-shell .tool-chip {
+    font-size: 9px;
+  }
+}

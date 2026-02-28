@@ -110,6 +110,38 @@ test("initToolsController uses injected gateway for click handlers", async () =>
   });
 });
 
+test("initToolsController binds Select and Mask button to injected gateway", async () => {
+  await withMockedHostModules(async () => {
+    const originalDocument = global.document;
+    const buttonMap = {
+      btnSelectAndMask: createMockButton()
+    };
+    global.document = createToolsDocument(buttonMap);
+
+    const calls = {
+      runSelectAndMask: 0
+    };
+    const injectedGateway = {
+      photoshop: {
+        runSelectAndMask: async () => {
+          calls.runSelectAndMask += 1;
+        }
+      }
+    };
+
+    try {
+      const { initToolsController } = require("../../src/controllers/tools-controller");
+      initToolsController({ gateway: injectedGateway });
+
+      await buttonMap.btnSelectAndMask.trigger("click", { currentTarget: buttonMap.btnSelectAndMask });
+      assert.equal(calls.runSelectAndMask, 1);
+      assert.equal(buttonMap.btnSelectAndMask.blurCalls, 1);
+    } finally {
+      global.document = originalDocument;
+    }
+  });
+});
+
 test("initToolsController keeps default gateway path when no injection provided", async () => {
   await withMockedHostModules(() => {
     const originalDocument = global.document;

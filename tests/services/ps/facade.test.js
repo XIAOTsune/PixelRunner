@@ -11,7 +11,8 @@ const EXPECTED_EXPORTS = [
   "runGaussianBlur",
   "runSharpen",
   "runHighPass",
-  "runContentAwareFill"
+  "runContentAwareFill",
+  "runSelectAndMask"
 ];
 
 function clearPsModuleCache() {
@@ -85,6 +86,7 @@ test("ps facade re-exports functions from split modules", () => {
     assert.equal(psFacade.runSharpen, tools.runSharpen);
     assert.equal(psFacade.runHighPass, tools.runHighPass);
     assert.equal(psFacade.runContentAwareFill, tools.runContentAwareFill);
+    assert.equal(psFacade.runSelectAndMask, tools.runSelectAndMask);
   });
 });
 

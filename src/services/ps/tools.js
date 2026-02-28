@@ -131,7 +131,17 @@ const TOOL_MENU_KEYWORDS = {
   gaussianBlur: ["gaussian blur"],
   smartSharpen: ["smart sharpen"],
   highPass: ["high pass"],
-  contentAwareFill: ["content-aware fill"]
+  selectAndMask: [
+    "select and mask",
+    "\u9009\u62e9\u5e76\u906e\u4f4f",
+    "\u9009\u62e9\u5e76\u906e\u7f69"
+  ],
+  contentAwareFill: [
+    "content-aware fill",
+    "content aware fill",
+    "\u5185\u5bb9\u8bc6\u522b\u586b\u5145",
+    "\u5185\u5bb9\u611f\u77e5\u586b\u5145"
+  ]
 };
 
 const TOOL_MENU_SCAN_RANGE = { start: 900, end: 5000 };
@@ -179,6 +189,34 @@ async function scanToolMenuIds() {
   return ids;
 }
 
+async function scanMenuIdByKey(menuKey, range = TOOL_MENU_SCAN_RANGE) {
+  if (!core || typeof core.getMenuCommandTitle !== "function") return 0;
+  const patterns = TOOL_MENU_KEYWORDS[menuKey];
+  if (!Array.isArray(patterns) || patterns.length === 0) return 0;
+
+  const start = Number(range && range.start) || TOOL_MENU_SCAN_RANGE.start;
+  const end = Number(range && range.end) || TOOL_MENU_SCAN_RANGE.end;
+  for (let commandID = start; commandID <= end; commandID += 1) {
+    let title = "";
+    try {
+      title = await core.getMenuCommandTitle({ commandID });
+    } catch (_) {
+      continue;
+    }
+
+    const normalized = normalizeMenuTitle(title);
+    if (!normalized) continue;
+
+    for (let i = 0; i < patterns.length; i += 1) {
+      if (normalized.includes(patterns[i])) {
+        return commandID;
+      }
+    }
+  }
+
+  return 0;
+}
+
 async function getToolMenuIds() {
   if (toolMenuIdsCache) return toolMenuIdsCache;
   if (!toolMenuIdsPromise) {
@@ -200,7 +238,17 @@ async function runMenuCommandByKey(menuKey, label) {
   }
 
   const ids = await getToolMenuIds();
-  const commandID = ids[menuKey];
+  let commandID = ids[menuKey];
+  if (!commandID && menuKey === "selectAndMask") {
+    const deepScanId = await scanMenuIdByKey(menuKey, { start: 5001, end: 12000 });
+    if (deepScanId) {
+      commandID = deepScanId;
+      toolMenuIdsCache = {
+        ...(toolMenuIdsCache || {}),
+        [menuKey]: deepScanId
+      };
+    }
+  }
   if (!commandID) {
     throw new Error(`${label}: menu command not found.`);
   }
@@ -223,18 +271,22 @@ async function runMenuCommandByKey(menuKey, label) {
   }
 }
 
-async function runSingleCommandWithDialog(descriptor, label) {
+async function runSingleCommand(descriptor, label, dialogOptions = "dontDisplay") {
   const command = {
     ...descriptor,
     _options: {
       ...(descriptor._options || {}),
-      dialogOptions: "display"
+      dialogOptions
     }
   };
 
   const result = await action.batchPlay([command], {});
   assertBatchPlaySucceeded(result, label);
   return result;
+}
+
+async function runSingleCommandWithDialog(descriptor, label) {
+  return runSingleCommand(descriptor, label, "display");
 }
 
 async function runDialogCommandWithFallback({ label, menuKey, descriptor, commandName }) {
@@ -299,12 +351,48 @@ async function runContentAwareFill() {
   if (!ensureSelectionExists(doc)) {
     throw new Error("Please create a selection before running Content-Aware Fill.");
   }
-  await runDialogCommandWithFallback({
-    label: "Content-Aware Fill",
-    menuKey: "contentAwareFill",
-    descriptor: { _obj: "contentAwareFill" },
-    commandName: "Content-Aware Fill"
-  });
+  try {
+    await runMenuCommandByKey("contentAwareFill", "Content-Aware Fill");
+  } catch (error) {
+    const message = error && error.message ? String(error.message) : String(error || "");
+    throw new Error(`Content-Aware Fill failed: ${message}`);
+  }
+}
+
+async function runSelectAndMask() {
+  ensureActiveDocument();
+  let menuError = null;
+  try {
+    await runMenuCommandByKey("selectAndMask", "Select and Mask");
+    return;
+  } catch (error) {
+    menuError = error;
+  }
+
+  const menuMessage = menuError && menuError.message ? String(menuError.message) : String(menuError || "");
+  if (menuMessage.toLowerCase().includes("disabled")) {
+    throw new Error(`Select and Mask failed: ${menuMessage}`);
+  }
+
+  let actionError = null;
+  try {
+    await core.executeAsModal(async () => {
+      await runSingleCommandWithDialog({ _obj: "selectAndMask" }, "Select and Mask");
+    }, { commandName: "Select and Mask", interactive: true });
+    return;
+  } catch (primaryActionError) {
+    actionError = primaryActionError;
+  }
+
+  try {
+    await core.executeAsModal(async () => {
+      await runSingleCommandWithDialog({ _obj: "refineSelectionEdge" }, "Select and Mask");
+    }, { commandName: "Select and Mask", interactive: true });
+  } catch (fallbackError) {
+    const actionMessage = actionError && actionError.message ? String(actionError.message) : String(actionError || "");
+    const fallbackMessage = fallbackError && fallbackError.message ? String(fallbackError.message) : String(fallbackError || "");
+    throw new Error(`Select and Mask failed. Menu: ${menuMessage}; Action(selectAndMask): ${actionMessage}; Action(refineSelectionEdge): ${fallbackMessage}`);
+  }
 }
 
 module.exports = {
@@ -314,5 +402,6 @@ module.exports = {
   runGaussianBlur,
   runSharpen,
   runHighPass,
-  runContentAwareFill
+  runContentAwareFill,
+  runSelectAndMask
 };
