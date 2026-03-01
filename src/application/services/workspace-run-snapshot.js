@@ -1,5 +1,4 @@
 const {
-  normalizeUploadMaxEdge,
   normalizePasteStrategy,
   normalizeUploadRetryCount
 } = require("../../domain/policies/run-settings-policy");
@@ -75,7 +74,6 @@ function buildWorkspaceRunSnapshot(options = {}) {
     sourceBuffer: cloneArrayBuffer(options.sourceBuffer),
     placementTarget: clonePlacementTarget(options.placementTarget),
     pollSettings: buildPollSettings(settings),
-    uploadMaxEdge: normalizeUploadMaxEdge(settings.uploadMaxEdge),
     uploadRetryCount: normalizeUploadRetryCount(settings.uploadRetryCount),
     pasteStrategy: normalizePasteStrategy(settings.pasteStrategy)
   };

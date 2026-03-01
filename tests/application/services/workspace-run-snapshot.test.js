@@ -112,7 +112,6 @@ test("buildWorkspaceRunSnapshot builds normalized, cloned run payload", () => {
     settings: {
       pollInterval: "4",
       timeout: "150",
-      uploadMaxEdge: "123",
       pasteStrategy: "edgeAuto"
     }
   });
@@ -133,6 +132,5 @@ test("buildWorkspaceRunSnapshot builds normalized, cloned run payload", () => {
     capturedAt: 1700000000001
   });
   assert.deepEqual(snapshot.pollSettings, { pollInterval: 4, timeout: 150 });
-  assert.equal(snapshot.uploadMaxEdge, 0);
   assert.equal(snapshot.pasteStrategy, "smart");
 });

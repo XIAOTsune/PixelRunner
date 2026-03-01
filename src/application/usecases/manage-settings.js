@@ -19,7 +19,6 @@ function loadSettingsSnapshotUsecase(options = {}) {
     apiKey: String(store.getApiKey() || ""),
     pollInterval: Number(settings && settings.pollInterval) || 2,
     timeout: Number(settings && settings.timeout) || 180,
-    uploadMaxEdge: Number(settings && settings.uploadMaxEdge) || 0,
     uploadRetryCount: normalizeUploadRetryCount(settings && settings.uploadRetryCount, 2),
     pasteStrategy: String((settings && settings.pasteStrategy) || ""),
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(
@@ -52,7 +51,6 @@ function saveSettingsUsecase(options = {}) {
   const apiKey = String(options.apiKey || "").trim();
   const pollInterval = Number(options.pollInterval) || 2;
   const timeout = Number(options.timeout) || 180;
-  const uploadMaxEdge = Number.isFinite(Number(options.uploadMaxEdge)) ? Number(options.uploadMaxEdge) : 0;
   const uploadRetryCount = normalizeUploadRetryCount(options.uploadRetryCount, 2);
   const pasteStrategy = String(options.pasteStrategy || "").trim();
   const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 2);
@@ -61,7 +59,6 @@ function saveSettingsUsecase(options = {}) {
   store.saveSettings({
     pollInterval,
     timeout,
-    uploadMaxEdge,
     uploadRetryCount,
     pasteStrategy,
     cloudConcurrentJobs

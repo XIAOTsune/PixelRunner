@@ -73,7 +73,6 @@ function createJobExecutor(options = {}) {
     const runOptions = {
       log: jobLog,
       signal,
-      uploadMaxEdge: job.uploadMaxEdge,
       uploadRetryCount: job.uploadRetryCount
     };
 

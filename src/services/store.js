@@ -55,8 +55,6 @@ function saveApiKey(apiKey) {
 function getSettings() {
   const rawValue = readJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
   const value = rawValue && typeof rawValue === "object" ? rawValue : {};
-  const uploadMaxEdgeRaw = Number(value.uploadMaxEdge);
-  let uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
   let uploadRetryCount = normalizeUploadRetryCount(
     value.uploadRetryCount,
     DEFAULT_SETTINGS.uploadRetryCount
@@ -75,8 +73,6 @@ function getSettings() {
   // Older releases often persisted 90s timeout; raise to current default to reduce timeout failures.
   if (schemaVersion < SETTINGS_SCHEMA_VERSION) {
     if (timeout < DEFAULT_SETTINGS.timeout) timeout = DEFAULT_SETTINGS.timeout;
-    // Since upload resolution cap moved to advanced settings, reset legacy values to default unlimited once.
-    if (schemaVersion < 3) uploadMaxEdge = DEFAULT_SETTINGS.uploadMaxEdge;
     if (schemaVersion < 5) uploadRetryCount = DEFAULT_SETTINGS.uploadRetryCount;
     shouldPersistMigration = true;
   }
@@ -84,7 +80,6 @@ function getSettings() {
   const normalizedSettings = {
     pollInterval: normalizePollInterval(value.pollInterval),
     timeout,
-    uploadMaxEdge,
     uploadRetryCount,
     pasteStrategy,
     cloudConcurrentJobs
@@ -101,8 +96,6 @@ function getSettings() {
 }
 
 function saveSettings(settings) {
-  const uploadMaxEdgeRaw = Number(settings.uploadMaxEdge);
-  const uploadMaxEdge = [0, 1024, 2048, 4096].includes(uploadMaxEdgeRaw) ? uploadMaxEdgeRaw : DEFAULT_SETTINGS.uploadMaxEdge;
   const uploadRetryCount = normalizeUploadRetryCount(
     settings.uploadRetryCount,
     DEFAULT_SETTINGS.uploadRetryCount
@@ -115,7 +108,6 @@ function saveSettings(settings) {
   writeJson(STORAGE_KEYS.SETTINGS, {
     pollInterval: normalizePollInterval(settings.pollInterval),
     timeout: normalizeTimeout(settings.timeout),
-    uploadMaxEdge,
     uploadRetryCount,
     pasteStrategy,
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs, DEFAULT_SETTINGS.cloudConcurrentJobs),

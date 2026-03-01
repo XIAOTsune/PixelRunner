@@ -35,7 +35,6 @@ const {
   buildTaskSummaryViewModel
 } = require("../application/services/task-summary");
 const {
-  normalizeUploadMaxEdge,
   normalizeCloudConcurrentJobs,
   normalizeUploadRetryCount
 } = require("../domain/policies/run-settings-policy");
@@ -151,7 +150,6 @@ function getWorkspaceSettingsController() {
       byId,
       store,
       runninghub,
-      normalizeUploadMaxEdge,
       normalizeCloudConcurrentJobs,
       normalizeUploadRetryCount,
       syncWorkspaceApps,

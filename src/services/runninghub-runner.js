@@ -1,12 +1,6 @@
 const { API } = require("../config");
 const { isEmptyValue } = require("../utils");
 const { RUNNINGHUB_ERROR_CODES } = require("./runninghub-error-codes");
-const {
-  normalizeUploadMaxEdge,
-  getUploadMaxEdgeLabel,
-  buildUploadMaxEdgeCandidates,
-  shouldRetryWithNextUploadEdge
-} = require("./runninghub-runner/upload-edge-strategy");
 const { uploadImage } = require("./runninghub-runner/upload-strategy");
 const {
   isAiInput,
@@ -126,7 +120,6 @@ async function submitTaskAttempt(params = {}) {
     apiKey,
     appItem,
     inputValues,
-    uploadMaxEdge = 0,
     options = {},
     helpers = {}
   } = params;
@@ -137,16 +130,8 @@ async function submitTaskAttempt(params = {}) {
     throwIfCancelled
   } = helpers;
   const safeThrowIfCancelled = typeof throwIfCancelled === "function" ? throwIfCancelled : () => {};
-  const normalizedUploadMaxEdge = normalizeUploadMaxEdge(uploadMaxEdge);
-  const attemptOptions = {
-    ...(options && typeof options === "object" ? options : {}),
-    uploadMaxEdge: normalizedUploadMaxEdge
-  };
+  const attemptOptions = options && typeof options === "object" ? { ...options } : {};
   const log = attemptOptions.log || (() => {});
-
-  if (normalizedUploadMaxEdge > 0) {
-    log(`Upload max edge active: ${getUploadMaxEdgeLabel(normalizedUploadMaxEdge)}`, "info");
-  }
 
   const nodeInfoList = [];
   const nodeParams = {};
@@ -261,45 +246,18 @@ async function runAppTaskCore(params = {}) {
     options = {},
     helpers = {}
   } = params;
-  const log = options.log || (() => {});
-  const hasImageInput = Array.isArray(appItem && appItem.inputs)
-    ? appItem.inputs.some((input) => resolveRuntimeInputType(input) === "image")
-    : false;
-  const uploadMaxEdgeCandidates = hasImageInput ? buildUploadMaxEdgeCandidates(options.uploadMaxEdge) : [0];
-  let lastErr = null;
-
-  for (let index = 0; index < uploadMaxEdgeCandidates.length; index += 1) {
-    const currentUploadMaxEdge = uploadMaxEdgeCandidates[index];
-    if (index > 0) {
-      const previousLabel = getUploadMaxEdgeLabel(uploadMaxEdgeCandidates[index - 1]);
-      const nextLabel = getUploadMaxEdgeLabel(currentUploadMaxEdge);
-      log(`Retrying task submission with adjusted upload limit: ${previousLabel} -> ${nextLabel}`, "warn");
-    }
-
-    try {
-      return await submitTaskAttempt({
-        apiKey,
-        appItem,
-        inputValues,
-        uploadMaxEdge: currentUploadMaxEdge,
-        options,
-        helpers
-      });
-    } catch (error) {
-      if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
-      lastErr = error;
-      const hasNextCandidate = index < uploadMaxEdgeCandidates.length - 1;
-      if (!hasNextCandidate || !shouldRetryWithNextUploadEdge(error)) {
-        throw error;
-      }
-      const currentLabel = getUploadMaxEdgeLabel(currentUploadMaxEdge);
-      const message = error && error.message ? error.message : String(error || "unknown error");
-      log(`Task submission failed under upload limit ${currentLabel}: ${message}`, "warn");
-    }
+  try {
+    return await submitTaskAttempt({
+      apiKey,
+      appItem,
+      inputValues,
+      options,
+      helpers
+    });
+  } catch (error) {
+    if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
+    throw error || createTaskSubmissionFailedError("Task submission failed");
   }
-
-  if (lastErr) throw lastErr;
-  throw createTaskSubmissionFailedError("Task submission failed");
 }
 
 module.exports = { runAppTaskCore };

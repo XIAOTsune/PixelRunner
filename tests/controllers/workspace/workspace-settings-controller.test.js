@@ -23,7 +23,6 @@ test("workspace settings controller forces paste strategy to normal", () => {
       getSettings: () => ({
         pollInterval: 2,
         timeout: 180,
-        uploadMaxEdge: "1024",
         uploadRetryCount: "2",
         cloudConcurrentJobs: "7",
         pasteStrategy: "smartEnhanced"
@@ -32,7 +31,6 @@ test("workspace settings controller forces paste strategy to normal", () => {
         saved.push(payload);
       }
     },
-    normalizeUploadMaxEdge: (value) => Number(value) || 0,
     normalizeUploadRetryCount: (value) => Number(value) || 2,
     normalizeCloudConcurrentJobs: (value) => Number(value) || 2,
     log: (message, type) => {
@@ -46,7 +44,6 @@ test("workspace settings controller forces paste strategy to normal", () => {
   assert.deepEqual(saved[0], {
     pollInterval: 2,
     timeout: 180,
-    uploadMaxEdge: 1024,
     uploadRetryCount: 2,
     cloudConcurrentJobs: 7,
     pasteStrategy: "normal"
@@ -146,7 +143,6 @@ test("workspace settings controller refresh and settings change keep list/accoun
       getSettings: () => ({
         pollInterval: 2,
         timeout: 180,
-        uploadMaxEdge: 0,
         uploadRetryCount: 2,
         cloudConcurrentJobs: 2,
         pasteStrategy: "smart"

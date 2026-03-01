@@ -50,7 +50,6 @@ function submitWorkspaceJobUsecase(options = {}) {
     sourceBuffer,
     placementTarget = null,
     pasteStrategy,
-    uploadMaxEdge,
     uploadRetryCount,
     pollSettings
   } = runSnapshot;
@@ -62,7 +61,6 @@ function submitWorkspaceJobUsecase(options = {}) {
     sourceBuffer,
     placementTarget,
     pasteStrategy,
-    uploadMaxEdge,
     uploadRetryCount,
     pollSettings
   });
@@ -78,7 +76,6 @@ function submitWorkspaceJobUsecase(options = {}) {
     sourceBuffer,
     placementTarget,
     pasteStrategy,
-    uploadMaxEdge,
     uploadRetryCount,
     pollSettings,
     runFingerprint,

@@ -4,8 +4,6 @@ function createWorkspaceSettingsController(options = {}) {
   const byId = typeof options.byId === "function" ? options.byId : () => null;
   const store = options.store || {};
   const runninghub = options.runninghub || {};
-  const normalizeUploadMaxEdge =
-    typeof options.normalizeUploadMaxEdge === "function" ? options.normalizeUploadMaxEdge : (value) => value;
   const normalizeCloudConcurrentJobs =
     typeof options.normalizeCloudConcurrentJobs === "function"
       ? options.normalizeCloudConcurrentJobs
@@ -46,7 +44,6 @@ function createWorkspaceSettingsController(options = {}) {
     const currentPasteStrategy = String(settings.pasteStrategy || "").trim();
     if (currentPasteStrategy === WORKSPACE_DEFAULT_PASTE_STRATEGY) return;
 
-    const uploadMaxEdge = normalizeUploadMaxEdge(settings.uploadMaxEdge);
     const cloudConcurrentJobs = normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs);
     const uploadRetryCount = normalizeUploadRetryCount(settings.uploadRetryCount);
 
@@ -54,7 +51,6 @@ function createWorkspaceSettingsController(options = {}) {
       store.saveSettings({
         pollInterval: settings.pollInterval,
         timeout: settings.timeout,
-        uploadMaxEdge,
         uploadRetryCount,
         pasteStrategy: WORKSPACE_DEFAULT_PASTE_STRATEGY,
         cloudConcurrentJobs

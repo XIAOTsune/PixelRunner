@@ -1,4 +1,3 @@
-const UPLOAD_MAX_EDGE_CHOICES = [0, 4096, 2048, 1024];
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
 const CLOUD_CONCURRENT_JOBS_MIN = 1;
 const CLOUD_CONCURRENT_JOBS_MAX = 100;
@@ -13,12 +12,6 @@ const LEGACY_PASTE_STRATEGY_MAP = {
   alphaTrim: "smart",
   edgeAuto: "smart"
 };
-
-function normalizeUploadMaxEdge(value, fallback = 0) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return fallback;
-  return UPLOAD_MAX_EDGE_CHOICES.includes(num) ? num : fallback;
-}
 
 function normalizePasteStrategy(value, fallback = "normal") {
   const marker = String(value || "").trim();
@@ -48,7 +41,6 @@ function normalizeUploadRetryCount(value, fallback = DEFAULT_UPLOAD_RETRY_COUNT)
 }
 
 module.exports = {
-  UPLOAD_MAX_EDGE_CHOICES,
   PASTE_STRATEGY_CHOICES,
   CLOUD_CONCURRENT_JOBS_MIN,
   CLOUD_CONCURRENT_JOBS_MAX,
@@ -57,7 +49,6 @@ module.exports = {
   UPLOAD_RETRY_COUNT_MAX,
   DEFAULT_UPLOAD_RETRY_COUNT,
   LEGACY_PASTE_STRATEGY_MAP,
-  normalizeUploadMaxEdge,
   normalizePasteStrategy,
   normalizeCloudConcurrentJobs,
   normalizeUploadRetryCount

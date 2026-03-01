@@ -9,7 +9,6 @@ function createSettingsEditorController(options = {}) {
           apiKey: "",
           pollInterval: 2,
           timeout: 180,
-          uploadMaxEdge: 0,
           uploadRetryCount: 2,
           pasteStrategy: "",
           cloudConcurrentJobs: 2
@@ -20,8 +19,6 @@ function createSettingsEditorController(options = {}) {
     typeof options.testApiKeyUsecase === "function" ? options.testApiKeyUsecase : async () => ({ message: "" });
   const saveTemplateUsecase =
     typeof options.saveTemplateUsecase === "function" ? options.saveTemplateUsecase : () => ({ reason: "saved" });
-  const normalizeUploadMaxEdge =
-    typeof options.normalizeUploadMaxEdge === "function" ? options.normalizeUploadMaxEdge : (value) => Number(value) || 0;
   const normalizeCloudConcurrentJobs =
     typeof options.normalizeCloudConcurrentJobs === "function"
       ? options.normalizeCloudConcurrentJobs
@@ -97,9 +94,6 @@ function createSettingsEditorController(options = {}) {
         normalizeCloudConcurrentJobs(settingsSnapshot.cloudConcurrentJobs)
       );
     }
-    if (dom.uploadMaxEdgeSettingSelect) {
-      dom.uploadMaxEdgeSettingSelect.value = String(normalizeUploadMaxEdge(settingsSnapshot.uploadMaxEdge));
-    }
     if (dom.uploadRetryCountInput) {
       dom.uploadRetryCountInput.value = String(normalizeUploadRetryCount(settingsSnapshot.uploadRetryCount));
     }
@@ -137,9 +131,6 @@ function createSettingsEditorController(options = {}) {
     const currentSettings = loadSettingsSnapshotUsecase({
       store
     });
-    const uploadMaxEdge = normalizeUploadMaxEdge(
-      dom.uploadMaxEdgeSettingSelect ? dom.uploadMaxEdgeSettingSelect.value : currentSettings.uploadMaxEdge
-    );
     const cloudConcurrentJobs = normalizeCloudConcurrentJobs(
       dom.cloudConcurrentJobsInput ? dom.cloudConcurrentJobsInput.value : currentSettings.cloudConcurrentJobs
     );
@@ -152,7 +143,6 @@ function createSettingsEditorController(options = {}) {
       apiKey,
       pollInterval,
       timeout,
-      uploadMaxEdge,
       uploadRetryCount,
       pasteStrategy: currentSettings.pasteStrategy,
       cloudConcurrentJobs

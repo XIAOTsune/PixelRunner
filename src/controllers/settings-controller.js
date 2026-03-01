@@ -4,7 +4,6 @@ const { DIAGNOSTIC_STORAGE_KEY } = require("../diagnostics/ps-env-doctor");
 const { byId, findClosestByClass, encodeDataId, decodeDataId, rebindEvent } = require("../shared/dom-utils");
 const textInputPolicy = require("../domain/policies/text-input-policy");
 const {
-  normalizeUploadMaxEdge,
   normalizeCloudConcurrentJobs,
   normalizeUploadRetryCount
 } = require("../domain/policies/run-settings-policy");
@@ -202,7 +201,6 @@ function getSettingsSubcontrollersRegistry() {
         saveSettingsUsecase,
         testApiKeyUsecase,
         saveTemplateUsecase,
-        normalizeUploadMaxEdge,
         normalizeCloudConcurrentJobs,
         normalizeUploadRetryCount,
         buildTemplateLengthHintViewModel,

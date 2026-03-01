@@ -3,7 +3,6 @@ const SETTINGS_DOM_IDS = [
   "pollIntervalInput",
   "timeoutInput",
   "cloudConcurrentJobsInput",
-  "uploadMaxEdgeSettingSelect",
   "uploadRetryCountInput",
   "toggleApiKey",
   "btnSaveApiKey",
