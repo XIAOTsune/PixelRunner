@@ -5,6 +5,8 @@ const { createRunCancelledError, fetchWithTimeout } = require("./request-strateg
 
 const IMAGE_RESIZE_DECODE_TIMEOUT_MS = 3500;
 const IMAGE_RESIZE_ENCODE_TIMEOUT_MS = 3000;
+const AUTO_COMPRESS_TARGET_MAX_BYTES = 9 * 1024 * 1024;
+const AUTO_COMPRESS_QUALITY_STEPS = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36, 0.28];
 const UPLOAD_RETRY_COUNT_MIN = 0;
 const UPLOAD_RETRY_COUNT_MAX = 5;
 const UPLOAD_RETRY_DELAY_BASE_MS = 800;
@@ -44,6 +46,22 @@ function normalizeUploadBuffer(imageValue) {
     return base64ToArrayBuffer(imageValue.trim());
   }
   throw new Error("Image input is invalid");
+}
+
+function normalizeUploadMaxBytes(value, fallback = AUTO_COMPRESS_TARGET_MAX_BYTES) {
+  const fallbackNum = Number(fallback);
+  const fallbackNormalized = Number.isFinite(fallbackNum) && fallbackNum > 0
+    ? Math.floor(fallbackNum)
+    : AUTO_COMPRESS_TARGET_MAX_BYTES;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallbackNormalized;
+  return Math.floor(num);
+}
+
+function toMiBLabel(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return "0.00";
+  return (size / (1024 * 1024)).toFixed(2);
 }
 
 function detectImageMime(arrayBuffer) {
@@ -155,8 +173,18 @@ async function loadImageFromBuffer(arrayBuffer, options = {}) {
   });
 }
 
-async function canvasToPngBlob(canvas, options = {}) {
+function parseMimeFromDataUrl(dataUrl, fallback = "image/png") {
+  const marker = String(dataUrl || "");
+  const matched = marker.match(/^data:([^;,]+)(?:;base64)?,/i);
+  if (!matched || !matched[1]) return fallback;
+  return String(matched[1]).toLowerCase();
+}
+
+async function canvasToEncodedBlob(canvas, options = {}) {
   if (!canvas) return null;
+  const mimeType = String(options.mimeType || "image/png").toLowerCase();
+  const qualityNum = Number(options.quality);
+  const quality = Number.isFinite(qualityNum) ? Math.max(0, Math.min(1, qualityNum)) : undefined;
   const timeoutMsRaw = Number(options.timeoutMs);
   const timeoutMs =
     Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : IMAGE_RESIZE_ENCODE_TIMEOUT_MS;
@@ -174,7 +202,7 @@ async function canvasToPngBlob(canvas, options = {}) {
           done = true;
           clearTimeout(timerId);
           resolve(result || null);
-        }, "image/png");
+        }, mimeType, quality);
       } catch (_) {
         if (done) return;
         done = true;
@@ -186,10 +214,10 @@ async function canvasToPngBlob(canvas, options = {}) {
   }
 
   if (typeof canvas.toDataURL === "function") {
-    const dataUrl = canvas.toDataURL("image/png");
+    const dataUrl = canvas.toDataURL(mimeType, quality);
     const base64 = String(dataUrl || "").split(",")[1] || "";
     if (base64) {
-      return new Blob([base64ToArrayBuffer(base64)], { type: "image/png" });
+      return new Blob([base64ToArrayBuffer(base64)], { type: parseMimeFromDataUrl(dataUrl, mimeType) });
     }
   }
   return null;
@@ -220,7 +248,8 @@ async function resizeUploadBufferIfNeeded(buffer, uploadMaxEdge, log, options = 
     if (!ctx) return buffer;
 
     ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-    const resizedBlob = await canvasToPngBlob(canvas, {
+    const resizedBlob = await canvasToEncodedBlob(canvas, {
+      mimeType: "image/png",
       timeoutMs: options.resizeEncodeTimeoutMs
     });
     if (!resizedBlob) return buffer;
@@ -238,6 +267,105 @@ async function resizeUploadBufferIfNeeded(buffer, uploadMaxEdge, log, options = 
       log(`Image resize skipped: ${message}`, "warn");
     }
     return buffer;
+  }
+}
+
+function buildQualityCompressionCandidates(detectedMime) {
+  const marker = String(detectedMime || "").toLowerCase();
+  if (marker === "image/jpeg") return [{ mimeType: "image/jpeg", qualities: AUTO_COMPRESS_QUALITY_STEPS }];
+  if (marker === "image/webp") return [{ mimeType: "image/webp", qualities: AUTO_COMPRESS_QUALITY_STEPS }];
+  return [
+    { mimeType: "image/webp", qualities: AUTO_COMPRESS_QUALITY_STEPS },
+    { mimeType: "image/jpeg", qualities: AUTO_COMPRESS_QUALITY_STEPS }
+  ];
+}
+
+async function compressUploadBufferBySizeIfNeeded(buffer, maxBytes, log, options = {}) {
+  const targetMaxBytes = normalizeUploadMaxBytes(maxBytes, AUTO_COMPRESS_TARGET_MAX_BYTES);
+  const fallback = {
+    buffer,
+    mimeType: detectImageMime(buffer)
+  };
+  if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return fallback;
+  if (targetMaxBytes <= 0 || buffer.byteLength <= targetMaxBytes) return fallback;
+  if (typeof document === "undefined" || typeof Image === "undefined") return fallback;
+
+  try {
+    const img = await loadImageFromBuffer(buffer, {
+      signal: options.signal,
+      timeoutMs: options.resizeDecodeTimeoutMs
+    });
+    const sourceWidth = Number(img && (img.naturalWidth || img.width) || 0);
+    const sourceHeight = Number(img && (img.naturalHeight || img.height) || 0);
+    if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+      return fallback;
+    }
+
+    const canvas = document.createElement("canvas");
+    if (!canvas) return fallback;
+    canvas.width = Math.max(1, Math.round(sourceWidth));
+    canvas.height = Math.max(1, Math.round(sourceHeight));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return fallback;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const detectedMime = detectImageMime(buffer);
+    const candidates = buildQualityCompressionCandidates(detectedMime);
+    let bestBuffer = buffer;
+    let bestMimeType = detectedMime;
+    let bestQuality = 1;
+
+    for (const candidate of candidates) {
+      for (const quality of candidate.qualities) {
+        const compressedBlob = await canvasToEncodedBlob(canvas, {
+          mimeType: candidate.mimeType,
+          quality,
+          timeoutMs: options.resizeEncodeTimeoutMs
+        });
+        if (!compressedBlob) continue;
+
+        const compressedBuffer = await compressedBlob.arrayBuffer();
+        if (!(compressedBuffer instanceof ArrayBuffer) || compressedBuffer.byteLength === 0) continue;
+
+        const normalizedMime =
+          String(compressedBlob.type || candidate.mimeType || "").toLowerCase() || candidate.mimeType;
+        if (compressedBuffer.byteLength < bestBuffer.byteLength) {
+          bestBuffer = compressedBuffer;
+          bestMimeType = normalizedMime;
+          bestQuality = quality;
+        }
+        if (compressedBuffer.byteLength <= targetMaxBytes) {
+          if (typeof log === "function") {
+            log(
+              `Image auto-compressed by quality: ${Math.round(sourceWidth)}x${Math.round(sourceHeight)}, ${toMiBLabel(buffer.byteLength)}MiB -> ${toMiBLabel(compressedBuffer.byteLength)}MiB, format=${normalizedMime}, quality=${quality.toFixed(2)}`,
+              "info"
+            );
+          }
+          return {
+            buffer: compressedBuffer,
+            mimeType: normalizedMime
+          };
+        }
+      }
+    }
+
+    if (typeof log === "function" && bestBuffer !== buffer) {
+      log(
+        `Image compressed by quality to smallest attempt but still above target: ${Math.round(sourceWidth)}x${Math.round(sourceHeight)}, ${toMiBLabel(buffer.byteLength)}MiB -> ${toMiBLabel(bestBuffer.byteLength)}MiB (target ${toMiBLabel(targetMaxBytes)}MiB, format=${bestMimeType}, quality=${bestQuality.toFixed(2)})`,
+        "warn"
+      );
+    }
+    return {
+      buffer: bestBuffer,
+      mimeType: bestMimeType
+    };
+  } catch (error) {
+    if (error && error.code === "RUN_CANCELLED") throw error;
+    if (typeof log === "function") {
+      const message = error && error.message ? error.message : String(error || "unknown");
+      log(`Image size auto-compress skipped: ${message}`, "warn");
+    }
+    return fallback;
   }
 }
 
@@ -391,8 +519,16 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
   const log = options.log || (() => {});
   const endpoints = [API.ENDPOINTS.UPLOAD_V2, API.ENDPOINTS.UPLOAD_LEGACY];
   const rawBuffer = normalizeUploadBuffer(imageValue);
-  const buffer = await resizeUploadBufferIfNeeded(rawBuffer, options.uploadMaxEdge, log, options);
-  const detectedMime = detectImageMime(buffer);
+  const resizedBuffer = await resizeUploadBufferIfNeeded(rawBuffer, options.uploadMaxEdge, log, options);
+  const compressed = await compressUploadBufferBySizeIfNeeded(
+    resizedBuffer,
+    options.uploadMaxBytes,
+    log,
+    options
+  );
+  const buffer = compressed && compressed.buffer instanceof ArrayBuffer ? compressed.buffer : resizedBuffer;
+  const compressedMime = String(compressed && compressed.mimeType || "").toLowerCase();
+  const detectedMime = compressedMime.startsWith("image/") ? compressedMime : detectImageMime(buffer);
   const uploadMime = detectedMime.startsWith("image/") ? detectedMime : "image/png";
   const uploadFileName = uploadMime === "image/jpeg" ? "image.jpg" : uploadMime === "image/webp" ? "image.webp" : "image.png";
   const blob = new Blob([buffer], { type: uploadMime });

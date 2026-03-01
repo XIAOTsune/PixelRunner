@@ -14,7 +14,7 @@
     2) Keep modal hooks and critical tag types stable.
     3) UI optimization can change visual style/layout only, not business behavior.
     Core workspace ids:
-    btnRun, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog,
+    btnRun, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog, btnCopyLog,
     taskStatusSummary, appPickerMeta, dynamicInputContainer, imageInputContainer, logWindow,
     appPickerModal, appPickerModalClose, appPickerSearchInput, appPickerStats, appPickerList,
     templateModal, templateModalTitle, templateList, templateModalActions,
@@ -247,6 +247,7 @@
     <div class="log-toolbar">
       <div class="log-toolbar-title">运行日志</div>
       <div class="log-toolbar-actions">
+        <button id="btnCopyLog" class="tiny-btn tiny-btn-compact" type="button">复制</button>
         <button id="btnClearLog" class="tiny-btn tiny-btn-compact" type="button">清空</button>
       </div>
     </div>

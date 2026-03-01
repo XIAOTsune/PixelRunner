@@ -1,7 +1,6 @@
 const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
 
 const UPLOAD_MAX_EDGE_CHOICES = [0, 1024, 2048, 4096];
-const UPLOAD_MAX_EDGE_RETRY_CHAIN = [1024, 2048, 4096, 0];
 
 function normalizeUploadMaxEdge(rawValue) {
   const num = Number(rawValue);
@@ -16,10 +15,7 @@ function getUploadMaxEdgeLabel(rawValue) {
 
 function buildUploadMaxEdgeCandidates(rawValue) {
   const normalized = normalizeUploadMaxEdge(rawValue);
-  if (normalized <= 0) return [0];
-  const index = UPLOAD_MAX_EDGE_RETRY_CHAIN.indexOf(normalized);
-  if (index < 0) return [0];
-  return UPLOAD_MAX_EDGE_RETRY_CHAIN.slice(index);
+  return [normalized];
 }
 
 function shouldRetryWithNextUploadEdge(error) {

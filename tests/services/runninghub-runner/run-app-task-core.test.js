@@ -159,6 +159,6 @@ test("runAppTaskCore does not retry upload-edge fallback on local validation err
     }
   );
 
-  const retryLog = logs.find((item) => /Retrying task submission with relaxed upload limit/.test(item.line));
+  const retryLog = logs.find((item) => /Retrying task submission with adjusted upload limit/.test(item.line));
   assert.equal(Boolean(retryLog), false);
 });

@@ -273,7 +273,7 @@ async function runAppTaskCore(params = {}) {
     if (index > 0) {
       const previousLabel = getUploadMaxEdgeLabel(uploadMaxEdgeCandidates[index - 1]);
       const nextLabel = getUploadMaxEdgeLabel(currentUploadMaxEdge);
-      log(`Retrying task submission with relaxed upload limit: ${previousLabel} -> ${nextLabel}`, "warn");
+      log(`Retrying task submission with adjusted upload limit: ${previousLabel} -> ${nextLabel}`, "warn");
     }
 
     try {

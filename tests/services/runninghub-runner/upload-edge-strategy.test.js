@@ -19,9 +19,10 @@ test("getUploadMaxEdgeLabel maps zero to unlimited and others to px", () => {
   assert.equal(getUploadMaxEdgeLabel("4096"), "4096px");
 });
 
-test("buildUploadMaxEdgeCandidates builds retry chain from current cap", () => {
-  assert.deepEqual(buildUploadMaxEdgeCandidates(1024), [1024, 2048, 4096, 0]);
-  assert.deepEqual(buildUploadMaxEdgeCandidates(4096), [4096, 0]);
+test("buildUploadMaxEdgeCandidates keeps only the manual upload cap", () => {
+  assert.deepEqual(buildUploadMaxEdgeCandidates(4096), [4096]);
+  assert.deepEqual(buildUploadMaxEdgeCandidates(2048), [2048]);
+  assert.deepEqual(buildUploadMaxEdgeCandidates(1024), [1024]);
   assert.deepEqual(buildUploadMaxEdgeCandidates(0), [0]);
   assert.deepEqual(buildUploadMaxEdgeCandidates(9999), [0]);
 });

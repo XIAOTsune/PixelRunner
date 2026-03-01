@@ -221,6 +221,10 @@ function onClearLogClick() {
   getWorkspaceLogController().onClearLogClick();
 }
 
+function onCopyLogClick() {
+  return getWorkspaceLogController().onCopyLogClick();
+}
+
 function getRunButtonPhaseController() {
   if (!runButtonPhaseController) {
     runButtonPhaseController = createRunButtonPhaseController({
@@ -489,6 +493,7 @@ function createWorkspaceInitEventDelegates() {
     handleTemplateListClick,
     onApplyTemplateSelectionClick,
     onClearLogClick,
+    onCopyLogClick,
     onAppsChanged,
     onTemplatesChanged,
     onSettingsChanged

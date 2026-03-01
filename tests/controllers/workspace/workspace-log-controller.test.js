@@ -98,3 +98,79 @@ test("workspace log controller skips prompt logging when summary is empty", () =
 
   assert.deepEqual(calls.lines, []);
 });
+
+test("workspace log controller copies selected log text when selection exists", async () => {
+  const lines = [];
+  const copiedTexts = [];
+  const logWindow = {
+    value: "line1\nline2",
+    selectionStart: 6,
+    selectionEnd: 11
+  };
+
+  const controller = createWorkspaceLogController({
+    dom: { logWindow },
+    consoleLog: () => {},
+    buildLogLine: ({ message }) => String(message || ""),
+    renderLogLine: (_target, line) => lines.push(line),
+    writeClipboardText: async (text) => {
+      copiedTexts.push(String(text || ""));
+      return true;
+    }
+  });
+
+  const copied = await controller.onCopyLogClick();
+
+  assert.equal(copied, true);
+  assert.deepEqual(copiedTexts, ["line2"]);
+  assert.equal(lines.some((line) => /Log copied \(selection; 5 chars\)\./.test(line)), true);
+});
+
+test("workspace log controller copies full log text when no selection exists", async () => {
+  const lines = [];
+  const copiedTexts = [];
+  const logWindow = {
+    value: "line1\nline2",
+    selectionStart: 0,
+    selectionEnd: 0
+  };
+
+  const controller = createWorkspaceLogController({
+    dom: { logWindow },
+    consoleLog: () => {},
+    buildLogLine: ({ message }) => String(message || ""),
+    renderLogLine: (_target, line) => lines.push(line),
+    writeClipboardText: async (text) => {
+      copiedTexts.push(String(text || ""));
+      return true;
+    }
+  });
+
+  const copied = await controller.onCopyLogClick();
+
+  assert.equal(copied, true);
+  assert.deepEqual(copiedTexts, ["line1\nline2"]);
+  assert.equal(lines.some((line) => /Log copied \(all; 11 chars\)\./.test(line)), true);
+});
+
+test("workspace log controller reports warning when copy fails", async () => {
+  const lines = [];
+  const logWindow = {
+    value: "line1\nline2",
+    selectionStart: 0,
+    selectionEnd: 0
+  };
+
+  const controller = createWorkspaceLogController({
+    dom: { logWindow },
+    consoleLog: () => {},
+    buildLogLine: ({ message }) => String(message || ""),
+    renderLogLine: (_target, line) => lines.push(line),
+    writeClipboardText: async () => false
+  });
+
+  const copied = await controller.onCopyLogClick();
+
+  assert.equal(copied, false);
+  assert.equal(lines.some((line) => /Copy failed: clipboard API unavailable\./.test(line)), true);
+});
