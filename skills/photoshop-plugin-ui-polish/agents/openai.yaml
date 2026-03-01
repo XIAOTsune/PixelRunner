@@ -1,0 +1,3 @@
+interface:
+  display_name: "Photoshop Plugin UI Polish"
+  short_description: "Polish Photoshop plugin visuals without changing logic/layout"
