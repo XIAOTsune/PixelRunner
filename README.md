@@ -4,7 +4,7 @@
   <p><strong>RunningHub × Photoshop (UXP) 一体化工作流插件</strong></p>
   <p>把“应用解析 → 参数填写 → 任务执行 → 结果回贴”压缩在同一个 Photoshop 面板中完成。</p>
   <p>
-    <img src="https://img.shields.io/badge/version-2.2.3-0A7BFF" alt="version" />
+    <img src="https://img.shields.io/badge/version-2.2.4-0A7BFF" alt="version" />
     <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="Photoshop" />
     <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="UXP" />
     <img src="https://img.shields.io/badge/tests-80-2EA043" alt="tests" />

@@ -2333,3 +2333,247 @@ label {
     font-size: 9px;
   }
 }
+
+/* ==========================================================================
+   Phase 6 Gemini Signal Visual Polish (2026-03-01)
+   Scope: visual refinement only (no logic change, no layout architecture change)
+   ========================================================================== */
+
+:root {
+  --ui-bg-app: #1c232c;
+  --ui-bg-surface-1: #232b36;
+  --ui-bg-surface-2: #2b3441;
+  --ui-bg-field: #171d26;
+  --ui-bg-hover: #364252;
+  --ui-bg-active: #1f4f79;
+
+  --ui-border-strong: #4e5a6b;
+  --ui-border: #3b4656;
+  --ui-border-muted: #323c4a;
+
+  --ui-text-main: #f4f7fb;
+  --ui-text-sub: #cdd6e2;
+  --ui-text-dim: #96a3b3;
+
+  --ui-accent: #5fb4ff;
+  --ui-success: #8fdcb0;
+  --ui-warning: #ffd287;
+  --ui-danger: #ff9f9f;
+
+  --ui-stage-outline: #3a4656;
+  --ui-stage-bg-soft: #1d252f;
+  --ui-stage-label: #a6b7cb;
+
+  --ui-radius-1: 2px;
+  --ui-radius-2: 4px;
+  --ui-radius-3: 7px;
+  --ui-radius-icon: 4px;
+
+  --ui-elev-1: 0 1px 0 rgba(255, 255, 255, 0.03), 0 8px 18px rgba(6, 10, 15, 0.32);
+  --ui-elev-2: 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 28px rgba(6, 10, 15, 0.38);
+  --ui-motion-fast: 140ms;
+  --ui-motion-base: 180ms;
+}
+
+body {
+  background:
+    radial-gradient(120% 80% at 6% -8%, rgba(95, 180, 255, 0.09), transparent 58%),
+    radial-gradient(90% 70% at 105% 105%, rgba(70, 118, 176, 0.12), transparent 56%),
+    var(--ui-bg-app);
+}
+
+.nav-tabs {
+  background: linear-gradient(180deg, #26303b 0%, #222a34 100%);
+}
+
+:where(.tools-group, .app-select-card, .setting-section, .tool-card, .workspace-stage-input, .workspace-stage-log, .modal-content, .donation-dialog, .donation-card) {
+  box-shadow: var(--ui-elev-1);
+}
+
+.workspace-stage-input,
+.workspace-stage-log {
+  background: linear-gradient(180deg, rgba(38, 50, 64, 0.58) 0%, rgba(29, 37, 47, 0.9) 100%);
+}
+
+.tools-group-title,
+.setting-section-title,
+.card-title,
+.log-toolbar-title {
+  color: var(--ui-text-sub);
+  font-weight: 700;
+  letter-spacing: 0.28px;
+}
+
+.tools-subtitle,
+.setting-hint,
+.log-hint,
+.prompt-length-hint,
+.task-status-summary {
+  color: var(--ui-text-dim);
+}
+
+.tool-card-title {
+  color: var(--ui-text-main);
+  font-weight: 700;
+}
+
+.tool-card-desc {
+  color: #a6b4c5;
+}
+
+.tool-chip,
+.account-pill,
+.app-picker-meta {
+  border-color: var(--ui-border);
+  background: linear-gradient(180deg, rgba(31, 40, 51, 0.95) 0%, rgba(23, 29, 38, 0.95) 100%);
+}
+
+.main-btn,
+.tiny-btn,
+.template-btn,
+.dynamic-input-toggle,
+.image-input-clear-btn,
+.app-picker-item,
+.modal-close,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+  transition:
+    border-color var(--ui-motion-base) ease,
+    background-color var(--ui-motion-base) ease,
+    color var(--ui-motion-base) ease,
+    box-shadow var(--ui-motion-fast) ease,
+    transform var(--ui-motion-fast) ease;
+}
+
+.main-btn-primary {
+  background: linear-gradient(180deg, #6ebfff 0%, #4ea6f3 100%);
+  border-color: #3e8fda;
+}
+
+.main-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #7bc7ff 0%, #5ab1fb 100%);
+  border-color: #4ea6f3;
+}
+
+.main-btn:active:not(:disabled),
+.tiny-btn:active:not(:disabled),
+.template-btn:active:not(:disabled),
+.app-picker-item:active {
+  transform: translateY(1px);
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus,
+.main-btn:focus-visible,
+.tiny-btn:focus-visible,
+.template-btn:focus-visible,
+.dynamic-input-toggle:focus-visible,
+.modal-close:focus-visible {
+  outline: 1px solid var(--ui-accent);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px rgba(95, 180, 255, 0.25);
+}
+
+#logWindow {
+  border-color: var(--ui-border-strong);
+  color: #c0cce0;
+}
+
+.task-status-summary.is-info {
+  color: #a6d0ff;
+}
+
+.nav-item.active .nav-item-icon,
+.app-picker-item.active,
+.view-tools-shell .tools-group-title::before,
+.view-settings-shell .setting-section-title::before {
+  border-color: var(--ui-accent);
+}
+
+/* No-oval icon system: force square/rounded-rectangle icon containers */
+.nav-brand-logo,
+.nav-item-icon,
+.section-icon,
+.empty-state-icon,
+.image-input-icon,
+.modal-close,
+.view-tools-shell .tools-group-title::before,
+.view-settings-shell .setting-section-title::before {
+  border-radius: var(--ui-radius-icon);
+}
+
+.nav-item-icon,
+.section-icon,
+.empty-state-icon,
+.image-input-icon,
+.modal-close {
+  min-width: var(--ui-icon-size-sm);
+  min-height: var(--ui-icon-size-sm);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --ui-bg-app: #eef3fa;
+    --ui-bg-surface-1: #f8fbff;
+    --ui-bg-surface-2: #edf3fa;
+    --ui-bg-field: #ffffff;
+    --ui-bg-hover: #e4edf8;
+    --ui-bg-active: #dcecff;
+
+    --ui-border-strong: #b7c5d8;
+    --ui-border: #cad5e4;
+    --ui-border-muted: #d9e3ef;
+
+    --ui-text-main: #1e2b3a;
+    --ui-text-sub: #33475d;
+    --ui-text-dim: #61768f;
+
+    --ui-accent: #136dd9;
+    --ui-stage-outline: #c7d6e9;
+    --ui-stage-bg-soft: #f2f7fd;
+    --ui-stage-label: #5f7490;
+  }
+
+  body {
+    background:
+      radial-gradient(120% 80% at 8% -8%, rgba(19, 109, 217, 0.12), transparent 58%),
+      radial-gradient(90% 70% at 105% 105%, rgba(82, 131, 184, 0.13), transparent 56%),
+      var(--ui-bg-app);
+  }
+
+  .nav-tabs {
+    background: linear-gradient(180deg, #f4f9ff 0%, #edf4fb 100%);
+  }
+
+  .workspace-stage-input,
+  .workspace-stage-log {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(242, 247, 253, 0.95) 100%);
+  }
+
+  .tool-chip,
+  .account-pill,
+  .app-picker-meta {
+    background: linear-gradient(180deg, #ffffff 0%, #f2f6fb 100%);
+  }
+
+  #logWindow {
+    color: #2f4358;
+  }
+
+  .modal-overlay {
+    background: rgba(15, 22, 32, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.main-btn, .tiny-btn, .template-btn, .dynamic-input-toggle, .image-input-clear-btn, .app-picker-item, .modal-close, input, select, textarea) {
+    transition-duration: 1ms;
+    transform: none;
+  }
+}
