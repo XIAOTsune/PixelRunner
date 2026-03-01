@@ -68,6 +68,31 @@ body.modal-open dialog textarea {
   font-size: 9px;
   padding: 0 4px;
 }
+
+#btnDonate.donate-text-link {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 700;
+  color: #ffb347;
+  cursor: pointer;
+  user-select: none;
+}
+
+#btnDonate.donate-text-link:hover {
+  color: #ffd39a;
+  text-decoration: underline;
+}
+
+#btnDonate.donate-text-link:focus,
+#btnDonate.donate-text-link:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 .nav-item {
   flex: 1;
   background: transparent;
@@ -117,11 +142,14 @@ body.modal-open dialog textarea {
 }
 
 #logWindow {
+  display: block;
   margin-top: 6px;
   width: 100%;
   min-height: 140px;
   max-height: 240px;
   resize: vertical;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
   background: #222;
   border: 1px solid #1a1a1a;
@@ -133,7 +161,10 @@ body.modal-open dialog textarea {
   font-family: Consolas, "Courier New", monospace;
   user-select: text;
   -webkit-user-select: text;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: text;
+  outline: none;
 }
 
 .log-hint {
@@ -2470,11 +2501,13 @@ input[type="password"]:focus,
 input[type="number"]:focus,
 select:focus,
 textarea:focus,
+#logWindow:focus,
 .main-btn:focus-visible,
 .tiny-btn:focus-visible,
 .template-btn:focus-visible,
 .dynamic-input-toggle:focus-visible,
-.modal-close:focus-visible {
+.modal-close:focus-visible,
+#logWindow:focus-visible {
   outline: 1px solid var(--ui-accent);
   outline-offset: 1px;
   box-shadow: 0 0 0 2px rgba(95, 180, 255, 0.25);

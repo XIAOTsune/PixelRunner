@@ -3,7 +3,6 @@ const WORKSPACE_DOM_IDS = [
   "btnOpenAppPicker",
   "btnRefreshWorkspaceApps",
   "btnClearLog",
-  "btnCopyLog",
   "taskStatusSummary",
   "appPickerMeta",
   "dynamicInputContainer",
@@ -61,7 +60,6 @@ function createWorkspaceInitController(options = {}) {
     rebindEvent(dom.templateList, "click", handlers.onTemplateListClick);
     rebindEvent(dom.btnApplyTemplateSelection, "click", handlers.onApplyTemplateSelectionClick);
     rebindEvent(dom.btnClearLog, "click", handlers.onClearLogClick);
-    rebindEvent(dom.btnCopyLog, "click", handlers.onCopyLogClick);
 
     if (!documentRef) return;
     if (appEvents.APPS_CHANGED) {
@@ -89,7 +87,6 @@ function createWorkspaceInitController(options = {}) {
       onTemplateListClick: delegates.handleTemplateListClick,
       onApplyTemplateSelectionClick: delegates.onApplyTemplateSelectionClick,
       onClearLogClick: delegates.onClearLogClick,
-      onCopyLogClick: delegates.onCopyLogClick,
       onAppsChanged: delegates.onAppsChanged,
       onTemplatesChanged: delegates.onTemplatesChanged,
       onSettingsChanged: delegates.onSettingsChanged

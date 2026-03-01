@@ -4,7 +4,7 @@
   <p><strong>把 RunningHub AI 工作流直接塞进 Photoshop 面板。</strong></p>
   <p>从应用解析、参数填写、任务提交、结果下载到回贴，整条链路不离开 PS。</p>
   <p>
-    <img src="https://img.shields.io/badge/version-2.2.4-0A7BFF" alt="version" />
+    <img src="https://img.shields.io/badge/version-2.3.0-0A7BFF" alt="version" />
     <img src="https://img.shields.io/badge/Photoshop-23%2B-31A8FF?logo=adobephotoshop&logoColor=white" alt="Photoshop" />
     <img src="https://img.shields.io/badge/UXP-Manifest%20v5-111111" alt="UXP" />
     <img src="https://img.shields.io/badge/tests-347-2EA043" alt="tests" />

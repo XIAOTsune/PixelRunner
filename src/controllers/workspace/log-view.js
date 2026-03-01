@@ -28,11 +28,19 @@ function buildLogLine({ message, type = "info", now = new Date() }) {
 
 function renderLogLine(logEl, line) {
   if (!logEl) return;
-  const stickToBottom = isNearLogBottom(logEl);
   const current = getLogText(logEl);
   setLogText(logEl, current ? `${current}\n${line}` : line);
-  if (stickToBottom) {
-    logEl.scrollTop = logEl.scrollHeight;
+  // Always follow latest log for progress visibility.
+  logEl.scrollTop = logEl.scrollHeight;
+  if (typeof setTimeout === "function") {
+    setTimeout(() => {
+      if (!logEl) return;
+      logEl.scrollTop = logEl.scrollHeight;
+      setTimeout(() => {
+        if (!logEl) return;
+        logEl.scrollTop = logEl.scrollHeight;
+      }, 16);
+    }, 0);
   }
 }
 

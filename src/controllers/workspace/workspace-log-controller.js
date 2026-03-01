@@ -6,10 +6,48 @@ const {
 } = require("./log-view");
 const { buildPromptLengthLogSummary: buildPromptLengthLogSummaryDefault } = require("../../application/services/prompt-log");
 
+function hasSelectionRange(logWindow) {
+  return (
+    logWindow &&
+    typeof logWindow.selectionStart === "number" &&
+    typeof logWindow.selectionEnd === "number"
+  );
+}
+
+function nodeContains(container, node) {
+  if (!container || !node || typeof container.contains !== "function") return false;
+  try {
+    return container === node || container.contains(node);
+  } catch (_) {
+    return false;
+  }
+}
+
+function selectionBelongsToLogWindow(selection, logWindow) {
+  if (!selection || !logWindow) return false;
+
+  if (typeof selection.rangeCount === "number" && selection.rangeCount > 0 && typeof selection.getRangeAt === "function") {
+    for (let i = 0; i < selection.rangeCount; i += 1) {
+      try {
+        const range = selection.getRangeAt(i);
+        if (!range) continue;
+        if (nodeContains(logWindow, range.startContainer) && nodeContains(logWindow, range.endContainer)) {
+          return true;
+        }
+      } catch (_) {}
+    }
+  }
+
+  const anchorNode = selection.anchorNode || null;
+  const focusNode = selection.focusNode || null;
+  if (!anchorNode || !focusNode) return false;
+  return nodeContains(logWindow, anchorNode) && nodeContains(logWindow, focusNode);
+}
+
 function pickSelectedLogText(logWindow, fullText, windowRef) {
   if (!logWindow) return "";
   const text = String(fullText || "");
-  if (typeof logWindow.selectionStart === "number" && typeof logWindow.selectionEnd === "number") {
+  if (hasSelectionRange(logWindow)) {
     const start = Math.max(0, Math.min(text.length, logWindow.selectionStart));
     const end = Math.max(start, Math.min(text.length, logWindow.selectionEnd));
     if (end > start) return text.slice(start, end);
@@ -18,7 +56,11 @@ function pickSelectedLogText(logWindow, fullText, windowRef) {
   const runtimeWindow = windowRef || (typeof window !== "undefined" ? window : null);
   if (runtimeWindow && typeof runtimeWindow.getSelection === "function") {
     const selection = runtimeWindow.getSelection();
-    if (selection && typeof selection.toString === "function") {
+    if (
+      selection &&
+      typeof selection.toString === "function" &&
+      selectionBelongsToLogWindow(selection, logWindow)
+    ) {
       const selected = String(selection.toString() || "");
       if (selected.length > 0) return selected;
     }
@@ -26,9 +68,88 @@ function pickSelectedLogText(logWindow, fullText, windowRef) {
   return "";
 }
 
+function copyViaLogWindowSelection(payload, documentRef, logWindow) {
+  if (!documentRef || typeof documentRef.execCommand !== "function" || !logWindow || !hasSelectionRange(logWindow)) {
+    return false;
+  }
+
+  let originalStart = logWindow.selectionStart;
+  let originalEnd = logWindow.selectionEnd;
+
+  try {
+    if (typeof logWindow.focus === "function") logWindow.focus();
+    if (typeof logWindow.select === "function") {
+      logWindow.select();
+    } else if (typeof logWindow.setSelectionRange === "function") {
+      logWindow.setSelectionRange(0, payload.length);
+    }
+    return Boolean(documentRef.execCommand("copy"));
+  } catch (_) {
+    return false;
+  } finally {
+    if (typeof logWindow.setSelectionRange === "function") {
+      try {
+        logWindow.setSelectionRange(originalStart, originalEnd);
+      } catch (_) {}
+    }
+  }
+}
+
+function copyViaTemporaryTextarea(payload, documentRef) {
+  if (
+    !documentRef ||
+    typeof documentRef.execCommand !== "function" ||
+    typeof documentRef.createElement !== "function" ||
+    !documentRef.body ||
+    typeof documentRef.body.appendChild !== "function" ||
+    typeof documentRef.body.removeChild !== "function"
+  ) {
+    return false;
+  }
+
+  let helperEl = null;
+  try {
+    helperEl = documentRef.createElement("textarea");
+    if (!helperEl) return false;
+    helperEl.value = payload;
+    helperEl.setAttribute("readonly", "readonly");
+    helperEl.style.position = "fixed";
+    helperEl.style.opacity = "0";
+    helperEl.style.pointerEvents = "none";
+    helperEl.style.left = "-9999px";
+    helperEl.style.top = "0";
+    documentRef.body.appendChild(helperEl);
+    if (typeof helperEl.focus === "function") helperEl.focus();
+    if (typeof helperEl.select === "function") helperEl.select();
+    if (typeof helperEl.setSelectionRange === "function") helperEl.setSelectionRange(0, payload.length);
+    return Boolean(documentRef.execCommand("copy"));
+  } catch (_) {
+    return false;
+  } finally {
+    if (helperEl && helperEl.parentNode === documentRef.body) {
+      try {
+        documentRef.body.removeChild(helperEl);
+      } catch (_) {}
+    }
+  }
+}
+
 async function writeClipboardTextDefault(text, options = {}) {
   const payload = String(text || "");
   if (!payload) return false;
+
+  async function tryInvokeClipboardMethod(method, ...args) {
+    if (typeof method !== "function") return false;
+    try {
+      const result = method(...args);
+      if (result && typeof result.then === "function") {
+        await result;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   const navigatorRef = options.navigatorRef || (typeof navigator !== "undefined" ? navigator : null);
   if (navigatorRef && navigatorRef.clipboard && typeof navigatorRef.clipboard.writeText === "function") {
@@ -38,58 +159,20 @@ async function writeClipboardTextDefault(text, options = {}) {
     } catch (_) {}
   }
 
-  const documentRef = options.documentRef || (typeof document !== "undefined" ? document : null);
-  const logWindow = options.logWindow || null;
-  if (documentRef && typeof documentRef.execCommand === "function" && logWindow) {
-    let originalStart = null;
-    let originalEnd = null;
-    if (typeof logWindow.selectionStart === "number" && typeof logWindow.selectionEnd === "number") {
-      originalStart = logWindow.selectionStart;
-      originalEnd = logWindow.selectionEnd;
-    }
-
-    try {
-      if (typeof logWindow.focus === "function") logWindow.focus();
-      if (typeof logWindow.select === "function") {
-        logWindow.select();
-      } else if (typeof logWindow.setSelectionRange === "function") {
-        logWindow.setSelectionRange(0, payload.length);
-      }
-      const copied = documentRef.execCommand("copy");
-      if (copied) return true;
-    } catch (_) {
-      // keep fallback chain
-    } finally {
-      if (
-        originalStart !== null &&
-        originalEnd !== null &&
-        typeof logWindow.setSelectionRange === "function"
-      ) {
-        try {
-          logWindow.setSelectionRange(originalStart, originalEnd);
-        } catch (_) {}
-      }
-    }
-  }
-
   if (typeof require === "function") {
     try {
       const uxp = require("uxp");
       const clipboard = uxp && uxp.clipboard;
-      if (clipboard && typeof clipboard.writeText === "function") {
-        await clipboard.writeText(payload);
-        return true;
-      }
-      if (clipboard && typeof clipboard.copyText === "function") {
-        clipboard.copyText(payload);
-        return true;
-      }
-      if (clipboard && typeof clipboard.setContent === "function") {
-        clipboard.setContent({ "text/plain": payload });
-        return true;
-      }
+      if (clipboard && (await tryInvokeClipboardMethod(clipboard.writeText, payload))) return true;
+      if (clipboard && (await tryInvokeClipboardMethod(clipboard.copyText, payload))) return true;
+      if (clipboard && (await tryInvokeClipboardMethod(clipboard.setContent, { "text/plain": payload }))) return true;
     } catch (_) {}
   }
+
+  const documentRef = options.documentRef || (typeof document !== "undefined" ? document : null);
+  const logWindow = options.logWindow || null;
+  if (copyViaLogWindowSelection(payload, documentRef, logWindow)) return true;
+  if (copyViaTemporaryTextarea(payload, documentRef)) return true;
 
   return false;
 }

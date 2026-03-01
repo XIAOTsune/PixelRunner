@@ -62,10 +62,23 @@ test("renderLogLine appends and keeps stick-to-bottom", () => {
   assert.equal(el.scrollTop, el.scrollHeight);
 });
 
-test("renderLogLine respects not sticking when far from bottom", () => {
+test("renderLogLine auto-follows latest even when user at top", () => {
   const el = createLogEl({ text: "line1", scrollHeight: 200, clientHeight: 80, scrollTop: 0 });
   renderLogLine(el, "line2");
   assert.equal(getLogText(el), "line1\nline2");
-  assert.equal(el.scrollTop, 0);
+  assert.equal(el.scrollTop, el.scrollHeight);
+});
+
+test("renderLogLine auto-follows latest for textarea log window", () => {
+  const el = createLogEl({
+    text: "line1",
+    scrollHeight: 500,
+    clientHeight: 120,
+    scrollTop: 140,
+    isTextarea: true
+  });
+  renderLogLine(el, "line2");
+  assert.equal(getLogText(el), "line1\nline2");
+  assert.equal(el.scrollTop, el.scrollHeight);
 });
 

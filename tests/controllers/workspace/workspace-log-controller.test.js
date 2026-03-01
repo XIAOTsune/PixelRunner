@@ -126,6 +126,74 @@ test("workspace log controller copies selected log text when selection exists", 
   assert.equal(lines.some((line) => /Log copied \(selection; 5 chars\)\./.test(line)), true);
 });
 
+test("workspace log controller copies window selection for div-like log container", async () => {
+  const lines = [];
+  const copiedTexts = [];
+  const insideNode = {};
+  const logWindow = {
+    textContent: "line1\nline2",
+    contains: (node) => node === insideNode
+  };
+
+  const controller = createWorkspaceLogController({
+    dom: { logWindow },
+    windowRef: {
+      getSelection: () => ({
+        toString: () => "line2",
+        anchorNode: insideNode,
+        focusNode: insideNode
+      })
+    },
+    consoleLog: () => {},
+    buildLogLine: ({ message }) => String(message || ""),
+    renderLogLine: (_target, line) => lines.push(line),
+    writeClipboardText: async (text) => {
+      copiedTexts.push(String(text || ""));
+      return true;
+    }
+  });
+
+  const copied = await controller.onCopyLogClick();
+
+  assert.equal(copied, true);
+  assert.deepEqual(copiedTexts, ["line2"]);
+  assert.equal(lines.some((line) => /Log copied \(selection; 5 chars\)\./.test(line)), true);
+});
+
+test("workspace log controller ignores window selection outside log container", async () => {
+  const lines = [];
+  const copiedTexts = [];
+  const outsideNode = {};
+  const logWindow = {
+    textContent: "line1\nline2",
+    contains: () => false
+  };
+
+  const controller = createWorkspaceLogController({
+    dom: { logWindow },
+    windowRef: {
+      getSelection: () => ({
+        toString: () => "OUTSIDE_SELECTION",
+        anchorNode: outsideNode,
+        focusNode: outsideNode
+      })
+    },
+    consoleLog: () => {},
+    buildLogLine: ({ message }) => String(message || ""),
+    renderLogLine: (_target, line) => lines.push(line),
+    writeClipboardText: async (text) => {
+      copiedTexts.push(String(text || ""));
+      return true;
+    }
+  });
+
+  const copied = await controller.onCopyLogClick();
+
+  assert.equal(copied, true);
+  assert.deepEqual(copiedTexts, ["line1\nline2"]);
+  assert.equal(lines.some((line) => /Log copied \(all; 11 chars\)\./.test(line)), true);
+});
+
 test("workspace log controller copies full log text when no selection exists", async () => {
   const lines = [];
   const copiedTexts = [];

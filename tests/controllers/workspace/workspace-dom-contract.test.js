@@ -64,7 +64,6 @@ test("workspace dom contract keeps critical element tags and modal hooks", () =>
     { id: "btnOpenAppPicker", allowedTagNames: ["button", "sp-button"] },
     { id: "btnRefreshWorkspaceApps", allowedTagNames: ["button", "sp-button"] },
     { id: "btnClearLog", allowedTagNames: ["button", "sp-button"] },
-    { id: "btnCopyLog", allowedTagNames: ["button", "sp-button"] },
     { id: "btnApplyTemplateSelection", allowedTagNames: ["button", "sp-button"] },
     { id: "appPickerModalClose", allowedTagNames: ["button", "sp-button"] },
     { id: "templateModalClose", allowedTagNames: ["button", "sp-button"] },

@@ -14,7 +14,7 @@
     2) Keep modal hooks and critical tag types stable.
     3) UI optimization can change visual style/layout only, not business behavior.
     Core workspace ids:
-    btnRun, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog, btnCopyLog,
+    btnRun, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog,
     taskStatusSummary, appPickerMeta, dynamicInputContainer, imageInputContainer, logWindow,
     appPickerModal, appPickerModalClose, appPickerSearchInput, appPickerStats, appPickerList,
     templateModal, templateModalTitle, templateList, templateModalActions,
@@ -24,7 +24,7 @@
   <div class="nav-tabs">
       <div class="nav-brand" title="Plugin Logo">
         <img class="nav-brand-logo" src="icons/icon.png" alt="logo" />
-        <sp-button id="btnDonate" variant="primary" size="s" quiet>打赏</sp-button>
+        <span id="btnDonate" class="donate-text-link" role="button" tabindex="0">打赏</span>
       </div>
       <button id="tabWorkspace" class="nav-item active" type="button">
         <span class="nav-item-icon nav-item-icon-workspace" aria-hidden="true"></span>
@@ -209,7 +209,7 @@
           </span>
         </div>
       </div>
-      <span class="version">V2.2.4</span>
+      <span class="version">v2.3.0</span>
     </header>
 
     <div class="workspace-flow">
@@ -247,12 +247,11 @@
     <div class="log-toolbar">
       <div class="log-toolbar-title">运行日志</div>
       <div class="log-toolbar-actions">
-        <button id="btnCopyLog" class="tiny-btn tiny-btn-compact" type="button">复制</button>
         <button id="btnClearLog" class="tiny-btn tiny-btn-compact" type="button">清空</button>
       </div>
     </div>
-    <textarea id="logWindow" readonly>[系统] 插件已加载，等待操作...</textarea>
-    <div class="log-hint">可选中文本后直接复制。</div>
+    <textarea id="logWindow" spellcheck="false">[系统] 插件已加载，等待操作...</textarea>
+    <div class="log-hint">日志会自动滚动到最新；可手动框选复制。</div>
     </div>
     </div>
   </section>
@@ -263,7 +262,7 @@
         <span class="section-icon section-icon-settings" aria-hidden="true"></span>
         <h3>系统设置</h3>
       </div>
-      <span class="version">V2.2.4</span>
+      <span class="version">v2.3.0</span>
     </header>
 
     <div class="settings-flow">
