@@ -1,6 +1,8 @@
 const {
   normalizePasteStrategy,
-  normalizeUploadRetryCount
+  normalizeUploadRetryCount,
+  normalizeUploadTargetBytes,
+  normalizeUploadHardLimitBytes
 } = require("../../domain/policies/run-settings-policy");
 
 function cloneArrayBuffer(value) {
@@ -75,6 +77,12 @@ function buildWorkspaceRunSnapshot(options = {}) {
     placementTarget: clonePlacementTarget(options.placementTarget),
     pollSettings: buildPollSettings(settings),
     uploadRetryCount: normalizeUploadRetryCount(settings.uploadRetryCount),
+    uploadTargetBytes: normalizeUploadTargetBytes(settings.uploadTargetBytes, 9_000_000),
+    uploadHardLimitBytes: normalizeUploadHardLimitBytes(
+      settings.uploadHardLimitBytes,
+      10_000_000,
+      settings.uploadTargetBytes
+    ),
     pasteStrategy: normalizePasteStrategy(settings.pasteStrategy)
   };
 }

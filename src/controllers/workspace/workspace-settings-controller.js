@@ -52,6 +52,10 @@ function createWorkspaceSettingsController(options = {}) {
         pollInterval: settings.pollInterval,
         timeout: settings.timeout,
         uploadRetryCount,
+        uploadTargetBytes: settings.uploadTargetBytes,
+        uploadHardLimitBytes: settings.uploadHardLimitBytes,
+        uploadAutoCompressEnabled: true,
+        uploadCompressFormat: settings.uploadCompressFormat,
         pasteStrategy: WORKSPACE_DEFAULT_PASTE_STRATEGY,
         cloudConcurrentJobs
       });

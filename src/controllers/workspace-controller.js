@@ -137,7 +137,8 @@ function getWorkspaceInputs() {
       getRenderedElementCount,
       updateCurrentAppMeta,
       updateRunButtonUI,
-      openTemplatePicker
+      openTemplatePicker,
+      getUploadSettings: () => (store && typeof store.getSettings === "function" ? store.getSettings() : {})
     });
   }
   return workspaceInputs;

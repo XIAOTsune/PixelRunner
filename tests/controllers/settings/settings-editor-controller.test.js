@@ -8,6 +8,11 @@ function createFixture(options = {}) {
     pollIntervalInput: { value: options.pollIntervalInputValue || "" },
     timeoutInput: { value: options.timeoutInputValue || "" },
     cloudConcurrentJobsInput: { value: options.cloudConcurrentJobsInputValue || "" },
+    uploadRetryCountInput: { value: options.uploadRetryCountInputValue || "" },
+    uploadTargetBytesInput: { value: options.uploadTargetBytesInputValue || "" },
+    uploadHardLimitBytesInput: { value: options.uploadHardLimitBytesInputValue || "" },
+    uploadAutoCompressEnabledInput: { value: options.uploadAutoCompressEnabledInputValue || "", disabled: false },
+    uploadCompressFormatInput: { value: options.uploadCompressFormatInputValue || "" },
     btnTestApiKey: { textContent: "test" },
     templateTitleInput: { value: options.templateTitleValue || "" },
     templateContentInput: { value: options.templateContentValue || "" },
@@ -19,6 +24,11 @@ function createFixture(options = {}) {
       apiKey: "stored-key",
       pollInterval: 3,
       timeout: 120,
+      uploadRetryCount: 2,
+      uploadTargetBytes: 9000000,
+      uploadHardLimitBytes: 10000000,
+      uploadAutoCompressEnabled: true,
+      uploadCompressFormat: "jpeg",
       pasteStrategy: "normal",
       cloudConcurrentJobs: 5
     };
@@ -28,6 +38,11 @@ function createFixture(options = {}) {
     testApiKeyArgs: [],
     saveTemplateArgs: [],
     normalizeCloudConcurrentCalls: [],
+    normalizeUploadRetryCountCalls: [],
+    normalizeUploadTargetBytesCalls: [],
+    normalizeUploadHardLimitBytesCalls: [],
+    normalizeUploadAutoCompressEnabledCalls: [],
+    normalizeUploadCompressFormatCalls: [],
     enforceCalls: [],
     insertCalls: [],
     buildHintArgs: [],
@@ -74,6 +89,33 @@ function createFixture(options = {}) {
       if (options.normalizedCloudConcurrentJobs !== undefined) return options.normalizedCloudConcurrentJobs;
       return Number(value) || 2;
     },
+    normalizeUploadRetryCount: (value) => {
+      calls.normalizeUploadRetryCountCalls.push(value);
+      if (options.normalizedUploadRetryCount !== undefined) return options.normalizedUploadRetryCount;
+      return Number(value) || 2;
+    },
+    normalizeUploadTargetBytes: (value) => {
+      calls.normalizeUploadTargetBytesCalls.push(value);
+      if (options.normalizedUploadTargetBytes !== undefined) return options.normalizedUploadTargetBytes;
+      return Number(value) || 9000000;
+    },
+    normalizeUploadHardLimitBytes: (value, fallback, targetBytes) => {
+      calls.normalizeUploadHardLimitBytesCalls.push({ value, fallback, targetBytes });
+      if (options.normalizedUploadHardLimitBytes !== undefined) return options.normalizedUploadHardLimitBytes;
+      return Math.max(Number(value) || Number(fallback) || 10000000, Number(targetBytes) || 0);
+    },
+    normalizeUploadAutoCompressEnabled: (value) => {
+      calls.normalizeUploadAutoCompressEnabledCalls.push(value);
+      if (options.normalizedUploadAutoCompressEnabled !== undefined) return options.normalizedUploadAutoCompressEnabled;
+      if (value === true || value === "true") return true;
+      if (value === false || value === "false") return false;
+      return true;
+    },
+    normalizeUploadCompressFormat: (value) => {
+      calls.normalizeUploadCompressFormatCalls.push(value);
+      if (options.normalizedUploadCompressFormat !== undefined) return options.normalizedUploadCompressFormat;
+      return String(value || "jpeg");
+    },
     buildTemplateLengthHintViewModel: (args) => {
       calls.buildHintArgs.push(args);
       return options.hintViewModel || { text: "hint", color: "#999", isLarge: false };
@@ -119,6 +161,23 @@ function createFixture(options = {}) {
 test("settings editor controller syncs settings snapshot to dom and enforces content max length", () => {
   const fixture = createFixture({
     normalizedCloudConcurrentJobs: 9,
+    normalizedUploadRetryCount: 3,
+    normalizedUploadTargetBytes: 8_800_000,
+    normalizedUploadHardLimitBytes: 9_900_000,
+    normalizedUploadAutoCompressEnabled: false,
+    normalizedUploadCompressFormat: "jpeg",
+    settingsSnapshot: {
+      apiKey: "stored-key",
+      pollInterval: 3,
+      timeout: 120,
+      uploadRetryCount: 2,
+      uploadTargetBytes: 9_000_000,
+      uploadHardLimitBytes: 10_000_000,
+      uploadAutoCompressEnabled: true,
+      uploadCompressFormat: "jpeg",
+      pasteStrategy: "normal",
+      cloudConcurrentJobs: 5
+    },
     textInputHardMaxChars: 12345
   });
   const { controller, dom, store, snapshot, calls } = fixture;
@@ -132,7 +191,18 @@ test("settings editor controller syncs settings snapshot to dom and enforces con
   assert.equal(dom.pollIntervalInput.value, 3);
   assert.equal(dom.timeoutInput.value, 120);
   assert.equal(dom.cloudConcurrentJobsInput.value, "9");
+  assert.equal(dom.uploadRetryCountInput.value, "3");
+  assert.equal(dom.uploadTargetBytesInput.value, "8800000");
+  assert.equal(dom.uploadHardLimitBytesInput.value, "9900000");
+  assert.equal(dom.uploadAutoCompressEnabledInput.value, "true");
+  assert.equal(dom.uploadAutoCompressEnabledInput.disabled, true);
+  assert.equal(dom.uploadCompressFormatInput.value, "jpeg");
   assert.deepEqual(calls.normalizeCloudConcurrentCalls, [5]);
+  assert.deepEqual(calls.normalizeUploadRetryCountCalls, [2]);
+  assert.deepEqual(calls.normalizeUploadTargetBytesCalls, [9000000]);
+  assert.deepEqual(calls.normalizeUploadHardLimitBytesCalls, [{ value: 10000000, fallback: 10000000, targetBytes: 9000000 }]);
+  assert.deepEqual(calls.normalizeUploadAutoCompressEnabledCalls, []);
+  assert.deepEqual(calls.normalizeUploadCompressFormatCalls, ["jpeg"]);
   assert.equal(calls.enforceCalls.length, 1);
   assert.equal(calls.enforceCalls[0].inputEl, dom.templateContentInput);
   assert.equal(calls.enforceCalls[0].maxChars, 12345);
@@ -187,14 +257,29 @@ test("settings editor controller saves api key/settings and emits settings chang
     pollIntervalInputValue: "5",
     timeoutInputValue: "90",
     cloudConcurrentJobsInputValue: "7",
+    uploadRetryCountInputValue: "4",
+    uploadTargetBytesInputValue: "8700000",
+    uploadHardLimitBytesInputValue: "9600000",
+    uploadAutoCompressEnabledInputValue: "false",
+    uploadCompressFormatInputValue: "jpeg",
     settingsSnapshot: {
       apiKey: "stored",
       pollInterval: 2,
       timeout: 180,
+      uploadRetryCount: 2,
+      uploadTargetBytes: 9000000,
+      uploadHardLimitBytes: 10000000,
+      uploadAutoCompressEnabled: true,
+      uploadCompressFormat: "jpeg",
       pasteStrategy: "smart",
       cloudConcurrentJobs: 3
     },
     normalizedCloudConcurrentJobs: 11,
+    normalizedUploadRetryCount: 4,
+    normalizedUploadTargetBytes: 8_700_000,
+    normalizedUploadHardLimitBytes: 9_600_000,
+    normalizedUploadAutoCompressEnabled: false,
+    normalizedUploadCompressFormat: "jpeg",
     saveSettingsPayload: { apiKeyChanged: true, settingsChanged: true }
   });
   const { controller, store, calls } = fixture;
@@ -208,6 +293,11 @@ test("settings editor controller saves api key/settings and emits settings chang
   assert.equal(calls.saveSettingsArgs[0].apiKey, "key-1");
   assert.equal(calls.saveSettingsArgs[0].pollInterval, 5);
   assert.equal(calls.saveSettingsArgs[0].timeout, 90);
+  assert.equal(calls.saveSettingsArgs[0].uploadRetryCount, 4);
+  assert.equal(calls.saveSettingsArgs[0].uploadTargetBytes, 8700000);
+  assert.equal(calls.saveSettingsArgs[0].uploadHardLimitBytes, 9600000);
+  assert.equal(calls.saveSettingsArgs[0].uploadAutoCompressEnabled, true);
+  assert.equal(calls.saveSettingsArgs[0].uploadCompressFormat, "jpeg");
   assert.equal(calls.saveSettingsArgs[0].pasteStrategy, "smart");
   assert.equal(calls.saveSettingsArgs[0].cloudConcurrentJobs, 11);
   assert.deepEqual(calls.emitSettings, [{ apiKeyChanged: true, settingsChanged: true }]);

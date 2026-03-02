@@ -24,6 +24,10 @@ test("workspace settings controller forces paste strategy to normal", () => {
         pollInterval: 2,
         timeout: 180,
         uploadRetryCount: "2",
+        uploadTargetBytes: 8800000,
+        uploadHardLimitBytes: 9900000,
+        uploadAutoCompressEnabled: false,
+        uploadCompressFormat: "jpeg",
         cloudConcurrentJobs: "7",
         pasteStrategy: "smartEnhanced"
       }),
@@ -45,6 +49,10 @@ test("workspace settings controller forces paste strategy to normal", () => {
     pollInterval: 2,
     timeout: 180,
     uploadRetryCount: 2,
+    uploadTargetBytes: 8800000,
+    uploadHardLimitBytes: 9900000,
+    uploadAutoCompressEnabled: true,
+    uploadCompressFormat: "jpeg",
     cloudConcurrentJobs: 7,
     pasteStrategy: "normal"
   });
@@ -144,6 +152,10 @@ test("workspace settings controller refresh and settings change keep list/accoun
         pollInterval: 2,
         timeout: 180,
         uploadRetryCount: 2,
+        uploadTargetBytes: 9000000,
+        uploadHardLimitBytes: 10000000,
+        uploadAutoCompressEnabled: true,
+        uploadCompressFormat: "jpeg",
         cloudConcurrentJobs: 2,
         pasteStrategy: "smart"
       }),

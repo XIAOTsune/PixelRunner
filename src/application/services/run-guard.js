@@ -71,12 +71,16 @@ function buildRunFingerprint({
   sourceBuffer,
   pasteStrategy,
   uploadRetryCount,
+  uploadTargetBytes,
+  uploadHardLimitBytes,
   pollSettings
 }) {
   const payload = {
     appId: String((appItem && (appItem.id || appItem.appId || appItem.name)) || ""),
     pasteStrategy: String(pasteStrategy || ""),
     uploadRetryCount: Number(uploadRetryCount) || 0,
+    uploadTargetBytes: Number(uploadTargetBytes) || 0,
+    uploadHardLimitBytes: Number(uploadHardLimitBytes) || 0,
     pollInterval: Number(pollSettings && pollSettings.pollInterval) || 0,
     timeout: Number(pollSettings && pollSettings.timeout) || 0,
     targetBounds: normalizeBoundsForFingerprint(targetBounds),

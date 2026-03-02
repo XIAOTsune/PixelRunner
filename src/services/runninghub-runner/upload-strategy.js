@@ -1,6 +1,11 @@
 const { API } = require("../../config");
 const { RUNNINGHUB_ERROR_CODES } = require("../runninghub-error-codes");
 const { createRunCancelledError, fetchWithTimeout } = require("./request-strategy");
+const {
+  normalizeUploadTargetBytes,
+  normalizeUploadHardLimitBytes,
+  classifyUploadRiskByBytes
+} = require("../../domain/policies/run-settings-policy");
 
 const UPLOAD_RETRY_COUNT_MIN = 0;
 const UPLOAD_RETRY_COUNT_MAX = 5;
@@ -73,6 +78,77 @@ function detectImageMime(arrayBuffer) {
   }
   if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
   return "application/octet-stream";
+}
+
+function normalizeBitDepth(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.floor(num);
+}
+
+function normalizeNonNegativeNumber(value, fallback = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return Math.max(0, Number(fallback) || 0);
+  return num;
+}
+
+function normalizeDimension(value, fallback = 0) {
+  return Math.max(0, Math.floor(normalizeNonNegativeNumber(value, fallback)));
+}
+
+function normalizeImageMeta(imageValue, fallback = {}) {
+  const source = imageValue && typeof imageValue === "object" ? imageValue : {};
+  const sourceMeta = source.sourceMeta && typeof source.sourceMeta === "object" ? source.sourceMeta : {};
+  const uploadMeta = source.uploadMeta && typeof source.uploadMeta === "object" ? source.uploadMeta : {};
+  const compressionTrace = source.compressionTrace && typeof source.compressionTrace === "object" ? source.compressionTrace : {};
+  const fallbackUploadBytes = Math.max(0, Number(fallback.uploadBytes) || 0);
+  const fallbackUploadMime = String(fallback.uploadMime || "");
+
+  const sourceBitDepth = normalizeBitDepth(sourceMeta.bitDepth);
+  const uploadBitDepth = normalizeBitDepth(uploadMeta.bitDepth);
+  const normalizedDocBitDepth = sourceBitDepth != null ? sourceBitDepth : uploadBitDepth;
+
+  const normalizedUploadBytes = normalizeNonNegativeNumber(uploadMeta.bytes, fallbackUploadBytes);
+  const normalizedSourceBytes = normalizeNonNegativeNumber(sourceMeta.bytes, normalizedUploadBytes);
+  const normalizedUploadWidth = normalizeDimension(uploadMeta.width, sourceMeta.width);
+  const normalizedUploadHeight = normalizeDimension(uploadMeta.height, sourceMeta.height);
+  const normalizedSourceWidth = normalizeDimension(sourceMeta.width, normalizedUploadWidth);
+  const normalizedSourceHeight = normalizeDimension(sourceMeta.height, normalizedUploadHeight);
+  const normalizedUploadMime = String(uploadMeta.mime || fallbackUploadMime || sourceMeta.mime || "");
+  const normalizedSourceMime = String(sourceMeta.mime || normalizedUploadMime || "");
+
+  return {
+    sourceMeta: {
+      mime: normalizedSourceMime,
+      bytes: normalizedSourceBytes,
+      width: normalizedSourceWidth,
+      height: normalizedSourceHeight,
+      bitDepth: normalizedDocBitDepth,
+      risk: String(sourceMeta.risk || "")
+    },
+    uploadMeta: {
+      mime: normalizedUploadMime,
+      bytes: normalizedUploadBytes,
+      width: normalizedUploadWidth,
+      height: normalizedUploadHeight,
+      bitDepth: normalizedDocBitDepth,
+      risk: String(uploadMeta.risk || "")
+    },
+    compressionTrace: {
+      applied: Boolean(compressionTrace.applied),
+      quality: Number.isFinite(Number(compressionTrace.quality)) ? Number(compressionTrace.quality) : null,
+      maxEdge: Number.isFinite(Number(compressionTrace.maxEdge)) ? Number(compressionTrace.maxEdge) : null,
+      attempts: Math.max(0, Number(compressionTrace.attempts) || 0),
+      durationMs: Math.max(0, Number(compressionTrace.durationMs) || 0)
+    }
+  };
+}
+
+function emitUploadDiagnosticLog(log, payload, level = "info") {
+  if (typeof log !== "function") return;
+  try {
+    log(`[UploadDiag] ${JSON.stringify(payload)}`, level);
+  } catch (_) {}
 }
 
 function pickUploadedValue(data) {
@@ -225,6 +301,10 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
   const log = options.log || (() => {});
   const endpoints = [API.ENDPOINTS.UPLOAD_V2, API.ENDPOINTS.UPLOAD_LEGACY];
   const buffer = normalizeUploadBuffer(imageValue);
+  const uploadBytes = Math.max(0, Number(buffer.byteLength) || 0);
+  const targetBytes = normalizeUploadTargetBytes(options.uploadTargetBytes, 9_000_000);
+  const hardLimitBytes = normalizeUploadHardLimitBytes(options.uploadHardLimitBytes, 10_000_000, targetBytes);
+  const uploadRisk = classifyUploadRiskByBytes(uploadBytes, targetBytes, hardLimitBytes);
   const detectedMime = detectImageMime(buffer);
   const uploadMime = detectedMime.startsWith("image/") ? detectedMime : "image/png";
   const uploadFileName = uploadMime === "image/jpeg" ? "image.jpg" : uploadMime === "image/webp" ? "image.webp" : "image.png";
@@ -232,6 +312,49 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
   const uploadRetryCount = normalizeUploadRetryCount(options.uploadRetryCount, 0);
   const maxAttempts = uploadRetryCount + 1;
   const attemptSummaries = [];
+  const normalizedMeta = normalizeImageMeta(imageValue, {
+    uploadBytes,
+    uploadMime
+  });
+  const sourceBytesForRisk = normalizedMeta.sourceMeta.bytes > 0 ? normalizedMeta.sourceMeta.bytes : uploadBytes;
+  const sourceRisk = classifyUploadRiskByBytes(sourceBytesForRisk, targetBytes, hardLimitBytes);
+  const declaredUploadRisk = normalizedMeta.uploadMeta.risk || null;
+
+  emitUploadDiagnosticLog(log, {
+    stage: "preflight",
+    sourceBytes: normalizedMeta.sourceMeta.bytes || null,
+    uploadBytes,
+    sourceMime: normalizedMeta.sourceMeta.mime || null,
+    uploadMime,
+    sourceSize: normalizedMeta.sourceMeta.width > 0 ? `${normalizedMeta.sourceMeta.width}x${normalizedMeta.sourceMeta.height}` : null,
+    uploadSize: normalizedMeta.uploadMeta.width > 0 ? `${normalizedMeta.uploadMeta.width}x${normalizedMeta.uploadMeta.height}` : null,
+    sourceBitDepth: normalizedMeta.sourceMeta.bitDepth,
+    uploadBitDepth: normalizedMeta.uploadMeta.bitDepth,
+    riskBefore: sourceRisk,
+    riskAfter: uploadRisk,
+    riskBeforeStage: "source-meta",
+    riskAfterStage: "upload-buffer",
+    declaredUploadRisk,
+    compressionApplied: normalizedMeta.compressionTrace.applied,
+    quality: normalizedMeta.compressionTrace.quality,
+    maxEdge: normalizedMeta.compressionTrace.maxEdge,
+    attempts: normalizedMeta.compressionTrace.attempts,
+    durationMs: normalizedMeta.compressionTrace.durationMs,
+    targetBytes,
+    hardLimitBytes
+  });
+
+  if (uploadBytes > hardLimitBytes) {
+    emitUploadDiagnosticLog(log, {
+      stage: "preflight-blocked",
+      sourceBytes: normalizedMeta.sourceMeta.bytes || null,
+      uploadBytes,
+      hardLimitBytes,
+      riskBefore: sourceRisk,
+      riskAfter: uploadRisk
+    }, "warn");
+    throw new Error("Upload preflight failed: file size exceeds hard limit");
+  }
 
   for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
     safeThrowIfCancelled(options);
@@ -256,6 +379,15 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
         safeThrowIfCancelled(options);
 
         if (!response.ok) {
+          emitUploadDiagnosticLog(log, {
+            stage: "endpoint-response",
+            endpoint,
+            httpStatus: response.status,
+            apiCode: null,
+            apiMessage: null,
+            uploadBytes,
+            riskAfter: uploadRisk
+          }, "warn");
           failures.push({
             reason: `${endpoint}: HTTP ${response.status}`,
             retryable: isRetryableHttpStatus(response.status)
@@ -266,6 +398,15 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
         const success = result && (result.code === 0 || result.success === true);
         if (!success) {
           const message = safeToMessage(result);
+          emitUploadDiagnosticLog(log, {
+            stage: "endpoint-response",
+            endpoint,
+            httpStatus: response.status,
+            apiCode: result && (result.code || result.statusCode || null),
+            apiMessage: message,
+            uploadBytes,
+            riskAfter: uploadRisk
+          }, "warn");
           failures.push({
             reason: `${endpoint}: ${message}`,
             retryable: isRetryableApiMessage(message)
@@ -275,7 +416,18 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
 
         const data = result.data || result.result || {};
         const picked = pickUploadedValue(data);
-        if (picked.value) return picked;
+        if (picked.value) {
+          emitUploadDiagnosticLog(log, {
+            stage: "endpoint-success",
+            endpoint,
+            httpStatus: response.status,
+            apiCode: result && (result.code || 0),
+            apiMessage: safeToMessage(result, "ok"),
+            uploadBytes,
+            riskAfter: uploadRisk
+          });
+          return picked;
+        }
         failures.push({
           reason: `${endpoint}: upload success but no usable file token/url`,
           retryable: true
@@ -283,6 +435,15 @@ async function uploadImage(apiKey, imageValue, options = {}, helpers = {}) {
       } catch (error) {
         if (error && error.code === RUNNINGHUB_ERROR_CODES.RUN_CANCELLED) throw error;
         const message = error && error.message ? error.message : String(error || "unknown");
+        emitUploadDiagnosticLog(log, {
+          stage: "endpoint-error",
+          endpoint,
+          httpStatus: null,
+          apiCode: null,
+          apiMessage: message,
+          uploadBytes,
+          riskAfter: uploadRisk
+        }, "warn");
         failures.push({
           reason: `${endpoint}: ${message}`,
           retryable: isRetryableError(error)

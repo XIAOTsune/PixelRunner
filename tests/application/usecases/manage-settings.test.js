@@ -15,6 +15,10 @@ test("loadSettingsSnapshotUsecase reads api key and settings", () => {
         pollInterval: 3,
         timeout: 210,
         uploadRetryCount: 4,
+        uploadTargetBytes: 8_800_000,
+        uploadHardLimitBytes: 9_900_000,
+        uploadAutoCompressEnabled: false,
+        uploadCompressFormat: "jpeg",
         pasteStrategy: "smart",
         cloudConcurrentJobs: 8
       })
@@ -26,6 +30,10 @@ test("loadSettingsSnapshotUsecase reads api key and settings", () => {
     pollInterval: 3,
     timeout: 210,
     uploadRetryCount: 4,
+    uploadTargetBytes: 8_800_000,
+    uploadHardLimitBytes: 9_900_000,
+    uploadAutoCompressEnabled: false,
+    uploadCompressFormat: "jpeg",
     pasteStrategy: "smart",
     cloudConcurrentJobs: 8
   });
@@ -75,6 +83,10 @@ test("saveSettingsUsecase saves api key and settings payload", () => {
     pollInterval: 5,
     timeout: 240,
     uploadRetryCount: 3,
+    uploadTargetBytes: 8_000_000,
+    uploadHardLimitBytes: 9_000_000,
+    uploadAutoCompressEnabled: true,
+    uploadCompressFormat: "jpeg",
     pasteStrategy: "smart",
     cloudConcurrentJobs: 6
   });
@@ -87,6 +99,10 @@ test("saveSettingsUsecase saves api key and settings payload", () => {
       pollInterval: 5,
       timeout: 240,
       uploadRetryCount: 3,
+      uploadTargetBytes: 8_000_000,
+      uploadHardLimitBytes: 9_000_000,
+      uploadAutoCompressEnabled: true,
+      uploadCompressFormat: "jpeg",
       pasteStrategy: "smart",
       cloudConcurrentJobs: 6
     }
@@ -109,6 +125,10 @@ test("saveSettingsUsecase falls back to defaults for invalid values", () => {
     pollInterval: "invalid",
     timeout: null,
     uploadRetryCount: "oops",
+    uploadTargetBytes: "oops",
+    uploadHardLimitBytes: 100,
+    uploadAutoCompressEnabled: "no",
+    uploadCompressFormat: "png",
     pasteStrategy: "",
     cloudConcurrentJobs: "oops"
   });
@@ -117,6 +137,10 @@ test("saveSettingsUsecase falls back to defaults for invalid values", () => {
     pollInterval: 2,
     timeout: 180,
     uploadRetryCount: 2,
+    uploadTargetBytes: 9000000,
+    uploadHardLimitBytes: 9000000,
+    uploadAutoCompressEnabled: false,
+    uploadCompressFormat: "jpeg",
     pasteStrategy: "",
     cloudConcurrentJobs: 2
   });

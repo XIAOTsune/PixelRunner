@@ -10,6 +10,10 @@ function createSettingsEditorController(options = {}) {
           pollInterval: 2,
           timeout: 180,
           uploadRetryCount: 2,
+          uploadTargetBytes: 9000000,
+          uploadHardLimitBytes: 10000000,
+          uploadAutoCompressEnabled: true,
+          uploadCompressFormat: "jpeg",
           pasteStrategy: "",
           cloudConcurrentJobs: 2
         });
@@ -35,6 +39,38 @@ function createSettingsEditorController(options = {}) {
           if (!Number.isFinite(num)) return 2;
           return Math.max(0, Math.min(5, Math.floor(num)));
         };
+  const normalizeUploadTargetBytes =
+    typeof options.normalizeUploadTargetBytes === "function"
+      ? options.normalizeUploadTargetBytes
+      : (value) => {
+          const num = Number(value);
+          if (!Number.isFinite(num)) return 9000000;
+          return Math.max(1000000, Math.min(100000000, Math.floor(num)));
+        };
+  const normalizeUploadHardLimitBytes =
+    typeof options.normalizeUploadHardLimitBytes === "function"
+      ? options.normalizeUploadHardLimitBytes
+      : (value, _fallback, targetBytes) => {
+          const num = Number(value);
+          const normalized = Number.isFinite(num) ? Math.max(1000000, Math.min(100000000, Math.floor(num))) : 10000000;
+          const target = Number.isFinite(Number(targetBytes)) ? Math.max(1000000, Math.min(100000000, Math.floor(targetBytes))) : 9000000;
+          return Math.max(normalized, target);
+        };
+  const normalizeUploadAutoCompressEnabled =
+    typeof options.normalizeUploadAutoCompressEnabled === "function"
+      ? options.normalizeUploadAutoCompressEnabled
+      : (value) => {
+          if (typeof value === "boolean") return value;
+          const marker = String(value == null ? "" : value).trim().toLowerCase();
+          if (!marker) return true;
+          if (["false", "0", "no", "off", "fou", "\u5426"].includes(marker)) return false;
+          if (["true", "1", "yes", "on", "shi", "\u662f"].includes(marker)) return true;
+          return true;
+        };
+  const normalizeUploadCompressFormat =
+    typeof options.normalizeUploadCompressFormat === "function"
+      ? options.normalizeUploadCompressFormat
+      : (value) => (String(value || "").trim().toLowerCase() === "jpeg" ? "jpeg" : "jpeg");
   const buildTemplateLengthHintViewModel =
     typeof options.buildTemplateLengthHintViewModel === "function"
       ? options.buildTemplateLengthHintViewModel
@@ -97,6 +133,27 @@ function createSettingsEditorController(options = {}) {
     if (dom.uploadRetryCountInput) {
       dom.uploadRetryCountInput.value = String(normalizeUploadRetryCount(settingsSnapshot.uploadRetryCount));
     }
+    if (dom.uploadTargetBytesInput) {
+      dom.uploadTargetBytesInput.value = String(normalizeUploadTargetBytes(settingsSnapshot.uploadTargetBytes));
+    }
+    if (dom.uploadHardLimitBytesInput) {
+      dom.uploadHardLimitBytesInput.value = String(
+        normalizeUploadHardLimitBytes(
+          settingsSnapshot.uploadHardLimitBytes,
+          10000000,
+          settingsSnapshot.uploadTargetBytes
+        )
+      );
+    }
+    if (dom.uploadAutoCompressEnabledInput) {
+      dom.uploadAutoCompressEnabledInput.value = "true";
+      dom.uploadAutoCompressEnabledInput.disabled = true;
+    }
+    if (dom.uploadCompressFormatInput) {
+      dom.uploadCompressFormatInput.value = String(
+        normalizeUploadCompressFormat(settingsSnapshot.uploadCompressFormat)
+      );
+    }
     enforceLongTextCapacity(dom.templateContentInput);
     return settingsSnapshot;
   }
@@ -137,6 +194,22 @@ function createSettingsEditorController(options = {}) {
     const uploadRetryCount = normalizeUploadRetryCount(
       dom.uploadRetryCountInput ? dom.uploadRetryCountInput.value : currentSettings.uploadRetryCount
     );
+    const uploadTargetBytes = normalizeUploadTargetBytes(
+      dom.uploadTargetBytesInput ? dom.uploadTargetBytesInput.value : currentSettings.uploadTargetBytes
+    );
+    const uploadHardLimitBytes = normalizeUploadHardLimitBytes(
+      dom.uploadHardLimitBytesInput ? dom.uploadHardLimitBytesInput.value : currentSettings.uploadHardLimitBytes,
+      currentSettings.uploadHardLimitBytes,
+      uploadTargetBytes
+    );
+    const uploadAutoCompressEnabled = true;
+    if (dom.uploadAutoCompressEnabledInput) {
+      dom.uploadAutoCompressEnabledInput.value = "true";
+      dom.uploadAutoCompressEnabledInput.disabled = true;
+    }
+    const uploadCompressFormat = normalizeUploadCompressFormat(
+      dom.uploadCompressFormatInput ? dom.uploadCompressFormatInput.value : currentSettings.uploadCompressFormat
+    );
 
     const payload = saveSettingsUsecase({
       store,
@@ -144,6 +217,10 @@ function createSettingsEditorController(options = {}) {
       pollInterval,
       timeout,
       uploadRetryCount,
+      uploadTargetBytes,
+      uploadHardLimitBytes,
+      uploadAutoCompressEnabled,
+      uploadCompressFormat,
       pasteStrategy: currentSettings.pasteStrategy,
       cloudConcurrentJobs
     });

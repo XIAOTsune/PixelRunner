@@ -1,6 +1,10 @@
 const {
   normalizeCloudConcurrentJobs,
-  normalizeUploadRetryCount
+  normalizeUploadRetryCount,
+  normalizeUploadTargetBytes,
+  normalizeUploadHardLimitBytes,
+  normalizeUploadAutoCompressEnabled,
+  normalizeUploadCompressFormat
 } = require("../../domain/policies/run-settings-policy");
 
 function requireMethod(target, methodName, ownerName) {
@@ -20,6 +24,17 @@ function loadSettingsSnapshotUsecase(options = {}) {
     pollInterval: Number(settings && settings.pollInterval) || 2,
     timeout: Number(settings && settings.timeout) || 180,
     uploadRetryCount: normalizeUploadRetryCount(settings && settings.uploadRetryCount, 2),
+    uploadTargetBytes: normalizeUploadTargetBytes(settings && settings.uploadTargetBytes, 9_000_000),
+    uploadHardLimitBytes: normalizeUploadHardLimitBytes(
+      settings && settings.uploadHardLimitBytes,
+      10_000_000,
+      settings && settings.uploadTargetBytes
+    ),
+    uploadAutoCompressEnabled: normalizeUploadAutoCompressEnabled(
+      settings && settings.uploadAutoCompressEnabled,
+      true
+    ),
+    uploadCompressFormat: normalizeUploadCompressFormat(settings && settings.uploadCompressFormat, "jpeg"),
     pasteStrategy: String((settings && settings.pasteStrategy) || ""),
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(
       settings && settings.cloudConcurrentJobs,
@@ -52,6 +67,14 @@ function saveSettingsUsecase(options = {}) {
   const pollInterval = Number(options.pollInterval) || 2;
   const timeout = Number(options.timeout) || 180;
   const uploadRetryCount = normalizeUploadRetryCount(options.uploadRetryCount, 2);
+  const uploadTargetBytes = normalizeUploadTargetBytes(options.uploadTargetBytes, 9_000_000);
+  const uploadHardLimitBytes = normalizeUploadHardLimitBytes(
+    options.uploadHardLimitBytes,
+    10_000_000,
+    uploadTargetBytes
+  );
+  const uploadAutoCompressEnabled = normalizeUploadAutoCompressEnabled(options.uploadAutoCompressEnabled, true);
+  const uploadCompressFormat = normalizeUploadCompressFormat(options.uploadCompressFormat, "jpeg");
   const pasteStrategy = String(options.pasteStrategy || "").trim();
   const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 2);
 
@@ -60,6 +83,10 @@ function saveSettingsUsecase(options = {}) {
     pollInterval,
     timeout,
     uploadRetryCount,
+    uploadTargetBytes,
+    uploadHardLimitBytes,
+    uploadAutoCompressEnabled,
+    uploadCompressFormat,
     pasteStrategy,
     cloudConcurrentJobs
   });

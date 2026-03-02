@@ -36,12 +36,55 @@ test("captureImageInput returns image payload on success", async () => {
   assert.equal(called.revoke, 1);
   assert.equal(result.ok, true);
   assert.equal(result.value.previewUrl, "blob:new");
+  assert.deepEqual(result.value.sourceMeta, {
+    mime: "image/png",
+    bytes: 3,
+    width: 1,
+    height: 1,
+    bitDepth: null
+  });
+  assert.deepEqual(result.value.uploadMeta, {
+    mime: "image/png",
+    bytes: 3,
+    width: 1,
+    height: 1,
+    bitDepth: null,
+    risk: "safe"
+  });
+  assert.equal(result.value.compressionTrace.applied, false);
   assert.deepEqual(result.value.captureContext, {
     documentId: 77,
     documentTitle: "Doc-A",
     capturedAt: 1700000000000
   });
   assert.deepEqual(result.selectionBounds, { left: 1, top: 2, right: 3, bottom: 4 });
+});
+
+test("captureImageInput computes risk by configured target/hard-limit bytes", async () => {
+  const buffer = new Uint8Array(9_500_000).buffer;
+  const result = await captureImageInput({
+    ps: {
+      captureSelection: async () => ({
+        arrayBuffer: buffer,
+        sourceMeta: {
+          mime: "image/png",
+          bytes: buffer.byteLength,
+          width: 100,
+          height: 100,
+          bitDepth: 16
+        }
+      })
+    },
+    createPreviewUrlFromBuffer: () => "blob:new",
+    getUploadSettings: () => ({
+      uploadTargetBytes: 9_000_000,
+      uploadHardLimitBytes: 10_000_000
+    })
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.uploadMeta.risk, "risky");
+  assert.match(result.value.bitDepthHint, /16-bit/);
 });
 
 test("captureImageInput returns empty when capture has no binary", async () => {

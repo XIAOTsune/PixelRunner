@@ -16,7 +16,8 @@ function createWorkspaceInputs(deps) {
     isEmptyValue,
     updateCurrentAppMeta,
     updateRunButtonUI,
-    openTemplatePicker
+    openTemplatePicker,
+    getUploadSettings
   } = deps;
 
   const LARGE_PROMPT_WARNING_CHARS = textInputPolicy.LARGE_PROMPT_WARNING_CHARS;
@@ -83,7 +84,8 @@ function createWorkspaceInputs(deps) {
     clearImageInputByKey: inputState.clearImageInputByKey,
     applyCapturedImageByKey: inputState.applyCapturedImageByKey,
     revokePreviewUrl,
-    createPreviewUrlFromBuffer
+    createPreviewUrlFromBuffer,
+    getUploadSettings
   });
 
   function getInputOptions(input) {

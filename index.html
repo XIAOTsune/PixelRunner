@@ -344,6 +344,30 @@
           <input id="uploadRetryCountInput" type="number" min="0" max="5" value="2" />
           <div class="setting-hint">仅用于图片上传阶段。0 表示不重试，2 表示最多 3 轮尝试。</div>
         </div>
+        <div class="control-group">
+          <label for="uploadTargetBytesInput">上传目标体积（bytes）</label>
+          <input id="uploadTargetBytesInput" type="number" min="1000000" max="100000000" value="9000000" />
+          <div class="setting-hint">safe 判定阈值，建议 9000000。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadHardLimitBytesInput">上传硬上限（bytes）</label>
+          <input id="uploadHardLimitBytesInput" type="number" min="1000000" max="100000000" value="10000000" />
+          <div class="setting-hint">blocked 判定阈值，必须大于或等于目标体积。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadAutoCompressEnabledInput">自动压缩</label>
+          <select id="uploadAutoCompressEnabledInput" disabled>
+            <option value="true">始终开启</option>
+          </select>
+          <div class="setting-hint">运行链路固定自动压缩，设置页不再提供关闭入口。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadCompressFormatInput">自动压缩格式</label>
+          <select id="uploadCompressFormatInput">
+            <option value="jpeg">JPEG</option>
+          </select>
+          <div class="setting-hint">当前版本固定走 Photoshop 原生 JPEG 导出链路。</div>
+        </div>
       </div>
     </div>
 

@@ -2,10 +2,14 @@ const { STORAGE_KEYS, DEFAULT_SETTINGS, DEFAULT_PROMPT_TEMPLATES } = require("..
 const { generateId, safeJsonParse, normalizeAppId, inferInputType } = require("../utils");
 const {
   normalizeCloudConcurrentJobs,
-  normalizeUploadRetryCount
+  normalizeUploadRetryCount,
+  normalizeUploadTargetBytes,
+  normalizeUploadHardLimitBytes,
+  normalizeUploadAutoCompressEnabled,
+  normalizeUploadCompressFormat
 } = require("../domain/policies/run-settings-policy");
 const PASTE_STRATEGY_CHOICES = ["normal", "smart", "smartEnhanced"];
-const SETTINGS_SCHEMA_VERSION = 5;
+const SETTINGS_SCHEMA_VERSION = 6;
 const PROMPT_TEMPLATE_BUNDLE_FORMAT = "pixelrunner.prompt-templates";
 const PROMPT_TEMPLATE_BUNDLE_VERSION = 1;
 const LEGACY_PASTE_STRATEGY_MAP = {
@@ -59,6 +63,20 @@ function getSettings() {
     value.uploadRetryCount,
     DEFAULT_SETTINGS.uploadRetryCount
   );
+  let uploadTargetBytes = normalizeUploadTargetBytes(value.uploadTargetBytes, DEFAULT_SETTINGS.uploadTargetBytes);
+  let uploadHardLimitBytes = normalizeUploadHardLimitBytes(
+    value.uploadHardLimitBytes,
+    DEFAULT_SETTINGS.uploadHardLimitBytes,
+    uploadTargetBytes
+  );
+  let uploadAutoCompressEnabled = normalizeUploadAutoCompressEnabled(
+    value.uploadAutoCompressEnabled,
+    DEFAULT_SETTINGS.uploadAutoCompressEnabled
+  );
+  let uploadCompressFormat = normalizeUploadCompressFormat(
+    value.uploadCompressFormat,
+    DEFAULT_SETTINGS.uploadCompressFormat
+  );
   let pasteStrategy = String(value.pasteStrategy || "").trim();
   if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
     pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
@@ -74,6 +92,12 @@ function getSettings() {
   if (schemaVersion < SETTINGS_SCHEMA_VERSION) {
     if (timeout < DEFAULT_SETTINGS.timeout) timeout = DEFAULT_SETTINGS.timeout;
     if (schemaVersion < 5) uploadRetryCount = DEFAULT_SETTINGS.uploadRetryCount;
+    if (schemaVersion < 6) {
+      uploadTargetBytes = DEFAULT_SETTINGS.uploadTargetBytes;
+      uploadHardLimitBytes = DEFAULT_SETTINGS.uploadHardLimitBytes;
+      uploadAutoCompressEnabled = DEFAULT_SETTINGS.uploadAutoCompressEnabled;
+      uploadCompressFormat = DEFAULT_SETTINGS.uploadCompressFormat;
+    }
     shouldPersistMigration = true;
   }
 
@@ -81,6 +105,10 @@ function getSettings() {
     pollInterval: normalizePollInterval(value.pollInterval),
     timeout,
     uploadRetryCount,
+    uploadTargetBytes,
+    uploadHardLimitBytes,
+    uploadAutoCompressEnabled,
+    uploadCompressFormat,
     pasteStrategy,
     cloudConcurrentJobs
   };
@@ -100,6 +128,23 @@ function saveSettings(settings) {
     settings.uploadRetryCount,
     DEFAULT_SETTINGS.uploadRetryCount
   );
+  const uploadTargetBytes = normalizeUploadTargetBytes(
+    settings.uploadTargetBytes,
+    DEFAULT_SETTINGS.uploadTargetBytes
+  );
+  const uploadHardLimitBytes = normalizeUploadHardLimitBytes(
+    settings.uploadHardLimitBytes,
+    DEFAULT_SETTINGS.uploadHardLimitBytes,
+    uploadTargetBytes
+  );
+  const uploadAutoCompressEnabled = normalizeUploadAutoCompressEnabled(
+    settings.uploadAutoCompressEnabled,
+    DEFAULT_SETTINGS.uploadAutoCompressEnabled
+  );
+  const uploadCompressFormat = normalizeUploadCompressFormat(
+    settings.uploadCompressFormat,
+    DEFAULT_SETTINGS.uploadCompressFormat
+  );
   let pasteStrategy = String(settings.pasteStrategy || "").trim();
   if (LEGACY_PASTE_STRATEGY_MAP[pasteStrategy]) {
     pasteStrategy = LEGACY_PASTE_STRATEGY_MAP[pasteStrategy];
@@ -109,6 +154,10 @@ function saveSettings(settings) {
     pollInterval: normalizePollInterval(settings.pollInterval),
     timeout: normalizeTimeout(settings.timeout),
     uploadRetryCount,
+    uploadTargetBytes,
+    uploadHardLimitBytes,
+    uploadAutoCompressEnabled,
+    uploadCompressFormat,
     pasteStrategy,
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(settings.cloudConcurrentJobs, DEFAULT_SETTINGS.cloudConcurrentJobs),
     schemaVersion: SETTINGS_SCHEMA_VERSION

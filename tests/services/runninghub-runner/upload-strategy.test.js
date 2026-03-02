@@ -89,7 +89,7 @@ test("uploadImage throws when all endpoints fail", async () => {
 
   const warnLine = logs.find((entry) => entry.level === "warn");
   assert.ok(warnLine);
-  assert.match(warnLine.line, /HTTP 500/);
+  assert.match(warnLine.line, /"httpStatus":500/);
 });
 
 test("uploadImage retries network failures when uploadRetryCount is enabled", async () => {
@@ -148,4 +148,119 @@ test("uploadImage does not retry for non-retryable http status", async () => {
 
   // only one round (v2 + legacy) should run
   assert.equal(calls.length, 2);
+});
+
+test("uploadImage blocks locally when bytes exceed hard limit", async () => {
+  const calls = [];
+  const logs = [];
+  const fetchImpl = async () => {
+    calls.push(true);
+    return { ok: true, status: 200, payload: { code: 0, data: { fileName: "x" } } };
+  };
+
+  await assert.rejects(
+    () =>
+      uploadImage(
+        "api-key",
+        new Uint8Array(2_100_000).buffer,
+        {
+          uploadTargetBytes: 1_500_000,
+          uploadHardLimitBytes: 2_000_000,
+          log: (line, level) => logs.push({ line, level })
+        },
+        {
+          fetchImpl,
+          parseJsonResponse: async (response) => response.payload
+        }
+      ),
+    /preflight failed/i
+  );
+
+  assert.equal(calls.length, 0);
+  assert.equal(logs.some((entry) => /"stage":"preflight-blocked"/.test(entry.line)), true);
+});
+
+test("uploadImage emits structured diagnostic logs with source/upload metadata", async () => {
+  const logs = [];
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    payload: {
+      code: 0,
+      data: { fileName: "token-structured" }
+    }
+  });
+
+  const imageValue = {
+    arrayBuffer: (() => {
+      const bytes = new Uint8Array(1_200_000);
+      bytes[0] = 0xff;
+      bytes[1] = 0xd8;
+      bytes[2] = 0xff;
+      return bytes.buffer;
+    })(),
+    sourceMeta: {
+      mime: "image/png",
+      bytes: 1_800_000,
+      width: 1200,
+      height: 800,
+      bitDepth: 16
+    },
+    uploadMeta: {
+      mime: "image/jpeg",
+      bytes: 1_200_000,
+      width: 1024,
+      height: 682,
+      bitDepth: 8,
+      risk: "safe"
+    },
+    compressionTrace: {
+      applied: true,
+      quality: 8,
+      maxEdge: 4096,
+      attempts: 2,
+      durationMs: 180
+    }
+  };
+
+  const result = await uploadImage(
+    "api-key",
+    imageValue,
+    {
+      uploadTargetBytes: 1_000_000,
+      uploadHardLimitBytes: 2_000_000,
+      log: (line, level) => logs.push({ line, level })
+    },
+    {
+      fetchImpl,
+      parseJsonResponse: async (response) => response.payload
+    }
+  );
+
+  assert.equal(result.value, "token-structured");
+  const diagLines = logs.filter((entry) => entry.line.startsWith("[UploadDiag] "));
+  assert.equal(diagLines.length >= 2, true);
+
+  const preflight = JSON.parse(diagLines[0].line.slice("[UploadDiag] ".length));
+  assert.equal(preflight.stage, "preflight");
+  assert.equal(preflight.sourceBytes, 1_800_000);
+  assert.equal(preflight.uploadBytes, 1_200_000);
+  assert.equal(preflight.sourceMime, "image/png");
+  assert.equal(preflight.uploadMime, "image/jpeg");
+  assert.equal(preflight.sourceBitDepth, 16);
+  assert.equal(preflight.uploadBitDepth, 16);
+  assert.equal(preflight.compressionApplied, true);
+  assert.equal(preflight.quality, 8);
+  assert.equal(preflight.maxEdge, 4096);
+  assert.equal(preflight.riskBefore, "risky");
+  assert.equal(preflight.riskAfter, "risky");
+  assert.equal(preflight.riskBeforeStage, "source-meta");
+  assert.equal(preflight.riskAfterStage, "upload-buffer");
+  assert.equal(preflight.declaredUploadRisk, "safe");
+
+  const success = diagLines
+    .map((entry) => JSON.parse(entry.line.slice("[UploadDiag] ".length)))
+    .find((item) => item.stage === "endpoint-success");
+  assert.ok(success);
+  assert.equal(success.httpStatus, 200);
 });

@@ -4,6 +4,7 @@ const Module = require("node:module");
 
 const EXPECTED_EXPORTS = [
   "captureSelection",
+  "compressCapturedSelection",
   "placeImage",
   "createNeutralGrayLayer",
   "createObserverLayer",
@@ -78,6 +79,7 @@ test("ps facade re-exports functions from split modules", () => {
     const tools = require("../../../src/services/ps/tools");
 
     assert.equal(psFacade.captureSelection, capture.captureSelection);
+    assert.equal(psFacade.compressCapturedSelection, capture.compressCapturedSelection);
     assert.equal(psFacade.placeImage, place.placeImage);
     assert.equal(psFacade.createNeutralGrayLayer, tools.createNeutralGrayLayer);
     assert.equal(psFacade.createObserverLayer, tools.createObserverLayer);

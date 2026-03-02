@@ -29,6 +29,10 @@ const DEFAULT_SETTINGS = {
   pollInterval: 2,
   timeout: 180,
   uploadRetryCount: 2,
+  uploadTargetBytes: 9_000_000,
+  uploadHardLimitBytes: 10_000_000,
+  uploadAutoCompressEnabled: true,
+  uploadCompressFormat: "jpeg",
   pasteStrategy: "normal",
   cloudConcurrentJobs: 2
 };

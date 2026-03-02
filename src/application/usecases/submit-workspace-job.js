@@ -51,6 +51,8 @@ function submitWorkspaceJobUsecase(options = {}) {
     placementTarget = null,
     pasteStrategy,
     uploadRetryCount,
+    uploadTargetBytes,
+    uploadHardLimitBytes,
     pollSettings
   } = runSnapshot;
 
@@ -62,6 +64,8 @@ function submitWorkspaceJobUsecase(options = {}) {
     placementTarget,
     pasteStrategy,
     uploadRetryCount,
+    uploadTargetBytes,
+    uploadHardLimitBytes,
     pollSettings
   });
   const isRecentDuplicateFingerprint = runGuard.isRecentDuplicateFingerprint(runFingerprint, now);
@@ -77,6 +81,8 @@ function submitWorkspaceJobUsecase(options = {}) {
     placementTarget,
     pasteStrategy,
     uploadRetryCount,
+    uploadTargetBytes,
+    uploadHardLimitBytes,
     pollSettings,
     runFingerprint,
     status: queuedStatus,

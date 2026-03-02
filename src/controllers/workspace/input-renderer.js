@@ -17,7 +17,8 @@ function createInputRenderer(deps = {}) {
     clearImageInputByKey,
     applyCapturedImageByKey,
     revokePreviewUrl,
-    createPreviewUrlFromBuffer
+    createPreviewUrlFromBuffer,
+    getUploadSettings
   } = deps;
 
   if (!state || typeof state !== "object") {
@@ -97,6 +98,36 @@ function createInputRenderer(deps = {}) {
         : Boolean(input && input.required);
 
     if (type === "image") {
+      const toMbText = (bytes) => `${(Math.max(0, Number(bytes) || 0) / (1024 * 1024)).toFixed(2)} MB`;
+      const renderImageMeta = (target, imageValue) => {
+        if (!target) return;
+        const uploadMeta =
+          imageValue && imageValue.uploadMeta && typeof imageValue.uploadMeta === "object"
+            ? imageValue.uploadMeta
+            : null;
+        const sourceMeta =
+          imageValue && imageValue.sourceMeta && typeof imageValue.sourceMeta === "object"
+            ? imageValue.sourceMeta
+            : null;
+        if (!uploadMeta) {
+          target.textContent = "";
+          target.style.display = "none";
+          return;
+        }
+        const mime = String(uploadMeta.mime || "image/unknown");
+        const width = Math.max(1, Number(uploadMeta.width) || 1);
+        const height = Math.max(1, Number(uploadMeta.height) || 1);
+        const bytes = Math.max(0, Number(uploadMeta.bytes) || 0);
+        const bitDepthValue = Number(
+          (sourceMeta && sourceMeta.bitDepth) || uploadMeta.bitDepth || null
+        );
+        const bitDepth = Number.isFinite(bitDepthValue) && bitDepthValue > 0
+          ? `${Math.floor(bitDepthValue)}-bit`
+          : "-";
+        target.style.display = "block";
+        target.textContent = `${mime} | ${width}x${height} | ${bitDepth} | ${toMbText(bytes)}`;
+      };
+
       const container = document.createElement("div");
       container.style.marginBottom = "6px";
       container.className = "full-width";
@@ -111,7 +142,7 @@ function createInputRenderer(deps = {}) {
         <img class="image-preview" />
         <div class="image-input-overlay-content">
           <div class="image-input-icon">📷</div>
-          <div class="image-input-text">点击从 PS 选区获取</div>
+          <div class="image-input-text">点击从 PS 选区捕获</div>
         </div>
       `;
 
@@ -119,6 +150,11 @@ function createInputRenderer(deps = {}) {
       clearBtn.type = "button";
       clearBtn.textContent = "清空";
       clearBtn.className = "image-input-clear-btn";
+
+      const metaText = document.createElement("div");
+      metaText.className = "image-input-meta";
+      metaText.style.display = "none";
+
       clearBtn.addEventListener("click", (event) => {
         event.stopPropagation();
         const statusText = wrapper.querySelector(".image-input-text");
@@ -128,35 +164,45 @@ function createInputRenderer(deps = {}) {
           previewImg.src = "";
           previewImg.classList.remove("has-image");
         }
-        if (statusText) statusText.textContent = "点击从 PS 选区获取";
+        wrapper.classList.remove("has-image");
+        renderImageMeta(metaText, null);
+        if (statusText) statusText.textContent = "点击从 PS 选区捕获";
       });
       wrapper.appendChild(clearBtn);
+      wrapper.appendChild(metaText);
 
       wrapper.addEventListener("click", async () => {
         const statusText = wrapper.querySelector(".image-input-text");
         const previewImg = wrapper.querySelector(".image-preview");
         if (!statusText || !previewImg) return;
 
-        statusText.textContent = "正在获取图像中...";
+        statusText.textContent = "正在捕获图像中...";
         const result = await captureImageInput({
           ps,
           log,
           previousValue: typeof getInputValueByKey === "function" ? getInputValueByKey(key) : state.inputValues[key],
           revokePreviewUrl,
-          createPreviewUrlFromBuffer
+          createPreviewUrlFromBuffer,
+          getUploadSettings
         });
         if (!result || !result.ok || !result.value) {
           if (result && result.reason === "error") {
             console.error(result.message || "capture image failed");
           }
-          statusText.textContent = "获取失败";
+          statusText.textContent = "捕获失败";
           return;
         }
 
         applyCapturedImageByKey(key, result);
         previewImg.src = result.value.previewUrl || "";
         previewImg.classList.add("has-image");
-        statusText.textContent = "已捕获，点击重新获取";
+        wrapper.classList.add("has-image");
+        renderImageMeta(metaText, result.value);
+
+        const bytes = result.value.uploadMeta && Number(result.value.uploadMeta.bytes);
+        statusText.textContent = Number.isFinite(bytes)
+          ? `已捕获 ${toMbText(bytes)} | 点击重新捕获`
+          : "已捕获，点击重新捕获";
       });
 
       container.appendChild(labelEl);
@@ -484,3 +530,4 @@ function createInputRenderer(deps = {}) {
 module.exports = {
   createInputRenderer
 };
+

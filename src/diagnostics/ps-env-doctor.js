@@ -7,6 +7,7 @@ const ps = require("../services/ps.js");
 const DIAGNOSTIC_STORAGE_KEY = "rh_env_diagnostic_latest";
 const REQUIRED_PS_EXPORTS = [
   "captureSelection",
+  "compressCapturedSelection",
   "placeImage",
   "createNeutralGrayLayer",
   "createObserverLayer",

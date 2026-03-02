@@ -107,7 +107,10 @@ function createFixture(options = {}) {
         options.settings || {
           pollInterval: 2,
           timeout: 180,
-          uploadMaxEdge: 0,
+          uploadTargetBytes: 9_000_000,
+          uploadHardLimitBytes: 10_000_000,
+          uploadAutoCompressEnabled: true,
+          uploadCompressFormat: "jpeg",
           pasteStrategy: "normal",
           cloudConcurrentJobs: 2
         }
@@ -147,7 +150,7 @@ function createFixture(options = {}) {
             capturedAt: 1700000000000
           }),
     runninghub: {},
-    ps: {},
+    ps: options.ps || {},
     setJobStatus: (job, status, reason = "") => {
       calls.setJobStatus.push({ job, status, reason });
       job.status = status;
@@ -195,6 +198,45 @@ function createFixture(options = {}) {
     state,
     calls,
     captured
+  };
+}
+
+function createImageValue(bytes, options = {}) {
+  const safeBytes = Math.max(1, Number(bytes) || 1);
+  const bitDepth = Number.isFinite(Number(options.bitDepth)) ? Number(options.bitDepth) : 8;
+  return {
+    arrayBuffer: new Uint8Array(safeBytes).buffer,
+    captureContext: options.captureContext || {
+      documentId: 11,
+      documentTitle: "Doc-A",
+      capturedAt: 1700000000000
+    },
+    sourceMeta: {
+      mime: "image/png",
+      bytes: safeBytes,
+      width: 100,
+      height: 100,
+      bitDepth
+    },
+    uploadMeta: {
+      mime: "image/png",
+      bytes: safeBytes,
+      width: 100,
+      height: 100,
+      bitDepth,
+      risk: "unknown"
+    },
+    compressionTrace: {
+      applied: false,
+      format: "jpeg",
+      quality: null,
+      maxEdge: null,
+      attempts: 0,
+      durationMs: 0,
+      beforeBytes: safeBytes,
+      afterBytes: safeBytes,
+      outcome: "not-applied"
+    }
   };
 }
 
@@ -333,3 +375,215 @@ test("run workflow controller logs warning when placement target is missing", as
     true
   );
 });
+
+test("run workflow controller preflight forces auto compress even when setting is disabled", async () => {
+  const compressCalls = [];
+  const fixture = createFixture({
+    currentApp: {
+      id: "app-1",
+      name: "Portrait",
+      inputs: [{ key: "image:main", label: "main", type: "image", required: true }]
+    },
+    inputValues: {
+      "image:main": createImageValue(1_500_000)
+    },
+    settings: {
+      pollInterval: 2,
+      timeout: 180,
+      uploadTargetBytes: 1_200_000,
+      uploadHardLimitBytes: 2_000_000,
+      uploadAutoCompressEnabled: false,
+      uploadCompressFormat: "jpeg",
+      pasteStrategy: "normal",
+      cloudConcurrentJobs: 2
+    },
+    ps: {
+      compressCapturedSelection: async (args) => {
+        compressCalls.push(args);
+        return {
+          applied: true,
+          arrayBuffer: new Uint8Array([1, 2, 3, 4, 5]).buffer,
+          uploadMeta: {
+            mime: "image/jpeg",
+            bytes: 5,
+            width: 100,
+            height: 100,
+            bitDepth: 8
+          },
+          compressionTrace: {
+            applied: true,
+            format: "jpeg",
+            quality: 8,
+            maxEdge: 4096,
+            attempts: 2,
+            durationMs: 30,
+            beforeBytes: 1_500_000,
+            afterBytes: 5,
+            outcome: "satisfied"
+          }
+        };
+      }
+    }
+  });
+  const { controller, calls, state } = fixture;
+
+  await controller.handleRun();
+
+  assert.equal(compressCalls.length, 1);
+  assert.ok(calls.submitArgs);
+  assert.equal(state.jobs.length, 1);
+  assert.equal(calls.logs.some((item) => /uploadAutoCompressEnabled=false ignored/.test(item.message)), true);
+});
+
+test("run workflow controller preflight auto compresses risky image and then submits", async () => {
+  const compressCalls = [];
+  const fixture = createFixture({
+    currentApp: {
+      id: "app-1",
+      name: "Portrait",
+      inputs: [{ key: "image:main", label: "主图", type: "image", required: true }]
+    },
+    inputValues: {
+      "image:main": createImageValue(1_500_000)
+    },
+    settings: {
+      pollInterval: 2,
+      timeout: 180,
+      uploadTargetBytes: 1_200_000,
+      uploadHardLimitBytes: 2_000_000,
+      uploadAutoCompressEnabled: true,
+      uploadCompressFormat: "jpeg",
+      pasteStrategy: "normal",
+      cloudConcurrentJobs: 2
+    },
+    ps: {
+      compressCapturedSelection: async (args) => {
+        compressCalls.push(args);
+        return {
+          applied: true,
+          arrayBuffer: new Uint8Array([1, 2, 3, 4, 5]).buffer,
+          uploadMeta: {
+            mime: "image/jpeg",
+            bytes: 5,
+            width: 100,
+            height: 100,
+            bitDepth: 8
+          },
+          compressionTrace: {
+            applied: true,
+            format: "jpeg",
+            quality: 8,
+            maxEdge: 4096,
+            attempts: 2,
+            durationMs: 30,
+            beforeBytes: 1_500_000,
+            afterBytes: 5,
+            outcome: "satisfied"
+          }
+        };
+      }
+    }
+  });
+  const { controller, calls, state } = fixture;
+
+  await controller.handleRun();
+
+  assert.equal(compressCalls.length, 1);
+  assert.ok(calls.submitArgs);
+  assert.equal(state.jobs.length, 1);
+  assert.equal(state.inputValues["image:main"].arrayBuffer.byteLength, 5);
+  assert.equal(state.inputValues["image:main"].sourceMeta.mime, "image/png");
+  assert.equal(state.inputValues["image:main"].sourceMeta.bytes, 1_500_000);
+  assert.equal(state.inputValues["image:main"].uploadMeta.mime, "image/jpeg");
+  assert.equal(state.inputValues["image:main"].uploadMeta.bytes, 5);
+  assert.equal(state.inputValues["image:main"].uploadMeta.risk, "safe");
+  assert.equal(calls.logs.some((item) => /\[Preflight\].*compressed to/.test(item.message)), true);
+});
+
+test("run workflow controller preflight blocks when compression result is still blocked", async () => {
+  const fixture = createFixture({
+    currentApp: {
+      id: "app-1",
+      name: "Portrait",
+      inputs: [{ key: "image:main", label: "主图", type: "image", required: true }]
+    },
+    inputValues: {
+      "image:main": createImageValue(2_500_000)
+    },
+    settings: {
+      pollInterval: 2,
+      timeout: 180,
+      uploadTargetBytes: 1_200_000,
+      uploadHardLimitBytes: 2_000_000,
+      uploadAutoCompressEnabled: true,
+      uploadCompressFormat: "jpeg",
+      pasteStrategy: "normal",
+      cloudConcurrentJobs: 2
+    },
+    ps: {
+      compressCapturedSelection: async () => ({
+        applied: true,
+        arrayBuffer: new Uint8Array(2_100_000).buffer,
+        uploadMeta: {
+          mime: "image/jpeg",
+          bytes: 2_100_000,
+          width: 100,
+          height: 100,
+          bitDepth: 8
+        },
+        compressionTrace: {
+          applied: true,
+          format: "jpeg",
+          quality: 4,
+          maxEdge: 2048,
+          attempts: 8,
+          durationMs: 200,
+          beforeBytes: 2_500_000,
+          afterBytes: 2_100_000,
+          outcome: "satisfied"
+        }
+      })
+    }
+  });
+  const { controller, calls, state } = fixture;
+
+  await controller.handleRun();
+
+  assert.equal(state.jobs.length, 0);
+  assert.equal(calls.submitArgs, null);
+  assert.equal(calls.feedback.some((item) => /硬上限|超过/.test(item.message)), true);
+});
+
+test("run workflow controller preflight keeps bit-depth as warning only", async () => {
+  const fixture = createFixture({
+    currentApp: {
+      id: "app-1",
+      name: "Portrait",
+      inputs: [{ key: "image:main", label: "主图", type: "image", required: true }]
+    },
+    inputValues: {
+      "image:main": createImageValue(1_100_000, { bitDepth: 16 })
+    },
+    settings: {
+      pollInterval: 2,
+      timeout: 180,
+      uploadTargetBytes: 1_200_000,
+      uploadHardLimitBytes: 2_000_000,
+      uploadAutoCompressEnabled: false,
+      uploadCompressFormat: "jpeg",
+      pasteStrategy: "normal",
+      cloudConcurrentJobs: 2
+    }
+  });
+  const { controller, calls, state } = fixture;
+
+  await controller.handleRun();
+
+  assert.ok(calls.submitArgs);
+  assert.equal(state.jobs.length, 1);
+  assert.equal(
+    calls.logs.some((item) => item.level === "warn" && /bit depth 16-bit \(提示，不阻断\)/.test(item.message)),
+    true
+  );
+});
+
