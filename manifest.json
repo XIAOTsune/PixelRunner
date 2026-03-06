@@ -1,7 +1,7 @@
 {
   "id": "my.runninghub.plugin",
   "name": "小T修图助手",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "main": "index.html",
   "manifestVersion": 5,
   "entrypoints": [

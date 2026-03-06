@@ -1341,7 +1341,9 @@ async function computeSmartEnhancedAlignment(sourceBuffer, outputBuffer, options
 
 async function buildContentReference(arrayBuffer, strategy, options = {}) {
   const normalizedStrategy = normalizePasteStrategy(strategy);
-  const mode = normalizedStrategy === "normal" ? "cover" : "cover";
+  // `normal` should keep the pasted result inside target bounds to avoid
+  // unexpected enlargement/overflow on transparent outputs.
+  const mode = normalizedStrategy === "normal" ? "contain" : "cover";
   return { mode, sourceSize: null, sourceRefBox: null };
 }
 
