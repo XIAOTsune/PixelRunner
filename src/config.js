@@ -14,6 +14,7 @@ const API = {
     AI_APP_RUN: "/task/openapi/ai-app/run",
     LEGACY_CREATE_TASK: "/task/openapi/create",
     TASK_OUTPUTS: "/task/openapi/outputs",
+    CANCEL_TASK: "/task/openapi/cancel",
     ACCOUNT_STATUS: "/uc/openapi/accountStatus",
     UPLOAD_V2: "/openapi/v2/media/upload/binary",
     UPLOAD_LEGACY: "/uc/openapi/upload"

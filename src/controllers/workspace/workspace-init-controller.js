@@ -1,5 +1,6 @@
 const WORKSPACE_DOM_IDS = [
   "btnRun",
+  "btnCancelJob",
   "btnOpenAppPicker",
   "btnRefreshWorkspaceApps",
   "btnClearLog",
@@ -49,6 +50,7 @@ function createWorkspaceInitController(options = {}) {
 
   function bindWorkspaceEvents(handlers = {}) {
     rebindEvent(dom.btnRun, "click", handlers.onRun);
+    rebindEvent(dom.btnCancelJob, "click", handlers.onCancelLatestJob);
     rebindEvent(dom.btnOpenAppPicker, "click", handlers.onOpenAppPickerModal);
     rebindEvent(dom.appPickerModalClose, "click", handlers.onCloseAppPickerModal);
     rebindEvent(dom.appPickerModal, "click", handlers.onAppPickerModalClick);
@@ -76,6 +78,7 @@ function createWorkspaceInitController(options = {}) {
   function bindWorkspaceEventsFromDelegates(delegates = {}) {
     bindWorkspaceEvents({
       onRun: delegates.handleRun,
+      onCancelLatestJob: delegates.handleCancelLatestJob,
       onOpenAppPickerModal: delegates.openAppPickerModal,
       onCloseAppPickerModal: delegates.closeAppPickerModal,
       onAppPickerModalClick: delegates.onAppPickerModalClick,

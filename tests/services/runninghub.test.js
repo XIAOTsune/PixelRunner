@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { RUNNINGHUB_ERROR_CODES } = require("../../src/services/runninghub-error-codes");
-const { downloadResultBinary } = require("../../src/services/runninghub");
+const { cancelTask, downloadResultBinary } = require("../../src/services/runninghub");
 
 test("downloadResultBinary enforces hard timeout and does not hang forever", async () => {
   const originalFetch = global.fetch;
@@ -42,6 +42,62 @@ test("downloadResultBinary returns arrayBuffer when response is successful", asy
     const data = await downloadResultBinary("https://example.test/result.bin", { requestTimeoutMs: 200 });
     assert.equal(data instanceof ArrayBuffer, true);
     assert.equal(data.byteLength, 4);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("cancelTask posts apiKey and taskId to cancel endpoint", async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, init) => {
+    calls.push({
+      url,
+      method: init && init.method,
+      body: init && init.body ? JSON.parse(init.body) : null
+    });
+    return {
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => "application/json"
+      },
+      json: async () => ({
+        code: 0,
+        msg: "success",
+        data: null
+      })
+    };
+  };
+
+  try {
+    const result = await cancelTask("api-key", "task-1");
+    assert.equal(result, null);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/task\/openapi\/cancel$/);
+    assert.equal(calls[0].method, "POST");
+    assert.deepEqual(calls[0].body, { apiKey: "api-key", taskId: "task-1" });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("cancelTask throws when api rejects the cancellation request", async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: {
+      get: () => "application/json"
+    },
+    json: async () => ({
+      code: 807,
+      msg: "APIKEY_TASK_NOT_FOUND"
+    })
+  });
+
+  try {
+    await assert.rejects(() => cancelTask("api-key", "task-missing"), /APIKEY_TASK_NOT_FOUND/);
   } finally {
     global.fetch = originalFetch;
   }

@@ -1985,10 +1985,22 @@ textarea {
   background: transparent;
   border: none;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-stage-run #btnRun {
+  order: 1;
+}
+
+.workspace-stage-run #btnCancelJob {
+  order: 2;
 }
 
 .workspace-stage-run .task-status-summary {
-  margin-top: 8px;
+  order: 3;
+  margin-top: 0;
 }
 
 .workspace-stage-log .log-toolbar {
@@ -2192,7 +2204,7 @@ textarea {
 }
 
 .workspace-stage-run .task-status-summary {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .workspace-stage-log .log-toolbar {

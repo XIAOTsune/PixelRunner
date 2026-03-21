@@ -7,11 +7,13 @@ const {
   classifyUploadRiskByBytes,
   formatBytesAsMbText
 } = require("../../domain/policies/run-settings-policy");
+const { findLatestCancelableJob } = require("../../application/services/run-button");
 
 const DEFAULT_COMPRESSION_QUALITY_STEPS = [10, 8, 7, 6, 5, 4];
 const DEFAULT_COMPRESSION_EDGE_STEPS = [6144, 5120, 4096, 3072, 2560, 2048];
 const DEFAULT_COMPRESSION_MAX_ATTEMPTS = 18;
 const DEFAULT_COMPRESSION_DURATION_MS = 12_000;
+const RUN_CANCELLED_ERROR_CODE = "RUN_CANCELLED";
 
 function isImageInputDefinition(input) {
   const typeMarker = String((input && (input.type || input.fieldType)) || "").toLowerCase();
@@ -148,6 +150,10 @@ function createRunWorkflowController(options = {}) {
     typeof options.createJobExecutor === "function" ? options.createJobExecutor : () => ({ execute: async () => {}, reset: () => {} });
   const createJobScheduler =
     typeof options.createJobScheduler === "function" ? options.createJobScheduler : () => ({ pump: () => {}, dispose: () => {} });
+  const refreshRunControls =
+    typeof options.refreshRunControls === "function" ? options.refreshRunControls : () => {};
+  const clearTaskSummaryHint =
+    typeof options.clearTaskSummaryHint === "function" ? options.clearTaskSummaryHint : () => {};
   const updateTaskStatusSummary =
     typeof options.updateTaskStatusSummary === "function" ? options.updateTaskStatusSummary : () => {};
   const pruneJobHistory = typeof options.pruneJobHistory === "function" ? options.pruneJobHistory : () => {};
@@ -194,6 +200,31 @@ function createRunWorkflowController(options = {}) {
     return /timeout|超时/.test(message);
   }
 
+  function isCancelledError(error) {
+    if (error && error.code === RUN_CANCELLED_ERROR_CODE) return true;
+    const message = String((error && error.message) || error || "").toLowerCase();
+    return /cancel|abort|中止/.test(message);
+  }
+
+  function isTerminalJobStatus(status) {
+    return [jobStatus.DONE, jobStatus.FAILED, jobStatus.CANCELLED].includes(status);
+  }
+
+  function findCurrentCancelableJob() {
+    return findLatestCancelableJob(state.jobs, jobStatus);
+  }
+
+  function finalizeCancelledJob(job, reason = "") {
+    if (!job) return;
+    job.cancelPending = false;
+    job.cancelRequested = true;
+    job.finishedAt = now();
+    clearTaskSummaryHint();
+    setJobStatus(job, jobStatus.CANCELLED, reason);
+    pruneJobHistory();
+    updateTaskStatusSummary();
+  }
+
   function ensureJobServices() {
     if (!jobExecutor) {
       jobExecutor = createJobExecutor({
@@ -222,6 +253,9 @@ function createRunWorkflowController(options = {}) {
           updateTaskStatusSummary();
         },
         onJobExecutionError: (job, error) => {
+          if ((job && job.status === jobStatus.CANCELLED) || isCancelledError(error)) {
+            return;
+          }
           const message = error && error.message ? error.message : String(error || "unknown error");
           setJobStatus(job, jobStatus.FAILED, message);
           createJobScopedLogger(job)(`任务失败: ${message}`, "error");
@@ -476,6 +510,47 @@ function createRunWorkflowController(options = {}) {
     }
   }
 
+  async function handleCancelLatestJob() {
+    const job = findCurrentCancelableJob();
+    if (!job || isTerminalJobStatus(job.status)) return;
+
+    const jobLog = createJobScopedLogger(job);
+    const reason = "任务已取消";
+    job.cancelPending = true;
+    refreshRunControls();
+
+    try {
+      const apiKey = String((job && job.apiKey) || (store && typeof store.getApiKey === "function" ? store.getApiKey() : ""));
+      const hasRemoteTask = Boolean(job && job.remoteTaskId);
+      const shouldCancelRemotely =
+        hasRemoteTask &&
+        [jobStatus.REMOTE_RUNNING, jobStatus.DOWNLOADING, jobStatus.APPLYING, jobStatus.TIMEOUT_TRACKING].includes(job.status);
+
+      if (shouldCancelRemotely) {
+        if (!runninghub || typeof runninghub.cancelTask !== "function") {
+          throw new Error("runninghub.cancelTask is unavailable");
+        }
+        await runninghub.cancelTask(apiKey, job.remoteTaskId, {
+          requestTimeoutMs: 30000
+        });
+      }
+
+      ensureJobServices();
+      job.cancelRequested = true;
+      if (jobExecutor && typeof jobExecutor.abort === "function") {
+        jobExecutor.abort(job);
+      }
+
+      finalizeCancelledJob(job, reason);
+      jobLog(reason, "info");
+    } catch (error) {
+      job.cancelPending = false;
+      refreshRunControls();
+      const message = error && error.message ? error.message : String(error || "unknown error");
+      log(`[${getJobTag(job)}] 取消失败: ${message}`, "error");
+    }
+  }
+
   function dispose() {
     if (jobScheduler) {
       jobScheduler.dispose();
@@ -489,6 +564,7 @@ function createRunWorkflowController(options = {}) {
 
   return {
     handleRun,
+    handleCancelLatestJob,
     pumpJobScheduler,
     dispose
   };

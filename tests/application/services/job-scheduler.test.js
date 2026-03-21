@@ -230,6 +230,7 @@ test("job executor forwards placementTarget to ps.placeImage", async () => {
   assert.equal(job.status, "DONE");
   assert.equal(placeCalls.length, 1);
   assert.equal(placeCalls[0].buffer, downloadedBuffer);
+  assert.equal(typeof placeCalls[0].placeOptions.signal, "object");
   assert.deepEqual(placeCalls[0].placeOptions.placementTarget, {
     documentId: 321,
     sourceInputKey: "image:main",
@@ -237,4 +238,72 @@ test("job executor forwards placementTarget to ps.placeImage", async () => {
   });
   assert.deepEqual(placeCalls[0].placeOptions.targetBounds, { left: 1, top: 2, right: 11, bottom: 12 });
   assert.notEqual(placeCalls[0].placeOptions.targetBounds, job.targetBounds);
+});
+
+test("job executor abort stops in-flight polling without marking job failed", async () => {
+  const statusHistory = [];
+  let releasePoll = null;
+  const job = {
+    remoteTaskId: "remote-3",
+    timeoutRecoveries: 0,
+    nextRunAt: 0,
+    pollSettings: { pollInterval: 2, timeout: 180 },
+    sourceBuffer: null,
+    targetBounds: null,
+    pasteStrategy: "normal",
+    appItem: { id: "app-1" },
+    inputValues: {},
+    apiKey: "k",
+    cancelRequested: false
+  };
+
+  const executor = createJobExecutor({
+    runninghub: {
+      runAppTask: async () => "unused",
+      pollTaskOutput: async (_apiKey, _taskId, _settings, options) =>
+        new Promise((resolve, reject) => {
+          releasePoll = () => {
+            if (options && options.signal && options.signal.aborted) {
+              const error = new Error("Run cancelled");
+              error.code = "RUN_CANCELLED";
+              reject(error);
+              return;
+            }
+            resolve("https://example.com/result.png");
+          };
+        }),
+      downloadResultBinary: async () => new ArrayBuffer(8)
+    },
+    ps: {
+      placeImage: async () => {}
+    },
+    setJobStatus: (targetJob, status) => {
+      targetJob.status = status;
+      statusHistory.push(status);
+    },
+    createJobLogger: () => () => {},
+    cloneBounds: (bounds) => bounds,
+    cloneArrayBuffer: (buffer) => buffer,
+    isJobTimeoutLikeError: () => false,
+    jobStatus: {
+      SUBMITTING: "SUBMITTING",
+      REMOTE_RUNNING: "REMOTE_RUNNING",
+      DOWNLOADING: "DOWNLOADING",
+      APPLYING: "APPLYING",
+      DONE: "DONE",
+      FAILED: "FAILED",
+      TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
+      CANCELLED: "CANCELLED"
+    }
+  });
+
+  const execution = executor.execute(job);
+  job.cancelRequested = true;
+  assert.equal(executor.abort(job), true);
+  assert.equal(typeof releasePoll, "function");
+  releasePoll();
+  await execution;
+
+  assert.deepEqual(statusHistory, ["REMOTE_RUNNING"]);
+  assert.notEqual(job.status, "FAILED");
 });

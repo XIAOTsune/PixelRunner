@@ -32,6 +32,48 @@ function buildRunButtonViewModel({ currentApp, runButtonPhase, runButtonPhaseEnu
   };
 }
 
+function resolveTerminalJobStatuses(jobStatus = {}) {
+  return new Set([
+    jobStatus.DONE || "DONE",
+    jobStatus.FAILED || "FAILED",
+    jobStatus.CANCELLED || "CANCELLED"
+  ]);
+}
+
+function findLatestCancelableJob(jobs, jobStatus = {}) {
+  const list = Array.isArray(jobs) ? jobs : [];
+  const terminalStatuses = resolveTerminalJobStatuses(jobStatus);
+  for (let i = 0; i < list.length; i += 1) {
+    const job = list[i];
+    if (!job || terminalStatuses.has(job.status) || job.cancelPending) continue;
+    return job;
+  }
+  return null;
+}
+
+function buildCancelButtonViewModel({ jobs, jobStatus }) {
+  const job = findLatestCancelableJob(jobs, jobStatus);
+  if (!job) {
+    return {
+      disabled: true,
+      text: "取消任务",
+      title: "当前没有可取消的任务"
+    };
+  }
+
+  const jobId = String(job.jobId || "").trim();
+  const statusText = String(job.status || "").trim();
+  const parts = [];
+  if (jobId) parts.push(jobId);
+  if (statusText) parts.push(statusText);
+
+  return {
+    disabled: false,
+    text: "取消最新任务",
+    title: parts.length > 0 ? `取消 ${parts.join(" / ")}` : "取消最新任务"
+  };
+}
+
 function createRunButtonPhaseController(options = {}) {
   const phaseEnum = options.runButtonPhaseEnum || {};
   const phaseIdle = phaseEnum.IDLE || "IDLE";
@@ -135,5 +177,7 @@ function createRunButtonPhaseController(options = {}) {
 
 module.exports = {
   buildRunButtonViewModel,
+  buildCancelButtonViewModel,
+  findLatestCancelableJob,
   createRunButtonPhaseController
 };

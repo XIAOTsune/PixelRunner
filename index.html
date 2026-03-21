@@ -14,7 +14,7 @@
     2) Keep modal hooks and critical tag types stable.
     3) UI optimization can change visual style/layout only, not business behavior.
     Core workspace ids:
-    btnRun, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog,
+    btnRun, btnCancelJob, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog,
     taskStatusSummary, appPickerMeta, dynamicInputContainer, imageInputContainer, logWindow,
     appPickerModal, appPickerModalClose, appPickerSearchInput, appPickerStats, appPickerList,
     templateModal, templateModalTitle, templateList, templateModalActions,
@@ -239,6 +239,7 @@
     </div>
 
     <div class="workspace-stage workspace-stage-run">
+      <button id="btnCancelJob" class="main-btn main-btn-secondary" type="button" disabled>取消任务</button>
       <button id="btnRun" class="main-btn main-btn-primary" type="button" disabled>开始运行</button>
       <div id="taskStatusSummary" class="task-status-summary">后台任务：无</div>
     </div>

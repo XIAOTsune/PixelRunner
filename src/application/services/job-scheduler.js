@@ -50,11 +50,13 @@ function createJobExecutor(options = {}) {
   }
 
   let applyQueue = Promise.resolve();
+  const activeControllers = new Map();
 
-  async function enqueueApplyWork(job, buffer) {
+  async function enqueueApplyWork(job, buffer, signal) {
     const task = async () => {
       await ps.placeImage(buffer, {
         log: createJobLogger(job),
+        signal,
         targetBounds: cloneBounds(job.targetBounds),
         pasteStrategy: job.pasteStrategy,
         sourceBuffer: cloneArrayBuffer(job.sourceBuffer),
@@ -70,6 +72,7 @@ function createJobExecutor(options = {}) {
     const jobLog = createJobLogger(job);
     const signalController = new AbortController();
     const signal = signalController.signal;
+    activeControllers.set(job, signalController);
     const runOptions = {
       log: jobLog,
       signal,
@@ -94,13 +97,17 @@ function createJobExecutor(options = {}) {
       const buffer = await runninghub.downloadResultBinary(job.resultUrl, runOptions);
 
       setJobStatus(job, jobStatus.APPLYING);
-      await enqueueApplyWork(job, buffer);
+      await enqueueApplyWork(job, buffer, signal);
 
       setJobStatus(job, jobStatus.DONE);
       job.finishedAt = Date.now();
       jobLog("处理完成，结果已回贴", "success");
       if (onJobCompleted) onJobCompleted(job);
     } catch (error) {
+      if ((error && error.code === "RUN_CANCELLED") || job.cancelRequested || job.status === jobStatus.CANCELLED) {
+        return;
+      }
+
       const message = defaultToMessage(error);
       if (
         isJobTimeoutLikeError(error) &&
@@ -116,18 +123,34 @@ function createJobExecutor(options = {}) {
         );
         return;
       }
+
       setJobStatus(job, jobStatus.FAILED, message);
       job.finishedAt = Date.now();
       jobLog(`任务失败: ${message}`, "error");
+    } finally {
+      activeControllers.delete(job);
     }
   }
 
+  function abort(job) {
+    const controller = activeControllers.get(job);
+    if (!controller || typeof controller.abort !== "function") return false;
+    controller.abort();
+    return true;
+  }
+
   function reset() {
+    activeControllers.forEach((controller) => {
+      if (!controller || typeof controller.abort !== "function") return;
+      controller.abort();
+    });
+    activeControllers.clear();
     applyQueue = Promise.resolve();
   }
 
   return {
     execute,
+    abort,
     reset
   };
 }

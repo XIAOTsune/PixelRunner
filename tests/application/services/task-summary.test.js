@@ -21,12 +21,13 @@ test("getJobElapsedSeconds returns fixed seconds and handles invalid start", () 
 });
 
 test("hasLiveJobs ignores done/failed and detects active jobs", () => {
-  const status = { DONE: "DONE", FAILED: "FAILED" };
+  const status = { DONE: "DONE", FAILED: "FAILED", CANCELLED: "CANCELLED" };
   assert.equal(
     hasLiveJobs(
       [
         { status: "DONE" },
-        { status: "FAILED" }
+        { status: "FAILED" },
+        { status: "CANCELLED" }
       ],
       status
     ),
@@ -53,7 +54,8 @@ test("collectTaskSummaryStats aggregates counts, previews and warning state", ()
     APPLYING: "APPLYING",
     TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
     DONE: "DONE",
-    FAILED: "FAILED"
+    FAILED: "FAILED",
+    CANCELLED: "CANCELLED"
   };
   const jobs = [
     { status: "SUBMITTING", jobId: "j1" },
@@ -102,23 +104,57 @@ test("collectTaskSummaryStats marks success only for fully settled success jobs"
   assert.equal(stats.hasSuccess, true);
 });
 
+test("collectTaskSummaryStats hides cancelled jobs from summary counts and previews", () => {
+  const stats = collectTaskSummaryStats({
+    jobs: [
+      { status: "CANCELLED", jobId: "j-cancelled" },
+      { status: "DONE", jobId: "j-done" }
+    ],
+    jobStatus: {
+      DONE: "DONE",
+      FAILED: "FAILED",
+      CANCELLED: "CANCELLED"
+    }
+  });
+
+  assert.equal(stats.isEmpty, false);
+  assert.equal(stats.done, 1);
+  assert.equal(stats.failed, 0);
+  assert.equal(stats.activeJobs.length, 0);
+  assert.deepEqual(stats.previewJobs.map((job) => job.jobId), ["j-done"]);
+});
+
+test("buildTaskSummaryViewModel treats cancelled-only history as empty state", () => {
+  const vm = buildTaskSummaryViewModel({
+    jobs: [{ jobId: "J-cancelled", status: "CANCELLED" }],
+    jobStatus: {
+      DONE: "DONE",
+      FAILED: "FAILED",
+      CANCELLED: "CANCELLED"
+    }
+  });
+
+  assert.match(vm.text, /后台任务：无/);
+  assert.equal(vm.title, "");
+});
+
 test("buildTaskSummaryViewModel builds empty-state text and info tone", () => {
   const vm = buildTaskSummaryViewModel({
     jobs: [],
-    hint: { type: "info", text: "最近操作：任务已提交" }
+    hint: { type: "info", text: "recent action" }
   });
 
   assert.equal(vm.tone, "info");
   assert.equal(vm.title, "");
   assert.match(vm.text, /后台任务：无/);
-  assert.match(vm.text, /最近操作：任务已提交/);
+  assert.match(vm.text, /recent action/);
 });
 
 test("buildTaskSummaryViewModel builds summary lines and preview title", () => {
   const now = 5000;
   const vm = buildTaskSummaryViewModel({
     now,
-    hint: { type: "warn", text: "任务超时" },
+    hint: { type: "warn", text: "timeout hint" },
     jobs: [
       {
         jobId: "J1",
@@ -135,15 +171,15 @@ test("buildTaskSummaryViewModel builds summary lines and preview title", () => {
       }
     ],
     resolveJobStatusLabel: (status) => {
-      if (status === "QUEUED") return "排队";
-      if (status === "DONE") return "完成";
+      if (status === "QUEUED") return "Queued";
+      if (status === "DONE") return "Done";
       return status || "-";
     }
   });
 
   assert.equal(vm.tone, "warning");
   assert.match(vm.text, /后台任务：运行 0｜排队 1｜完成 1｜失败 0/);
-  assert.match(vm.text, /J1 排队 2.00s/);
-  assert.match(vm.title, /Hint \| 任务超时/);
-  assert.match(vm.title, /J2 \| App2 \| 完成 \| 0.00s \| remote-2/);
+  assert.match(vm.text, /J1 Queued 2.00s/);
+  assert.match(vm.title, /Hint \| timeout hint/);
+  assert.match(vm.title, /J2 \| App2 \| Done \| 0.00s \| remote-2/);
 });

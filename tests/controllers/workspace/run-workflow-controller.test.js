@@ -10,7 +10,8 @@ const JOB_STATUS = {
   APPLYING: "APPLYING",
   TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
   DONE: "DONE",
-  FAILED: "FAILED"
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED"
 };
 
 function createFixture(options = {}) {
@@ -33,6 +34,7 @@ function createFixture(options = {}) {
     setJobStatus: [],
     prune: 0,
     summary: 0,
+    clearTaskSummaryHint: 0,
     updateAccountStatus: 0,
     beginSubmit: 0,
     finishSubmit: 0,
@@ -42,6 +44,8 @@ function createFixture(options = {}) {
     schedulerPump: 0,
     schedulerDispose: 0,
     executorReset: 0,
+    executorAbort: 0,
+    cancelTaskCalls: [],
     runButton: {
       enterSubmittingGuard: 0,
       waitSubmittingMinDuration: 0,
@@ -94,6 +98,10 @@ function createFixture(options = {}) {
   };
   const executor = {
     execute: async () => {},
+    abort: () => {
+      calls.executorAbort += 1;
+      return true;
+    },
     reset: () => {
       calls.executorReset += 1;
     }
@@ -149,7 +157,12 @@ function createFixture(options = {}) {
             sourceInputKey: "image:main",
             capturedAt: 1700000000000
           }),
-    runninghub: {},
+    runninghub: options.runninghub || {
+      cancelTask: async (apiKey, taskId) => {
+        calls.cancelTaskCalls.push({ apiKey, taskId });
+        return null;
+      }
+    },
     ps: options.ps || {},
     setJobStatus: (job, status, reason = "") => {
       calls.setJobStatus.push({ job, status, reason });
@@ -167,6 +180,9 @@ function createFixture(options = {}) {
       calls.createScheduler += 1;
       captured.schedulerOptions = schedulerOptions;
       return scheduler;
+    },
+    clearTaskSummaryHint: () => {
+      calls.clearTaskSummaryHint += 1;
     },
     updateTaskStatusSummary: () => {
       calls.summary += 1;
@@ -253,6 +269,77 @@ test("run workflow controller blocks run when api key is missing", async () => {
   assert.equal(calls.beginSubmit, 0);
   assert.equal(state.jobs.length, 0);
   assert.equal(calls.schedulerPump, 0);
+});
+
+test("run workflow controller cancels queued job locally without remote call", async () => {
+  const queuedJob = {
+    jobId: "J-queued",
+    status: JOB_STATUS.QUEUED,
+    createdAt: 1,
+    updatedAt: 1,
+    remoteTaskId: "",
+    apiKey: "key-1"
+  };
+  const fixture = createFixture({
+    jobs: [queuedJob]
+  });
+  const { controller, state, calls } = fixture;
+
+  await controller.handleCancelLatestJob();
+
+  assert.equal(state.jobs[0].status, JOB_STATUS.CANCELLED);
+  assert.equal(calls.cancelTaskCalls.length, 0);
+  assert.equal(calls.executorAbort, 1);
+  assert.equal(calls.clearTaskSummaryHint, 1);
+  assert.equal(calls.logs.some((item) => /任务已取消/.test(item.message)), true);
+});
+
+test("run workflow controller cancels timeout-tracking job through remote cancel api", async () => {
+  const timeoutJob = {
+    jobId: "J-timeout",
+    status: JOB_STATUS.TIMEOUT_TRACKING,
+    createdAt: 1,
+    updatedAt: 1,
+    remoteTaskId: "remote-123",
+    apiKey: "key-1"
+  };
+  const fixture = createFixture({
+    jobs: [timeoutJob]
+  });
+  const { controller, state, calls } = fixture;
+
+  await controller.handleCancelLatestJob();
+
+  assert.equal(calls.cancelTaskCalls.length, 1);
+  assert.deepEqual(calls.cancelTaskCalls[0], { apiKey: "key-1", taskId: "remote-123" });
+  assert.equal(state.jobs[0].status, JOB_STATUS.CANCELLED);
+  assert.equal(calls.logs.some((item) => /任务已取消/.test(item.message)), true);
+});
+
+test("run workflow controller keeps job active when remote cancel fails", async () => {
+  const runningJob = {
+    jobId: "J-running",
+    status: JOB_STATUS.REMOTE_RUNNING,
+    createdAt: 1,
+    updatedAt: 1,
+    remoteTaskId: "remote-456",
+    apiKey: "key-1"
+  };
+  const fixture = createFixture({
+    jobs: [runningJob],
+    runninghub: {
+      cancelTask: async () => {
+        throw new Error("cancel denied");
+      }
+    }
+  });
+  const { controller, state, calls } = fixture;
+
+  await controller.handleCancelLatestJob();
+
+  assert.equal(state.jobs[0].status, JOB_STATUS.REMOTE_RUNNING);
+  assert.equal(Boolean(state.jobs[0].cancelPending), false);
+  assert.equal(calls.logs.some((item) => /取消失败: cancel denied/.test(item.message)), true);
 });
 
 test("run workflow controller short-circuits duplicate click guard feedback", async () => {

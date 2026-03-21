@@ -10,7 +10,8 @@ const JOB_STATUS = {
   APPLYING: "APPLYING",
   TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
   DONE: "DONE",
-  FAILED: "FAILED"
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED"
 };
 
 function createState(overrides = {}) {

@@ -27,6 +27,7 @@ const { createJobScheduler, createJobExecutor } = require("../application/servic
 const { buildAppPickerViewModel } = require("../application/services/app-picker");
 const {
   buildRunButtonViewModel,
+  buildCancelButtonViewModel,
   createRunButtonPhaseController
 } = require("../application/services/run-button");
 const { submitWorkspaceJobUsecase } = require("../application/usecases/submit-workspace-job");
@@ -87,7 +88,8 @@ const JOB_STATUS = {
   APPLYING: "APPLYING",
   TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
   DONE: "DONE",
-  FAILED: "FAILED"
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED"
 };
 const LOCAL_MAX_CONCURRENT_JOBS = 2;
 const JOB_TIMEOUT_RETRY_DELAY_MS = 15000;
@@ -300,6 +302,8 @@ function getRunWorkflowController() {
       cloneArrayBuffer,
       createJobExecutor,
       createJobScheduler,
+      refreshRunControls: updateRunButtonUI,
+      clearTaskSummaryHint,
       updateTaskStatusSummary,
       pruneJobHistory,
       emitRunGuardFeedback,
@@ -333,10 +337,12 @@ function updateTaskStatusSummary() {
 
 function setJobStatus(job, status, reason = "") {
   getRunStatusController().setJobStatus(job, status, reason);
+  updateRunButtonUI();
 }
 
 function pruneJobHistory() {
   getRunStatusController().pruneJobHistory();
+  updateRunButtonUI();
 }
 
 function emitRunGuardFeedback(message, level = "info", ttlMs = RUN_SUMMARY_HINT_MS) {
@@ -349,17 +355,29 @@ function emitRunGuardFeedback(message, level = "info", ttlMs = RUN_SUMMARY_HINT_
 
 function updateRunButtonUI() {
   const btn = dom.btnRun || byId("btnRun");
-  if (!btn) return;
+  const cancelBtn = dom.btnCancelJob || byId("btnCancelJob");
 
-  const viewModel = buildRunButtonViewModel({
-    currentApp: state.currentApp,
-    runButtonPhase: state.runButtonPhase,
-    runButtonPhaseEnum: RUN_BUTTON_PHASE
-  });
+  if (btn) {
+    const viewModel = buildRunButtonViewModel({
+      currentApp: state.currentApp,
+      runButtonPhase: state.runButtonPhase,
+      runButtonPhaseEnum: RUN_BUTTON_PHASE
+    });
 
-  btn.classList.toggle("is-busy", !!viewModel.busy);
-  btn.disabled = !!viewModel.disabled;
-  btn.textContent = viewModel.text;
+    btn.classList.toggle("is-busy", !!viewModel.busy);
+    btn.disabled = !!viewModel.disabled;
+    btn.textContent = viewModel.text;
+  }
+
+  if (cancelBtn) {
+    const cancelViewModel = buildCancelButtonViewModel({
+      jobs: state.jobs,
+      jobStatus: JOB_STATUS
+    });
+    cancelBtn.disabled = !!cancelViewModel.disabled;
+    cancelBtn.textContent = cancelViewModel.text;
+    cancelBtn.title = String(cancelViewModel.title || "");
+  }
 }
 
 function updateCurrentAppMeta() {
@@ -403,6 +421,10 @@ function resolveLocalMaxConcurrentJobs() {
 
 function handleRun() {
   getRunWorkflowController().handleRun();
+}
+
+function handleCancelLatestJob() {
+  getRunWorkflowController().handleCancelLatestJob();
 }
 
 function closeAppPickerModal() {
@@ -477,6 +499,7 @@ function onSettingsChanged() {
 function createWorkspaceInitEventDelegates() {
   return {
     handleRun,
+    handleCancelLatestJob,
     openAppPickerModal,
     closeAppPickerModal,
     onAppPickerModalClick,

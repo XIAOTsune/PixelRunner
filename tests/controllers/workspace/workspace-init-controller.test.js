@@ -15,6 +15,7 @@ function createDomMap() {
 function createHandlers() {
   return {
     onRun: () => {},
+    onCancelLatestJob: () => {},
     onOpenAppPickerModal: () => {},
     onCloseAppPickerModal: () => {},
     onAppPickerModalClick: () => {},
@@ -35,6 +36,7 @@ function createHandlers() {
 function createDelegates(handlers) {
   return {
     handleRun: handlers.onRun,
+    handleCancelLatestJob: handlers.onCancelLatestJob,
     openAppPickerModal: handlers.onOpenAppPickerModal,
     closeAppPickerModal: handlers.onCloseAppPickerModal,
     onAppPickerModalClick: handlers.onAppPickerModalClick,
@@ -87,6 +89,7 @@ test("workspace init controller collectDomRefs reports missing dom ids", () => {
 
   assert.equal(Array.isArray(missingIds), true);
   assert.equal(missingIds.includes(existingId), false);
+  assert.equal(missingIds.includes("btnCancelJob"), true);
   assert.equal(missingIds.includes("btnOpenAppPicker"), true);
   assert.equal(missingIds.length, WORKSPACE_DOM_IDS.length - 1);
   assert.equal(warnings.length, 1);
@@ -115,11 +118,12 @@ test("workspace init controller bindWorkspaceEvents rebinds all dom and app even
 
   controller.bindWorkspaceEvents(handlers);
 
-  assert.equal(bindings.length, 15);
+  assert.equal(bindings.length, 16);
   assert.deepEqual(
     bindings.map((item) => [item.target && item.target.id, item.eventName]),
     [
       ["btnRun", "click"],
+      ["btnCancelJob", "click"],
       ["btnOpenAppPicker", "click"],
       ["appPickerModalClose", "click"],
       ["appPickerModal", "click"],
@@ -137,8 +141,9 @@ test("workspace init controller bindWorkspaceEvents rebinds all dom and app even
     ]
   );
   assert.equal(bindings[0].handler, handlers.onRun);
-  assert.equal(bindings[6].handler, handlers.onRefreshWorkspaceClick);
-  assert.equal(bindings[14].handler, handlers.onSettingsChanged);
+  assert.equal(bindings[1].handler, handlers.onCancelLatestJob);
+  assert.equal(bindings[7].handler, handlers.onRefreshWorkspaceClick);
+  assert.equal(bindings[15].handler, handlers.onSettingsChanged);
 });
 
 test("workspace init controller bindWorkspaceEventsFromDelegates maps delegates to handlers", () => {
@@ -163,9 +168,10 @@ test("workspace init controller bindWorkspaceEventsFromDelegates maps delegates 
 
   controller.bindWorkspaceEventsFromDelegates(delegates);
 
-  assert.equal(bindings.length, 15);
+  assert.equal(bindings.length, 16);
   assert.equal(bindings[0].handler, handlers.onRun);
-  assert.equal(bindings[4].handler, handlers.onAppPickerListClick);
-  assert.equal(bindings[9].handler, handlers.onTemplateListClick);
-  assert.equal(bindings[14].handler, handlers.onSettingsChanged);
+  assert.equal(bindings[1].handler, handlers.onCancelLatestJob);
+  assert.equal(bindings[5].handler, handlers.onAppPickerListClick);
+  assert.equal(bindings[10].handler, handlers.onTemplateListClick);
+  assert.equal(bindings[15].handler, handlers.onSettingsChanged);
 });

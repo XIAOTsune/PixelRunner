@@ -15,14 +15,15 @@ function resolveStatusMap(jobStatus = {}) {
     APPLYING: source.APPLYING || "APPLYING",
     TIMEOUT_TRACKING: source.TIMEOUT_TRACKING || "TIMEOUT_TRACKING",
     DONE: source.DONE || "DONE",
-    FAILED: source.FAILED || "FAILED"
+    FAILED: source.FAILED || "FAILED",
+    CANCELLED: source.CANCELLED || "CANCELLED"
   };
 }
 
 function hasLiveJobs(jobs, jobStatus = {}) {
   const status = resolveStatusMap(jobStatus);
   const list = Array.isArray(jobs) ? jobs : [];
-  return list.some((job) => ![status.DONE, status.FAILED].includes(job && job.status));
+  return list.some((job) => ![status.DONE, status.FAILED, status.CANCELLED].includes(job && job.status));
 }
 
 function countJobsByStatus(jobs, targetStatus) {
@@ -32,7 +33,9 @@ function countJobsByStatus(jobs, targetStatus) {
 
 function collectTaskSummaryStats(options = {}) {
   const status = resolveStatusMap(options.jobStatus);
-  const jobs = Array.isArray(options.jobs) ? options.jobs : [];
+  const jobs = Array.isArray(options.jobs)
+    ? options.jobs.filter((job) => job && job.status !== status.CANCELLED)
+    : [];
   const hint = options.hint && typeof options.hint === "object" ? options.hint : null;
   const previewLimit = Math.max(1, Number(options.previewLimit) || 8);
   const activeLimit = Math.max(1, Number(options.activeLimit) || 6);

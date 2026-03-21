@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   buildRunButtonViewModel,
+  buildCancelButtonViewModel,
+  findLatestCancelableJob,
   createRunButtonPhaseController
 } = require("../../../src/application/services/run-button");
 
@@ -9,6 +11,18 @@ const RUN_BUTTON_PHASE = {
   IDLE: "IDLE",
   SUBMITTING_GUARD: "SUBMITTING_GUARD",
   SUBMITTED_ACK: "SUBMITTED_ACK"
+};
+
+const JOB_STATUS = {
+  QUEUED: "QUEUED",
+  SUBMITTING: "SUBMITTING",
+  REMOTE_RUNNING: "REMOTE_RUNNING",
+  DOWNLOADING: "DOWNLOADING",
+  APPLYING: "APPLYING",
+  TIMEOUT_TRACKING: "TIMEOUT_TRACKING",
+  DONE: "DONE",
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED"
 };
 
 test("buildRunButtonViewModel returns disabled idle text when no current app", () => {
@@ -221,5 +235,44 @@ test("createRunButtonPhaseController isClickGuardActive delegates to runGuard", 
 
   assert.equal(ctrl.isClickGuardActive(100), true);
   assert.equal(ctrl.isClickGuardActive(300), false);
+});
+
+test("findLatestCancelableJob skips terminal and cancel-pending jobs", () => {
+  const job = findLatestCancelableJob([
+    { jobId: "J3", status: JOB_STATUS.CANCELLED },
+    { jobId: "J2", status: JOB_STATUS.REMOTE_RUNNING, cancelPending: true },
+    { jobId: "J1", status: JOB_STATUS.TIMEOUT_TRACKING }
+  ], JOB_STATUS);
+
+  assert.deepEqual(job, { jobId: "J1", status: JOB_STATUS.TIMEOUT_TRACKING });
+});
+
+test("buildCancelButtonViewModel disables button when no cancelable jobs remain", () => {
+  const vm = buildCancelButtonViewModel({
+    jobs: [{ jobId: "J1", status: JOB_STATUS.CANCELLED }],
+    jobStatus: JOB_STATUS
+  });
+
+  assert.deepEqual(vm, {
+    disabled: true,
+    text: "取消任务",
+    title: "当前没有可取消的任务"
+  });
+});
+
+test("buildCancelButtonViewModel targets latest cancelable job", () => {
+  const vm = buildCancelButtonViewModel({
+    jobs: [
+      { jobId: "J3", status: JOB_STATUS.CANCELLED },
+      { jobId: "J2", status: JOB_STATUS.TIMEOUT_TRACKING },
+      { jobId: "J1", status: JOB_STATUS.QUEUED }
+    ],
+    jobStatus: JOB_STATUS
+  });
+
+  assert.equal(vm.disabled, false);
+  assert.equal(vm.text, "取消最新任务");
+  assert.match(vm.title, /J2/);
+  assert.match(vm.title, /TIMEOUT_TRACKING/);
 });
 

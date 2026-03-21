@@ -59,6 +59,27 @@ async function runAppTask(apiKey, appItem, inputValues, options = {}) {
   });
 }
 
+async function cancelTask(apiKey, taskId, options = {}) {
+  throwIfCancelled(options);
+  const response = await fetchWithTimeout(
+    fetch,
+    `${API.BASE_URL}${API.ENDPOINTS.CANCEL_TASK}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey, taskId }),
+      signal: options.signal
+    },
+    { timeoutMs: options.requestTimeoutMs }
+  );
+  throwIfCancelled(options);
+  const result = await parseJsonResponse(response);
+  throwIfCancelled(options);
+  const ok = response.ok && result && (result.code === 0 || result.success === true);
+  if (!ok) throw new Error(toMessage(result, `Cancel task failed (HTTP ${response.status})`));
+  return result.data || result.result || null;
+}
+
 async function downloadResultBinary(url, options = {}) {
   throwIfCancelled(options);
   const response = await fetchWithTimeout(
@@ -99,6 +120,7 @@ async function fetchAccountStatus(apiKey) {
 module.exports = {
   fetchAppInfo,
   runAppTask,
+  cancelTask,
   pollTaskOutput,
   downloadResultBinary,
   testApiKey,

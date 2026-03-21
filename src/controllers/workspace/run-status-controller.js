@@ -161,7 +161,8 @@ function createDefaultStatusLabelResolver(jobStatus = {}) {
     [jobStatus.APPLYING || "APPLYING", "回贴"],
     [jobStatus.TIMEOUT_TRACKING || "TIMEOUT_TRACKING", "超时跟踪"],
     [jobStatus.DONE || "DONE", "完成"],
-    [jobStatus.FAILED || "FAILED", "失败"]
+    [jobStatus.FAILED || "FAILED", "失败"],
+    [jobStatus.CANCELLED || "CANCELLED", "已取消"]
   ]);
   return (status) => labels.get(status) || status || "-";
 }
