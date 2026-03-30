@@ -108,7 +108,6 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     loadDiagnosticsSummary: 0,
     toggleSectionCollapse: 0,
     saveApiKeyAndSettings: 0,
-    testApiKey: 0,
     parseApp: 0,
     saveTemplate: 0,
     exportTemplatesJson: 0,
@@ -124,9 +123,6 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
   const delegates = {
     saveApiKeyAndSettings: () => {
       registry.getSettingsEditorController().saveApiKeyAndSettings();
-    },
-    testApiKey: () => {
-      registry.getSettingsEditorController().testApiKey();
     },
     parseApp: () => {
       registry.getSettingsParseController().parseApp();
@@ -242,9 +238,6 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
       saveApiKeyAndSettings: () => {
         calls.saveApiKeyAndSettings += 1;
       },
-      testApiKey: () => {
-        calls.testApiKey += 1;
-      },
       saveTemplate: () => {
         calls.saveTemplate += 1;
       }
@@ -263,7 +256,6 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     assert.equal(elementMap.envDiagnosticsToggle.textContent, "展开");
 
     elementMap.btnSaveApiKey.trigger("click");
-    elementMap.btnTestApiKey.trigger("click");
     elementMap.btnParseApp.trigger("click");
     elementMap.btnSaveTemplate.trigger("click");
     elementMap.btnExportTemplatesJson.trigger("click");
@@ -280,7 +272,6 @@ test("settings init chain integration wires init -> bind -> subcontrollers", () 
     mockDocument.trigger("templates_changed");
 
     assert.equal(calls.saveApiKeyAndSettings, 1);
-    assert.equal(calls.testApiKey, 1);
     assert.equal(calls.parseApp, 1);
     assert.equal(calls.saveTemplate, 1);
     assert.equal(calls.exportTemplatesJson, 1);

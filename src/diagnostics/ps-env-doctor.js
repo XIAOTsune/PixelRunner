@@ -78,7 +78,6 @@ function buildRequiredDomIds() {
     "appPickerList",
     "apiKeyInput",
     "btnSaveApiKey",
-    "btnTestApiKey",
     "appIdInput",
     "btnParseApp",
     "savedAppsList",
@@ -423,7 +422,6 @@ async function runPsEnvironmentDoctor(options = {}) {
         "runAppTask",
         "pollTaskOutput",
         "downloadResultBinary",
-        "testApiKey",
         "fetchAccountStatus"
       ]),
       checkModuleExports("ps", ps, [

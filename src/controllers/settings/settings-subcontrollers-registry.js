@@ -171,7 +171,6 @@ function createSettingsSubcontrollersRegistry(options = {}) {
         loadDiagnosticsSummary: resolveDelegate("loadDiagnosticsSummary"),
         handlers: {
           onSaveApiKeyAndSettings: resolveDelegate("saveApiKeyAndSettings"),
-          onTestApiKey: resolveDelegate("testApiKey"),
           onParseApp: resolveDelegate("parseApp"),
           onToggleApiKey: resolveDelegate("onToggleApiKey"),
           onSaveTemplate: resolveDelegate("saveTemplate"),

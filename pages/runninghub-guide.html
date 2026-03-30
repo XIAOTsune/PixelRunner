@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RunningHub 插件快速上手</title>
+  <style>
+    :root {
+      --bg: #071018;
+      --bg-soft: #0b1623;
+      --surface: rgba(13, 24, 38, 0.9);
+      --surface-strong: rgba(18, 31, 49, 0.96);
+      --surface-muted: rgba(255, 255, 255, 0.03);
+      --line: rgba(112, 157, 214, 0.18);
+      --line-strong: rgba(112, 157, 214, 0.28);
+      --text: #eef5ff;
+      --text-sub: #abc1dc;
+      --text-dim: #7d93ad;
+      --accent: #58a9ff;
+      --accent-strong: #88c3ff;
+      --accent-soft: rgba(88, 169, 255, 0.14);
+      --success: #8fdaa6;
+      --warning: #ffd27a;
+      --danger: #ff9d9d;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --radius-sm: 12px;
+      --page-width: 1120px;
+      --motion-base: 520ms;
+      --motion-fast: 240ms;
+      --motion-slow: 880ms;
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font: 15px/1.7 "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      background:
+        radial-gradient(circle at 10% 12%, rgba(88, 169, 255, 0.18), transparent 22%),
+        radial-gradient(circle at 88% 8%, rgba(143, 218, 166, 0.12), transparent 18%),
+        radial-gradient(circle at 50% 100%, rgba(255, 210, 122, 0.1), transparent 26%),
+        linear-gradient(180deg, #061019 0%, #08131e 42%, #071018 100%);
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(circle at center, black 36%, transparent 92%);
+      pointer-events: none;
+      opacity: 0.35;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .page {
+      width: min(var(--page-width), calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 48px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 30px;
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(140deg, rgba(18, 31, 49, 0.95), rgba(8, 18, 30, 0.98)),
+        var(--surface);
+      box-shadow: var(--shadow);
+      isolation: isolate;
+    }
+
+    .hero::before,
+    .hero::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(10px);
+      pointer-events: none;
+    }
+
+    .hero::before {
+      width: 260px;
+      height: 260px;
+      top: -90px;
+      right: -70px;
+      background: radial-gradient(circle, rgba(88, 169, 255, 0.34), transparent 70%);
+      animation: floatOrb var(--motion-slow) var(--ease-in-out) infinite alternate;
+    }
+
+    .hero::after {
+      width: 180px;
+      height: 180px;
+      left: -40px;
+      bottom: -50px;
+      background: radial-gradient(circle, rgba(143, 218, 166, 0.18), transparent 70%);
+      animation: floatOrb calc(var(--motion-slow) * 1.08) var(--ease-in-out) infinite alternate-reverse;
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-start;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      border: 1px solid rgba(88, 169, 255, 0.2);
+      color: #c8e4ff;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    .hero-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      max-width: 360px;
+    }
+
+    .status-chip {
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--text-sub);
+      font-size: 12px;
+      backdrop-filter: blur(8px);
+    }
+
+    .hero-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+      gap: 22px;
+      align-items: end;
+      margin-top: 22px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(34px, 5vw, 56px);
+      line-height: 0.96;
+      letter-spacing: -0.04em;
+    }
+
+    .hero-subtitle {
+      margin: 0;
+      max-width: 720px;
+      color: var(--text-sub);
+      font-size: 16px;
+      line-height: 1.72;
+    }
+
+    .hero-panel {
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.035);
+      backdrop-filter: blur(14px);
+    }
+
+    .hero-panel-title {
+      margin: 0 0 10px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .hero-panel-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text-sub);
+    }
+
+    .hero-panel-list li + li {
+      margin-top: 6px;
+    }
+
+    .anchor-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 18px 0 0;
+    }
+
+    .anchor-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      color: var(--text-sub);
+      transition:
+        transform var(--motion-fast) var(--ease-out),
+        border-color var(--motion-fast) ease,
+        background-color var(--motion-fast) ease,
+        color var(--motion-fast) ease;
+    }
+
+    .anchor-link:hover {
+      transform: translateY(-1px);
+      border-color: var(--line-strong);
+      background: rgba(88, 169, 255, 0.08);
+      color: var(--text);
+    }
+
+    .section {
+      margin-top: 18px;
+      padding: 24px;
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .section::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 22%);
+      pointer-events: none;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      align-items: flex-end;
+      margin-bottom: 18px;
+    }
+
+    .section-kicker {
+      margin: 0 0 6px;
+      color: var(--accent-strong);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .section-desc {
+      margin: 10px 0 0;
+      max-width: 720px;
+      color: var(--text-sub);
+    }
+
+    .section-badge {
+      flex-shrink: 0;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-dim);
+      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .quickstart-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .step-card {
+      position: relative;
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      background: var(--surface-strong);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition:
+        transform var(--motion-fast) var(--ease-out),
+        border-color var(--motion-fast) ease,
+        box-shadow var(--motion-fast) ease;
+    }
+
+    .step-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--line-strong);
+      box-shadow: 0 20px 36px rgba(0, 0, 0, 0.18);
+    }
+
+    .step-index {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      margin-bottom: 12px;
+      background: linear-gradient(145deg, rgba(88, 169, 255, 0.2), rgba(88, 169, 255, 0.08));
+      border: 1px solid rgba(88, 169, 255, 0.18);
+      color: #d5ebff;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .step-title {
+      margin: 0 0 10px;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .step-text {
+      margin: 0;
+      color: var(--text-sub);
+    }
+
+    .step-note {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 210, 122, 0.07);
+      border: 1px solid rgba(255, 210, 122, 0.14);
+      color: #f3dba5;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .problem-grid {
+      display: grid;
+      grid-template-columns: 1.06fr 0.94fr;
+      gap: 14px;
+    }
+
+    .panel-card {
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      background: var(--surface-strong);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .panel-card h3 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .issue-list,
+    .mini-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .issue-item,
+    .mini-item {
+      padding: 14px 14px 14px 16px;
+      border-radius: var(--radius-md);
+      background: var(--surface-muted);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      position: relative;
+    }
+
+    .issue-item::before,
+    .mini-item::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 12px;
+      bottom: 12px;
+      width: 3px;
+      border-radius: 999px;
+      background: rgba(88, 169, 255, 0.24);
+    }
+
+    .issue-item strong,
+    .mini-item strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+
+    .issue-item p,
+    .mini-item p {
+      margin: 0;
+      color: var(--text-sub);
+      font-size: 14px;
+    }
+
+    .issue-item.warn::before {
+      background: rgba(255, 210, 122, 0.56);
+    }
+
+    .issue-item.danger::before {
+      background: rgba(255, 157, 157, 0.62);
+    }
+
+    .issue-item.success::before {
+      background: rgba(143, 218, 166, 0.56);
+    }
+
+    .faq-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .faq-card {
+      height: 100%;
+    }
+
+    .faq-answer {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .solution-banner {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(145deg, rgba(88, 169, 255, 0.12), rgba(88, 169, 255, 0.04));
+      border: 1px solid rgba(88, 169, 255, 0.16);
+      color: #d8ecff;
+    }
+
+    .solution-banner strong {
+      color: var(--text);
+    }
+
+    .app-guide {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .path-steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .path-card {
+      padding: 14px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.025);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .path-card span {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 999px;
+      margin-bottom: 10px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .side-cta {
+      padding: 18px;
+      border-radius: var(--radius-lg);
+      background:
+        linear-gradient(165deg, rgba(88, 169, 255, 0.18), rgba(88, 169, 255, 0.05)),
+        rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(88, 169, 255, 0.16);
+    }
+
+    .side-cta h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .cta-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 14px;
+      padding: 12px 16px;
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(88, 169, 255, 0.22);
+      background: rgba(88, 169, 255, 0.14);
+      color: var(--text);
+      font-weight: 700;
+      transition:
+        transform var(--motion-fast) var(--ease-out),
+        background-color var(--motion-fast) ease,
+        border-color var(--motion-fast) ease;
+    }
+
+    .cta-button:hover {
+      transform: translateY(-1px);
+      background: rgba(88, 169, 255, 0.2);
+      border-color: rgba(88, 169, 255, 0.34);
+    }
+
+    .footer {
+      margin-top: 16px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition:
+        opacity var(--motion-base) var(--ease-out),
+        transform var(--motion-base) var(--ease-out);
+      transition-delay: var(--delay, 0ms);
+    }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .hero .reveal {
+      opacity: 0;
+      transform: translateY(16px);
+      animation: heroReveal var(--motion-base) var(--ease-out) forwards;
+      animation-delay: var(--delay, 0ms);
+    }
+
+    @keyframes heroReveal {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes floatOrb {
+      from {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+      to {
+        transform: translate3d(0, 10px, 0) scale(1.04);
+      }
+    }
+
+    @media (max-width: 960px) {
+      .hero-main,
+      .problem-grid,
+      .faq-grid,
+      .app-guide {
+        grid-template-columns: 1fr;
+      }
+
+      .quickstart-grid,
+      .path-steps {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-top {
+        flex-direction: column;
+      }
+
+      .hero-status {
+        justify-content: flex-start;
+        max-width: none;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: min(100vw - 20px, var(--page-width));
+        padding-top: 12px;
+      }
+
+      .hero,
+      .section {
+        padding: 18px;
+        border-radius: 22px;
+      }
+
+      .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .anchor-nav {
+        gap: 8px;
+      }
+
+      .anchor-link {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      .hero::before,
+      .hero::after,
+      .hero .reveal,
+      .reveal,
+      .step-card,
+      .anchor-link,
+      .cta-button {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+        opacity: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero" id="top">
+      <div class="hero-top">
+        <div class="eyebrow reveal" style="--delay: 40ms;">PixelRunner 本地教程站</div>
+        <div class="hero-status reveal" style="--delay: 120ms;">
+          <span class="status-chip">适合第一次接触插件的用户</span>
+          <span class="status-chip">覆盖常见失败原因</span>
+          <span class="status-chip">内含缓存返图处理方法</span>
+        </div>
+      </div>
+
+      <div class="hero-main">
+        <div>
+          <h1 class="reveal" style="--delay: 140ms;">RunningHub 插件<br />快速上手与问题排查</h1>
+          <p class="hero-subtitle reveal" style="--delay: 220ms;">
+            这页教程把最重要的几件事放在一起了：怎么开始用、为什么会失败、为什么有时返的是上一张图、以及怎么自己添加应用。
+            如果你是第一次上手，先按下面的“快速上手教程”走一遍，基本就能把整条链路跑通。
+          </p>
+        </div>
+
+        <aside class="hero-panel reveal" style="--delay: 300ms;">
+          <div class="hero-panel-title">先看这三个重点</div>
+          <ul class="hero-panel-list">
+            <li>推荐优先使用企业共享 API，充值直接充钱包即可。</li>
+            <li>设置页除了保存 API Key，也建议提前配好常用 AI 应用和预设提示词。</li>
+            <li>遇到返图异常时，先点“刷新应用”再运行，通常是最快的处理方式。</li>
+          </ul>
+        </aside>
+      </div>
+
+      <nav class="anchor-nav reveal" style="--delay: 360ms;">
+        <a class="anchor-link" href="#quickstart">快速上手</a>
+        <a class="anchor-link" href="#run-failed">为什么运行失败</a>
+        <a class="anchor-link" href="#cache-return">为什么返上一张图</a>
+        <a class="anchor-link" href="#add-app">如何自己添加应用</a>
+      </nav>
+    </section>
+
+    <section class="section reveal" id="quickstart">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">Quick Start</p>
+          <h2 class="section-title">快速上手教程</h2>
+          <p class="section-desc">先把基础链路跑通，再慢慢扩展自己的工作流。下面这 3 步是最推荐的新手路径。</p>
+        </div>
+        <div class="section-badge">3 步上手</div>
+      </div>
+
+      <div class="quickstart-grid">
+        <article class="step-card">
+          <div class="step-index">01</div>
+          <h3 class="step-title">在 RunningHub 中拿到 API Key</h3>
+          <p class="step-text">先去 RunningHub 账户里拿到可用的 API Key。这里更推荐使用企业共享 API，后续需要充值时，直接充值钱包即可。</p>
+          <div class="step-note">建议把 API Key 的来源先确认清楚，再开始配置插件，避免后面因为余额或权限问题反复排查。</div>
+        </article>
+
+        <article class="step-card">
+          <div class="step-index">02</div>
+          <h3 class="step-title">在设置页保存 API Key、AI 应用与预设提示词</h3>
+          <p class="step-text">进入插件设置页面，先保存 API Key，然后添加适合你当前业务的 AI 应用，同时把常用的预设提示词也一并保存好。</p>
+          <div class="step-note">这一步做得越完整，后面 Workspace 的使用成本越低，尤其适合反复跑相似任务。</div>
+        </article>
+
+        <article class="step-card">
+          <div class="step-index">03</div>
+          <h3 class="step-title">在工作区选择应用、输入参数并运行</h3>
+          <p class="step-text">回到工作区页面，选择目标应用，输入或上传需要的参数，然后点击运行即可开始任务。</p>
+          <div class="step-note">运行时重点看状态摘要和日志区，它们通常能最快告诉你问题发生在哪一步。</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section reveal" id="run-failed">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">Troubleshooting</p>
+          <h2 class="section-title">为什么运行失败？</h2>
+          <p class="section-desc">大多数失败其实都集中在少数几个原因。按下面顺序排查，通常会比盲目重试更快。</p>
+        </div>
+        <div class="section-badge">优先排查</div>
+      </div>
+
+      <div class="problem-grid">
+        <div class="panel-card">
+          <h3>最常见的 4 个原因</h3>
+          <div class="issue-list">
+            <div class="issue-item warn">
+              <strong>1. 全能图片 Pro / 2 应用使用人数较多，比较拥挤</strong>
+              <p>这类热门应用在高峰时段更容易排队、超时或者表现不稳定，所以偶发失败并不完全是插件问题。</p>
+            </div>
+            <div class="issue-item danger">
+              <strong>2. 钱包没有钱，请先查询余额</strong>
+              <p>如果钱包余额不足，任务可能直接失败。建议先确认 RunningHub 钱包是否还有可用余额。</p>
+            </div>
+            <div class="issue-item danger">
+              <strong>3. 图片涉及违规内容，未通过云端审核</strong>
+              <p>这类失败通常不是参数格式问题，而是内容在云端审核阶段被拦截了。</p>
+            </div>
+            <div class="issue-item success">
+              <strong>4. 关闭梯子或加速器</strong>
+              <p>本插件使用国内网站服务器运行，梯子、加速器或某些网络代理环境有概率导致请求被屏蔽或行为异常。</p>
+            </div>
+          </div>
+        </div>
+
+        <aside class="panel-card">
+          <h3>建议排查顺序</h3>
+          <div class="mini-list">
+            <div class="mini-item">
+              <strong>先看余额</strong>
+              <p>这是最容易忽略、也最常见的原因之一。</p>
+            </div>
+            <div class="mini-item">
+              <strong>再看应用拥挤程度</strong>
+              <p>尤其是全能图片 Pro / 2，热门时段容易挤。</p>
+            </div>
+            <div class="mini-item">
+              <strong>然后检查图片内容</strong>
+              <p>如果内容可能踩审核规则，建议先换一张图再试。</p>
+            </div>
+            <div class="mini-item">
+              <strong>最后排查网络环境</strong>
+              <p>把梯子、加速器、代理先关闭，再重新运行一次。</p>
+            </div>
+          </div>
+
+          <div class="solution-banner">
+            <strong>一个经验：</strong>
+            如果你看到的是“偶发失败”而不是“稳定必现失败”，优先怀疑热门应用拥挤或网络代理环境，而不是先怀疑插件本身。
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section reveal" id="cache-return">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">FAQ</p>
+          <h2 class="section-title">为什么有时候返图是上一张图的？</h2>
+          <p class="section-desc">这个现象偶尔会出现，核心问题通常不是“你没换图”，而是网站侧有时命中了之前一张图的缓存。</p>
+        </div>
+        <div class="section-badge">缓存相关</div>
+      </div>
+
+      <div class="faq-grid">
+        <article class="panel-card faq-card">
+          <h3>可能原因</h3>
+          <div class="faq-answer">
+            <div class="mini-item">
+              <strong>1. 网站有时会命中前一张图的缓存</strong>
+              <p>所以你已经换了图，但实际返回时仍然有概率拿到上一轮图像相关结果。</p>
+            </div>
+            <div class="mini-item">
+              <strong>2. 这不是每次都发生</strong>
+              <p>它更像是偶发性的缓存命中，因此体感上会显得“玄学”，但本质上是有明确处理办法的。</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel-card faq-card">
+          <h3>解决方法</h3>
+          <div class="faq-answer">
+            <div class="mini-item">
+              <strong>方法 A：点击刷新应用之后再运行</strong>
+              <p>这是当前最直接、最轻量的处理方式，适合大多数情况。</p>
+            </div>
+            <div class="mini-item">
+              <strong>方法 B：切换到其他应用，再切回当前应用运行</strong>
+              <p>如果你怀疑当前应用状态还残留旧输入，这种做法往往更稳。</p>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="solution-banner">
+        <strong>建议习惯：</strong>
+        如果你刚替换了图片，又正好在全能图片 Pro / 2 这类热门模型上继续跑任务，最好先点一次“刷新应用”再提交。
+      </div>
+    </section>
+
+    <section class="section reveal" id="add-app">
+      <div class="section-header">
+        <div>
+          <p class="section-kicker">DIY Workflow</p>
+          <h2 class="section-title">如何自己添加应用？</h2>
+          <p class="section-desc">插件不是只能跑内置示例。你完全可以去 RunningHub 官网挑选更适合自己业务的图生图 AI 应用，再添加到设置页里。</p>
+        </div>
+        <div class="section-badge">可扩展</div>
+      </div>
+
+      <div class="app-guide">
+        <div class="panel-card">
+          <h3>推荐路径</h3>
+          <p>去 RunningHub 官网，在 AI 应用界面里寻找合适的图生图 AI 应用。找到合适的应用后，把对应链接或应用 ID 放进插件设置页进行解析和保存即可。</p>
+
+          <div class="path-steps">
+            <div class="path-card">
+              <span>1</span>
+              <strong>进入 RunningHub 官网</strong>
+              <p>先去官网的 AI 应用列表里筛选你需要的方向。</p>
+            </div>
+            <div class="path-card">
+              <span>2</span>
+              <strong>寻找合适的图生图应用</strong>
+              <p>优先找参数结构清晰、输出稳定、适合你场景的应用。</p>
+            </div>
+            <div class="path-card">
+              <span>3</span>
+              <strong>复制链接或应用 ID 回到插件保存</strong>
+              <p>解析成功后，它就会出现在你的应用列表里，后续可直接复用。</p>
+            </div>
+          </div>
+        </div>
+
+        <aside class="side-cta">
+          <h3>挑应用时的一个小建议</h3>
+          <p>不要一上来就追最热门的模型。先从输入要求简单、日志更清晰、返图更稳定的图生图应用开始，后面再慢慢扩展到更复杂的工作流。</p>
+          <a class="cta-button" href="https://www.runninghub.cn" target="_blank" rel="noreferrer">前往 RunningHub 官网</a>
+        </aside>
+      </div>
+    </section>
+
+    <div class="footer reveal">
+      这是一份随插件一起打包的本地教程页。后续如果你愿意，还可以继续扩展成更完整的帮助中心或更新日志站点。
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (prefersReducedMotion) return;
+
+      const revealTargets = document.querySelectorAll(".reveal:not(.hero .reveal)");
+      if (!("IntersectionObserver" in window) || revealTargets.length === 0) {
+        revealTargets.forEach((node) => node.classList.add("is-visible"));
+        return;
+      }
+
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      }, {
+        threshold: 0.16,
+        rootMargin: "0px 0px -8% 0px"
+      });
+
+      revealTargets.forEach((node, index) => {
+        node.style.setProperty("--delay", `${Math.min(index * 60, 240)}ms`);
+        observer.observe(node);
+      });
+    })();
+  </script>
+</body>
+</html>

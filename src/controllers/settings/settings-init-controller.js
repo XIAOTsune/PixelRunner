@@ -10,7 +10,6 @@ const SETTINGS_DOM_IDS = [
   "uploadCompressFormatInput",
   "toggleApiKey",
   "btnSaveApiKey",
-  "btnTestApiKey",
   "appIdInput",
   "appNameInput",
   "btnParseApp",
@@ -64,7 +63,6 @@ function createSettingsInitController(options = {}) {
 
   function bindCoreEvents() {
     rebindEvent(dom.btnSaveApiKey, "click", handlers.onSaveApiKeyAndSettings);
-    rebindEvent(dom.btnTestApiKey, "click", handlers.onTestApiKey);
     rebindEvent(dom.btnParseApp, "click", handlers.onParseApp);
     rebindEvent(dom.toggleApiKey, "click", handlers.onToggleApiKey);
     rebindEvent(dom.btnSaveTemplate, "click", handlers.onSaveTemplate);

@@ -42,14 +42,21 @@ function setupTabs() {
     tabTools: "viewTools",
     tabSettings: "viewSettings"
   };
+  const tabButtons = Object.keys(tabs)
+    .map((tabId) => document.getElementById(tabId))
+    .filter(Boolean);
+  const tabViews = Object.values(tabs)
+    .map((viewId) => document.getElementById(viewId))
+    .filter(Boolean);
 
   Object.keys(tabs).forEach((tabId) => {
     const btn = document.getElementById(tabId);
     if (!btn) return;
 
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item").forEach((el) => el.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach((el) => el.classList.remove("active"));
+      if (btn.classList.contains("active")) return;
+      tabButtons.forEach((el) => el.classList.remove("active"));
+      tabViews.forEach((el) => el.classList.remove("active"));
 
       btn.classList.add("active");
       const viewId = tabs[tabId];
@@ -65,6 +72,8 @@ function setupDonationModal() {
   const donationDialogClose = document.getElementById("donationDialogClose");
   const donationBody = donationDialog ? donationDialog.querySelector(".donation-dialog-body") : null;
   const donationStatusHint = document.getElementById("donationStatusHint");
+  const btnOpenRunningHubSite = document.getElementById("btnOpenRunningHubSite");
+  const btnOpenTutorialSite = document.getElementById("btnOpenTutorialSite");
   if (!btnDonate || !donationDialog || !donationDialogClose) return;
   if (!donationBody) {
     console.warn("Donation dialog body is missing");
@@ -99,7 +108,7 @@ function setupDonationModal() {
     const loadedCount = values.filter((item) => item === "loaded").length;
     const failedCount = values.filter((item) => item === "failed").length;
     if (loadedCount === 2) {
-      setDonationStatus("二维码已加载，可点击尝试打开链接。", "ok");
+      setDonationStatus("二维码已加载，可点击二维码尝试打开链接。", "ok");
       return;
     }
     if (loadedCount >= 1 && failedCount >= 1) {
@@ -114,10 +123,13 @@ function setupDonationModal() {
   };
 
   const closeDialog = () => {
+    if (!donationDialog.open) return;
     donationDialog.close();
     refreshModalOpenState();
   };
+
   const openDialog = () => {
+    if (donationDialog.open) return;
     donationDialog.showModal();
     refreshModalOpenState();
   };
@@ -125,6 +137,36 @@ function setupDonationModal() {
   btnDonate.addEventListener("click", openDialog);
   donationDialogClose.addEventListener("click", closeDialog);
   donationDialog.addEventListener("close", refreshModalOpenState);
+
+  if (btnOpenRunningHubSite) {
+    btnOpenRunningHubSite.addEventListener("click", async () => {
+      const opened = await openExternalUrl(
+        RUNNINGHUB_HOME_URL,
+        "将使用系统默认浏览器打开 RunningHub 官网。"
+      );
+      if (!opened) {
+        setDonationStatus("RunningHub 官网打开失败，请检查系统默认浏览器设置。", "failed");
+      }
+    });
+  }
+
+  if (btnOpenTutorialSite) {
+    btnOpenTutorialSite.addEventListener("click", async () => {
+      const tutorialPath = await resolveTutorialNativePath();
+      if (!tutorialPath) {
+        setDonationStatus("本地教程文件定位失败，请检查 pages/runninghub-guide.html。", "failed");
+        return;
+      }
+      const opened = await openLocalPath(
+        tutorialPath,
+        "将使用系统默认浏览器打开本地教程页面。"
+      );
+      if (!opened) {
+        setDonationStatus("本地教程打开失败，请确认默认浏览器已正确关联 .html 文件。", "failed");
+      }
+    });
+  }
+
   loadDonationImageWithFallback(zfbImage, DONATION_IMAGE_SOURCES.zfb, "支付宝二维码", (status) => {
     imageStates.zfb = status;
     refreshDonationStatus();
@@ -146,6 +188,8 @@ function refreshModalOpenState() {
 
 const DONATION_ZFB_TEXT = "https://qr.alipay.com/fkx12142r0sdwj4kizujk2f";
 const DONATION_WX_TEXT = "wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI";
+const RUNNINGHUB_HOME_URL = "https://www.runninghub.cn";
+const TUTORIAL_RELATIVE_PATH = ["pages", "runninghub-guide.html"];
 const DONATION_IMAGE_SOURCES = {
   zfb: ["icons/zfb.png", "./icons/zfb.png"],
   wx: ["icons/vx.png", "./icons/vx.png"]
@@ -197,6 +241,7 @@ function loadDonationImageWithFallback(imageEl, sources, label, onStateChange) {
   const initialIndex = currentSrcAttr ? Math.max(0, candidates.indexOf(currentSrcAttr)) : 0;
   imageEl.dataset.srcIndex = String(initialIndex);
   imageEl.src = candidates[initialIndex];
+
   imageEl.addEventListener("load", () => {
     const card = imageEl.closest(".donation-card");
     if (card) card.classList.remove("is-broken");
@@ -226,16 +271,65 @@ function loadDonationImageWithFallback(imageEl, sources, label, onStateChange) {
   });
 }
 
-function openDonationLink(url, label) {
+async function resolveTutorialNativePath() {
+  try {
+    const { storage } = require("uxp");
+    const localFileSystem = storage && storage.localFileSystem;
+    if (!localFileSystem || typeof localFileSystem.getPluginFolder !== "function") {
+      return "";
+    }
+
+    const pluginFolder = await localFileSystem.getPluginFolder();
+    if (!pluginFolder) return "";
+
+    if (typeof pluginFolder.getEntry === "function") {
+      try {
+        const pagesFolder = await pluginFolder.getEntry(TUTORIAL_RELATIVE_PATH[0]);
+        if (pagesFolder && typeof pagesFolder.getEntry === "function") {
+          const tutorialEntry = await pagesFolder.getEntry(TUTORIAL_RELATIVE_PATH[1]);
+          if (tutorialEntry && tutorialEntry.nativePath) {
+            return String(tutorialEntry.nativePath);
+          }
+        }
+      } catch (error) {
+        console.warn("Tutorial entry lookup fallback:", error);
+      }
+    }
+
+    if (pluginFolder.nativePath) {
+      const basePath = String(pluginFolder.nativePath || "").replace(/[\\\/]+$/, "");
+      return `${basePath}\\${TUTORIAL_RELATIVE_PATH.join("\\")}`;
+    }
+  } catch (error) {
+    console.warn("Failed to resolve tutorial page path:", error);
+  }
+  return "";
+}
+
+async function openExternalUrl(url, developerText) {
   try {
     const { shell } = require("uxp");
     if (shell && typeof shell.openExternal === "function") {
-      shell.openExternal(url);
-      return;
+      const result = await shell.openExternal(String(url || ""), String(developerText || ""));
+      return result === "";
     }
   } catch (error) {
-    console.warn(`Failed to open ${label}:`, error);
+    console.warn("Failed to open external url:", error);
   }
+  return false;
+}
+
+async function openLocalPath(nativePath, developerText) {
+  try {
+    const { shell } = require("uxp");
+    if (shell && typeof shell.openPath === "function") {
+      const result = await shell.openPath(String(nativePath || ""), String(developerText || ""));
+      return result === "";
+    }
+  } catch (error) {
+    console.warn("Failed to open local path:", error);
+  }
+  return false;
 }
 
 function bindDonationImageEvents(imageEl, url, label) {
@@ -243,5 +337,7 @@ function bindDonationImageEvents(imageEl, url, label) {
     console.warn(`${label} node is missing`);
     return;
   }
-  imageEl.addEventListener("click", () => openDonationLink(url, label));
+  imageEl.addEventListener("click", () => {
+    void openExternalUrl(url, `将尝试打开${label}对应链接。`);
+  });
 }

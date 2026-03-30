@@ -35,6 +35,9 @@ Desktop.ini
 # Local project helper folders
 .roo/
 docs/
+!docs/
+docs/*
+!docs/ui-performance-execution-plan.md
 tools/
 plans/
 test/

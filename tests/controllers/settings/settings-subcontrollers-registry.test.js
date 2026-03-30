@@ -7,7 +7,6 @@ const {
 function createNoopDelegates() {
   return {
     saveApiKeyAndSettings: () => {},
-    testApiKey: () => {},
     parseApp: () => {},
     onToggleApiKey: () => {},
     saveTemplate: () => {},

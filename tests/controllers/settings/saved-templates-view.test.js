@@ -47,8 +47,10 @@ test("renderSavedTemplatesListHtml renders template rows with duplicate and acti
     }
   );
   assert.match(html, /data-id="enc-t\/1"/);
+  assert.match(html, /saved-item-template/);
   assert.match(html, /Title &lt;A&gt;/);
   assert.match(html, /重复 2\/3/);
+  assert.match(html, /记录ID: t\/1/);
   assert.match(html, /data-action="edit-template"/);
   assert.match(html, /data-action="delete-template"/);
 });

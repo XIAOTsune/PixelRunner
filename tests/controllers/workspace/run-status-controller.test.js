@@ -18,6 +18,7 @@ function createState(overrides = {}) {
   return {
     jobs: [],
     taskSummaryTimerId: null,
+    taskSummaryTimerMs: 0,
     taskSummaryHintText: "",
     taskSummaryHintType: "info",
     taskSummaryHintUntil: 0,
@@ -26,9 +27,9 @@ function createState(overrides = {}) {
   };
 }
 
-test("run status controller renders summary and controls ticker for live jobs", () => {
+test("run status controller renders summary and controls fast ticker for progressing jobs", () => {
   const state = createState({
-    jobs: [{ jobId: "J-1", status: JOB_STATUS.QUEUED, createdAt: 1 }]
+    jobs: [{ jobId: "J-1", status: JOB_STATUS.REMOTE_RUNNING, createdAt: 1 }]
   });
   const summaryEl = {};
   const calls = {
@@ -68,10 +69,11 @@ test("run status controller renders summary and controls ticker for live jobs", 
   });
 
   controller.updateTaskStatusSummary();
-  assert.equal(summaryEl.viewModel.text, "排队");
+  assert.equal(summaryEl.viewModel.text, "运行");
   assert.equal(calls.render, 1);
   assert.equal(calls.setInterval, 1);
   assert.equal(state.taskSummaryTimerId, timerToken);
+  assert.equal(state.taskSummaryTimerMs, 100);
 
   controller.updateTaskStatusSummary();
   assert.equal(calls.setInterval, 1);
@@ -82,6 +84,44 @@ test("run status controller renders summary and controls ticker for live jobs", 
 
   assert.equal(calls.clearInterval, 1);
   assert.equal(state.taskSummaryTimerId, null);
+  assert.equal(state.taskSummaryTimerMs, 0);
+});
+
+test("run status controller uses slower ticker for passive live jobs", () => {
+  const state = createState({
+    jobs: [{ jobId: "J-2", status: JOB_STATUS.QUEUED, createdAt: 1 }]
+  });
+  const calls = {
+    setInterval: [],
+    clearInterval: 0
+  };
+
+  const controller = createRunStatusController({
+    state,
+    dom: { taskStatusSummary: {} },
+    jobStatus: JOB_STATUS,
+    hasLiveJobs: (jobs, statusMap) =>
+      jobs.some((job) => job && ![statusMap.DONE, statusMap.FAILED].includes(job.status)),
+    buildTaskSummaryViewModel: () => ({
+      text: "",
+      title: "",
+      tone: "default"
+    }),
+    renderTaskSummary: () => {},
+    setIntervalFn: (_fn, intervalMs) => {
+      calls.setInterval.push(intervalMs);
+      return "passive-ticker";
+    },
+    clearIntervalFn: () => {
+      calls.clearInterval += 1;
+    }
+  });
+
+  controller.updateTaskStatusSummary();
+
+  assert.deepEqual(calls.setInterval, [400]);
+  assert.equal(calls.clearInterval, 0);
+  assert.equal(state.taskSummaryTimerMs, 400);
 });
 
 test("run status controller manages hint lifecycle and auto-clears on timeout", () => {
@@ -121,15 +161,15 @@ test("run status controller manages hint lifecycle and auto-clears on timeout", 
     }
   });
 
-  controller.setTaskSummaryHint("最近操作：提交成功", "warn", 900);
+  controller.setTaskSummaryHint("鏈€杩戞搷浣滐細鎻愪氦鎴愬姛", "warn", 900);
 
-  assert.equal(state.taskSummaryHintText, "最近操作：提交成功");
+  assert.equal(state.taskSummaryHintText, "鏈€杩戞搷浣滐細鎻愪氦鎴愬姛");
   assert.equal(state.taskSummaryHintType, "warn");
   assert.equal(state.taskSummaryHintUntil, 1900);
   assert.equal(state.taskSummaryHintTimerId, "hint-timeout-id");
   assert.equal(scheduledDelay, 920);
   assert.equal(calls.render, 1);
-  assert.equal(summaryEl.viewModel.text, "最近操作：提交成功");
+  assert.equal(summaryEl.viewModel.text, "鏈€杩戞搷浣滐細鎻愪氦鎴愬姛");
 
   now = 2000;
   assert.equal(typeof timeoutFn, "function");
@@ -191,6 +231,7 @@ test("run status controller updates job status and prunes history with active pr
 test("run status controller dispose clears timer resources and hint state", () => {
   const state = createState({
     taskSummaryTimerId: "summary-timer-id",
+    taskSummaryTimerMs: 100,
     taskSummaryHintText: "hint",
     taskSummaryHintType: "warn",
     taskSummaryHintUntil: 1234,
@@ -218,6 +259,7 @@ test("run status controller dispose clears timer resources and hint state", () =
   assert.deepEqual(cleared.intervals, ["summary-timer-id"]);
   assert.deepEqual(cleared.timeouts, ["hint-timer-id"]);
   assert.equal(state.taskSummaryTimerId, null);
+  assert.equal(state.taskSummaryTimerMs, 0);
   assert.equal(state.taskSummaryHintText, "");
   assert.equal(state.taskSummaryHintType, "info");
   assert.equal(state.taskSummaryHintUntil, 0);

@@ -1,4 +1,5 @@
 const TASK_SUMMARY_TICK_MS = 100;
+const TASK_SUMMARY_PASSIVE_TICK_MS = 400;
 
 function createRunStatusController(options = {}) {
   const state = options.state || {};
@@ -12,6 +13,11 @@ function createRunStatusController(options = {}) {
   const renderTaskSummary = typeof options.renderTaskSummary === "function" ? options.renderTaskSummary : () => {};
   const jobStatus = options.jobStatus && typeof options.jobStatus === "object" ? options.jobStatus : {};
   const runSummaryHintMs = Math.max(300, Number(options.runSummaryHintMs) || 1800);
+  const taskSummaryTickMs = Math.max(80, Number(options.taskSummaryTickMs) || TASK_SUMMARY_TICK_MS);
+  const passiveTaskSummaryTickMs = Math.max(
+    taskSummaryTickMs,
+    Number(options.passiveTaskSummaryTickMs) || TASK_SUMMARY_PASSIVE_TICK_MS
+  );
   const maxHistory = Math.max(1, Number(options.maxHistory) || 120);
   const nowFn = typeof options.now === "function" ? options.now : () => Date.now();
   const setIntervalFn = typeof options.setIntervalFn === "function" ? options.setIntervalFn : setInterval;
@@ -23,6 +29,7 @@ function createRunStatusController(options = {}) {
       ? options.resolveJobStatusLabel
       : createDefaultStatusLabelResolver(jobStatus);
   const activeJobStatuses = resolveActiveJobStatuses(jobStatus);
+  const progressingJobStatuses = resolveProgressingJobStatuses(jobStatus);
 
   function clearTaskSummaryHint() {
     if (state.taskSummaryHintTimerId) {
@@ -70,16 +77,25 @@ function createRunStatusController(options = {}) {
 
   function syncTaskSummaryTicker() {
     if (hasLiveJobs(state.jobs, jobStatus)) {
-      if (state.taskSummaryTimerId) return;
+      const nextTickMs = hasProgressingJobs(state.jobs, progressingJobStatuses)
+        ? taskSummaryTickMs
+        : passiveTaskSummaryTickMs;
+      if (state.taskSummaryTimerId && state.taskSummaryTimerMs === nextTickMs) return;
+      if (state.taskSummaryTimerId) {
+        clearIntervalFn(state.taskSummaryTimerId);
+        state.taskSummaryTimerId = null;
+      }
       state.taskSummaryTimerId = setIntervalFn(() => {
         updateTaskStatusSummary();
-      }, TASK_SUMMARY_TICK_MS);
+      }, nextTickMs);
+      state.taskSummaryTimerMs = nextTickMs;
       return;
     }
     if (state.taskSummaryTimerId) {
       clearIntervalFn(state.taskSummaryTimerId);
       state.taskSummaryTimerId = null;
     }
+    state.taskSummaryTimerMs = 0;
   }
 
   function updateTaskStatusSummary() {
@@ -127,6 +143,7 @@ function createRunStatusController(options = {}) {
       clearIntervalFn(state.taskSummaryTimerId);
       state.taskSummaryTimerId = null;
     }
+    state.taskSummaryTimerMs = 0;
   }
 
   return {
@@ -150,6 +167,20 @@ function resolveActiveJobStatuses(jobStatus = {}) {
     jobStatus.TIMEOUT_TRACKING || "TIMEOUT_TRACKING"
   ];
   return statuses.filter(Boolean);
+}
+
+function resolveProgressingJobStatuses(jobStatus = {}) {
+  return [
+    jobStatus.SUBMITTING || "SUBMITTING",
+    jobStatus.REMOTE_RUNNING || "REMOTE_RUNNING",
+    jobStatus.DOWNLOADING || "DOWNLOADING",
+    jobStatus.APPLYING || "APPLYING"
+  ].filter(Boolean);
+}
+
+function hasProgressingJobs(jobs, progressingStatuses = []) {
+  const list = Array.isArray(jobs) ? jobs : [];
+  return list.some((job) => job && progressingStatuses.includes(job.status));
 }
 
 function createDefaultStatusLabelResolver(jobStatus = {}) {

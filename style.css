@@ -727,6 +727,14 @@ textarea {
   flex-direction: column;
   gap: 8px;
 }
+.donation-shortcuts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.donation-shortcut-btn {
+  flex: 1 1 0;
+}
 .donation-tip {
   font-size: 12px;
   color: #d2d2d2;
@@ -1552,6 +1560,10 @@ textarea:focus-visible {
   background: #342626;
 }
 
+.donation-shortcut-btn {
+  min-width: 0;
+}
+
 .donation-label {
   color: var(--ui-text-sub);
 }
@@ -2273,7 +2285,61 @@ label {
 .saved-list {
   margin-top: 6px;
   padding-top: 6px;
-  max-height: 132px;
+  max-height: 228px;
+}
+
+.saved-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-bg-surface-2);
+}
+
+.saved-item:last-child {
+  margin-bottom: 0;
+}
+
+.saved-item-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.saved-item-title {
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--ui-text-main);
+}
+
+.saved-item-title-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-item-meta {
+  margin-top: 2px;
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--ui-text-dim);
+}
+
+.saved-item-duplicate {
+  margin-left: 6px;
+  font-size: 9px;
+  color: #ffb74d;
+}
+
+.saved-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
 }
 
 #templateContentInput {
@@ -2301,7 +2367,7 @@ label {
   }
 
   .saved-list {
-    max-height: 116px;
+    max-height: 168px;
   }
 
   #templateContentInput {
@@ -2638,4 +2704,100 @@ textarea:focus,
   z-index: 3;
   pointer-events: none;
   word-break: break-word;
+}
+
+/* ==========================================================================
+   Phase 6.2 Motion + Refresh Polish (2026-03-30)
+   Scope: low-risk transitions and interaction smoothness
+   ========================================================================== */
+
+@keyframes tabContentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalContentRiseIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.nav-item {
+  transition:
+    color var(--ui-motion-fast) ease,
+    border-color var(--ui-motion-base) ease,
+    background-color var(--ui-motion-base) ease;
+}
+
+.nav-item.active {
+  background: rgba(95, 180, 255, 0.08);
+}
+
+.tab-content.active {
+  animation: tabContentFadeIn var(--ui-motion-base) ease-out both;
+}
+
+.modal-overlay.active {
+  animation: modalOverlayFadeIn var(--ui-motion-fast) ease-out both;
+}
+
+.modal-overlay.active .modal-content,
+.donation-dialog[open] {
+  animation: modalContentRiseIn var(--ui-motion-base) ease-out both;
+}
+
+.image-input-wrapper,
+.tool-card,
+.app-select-card,
+.setting-section {
+  transition:
+    border-color var(--ui-motion-base) ease,
+    background-color var(--ui-motion-base) ease,
+    box-shadow var(--ui-motion-base) ease,
+    transform var(--ui-motion-fast) ease;
+}
+
+.tool-card:hover,
+.app-select-card:hover,
+.setting-section:hover {
+  border-color: var(--ui-border-strong);
+}
+
+.tool-card:hover {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-content.active,
+  .modal-overlay.active,
+  .modal-overlay.active .modal-content,
+  .donation-dialog[open] {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .donation-shortcuts {
+    gap: 6px;
+  }
 }

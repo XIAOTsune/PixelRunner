@@ -11,7 +11,6 @@ function createSettingsGateway(options = {}) {
 
   return {
     ...store,
-    testApiKey: (...args) => runninghub.testApiKey(...args),
     fetchAppInfo: (...args) => runninghub.fetchAppInfo(...args),
     getStorage: () => storage
   };

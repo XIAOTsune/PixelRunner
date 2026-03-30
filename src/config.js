@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS = {
   uploadAutoCompressEnabled: true,
   uploadCompressFormat: "jpeg",
   pasteStrategy: "normal",
-  cloudConcurrentJobs: 2
+  cloudConcurrentJobs: 3
 };
 
 const DEFAULT_PROMPT_TEMPLATES = [

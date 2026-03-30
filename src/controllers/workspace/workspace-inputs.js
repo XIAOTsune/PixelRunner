@@ -133,10 +133,19 @@ function createWorkspaceInputs(deps) {
 
     if (imageInputs.length > 0 && imgContainer) {
       imgContainer.style.display = "block";
+      const imageFragment =
+        typeof document !== "undefined" && typeof document.createDocumentFragment === "function"
+          ? document.createDocumentFragment()
+          : null;
       imageInputs.forEach((input, idx) => {
         const field = inputRenderer.createInputField(input, idx);
+        if (imageFragment) {
+          imageFragment.appendChild(field);
+          return;
+        }
         imgContainer.appendChild(field);
       });
+      if (imageFragment) imgContainer.appendChild(imageFragment);
     }
 
     if (otherInputs.length > 0 && container) {

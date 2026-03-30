@@ -95,10 +95,14 @@ function createTemplatePickerController(options = {}) {
       selectedIds: state.templatePickerSelectedIds,
       multipleMode: isMultipleMode()
     });
-    dom.templateList.innerHTML = renderTemplatePickerListHtml(viewModel, {
+    const nextHtml = renderTemplatePickerListHtml(viewModel, {
       escapeHtml,
       encodeDataId
     });
+    if (dom.templateList.__pixelRunnerLastHtml !== nextHtml) {
+      dom.templateList.innerHTML = nextHtml;
+      dom.templateList.__pixelRunnerLastHtml = nextHtml;
+    }
     updateSelectionInfo();
   }
 

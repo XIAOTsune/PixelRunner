@@ -57,8 +57,11 @@ test("renderSavedAppsListHtml renders app rows with encoded id and duplicate tag
     }
   );
   assert.match(html, /data-id="enc-a\/1"/);
+  assert.match(html, /saved-item-app/);
   assert.match(html, /App &lt;A&gt;/);
   assert.match(html, /重复 1\/2/);
+  assert.match(html, /应用ID: wf-1/);
+  assert.doesNotMatch(html, /记录ID/);
   assert.match(html, /data-action="edit-app"/);
   assert.match(html, /data-action="delete-app"/);
   assert.match(html, /disabled/);

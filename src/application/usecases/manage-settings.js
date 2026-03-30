@@ -38,7 +38,7 @@ function loadSettingsSnapshotUsecase(options = {}) {
     pasteStrategy: String((settings && settings.pasteStrategy) || ""),
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(
       settings && settings.cloudConcurrentJobs,
-      2
+      3
     )
   };
 }
@@ -47,14 +47,6 @@ function getSavedApiKeyUsecase(options = {}) {
   const store = options.store;
   requireMethod(store, "getApiKey", "store");
   return String(store.getApiKey() || "").trim();
-}
-
-async function testApiKeyUsecase(options = {}) {
-  const runninghub = options.runninghub;
-  const apiKey = String(options.apiKey || "").trim();
-  requireMethod(runninghub, "testApiKey", "runninghub");
-  if (!apiKey) throw new Error("Please enter API Key");
-  return runninghub.testApiKey(apiKey);
 }
 
 function saveSettingsUsecase(options = {}) {
@@ -76,7 +68,7 @@ function saveSettingsUsecase(options = {}) {
   const uploadAutoCompressEnabled = normalizeUploadAutoCompressEnabled(options.uploadAutoCompressEnabled, true);
   const uploadCompressFormat = normalizeUploadCompressFormat(options.uploadCompressFormat, "jpeg");
   const pasteStrategy = String(options.pasteStrategy || "").trim();
-  const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 2);
+  const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 3);
 
   store.saveApiKey(apiKey);
   store.saveSettings({
@@ -100,6 +92,5 @@ function saveSettingsUsecase(options = {}) {
 module.exports = {
   loadSettingsSnapshotUsecase,
   getSavedApiKeyUsecase,
-  testApiKeyUsecase,
   saveSettingsUsecase
 };
