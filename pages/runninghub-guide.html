@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RunningHub 插件教程</title>
+  <style>
+    :root {
+      --bg: #09111b;
+      --panel: rgba(15, 25, 40, 0.94);
+      --panel-strong: rgba(19, 32, 50, 0.98);
+      --line: rgba(126, 164, 213, 0.18);
+      --text: #edf4ff;
+      --text-sub: #a9bdd8;
+      --accent: #57a6ff;
+      --accent-soft: rgba(87, 166, 255, 0.14);
+      --success: #8ed18f;
+      --warning: #ffd27a;
+      --shadow: 0 18px 46px rgba(0, 0, 0, 0.32);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top right, rgba(87, 166, 255, 0.18), transparent 34%),
+        linear-gradient(180deg, #07101a 0%, #0a1320 100%);
+      color: var(--text);
+      font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+
+    body {
+      padding: 24px;
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .hero,
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -40px;
+      bottom: -40px;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(87, 166, 255, 0.24), transparent 68%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #b8d8ff;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(28px, 4vw, 40px);
+      line-height: 1.08;
+    }
+
+    p {
+      margin: 0;
+      color: var(--text-sub);
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(142, 209, 143, 0.12);
+      border: 1px solid rgba(142, 209, 143, 0.18);
+      color: #c8f3ca;
+      font-size: 12px;
+    }
+
+    .hero-grid,
+    .step-grid,
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .hero-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 20px;
+    }
+
+    .hero-card,
+    .step-card,
+    .checklist li,
+    .tip {
+      background: var(--panel-strong);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .hero-card strong,
+    .checklist strong,
+    .tip strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .section {
+      padding: 18px;
+    }
+
+    .section h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .step-index {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      margin-bottom: 10px;
+      background: var(--accent-soft);
+      color: #c7e1ff;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .step-card h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .checklist {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .tips {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .tip {
+      background: rgba(255, 210, 122, 0.07);
+      border-color: rgba(255, 210, 122, 0.16);
+    }
+
+    .tip strong {
+      color: var(--warning);
+    }
+
+    .footer {
+      text-align: center;
+      color: #87a2c2;
+      font-size: 12px;
+      padding-bottom: 8px;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 14px;
+      }
+
+      .hero,
+      .section {
+        padding: 16px;
+      }
+
+      .hero-grid,
+      .step-grid,
+      .checklist {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">PixelRunner 本地教程页</div>
+      <h1>RunningHub 插件 5 分钟上手</h1>
+      <p>这份教程适合第一次使用插件时快速过一遍核心流程。你只需要完成 API Key 保存、应用解析、图片获取和任务运行这四步，就可以把整条链路跑通。</p>
+      <div class="badge-row">
+        <span class="badge">本地 HTML 教程</span>
+        <span class="badge">适合新用户</span>
+        <span class="badge">覆盖常见问题</span>
+      </div>
+      <div class="hero-grid">
+        <div class="hero-card">
+          <strong>1. 准备 API Key</strong>
+          <span>先在 RunningHub 账号里拿到可用的 API Key，并保存到插件设置里。</span>
+        </div>
+        <div class="hero-card">
+          <strong>2. 解析应用</strong>
+          <span>把应用 ID 或链接填进设置页，保存成你常用的 AI 应用卡片。</span>
+        </div>
+        <div class="hero-card">
+          <strong>3. 进入 Workspace</strong>
+          <span>选择应用、准备图片和提示词，然后直接提交运行。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>标准流程</h2>
+      <div class="step-grid">
+        <article class="step-card">
+          <div class="step-index">01</div>
+          <h3>保存 API Key</h3>
+          <p>在“系统设置”里填入 RunningHub API Key，保存后插件会记住这个值，后续运行任务时会自动读取。</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">02</div>
+          <h3>解析并保存应用</h3>
+          <p>把 RunningHub 应用链接或应用 ID 粘贴到设置页，解析成功后保存。这样 Workspace 里就能直接选择，不用每次重新输入。</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">03</div>
+          <h3>准备输入内容</h3>
+          <p>回到 Workspace，选择一个已保存应用。根据应用需要上传图片、补充提示词、调整参数。</p>
+        </article>
+        <article class="step-card">
+          <div class="step-index">04</div>
+          <h3>运行并查看日志</h3>
+          <p>点击运行后，重点看状态摘要和日志区域。任务完成后结果会自动下载并回贴到 Photoshop。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>新手最常遇到的 4 个点</h2>
+      <ul class="checklist">
+        <li>
+          <strong>应用链接和应用 ID 都可以</strong>
+          设置页支持直接粘贴完整 RunningHub 链接，插件会自动规范化成可解析的应用 ID。
+        </li>
+        <li>
+          <strong>提示词不宜过长</strong>
+          单条提示词建议控制在 4000 字符内，过长可能被 RunningHub 侧拒绝或让调试变难。
+        </li>
+        <li>
+          <strong>并发数不是越高越好</strong>
+          默认并发数已经设置为 3。只有在账号本身支持更高并发时，再考虑继续调大。
+        </li>
+        <li>
+          <strong>优先从已保存应用开始</strong>
+          这样能减少解析链路的不确定性，也更适合稳定复用你常跑的工作流。
+        </li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>排查建议</h2>
+      <div class="tips">
+        <div class="tip">
+          <strong>任务没有开始运行：</strong>
+          先检查 API Key 是否已保存、应用是否解析成功、图片输入是否完整。
+        </div>
+        <div class="tip">
+          <strong>返回结果不符合预期：</strong>
+          优先确认当前应用、提示词和图片是否都是最新的，再观察日志里是否出现旧输入残留。
+        </div>
+        <div class="tip">
+          <strong>看起来有点卡：</strong>
+          优先留意日志刷新、图片体积和并发数设置。并发数调得过高不一定更快，反而可能让体验变差。
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">这是一份随插件一起打包的本地教程页，后续可以继续扩展成更完整的帮助中心。</div>
+  </main>
+</body>
+</html>
