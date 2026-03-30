@@ -4,7 +4,7 @@ const taskStatus = require("./runninghub-task-status");
 const { pollTaskOutputCore } = require("./runninghub-polling");
 const { runAppTaskCore } = require("./runninghub-runner");
 const { fetchWithTimeout } = require("./runninghub-runner/request-strategy");
-const { testApiKeyCore, fetchAccountStatusCore } = require("./runninghub-account");
+const { fetchAccountStatusCore } = require("./runninghub-account");
 const { toMessage, parseJsonResponse, throwIfCancelled } = require("./runninghub-common");
 const { fetchAppInfoCore } = require("./runninghub-parser");
 
@@ -93,18 +93,6 @@ async function downloadResultBinary(url, options = {}) {
   return response.arrayBuffer();
 }
 
-async function testApiKey(apiKey) {
-  return testApiKeyCore({
-    apiKey,
-    helpers: {
-      fetchImpl: fetch,
-      api: API,
-      parseJsonResponse,
-      toMessage
-    }
-  });
-}
-
 async function fetchAccountStatus(apiKey) {
   return fetchAccountStatusCore({
     apiKey,
@@ -123,6 +111,5 @@ module.exports = {
   cancelTask,
   pollTaskOutput,
   downloadResultBinary,
-  testApiKey,
   fetchAccountStatus
 };

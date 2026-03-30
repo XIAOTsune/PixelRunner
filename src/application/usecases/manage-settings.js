@@ -49,14 +49,6 @@ function getSavedApiKeyUsecase(options = {}) {
   return String(store.getApiKey() || "").trim();
 }
 
-async function testApiKeyUsecase(options = {}) {
-  const runninghub = options.runninghub;
-  const apiKey = String(options.apiKey || "").trim();
-  requireMethod(runninghub, "testApiKey", "runninghub");
-  if (!apiKey) throw new Error("Please enter API Key");
-  return runninghub.testApiKey(apiKey);
-}
-
 function saveSettingsUsecase(options = {}) {
   const store = options.store;
   requireMethod(store, "getSettings", "store");
@@ -100,6 +92,5 @@ function saveSettingsUsecase(options = {}) {
 module.exports = {
   loadSettingsSnapshotUsecase,
   getSavedApiKeyUsecase,
-  testApiKeyUsecase,
   saveSettingsUsecase
 };

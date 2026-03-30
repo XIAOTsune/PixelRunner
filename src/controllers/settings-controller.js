@@ -29,7 +29,6 @@ const {
 const {
   loadSettingsSnapshotUsecase,
   getSavedApiKeyUsecase,
-  testApiKeyUsecase,
   saveSettingsUsecase
 } = require("../application/usecases/manage-settings");
 const { parseRunninghubAppUsecase } = require("../application/usecases/parse-runninghub-app");
@@ -101,7 +100,6 @@ function buildSettingsDelegates() {
   return {
     saveApiKeyAndSettings: () =>
       getSettingsSubcontrollersRegistry().getSettingsEditorController().saveApiKeyAndSettings(),
-    testApiKey: () => getSettingsSubcontrollersRegistry().getSettingsEditorController().testApiKey(),
     parseApp: () => getSettingsSubcontrollersRegistry().getSettingsParseController().parseApp(),
     onToggleApiKey,
     saveTemplate: () => getSettingsSubcontrollersRegistry().getSettingsEditorController().saveTemplate(),
@@ -203,7 +201,6 @@ function getSettingsSubcontrollersRegistry() {
       editorDeps: {
         loadSettingsSnapshotUsecase,
         saveSettingsUsecase,
-        testApiKeyUsecase,
         saveTemplateUsecase,
         normalizeCloudConcurrentJobs,
         normalizeUploadRetryCount,

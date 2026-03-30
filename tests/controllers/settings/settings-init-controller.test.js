@@ -77,13 +77,12 @@ test("settings init controller bindCoreEvents rebinds core listeners and collaps
 
   controller.bindCoreEvents();
 
-  assert.equal(bindings.length, 15);
+  assert.equal(bindings.length, 14);
   assert.equal(collapseTabBindCalls, 1);
   assert.deepEqual(
     bindings.map((item) => [item.target && item.target.id, item.eventName]),
     [
       ["btnSaveApiKey", "click"],
-      ["btnTestApiKey", "click"],
       ["btnParseApp", "click"],
       ["toggleApiKey", "click"],
       ["btnSaveTemplate", "click"],
@@ -100,8 +99,8 @@ test("settings init controller bindCoreEvents rebinds core listeners and collaps
     ]
   );
   assert.equal(bindings[0].handler, handlers.onSaveApiKeyAndSettings);
-  assert.equal(bindings[8].handler, handlers.onUpdateTemplateLengthHint);
-  assert.equal(bindings[10].handler, handlers.onTemplateContentPaste);
+  assert.equal(bindings[7].handler, handlers.onUpdateTemplateLengthHint);
+  assert.equal(bindings[9].handler, handlers.onTemplateContentPaste);
 });
 
 test("settings init controller initialize keeps expected setup sequence", () => {
@@ -148,6 +147,6 @@ test("settings init controller initialize keeps expected setup sequence", () => 
   assert.equal(order[order.length - 3], "sync_lists");
   assert.equal(order[order.length - 2], "update_hint");
   assert.equal(order[order.length - 1], "load_diag_summary");
-  assert.equal(order.filter((item) => item === "bind_event").length, 15);
+  assert.equal(order.filter((item) => item === "bind_event").length, 14);
   assert.equal(order.includes("bind_collapse_tab"), true);
 });

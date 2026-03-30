@@ -183,7 +183,7 @@ test("workspace settings controller refresh and settings change keep list/accoun
   await Promise.resolve();
   await Promise.resolve();
 
-  assert.deepEqual(calls.syncWorkspaceApps, [{ forceRerender: false }]);
+  assert.deepEqual(calls.syncWorkspaceApps, [{ forceRerender: true }]);
   assert.equal(calls.logs.some((item) => item.message === "应用列表已刷新" && item.type === "info"), true);
   assert.equal(calls.logs.some((item) => item.message.includes("回贴策略已固定为")), true);
   assert.equal(calls.fetchAccountStatus, 2);

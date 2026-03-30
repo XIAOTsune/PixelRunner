@@ -98,7 +98,7 @@ function createWorkspaceSettingsController(options = {}) {
   }
 
   function onRefreshWorkspaceClick() {
-    syncWorkspaceApps({ forceRerender: false });
+    syncWorkspaceApps({ forceRerender: true });
     updateAccountStatus();
     log("应用列表已刷新", "info");
   }

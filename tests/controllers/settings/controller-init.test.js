@@ -113,7 +113,6 @@ function createSettingsDomMap() {
     "uploadMaxEdgeSettingSelect",
     "toggleApiKey",
     "btnSaveApiKey",
-    "btnTestApiKey",
     "appIdInput",
     "appNameInput",
     "btnParseApp",

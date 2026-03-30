@@ -19,8 +19,6 @@ function createSettingsEditorController(options = {}) {
         });
   const saveSettingsUsecase =
     typeof options.saveSettingsUsecase === "function" ? options.saveSettingsUsecase : () => ({});
-  const testApiKeyUsecase =
-    typeof options.testApiKeyUsecase === "function" ? options.testApiKeyUsecase : async () => ({ message: "" });
   const saveTemplateUsecase =
     typeof options.saveTemplateUsecase === "function" ? options.saveTemplateUsecase : () => ({ reason: "saved" });
   const normalizeCloudConcurrentJobs =
@@ -101,11 +99,7 @@ function createSettingsEditorController(options = {}) {
       : () => {};
   const messages = Object.assign(
     {
-      saveSettingsSuccess: "\u8bbe\u7f6e\u5df2\u4fdd\u5b58",
-      apiKeyRequired: "\u8bf7\u8f93\u5165 API Key",
-      testingApiKey: "\u6d4b\u8bd5\u4e2d...",
-      testApiKeyAction: "\u6d4b\u8bd5\u8fde\u63a5",
-      testApiKeyFailedPrefix: "\u6d4b\u8bd5\u51fa\u9519: "
+      saveSettingsSuccess: "\u8bbe\u7f6e\u5df2\u4fdd\u5b58"
     },
     options.messages && typeof options.messages === "object" ? options.messages : {}
   );
@@ -229,33 +223,6 @@ function createSettingsEditorController(options = {}) {
     return payload;
   }
 
-  async function testApiKey() {
-    const apiKey = String((dom.apiKeyInput && dom.apiKeyInput.value) || "").trim();
-    if (!apiKey) {
-      alertFn(messages.apiKeyRequired);
-      return null;
-    }
-    if (dom.btnTestApiKey) {
-      dom.btnTestApiKey.textContent = messages.testingApiKey;
-    }
-    try {
-      const result = await testApiKeyUsecase({
-        runninghub: resolveStore(),
-        apiKey
-      });
-      alertFn(result && result.message ? result.message : "");
-      return result;
-    } catch (error) {
-      const message = error && error.message ? error.message : String(error || "unknown");
-      alertFn(`${messages.testApiKeyFailedPrefix}${message}`);
-      return null;
-    } finally {
-      if (dom.btnTestApiKey) {
-        dom.btnTestApiKey.textContent = messages.testApiKeyAction;
-      }
-    }
-  }
-
   function saveTemplate() {
     try {
       const result = saveTemplateUsecase({
@@ -281,7 +248,6 @@ function createSettingsEditorController(options = {}) {
     updateTemplateLengthHint,
     onTemplateContentPaste,
     saveApiKeyAndSettings,
-    testApiKey,
     saveTemplate
   };
 }

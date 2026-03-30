@@ -3,7 +3,6 @@ const assert = require("node:assert/strict");
 const {
   loadSettingsSnapshotUsecase,
   getSavedApiKeyUsecase,
-  testApiKeyUsecase,
   saveSettingsUsecase
 } = require("../../../src/application/usecases/manage-settings");
 
@@ -46,27 +45,6 @@ test("getSavedApiKeyUsecase trims api key", () => {
     }
   });
   assert.equal(result, "key-1");
-});
-
-test("testApiKeyUsecase validates and delegates to runninghub", async () => {
-  await assert.rejects(
-    () =>
-      testApiKeyUsecase({
-        runninghub: {
-          testApiKey: async () => ({ message: "ok" })
-        },
-        apiKey: " "
-      }),
-    /API Key/
-  );
-
-  const result = await testApiKeyUsecase({
-    runninghub: {
-      testApiKey: async (apiKey) => ({ ok: true, apiKey })
-    },
-    apiKey: "  hello "
-  });
-  assert.deepEqual(result, { ok: true, apiKey: "hello" });
 });
 
 test("saveSettingsUsecase saves api key and settings payload", () => {

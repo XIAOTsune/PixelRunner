@@ -13,7 +13,6 @@ function createFixture(options = {}) {
     uploadHardLimitBytesInput: { value: options.uploadHardLimitBytesInputValue || "" },
     uploadAutoCompressEnabledInput: { value: options.uploadAutoCompressEnabledInputValue || "", disabled: false },
     uploadCompressFormatInput: { value: options.uploadCompressFormatInputValue || "" },
-    btnTestApiKey: { textContent: "test" },
     templateTitleInput: { value: options.templateTitleValue || "" },
     templateContentInput: { value: options.templateContentValue || "" },
     templateLengthHint: {}
@@ -35,7 +34,6 @@ function createFixture(options = {}) {
   const calls = {
     loadSnapshotArgs: [],
     saveSettingsArgs: [],
-    testApiKeyArgs: [],
     saveTemplateArgs: [],
     normalizeCloudConcurrentCalls: [],
     normalizeUploadRetryCountCalls: [],
@@ -54,11 +52,7 @@ function createFixture(options = {}) {
   };
   const messages = Object.assign(
     {
-      saveSettingsSuccess: "saved settings",
-      apiKeyRequired: "api key required",
-      testingApiKey: "testing",
-      testApiKeyAction: "test",
-      testApiKeyFailedPrefix: "test failed: "
+      saveSettingsSuccess: "saved settings"
     },
     options.messages || {}
   );
@@ -73,11 +67,6 @@ function createFixture(options = {}) {
     saveSettingsUsecase: (args) => {
       calls.saveSettingsArgs.push(args);
       return options.saveSettingsPayload || { apiKeyChanged: true, settingsChanged: true };
-    },
-    testApiKeyUsecase: async (args) => {
-      calls.testApiKeyArgs.push(args);
-      if (options.testApiKeyError) throw options.testApiKeyError;
-      return options.testApiKeyResult || { message: "ok" };
     },
     saveTemplateUsecase: (args) => {
       calls.saveTemplateArgs.push(args);
@@ -302,43 +291,6 @@ test("settings editor controller saves api key/settings and emits settings chang
   assert.equal(calls.saveSettingsArgs[0].cloudConcurrentJobs, 11);
   assert.deepEqual(calls.emitSettings, [{ apiKeyChanged: true, settingsChanged: true }]);
   assert.deepEqual(calls.alerts, ["saved settings"]);
-});
-
-test("settings editor controller testApiKey validates empty key and skips request", async () => {
-  const fixture = createFixture({
-    apiKeyInputValue: "   "
-  });
-  const { controller, calls, dom } = fixture;
-
-  const result = await controller.testApiKey();
-
-  assert.equal(result, null);
-  assert.equal(calls.testApiKeyArgs.length, 0);
-  assert.deepEqual(calls.alerts, ["api key required"]);
-  assert.equal(dom.btnTestApiKey.textContent, "test");
-});
-
-test("settings editor controller testApiKey restores button text on success and failure", async () => {
-  const successFixture = createFixture({
-    apiKeyInputValue: "  key-ok "
-  });
-  const successResult = await successFixture.controller.testApiKey();
-  assert.deepEqual(successResult, { message: "ok" });
-  assert.equal(successFixture.calls.testApiKeyArgs.length, 1);
-  assert.equal(successFixture.calls.testApiKeyArgs[0].apiKey, "key-ok");
-  assert.equal(successFixture.calls.testApiKeyArgs[0].runninghub, successFixture.store);
-  assert.deepEqual(successFixture.calls.alerts, ["ok"]);
-  assert.equal(successFixture.dom.btnTestApiKey.textContent, "test");
-
-  const failedFixture = createFixture({
-    apiKeyInputValue: "key-fail",
-    testApiKeyError: new Error("network down")
-  });
-  const failedResult = await failedFixture.controller.testApiKey();
-  assert.equal(failedResult, null);
-  assert.equal(failedFixture.calls.testApiKeyArgs.length, 1);
-  assert.deepEqual(failedFixture.calls.alerts, ["test failed: network down"]);
-  assert.equal(failedFixture.dom.btnTestApiKey.textContent, "test");
 });
 
 test("settings editor controller saves template and clears editor inputs", () => {
