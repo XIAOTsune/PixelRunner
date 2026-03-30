@@ -2639,3 +2639,93 @@ textarea:focus,
   pointer-events: none;
   word-break: break-word;
 }
+
+/* ==========================================================================
+   Phase 6.2 Motion + Refresh Polish (2026-03-30)
+   Scope: low-risk transitions and interaction smoothness
+   ========================================================================== */
+
+@keyframes tabContentFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalOverlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalContentRiseIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.nav-item {
+  transition:
+    color var(--ui-motion-fast) ease,
+    border-color var(--ui-motion-base) ease,
+    background-color var(--ui-motion-base) ease;
+}
+
+.nav-item.active {
+  background: rgba(95, 180, 255, 0.08);
+}
+
+.tab-content.active {
+  animation: tabContentFadeIn var(--ui-motion-base) ease-out both;
+}
+
+.modal-overlay.active {
+  animation: modalOverlayFadeIn var(--ui-motion-fast) ease-out both;
+}
+
+.modal-overlay.active .modal-content,
+.donation-dialog[open] {
+  animation: modalContentRiseIn var(--ui-motion-base) ease-out both;
+}
+
+.image-input-wrapper,
+.tool-card,
+.app-select-card,
+.setting-section {
+  transition:
+    border-color var(--ui-motion-base) ease,
+    background-color var(--ui-motion-base) ease,
+    box-shadow var(--ui-motion-base) ease,
+    transform var(--ui-motion-fast) ease;
+}
+
+.tool-card:hover,
+.app-select-card:hover,
+.setting-section:hover {
+  border-color: var(--ui-border-strong);
+}
+
+.tool-card:hover {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-content.active,
+  .modal-overlay.active,
+  .modal-overlay.active .modal-content,
+  .donation-dialog[open] {
+    animation: none;
+  }
+}

@@ -42,14 +42,21 @@ function setupTabs() {
     tabTools: "viewTools",
     tabSettings: "viewSettings"
   };
+  const tabButtons = Object.keys(tabs)
+    .map((tabId) => document.getElementById(tabId))
+    .filter(Boolean);
+  const tabViews = Object.values(tabs)
+    .map((viewId) => document.getElementById(viewId))
+    .filter(Boolean);
 
   Object.keys(tabs).forEach((tabId) => {
     const btn = document.getElementById(tabId);
     if (!btn) return;
 
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".nav-item").forEach((el) => el.classList.remove("active"));
-      document.querySelectorAll(".tab-content").forEach((el) => el.classList.remove("active"));
+      if (btn.classList.contains("active")) return;
+      tabButtons.forEach((el) => el.classList.remove("active"));
+      tabViews.forEach((el) => el.classList.remove("active"));
 
       btn.classList.add("active");
       const viewId = tabs[tabId];

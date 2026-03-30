@@ -58,7 +58,7 @@ test("run status controller renders summary and controls ticker for live jobs", 
     setIntervalFn: (fn, intervalMs) => {
       calls.setInterval += 1;
       tickerFn = fn;
-      assert.equal(intervalMs, 100);
+      assert.equal(intervalMs, 500);
       return timerToken;
     },
     clearIntervalFn: (timerId) => {

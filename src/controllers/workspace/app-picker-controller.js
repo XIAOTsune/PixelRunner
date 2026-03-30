@@ -45,13 +45,20 @@ function createAppPickerController(options = {}) {
     });
 
     if (dom.appPickerStats) {
-      dom.appPickerStats.textContent = `${viewModel.visibleCount} / ${viewModel.totalCount}`;
+      const nextStatsText = `${viewModel.visibleCount} / ${viewModel.totalCount}`;
+      if (dom.appPickerStats.textContent !== nextStatsText) {
+        dom.appPickerStats.textContent = nextStatsText;
+      }
     }
 
-    dom.appPickerList.innerHTML = renderAppPickerListHtml(viewModel, {
+    const nextHtml = renderAppPickerListHtml(viewModel, {
       escapeHtml,
       encodeDataId
     });
+    if (dom.appPickerList.__pixelRunnerLastHtml !== nextHtml) {
+      dom.appPickerList.innerHTML = nextHtml;
+      dom.appPickerList.__pixelRunnerLastHtml = nextHtml;
+    }
   }
 
   function close() {

@@ -1,4 +1,4 @@
-const TASK_SUMMARY_TICK_MS = 100;
+const TASK_SUMMARY_TICK_MS = 500;
 
 function createRunStatusController(options = {}) {
   const state = options.state || {};
@@ -12,6 +12,7 @@ function createRunStatusController(options = {}) {
   const renderTaskSummary = typeof options.renderTaskSummary === "function" ? options.renderTaskSummary : () => {};
   const jobStatus = options.jobStatus && typeof options.jobStatus === "object" ? options.jobStatus : {};
   const runSummaryHintMs = Math.max(300, Number(options.runSummaryHintMs) || 1800);
+  const taskSummaryTickMs = Math.max(250, Number(options.taskSummaryTickMs) || TASK_SUMMARY_TICK_MS);
   const maxHistory = Math.max(1, Number(options.maxHistory) || 120);
   const nowFn = typeof options.now === "function" ? options.now : () => Date.now();
   const setIntervalFn = typeof options.setIntervalFn === "function" ? options.setIntervalFn : setInterval;
@@ -73,7 +74,7 @@ function createRunStatusController(options = {}) {
       if (state.taskSummaryTimerId) return;
       state.taskSummaryTimerId = setIntervalFn(() => {
         updateTaskStatusSummary();
-      }, TASK_SUMMARY_TICK_MS);
+      }, taskSummaryTickMs);
       return;
     }
     if (state.taskSummaryTimerId) {

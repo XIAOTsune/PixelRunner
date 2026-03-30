@@ -26,26 +26,68 @@ function buildLogLine({ message, type = "info", now = new Date() }) {
   return `[${time}] [${level}] ${String(message || "")}`;
 }
 
+function appendLogText(logEl, line) {
+  if (!logEl) return;
+  const nextLine = String(line || "");
+  if (!nextLine) return;
+
+  if (typeof logEl.value === "string") {
+    logEl.value = logEl.value ? `${logEl.value}\n${nextLine}` : nextLine;
+    return;
+  }
+
+  const current = getLogText(logEl);
+  logEl.textContent = current ? `${current}\n${nextLine}` : nextLine;
+}
+
+function clearPendingLogScroll(logEl) {
+  if (!logEl) return;
+  if (typeof cancelAnimationFrame === "function" && logEl.__pixelRunnerLogScrollFrameId) {
+    cancelAnimationFrame(logEl.__pixelRunnerLogScrollFrameId);
+  }
+  if (typeof clearTimeout === "function" && logEl.__pixelRunnerLogScrollTimeoutId) {
+    clearTimeout(logEl.__pixelRunnerLogScrollTimeoutId);
+  }
+  logEl.__pixelRunnerLogScrollFrameId = null;
+  logEl.__pixelRunnerLogScrollTimeoutId = null;
+}
+
+function scrollLogToBottom(logEl) {
+  if (!logEl) return;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function scheduleLogScrollToBottom(logEl) {
+  if (!logEl) return;
+  clearPendingLogScroll(logEl);
+
+  if (typeof requestAnimationFrame === "function") {
+    logEl.__pixelRunnerLogScrollFrameId = requestAnimationFrame(() => {
+      logEl.__pixelRunnerLogScrollFrameId = null;
+      scrollLogToBottom(logEl);
+    });
+    return;
+  }
+
+  if (typeof setTimeout === "function") {
+    logEl.__pixelRunnerLogScrollTimeoutId = setTimeout(() => {
+      logEl.__pixelRunnerLogScrollTimeoutId = null;
+      scrollLogToBottom(logEl);
+    }, 16);
+  }
+}
+
 function renderLogLine(logEl, line) {
   if (!logEl) return;
-  const current = getLogText(logEl);
-  setLogText(logEl, current ? `${current}\n${line}` : line);
-  // Always follow latest log for progress visibility.
-  logEl.scrollTop = logEl.scrollHeight;
-  if (typeof setTimeout === "function") {
-    setTimeout(() => {
-      if (!logEl) return;
-      logEl.scrollTop = logEl.scrollHeight;
-      setTimeout(() => {
-        if (!logEl) return;
-        logEl.scrollTop = logEl.scrollHeight;
-      }, 16);
-    }, 0);
-  }
+  appendLogText(logEl, line);
+  // Always follow latest log for progress visibility, but collapse follow-up scroll work.
+  scrollLogToBottom(logEl);
+  scheduleLogScrollToBottom(logEl);
 }
 
 function clearLogView(logEl) {
   if (!logEl) return;
+  clearPendingLogScroll(logEl);
   setLogText(logEl, "");
 }
 
