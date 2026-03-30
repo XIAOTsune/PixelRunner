@@ -30,8 +30,7 @@ function renderSavedAppsListHtml(viewModel = {}, helpers = {}) {
             <div class="saved-item saved-item-app" data-id="${encodedRawId}">
                 <div class="saved-item-body">
                     <div class="saved-item-title">${escapeHtml(item && item.name)}</div>
-                    <div class="saved-item-meta">应用ID: ${escapeHtml(item && item.appId)}</div>
-                    <div class="saved-item-meta">记录ID: ${escapeHtml(item && item.recordId)}${duplicateTag}</div>
+                    <div class="saved-item-meta">应用ID: ${escapeHtml(item && item.appId)}${duplicateTag}</div>
                 </div>
                 <div class="saved-item-actions">
                     <button class="tiny-btn" type="button" data-action="edit-app" data-id="${encodedRawId}" ${

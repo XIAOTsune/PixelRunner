@@ -15,7 +15,7 @@ function createSettingsEditorController(options = {}) {
           uploadAutoCompressEnabled: true,
           uploadCompressFormat: "jpeg",
           pasteStrategy: "",
-          cloudConcurrentJobs: 2
+          cloudConcurrentJobs: 3
         });
   const saveSettingsUsecase =
     typeof options.saveSettingsUsecase === "function" ? options.saveSettingsUsecase : () => ({});
@@ -26,7 +26,7 @@ function createSettingsEditorController(options = {}) {
       ? options.normalizeCloudConcurrentJobs
       : (value) => {
           const num = Number(value);
-          if (!Number.isFinite(num)) return 2;
+          if (!Number.isFinite(num)) return 3;
           return Math.max(1, Math.min(100, Math.floor(num)));
         };
   const normalizeUploadRetryCount =

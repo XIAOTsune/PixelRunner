@@ -38,7 +38,7 @@ function loadSettingsSnapshotUsecase(options = {}) {
     pasteStrategy: String((settings && settings.pasteStrategy) || ""),
     cloudConcurrentJobs: normalizeCloudConcurrentJobs(
       settings && settings.cloudConcurrentJobs,
-      2
+      3
     )
   };
 }
@@ -68,7 +68,7 @@ function saveSettingsUsecase(options = {}) {
   const uploadAutoCompressEnabled = normalizeUploadAutoCompressEnabled(options.uploadAutoCompressEnabled, true);
   const uploadCompressFormat = normalizeUploadCompressFormat(options.uploadCompressFormat, "jpeg");
   const pasteStrategy = String(options.pasteStrategy || "").trim();
-  const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 2);
+  const cloudConcurrentJobs = normalizeCloudConcurrentJobs(options.cloudConcurrentJobs, 3);
 
   store.saveApiKey(apiKey);
   store.saveSettings({

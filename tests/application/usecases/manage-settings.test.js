@@ -120,6 +120,6 @@ test("saveSettingsUsecase falls back to defaults for invalid values", () => {
     uploadAutoCompressEnabled: false,
     uploadCompressFormat: "jpeg",
     pasteStrategy: "",
-    cloudConcurrentJobs: 2
+    cloudConcurrentJobs: 3
   });
 });
