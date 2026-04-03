@@ -1,0 +1,14 @@
+{
+  "name": "pixelrunner-uxp",
+  "version": "2.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "build:watch": "node ./scripts/build.mjs --watch",
+    "package:test": "node ./scripts/package-test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.3"
+  }
+}

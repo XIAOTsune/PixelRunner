@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PixelRunner Host</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="host-shell">
+    <div id="hostStatus" class="host-status">Loading PixelRunner WebView...</div>
+    <div class="webview-mount">
+      <webview
+        id="pixelrunnerWebview"
+        class="host-webview"
+        width="100%"
+        height="100%"
+        src="plugin:/app.html"
+        uxpAllowInspector="true"></webview>
+    </div>
+  </div>
+
+  <script src="dist/host.bundle.js"></script>
+</body>
+</html>

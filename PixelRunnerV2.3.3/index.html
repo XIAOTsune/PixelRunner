@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RunningHub Photoshop 插件</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!--
+    Phase 0 DOM Contract Freeze (2026-02-25)
+    Rule:
+    1) Keep controller-bound ids stable.
+    2) Keep modal hooks and critical tag types stable.
+    3) UI optimization can change visual style/layout only, not business behavior.
+    Core workspace ids:
+    btnRun, btnCancelJob, btnOpenAppPicker, btnRefreshWorkspaceApps, btnClearLog,
+    taskStatusSummary, appPickerMeta, dynamicInputContainer, imageInputContainer, logWindow,
+    appPickerModal, appPickerModalClose, appPickerSearchInput, appPickerStats, appPickerList,
+    templateModal, templateModalTitle, templateList, templateModalActions,
+    templateModalSelectionInfo, btnApplyTemplateSelection, templateModalClose,
+    accountSummary, accountBalanceValue, accountCoinsValue
+  -->
+  <div class="nav-tabs">
+      <div class="nav-brand" title="Plugin Logo">
+        <img class="nav-brand-logo" src="icons/icon.png" alt="logo" />
+        <span id="btnDonate" class="donate-text-link" role="button" tabindex="0">打赏</span>
+      </div>
+      <button id="tabWorkspace" class="nav-item active" type="button">
+        <span class="nav-item-icon nav-item-icon-workspace" aria-hidden="true"></span>
+        <span class="nav-item-label">RH 工作台</span>
+      </button>
+      <button id="tabTools" class="nav-item" type="button">
+        <span class="nav-item-icon nav-item-icon-tools" aria-hidden="true"></span>
+        <span class="nav-item-label">工具箱</span>
+      </button>
+      <button id="tabSettings" class="nav-item" type="button">
+        <span class="nav-item-icon nav-item-icon-settings" aria-hidden="true"></span>
+        <span class="nav-item-label">设置</span>
+      </button>
+  </div>
+  
+  <section id="viewTools" class="tab-content view-shell view-tools-shell">
+    <div class="view-stack view-tools-stack">
+    <div class="tools-intro section-intro">
+      <div class="tools-title-row">
+        <span class="section-icon section-icon-tools" aria-hidden="true"></span>
+        <div class="tools-title">工具箱</div>
+      </div>
+      <div class="tools-subtitle">常用 PS 功能入口，后续会加入更多工具与可选参数。</div>
+    </div>
+
+    <div class="tools-group">
+      <div class="tools-group-title">图层辅助</div>
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">黑白观察层</div>
+              <div class="tool-card-desc">创建观察组（黑白 + 曲线）用于明暗检查。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnObserver" class="main-btn main-btn-secondary tool-action-btn" type="button">创建</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">类型: 观察组</span>
+            <span class="tool-chip">用途: 明暗检查</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">中性灰图层</div>
+              <div class="tool-card-desc">新建 50% 灰层并设为柔光，用于加深/减淡。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnNeutralGray" class="main-btn main-btn-secondary tool-action-btn" type="button">创建</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">填充: 50%</span>
+            <span class="tool-chip">模式: 柔光</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tools-group">
+      <div class="tools-group-title">滤镜与修复</div>
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">高斯模糊</div>
+              <div class="tool-card-desc">打开 PS 高斯模糊对话框，作用于当前图层或选区。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnGaussianBlur" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">滤镜 &gt; 模糊</span>
+            <span class="tool-chip">系统对话框</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">锐化</div>
+              <div class="tool-card-desc">直接执行一次锐化处理，快速提升清晰度。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnSharpen" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">滤镜 &gt; 锐化</span>
+            <span class="tool-chip">快捷执行</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">高反差保留</div>
+              <div class="tool-card-desc">调用高反差保留滤镜，可在弹窗中设置半径。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnHighPass" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">滤镜 &gt; 其他</span>
+            <span class="tool-chip">系统对话框</span>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">智能识别填充</div>
+              <div class="tool-card-desc">调用内容识别填充（Content-Aware），需先有选区。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnContentAwareFill" class="main-btn main-btn-secondary tool-action-btn" type="button">运行</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">编辑 &gt; 填充</span>
+            <span class="tool-chip">内容识别</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tools-group">
+      <div class="tools-group-title">合并操作</div>
+      <div class="tools-grid">
+        <div class="tool-card">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">&#36873;&#25321;&#24182;&#36974;&#20303;</div>
+              <div class="tool-card-desc">&#25171;&#24320; Photoshop &#21407;&#29983;&#8220;&#36873;&#25321;&#24182;&#36974;&#20303;&#8221;&#38754;&#26495;&#65292;&#38656;&#20808;&#26377;&#36873;&#21306;&#12290;</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnSelectAndMask" class="main-btn main-btn-secondary tool-action-btn" type="button">&#36816;&#34892;</button>
+            </div>
+          </div>
+          <div class="tool-card-options">
+            <span class="tool-chip">&#36873;&#25321; &gt; &#36873;&#25321;&#24182;&#36974;&#20303;</span>
+            <span class="tool-chip">&#20132;&#20114;&#38754;&#26495;</span>
+          </div>
+        </div>
+
+        <div class="tool-card tool-card-compact">
+          <div class="tool-card-header">
+            <div class="tool-card-info">
+              <div class="tool-card-title">盖印图层</div>
+              <div class="tool-card-desc">等同 Ctrl+Alt+Shift+E。</div>
+            </div>
+            <div class="tool-card-actions">
+              <button id="btnStamp" class="main-btn tool-action-btn" type="button">执行</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+</section>
+
+  <section id="viewWorkspace" class="tab-content active view-shell view-workspace-shell">
+    <header class="header workspace-header">
+      <div class="header-main">
+        <div class="workspace-title-row">
+          <span class="section-icon section-icon-workspace" aria-hidden="true"></span>
+          <h3>RunningHub AI 助手</h3>
+        </div>
+        <div id="accountSummary" class="account-summary is-empty" title="请先设置 API Key">
+          <span class="account-pill">
+            <span class="account-pill-label">余额</span>
+            <span id="accountBalanceValue" class="account-pill-value">--</span>
+          </span>
+          <span class="account-pill">
+            <span class="account-pill-label">RH币</span>
+            <span id="accountCoinsValue" class="account-pill-value">--</span>
+          </span>
+        </div>
+      </div>
+      <span class="version">v2.3.3</span>
+    </header>
+
+    <div class="workspace-flow">
+    <div class="card app-select-card workspace-stage workspace-stage-app">
+      <div class="card-title-row">
+        <div class="card-title">选择应用</div>
+        
+        <div id="appPickerMeta" class="app-picker-meta">
+          <span class="placeholder-text">请先点击右侧切换应用</span>
+        </div>
+
+        <div class="card-title-tools">
+          <button id="btnOpenAppPicker" class="tiny-btn tiny-btn-compact" type="button">切换</button>
+          <button id="btnRefreshWorkspaceApps" class="tiny-btn tiny-btn-compact" type="button">刷新</button>
+        </div>
+      </div>
+      </div>
+
+    <div id="workspaceInputArea" class="workspace-input-area workspace-stage workspace-stage-input">
+      <div id="imageInputContainer" class="image-input-container"></div>
+      <div id="dynamicInputContainer" class="dynamic-input-container">
+        <div class="empty-state">
+          <div class="empty-state-icon">📝</div>
+          <div>请先选择一个应用</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="workspace-stage workspace-stage-run">
+      <button id="btnCancelJob" class="main-btn main-btn-secondary" type="button" disabled>取消任务</button>
+      <button id="btnRun" class="main-btn main-btn-primary" type="button" disabled>开始运行</button>
+      <div id="taskStatusSummary" class="task-status-summary">后台任务：无</div>
+    </div>
+
+    <div class="workspace-stage workspace-stage-log">
+    <div class="log-toolbar">
+      <div class="log-toolbar-title">运行日志</div>
+      <div class="log-toolbar-actions">
+        <button id="btnClearLog" class="tiny-btn tiny-btn-compact" type="button">清空</button>
+      </div>
+    </div>
+    <textarea id="logWindow" spellcheck="false">[系统] 插件已加载，等待操作...</textarea>
+    <div class="log-hint">日志会自动滚动到最新；可手动框选复制。</div>
+    </div>
+    </div>
+  </section>
+
+  <section id="viewSettings" class="tab-content view-shell view-settings-shell">
+    <header class="header">
+      <div class="settings-title-row">
+        <span class="section-icon section-icon-settings" aria-hidden="true"></span>
+        <h3>系统设置</h3>
+      </div>
+      <span class="version">v2.3.3</span>
+    </header>
+
+    <div class="settings-flow">
+    <div class="setting-section setting-section-core">
+      <div class="setting-section-title">API Key</div>
+      <div class="control-group">
+        <label for="apiKeyInput">RunningHub API Key</label>
+        <div class="inline-input">
+          <input id="apiKeyInput" type="password" placeholder="请输入 API Key" />
+          <button id="toggleApiKey" type="button" class="tiny-btn">显示</button>
+        </div>
+      </div>
+      <div class="inline-row">
+        <button id="btnSaveApiKey" class="main-btn main-btn-primary" type="button">保存设置</button>
+      </div>
+      <div class="setting-hint">API Key 仅保存在本地，不会上传到第三方。</div>
+    </div>
+
+    <div class="setting-section setting-section-core">
+      <div class="setting-section-title">AI 应用管理</div>
+      <div class="control-group">
+        <label for="appIdInput">应用 ID / URL</label>
+        <div class="inline-row">
+          <input id="appIdInput" type="text" placeholder="例如: 123456 或 RunningHub 应用链接" />
+          <button id="btnParseApp" class="main-btn main-btn-secondary parse-btn" type="button">解析</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <label for="appNameInput">应用名称</label>
+        <input id="appNameInput" type="text" placeholder="例如: SDXL 风格化" />
+      </div>
+
+      <div id="parseResultContainer"></div>
+
+      <div id="savedAppsList" class="saved-list"></div>
+    </div>
+
+    <div class="setting-section setting-section-core">
+      <div class="setting-section-title">提示词模板</div>
+      <div class="control-group">
+        <label for="templateTitleInput">模板标题</label>
+        <input id="templateTitleInput" type="text" placeholder="例如: 高质量二次元" />
+      </div>
+      <div class="control-group">
+        <label for="templateContentInput">模板内容</label>
+        <textarea id="templateContentInput" rows="6" placeholder="输入模板文本"></textarea>
+      </div>
+      <div id="templateLengthHint" class="setting-hint">提示：插件本地不会截断模板内容；建议单条提示词控制在 4000 字符内。</div>
+      <div class="inline-row">
+        <button id="btnSaveTemplate" type="button" class="main-btn main-btn-primary">保存模板</button>
+        <button id="btnExportTemplatesJson" type="button" class="main-btn">导出 JSON</button>
+        <button id="btnImportTemplatesJson" type="button" class="main-btn">导入 JSON</button>
+      </div>
+      <div id="savedTemplatesList" class="saved-list"></div>
+    </div>
+
+    <div id="advancedSettingsSection" class="setting-section setting-section-collapsible setting-section-compact setting-section-aux is-collapsed">
+      <div id="advancedSettingsHeader" class="setting-section-title setting-section-toggle" role="button" tabindex="0" aria-expanded="false">
+        <span>高级设置</span>
+        <button id="advancedSettingsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
+      </div>
+      <div class="setting-section-body">
+        <div class="control-group">
+          <label for="pollIntervalInput">轮询间隔（秒）</label>
+          <input id="pollIntervalInput" type="number" min="1" max="15" value="2" />
+        </div>
+        <div class="control-group">
+          <label for="timeoutInput">超时时间（秒）</label>
+          <input id="timeoutInput" type="number" min="10" max="600" value="180" />
+        </div>
+        <div class="control-group">
+          <label for="cloudConcurrentJobsInput">云端任务并发数（1-100）</label>
+          <input id="cloudConcurrentJobsInput" type="number" min="1" max="100" value="3" />
+          <div class="setting-hint">默认 3。仅当账号支持更高并发时再提高。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadRetryCountInput">上传自动重试次数（0-5）</label>
+          <input id="uploadRetryCountInput" type="number" min="0" max="5" value="2" />
+          <div class="setting-hint">仅用于图片上传阶段。0 表示不重试，2 表示最多 3 轮尝试。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadTargetBytesInput">上传目标体积（bytes）</label>
+          <input id="uploadTargetBytesInput" type="number" min="1000000" max="100000000" value="9000000" />
+          <div class="setting-hint">safe 判定阈值，建议 9000000。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadHardLimitBytesInput">上传硬上限（bytes）</label>
+          <input id="uploadHardLimitBytesInput" type="number" min="1000000" max="100000000" value="10000000" />
+          <div class="setting-hint">blocked 判定阈值，必须大于或等于目标体积。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadAutoCompressEnabledInput">自动压缩</label>
+          <select id="uploadAutoCompressEnabledInput" disabled>
+            <option value="true">始终开启</option>
+          </select>
+          <div class="setting-hint">运行链路固定自动压缩，设置页不再提供关闭入口。</div>
+        </div>
+        <div class="control-group">
+          <label for="uploadCompressFormatInput">自动压缩格式</label>
+          <select id="uploadCompressFormatInput">
+            <option value="jpeg">JPEG</option>
+          </select>
+          <div class="setting-hint">当前版本固定走 Photoshop 原生 JPEG 导出链路。</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="envDiagnosticsSection" class="setting-section setting-section-collapsible setting-section-compact setting-section-aux is-collapsed">
+      <div id="envDiagnosticsHeader" class="setting-section-title setting-section-toggle" role="button" tabindex="0" aria-expanded="false">
+        <span>环境诊断</span>
+        <button id="envDiagnosticsToggle" type="button" class="dynamic-input-toggle setting-section-toggle-btn">展开</button>
+      </div>
+      <div class="setting-section-body">
+        <div class="inline-row">
+          <button id="btnLoadDiagnosticsSummary" type="button" class="main-btn main-btn-secondary">读取诊断摘要</button>
+        </div>
+        <div class="control-group">
+          <label for="envDoctorOutput">诊断输出</label>
+          <textarea id="envDoctorOutput" rows="10" placeholder="点击“读取诊断摘要”查看环境诊断与解析调试信息"></textarea>
+        </div>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <dialog id="donationDialog" class="donation-dialog">
+    <div class="donation-dialog-header">
+      <div class="donation-dialog-title">支持作者</div>
+      <sp-button id="donationDialogClose" variant="secondary" size="s" quiet>关闭</sp-button>
+    </div>
+    <div class="donation-dialog-body">
+      <div class="donation-shortcuts">
+        <button id="btnOpenRunningHubSite" type="button" class="main-btn main-btn-secondary donation-shortcut-btn">打开 RunningHub</button>
+        <button id="btnOpenTutorialSite" type="button" class="main-btn donation-shortcut-btn">打开教程网站</button>
+      </div>
+      <div class="donation-grid">
+        <div class="donation-card">
+          <img id="donationWxImage" src="icons/vx.png" alt="微信赞助二维码" width="136" height="136" loading="eager" />
+          <div class="donation-label">微信赞助</div>
+        </div>
+        <div class="donation-card">
+          <img id="donationZfbImage" src="icons/zfb.png" alt="支付宝赞助二维码" width="136" height="136" loading="eager" />
+          <div class="donation-label">支付宝赞助</div>
+        </div>
+      </div>
+      <div id="donationStatusHint" class="donation-status">正在加载二维码...</div>
+      <div class="donation-tip">感谢支持！可扫码赞助，若无法自动唤起请直接使用手机扫码。</div>
+    </div>
+  </dialog>
+
+  <div id="templateModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span id="templateModalTitle">选择提示词模板</span>
+        <button id="templateModalClose" class="modal-close" type="button">&times;</button>
+      </div>
+      <div id="templateList" class="template-list"></div>
+      <div id="templateModalActions" class="template-modal-actions" style="display:none;">
+        <div id="templateModalSelectionInfo" class="template-modal-selection-info">已选择 0 / 5</div>
+        <button id="btnApplyTemplateSelection" type="button" class="main-btn main-btn-primary">应用组合</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="appPickerModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        选择 AI 应用
+        <button id="appPickerModalClose" class="modal-close" type="button">&times;</button>
+      </div>
+      <div class="app-picker-search-row">
+        <input id="appPickerSearchInput" type="text" placeholder="搜索应用名称..." />
+        <div id="appPickerStats" class="app-picker-stats">0 / 0</div>
+      </div>
+      <div id="appPickerList" class="app-picker-modal-list"></div>
+    </div>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>

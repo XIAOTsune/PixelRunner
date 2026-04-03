@@ -1,0 +1,2349 @@
+var PixelRunnerWebviewBundle = (() => {
+  // src/webview/runtime.js
+  (function initRuntimeModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const bridgeState = {
+      seq: 0,
+      pending: /* @__PURE__ */ new Map(),
+      listenerBound: false
+    };
+    function isPluginRuntime() {
+      return typeof global !== "undefined" && (!!global.uxp || !!global.uxpHost);
+    }
+    function getById(id) {
+      return document.getElementById(id);
+    }
+    function escapeHtml(value) {
+      return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+    }
+    function createId(prefix = "id") {
+      return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    function readBrowserStorage(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (_) {
+        return null;
+      }
+    }
+    function writeBrowserStorage(key, value) {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    function postHostMessage(message) {
+      if (typeof global === "undefined") return false;
+      if (!global.uxpHost || typeof global.uxpHost.postMessage !== "function") return false;
+      try {
+        global.uxpHost.postMessage(message);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    function ensureBridgeListener() {
+      if (bridgeState.listenerBound || typeof global === "undefined") return;
+      global.addEventListener("message", (event) => {
+        const payload = event && event.data;
+        if (!payload || typeof payload !== "object") return;
+        if (!("id" in payload) || !("result" in payload) && !("error" in payload)) return;
+        const pending = bridgeState.pending.get(payload.id);
+        if (!pending) return;
+        bridgeState.pending.delete(payload.id);
+        clearTimeout(pending.timer);
+        if (payload.error) {
+          pending.reject(new Error(String(payload.error.message || "Bridge request failed")));
+          return;
+        }
+        pending.resolve(payload.result);
+      });
+      bridgeState.listenerBound = true;
+    }
+    function callHost(method, args = [], options = {}) {
+      if (!isPluginRuntime()) {
+        return Promise.reject(new Error("Host bridge unavailable in browser preview"));
+      }
+      ensureBridgeListener();
+      const id = `bridge-${Date.now()}-${++bridgeState.seq}`;
+      const timeoutMs = Math.max(1e3, Number(options.timeoutMs) || 8e3);
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          bridgeState.pending.delete(id);
+          reject(new Error(`Bridge timeout: ${method}`));
+        }, timeoutMs);
+        bridgeState.pending.set(id, { resolve, reject, timer });
+        const posted = postHostMessage({ id, method, args });
+        if (!posted) {
+          clearTimeout(timer);
+          bridgeState.pending.delete(id);
+          reject(new Error(`Failed to post host message: ${method}`));
+        }
+      });
+    }
+    async function storageGetItem(key) {
+      if (isPluginRuntime()) {
+        try {
+          return await callHost("storage.getItem", [key]);
+        } catch (_) {
+          return readBrowserStorage(key);
+        }
+      }
+      return readBrowserStorage(key);
+    }
+    async function storageSetItem(key, value) {
+      if (isPluginRuntime()) {
+        try {
+          return await callHost("storage.setItem", [key, value]);
+        } catch (_) {
+          return writeBrowserStorage(key, value);
+        }
+      }
+      return writeBrowserStorage(key, value);
+    }
+    function readJsonText(rawValue, fallback) {
+      if (!rawValue) return fallback;
+      try {
+        return JSON.parse(rawValue);
+      } catch (_) {
+        return fallback;
+      }
+    }
+    function setSummaryStatus(element, message, type = "info") {
+      if (!element) return;
+      element.textContent = String(message || "");
+      element.dataset.status = String(type || "info");
+    }
+    modules.runtime = {
+      bridgeState,
+      isPluginRuntime,
+      getById,
+      escapeHtml,
+      createId,
+      postHostMessage,
+      callHost,
+      storageGetItem,
+      storageSetItem,
+      readJsonText,
+      setSummaryStatus
+    };
+  })(window);
+
+  // src/webview/state.js
+  (function initStateModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const STORAGE_KEYS = {
+      API_KEY: "rh_api_key",
+      SETTINGS: "rh_settings",
+      APPS: "rh_ai_apps_v2",
+      PROMPT_TEMPLATES: "rh_prompt_templates",
+      LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
+      CURRENT_APP_ID: "pixelrunner.current_app_id"
+    };
+    const DEFAULT_SETTINGS = {
+      apiKey: "",
+      pollInterval: 2,
+      timeout: 180
+    };
+    const state = {
+      apps: [],
+      currentApp: null,
+      templates: [],
+      appPickerKeyword: "",
+      settings: { ...DEFAULT_SETTINGS },
+      settingsLoaded: false,
+      hostRuntime: null,
+      currentDocumentInfo: null,
+      editingAppId: null,
+      editingTemplateId: null,
+      formValues: {},
+      templatePicker: {
+        open: false,
+        targetKey: "",
+        selectedIds: [],
+        mode: "multiple",
+        maxSelection: 5
+      },
+      imageCapture: {
+        asset: null,
+        assets: [],
+        selectedAssetId: "",
+        maxDimension: 1536,
+        quality: 82
+      },
+      lastRunPayload: null,
+      lastResult: {
+        appName: "",
+        sourceDocument: null,
+        outputUrl: "",
+        taskId: "",
+        placedAt: 0
+      },
+      runningTask: {
+        taskId: "",
+        appName: "",
+        status: "idle"
+      }
+    };
+    function normalizeSettings(settings) {
+      const source = settings && typeof settings === "object" ? settings : {};
+      const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
+      const timeout = Math.min(600, Math.max(10, Math.floor(Number(source.timeout) || DEFAULT_SETTINGS.timeout)));
+      return {
+        apiKey: String(source.apiKey || "").trim(),
+        pollInterval,
+        timeout
+      };
+    }
+    function normalizeAppInputs(inputs) {
+      if (!Array.isArray(inputs)) return [];
+      return inputs.filter((item) => item && typeof item === "object").map((item, index) => {
+        const source = item && typeof item === "object" ? item : {};
+        const key = String(item.key || item.name || `param_${index + 1}`).trim();
+        if (!key) return null;
+        return {
+          ...source,
+          key,
+          label: String(item.label || item.name || key).trim(),
+          name: String(item.name || item.label || key).trim(),
+          type: String(item.type || "text").trim() || "text",
+          required: item.required !== false,
+          default: item.default,
+          options: Array.isArray(item.options) ? item.options : void 0
+        };
+      }).filter(Boolean);
+    }
+    function normalizeAppRecord(app, index = 0) {
+      const runtime = modules.runtime;
+      const source = app && typeof app === "object" ? app : {};
+      const now = Date.now();
+      const appId = String(source.appId || source.webappId || source.id || "").trim();
+      const id = String(source.id || "").trim() || runtime.createId("app");
+      const name = String(source.name || source.title || `应用 ${index + 1}`).trim() || `应用 ${index + 1}`;
+      return {
+        id,
+        appId,
+        name,
+        description: String(source.description || "").trim(),
+        inputs: normalizeAppInputs(source.inputs),
+        createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now,
+        updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now
+      };
+    }
+    function normalizeTemplateRecord(template, index = 0) {
+      const runtime = modules.runtime;
+      const source = template && typeof template === "object" ? template : {};
+      const id = String(source.id || "").trim() || runtime.createId("tpl");
+      const title = String(source.title || "").trim();
+      const content = String(source.content == null ? "" : source.content);
+      const now = Date.now();
+      if (!title || !content.trim()) return null;
+      return {
+        id,
+        title,
+        content,
+        createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
+        updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+      };
+    }
+    function normalizeTemplateList(templates) {
+      const seenIds = /* @__PURE__ */ new Set();
+      return (Array.isArray(templates) ? templates : []).map((item, index) => normalizeTemplateRecord(item, index)).filter((item) => {
+        if (!item) return false;
+        if (seenIds.has(item.id)) {
+          item.id = modules.runtime.createId("tpl");
+        }
+        seenIds.add(item.id);
+        return true;
+      });
+    }
+    function normalizeAppList(apps) {
+      return (Array.isArray(apps) ? apps : []).filter((item) => item && typeof item === "object").map((item, index) => normalizeAppRecord(item, index)).filter((item) => item.appId);
+    }
+    function getAppInputCount(app) {
+      return Array.isArray(app && app.inputs) ? app.inputs.length : 0;
+    }
+    function getAppDisplayName(app) {
+      return String(app && (app.name || app.title) || "未命名应用");
+    }
+    function getAppDisplayId(app) {
+      return String(app && (app.appId || app.id) || "-");
+    }
+    function isPromptLikeInput(input) {
+      if (!input || typeof input !== "object") return false;
+      const key = String(input.key || "").toLowerCase();
+      const label = String(input.label || input.name || "").toLowerCase();
+      return /prompt|negative|positive|提示词|负向|正向/.test(`${key} ${label}`);
+    }
+    function buildDefaultFormValues(app) {
+      const values = {};
+      const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
+      inputs.forEach((input) => {
+        const key = String(input.key || "").trim();
+        if (!key) return;
+        if (input.default != null) {
+          values[key] = input.default;
+          return;
+        }
+        if (input.type === "boolean" || input.type === "switch" || input.type === "checkbox") {
+          values[key] = false;
+          return;
+        }
+        if (input.type === "image" || input.type === "file") {
+          values[key] = null;
+          return;
+        }
+        values[key] = "";
+      });
+      return values;
+    }
+    modules.state = {
+      STORAGE_KEYS,
+      DEFAULT_SETTINGS,
+      state,
+      normalizeSettings,
+      normalizeAppInputs,
+      normalizeAppRecord,
+      normalizeAppList,
+      normalizeTemplateRecord,
+      normalizeTemplateList,
+      getAppInputCount,
+      getAppDisplayName,
+      getAppDisplayId,
+      isPromptLikeInput,
+      buildDefaultFormValues
+    };
+  })(window);
+
+  // src/webview/ui.js
+  (function initUiModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function logToWorkspace(message, type = "info") {
+      const runtime = modules.runtime;
+      const logWindow = runtime.getById("logWindow");
+      if (!logWindow) return;
+      const normalizedType = String(type || "info").toUpperCase();
+      const text = `[${normalizedType}] ${String(message || "")}`;
+      logWindow.value = logWindow.value ? `${logWindow.value}
+${text}` : text;
+      logWindow.scrollTop = logWindow.scrollHeight;
+      runtime.postHostMessage({
+        type: "pixelrunner.webview.log",
+        level: String(type || "info"),
+        message: String(message || "")
+      });
+    }
+    function setActiveView(activeTabId) {
+      Object.entries(modules.main.VIEW_MAP).forEach(([tabId, viewId]) => {
+        const tab = modules.runtime.getById(tabId);
+        const view = modules.runtime.getById(viewId);
+        const isActive = tabId === activeTabId;
+        if (tab) tab.classList.toggle("active", isActive);
+        if (view) {
+          view.classList.toggle("active", isActive);
+          view.classList.toggle("is-hidden", !isActive);
+        }
+      });
+    }
+    function bindTabs() {
+      Object.keys(modules.main.VIEW_MAP).forEach((tabId) => {
+        const tab = modules.runtime.getById(tabId);
+        if (!tab) return;
+        tab.addEventListener("click", () => setActiveView(tabId));
+      });
+    }
+    function bindTactileFeedback() {
+      const tactileTargets = document.querySelectorAll(".ghost-btn, .mini-btn, .secondary-btn, .primary-btn, .nav-tab");
+      tactileTargets.forEach((element) => {
+        let releaseTimer = null;
+        const clearPressed = () => {
+          if (releaseTimer) {
+            clearTimeout(releaseTimer);
+            releaseTimer = null;
+          }
+          element.classList.remove("is-pressed");
+        };
+        const setPressed = () => {
+          if (releaseTimer) {
+            clearTimeout(releaseTimer);
+            releaseTimer = null;
+          }
+          element.classList.add("is-pressed");
+        };
+        const releasePressed = () => {
+          if (releaseTimer) clearTimeout(releaseTimer);
+          releaseTimer = setTimeout(() => {
+            element.classList.remove("is-pressed");
+            releaseTimer = null;
+          }, 120);
+        };
+        element.addEventListener("pointerdown", setPressed);
+        element.addEventListener("pointerup", releasePressed);
+        element.addEventListener("pointercancel", clearPressed);
+        element.addEventListener("pointerleave", clearPressed);
+        element.addEventListener("mouseleave", clearPressed);
+        element.addEventListener("blur", clearPressed);
+      });
+    }
+    function bindPlaceholderActions() {
+      const runtime = modules.runtime;
+      const logWindow = runtime.getById("logWindow");
+      const donateButtons = ["btnDonate", "btnDonateTools", "btnDonateSettings"].map((id) => runtime.getById(id)).filter(Boolean);
+      const clearButton = runtime.getById("btnClearLog");
+      donateButtons.forEach((donateButton) => {
+        if (!logWindow) return;
+        donateButton.addEventListener("click", () => {
+          logWindow.value += "\n[提示] 支持项目入口已预留，后续会接入正式弹窗和外链。";
+          logWindow.scrollTop = logWindow.scrollHeight;
+        });
+      });
+      if (clearButton && logWindow) {
+        clearButton.addEventListener("click", () => {
+          logWindow.value = "[系统] 日志已清空，等待新的模块接入。";
+        });
+      }
+    }
+    function bindToolActions() {
+      const toolConfigs = [
+        {
+          id: "btnObserver",
+          payload: { action: "observerLayer", layerName: "黑白观察层" },
+          pending: "正在创建黑白观察层...",
+          success: (result) => result && result.message ? result.message : "已创建黑白观察层"
+        },
+        {
+          id: "btnNeutralGray",
+          payload: { action: "neutralGrayLayer" },
+          pending: "正在创建中性灰图层...",
+          success: (result) => result && result.message ? result.message : "已创建中性灰图层"
+        },
+        {
+          id: "btnGaussianBlur",
+          payload: { action: "gaussianBlur", radius: 4 },
+          pending: "正在执行高斯模糊...",
+          success: (result) => result && result.message ? result.message : "已执行高斯模糊"
+        },
+        {
+          id: "btnSharpen",
+          payload: { action: "sharpen" },
+          pending: "正在执行锐化...",
+          success: (result) => result && result.message ? result.message : "已执行锐化"
+        },
+        {
+          id: "btnHighPass",
+          payload: { action: "highPass", radius: 2 },
+          pending: "正在执行高反差保留...",
+          success: (result) => result && result.message ? result.message : "已执行高反差保留"
+        },
+        {
+          id: "btnStamp",
+          payload: { action: "stampVisible", layerName: "盖印图层" },
+          pending: "正在生成盖印图层...",
+          success: (result) => result && result.message ? result.message : "已生成盖印图层"
+        },
+        {
+          id: "btnContentAwareFill",
+          payload: { action: "contentAwareFill" },
+          pending: "正在触发内容识别填充...",
+          success: (result) => result && result.message ? result.message : "已触发内容识别填充"
+        },
+        {
+          id: "btnSelectAndMask",
+          payload: { action: "selectAndMask" },
+          pending: "正在触发选择并遮住...",
+          success: (result) => result && result.message ? result.message : "已触发选择并遮住"
+        }
+      ];
+      toolConfigs.forEach((config) => {
+        const button = modules.runtime.getById(config.id);
+        if (!button) return;
+        button.addEventListener("click", async () => {
+          if (!modules.runtime.isPluginRuntime()) {
+            logToWorkspace(`浏览器预览模式下不会执行工具动作：${config.id}`, "info");
+            return;
+          }
+          button.disabled = true;
+          logToWorkspace(config.pending, "info");
+          try {
+            const result = await modules.runtime.callHost("photoshop.runToolAction", [config.payload], {
+              timeoutMs: 45e3
+            });
+            logToWorkspace(config.success(result), "success");
+          } catch (error) {
+            logToWorkspace(`工具执行失败：${error.message}`, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+    }
+    modules.ui = {
+      logToWorkspace,
+      setActiveView,
+      bindTabs,
+      bindTactileFeedback,
+      bindPlaceholderActions,
+      bindToolActions
+    };
+  })(window);
+
+  // src/webview/workspace.js
+  (function initWorkspaceModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function setModalOpen(modalId, open) {
+      const modal = modules.runtime.getById(modalId);
+      if (!modal) return;
+      modal.classList.toggle("is-open", open);
+      document.body.classList.toggle("modal-open", open);
+    }
+    function isImageInput(input) {
+      const type = String(input && input.type || "").trim().toLowerCase();
+      return type === "image" || type === "file";
+    }
+    function isPromptField(input) {
+      return modules.state.isPromptLikeInput(input) && !isImageInput(input);
+    }
+    function hasImageAsset(asset) {
+      return Boolean(
+        asset && typeof asset === "object" && (typeof asset.dataUrl === "string" && asset.dataUrl.trim() || typeof asset.base64 === "string" && asset.base64.trim() || typeof asset.url === "string" && asset.url.trim())
+      );
+    }
+    function findImageInputs(app) {
+      return (Array.isArray(app && app.inputs) ? app.inputs : []).filter(isImageInput);
+    }
+    function getResultDefaultLayerName() {
+      const state = modules.state.state;
+      const appName = String(
+        state.lastResult && state.lastResult.appName || state.currentApp && state.currentApp.name || "Result"
+      ).trim();
+      return `PixelRunner - ${appName}`;
+    }
+    function formatSelectionLabel(selectionBounds) {
+      if (!selectionBounds) return "full document";
+      const width = Math.max(0, Number(selectionBounds.right) - Number(selectionBounds.left));
+      const height = Math.max(0, Number(selectionBounds.bottom) - Number(selectionBounds.top));
+      return `${Math.round(width)}x${Math.round(height)}`;
+    }
+    function formatDocumentLabel(docInfo) {
+      if (!docInfo || !docInfo.hasActiveDocument) {
+        return "无活动文档";
+      }
+      const title = String(docInfo.title || "Untitled");
+      const documentId = Number(docInfo.documentId) || 0;
+      const sizeText = Number.isFinite(Number(docInfo.width)) && Number.isFinite(Number(docInfo.height)) ? ` ${Math.round(Number(docInfo.width))}x${Math.round(Number(docInfo.height))}` : "";
+      return `${title} (#${documentId})${sizeText}`;
+    }
+    function getImageCaptureSettings() {
+      const state = modules.state.state;
+      const maxDimensionInput = modules.runtime.getById("imageCaptureMaxDimension");
+      const qualityInput = modules.runtime.getById("imageCaptureQuality");
+      if (maxDimensionInput) {
+        state.imageCapture.maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(maxDimensionInput.value) || 1536)));
+      }
+      if (qualityInput) {
+        state.imageCapture.quality = Math.max(20, Math.min(100, Math.floor(Number(qualityInput.value) || 82)));
+      }
+      return {
+        maxDimension: state.imageCapture.maxDimension,
+        quality: state.imageCapture.quality
+      };
+    }
+    function syncImageCaptureControls() {
+      const state = modules.state.state;
+      const maxDimensionInput = modules.runtime.getById("imageCaptureMaxDimension");
+      const qualityInput = modules.runtime.getById("imageCaptureQuality");
+      if (maxDimensionInput) maxDimensionInput.value = String(state.imageCapture.maxDimension || 1536);
+      if (qualityInput) qualityInput.value = String(state.imageCapture.quality || 82);
+    }
+    function cloneCaptureAsset(asset) {
+      if (!hasImageAsset(asset)) return null;
+      return {
+        assetId: String(asset.assetId || ""),
+        capturedAt: Number(asset.capturedAt) || 0,
+        kind: String(asset.kind || "captured-document-image"),
+        source: String(asset.source || "photoshop-document"),
+        documentId: Number(asset.documentId) || null,
+        document: asset.document && typeof asset.document === "object" ? { ...asset.document } : null,
+        width: Number(asset.width) || null,
+        height: Number(asset.height) || null,
+        originalWidth: Number(asset.originalWidth) || null,
+        originalHeight: Number(asset.originalHeight) || null,
+        quality: Number(asset.quality) || null,
+        maxDimension: Number(asset.maxDimension) || null,
+        mimeType: String(asset.mimeType || "image/jpeg"),
+        dataUrl: String(asset.dataUrl || ""),
+        base64: String(asset.base64 || ""),
+        url: String(asset.url || "")
+      };
+    }
+    function createCaptureAssetId() {
+      return `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+    function getCaptureAssets() {
+      const assets = modules.state.state.imageCapture.assets;
+      return Array.isArray(assets) ? assets.filter(hasImageAsset) : [];
+    }
+    function getSelectedCaptureAsset() {
+      const state = modules.state.state;
+      const assets = getCaptureAssets();
+      const selectedAssetId = String(state.imageCapture.selectedAssetId || "");
+      const selected = assets.find((asset) => String(asset.assetId || "") === selectedAssetId) || assets[0] || null;
+      state.imageCapture.asset = selected || null;
+      state.imageCapture.selectedAssetId = selected ? String(selected.assetId || "") : "";
+      return selected;
+    }
+    function setSelectedCaptureAsset(assetId) {
+      const state = modules.state.state;
+      const nextId = String(assetId || "").trim();
+      const assets = getCaptureAssets();
+      const selected = assets.find((asset) => String(asset.assetId || "") === nextId) || assets[0] || null;
+      state.imageCapture.selectedAssetId = selected ? String(selected.assetId || "") : "";
+      state.imageCapture.asset = selected || null;
+      return selected;
+    }
+    function pushCapturedAsset(asset) {
+      const state = modules.state.state;
+      const nextAsset = cloneCaptureAsset({
+        ...asset,
+        assetId: asset && asset.assetId ? asset.assetId : createCaptureAssetId(),
+        capturedAt: Number(asset && asset.capturedAt) > 0 ? Number(asset.capturedAt) : Date.now()
+      });
+      if (!nextAsset) return null;
+      const nextAssets = [
+        nextAsset,
+        ...getCaptureAssets().filter((item) => String(item.assetId || "") !== String(nextAsset.assetId || ""))
+      ].slice(0, 12);
+      state.imageCapture.assets = nextAssets;
+      state.imageCapture.selectedAssetId = String(nextAsset.assetId || "");
+      state.imageCapture.asset = nextAsset;
+      return nextAsset;
+    }
+    function removeCapturedAsset(assetId) {
+      const state = modules.state.state;
+      const targetId = String(assetId || "").trim();
+      if (!targetId) return;
+      state.imageCapture.assets = getCaptureAssets().filter((asset) => String(asset.assetId || "") !== targetId);
+      Object.keys(state.formValues).forEach((key) => {
+        const value = state.formValues[key];
+        if (value && typeof value === "object" && String(value.assetId || "") === targetId) {
+          state.formValues[key] = null;
+        }
+      });
+      setSelectedCaptureAsset(state.imageCapture.selectedAssetId === targetId ? "" : state.imageCapture.selectedAssetId);
+    }
+    function clearAllCapturedAssets() {
+      const state = modules.state.state;
+      state.imageCapture.assets = [];
+      state.imageCapture.selectedAssetId = "";
+      state.imageCapture.asset = null;
+      Object.keys(state.formValues).forEach((key) => {
+        if (hasImageAsset(state.formValues[key])) {
+          state.formValues[key] = null;
+        }
+      });
+    }
+    function getImageTransferModeLabel(input) {
+      if (!input || typeof input !== "object") return "dataUrl";
+      if (input.passObject === true) return "object";
+      const marker = String(
+        input.imageValueMode || input.valueMode || input.transferMode || input.transport || ""
+      ).trim().toLowerCase();
+      if (marker === "base64") return "base64";
+      if (marker === "url") return "url";
+      if (marker === "object" || marker === "json") return "object";
+      return "dataUrl";
+    }
+    function assignCaptureToInput(key, assetId = "") {
+      const state = modules.state.state;
+      const selectedAsset = assetId ? getCaptureAssets().find((item) => String(item.assetId || "") === String(assetId)) : getSelectedCaptureAsset();
+      const asset = cloneCaptureAsset(selectedAsset);
+      if (!asset) {
+        throw new Error("请先捕获一张 Photoshop 图像");
+      }
+      state.formValues[key] = asset;
+      renderWorkspace();
+    }
+    function clearImageInputValue(key) {
+      modules.state.state.formValues[key] = null;
+      renderWorkspace();
+    }
+    function renderCaptureSummary(asset) {
+      if (!hasImageAsset(asset)) {
+        return `
+        <div class="empty-panel">
+          <h4>图像输入区</h4>
+          <p>点击“捕获当前文档”后，WebView 会显示预览，并可把捕获结果绑定到下方图像字段。</p>
+        </div>
+      `;
+      }
+      const documentText = asset.document ? formatDocumentLabel(asset.document) : `文档 #${asset.documentId || "-"}`;
+      const capturedText = asset.capturedAt ? new Date(asset.capturedAt).toLocaleTimeString() : "-";
+      return `
+      <div class="image-capture-shell">
+        <div class="image-preview-frame">
+          <img src="${modules.runtime.escapeHtml(asset.dataUrl)}" alt="Captured Photoshop document preview" />
+        </div>
+        <div class="image-meta-grid">
+          <span class="image-meta-pill">${modules.runtime.escapeHtml(documentText)}</span>
+          <span class="image-meta-pill">${modules.runtime.escapeHtml(String(asset.width || "-"))}x${modules.runtime.escapeHtml(String(asset.height || "-"))}</span>
+          <span class="image-meta-pill">JPEG ${modules.runtime.escapeHtml(String(asset.quality || "-"))}</span>
+          <span class="image-meta-pill">Max ${modules.runtime.escapeHtml(String(asset.maxDimension || "-"))}</span>
+          <span class="image-meta-pill">#${modules.runtime.escapeHtml(String(asset.assetId || "").slice(-6) || "-")}</span>
+          <span class="image-meta-pill">${modules.runtime.escapeHtml(capturedText)}</span>
+        </div>
+      </div>
+    `;
+    }
+    function renderCaptureLibrary(assets, selectedAssetId) {
+      if (!Array.isArray(assets) || assets.length === 0) {
+        return "";
+      }
+      return `
+      <div class="image-capture-shell">
+        <div class="card-head">
+          <div>
+            <h4>已捕获图像</h4>
+            <p>可切换当前选中图像，再分别绑定到不同图片字段。</p>
+          </div>
+          <div class="inline-actions">
+            <button id="btnClearAllCapturedImages" class="mini-btn" type="button">清空全部</button>
+          </div>
+        </div>
+        <div class="tool-list">
+          ${assets.map((asset) => {
+        const documentText = asset.document ? formatDocumentLabel(asset.document) : `文档 #${asset.documentId || "-"}`;
+        const isSelected = String(asset.assetId || "") === String(selectedAssetId || "");
+        return `
+              <article class="tool-item">
+                <div>
+                  <h4>${modules.runtime.escapeHtml(documentText)}</h4>
+                  <p>${modules.runtime.escapeHtml(`${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"} / #${String(asset.assetId || "").slice(-6)}`)}</p>
+                </div>
+                <div class="inline-actions">
+                  <button class="mini-btn" type="button" data-action="select-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}" ${isSelected ? "disabled" : ""}>${isSelected ? "当前选中" : "选中"}</button>
+                  <button class="mini-btn" type="button" data-action="remove-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}">移除</button>
+                </div>
+              </article>
+            `;
+      }).join("")}
+        </div>
+      </div>
+    `;
+    }
+    function renderImageInputArea() {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const imageInputContainer = runtime.getById("imageInputContainer");
+      if (!imageInputContainer) return;
+      const imageInputs = findImageInputs(state.currentApp);
+      const selectedAsset = getSelectedCaptureAsset();
+      const captureAssets = getCaptureAssets();
+      if (!state.currentApp) {
+        imageInputContainer.innerHTML = `
+        <div class="empty-panel">
+          <h4>图像输入区</h4>
+          <p>等待应用选择后，再接入图像捕获和图像输入映射。</p>
+        </div>
+      `;
+        return;
+      }
+      if (imageInputs.length === 0) {
+        imageInputContainer.innerHTML = `
+        <div class="empty-panel">
+          <h4>图像输入区</h4>
+          <p>当前应用没有图像字段，后续如果 schema 出现 image/file 输入，会在这里统一管理捕获与预处理。</p>
+        </div>
+      `;
+        return;
+      }
+      imageInputContainer.innerHTML = `
+      <div class="image-capture-shell">
+        <div class="card-head">
+          <div>
+            <h4>Photoshop 图像捕获</h4>
+            <p>宿主负责抓取当前文档，WebView 负责预览、压缩参数和字段绑定。</p>
+          </div>
+          <div class="inline-actions">
+            <button id="btnCaptureDocumentImage" class="mini-btn" type="button">捕获当前文档</button>
+            <button id="btnClearCapturedImage" class="mini-btn" type="button" ${hasImageAsset(selectedAsset) ? "" : "disabled"}>移除当前</button>
+          </div>
+        </div>
+
+        <div class="dual-grid">
+          <label class="field">
+            <span class="field-label">最大边长</span>
+            <input id="imageCaptureMaxDimension" class="field-input" type="number" min="256" max="4096" step="128" />
+          </label>
+          <label class="field">
+            <span class="field-label">JPEG 质量</span>
+            <input id="imageCaptureQuality" class="field-input" type="number" min="20" max="100" step="1" />
+          </label>
+        </div>
+
+        ${renderCaptureSummary(selectedAsset)}
+        ${renderCaptureLibrary(captureAssets, state.imageCapture.selectedAssetId)}
+      </div>
+    `;
+      syncImageCaptureControls();
+    }
+    function renderImageField(input) {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const key = String(input.key || "").trim();
+      const label = runtime.escapeHtml(input.label || input.name || key);
+      const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
+      const asset = state.formValues[key];
+      const hasAssignedAsset = hasImageAsset(asset);
+      const captureReady = hasImageAsset(getSelectedCaptureAsset());
+      const transferMode = getImageTransferModeLabel(input);
+      const meta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"}` : "尚未绑定图像";
+      return `
+      <div class="field dynamic-field">
+        <span class="field-label">${label}${requiredMark}</span>
+        <div class="input-zone">
+          <div class="image-binding-card">
+            ${hasAssignedAsset ? `
+              <div class="image-preview-frame">
+                <img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" />
+              </div>
+            ` : `
+              <div class="empty-panel">
+                <h4>等待图像绑定</h4>
+                <p>先在上方捕获当前文档，再绑定到这个字段。</p>
+              </div>
+            `}
+            <div class="image-meta-grid">
+              <span class="image-meta-pill">${runtime.escapeHtml(meta)}</span>
+              <span class="image-meta-pill">字段: ${runtime.escapeHtml(key)}</span>
+              <span class="image-meta-pill">上传: ${runtime.escapeHtml(transferMode)}</span>
+              ${hasAssignedAsset && asset.assetId ? `<span class="image-meta-pill">来源 #${runtime.escapeHtml(String(asset.assetId).slice(-6))}</span>` : ""}
+            </div>
+            <div class="inline-actions">
+              <button class="mini-btn" type="button" data-action="assign-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${captureReady ? "" : "disabled"}>使用当前捕获</button>
+              <button class="mini-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    }
+    function renderPromptHint(value) {
+      const text = String(value || "");
+      const length = modules.templates.getTextLength(text);
+      const tail = modules.templates.getTailPreview(text, 24);
+      return `
+      <div class="prompt-length-hint ${length >= modules.templates.PROMPT_WARN_CHARS ? "is-warning" : ""}">
+        长度 ${modules.runtime.escapeHtml(String(length))} 字符 | 末尾预览 ${modules.runtime.escapeHtml(tail)}
+      </div>
+    `;
+    }
+    function updateRunButtonState() {
+      const state = modules.state.state;
+      const runButton = modules.runtime.getById("btnRun");
+      const cancelButton = modules.runtime.getById("btnCancelJob");
+      const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
+      const hasCurrentApp = !!state.currentApp;
+      const hasRunningTask = Boolean(state.runningTask && state.runningTask.taskId);
+      if (runButton) {
+        runButton.disabled = !hasCurrentApp || hasRunningTask;
+        runButton.textContent = hasRunningTask ? "任务进行中..." : hasCurrentApp ? `运行 ${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
+      }
+      if (cancelButton) {
+        cancelButton.disabled = !hasRunningTask;
+        cancelButton.textContent = "取消任务";
+      }
+      if (taskStatusSummary) {
+        if (hasRunningTask) {
+          taskStatusSummary.textContent = `任务进行中：${state.runningTask.appName}，Task ID: ${state.runningTask.taskId}`;
+        } else {
+          taskStatusSummary.textContent = hasCurrentApp ? `当前应用：${modules.state.getAppDisplayName(state.currentApp)}，动态表单已接入，可直接提交任务` : "后台任务：暂无，请先选择一个应用";
+        }
+      }
+    }
+    function renderField(input) {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const key = String(input.key || "").trim();
+      const label = runtime.escapeHtml(input.label || input.name || key);
+      const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
+      const value = state.formValues[key];
+      const escapedKey = runtime.escapeHtml(key);
+      if (isImageInput(input)) {
+        return renderImageField(input);
+      }
+      if (input.type === "textarea" || input.type === "multiline" || isPromptField(input)) {
+        const currentValue = String(value ?? "");
+        return `
+        <label class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
+          <span class="field-label">
+            <span>${label}${requiredMark}</span>
+            ${isPromptField(input) ? `<button class="mini-btn template-trigger-btn" type="button" data-action="open-template-picker" data-form-key="${escapedKey}">模板</button>` : ""}
+          </span>
+          <textarea class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(String(value ?? ""))}</textarea>
+          ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
+        </label>
+      `;
+      }
+      if (input.type === "number" || input.type === "int" || input.type === "float") {
+        return `
+        <label class="field dynamic-field">
+          <span class="field-label">${label}${requiredMark}</span>
+          <input class="field-input" type="number" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" />
+        </label>
+      `;
+      }
+      if (input.type === "boolean" || input.type === "switch" || input.type === "checkbox") {
+        return `
+        <label class="field toggle-field">
+          <span class="field-label">${label}${requiredMark}</span>
+          <label class="checkbox-line">
+            <input type="checkbox" data-form-key="${escapedKey}" ${value ? "checked" : ""} />
+            <span>启用</span>
+          </label>
+        </label>
+      `;
+      }
+      if (input.type === "select" || input.type === "enum") {
+        const options = Array.isArray(input.options) ? input.options : [];
+        return `
+        <label class="field dynamic-field">
+          <span class="field-label">${label}${requiredMark}</span>
+          <select class="field-input" data-form-key="${escapedKey}">
+            <option value="">请选择</option>
+            ${options.map((option) => {
+          const optValue = typeof option === "object" ? option.value : option;
+          const optLabel = typeof option === "object" ? option.label : option;
+          return `<option value="${runtime.escapeHtml(String(optValue ?? ""))}" ${String(value ?? "") === String(optValue ?? "") ? "selected" : ""}>${runtime.escapeHtml(String(optLabel ?? optValue ?? ""))}</option>`;
+        }).join("")}
+          </select>
+        </label>
+      `;
+      }
+      return `
+      <label class="field dynamic-field">
+        <span class="field-label">${label}${requiredMark}</span>
+        <input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" />
+      </label>
+    `;
+    }
+    function renderWorkspace() {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const appPickerMeta = runtime.getById("appPickerMeta");
+      const dynamicInputContainer = runtime.getById("dynamicInputContainer");
+      if (appPickerMeta) {
+        if (!state.currentApp) {
+          appPickerMeta.innerHTML = "暂未选择 RunningHub 应用";
+        } else {
+          appPickerMeta.innerHTML = `
+          <div><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</strong></div>
+          <div>App ID: ${runtime.escapeHtml(modules.state.getAppDisplayId(state.currentApp))}</div>
+          <div>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(state.currentApp)))}</div>
+          <div>图像项：${runtime.escapeHtml(String(findImageInputs(state.currentApp).length))}</div>
+        `;
+        }
+      }
+      renderImageInputArea();
+      if (dynamicInputContainer) {
+        if (!state.currentApp) {
+          dynamicInputContainer.innerHTML = `
+          <div class="empty-panel">
+            <h4>动态表单区</h4>
+            <p>请先选择一个已保存应用，后续这里会根据 schema 动态渲染输入表单。</p>
+          </div>
+        `;
+        } else if (!Array.isArray(state.currentApp.inputs) || state.currentApp.inputs.length === 0) {
+          dynamicInputContainer.innerHTML = `
+          <div class="empty-panel">
+            <h4>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</h4>
+            <p>当前应用还没有输入 schema。你可以先去 Settings 编辑应用，手动填写输入 JSON。</p>
+          </div>
+        `;
+        } else {
+          dynamicInputContainer.innerHTML = `
+          <div class="dynamic-form">
+            ${state.currentApp.inputs.map(renderField).join("")}
+          </div>
+        `;
+        }
+      }
+      updateRunButtonState();
+    }
+    function collectFormValuesFromDom() {
+      const state = modules.state.state;
+      const container = modules.runtime.getById("dynamicInputContainer");
+      if (!container) return;
+      container.querySelectorAll("[data-form-key]").forEach((element) => {
+        const key = element.getAttribute("data-form-key");
+        if (!key) return;
+        if (element.matches('input[type="checkbox"]')) {
+          state.formValues[key] = Boolean(element.checked);
+          return;
+        }
+        const inputMeta = (state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
+        if (inputMeta && isImageInput(inputMeta)) {
+          return;
+        }
+        if (element.matches("input, textarea, select")) {
+          state.formValues[key] = element.value;
+        }
+      });
+    }
+    function buildRunPayload() {
+      const state = modules.state.state;
+      collectFormValuesFromDom();
+      const payload = {
+        appId: state.currentApp ? state.currentApp.appId : "",
+        appName: state.currentApp ? state.currentApp.name : "",
+        app: state.currentApp ? {
+          id: state.currentApp.id,
+          appId: state.currentApp.appId,
+          name: state.currentApp.name,
+          inputs: Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : []
+        } : null,
+        apiKey: state.settings.apiKey || "",
+        inputs: { ...state.formValues },
+        settings: {
+          pollInterval: state.settings.pollInterval,
+          timeout: state.settings.timeout
+        }
+      };
+      state.lastRunPayload = payload;
+      return payload;
+    }
+    function setRunningTask(taskId, appName, status = "running") {
+      modules.state.state.runningTask = {
+        taskId: String(taskId || ""),
+        appName: String(appName || ""),
+        status: String(status || "running")
+      };
+      updateRunButtonState();
+    }
+    function clearRunningTask() {
+      modules.state.state.runningTask = {
+        taskId: "",
+        appName: "",
+        status: "idle"
+      };
+      updateRunButtonState();
+    }
+    function clearLastResult() {
+      const state = modules.state.state;
+      state.lastResult = {
+        appName: "",
+        sourceDocument: null,
+        outputUrl: "",
+        taskId: "",
+        placedAt: 0
+      };
+      updateRunButtonState();
+    }
+    function setLastResult(payload) {
+      const state = modules.state.state;
+      const data = payload && typeof payload === "object" ? payload : {};
+      state.lastResult = {
+        appName: String(data.appName || "").trim(),
+        sourceDocument: data.sourceDocument && typeof data.sourceDocument === "object" ? data.sourceDocument : null,
+        outputUrl: String(data.outputUrl || "").trim(),
+        taskId: String(data.taskId || "").trim(),
+        placedAt: Number(data.placedAt) > 0 ? Number(data.placedAt) : 0
+      };
+      updateRunButtonState();
+    }
+    async function refreshPhotoshopDocumentStatus(options = {}) {
+      const state = modules.state.state;
+      if (!modules.runtime.isPluginRuntime()) return null;
+      try {
+        const info = await modules.runtime.callHost("photoshop.getActiveDocumentInfo", []);
+        state.currentDocumentInfo = info && typeof info === "object" ? info : null;
+        if (!options.quiet && info && info.ok) {
+          modules.ui.logToWorkspace(`Photoshop 当前文档：${info.title} (#${info.documentId})`, "info");
+        }
+        return state.currentDocumentInfo;
+      } catch (_) {
+        state.currentDocumentInfo = null;
+        return null;
+      }
+    }
+    async function captureSourceDocumentInfo() {
+      if (!modules.runtime.isPluginRuntime()) return null;
+      return refreshPhotoshopDocumentStatus({ quiet: true });
+    }
+    async function captureCurrentDocumentImage() {
+      if (!modules.runtime.isPluginRuntime()) {
+        throw new Error("浏览器预览模式下无法捕获 Photoshop 图像");
+      }
+      const settings = getImageCaptureSettings();
+      const captured = await modules.runtime.callHost("photoshop.captureDocumentPreview", [settings], {
+        timeoutMs: 3e4
+      });
+      const asset = pushCapturedAsset(captured);
+      modules.ui.logToWorkspace(
+        `已捕获 Photoshop 文档图像：${asset.width}x${asset.height}，JPEG ${asset.quality}`,
+        "success"
+      );
+      renderWorkspace();
+      return asset;
+    }
+    function clearCapturedImage() {
+      const selectedAsset = getSelectedCaptureAsset();
+      if (!selectedAsset) return;
+      removeCapturedAsset(selectedAsset.assetId);
+      renderWorkspace();
+    }
+    function isMissingRequiredValue(value) {
+      if (typeof value === "boolean") return false;
+      if (hasImageAsset(value)) return false;
+      if (value && typeof value === "object") return true;
+      return String(value ?? "").trim() === "";
+    }
+    function validateRunPayload() {
+      const state = modules.state.state;
+      const app = state.currentApp;
+      if (!app) {
+        throw new Error("Please select an app first");
+      }
+      collectFormValuesFromDom();
+      const missing = (Array.isArray(app.inputs) ? app.inputs : []).filter((input) => input.required).filter((input) => isMissingRequiredValue(state.formValues[input.key]));
+      if (missing.length > 0) {
+        throw new Error(`Please fill required fields: ${missing.map((item) => item.label || item.key).join(", ")}`);
+      }
+    }
+    function buildAutoPlacementPayload(result) {
+      const sourceDocument = result && result.sourceDocument && typeof result.sourceDocument === "object" ? result.sourceDocument : null;
+      return {
+        url: result && result.outputUrl ? result.outputUrl : "",
+        taskId: result && result.taskId ? result.taskId : "",
+        targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
+        targetBounds: sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null,
+        applyMask: Boolean(sourceDocument && sourceDocument.selectionBounds),
+        fitMode: "contain",
+        layerName: getResultDefaultLayerName()
+      };
+    }
+    async function autoPlaceLastResult() {
+      const result = modules.state.state.lastResult;
+      if (!result || !result.outputUrl) {
+        throw new Error("No result available for automatic placement");
+      }
+      if (!modules.runtime.isPluginRuntime()) {
+        modules.ui.logToWorkspace(`Browser preview will not auto-place the result. URL: ${result.outputUrl}`, "info");
+        return null;
+      }
+      await refreshPhotoshopDocumentStatus({ quiet: true });
+      const placementPayload = buildAutoPlacementPayload(result);
+      const response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], {
+        timeoutMs: 6e4
+      });
+      modules.state.state.lastResult.placedAt = Date.now();
+      if (response && response.document) {
+        modules.state.state.currentDocumentInfo = response.document;
+      }
+      const sourceDocument = result.sourceDocument;
+      const placementSummary = sourceDocument && sourceDocument.selectionBounds ? `Auto-placed back using source selection ${formatSelectionLabel(sourceDocument.selectionBounds)}` : "Auto-placed back into the source document";
+      modules.ui.logToWorkspace(
+        `${placementSummary}, document #${response.documentId}, layer: ${response.layerName || placementPayload.layerName}`,
+        "success"
+      );
+      return response;
+    }
+    function bindWorkspaceActions() {
+      const runButton = modules.runtime.getById("btnRun");
+      const cancelButton = modules.runtime.getById("btnCancelJob");
+      const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
+      const imageInputContainer = modules.runtime.getById("imageInputContainer");
+      if (dynamicInputContainer) {
+        dynamicInputContainer.addEventListener("input", (event) => {
+          const element = event.target;
+          if (!element || !element.matches("[data-form-key]")) return;
+          const key = element.getAttribute("data-form-key");
+          if (!key) return;
+          if (element.matches('input[type="checkbox"]')) {
+            modules.state.state.formValues[key] = Boolean(element.checked);
+            return;
+          }
+          const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
+          if (!inputMeta || !isImageInput(inputMeta)) {
+            modules.state.state.formValues[key] = element.value;
+          }
+        });
+        dynamicInputContainer.addEventListener("change", (event) => {
+          const element = event.target;
+          if (!element || !element.matches("[data-form-key]")) return;
+          const key = element.getAttribute("data-form-key");
+          if (!key) return;
+          if (element.matches('input[type="checkbox"]')) {
+            modules.state.state.formValues[key] = Boolean(element.checked);
+            return;
+          }
+          const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
+          if (!inputMeta || !isImageInput(inputMeta)) {
+            modules.state.state.formValues[key] = element.value;
+          }
+        });
+        dynamicInputContainer.addEventListener("click", (event) => {
+          const actionTarget = event.target && event.target.closest("[data-action][data-form-key]");
+          if (!actionTarget) return;
+          const action = actionTarget.getAttribute("data-action");
+          const key = actionTarget.getAttribute("data-form-key");
+          if (!action || !key) return;
+          if (action === "open-template-picker") {
+            modules.templates.openTemplatePicker({
+              mode: "multiple",
+              maxSelection: 5,
+              targetKey: key
+            });
+            return;
+          }
+          if (action === "assign-captured-image") {
+            try {
+              assignCaptureToInput(key);
+              modules.ui.logToWorkspace(`Assigned current capture to field: ${key}`, "success");
+            } catch (error) {
+              modules.ui.logToWorkspace(error.message, "warn");
+            }
+            return;
+          }
+          if (action === "clear-captured-image") {
+            clearImageInputValue(key);
+            modules.ui.logToWorkspace(`Cleared image field: ${key}`, "info");
+          }
+        });
+      }
+      if (imageInputContainer) {
+        imageInputContainer.addEventListener("input", () => {
+          getImageCaptureSettings();
+        });
+        imageInputContainer.addEventListener("click", async (event) => {
+          const captureButton = event.target && event.target.closest("#btnCaptureDocumentImage");
+          const clearButton = event.target && event.target.closest("#btnClearCapturedImage");
+          const clearAllButton = event.target && event.target.closest("#btnClearAllCapturedImages");
+          const selectAssetButton = event.target && event.target.closest('[data-action="select-captured-image"][data-capture-id]');
+          const removeAssetButton = event.target && event.target.closest('[data-action="remove-captured-image"][data-capture-id]');
+          if (captureButton) {
+            captureButton.disabled = true;
+            try {
+              await captureCurrentDocumentImage();
+            } catch (error) {
+              modules.ui.logToWorkspace(`Image capture failed: ${error.message}`, "error");
+            } finally {
+              captureButton.disabled = false;
+            }
+            return;
+          }
+          if (clearButton) {
+            clearCapturedImage();
+            modules.ui.logToWorkspace("Removed current selected capture", "info");
+            return;
+          }
+          if (clearAllButton) {
+            clearAllCapturedAssets();
+            renderWorkspace();
+            modules.ui.logToWorkspace("Cleared all captured images and detached field bindings", "info");
+            return;
+          }
+          if (selectAssetButton) {
+            setSelectedCaptureAsset(selectAssetButton.getAttribute("data-capture-id"));
+            renderWorkspace();
+            modules.ui.logToWorkspace("Switched current selected capture", "info");
+            return;
+          }
+          if (removeAssetButton) {
+            removeCapturedAsset(removeAssetButton.getAttribute("data-capture-id"));
+            renderWorkspace();
+            modules.ui.logToWorkspace("Removed one captured image", "info");
+          }
+        });
+      }
+      if (runButton) {
+        runButton.addEventListener("click", async () => {
+          try {
+            validateRunPayload();
+            clearLastResult();
+            const payload = buildRunPayload();
+            const sourceDocument = await captureSourceDocumentInfo();
+            const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
+            if (!modules.runtime.isPluginRuntime()) {
+              if (taskStatusSummary) {
+                taskStatusSummary.textContent = `Browser preview generated payload for ${payload.appName}`;
+              }
+              modules.ui.logToWorkspace(`Task payload generated: ${JSON.stringify(payload)}`, "info");
+              return;
+            }
+            if (!payload.apiKey) {
+              throw new Error("Please save the RunningHub API Key in Settings first");
+            }
+            if (taskStatusSummary) taskStatusSummary.textContent = `Submitting task: ${payload.appName}`;
+            const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {
+              timeoutMs: Math.max(1e4, Number(payload.settings.timeout || 180) * 1e3 + 5e3)
+            });
+            modules.ui.logToWorkspace(`Task submitted: ${submitResult.taskId}`, "success");
+            setRunningTask(submitResult.taskId, payload.appName, "submitted");
+            if (taskStatusSummary) taskStatusSummary.textContent = `Polling task result: ${submitResult.taskId}`;
+            const pollResult = await modules.runtime.callHost("runninghub.pollTask", [{
+              apiKey: payload.apiKey,
+              taskId: submitResult.taskId,
+              settings: payload.settings
+            }], {
+              timeoutMs: Math.max(15e3, Number(payload.settings.timeout || 180) * 1e3 + 15e3)
+            });
+            clearRunningTask();
+            setLastResult({
+              appName: payload.appName,
+              sourceDocument,
+              outputUrl: pollResult.outputUrl,
+              taskId: submitResult.taskId
+            });
+            modules.ui.logToWorkspace(`Task completed, result URL: ${pollResult.outputUrl}`, "success");
+            const placementResponse = await autoPlaceLastResult();
+            if (taskStatusSummary) {
+              const placedDocumentId = placementResponse && placementResponse.documentId ? `#${placementResponse.documentId}` : "-";
+              taskStatusSummary.textContent = `Task completed and auto-placed into Photoshop: ${payload.appName} -> ${placedDocumentId}`;
+            }
+          } catch (error) {
+            clearRunningTask();
+            modules.ui.logToWorkspace(error.message, "warn");
+            const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
+            if (taskStatusSummary) {
+              taskStatusSummary.textContent = `Task failed: ${error.message}`;
+            }
+          }
+        });
+      }
+      if (cancelButton) {
+        cancelButton.addEventListener("click", async () => {
+          const runningTask = modules.state.state.runningTask;
+          const apiKey = modules.state.state.settings.apiKey;
+          if (!runningTask || !runningTask.taskId) {
+            modules.ui.logToWorkspace("No running task to cancel", "info");
+            return;
+          }
+          try {
+            await modules.runtime.callHost("runninghub.cancelTask", [{
+              apiKey,
+              taskId: runningTask.taskId
+            }], { timeoutMs: 2e4 });
+            modules.ui.logToWorkspace(`Task cancelled: ${runningTask.taskId}`, "warn");
+            clearRunningTask();
+            const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
+            if (taskStatusSummary) {
+              taskStatusSummary.textContent = `Task cancelled: ${runningTask.taskId}`;
+            }
+          } catch (error) {
+            modules.ui.logToWorkspace(`Cancel task failed: ${error.message}`, "error");
+          }
+        });
+      }
+    }
+    modules.workspace = {
+      setModalOpen,
+      updateRunButtonState,
+      renderWorkspace,
+      buildRunPayload,
+      bindWorkspaceActions,
+      refreshPhotoshopDocumentStatus
+    };
+  })(window);
+
+  // src/webview/apps.js
+  (function initAppsModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    async function persistCurrentAppId(appId) {
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID, String(appId || ""));
+    }
+    function parseAppInputsText(text) {
+      const marker = String(text || "").trim();
+      if (!marker) return [];
+      const parsed = JSON.parse(marker);
+      if (!Array.isArray(parsed)) {
+        throw new Error("输入 schema 必须是 JSON 数组");
+      }
+      return modules.state.normalizeAppInputs(parsed);
+    }
+    async function loadAppsFromStorage() {
+      const runtime = modules.runtime;
+      const keys = modules.state.STORAGE_KEYS;
+      const primaryRaw = await runtime.storageGetItem(keys.APPS);
+      const primaryApps = modules.state.normalizeAppList(runtime.readJsonText(primaryRaw, []));
+      if (primaryApps.length > 0) return primaryApps;
+      for (const legacyKey of keys.LEGACY_APPS) {
+        const legacyRaw = await runtime.storageGetItem(legacyKey);
+        const legacyApps = modules.state.normalizeAppList(runtime.readJsonText(legacyRaw, []));
+        if (legacyApps.length > 0) return legacyApps;
+      }
+      return [];
+    }
+    async function saveAppsToStorage(apps) {
+      const normalizedApps = modules.state.normalizeAppList(apps).map((item) => ({
+        id: item.id,
+        appId: item.appId,
+        name: item.name,
+        description: item.description,
+        inputs: item.inputs,
+        createdAt: item.createdAt,
+        updatedAt: Date.now()
+      }));
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.APPS, JSON.stringify(normalizedApps));
+      modules.state.state.apps = normalizedApps;
+      await hydrateCurrentApp({ quiet: true });
+      renderSavedAppsList();
+      modules.workspace.renderWorkspace();
+      renderAppPickerList();
+    }
+    function renderAppPickerList() {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const listEl = runtime.getById("appPickerList");
+      const statsEl = runtime.getById("appPickerStats");
+      if (!listEl) return;
+      const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
+      const visibleApps = !keyword ? state.apps : state.apps.filter((item) => {
+        const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase();
+        return marker.includes(keyword);
+      });
+      if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
+      if (visibleApps.length === 0) {
+        listEl.innerHTML = state.apps.length === 0 ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先到 Settings 里新建或导入应用。</p></div>` : `<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
+        return;
+      }
+      listEl.innerHTML = visibleApps.map((app) => {
+        const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
+        return `
+        <button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}">
+          <span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span>
+          <span class="picker-item-meta">
+            <span>App ID: ${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>
+            <span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>
+          </span>
+        </button>
+      `;
+      }).join("");
+    }
+    function renderSavedAppsList() {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const listEl = runtime.getById("savedAppsList");
+      const summaryEl = runtime.getById("savedAppsSummary");
+      const transferInput = runtime.getById("appTransferInput");
+      if (!listEl || !summaryEl) return;
+      runtime.setSummaryStatus(summaryEl, `已保存应用：${state.apps.length} 个`, "info");
+      if (transferInput && !transferInput.dataset.userEdited && state.apps.length > 0) {
+        transferInput.value = JSON.stringify(state.apps, null, 2);
+      }
+      if (state.apps.length === 0) {
+        listEl.innerHTML = `
+        <div class="picker-empty">
+          <strong>还没有已保存应用</strong>
+          <p>可以手动新建一个应用，或者把旧版本导出的 JSON 粘贴到下方后导入。</p>
+        </div>
+      `;
+        return;
+      }
+      listEl.innerHTML = state.apps.map((app) => {
+        const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
+        return `
+        <article class="list-item saved-app-item ${isActive ? "is-active" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}">
+          <div class="saved-app-main">
+            <strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong>
+            <span>App ID: ${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>
+            <span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>
+          </div>
+          <div class="inline-actions">
+            <button class="mini-btn" type="button" data-action="select-app" data-app-id="${runtime.escapeHtml(String(app.id))}">设为当前</button>
+            <button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">编辑</button>
+            <button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button>
+          </div>
+        </article>
+      `;
+      }).join("");
+    }
+    async function setCurrentAppById(appId, options = {}) {
+      const state = modules.state.state;
+      const nextApp = state.apps.find((item) => String(item.id) === String(appId));
+      if (!nextApp) return false;
+      state.currentApp = nextApp;
+      state.formValues = modules.state.buildDefaultFormValues(nextApp);
+      await persistCurrentAppId(nextApp.id || "");
+      modules.workspace.renderWorkspace();
+      renderSavedAppsList();
+      renderAppPickerList();
+      if (!options.quiet) {
+        modules.ui.logToWorkspace(`已选择应用：${modules.state.getAppDisplayName(nextApp)}`);
+      }
+      return true;
+    }
+    async function hydrateCurrentApp(options = {}) {
+      const state = modules.state.state;
+      const currentId = state.currentApp && state.currentApp.id;
+      if (currentId && await setCurrentAppById(currentId, { quiet: true })) return;
+      const persistedId = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID);
+      if (persistedId && await setCurrentAppById(persistedId, { quiet: true })) return;
+      state.currentApp = null;
+      state.formValues = {};
+      if (state.apps[0]) {
+        await setCurrentAppById(state.apps[0].id, { quiet: true });
+        return;
+      }
+      modules.workspace.renderWorkspace();
+      if (!options.quiet) {
+        modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
+      }
+    }
+    async function refreshWorkspaceApps(options = {}) {
+      modules.state.state.apps = await loadAppsFromStorage();
+      await hydrateCurrentApp({ quiet: true });
+      renderSavedAppsList();
+      renderAppPickerList();
+      if (!options.quiet) {
+        modules.ui.logToWorkspace(`应用列表已刷新，共读取到 ${modules.state.state.apps.length} 个应用。`);
+      }
+    }
+    function bindAppPicker() {
+      const runtime = modules.runtime;
+      const state = modules.state.state;
+      const openButton = runtime.getById("btnOpenAppPicker");
+      const refreshButton = runtime.getById("btnRefreshWorkspaceApps");
+      const closeButton = runtime.getById("appPickerModalClose");
+      const searchInput = runtime.getById("appPickerSearchInput");
+      const listEl = runtime.getById("appPickerList");
+      if (openButton) {
+        openButton.addEventListener("click", () => {
+          state.appPickerKeyword = "";
+          if (searchInput) searchInput.value = "";
+          renderAppPickerList();
+          modules.workspace.setModalOpen("appPickerModal", true);
+        });
+      }
+      if (refreshButton) {
+        refreshButton.addEventListener("click", async () => {
+          await refreshWorkspaceApps();
+          modules.settings.renderSettingsDiagnostics("应用列表已从 Host Storage 刷新。", {
+            runtime: state.hostRuntime,
+            hasApiKey: Boolean(state.settings.apiKey)
+          });
+        });
+      }
+      if (closeButton) {
+        closeButton.addEventListener("click", () => {
+          modules.workspace.setModalOpen("appPickerModal", false);
+        });
+      }
+      document.addEventListener("click", async (event) => {
+        const closeTarget = event.target && event.target.closest("#appPickerBackdrop");
+        if (closeTarget) {
+          modules.workspace.setModalOpen("appPickerModal", false);
+          return;
+        }
+        const item = event.target && event.target.closest(".picker-item");
+        if (!item || !listEl || !listEl.contains(item)) return;
+        const appId = item.getAttribute("value");
+        if (!appId) return;
+        if (await setCurrentAppById(appId)) {
+          renderAppPickerList();
+          modules.workspace.setModalOpen("appPickerModal", false);
+        }
+      });
+      if (searchInput) {
+        searchInput.addEventListener("input", () => {
+          state.appPickerKeyword = searchInput.value || "";
+          renderAppPickerList();
+        });
+      }
+    }
+    function fillAppEditor(app) {
+      const runtime = modules.runtime;
+      const safeApp = app && typeof app === "object" ? app : null;
+      modules.state.state.editingAppId = safeApp ? String(safeApp.id) : null;
+      runtime.getById("appEditorTitle").textContent = safeApp ? `编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "新建应用";
+      runtime.getById("appEditorNameInput").value = safeApp ? safeApp.name || "" : "";
+      runtime.getById("appEditorAppIdInput").value = safeApp ? safeApp.appId || "" : "";
+      runtime.getById("appEditorDescriptionInput").value = safeApp ? safeApp.description || "" : "";
+      runtime.getById("appEditorInputsInput").value = safeApp ? JSON.stringify(safeApp.inputs || [], null, 2) : "";
+      const deleteButton = runtime.getById("btnDeleteEditingApp");
+      if (deleteButton) deleteButton.hidden = !safeApp;
+      runtime.setSummaryStatus(
+        runtime.getById("appEditorStatus"),
+        safeApp ? "可以继续调整应用元数据，后续也可以把解析结果直接写回这里。" : "先填写应用名称和 App ID，输入 schema JSON 可以稍后补充。",
+        "info"
+      );
+    }
+    function openAppEditor(appId = null) {
+      const app = appId ? modules.state.state.apps.find((item) => String(item.id) === String(appId)) : null;
+      fillAppEditor(app || null);
+      modules.workspace.setModalOpen("appEditorModal", true);
+    }
+    function closeAppEditor() {
+      modules.workspace.setModalOpen("appEditorModal", false);
+    }
+    function readAppEditorForm() {
+      const runtime = modules.runtime;
+      const appId = String(runtime.getById("appEditorAppIdInput")?.value || "").trim();
+      const name = String(runtime.getById("appEditorNameInput")?.value || "").trim();
+      if (!name) throw new Error("请先填写应用名称");
+      if (!appId) throw new Error("请先填写 RunningHub App ID");
+      return {
+        id: modules.state.state.editingAppId || runtime.createId("app"),
+        appId,
+        name,
+        description: String(runtime.getById("appEditorDescriptionInput")?.value || "").trim(),
+        inputs: parseAppInputsText(runtime.getById("appEditorInputsInput")?.value || "")
+      };
+    }
+    async function saveEditedApp() {
+      const formValue = readAppEditorForm();
+      const apps = modules.state.state.apps;
+      const existingIndex = apps.findIndex((item) => String(item.id) === String(formValue.id));
+      const now = Date.now();
+      const nextApp = modules.state.normalizeAppRecord({
+        ...formValue,
+        createdAt: existingIndex >= 0 ? apps[existingIndex].createdAt : now,
+        updatedAt: now
+      });
+      const nextApps = [...apps];
+      if (existingIndex >= 0) nextApps[existingIndex] = nextApp;
+      else nextApps.push(nextApp);
+      await saveAppsToStorage(nextApps);
+      await setCurrentAppById(nextApp.id, { quiet: true });
+      closeAppEditor();
+      modules.ui.logToWorkspace(`应用已保存：${nextApp.name}`, "success");
+    }
+    async function deleteAppById(appId) {
+      const target = modules.state.state.apps.find((item) => String(item.id) === String(appId));
+      if (!target) return;
+      const nextApps = modules.state.state.apps.filter((item) => String(item.id) !== String(appId));
+      await saveAppsToStorage(nextApps);
+      if (modules.state.state.currentApp && String(modules.state.state.currentApp.id) === String(appId)) {
+        if (nextApps[0]) await setCurrentAppById(nextApps[0].id, { quiet: true });
+        else {
+          modules.state.state.currentApp = null;
+          modules.state.state.formValues = {};
+          await persistCurrentAppId("");
+          modules.workspace.renderWorkspace();
+          renderSavedAppsList();
+          renderAppPickerList();
+        }
+      }
+      modules.ui.logToWorkspace(`应用已删除：${target.name}`, "warn");
+    }
+    async function importAppsFromTextarea() {
+      const input = modules.runtime.getById("appTransferInput");
+      if (!input) return;
+      const marker = String(input.value || "").trim();
+      if (!marker) throw new Error("请先在文本框中粘贴应用列表 JSON");
+      let parsed = JSON.parse(marker);
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.apps)) parsed = parsed.apps;
+      const importedApps = modules.state.normalizeAppList(parsed);
+      if (importedApps.length === 0) throw new Error("没有解析到可导入的应用记录");
+      await saveAppsToStorage(importedApps);
+      input.dataset.userEdited = "";
+      input.value = JSON.stringify(importedApps, null, 2);
+      modules.ui.logToWorkspace(`应用列表导入完成，共 ${importedApps.length} 个应用。`, "success");
+    }
+    function exportAppsToTextarea() {
+      const input = modules.runtime.getById("appTransferInput");
+      if (!input) return;
+      input.dataset.userEdited = "";
+      input.value = JSON.stringify(modules.state.state.apps, null, 2);
+    }
+    modules.apps = {
+      loadAppsFromStorage,
+      saveAppsToStorage,
+      bindAppPicker,
+      renderSavedAppsList,
+      renderAppPickerList,
+      setCurrentAppById,
+      hydrateCurrentApp,
+      refreshWorkspaceApps,
+      openAppEditor,
+      closeAppEditor,
+      saveEditedApp,
+      deleteAppById,
+      importAppsFromTextarea,
+      exportAppsToTextarea
+    };
+  })(window);
+
+  // src/webview/templates.js
+  (function initTemplatesModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const PROMPT_WARN_CHARS = 4e3;
+    function getTextLength(value) {
+      return Array.from(String(value || "")).length;
+    }
+    function getTailPreview(value, maxChars = 20) {
+      return Array.from(String(value || "")).slice(-Math.max(0, Number(maxChars) || 0)).join("").replace(/\r?\n/g, "\\n");
+    }
+    function buildTemplateLengthHint(title, content) {
+      const titleLen = getTextLength(title);
+      const contentLen = getTextLength(content);
+      const tailPreview = getTailPreview(content, 20);
+      const warning = titleLen >= PROMPT_WARN_CHARS || contentLen >= PROMPT_WARN_CHARS;
+      return {
+        text: warning ? `标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。建议控制在 ${PROMPT_WARN_CHARS} 字符内。` : `标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。插件本地不会截断模板内容。`,
+        warning
+      };
+    }
+    function fillTemplateEditor(template) {
+      const runtime = modules.runtime;
+      const item = template && typeof template === "object" ? template : null;
+      modules.state.state.editingTemplateId = item ? String(item.id) : null;
+      const titleInput = runtime.getById("templateTitleInput");
+      const contentInput = runtime.getById("templateContentInput");
+      if (titleInput) titleInput.value = item ? item.title || "" : "";
+      if (contentInput) contentInput.value = item ? item.content || "" : "";
+      updateTemplateLengthHint();
+      runtime.setSummaryStatus(
+        runtime.getById("templateStatusSummary"),
+        item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存为新模板",
+        "info"
+      );
+    }
+    function updateTemplateLengthHint() {
+      const runtime = modules.runtime;
+      const hintEl = runtime.getById("templateLengthHint");
+      if (!hintEl) return;
+      const title = runtime.getById("templateTitleInput")?.value || "";
+      const content = runtime.getById("templateContentInput")?.value || "";
+      const hint = buildTemplateLengthHint(title, content);
+      hintEl.textContent = hint.text;
+      hintEl.classList.toggle("is-warning", hint.warning);
+    }
+    async function loadTemplatesFromStorage() {
+      const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES);
+      return modules.state.normalizeTemplateList(modules.runtime.readJsonText(raw, []));
+    }
+    async function saveTemplatesToStorage(templates) {
+      const normalized = modules.state.normalizeTemplateList(templates);
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES, JSON.stringify(normalized));
+      modules.state.state.templates = normalized;
+      renderSavedTemplatesList();
+      renderTemplatePickerList();
+      return normalized;
+    }
+    async function refreshTemplates(options = {}) {
+      modules.state.state.templates = await loadTemplatesFromStorage();
+      renderSavedTemplatesList();
+      renderTemplatePickerList();
+      if (!options.quiet) {
+        modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条`, "info");
+      }
+    }
+    function readTemplateEditorForm() {
+      const runtime = modules.runtime;
+      const title = String(runtime.getById("templateTitleInput")?.value || "").trim();
+      const content = String(runtime.getById("templateContentInput")?.value || "");
+      if (!title) throw new Error("请先填写模板标题");
+      if (!content.trim()) throw new Error("请先填写模板内容");
+      return {
+        id: modules.state.state.editingTemplateId || runtime.createId("tpl"),
+        title,
+        content
+      };
+    }
+    async function saveEditedTemplate() {
+      const formValue = readTemplateEditorForm();
+      const templates = modules.state.state.templates.slice();
+      const existingIndex = templates.findIndex((item) => String(item.id) === String(formValue.id));
+      const now = Date.now();
+      const nextItem = modules.state.normalizeTemplateRecord({
+        ...formValue,
+        createdAt: existingIndex >= 0 ? templates[existingIndex].createdAt : now,
+        updatedAt: now
+      });
+      if (!nextItem) throw new Error("模板标题和内容不能为空");
+      if (existingIndex >= 0) templates[existingIndex] = nextItem;
+      else templates.unshift(nextItem);
+      await saveTemplatesToStorage(templates);
+      fillTemplateEditor(null);
+      modules.ui.logToWorkspace(`模板已保存：${nextItem.title}`, "success");
+      modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已保存并同步到工作台选择器", "success");
+    }
+    async function deleteTemplateById(templateId) {
+      const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+      if (!target) return;
+      const nextTemplates = modules.state.state.templates.filter((item) => String(item.id) !== String(templateId));
+      await saveTemplatesToStorage(nextTemplates);
+      if (String(modules.state.state.editingTemplateId || "") === String(templateId)) {
+        fillTemplateEditor(null);
+      }
+      modules.ui.logToWorkspace(`模板已删除：${target.title}`, "warn");
+      modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除", "warn");
+    }
+    function exportTemplatesToTextarea() {
+      const runtime = modules.runtime;
+      const input = runtime.getById("templateTransferInput");
+      if (!input) return;
+      input.dataset.userEdited = "";
+      input.value = JSON.stringify({
+        format: "pixelrunner.prompt-templates",
+        version: 1,
+        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        templates: modules.state.state.templates
+      }, null, 2);
+    }
+    async function importTemplatesFromTextarea() {
+      const runtime = modules.runtime;
+      const input = runtime.getById("templateTransferInput");
+      if (!input) return;
+      const text = String(input.value || "").trim();
+      if (!text) throw new Error("请先在文本框中粘贴模板 JSON");
+      let parsed = JSON.parse(text);
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.templates)) {
+        parsed = parsed.templates;
+      }
+      const templates = modules.state.normalizeTemplateList(parsed);
+      if (templates.length === 0) throw new Error("没有解析到可导入的模板");
+      await saveTemplatesToStorage(templates);
+      input.dataset.userEdited = "";
+      input.value = JSON.stringify({
+        format: "pixelrunner.prompt-templates",
+        version: 1,
+        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        templates
+      }, null, 2);
+      modules.runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `模板导入完成，共 ${templates.length} 条`, "success");
+      modules.ui.logToWorkspace(`模板导入完成，共 ${templates.length} 条`, "success");
+    }
+    function renderSavedTemplatesList() {
+      const runtime = modules.runtime;
+      const listEl = runtime.getById("savedTemplatesList");
+      const summaryEl = runtime.getById("savedTemplatesSummary");
+      const transferInput = runtime.getById("templateTransferInput");
+      const templates = modules.state.state.templates;
+      if (!listEl || !summaryEl) return;
+      runtime.setSummaryStatus(summaryEl, `已保存模板：${templates.length} 条`, "info");
+      if (transferInput && !transferInput.dataset.userEdited && templates.length > 0) {
+        exportTemplatesToTextarea();
+      }
+      if (templates.length === 0) {
+        listEl.innerHTML = `
+        <div class="picker-empty">
+          <strong>还没有已保存模板</strong>
+          <p>可先创建常用提示词模板，工作台里的 prompt 字段会直接接入模板选择器。</p>
+        </div>
+      `;
+        return;
+      }
+      listEl.innerHTML = templates.map((item) => `
+      <article class="list-item saved-template-item" data-template-id="${runtime.escapeHtml(String(item.id))}">
+        <div class="saved-template-main">
+          <strong>${runtime.escapeHtml(item.title)}</strong>
+          <span>${runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span>
+          <span>${runtime.escapeHtml(getTailPreview(item.content, 28))}</span>
+        </div>
+        <div class="inline-actions">
+          <button class="mini-btn" type="button" data-action="edit-template" data-template-id="${runtime.escapeHtml(String(item.id))}">编辑</button>
+          <button class="mini-btn" type="button" data-action="delete-template" data-template-id="${runtime.escapeHtml(String(item.id))}">删除</button>
+        </div>
+      </article>
+    `).join("");
+    }
+    function normalizePickerConfig(config = {}) {
+      const mode = config.mode === "single" ? "single" : "multiple";
+      return {
+        mode,
+        targetKey: String(config.targetKey || ""),
+        maxSelection: mode === "single" ? 1 : Math.max(1, Math.min(10, Number(config.maxSelection) || 5))
+      };
+    }
+    function openTemplatePicker(config = {}) {
+      const picker = modules.state.state.templatePicker;
+      const next = normalizePickerConfig(config);
+      picker.open = true;
+      picker.targetKey = next.targetKey;
+      picker.mode = next.mode;
+      picker.maxSelection = next.maxSelection;
+      picker.selectedIds = [];
+      modules.workspace.setModalOpen("templatePickerModal", true);
+      syncTemplatePickerUi();
+      renderTemplatePickerList();
+    }
+    function closeTemplatePicker() {
+      const picker = modules.state.state.templatePicker;
+      picker.open = false;
+      picker.targetKey = "";
+      picker.selectedIds = [];
+      picker.mode = "multiple";
+      picker.maxSelection = 5;
+      modules.workspace.setModalOpen("templatePickerModal", false);
+    }
+    function getPickerSelectionInfo() {
+      const picker = modules.state.state.templatePicker;
+      return picker.mode === "single" ? "单选模式：点击模板后立即写入字段" : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}`;
+    }
+    function syncTemplatePickerUi() {
+      const runtime = modules.runtime;
+      const titleEl = runtime.getById("templatePickerTitle");
+      const infoEl = runtime.getById("templatePickerSelectionInfo");
+      const applyButton = runtime.getById("btnApplyTemplateSelection");
+      const picker = modules.state.state.templatePicker;
+      if (titleEl) titleEl.textContent = picker.mode === "single" ? "选择提示词模板" : "组合提示词模板";
+      if (infoEl) infoEl.textContent = getPickerSelectionInfo();
+      if (applyButton) applyButton.hidden = picker.mode === "single";
+      if (applyButton) applyButton.disabled = picker.selectedIds.length === 0;
+    }
+    function renderTemplatePickerList() {
+      const runtime = modules.runtime;
+      const listEl = runtime.getById("templatePickerList");
+      if (!listEl) return;
+      const templates = modules.state.state.templates;
+      const picker = modules.state.state.templatePicker;
+      if (templates.length === 0) {
+        listEl.innerHTML = `
+        <div class="picker-empty">
+          <strong>还没有可用模板</strong>
+          <p>先去 Settings 创建模板，再回到工作台选择。</p>
+        </div>
+      `;
+        syncTemplatePickerUi();
+        return;
+      }
+      listEl.innerHTML = templates.map((item) => {
+        const isSelected = picker.selectedIds.includes(String(item.id));
+        return `
+        <button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${runtime.escapeHtml(String(item.id))}">
+          <span class="picker-item-title">${runtime.escapeHtml(item.title)}</span>
+          <span class="picker-item-meta">
+            <span>${runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span>
+            <span>${runtime.escapeHtml(getTailPreview(item.content, 30))}</span>
+          </span>
+        </button>
+      `;
+      }).join("");
+      syncTemplatePickerUi();
+    }
+    function toggleTemplateSelection(templateId) {
+      const picker = modules.state.state.templatePicker;
+      const id = String(templateId || "");
+      const exists = picker.selectedIds.includes(id);
+      if (exists) {
+        picker.selectedIds = picker.selectedIds.filter((item) => item !== id);
+        renderTemplatePickerList();
+        return true;
+      }
+      if (picker.selectedIds.length >= picker.maxSelection) return false;
+      picker.selectedIds = [...picker.selectedIds, id];
+      renderTemplatePickerList();
+      return true;
+    }
+    function applyTemplatesToField(fieldKey, templateIds) {
+      const key = String(fieldKey || "").trim();
+      if (!key) throw new Error("未找到目标字段");
+      const selected = (Array.isArray(templateIds) ? templateIds : []).map((id) => modules.state.state.templates.find((item) => String(item.id) === String(id))).filter(Boolean);
+      if (selected.length === 0) throw new Error("请至少选择一个模板");
+      const content = selected.map((item) => String(item.content || "")).join("\n");
+      const length = getTextLength(content);
+      if (length > PROMPT_WARN_CHARS) {
+        throw new Error(`组合后的提示词长度 ${length} 超出建议上限 ${PROMPT_WARN_CHARS}`);
+      }
+      modules.state.state.formValues[key] = content;
+      modules.workspace.renderWorkspace();
+      modules.ui.logToWorkspace(`已将 ${selected.length} 条模板写入字段：${key}`, "success");
+    }
+    function bindTemplateActions() {
+      const runtime = modules.runtime;
+      const titleInput = runtime.getById("templateTitleInput");
+      const contentInput = runtime.getById("templateContentInput");
+      const transferInput = runtime.getById("templateTransferInput");
+      const saveButton = runtime.getById("btnSaveTemplate");
+      const resetButton = runtime.getById("btnResetTemplateEditor");
+      const importButton = runtime.getById("btnImportTemplates");
+      const exportButton = runtime.getById("btnExportTemplates");
+      const pickerCloseButton = runtime.getById("templatePickerModalClose");
+      const pickerApplyButton = runtime.getById("btnApplyTemplateSelection");
+      const pickerList = runtime.getById("templatePickerList");
+      [titleInput, contentInput].filter(Boolean).forEach((element) => {
+        element.addEventListener("input", updateTemplateLengthHint);
+      });
+      if (transferInput) {
+        transferInput.addEventListener("input", () => {
+          transferInput.dataset.userEdited = "true";
+        });
+      }
+      if (saveButton) {
+        saveButton.addEventListener("click", async () => {
+          try {
+            await saveEditedTemplate();
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `保存失败：${error.message}`, "error");
+          }
+        });
+      }
+      if (resetButton) {
+        resetButton.addEventListener("click", () => fillTemplateEditor(null));
+      }
+      if (importButton) {
+        importButton.addEventListener("click", async () => {
+          try {
+            await importTemplatesFromTextarea();
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `导入失败：${error.message}`, "error");
+          }
+        });
+      }
+      if (exportButton) {
+        exportButton.addEventListener("click", () => {
+          exportTemplatesToTextarea();
+          runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), "模板 JSON 已导出到下方文本框", "success");
+        });
+      }
+      document.addEventListener("click", async (event) => {
+        const actionTarget = event.target && event.target.closest("[data-action][data-template-id]");
+        if (actionTarget) {
+          const action = actionTarget.getAttribute("data-action");
+          const templateId = actionTarget.getAttribute("data-template-id");
+          if (action === "edit-template") {
+            const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+            fillTemplateEditor(target || null);
+            return;
+          }
+          if (action === "delete-template") {
+            await deleteTemplateById(templateId);
+            return;
+          }
+        }
+        if (event.target && event.target.closest("#templatePickerBackdrop")) {
+          closeTemplatePicker();
+        }
+      });
+      if (pickerCloseButton) pickerCloseButton.addEventListener("click", closeTemplatePicker);
+      if (pickerList) {
+        pickerList.addEventListener("click", (event) => {
+          const item = event.target && event.target.closest("[data-template-id]");
+          if (!item) return;
+          const templateId = item.getAttribute("data-template-id");
+          if (!templateId) return;
+          const picker = modules.state.state.templatePicker;
+          if (picker.mode === "single") {
+            try {
+              applyTemplatesToField(picker.targetKey, [templateId]);
+              closeTemplatePicker();
+            } catch (error) {
+              modules.ui.logToWorkspace(error.message, "warn");
+            }
+            return;
+          }
+          if (!toggleTemplateSelection(templateId)) {
+            modules.ui.logToWorkspace(`最多只能选择 ${picker.maxSelection} 条模板`, "warn");
+          }
+        });
+      }
+      if (pickerApplyButton) {
+        pickerApplyButton.addEventListener("click", () => {
+          try {
+            const picker = modules.state.state.templatePicker;
+            applyTemplatesToField(picker.targetKey, picker.selectedIds);
+            closeTemplatePicker();
+          } catch (error) {
+            modules.ui.logToWorkspace(error.message, "warn");
+          }
+        });
+      }
+      fillTemplateEditor(null);
+      updateTemplateLengthHint();
+    }
+    modules.templates = {
+      PROMPT_WARN_CHARS,
+      getTextLength,
+      getTailPreview,
+      buildTemplateLengthHint,
+      fillTemplateEditor,
+      updateTemplateLengthHint,
+      refreshTemplates,
+      renderSavedTemplatesList,
+      saveEditedTemplate,
+      deleteTemplateById,
+      importTemplatesFromTextarea,
+      exportTemplatesToTextarea,
+      openTemplatePicker,
+      closeTemplatePicker,
+      applyTemplatesToField,
+      bindTemplateActions
+    };
+  })(window);
+
+  // src/webview/settings.js
+  (function initSettingsModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function renderSettingsStatus(message, type = "info") {
+      modules.runtime.setSummaryStatus(modules.runtime.getById("settingsStatusSummary"), message, type);
+    }
+    function renderSettingsDiagnostics(message, options = {}) {
+      const box = modules.runtime.getById("settingsDiagnosticBox");
+      if (!box) return;
+      const runtimeText = options.runtime ? `<p>宿主环境：${modules.runtime.escapeHtml(options.runtime)}</p>` : "";
+      const apiKeyText = options.hasApiKey ? "<p>API Key：已配置，本次保存将写入 Host Storage。</p>" : "<p>API Key：尚未配置。</p>";
+      const appText = `<p>已保存应用：${modules.runtime.escapeHtml(String(modules.state.state.apps.length))} 个。</p>`;
+      box.innerHTML = `
+      <p>${modules.runtime.escapeHtml(String(message || ""))}</p>
+      ${runtimeText}
+      ${apiKeyText}
+      ${appText}
+    `;
+    }
+    function updateAccountSummary(account) {
+      const balanceEl = modules.runtime.getById("accountBalanceValue");
+      const coinsEl = modules.runtime.getById("accountCoinsValue");
+      const summaryEl = modules.runtime.getById("accountSummary");
+      if (!balanceEl || !coinsEl || !summaryEl) return;
+      const hasAccount = account && account.ok;
+      balanceEl.textContent = hasAccount && account.balance != null ? String(account.balance) : "--";
+      coinsEl.textContent = hasAccount && account.coins != null ? String(account.coins) : "--";
+      summaryEl.classList.toggle("is-empty", !hasAccount);
+    }
+    function fillSettingsForm(settings) {
+      const runtime = modules.runtime;
+      const apiKeyInput = runtime.getById("settingsApiKeyInput");
+      const pollIntervalInput = runtime.getById("settingsPollIntervalInput");
+      const timeoutInput = runtime.getById("settingsTimeoutInput");
+      if (apiKeyInput) apiKeyInput.value = settings.apiKey || "";
+      if (pollIntervalInput) pollIntervalInput.value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
+      if (timeoutInput) timeoutInput.value = String(settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout);
+    }
+    function readSettingsForm() {
+      return modules.state.normalizeSettings({
+        apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
+        pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
+        timeout: modules.runtime.getById("settingsTimeoutInput")?.value
+      });
+    }
+    async function loadSettingsSnapshot() {
+      const apiKey = String(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY) || "").trim();
+      const rawSettings = modules.runtime.readJsonText(
+        await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS),
+        {}
+      );
+      return modules.state.normalizeSettings({
+        apiKey,
+        pollInterval: rawSettings && rawSettings.pollInterval,
+        timeout: rawSettings && rawSettings.timeout
+      });
+    }
+    async function saveSettingsSnapshot(settings) {
+      const normalized = modules.state.normalizeSettings(settings);
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
+      await modules.runtime.storageSetItem(
+        modules.state.STORAGE_KEYS.SETTINGS,
+        JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout })
+      );
+      modules.state.state.settings = normalized;
+      modules.state.state.settingsLoaded = true;
+      fillSettingsForm(normalized);
+      renderSettingsStatus("设置已保存到本地 Host Storage。", "success");
+      renderSettingsDiagnostics("运行参数已同步，可继续使用应用列表和任务流程。", {
+        runtime: modules.state.state.hostRuntime,
+        hasApiKey: Boolean(normalized.apiKey)
+      });
+      modules.ui.logToWorkspace(
+        `设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s，API Key ${normalized.apiKey ? "已配置" : "未配置"}`,
+        "success"
+      );
+    }
+    async function initializeSettings() {
+      renderSettingsStatus("正在读取本地设置...", "info");
+      try {
+        if (modules.runtime.isPluginRuntime()) {
+          const hostInfo = await modules.runtime.callHost("host.ping");
+          modules.state.state.hostRuntime = hostInfo && hostInfo.runtime ? String(hostInfo.runtime) : "uxp-host";
+        } else {
+          modules.state.state.hostRuntime = "browser-preview";
+        }
+      } catch (_) {
+        modules.state.state.hostRuntime = modules.runtime.isPluginRuntime() ? "uxp-host" : "browser-preview";
+      }
+      const snapshot = await loadSettingsSnapshot();
+      modules.state.state.settings = snapshot;
+      modules.state.state.settingsLoaded = true;
+      fillSettingsForm(snapshot);
+      renderSettingsStatus("设置已加载，可直接修改并保存。", "success");
+      renderSettingsDiagnostics("当前设置快照已从 bridge / local fallback 读取完成。", {
+        runtime: modules.state.state.hostRuntime,
+        hasApiKey: Boolean(snapshot.apiKey)
+      });
+      if (snapshot.apiKey && modules.runtime.isPluginRuntime()) {
+        try {
+          const account = await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: snapshot.apiKey }]);
+          updateAccountSummary(account);
+        } catch (_) {
+          updateAccountSummary(null);
+        }
+      } else {
+        updateAccountSummary(null);
+      }
+    }
+    function bindSettingsActions() {
+      const runtime = modules.runtime;
+      const saveButton = runtime.getById("btnSaveSettings");
+      const resetButton = runtime.getById("btnResetSettings");
+      const createAppButton = runtime.getById("btnCreateApp");
+      const importAppsButton = runtime.getById("btnImportApps");
+      const exportAppsButton = runtime.getById("btnExportApps");
+      const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
+      const deleteEditingAppButton = runtime.getById("btnDeleteEditingApp");
+      const closeEditorButton = runtime.getById("appEditorClose");
+      const transferInput = runtime.getById("appTransferInput");
+      const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput"];
+      fieldIds.forEach((id) => {
+        const element = runtime.getById(id);
+        if (!element) return;
+        element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
+      });
+      if (saveButton) {
+        saveButton.addEventListener("click", async () => {
+          saveButton.disabled = true;
+          renderSettingsStatus("正在保存设置...", "info");
+          try {
+            await saveSettingsSnapshot(readSettingsForm());
+            if (modules.state.state.settings.apiKey && modules.runtime.isPluginRuntime()) {
+              const account = await modules.runtime.callHost("runninghub.fetchAccountStatus", [{
+                apiKey: modules.state.state.settings.apiKey
+              }]);
+              updateAccountSummary(account);
+            } else {
+              updateAccountSummary(null);
+            }
+          } catch (error) {
+            renderSettingsStatus(`设置保存失败：${error.message}`, "error");
+            renderSettingsDiagnostics("保存设置时发生错误，请检查 bridge 与宿主环境。", {
+              runtime: modules.state.state.hostRuntime,
+              hasApiKey: Boolean(runtime.getById("settingsApiKeyInput")?.value)
+            });
+            modules.ui.logToWorkspace(`设置保存失败：${error.message}`, "error");
+          } finally {
+            saveButton.disabled = false;
+          }
+        });
+      }
+      if (resetButton) {
+        resetButton.addEventListener("click", () => {
+          fillSettingsForm(modules.state.state.settingsLoaded ? modules.state.state.settings : modules.state.DEFAULT_SETTINGS);
+          renderSettingsStatus("表单已恢复为当前已加载设置。", "info");
+        });
+      }
+      if (createAppButton) createAppButton.addEventListener("click", () => modules.apps.openAppEditor());
+      if (importAppsButton) {
+        importAppsButton.addEventListener("click", async () => {
+          try {
+            await modules.apps.importAppsFromTextarea();
+            renderSettingsDiagnostics("应用列表导入完成，Workspace 也已同步刷新。", {
+              runtime: modules.state.state.hostRuntime,
+              hasApiKey: Boolean(modules.state.state.settings.apiKey)
+            });
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), `导入失败：${error.message}`, "error");
+            modules.ui.logToWorkspace(`导入应用失败：${error.message}`, "error");
+          }
+        });
+      }
+      if (exportAppsButton) {
+        exportAppsButton.addEventListener("click", () => {
+          modules.apps.exportAppsToTextarea();
+          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用列表已导出到下方文本框。", "success");
+        });
+      }
+      if (transferInput) {
+        transferInput.addEventListener("input", () => {
+          transferInput.dataset.userEdited = "true";
+        });
+      }
+      if (saveEditingAppButton) {
+        saveEditingAppButton.addEventListener("click", async () => {
+          try {
+            await modules.apps.saveEditedApp();
+            runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已保存，并已同步到 Workspace。", "success");
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("appEditorStatus"), `保存失败：${error.message}`, "error");
+          }
+        });
+      }
+      if (deleteEditingAppButton) {
+        deleteEditingAppButton.addEventListener("click", async () => {
+          if (!modules.state.state.editingAppId) return;
+          await modules.apps.deleteAppById(modules.state.state.editingAppId);
+          modules.apps.closeAppEditor();
+          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已删除。", "warn");
+        });
+      }
+      if (closeEditorButton) closeEditorButton.addEventListener("click", modules.apps.closeAppEditor);
+      document.addEventListener("click", async (event) => {
+        if (event.target && event.target.closest("#appEditorBackdrop")) {
+          modules.apps.closeAppEditor();
+          return;
+        }
+        const actionTarget = event.target && event.target.closest("[data-action]");
+        if (!actionTarget) return;
+        const action = actionTarget.getAttribute("data-action");
+        const appId = actionTarget.getAttribute("data-app-id");
+        if (!action || !appId) return;
+        if (action === "select-app") {
+          await modules.apps.setCurrentAppById(appId);
+          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "当前应用已切换。", "success");
+          return;
+        }
+        if (action === "edit-app") {
+          modules.apps.openAppEditor(appId);
+          return;
+        }
+        if (action === "delete-app") {
+          await modules.apps.deleteAppById(appId);
+          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已删除。", "warn");
+        }
+      });
+    }
+    modules.settings = {
+      renderSettingsStatus,
+      renderSettingsDiagnostics,
+      initializeSettings,
+      bindSettingsActions
+    };
+  })(window);
+
+  // src/webview/main.js
+  window.PixelRunnerModules = window.PixelRunnerModules || {};
+  window.PixelRunnerModules.main = {
+    VIEW_MAP: {
+      tabWorkspace: "viewWorkspace",
+      tabTools: "viewTools",
+      tabSettings: "viewSettings"
+    }
+  };
+  document.addEventListener("DOMContentLoaded", () => {
+    const modules = window.PixelRunnerModules;
+    document.body.classList.toggle("is-browser-preview", !modules.runtime.isPluginRuntime());
+    modules.ui.bindTabs();
+    modules.ui.bindTactileFeedback();
+    modules.ui.bindToolActions();
+    modules.apps.bindAppPicker();
+    modules.workspace.bindWorkspaceActions();
+    modules.ui.bindPlaceholderActions();
+    modules.templates.bindTemplateActions();
+    modules.settings.bindSettingsActions();
+    Promise.all([
+      modules.apps.refreshWorkspaceApps({ quiet: true }),
+      modules.templates.refreshTemplates({ quiet: true }),
+      modules.settings.initializeSettings()
+    ]).then(() => {
+      modules.apps.renderSavedAppsList();
+      modules.templates.renderSavedTemplatesList();
+      modules.workspace.renderWorkspace();
+      modules.ui.setActiveView("tabWorkspace");
+      if (modules.runtime.isPluginRuntime()) {
+        modules.workspace.refreshPhotoshopDocumentStatus({ quiet: true });
+      }
+      modules.runtime.postHostMessage({
+        type: "pixelrunner.webview.ready",
+        version: "2.4.0"
+      });
+    }).catch((error) => {
+      modules.settings.renderSettingsStatus(`初始化失败：${error.message}`, "error");
+      modules.settings.renderSettingsDiagnostics("应用初始化未完成，请先检查 src/webview-entry.js 和 bridge。", {
+        runtime: modules.state.state.hostRuntime,
+        hasApiKey: false
+      });
+      modules.ui.logToWorkspace(`初始化失败：${error.message}`, "error");
+    });
+  });
+})();
+//# sourceMappingURL=app.bundle.js.map
