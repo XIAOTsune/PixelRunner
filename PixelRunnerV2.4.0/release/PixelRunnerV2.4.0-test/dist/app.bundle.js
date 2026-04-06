@@ -1137,12 +1137,23 @@ ${text}` : text;
   // src/webview/apps.js
   (function initAppsModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function normalizeAppId(rawValue) {
+      const text = String(rawValue || "").trim();
+      if (!text) return "";
+      const directMatch = text.match(/^\d+$/);
+      if (directMatch) return directMatch[0];
+      const queryMatch = text.match(/[?&](?:appId|webappId|id)=([^&#]+)/i);
+      if (queryMatch) return decodeURIComponent(queryMatch[1]).trim();
+      const pathMatch = text.match(/\/(\d+)(?:[/?#]|$)/);
+      if (pathMatch) return pathMatch[1];
+      return text;
+    }
     function getAppEditorDraft() {
       const runtime = modules.runtime;
       return JSON.stringify({
         id: modules.state.state.editingAppId || "",
         name: String(runtime.getById("appEditorNameInput")?.value || "").trim(),
-        appId: String(runtime.getById("appEditorAppIdInput")?.value || "").trim(),
+        appId: normalizeAppId(runtime.getById("appEditorAppIdInput")?.value || ""),
         description: String(runtime.getById("appEditorDescriptionInput")?.value || "").trim(),
         inputsText: String(runtime.getById("appEditorInputsInput")?.value || "").trim()
       });
@@ -1155,7 +1166,7 @@ ${text}` : text;
     }
     function confirmDiscardAppEditorChanges() {
       if (!isAppEditorDirty()) return true;
-      return global.confirm("当前应用编辑器里有未保存修改，确定放弃这些内容吗？");
+      return global.confirm("当前应用编辑区里有未保存修改，确定放弃这些内容吗？");
     }
     async function persistCurrentAppId(appId) {
       await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID, String(appId || ""));
@@ -1163,16 +1174,10 @@ ${text}` : text;
     function analyzeAppInputsText(text) {
       const marker = String(text || "").trim();
       if (!marker) {
-        return {
-          normalized: [],
-          summary: "输入结构为空。可以先保存应用，稍后再补充字段。",
-          status: "info"
-        };
+        return { normalized: [], summary: "当前应用还没有输入结构。", status: "info" };
       }
       const parsed = JSON.parse(marker);
-      if (!Array.isArray(parsed)) {
-        throw new Error("输入结构必须是 JSON 数组");
-      }
+      if (!Array.isArray(parsed)) throw new Error("输入结构必须是 JSON 数组");
       const normalized = modules.state.normalizeAppInputs(parsed);
       const imageCount = normalized.filter((item) => item.type === "image" || item.type === "file").length;
       const promptCount = normalized.filter((item) => modules.state.isPromptLikeInput(item)).length;
@@ -1225,30 +1230,6 @@ ${text}` : text;
       modules.workspace.renderWorkspace();
       renderAppPickerList();
     }
-    function getManagedApps() {
-      const state = modules.state.state;
-      const keyword = String(state.appManagerKeyword || "").trim().toLowerCase();
-      const sort = String(state.appManagerSort || "updated_desc");
-      return state.apps.filter((item) => {
-        if (!keyword) return true;
-        const marker = [
-          modules.state.getAppDisplayName(item),
-          modules.state.getAppDisplayId(item),
-          item.description || ""
-        ].join("\n").toLowerCase();
-        return marker.includes(keyword);
-      }).slice().sort((left, right) => {
-        if (sort === "created_desc") return Number(right.createdAt || 0) - Number(left.createdAt || 0);
-        if (sort === "name_asc") {
-          return String(modules.state.getAppDisplayName(left)).localeCompare(
-            String(modules.state.getAppDisplayName(right)),
-            "zh-CN"
-          );
-        }
-        if (sort === "inputs_desc") return modules.state.getAppInputCount(right) - modules.state.getAppInputCount(left);
-        return Number(right.updatedAt || 0) - Number(left.updatedAt || 0);
-      });
-    }
     function renderAppPickerList() {
       const runtime = modules.runtime;
       const state = modules.state.state;
@@ -1257,25 +1238,17 @@ ${text}` : text;
       if (!listEl) return;
       const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
       const visibleApps = !keyword ? state.apps : state.apps.filter((item) => {
-        const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`.toLowerCase();
+        const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase();
         return marker.includes(keyword);
       });
       if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
       if (visibleApps.length === 0) {
-        listEl.innerHTML = state.apps.length === 0 ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先到设置页新建或导入应用。</p></div>` : `<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
+        listEl.innerHTML = state.apps.length === 0 ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>` : `<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
         return;
       }
       listEl.innerHTML = visibleApps.map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
-        return `
-        <button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}">
-          <span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span>
-          <span class="picker-item-meta">
-            <span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>
-            <span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>
-          </span>
-        </button>
-      `;
+        return `<button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
       }).join("");
     }
     function renderSavedAppsList() {
@@ -1283,55 +1256,13 @@ ${text}` : text;
       const state = modules.state.state;
       const listEl = runtime.getById("savedAppsList");
       const summaryEl = runtime.getById("savedAppsSummary");
-      const transferInput = runtime.getById("appTransferInput");
       if (!listEl || !summaryEl) return;
-      const visibleApps = getManagedApps();
-      runtime.setSummaryStatus(summaryEl, `已保存应用：显示 ${visibleApps.length} / 共 ${state.apps.length} 个`, "info");
-      if (transferInput && !transferInput.dataset.userEdited && state.apps.length > 0) {
-        transferInput.value = JSON.stringify(state.apps, null, 2);
-      }
+      runtime.setSummaryStatus(summaryEl, `已保存应用：${state.apps.length} 个`, "info");
       if (state.apps.length === 0) {
-        listEl.innerHTML = `
-        <div class="picker-empty">
-          <strong>还没有已保存应用</strong>
-          <p>可以手动新建一个应用，或者把旧版本导出的 JSON 粘贴到下方后导入。</p>
-        </div>
-      `;
+        listEl.innerHTML = `<div class="picker-empty"><strong>还没有已保存应用</strong><p>输入应用 ID 或链接后解析并保存。</p></div>`;
         return;
       }
-      if (visibleApps.length === 0) {
-        listEl.innerHTML = `
-        <div class="picker-empty">
-          <strong>没有匹配的应用</strong>
-          <p>可以调整搜索词或切换排序方式后再试。</p>
-        </div>
-      `;
-        return;
-      }
-      listEl.innerHTML = visibleApps.map((app) => {
-        const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
-        const isEditing = String(state.editingAppId || "") === String(app.id);
-        const description = String(app.description || "").trim();
-        return `
-        <article class="list-item saved-app-item ${isActive ? "is-active" : ""} ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}">
-          <div class="saved-app-main">
-            <div class="saved-item-heading">
-              <strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong>
-              ${isActive ? '<span class="saved-item-badge is-current">当前使用</span>' : ""}
-              ${isEditing ? '<span class="saved-item-badge is-editing">正在编辑</span>' : ""}
-            </div>
-            <span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>
-            <span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>
-            ${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}
-          </div>
-          <div class="inline-actions">
-            <button class="mini-btn" type="button" data-action="select-app" data-app-id="${runtime.escapeHtml(String(app.id))}">设为当前</button>
-            <button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">编辑</button>
-            <button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button>
-          </div>
-        </article>
-      `;
-      }).join("");
+      listEl.innerHTML = state.apps.map((app) => `<article class="list-item saved-app-item compact-card ${String(modules.state.state.editingAppId || "") === String(app.id) ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><span>应用 ID: ${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></article>`).join("");
     }
     async function setCurrentAppById(appId, options = {}) {
       const state = modules.state.state;
@@ -1343,9 +1274,7 @@ ${text}` : text;
       modules.workspace.renderWorkspace();
       renderSavedAppsList();
       renderAppPickerList();
-      if (!options.quiet) {
-        modules.ui.logToWorkspace(`已选择应用：${modules.state.getAppDisplayName(nextApp)}`);
-      }
+      if (!options.quiet) modules.ui.logToWorkspace(`已选择应用：${modules.state.getAppDisplayName(nextApp)}`);
       return true;
     }
     async function hydrateCurrentApp(options = {}) {
@@ -1361,18 +1290,14 @@ ${text}` : text;
         return;
       }
       modules.workspace.renderWorkspace();
-      if (!options.quiet) {
-        modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
-      }
+      if (!options.quiet) modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
     }
     async function refreshWorkspaceApps(options = {}) {
       modules.state.state.apps = await loadAppsFromStorage();
       await hydrateCurrentApp({ quiet: true });
       renderSavedAppsList();
       renderAppPickerList();
-      if (!options.quiet) {
-        modules.ui.logToWorkspace(`应用列表已刷新，共读取到 ${modules.state.state.apps.length} 个应用。`);
-      }
+      if (!options.quiet) modules.ui.logToWorkspace(`应用列表已刷新，共 ${modules.state.state.apps.length} 个应用。`);
     }
     function bindAppPicker() {
       const runtime = modules.runtime;
@@ -1393,20 +1318,12 @@ ${text}` : text;
       if (refreshButton) {
         refreshButton.addEventListener("click", async () => {
           await refreshWorkspaceApps();
-          modules.settings.renderSettingsDiagnostics("应用列表已从宿主本地存储刷新。", {
-            runtime: state.hostRuntime,
-            hasApiKey: Boolean(state.settings.apiKey)
-          });
+          modules.settings.renderSettingsDiagnostics("应用列表已从宿主本地存储刷新。", { runtime: state.hostRuntime, hasApiKey: Boolean(state.settings.apiKey) });
         });
       }
-      if (closeButton) {
-        closeButton.addEventListener("click", () => {
-          modules.workspace.setModalOpen("appPickerModal", false);
-        });
-      }
+      if (closeButton) closeButton.addEventListener("click", () => modules.workspace.setModalOpen("appPickerModal", false));
       document.addEventListener("click", async (event) => {
-        const closeTarget = event.target && event.target.closest("#appPickerBackdrop");
-        if (closeTarget) {
+        if (event.target && event.target.closest("#appPickerBackdrop")) {
           modules.workspace.setModalOpen("appPickerModal", false);
           return;
         }
@@ -1430,19 +1347,14 @@ ${text}` : text;
       const runtime = modules.runtime;
       const safeApp = app && typeof app === "object" ? app : null;
       modules.state.state.editingAppId = safeApp ? String(safeApp.id) : null;
-      runtime.getById("appEditorTitle").textContent = safeApp ? `编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "新建应用";
-      runtime.getById("appEditorNameInput").value = safeApp ? safeApp.name || "" : "";
-      runtime.getById("appEditorAppIdInput").value = safeApp ? safeApp.appId || "" : "";
-      runtime.getById("appEditorDescriptionInput").value = safeApp ? safeApp.description || "" : "";
-      runtime.getById("appEditorInputsInput").value = safeApp ? JSON.stringify(safeApp.inputs || [], null, 2) : "";
-      renderAppInputsSummary(runtime.getById("appEditorInputsInput").value);
+      if (runtime.getById("appEditorNameInput")) runtime.getById("appEditorNameInput").value = safeApp ? safeApp.name || "" : "";
+      if (runtime.getById("appEditorAppIdInput")) runtime.getById("appEditorAppIdInput").value = safeApp ? safeApp.appId || "" : "";
+      if (runtime.getById("appEditorDescriptionInput")) runtime.getById("appEditorDescriptionInput").value = safeApp ? safeApp.description || "" : "";
+      if (runtime.getById("appEditorInputsInput")) runtime.getById("appEditorInputsInput").value = safeApp ? JSON.stringify(safeApp.inputs || [], null, 2) : "[]";
+      renderAppInputsSummary(runtime.getById("appEditorInputsInput")?.value || "[]");
       const deleteButton = runtime.getById("btnDeleteEditingApp");
       if (deleteButton) deleteButton.hidden = !safeApp;
-      runtime.setSummaryStatus(
-        runtime.getById("appEditorStatus"),
-        safeApp ? "正在编辑当前应用。修改后保存，会同步回应用列表和工作台。" : "正在新建应用。先填写名称和应用 ID，输入结构 JSON 可以稍后补充。",
-        "info"
-      );
+      runtime.setSummaryStatus(runtime.getById("appEditorStatus"), safeApp ? `正在编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "输入应用 ID 或链接后解析，确认名称后保存。", "info");
       markAppEditorPristine();
       renderSavedAppsList();
     }
@@ -1450,29 +1362,38 @@ ${text}` : text;
       if (!options.force && !confirmDiscardAppEditorChanges()) return false;
       const app = appId ? modules.state.state.apps.find((item) => String(item.id) === String(appId)) : null;
       fillAppEditor(app || null);
-      modules.workspace.setModalOpen("appEditorModal", true);
+      modules.runtime.getById("appEditorAppIdInput")?.focus();
+      modules.runtime.getById("appEditorAppIdInput")?.scrollIntoView({ block: "center", behavior: "smooth" });
       return true;
     }
     function closeAppEditor(options = {}) {
       if (!options.force && !confirmDiscardAppEditorChanges()) return false;
       modules.state.state.editingAppId = null;
       modules.state.state.appEditorSnapshot = "";
-      renderSavedAppsList();
-      modules.workspace.setModalOpen("appEditorModal", false);
+      fillAppEditor(null, { force: true });
       return true;
+    }
+    function parseAppReference() {
+      const runtime = modules.runtime;
+      const inputEl = runtime.getById("appEditorAppIdInput");
+      const normalizedAppId = normalizeAppId(inputEl?.value || "");
+      if (!normalizedAppId) throw new Error("请先输入有效的应用 ID 或 URL");
+      if (inputEl) inputEl.value = normalizedAppId;
+      runtime.setSummaryStatus(runtime.getById("appEditorStatus"), `已解析应用 ID：${normalizedAppId}，请确认名称后保存。`, "success");
+      return normalizedAppId;
     }
     function readAppEditorForm() {
       const runtime = modules.runtime;
-      const appId = String(runtime.getById("appEditorAppIdInput")?.value || "").trim();
+      const appId = normalizeAppId(runtime.getById("appEditorAppIdInput")?.value || "");
       const name = String(runtime.getById("appEditorNameInput")?.value || "").trim();
+      if (!appId) throw new Error("请先填写应用 ID");
       if (!name) throw new Error("请先填写应用名称");
-      if (!appId) throw new Error("请先填写 RunningHub 应用 ID");
       return {
         id: modules.state.state.editingAppId || runtime.createId("app"),
         appId,
         name,
         description: String(runtime.getById("appEditorDescriptionInput")?.value || "").trim(),
-        inputs: parseAppInputsText(runtime.getById("appEditorInputsInput")?.value || "")
+        inputs: parseAppInputsText(runtime.getById("appEditorInputsInput")?.value || "[]")
       };
     }
     async function saveEditedApp() {
@@ -1480,23 +1401,15 @@ ${text}` : text;
       const apps = modules.state.state.apps;
       const existingIndex = apps.findIndex((item) => String(item.id) === String(formValue.id));
       const now = Date.now();
-      const nextApp = modules.state.normalizeAppRecord({
-        ...formValue,
-        createdAt: existingIndex >= 0 ? apps[existingIndex].createdAt : now,
-        updatedAt: now
-      });
+      const nextApp = modules.state.normalizeAppRecord({ ...formValue, createdAt: existingIndex >= 0 ? apps[existingIndex].createdAt : now, updatedAt: now });
       const nextApps = [...apps];
       if (existingIndex >= 0) nextApps[existingIndex] = nextApp;
       else nextApps.unshift(nextApp);
       await saveAppsToStorage(nextApps);
       await setCurrentAppById(nextApp.id, { quiet: true });
-      modules.runtime.setSummaryStatus(
-        modules.runtime.getById("appEditorStatus"),
-        `应用已保存：${nextApp.name}，并已同步到工作台。`,
-        "success"
-      );
+      modules.runtime.setSummaryStatus(modules.runtime.getById("appEditorStatus"), `应用已保存：${nextApp.name}`, "success");
       modules.ui.logToWorkspace(`应用已保存：${nextApp.name}`, "success");
-      closeAppEditor({ force: true });
+      fillAppEditor(null);
     }
     async function deleteAppById(appId) {
       const target = modules.state.state.apps.find((item) => String(item.id) === String(appId));
@@ -1506,6 +1419,7 @@ ${text}` : text;
       if (String(modules.state.state.editingAppId || "") === String(appId)) {
         modules.state.state.editingAppId = null;
         modules.state.state.appEditorSnapshot = "";
+        fillAppEditor(null);
       }
       if (modules.state.state.currentApp && String(modules.state.state.currentApp.id) === String(appId)) {
         if (nextApps[0]) await setCurrentAppById(nextApps[0].id, { quiet: true });
@@ -1524,7 +1438,7 @@ ${text}` : text;
       const input = modules.runtime.getById("appTransferInput");
       if (!input) return;
       const marker = String(input.value || "").trim();
-      if (!marker) throw new Error("请先在文本框中粘贴应用列表 JSON");
+      if (!marker) throw new Error("请先粘贴应用列表 JSON");
       let parsed = JSON.parse(marker);
       if (parsed && typeof parsed === "object" && Array.isArray(parsed.apps)) parsed = parsed.apps;
       const importedApps = modules.state.normalizeAppList(parsed);
@@ -1532,7 +1446,6 @@ ${text}` : text;
       await saveAppsToStorage(importedApps);
       input.dataset.userEdited = "";
       input.value = JSON.stringify(importedApps, null, 2);
-      modules.ui.logToWorkspace(`应用列表导入完成，共 ${importedApps.length} 个应用。`, "success");
     }
     function exportAppsToTextarea() {
       const input = modules.runtime.getById("appTransferInput");
@@ -1552,11 +1465,12 @@ ${text}` : text;
       refreshWorkspaceApps,
       openAppEditor,
       closeAppEditor,
+      fillAppEditor,
+      parseAppReference,
       saveEditedApp,
       deleteAppById,
       importAppsFromTextarea,
       exportAppsToTextarea,
-      fillAppEditor,
       isAppEditorDirty,
       confirmDiscardAppEditorChanges,
       markAppEditorPristine
@@ -1583,7 +1497,7 @@ ${text}` : text;
     }
     function confirmDiscardTemplateChanges() {
       if (!isTemplateEditorDirty()) return true;
-      return global.confirm("当前模板编辑器里有未保存修改，确定放弃这些内容吗？");
+      return global.confirm("当前模板编辑区里有未保存修改，确定放弃这些内容吗？");
     }
     function getTextLength(value) {
       return Array.from(String(value || "")).length;
@@ -1597,7 +1511,7 @@ ${text}` : text;
       const tailPreview = getTailPreview(content, 20);
       const warning = titleLen >= PROMPT_WARN_CHARS || contentLen >= PROMPT_WARN_CHARS;
       return {
-        text: warning ? `标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。建议控制在 ${PROMPT_WARN_CHARS} 字符内。` : `标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。插件本地不会截断模板内容。`,
+        text: warning ? `提示：标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。建议控制在 ${PROMPT_WARN_CHARS} 字符内。` : `提示：标题 ${titleLen} / 内容 ${contentLen} 字符，末尾预览 ${tailPreview}。插件本地不会截断模板内容。`,
         warning
       };
     }
@@ -1606,26 +1520,19 @@ ${text}` : text;
       const runtime = modules.runtime;
       const item = template && typeof template === "object" ? template : null;
       modules.state.state.editingTemplateId = item ? String(item.id) : null;
-      const titleInput = runtime.getById("templateTitleInput");
-      const contentInput = runtime.getById("templateContentInput");
-      if (titleInput) titleInput.value = item ? item.title || "" : "";
-      if (contentInput) contentInput.value = item ? item.content || "" : "";
+      if (runtime.getById("templateTitleInput")) runtime.getById("templateTitleInput").value = item ? item.title || "" : "";
+      if (runtime.getById("templateContentInput")) runtime.getById("templateContentInput").value = item ? item.content || "" : "";
       updateTemplateLengthHint();
-      runtime.setSummaryStatus(
-        runtime.getById("templateStatusSummary"),
-        item ? `正在编辑模板：${item.title}` : "正在新建模板，填写标题和内容后即可保存。",
-        "info"
-      );
+      runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。", "info");
       markTemplateEditorPristine();
       renderSavedTemplatesList();
       return true;
     }
     function updateTemplateLengthHint() {
-      const runtime = modules.runtime;
-      const hintEl = runtime.getById("templateLengthHint");
+      const hintEl = modules.runtime.getById("templateLengthHint");
       if (!hintEl) return;
-      const title = runtime.getById("templateTitleInput")?.value || "";
-      const content = runtime.getById("templateContentInput")?.value || "";
+      const title = modules.runtime.getById("templateTitleInput")?.value || "";
+      const content = modules.runtime.getById("templateContentInput")?.value || "";
       const hint = buildTemplateLengthHint(title, content);
       hintEl.textContent = hint.text;
       hintEl.classList.toggle("is-warning", hint.warning);
@@ -1646,157 +1553,72 @@ ${text}` : text;
       modules.state.state.templates = await loadTemplatesFromStorage();
       renderSavedTemplatesList();
       renderTemplatePickerList();
-      if (!options.quiet) {
-        modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条。`, "info");
-      }
+      if (!options.quiet) modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条。`, "info");
     }
     function readTemplateEditorForm() {
-      const runtime = modules.runtime;
-      const title = String(runtime.getById("templateTitleInput")?.value || "").trim();
-      const content = String(runtime.getById("templateContentInput")?.value || "");
+      const title = String(modules.runtime.getById("templateTitleInput")?.value || "").trim();
+      const content = String(modules.runtime.getById("templateContentInput")?.value || "");
       if (!title) throw new Error("请先填写模板标题");
       if (!content.trim()) throw new Error("请先填写模板内容");
-      return {
-        id: modules.state.state.editingTemplateId || runtime.createId("tpl"),
-        title,
-        content
-      };
+      return { id: modules.state.state.editingTemplateId || modules.runtime.createId("tpl"), title, content };
     }
     async function saveEditedTemplate() {
       const formValue = readTemplateEditorForm();
       const templates = modules.state.state.templates.slice();
       const existingIndex = templates.findIndex((item) => String(item.id) === String(formValue.id));
       const now = Date.now();
-      const nextItem = modules.state.normalizeTemplateRecord({
-        ...formValue,
-        createdAt: existingIndex >= 0 ? templates[existingIndex].createdAt : now,
-        updatedAt: now
-      });
+      const nextItem = modules.state.normalizeTemplateRecord({ ...formValue, createdAt: existingIndex >= 0 ? templates[existingIndex].createdAt : now, updatedAt: now });
       if (!nextItem) throw new Error("模板标题和内容不能为空");
       if (existingIndex >= 0) templates[existingIndex] = nextItem;
       else templates.unshift(nextItem);
       await saveTemplatesToStorage(templates);
-      fillTemplateEditor(null, { force: true });
+      modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), `模板已保存：${nextItem.title}`, "success");
       modules.ui.logToWorkspace(`模板已保存：${nextItem.title}`, "success");
-      modules.runtime.setSummaryStatus(
-        modules.runtime.getById("templateStatusSummary"),
-        `模板已保存：${nextItem.title}，并已同步到工作台选择器。`,
-        "success"
-      );
+      fillTemplateEditor(null, { force: true });
     }
     async function deleteTemplateById(templateId) {
       const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
       if (!target) return;
       const nextTemplates = modules.state.state.templates.filter((item) => String(item.id) !== String(templateId));
       await saveTemplatesToStorage(nextTemplates);
-      if (String(modules.state.state.editingTemplateId || "") === String(templateId)) {
-        fillTemplateEditor(null, { force: true });
-      }
+      if (String(modules.state.state.editingTemplateId || "") === String(templateId)) fillTemplateEditor(null, { force: true });
       modules.ui.logToWorkspace(`模板已删除：${target.title}`, "warn");
       modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除。", "warn");
     }
     function exportTemplatesToTextarea() {
-      const runtime = modules.runtime;
-      const input = runtime.getById("templateTransferInput");
+      const input = modules.runtime.getById("templateTransferInput");
       if (!input) return;
       input.dataset.userEdited = "";
-      input.value = JSON.stringify({
-        format: "pixelrunner.prompt-templates",
-        version: 1,
-        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        templates: modules.state.state.templates
-      }, null, 2);
+      input.value = JSON.stringify({ format: "pixelrunner.prompt-templates", version: 1, exportedAt: (/* @__PURE__ */ new Date()).toISOString(), templates: modules.state.state.templates }, null, 2);
     }
     async function importTemplatesFromTextarea() {
-      const runtime = modules.runtime;
-      const input = runtime.getById("templateTransferInput");
+      const input = modules.runtime.getById("templateTransferInput");
       if (!input) return;
       const text = String(input.value || "").trim();
-      if (!text) throw new Error("请先在文本框中粘贴模板 JSON");
+      if (!text) throw new Error("请先粘贴模板 JSON");
       let parsed = JSON.parse(text);
-      if (parsed && typeof parsed === "object" && Array.isArray(parsed.templates)) {
-        parsed = parsed.templates;
-      }
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.templates)) parsed = parsed.templates;
       const templates = modules.state.normalizeTemplateList(parsed);
       if (templates.length === 0) throw new Error("没有解析到可导入的模板");
       await saveTemplatesToStorage(templates);
       input.dataset.userEdited = "";
-      input.value = JSON.stringify({
-        format: "pixelrunner.prompt-templates",
-        version: 1,
-        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        templates
-      }, null, 2);
-      modules.runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `模板导入完成，共 ${templates.length} 条。`, "success");
-      modules.ui.logToWorkspace(`模板导入完成，共 ${templates.length} 条。`, "success");
+      input.value = JSON.stringify({ format: "pixelrunner.prompt-templates", version: 1, exportedAt: (/* @__PURE__ */ new Date()).toISOString(), templates }, null, 2);
     }
     function renderSavedTemplatesList() {
-      const runtime = modules.runtime;
-      const listEl = runtime.getById("savedTemplatesList");
-      const summaryEl = runtime.getById("savedTemplatesSummary");
-      const transferInput = runtime.getById("templateTransferInput");
-      const state = modules.state.state;
-      const keyword = String(state.templateManagerKeyword || "").trim().toLowerCase();
-      const sort = String(state.templateManagerSort || "updated_desc");
-      const templates = state.templates.filter((item) => {
-        if (!keyword) return true;
-        return `${item.title || ""}
-${item.content || ""}`.toLowerCase().includes(keyword);
-      }).slice().sort((left, right) => {
-        if (sort === "title_asc") return String(left.title || "").localeCompare(String(right.title || ""), "zh-CN");
-        if (sort === "length_desc") return getTextLength(right.content) - getTextLength(left.content);
-        if (sort === "created_desc") return Number(right.createdAt || 0) - Number(left.createdAt || 0);
-        return Number(right.updatedAt || 0) - Number(left.updatedAt || 0);
-      });
-      const totalCount = state.templates.length;
+      const listEl = modules.runtime.getById("savedTemplatesList");
+      const summaryEl = modules.runtime.getById("savedTemplatesSummary");
       if (!listEl || !summaryEl) return;
-      runtime.setSummaryStatus(summaryEl, `已保存模板：显示 ${templates.length} / 共 ${totalCount} 条`, "info");
-      if (transferInput && !transferInput.dataset.userEdited && totalCount > 0) {
-        exportTemplatesToTextarea();
-      }
-      if (totalCount === 0) {
-        listEl.innerHTML = `
-        <div class="picker-empty">
-          <strong>还没有已保存模板</strong>
-          <p>可以先创建常用提示词模板，工作台里的提示词字段会直接接入模板选择器。</p>
-        </div>
-      `;
-        return;
-      }
+      const templates = modules.state.state.templates.slice().sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+      modules.runtime.setSummaryStatus(summaryEl, `已保存模板：${templates.length} 条`, "info");
       if (templates.length === 0) {
-        listEl.innerHTML = `
-        <div class="picker-empty">
-          <strong>没有匹配的模板</strong>
-          <p>换个关键词，或者调整排序方式后再试试。</p>
-        </div>
-      `;
+        listEl.innerHTML = `<div class="picker-empty"><strong>还没有已保存模板</strong><p>点击“创建模板”开始整理常用提示词。</p></div>`;
         return;
       }
-      listEl.innerHTML = templates.map((item) => `
-      <article class="list-item saved-template-item ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${runtime.escapeHtml(String(item.id))}">
-        <div class="saved-template-main">
-          <div class="saved-item-heading">
-            <strong>${runtime.escapeHtml(item.title)}</strong>
-            ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? '<span class="saved-item-badge is-editing">正在编辑</span>' : ""}
-          </div>
-          <span>${runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span>
-          <span>${runtime.escapeHtml(getTailPreview(item.content, 28))}</span>
-        </div>
-        <div class="inline-actions">
-          <button class="mini-btn" type="button" data-action="edit-template" data-template-id="${runtime.escapeHtml(String(item.id))}">编辑</button>
-          <button class="mini-btn" type="button" data-action="delete-template" data-template-id="${runtime.escapeHtml(String(item.id))}">删除</button>
-        </div>
-      </article>
-    `).join("");
+      listEl.innerHTML = templates.map((item) => `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`).join("");
     }
     function normalizePickerConfig(config = {}) {
       const mode = config.mode === "single" ? "single" : "multiple";
-      return {
-        mode,
-        targetKey: String(config.targetKey || ""),
-        maxSelection: mode === "single" ? 1 : Math.max(1, Math.min(10, Number(config.maxSelection) || 5)),
-        applyMode: config.applyMode === "append" ? "append" : "replace"
-      };
+      return { mode, targetKey: String(config.targetKey || ""), maxSelection: mode === "single" ? 1 : Math.max(1, Math.min(10, Number(config.maxSelection) || 5)), applyMode: config.applyMode === "append" ? "append" : "replace" };
     }
     function openTemplatePicker(config = {}) {
       const picker = modules.state.state.templatePicker;
@@ -1828,12 +1650,11 @@ ${item.content || ""}`.toLowerCase().includes(keyword);
       return picker.mode === "single" ? "单选模式：点击模板后会立即写入目标字段。" : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}，可组合写入同一个字段。`;
     }
     function syncTemplatePickerUi() {
-      const runtime = modules.runtime;
-      const titleEl = runtime.getById("templatePickerTitle");
-      const infoEl = runtime.getById("templatePickerSelectionInfo");
-      const applyButton = runtime.getById("btnApplyTemplateSelection");
-      const searchInput = runtime.getById("templatePickerSearchInput");
-      const applyModeInput = runtime.getById("templatePickerApplyMode");
+      const titleEl = modules.runtime.getById("templatePickerTitle");
+      const infoEl = modules.runtime.getById("templatePickerSelectionInfo");
+      const applyButton = modules.runtime.getById("btnApplyTemplateSelection");
+      const searchInput = modules.runtime.getById("templatePickerSearchInput");
+      const applyModeInput = modules.runtime.getById("templatePickerApplyMode");
       const picker = modules.state.state.templatePicker;
       if (titleEl) titleEl.textContent = picker.mode === "single" ? "选择提示词模板" : "组合提示词模板";
       if (infoEl) infoEl.textContent = getPickerSelectionInfo();
@@ -1842,13 +1663,14 @@ ${item.content || ""}`.toLowerCase().includes(keyword);
         applyModeInput.value = picker.applyMode || "replace";
         applyModeInput.disabled = picker.mode === "single";
       }
-      if (applyButton) applyButton.hidden = picker.mode === "single";
-      if (applyButton) applyButton.disabled = picker.selectedIds.length === 0;
+      if (applyButton) {
+        applyButton.hidden = picker.mode === "single";
+        applyButton.disabled = picker.selectedIds.length === 0;
+      }
     }
     function renderTemplatePickerList() {
-      const runtime = modules.runtime;
-      const listEl = runtime.getById("templatePickerList");
-      const statsEl = runtime.getById("templatePickerStats");
+      const listEl = modules.runtime.getById("templatePickerList");
+      const statsEl = modules.runtime.getById("templatePickerStats");
       if (!listEl) return;
       const picker = modules.state.state.templatePicker;
       const templates = modules.state.state.templates;
@@ -1857,36 +1679,18 @@ ${item.content || ""}`.toLowerCase().includes(keyword);
 ${item.content || ""}`.toLowerCase().includes(keyword));
       if (statsEl) statsEl.textContent = `${visibleTemplates.length} / ${templates.length}`;
       if (templates.length === 0) {
-        listEl.innerHTML = `
-        <div class="picker-empty">
-          <strong>还没有可用模板</strong>
-          <p>先去设置页创建模板，再回到工作台选择。</p>
-        </div>
-      `;
+        listEl.innerHTML = `<div class="picker-empty"><strong>还没有可用模板</strong><p>先去设置页创建模板，再回到工作台选择。</p></div>`;
         syncTemplatePickerUi();
         return;
       }
       if (visibleTemplates.length === 0) {
-        listEl.innerHTML = `
-        <div class="picker-empty">
-          <strong>没有匹配的模板</strong>
-          <p>可以换个关键词，或者先去设置页补充模板内容。</p>
-        </div>
-      `;
+        listEl.innerHTML = `<div class="picker-empty"><strong>没有匹配的模板</strong><p>换个关键词再试试。</p></div>`;
         syncTemplatePickerUi();
         return;
       }
       listEl.innerHTML = visibleTemplates.map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
-        return `
-        <button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${runtime.escapeHtml(String(item.id))}">
-          <span class="picker-item-title">${runtime.escapeHtml(item.title)}</span>
-          <span class="picker-item-meta">
-            <span>${runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span>
-            <span>${runtime.escapeHtml(getTailPreview(item.content, 30))}</span>
-          </span>
-        </button>
-      `;
+        return `<button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
       }).join("");
       syncTemplatePickerUi();
     }
@@ -1916,61 +1720,28 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
 
 ${incomingContent}` : incomingContent;
       const length = getTextLength(content);
-      if (length > PROMPT_WARN_CHARS) {
-        throw new Error(`组合后的提示词长度 ${length} 超出建议上限 ${PROMPT_WARN_CHARS}`);
-      }
+      if (length > PROMPT_WARN_CHARS) throw new Error(`组合后的提示词长度 ${length} 超出建议上限 ${PROMPT_WARN_CHARS}`);
       modules.state.state.formValues[key] = content;
       modules.workspace.renderWorkspace();
-      modules.ui.logToWorkspace(
-        `${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段：${key}`,
-        "success"
-      );
+      modules.ui.logToWorkspace(`${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段：${key}`, "success");
     }
     function bindTemplateActions() {
       const runtime = modules.runtime;
       const titleInput = runtime.getById("templateTitleInput");
       const contentInput = runtime.getById("templateContentInput");
-      const transferInput = runtime.getById("templateTransferInput");
       const saveButton = runtime.getById("btnSaveTemplate");
       const resetButton = runtime.getById("btnResetTemplateEditor");
-      const importButton = runtime.getById("btnImportTemplates");
-      const exportButton = runtime.getById("btnExportTemplates");
       const pickerCloseButton = runtime.getById("templatePickerModalClose");
       const pickerApplyButton = runtime.getById("btnApplyTemplateSelection");
       const pickerList = runtime.getById("templatePickerList");
       const pickerSearchInput = runtime.getById("templatePickerSearchInput");
       const pickerApplyMode = runtime.getById("templatePickerApplyMode");
-      const managerSearchInput = runtime.getById("templateManagerSearchInput");
-      const managerSortInput = runtime.getById("templateManagerSortInput");
       [titleInput, contentInput].filter(Boolean).forEach((element) => {
         element.addEventListener("input", () => {
           updateTemplateLengthHint();
-          runtime.setSummaryStatus(
-            runtime.getById("templateStatusSummary"),
-            modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会同步到工作台选择器。",
-            "pending"
-          );
+          runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。", "pending");
         });
       });
-      if (transferInput) {
-        transferInput.addEventListener("input", () => {
-          transferInput.dataset.userEdited = "true";
-        });
-      }
-      if (managerSearchInput) {
-        managerSearchInput.value = modules.state.state.templateManagerKeyword || "";
-        managerSearchInput.addEventListener("input", () => {
-          modules.state.state.templateManagerKeyword = managerSearchInput.value || "";
-          renderSavedTemplatesList();
-        });
-      }
-      if (managerSortInput) {
-        managerSortInput.value = modules.state.state.templateManagerSort || "updated_desc";
-        managerSortInput.addEventListener("change", () => {
-          modules.state.state.templateManagerSort = managerSortInput.value || "updated_desc";
-          renderSavedTemplatesList();
-        });
-      }
       if (saveButton) {
         saveButton.addEventListener("click", async () => {
           try {
@@ -1980,24 +1751,7 @@ ${incomingContent}` : incomingContent;
           }
         });
       }
-      if (resetButton) {
-        resetButton.addEventListener("click", () => fillTemplateEditor(null));
-      }
-      if (importButton) {
-        importButton.addEventListener("click", async () => {
-          try {
-            await importTemplatesFromTextarea();
-          } catch (error) {
-            runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `导入失败：${error.message}`, "error");
-          }
-        });
-      }
-      if (exportButton) {
-        exportButton.addEventListener("click", () => {
-          exportTemplatesToTextarea();
-          runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), "模板 JSON 已导出到下方文本框。", "success");
-        });
-      }
+      if (resetButton) resetButton.addEventListener("click", () => fillTemplateEditor(null));
       document.addEventListener("click", async (event) => {
         const actionTarget = event.target && event.target.closest("[data-action][data-template-id]");
         if (actionTarget) {
@@ -2013,9 +1767,7 @@ ${incomingContent}` : incomingContent;
             return;
           }
         }
-        if (event.target && event.target.closest("#templatePickerBackdrop")) {
-          closeTemplatePicker();
-        }
+        if (event.target && event.target.closest("#templatePickerBackdrop")) closeTemplatePicker();
       });
       if (pickerCloseButton) pickerCloseButton.addEventListener("click", closeTemplatePicker);
       if (pickerList) {
@@ -2034,9 +1786,7 @@ ${incomingContent}` : incomingContent;
             }
             return;
           }
-          if (!toggleTemplateSelection(templateId)) {
-            modules.ui.logToWorkspace(`最多只能选择 ${picker.maxSelection} 条模板`, "warn");
-          }
+          if (!toggleTemplateSelection(templateId)) modules.ui.logToWorkspace(`最多只能选择 ${picker.maxSelection} 条模板`, "warn");
         });
       }
       if (pickerSearchInput) {
@@ -2055,9 +1805,7 @@ ${incomingContent}` : incomingContent;
         pickerApplyButton.addEventListener("click", () => {
           try {
             const picker = modules.state.state.templatePicker;
-            applyTemplatesToField(picker.targetKey, picker.selectedIds, {
-              applyMode: picker.applyMode
-            });
+            applyTemplatesToField(picker.targetKey, picker.selectedIds, { applyMode: picker.applyMode });
             closeTemplatePicker();
           } catch (error) {
             modules.ui.logToWorkspace(error.message, "warn");
@@ -2100,19 +1848,12 @@ ${incomingContent}` : incomingContent;
       const box = modules.runtime.getById("settingsDiagnosticBox");
       if (!box) return;
       const runtimeText = options.runtime ? `<p>宿主环境：${modules.runtime.escapeHtml(options.runtime)}</p>` : "";
-      const apiKeyText = options.hasApiKey ? "<p>API Key：已配置，本次保存将写入宿主本地存储。</p>" : "<p>API Key：尚未配置。</p>";
+      const apiKeyText = options.hasApiKey ? "<p>API Key：已配置，会写入宿主本地存储。</p>" : "<p>API Key：尚未配置。</p>";
       const appText = `<p>已保存应用：${modules.runtime.escapeHtml(String(modules.state.state.apps.length))} 个。</p>`;
       const templateText = `<p>已保存模板：${modules.runtime.escapeHtml(String(modules.state.state.templates.length))} 条。</p>`;
       const currentApp = modules.state.state.currentApp;
       const currentAppText = currentApp ? `<p>当前应用：${modules.runtime.escapeHtml(modules.state.getAppDisplayName(currentApp))}。</p>` : "<p>当前应用：尚未选择。</p>";
-      box.innerHTML = `
-      <p>${modules.runtime.escapeHtml(String(message || ""))}</p>
-      ${runtimeText}
-      ${apiKeyText}
-      ${appText}
-      ${templateText}
-      ${currentAppText}
-    `;
+      box.innerHTML = `<p>${modules.runtime.escapeHtml(String(message || ""))}</p>${runtimeText}${apiKeyText}${appText}${templateText}${currentAppText}`;
     }
     function updateAccountSummary(account) {
       const balanceEl = modules.runtime.getById("accountBalanceValue");
@@ -2125,13 +1866,9 @@ ${incomingContent}` : incomingContent;
       summaryEl.classList.toggle("is-empty", !hasAccount);
     }
     function fillSettingsForm(settings) {
-      const runtime = modules.runtime;
-      const apiKeyInput = runtime.getById("settingsApiKeyInput");
-      const pollIntervalInput = runtime.getById("settingsPollIntervalInput");
-      const timeoutInput = runtime.getById("settingsTimeoutInput");
-      if (apiKeyInput) apiKeyInput.value = settings.apiKey || "";
-      if (pollIntervalInput) pollIntervalInput.value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
-      if (timeoutInput) timeoutInput.value = String(settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout);
+      if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
+      if (modules.runtime.getById("settingsPollIntervalInput")) modules.runtime.getById("settingsPollIntervalInput").value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
+      if (modules.runtime.getById("settingsTimeoutInput")) modules.runtime.getById("settingsTimeoutInput").value = String(settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout);
     }
     function readSettingsForm() {
       return modules.state.normalizeSettings({
@@ -2142,35 +1879,19 @@ ${incomingContent}` : incomingContent;
     }
     async function loadSettingsSnapshot() {
       const apiKey = String(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY) || "").trim();
-      const rawSettings = modules.runtime.readJsonText(
-        await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS),
-        {}
-      );
-      return modules.state.normalizeSettings({
-        apiKey,
-        pollInterval: rawSettings && rawSettings.pollInterval,
-        timeout: rawSettings && rawSettings.timeout
-      });
+      const rawSettings = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS), {});
+      return modules.state.normalizeSettings({ apiKey, pollInterval: rawSettings && rawSettings.pollInterval, timeout: rawSettings && rawSettings.timeout });
     }
     async function saveSettingsSnapshot(settings) {
       const normalized = modules.state.normalizeSettings(settings);
       await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
-      await modules.runtime.storageSetItem(
-        modules.state.STORAGE_KEYS.SETTINGS,
-        JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout })
-      );
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.SETTINGS, JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout }));
       modules.state.state.settings = normalized;
       modules.state.state.settingsLoaded = true;
       fillSettingsForm(normalized);
       renderSettingsStatus("设置已保存到宿主本地存储。", "success");
-      renderSettingsDiagnostics("运行参数已同步，可以继续管理应用、模板并提交任务。", {
-        runtime: modules.state.state.hostRuntime,
-        hasApiKey: Boolean(normalized.apiKey)
-      });
-      modules.ui.logToWorkspace(
-        `设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s，API Key ${normalized.apiKey ? "已配置" : "未配置"}`,
-        "success"
-      );
+      renderSettingsDiagnostics("当前设置已同步。", { runtime: modules.state.state.hostRuntime, hasApiKey: Boolean(normalized.apiKey) });
+      modules.ui.logToWorkspace(`设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s。`, "success");
     }
     async function initializeSettings() {
       renderSettingsStatus("正在读取本地设置...", "info");
@@ -2189,14 +1910,10 @@ ${incomingContent}` : incomingContent;
       modules.state.state.settingsLoaded = true;
       fillSettingsForm(snapshot);
       renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
-      renderSettingsDiagnostics("当前设置快照已读取完成。", {
-        runtime: modules.state.state.hostRuntime,
-        hasApiKey: Boolean(snapshot.apiKey)
-      });
+      renderSettingsDiagnostics("当前设置快照已读取完成。", { runtime: modules.state.state.hostRuntime, hasApiKey: Boolean(snapshot.apiKey) });
       if (snapshot.apiKey && modules.runtime.isPluginRuntime()) {
         try {
-          const account = await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: snapshot.apiKey }]);
-          updateAccountSummary(account);
+          updateAccountSummary(await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: snapshot.apiKey }]));
         } catch (_) {
           updateAccountSummary(null);
         }
@@ -2208,22 +1925,11 @@ ${incomingContent}` : incomingContent;
       const runtime = modules.runtime;
       const saveButton = runtime.getById("btnSaveSettings");
       const resetButton = runtime.getById("btnResetSettings");
-      const createAppButton = runtime.getById("btnCreateApp");
-      const importAppsButton = runtime.getById("btnImportApps");
-      const exportAppsButton = runtime.getById("btnExportApps");
-      const appManagerSearchInput = runtime.getById("appManagerSearchInput");
-      const appManagerSortInput = runtime.getById("appManagerSortInput");
+      const parseAppButton = runtime.getById("btnParseApp");
       const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
       const deleteEditingAppButton = runtime.getById("btnDeleteEditingApp");
-      const closeEditorButton = runtime.getById("appEditorClose");
-      const formatAppInputsButton = runtime.getById("btnFormatAppInputs");
-      const transferInput = runtime.getById("appTransferInput");
-      const appEditorFieldIds = [
-        "appEditorNameInput",
-        "appEditorAppIdInput",
-        "appEditorDescriptionInput",
-        "appEditorInputsInput"
-      ];
+      const saveTemplateButton = runtime.getById("btnSaveTemplate");
+      const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
       const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput"];
       fieldIds.forEach((id) => {
         const element = runtime.getById(id);
@@ -2237,19 +1943,13 @@ ${incomingContent}` : incomingContent;
           try {
             await saveSettingsSnapshot(readSettingsForm());
             if (modules.state.state.settings.apiKey && modules.runtime.isPluginRuntime()) {
-              const account = await modules.runtime.callHost("runninghub.fetchAccountStatus", [{
-                apiKey: modules.state.state.settings.apiKey
-              }]);
-              updateAccountSummary(account);
+              updateAccountSummary(await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: modules.state.state.settings.apiKey }]));
             } else {
               updateAccountSummary(null);
             }
           } catch (error) {
             renderSettingsStatus(`设置保存失败：${error.message}`, "error");
-            renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", {
-              runtime: modules.state.state.hostRuntime,
-              hasApiKey: Boolean(runtime.getById("settingsApiKeyInput")?.value)
-            });
+            renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", { runtime: modules.state.state.hostRuntime, hasApiKey: Boolean(runtime.getById("settingsApiKeyInput")?.value) });
             modules.ui.logToWorkspace(`设置保存失败：${error.message}`, "error");
           } finally {
             saveButton.disabled = false;
@@ -2262,81 +1962,27 @@ ${incomingContent}` : incomingContent;
           renderSettingsStatus("表单已恢复为当前已加载设置。", "info");
         });
       }
-      if (createAppButton) createAppButton.addEventListener("click", () => modules.apps.openAppEditor());
-      if (appManagerSearchInput) {
-        appManagerSearchInput.value = modules.state.state.appManagerKeyword || "";
-        appManagerSearchInput.addEventListener("input", () => {
-          modules.state.state.appManagerKeyword = appManagerSearchInput.value || "";
-          modules.apps.renderSavedAppsList();
-        });
-      }
-      if (appManagerSortInput) {
-        appManagerSortInput.value = modules.state.state.appManagerSort || "updated_desc";
-        appManagerSortInput.addEventListener("change", () => {
-          modules.state.state.appManagerSort = appManagerSortInput.value || "updated_desc";
-          modules.apps.renderSavedAppsList();
-        });
-      }
-      if (importAppsButton) {
-        importAppsButton.addEventListener("click", async () => {
+      if (parseAppButton) {
+        parseAppButton.addEventListener("click", () => {
           try {
-            await modules.apps.importAppsFromTextarea();
-            renderSettingsDiagnostics("应用列表导入完成，工作台已同步刷新。", {
-              runtime: modules.state.state.hostRuntime,
-              hasApiKey: Boolean(modules.state.state.settings.apiKey)
-            });
+            modules.apps.parseAppReference();
           } catch (error) {
-            runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), `导入失败：${error.message}`, "error");
-            modules.ui.logToWorkspace(`导入应用失败：${error.message}`, "error");
+            runtime.setSummaryStatus(runtime.getById("appEditorStatus"), error.message, "error");
           }
         });
       }
-      if (exportAppsButton) {
-        exportAppsButton.addEventListener("click", () => {
-          modules.apps.exportAppsToTextarea();
-          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用列表已导出到下方文本框。", "success");
-        });
-      }
-      if (transferInput) {
-        transferInput.addEventListener("input", () => {
-          transferInput.dataset.userEdited = "true";
-        });
-      }
-      appEditorFieldIds.forEach((id) => {
+      ["appEditorAppIdInput", "appEditorNameInput"].forEach((id) => {
         const element = runtime.getById(id);
         if (!element) return;
         element.addEventListener("input", () => {
-          runtime.setSummaryStatus(
-            runtime.getById("appEditorStatus"),
-            modules.state.state.editingAppId ? "已修改当前应用，记得保存后再切换或关闭。" : "正在填写新应用，保存后会加入列表并同步到工作台。",
-            "pending"
-          );
+          runtime.setSummaryStatus(runtime.getById("appEditorStatus"), modules.state.state.editingAppId ? "已修改当前应用，记得保存。" : "输入应用 ID 或链接后解析，确认名称后保存。", "pending");
         });
       });
-      const appInputsInput = runtime.getById("appEditorInputsInput");
-      if (appInputsInput) {
-        appInputsInput.addEventListener("input", () => {
-          modules.apps.renderAppInputsSummary(appInputsInput.value || "");
-        });
-      }
-      if (formatAppInputsButton && appInputsInput) {
-        formatAppInputsButton.addEventListener("click", () => {
-          try {
-            const marker = String(appInputsInput.value || "").trim();
-            appInputsInput.value = marker ? JSON.stringify(JSON.parse(marker), null, 2) : "[]";
-            modules.apps.renderAppInputsSummary(appInputsInput.value || "");
-            runtime.setSummaryStatus(runtime.getById("appEditorStatus"), "输入结构 JSON 已格式化。", "success");
-          } catch (error) {
-            modules.apps.renderAppInputsSummary(appInputsInput.value || "");
-            runtime.setSummaryStatus(runtime.getById("appEditorStatus"), `格式化失败：${error.message}`, "error");
-          }
-        });
-      }
       if (saveEditingAppButton) {
         saveEditingAppButton.addEventListener("click", async () => {
           try {
             await modules.apps.saveEditedApp();
-            runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已保存，并已同步到工作台。", "success");
+            runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已保存。", "success");
           } catch (error) {
             runtime.setSummaryStatus(runtime.getById("appEditorStatus"), `保存失败：${error.message}`, "error");
           }
@@ -2346,31 +1992,41 @@ ${incomingContent}` : incomingContent;
         deleteEditingAppButton.addEventListener("click", async () => {
           if (!modules.state.state.editingAppId) return;
           await modules.apps.deleteAppById(modules.state.state.editingAppId);
-          modules.apps.closeAppEditor({ force: true });
           runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已删除。", "warn");
         });
       }
-      if (closeEditorButton) closeEditorButton.addEventListener("click", () => modules.apps.closeAppEditor());
+      if (resetTemplateButton) {
+        resetTemplateButton.addEventListener("click", () => {
+          modules.templates.fillTemplateEditor(null);
+        });
+      }
+      ["templateTitleInput", "templateContentInput"].forEach((id) => {
+        const element = runtime.getById(id);
+        if (!element) return;
+        element.addEventListener("input", () => {
+          modules.templates.updateTemplateLengthHint();
+        });
+      });
+      if (saveTemplateButton) {
+        saveTemplateButton.addEventListener("click", async () => {
+          try {
+            await modules.templates.saveEditedTemplate();
+            runtime.setSummaryStatus(runtime.getById("savedTemplatesSummary"), "模板已保存。", "success");
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `保存失败：${error.message}`, "error");
+          }
+        });
+      }
       document.addEventListener("click", async (event) => {
-        if (event.target && event.target.closest("#appEditorBackdrop")) {
-          modules.apps.closeAppEditor();
-          return;
-        }
         const actionTarget = event.target && event.target.closest("[data-action]");
         if (!actionTarget) return;
         const action = actionTarget.getAttribute("data-action");
         const appId = actionTarget.getAttribute("data-app-id");
-        if (!action || !appId) return;
-        if (action === "select-app") {
-          await modules.apps.setCurrentAppById(appId);
-          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "当前应用已切换。", "success");
-          return;
-        }
-        if (action === "edit-app") {
+        if (action === "edit-app" && appId) {
           modules.apps.openAppEditor(appId);
           return;
         }
-        if (action === "delete-app") {
+        if (action === "delete-app" && appId) {
           await modules.apps.deleteAppById(appId);
           runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已删除。", "warn");
         }

@@ -58,7 +58,6 @@
                 <button id="btnRefreshWorkspaceApps" class="mini-btn" type="button">刷新</button>
               </div>
             </div>
-
             <div id="appPickerMeta" class="selection-meta">暂未选择应用</div>
           </section>
 
@@ -91,12 +90,10 @@
                 <h3 class="card-title">提交任务</h3>
               </div>
             </div>
-
             <div class="action-row">
               <button id="btnCancelJob" class="secondary-btn" type="button" disabled>取消任务</button>
               <button id="btnRun" class="primary-btn" type="button" disabled>开始运行</button>
             </div>
-
             <div id="taskStatusSummary" class="summary-strip">后台任务：暂时空闲</div>
           </section>
 
@@ -107,7 +104,6 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-
             <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.0 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
@@ -230,23 +226,13 @@
         <div class="settings-grid">
           <section class="surface-card">
             <div class="card-head">
-              <h3 class="card-title">API 与运行参数</h3>
+              <h3 class="card-title">API 设置</h3>
             </div>
             <div class="form-stack">
               <label class="field">
                 <span class="field-label">RunningHub API Key</span>
                 <input id="settingsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
               </label>
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">轮询间隔</span>
-                  <input id="settingsPollIntervalInput" class="field-input" type="number" min="1" max="15" placeholder="1-15 秒" />
-                </label>
-                <label class="field">
-                  <span class="field-label">任务超时</span>
-                  <input id="settingsTimeoutInput" class="field-input" type="number" min="10" max="600" placeholder="10-600 秒" />
-                </label>
-              </div>
               <div class="action-row">
                 <button id="btnResetSettings" class="secondary-btn" type="button">重置</button>
                 <button id="btnSaveSettings" class="primary-btn" type="button">保存设置</button>
@@ -255,145 +241,100 @@
             </div>
           </section>
 
-          <section class="surface-card">
-            <div class="card-head">
-              <h3 class="card-title">已保存应用</h3>
-              <div class="inline-actions">
-                <button id="btnImportApps" class="mini-btn" type="button">导入</button>
-                <button id="btnExportApps" class="mini-btn" type="button">导出</button>
-                <button id="btnCreateApp" class="mini-btn" type="button">新建</button>
-              </div>
+          <section class="surface-card settings-manage-card">
+            <div class="settings-section-head">
+              <span class="settings-section-checkbox"></span>
+              <h3 class="card-title">AI 应用管理</h3>
             </div>
             <div class="form-stack">
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">搜索应用</span>
-                  <input id="appManagerSearchInput" class="field-input" type="search" placeholder="按名称、应用 ID 或说明筛选" />
-                </label>
-                <label class="field">
-                  <span class="field-label">排序方式</span>
-                  <select id="appManagerSortInput" class="field-input">
-                    <option value="updated_desc">最近修改优先</option>
-                    <option value="created_desc">最近新增优先</option>
-                    <option value="name_asc">按名称排序</option>
-                    <option value="inputs_desc">按输入项数量排序</option>
-                  </select>
-                </label>
+              <label class="field">
+                <span class="field-label">应用 ID / URL</span>
+                <input id="appEditorAppIdInput" class="field-input" type="text" placeholder="例如：123456 或 RunningHub 应用链接" />
+              </label>
+              <div class="action-row">
+                <button id="btnParseApp" class="secondary-btn" type="button">解析</button>
+              </div>
+              <label class="field">
+                <span class="field-label">应用名称</span>
+                <input id="appEditorNameInput" class="field-input" type="text" placeholder="例如：SDXL 风格化" />
+              </label>
+              <label class="field is-hidden">
+                <span class="field-label">说明</span>
+                <textarea id="appEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
+              </label>
+              <label class="field is-hidden">
+                <span class="field-label">输入结构 JSON</span>
+                <textarea id="appEditorInputsInput" class="field-input field-textarea" rows="8"></textarea>
+              </label>
+              <div id="appEditorSchemaSummary" class="summary-strip is-hidden">输入结构摘要</div>
+              <div id="appEditorStatus" class="summary-strip">输入应用 ID 或链接后解析，确认名称后保存。</div>
+              <div class="action-row">
+                <button id="btnDeleteEditingApp" class="secondary-btn" type="button" hidden>删除当前应用</button>
+                <button id="btnSaveEditingApp" class="primary-btn" type="button">保存应用</button>
               </div>
               <div id="savedAppsSummary" class="summary-strip">应用列表尚未加载</div>
-              <div id="savedAppsList" class="list-shell"></div>
-              <label class="field">
-                <span class="field-label">应用导入 / 导出 JSON</span>
-                <textarea id="appTransferInput" class="field-input field-textarea" rows="6" placeholder="这里可以粘贴应用列表 JSON，导入或导出后会回写到此处"></textarea>
-              </label>
+              <div id="savedAppsList" class="list-shell compact-list-shell"></div>
+              <textarea id="appTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
             </div>
           </section>
 
-          <section class="surface-card">
-            <div class="card-head">
+          <section class="surface-card settings-manage-card">
+            <div class="settings-section-head">
+              <span class="settings-section-checkbox"></span>
               <h3 class="card-title">提示词模板</h3>
-              <div class="inline-actions">
-                <button id="btnImportTemplates" class="mini-btn" type="button">导入</button>
-                <button id="btnExportTemplates" class="mini-btn" type="button">导出</button>
-              </div>
             </div>
             <div class="form-stack">
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">搜索模板</span>
-                  <input id="templateManagerSearchInput" class="field-input" type="search" placeholder="按标题或内容筛选" />
-                </label>
-                <label class="field">
-                  <span class="field-label">排序方式</span>
-                  <select id="templateManagerSortInput" class="field-input">
-                    <option value="updated_desc">最近修改优先</option>
-                    <option value="created_desc">最近新增优先</option>
-                    <option value="title_asc">按标题排序</option>
-                    <option value="length_desc">按内容长度排序</option>
-                  </select>
-                </label>
-              </div>
               <label class="field">
                 <span class="field-label">模板标题</span>
-                <input id="templateTitleInput" class="field-input" type="text" placeholder="例如：高质量二次元角色" />
+                <input id="templateTitleInput" class="field-input" type="text" placeholder="例如：高质量二次元" />
               </label>
               <label class="field">
                 <span class="field-label">模板内容</span>
-                <textarea id="templateContentInput" class="field-input field-textarea" rows="5" placeholder="输入模板内容"></textarea>
+                <textarea id="templateContentInput" class="field-input field-textarea" rows="5" placeholder="输入模板文本"></textarea>
               </label>
-              <div id="templateLengthHint" class="summary-strip">模板长度提示尚未加载</div>
+              <div id="templateLengthHint" class="summary-strip">提示：插件本地不会截断模板内容。</div>
+              <div id="templateStatusSummary" class="summary-strip">填写标题和内容后即可保存模板。</div>
               <div class="action-row">
-                <button id="btnResetTemplateEditor" class="secondary-btn" type="button">重置</button>
+                <button id="btnResetTemplateEditor" class="secondary-btn" type="button">创建模板</button>
                 <button id="btnSaveTemplate" class="primary-btn" type="button">保存模板</button>
               </div>
-              <div id="templateStatusSummary" class="summary-strip">模板编辑器已就绪</div>
               <div id="savedTemplatesSummary" class="summary-strip">模板列表尚未加载</div>
-              <div id="savedTemplatesList" class="list-shell"></div>
-              <label class="field">
-                <span class="field-label">模板导入 / 导出 JSON</span>
-                <textarea id="templateTransferInput" class="field-input field-textarea" rows="6" placeholder="这里可以粘贴模板 JSON，导入或导出后会回写到此处"></textarea>
-              </label>
+              <div id="savedTemplatesList" class="list-shell compact-list-shell"></div>
+              <input id="templateManagerSearchInput" class="field-input is-hidden" type="search" hidden />
+              <select id="templateManagerSortInput" class="field-input is-hidden" hidden>
+                <option value="updated_desc">updated_desc</option>
+              </select>
+              <textarea id="templateTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
             </div>
           </section>
 
-          <section class="surface-card">
-            <div class="card-head">
-              <h3 class="card-title">环境诊断</h3>
+          <details class="surface-card settings-collapsible">
+            <summary class="settings-collapse-summary">高级设置</summary>
+            <div class="form-stack collapsible-body">
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">轮询间隔（秒）</span>
+                  <input id="settingsPollIntervalInput" class="field-input" type="number" min="1" max="15" placeholder="1-15 秒" />
+                </label>
+                <label class="field">
+                  <span class="field-label">任务超时（秒）</span>
+                  <input id="settingsTimeoutInput" class="field-input" type="number" min="10" max="600" placeholder="10-600 秒" />
+                </label>
+              </div>
             </div>
-            <div id="settingsDiagnosticBox" class="diagnostic-box">
-              <p>这里会显示环境摘要、存储状态与运行诊断信息。</p>
+          </details>
+
+          <details class="surface-card settings-collapsible">
+            <summary class="settings-collapse-summary">环境诊断</summary>
+            <div class="collapsible-body">
+              <div id="settingsDiagnosticBox" class="diagnostic-box">
+                <p>这里会显示环境摘要、存储状态与运行诊断信息。</p>
+              </div>
             </div>
-          </section>
+          </details>
         </div>
       </section>
     </main>
-  </div>
-
-  <div id="appEditorModal" class="overlay-modal">
-    <div id="appEditorBackdrop" class="overlay-backdrop"></div>
-    <section class="overlay-card">
-      <div class="card-head">
-        <div>
-          <p class="card-kicker">设置页</p>
-          <h3 id="appEditorTitle" class="card-title">新建应用</h3>
-        </div>
-        <button id="appEditorClose" class="mini-btn" type="button">关闭</button>
-      </div>
-
-      <div class="form-stack">
-        <label class="field">
-          <span class="field-label">应用名称</span>
-          <input id="appEditorNameInput" class="field-input" type="text" placeholder="例如：高清修图工作流" />
-        </label>
-
-        <label class="field">
-          <span class="field-label">RunningHub 应用 ID</span>
-          <input id="appEditorAppIdInput" class="field-input" type="text" placeholder="请输入 webappId / appId" />
-        </label>
-
-        <label class="field">
-          <span class="field-label">说明</span>
-          <textarea id="appEditorDescriptionInput" class="field-input field-textarea" rows="3" placeholder="可选：记录用途、提示词要求、输出规格等"></textarea>
-        </label>
-
-        <label class="field">
-          <span class="field-label">输入结构 JSON</span>
-          <textarea id="appEditorInputsInput" class="field-input field-textarea" rows="8" placeholder='例如：[{"key":"prompt","label":"提示词","type":"text","required":true}]'></textarea>
-        </label>
-
-        <div class="inline-actions">
-          <button id="btnFormatAppInputs" class="mini-btn" type="button">格式化 JSON</button>
-        </div>
-
-        <div id="appEditorSchemaSummary" class="summary-strip">这里会显示输入结构摘要或格式错误。</div>
-        <div id="appEditorStatus" class="summary-strip">可手动维护应用信息，保存后会同步回应用列表和工作台。</div>
-
-        <div class="action-row">
-          <button id="btnDeleteEditingApp" class="secondary-btn" type="button" hidden>删除当前应用</button>
-          <button id="btnSaveEditingApp" class="primary-btn" type="button">保存应用</button>
-        </div>
-      </div>
-    </section>
   </div>
 
   <div id="appPickerModal" class="overlay-modal">
