@@ -11,15 +11,22 @@
 
     const runtimeText = options.runtime ? `<p>宿主环境：${modules.runtime.escapeHtml(options.runtime)}</p>` : "";
     const apiKeyText = options.hasApiKey
-      ? "<p>API Key：已配置，本次保存将写入 Host Storage。</p>"
+      ? "<p>API Key：已配置，本次保存将写入宿主本地存储。</p>"
       : "<p>API Key：尚未配置。</p>";
     const appText = `<p>已保存应用：${modules.runtime.escapeHtml(String(modules.state.state.apps.length))} 个。</p>`;
+    const templateText = `<p>已保存模板：${modules.runtime.escapeHtml(String(modules.state.state.templates.length))} 条。</p>`;
+    const currentApp = modules.state.state.currentApp;
+    const currentAppText = currentApp
+      ? `<p>当前应用：${modules.runtime.escapeHtml(modules.state.getAppDisplayName(currentApp))}。</p>`
+      : "<p>当前应用：尚未选择。</p>";
 
     box.innerHTML = `
       <p>${modules.runtime.escapeHtml(String(message || ""))}</p>
       ${runtimeText}
       ${apiKeyText}
       ${appText}
+      ${templateText}
+      ${currentAppText}
     `;
   }
 
@@ -79,8 +86,8 @@
     modules.state.state.settings = normalized;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(normalized);
-    renderSettingsStatus("设置已保存到本地 Host Storage。", "success");
-    renderSettingsDiagnostics("运行参数已同步，可继续使用应用列表和任务流程。", {
+    renderSettingsStatus("设置已保存到宿主本地存储。", "success");
+    renderSettingsDiagnostics("运行参数已同步，可以继续管理应用、模板并提交任务。", {
       runtime: modules.state.state.hostRuntime,
       hasApiKey: Boolean(normalized.apiKey)
     });
@@ -110,8 +117,8 @@
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(snapshot);
 
-    renderSettingsStatus("设置已加载，可直接修改并保存。", "success");
-    renderSettingsDiagnostics("当前设置快照已从 bridge / local fallback 读取完成。", {
+    renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
+    renderSettingsDiagnostics("当前设置快照已读取完成。", {
       runtime: modules.state.state.hostRuntime,
       hasApiKey: Boolean(snapshot.apiKey)
     });
@@ -135,10 +142,19 @@
     const createAppButton = runtime.getById("btnCreateApp");
     const importAppsButton = runtime.getById("btnImportApps");
     const exportAppsButton = runtime.getById("btnExportApps");
+    const appManagerSearchInput = runtime.getById("appManagerSearchInput");
+    const appManagerSortInput = runtime.getById("appManagerSortInput");
     const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
     const deleteEditingAppButton = runtime.getById("btnDeleteEditingApp");
     const closeEditorButton = runtime.getById("appEditorClose");
+    const formatAppInputsButton = runtime.getById("btnFormatAppInputs");
     const transferInput = runtime.getById("appTransferInput");
+    const appEditorFieldIds = [
+      "appEditorNameInput",
+      "appEditorAppIdInput",
+      "appEditorDescriptionInput",
+      "appEditorInputsInput"
+    ];
     const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput"];
 
     fieldIds.forEach((id) => {
@@ -164,7 +180,7 @@
           }
         } catch (error) {
           renderSettingsStatus(`设置保存失败：${error.message}`, "error");
-          renderSettingsDiagnostics("保存设置时发生错误，请检查 bridge 与宿主环境。", {
+          renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", {
             runtime: modules.state.state.hostRuntime,
             hasApiKey: Boolean(runtime.getById("settingsApiKeyInput")?.value)
           });
@@ -184,11 +200,27 @@
 
     if (createAppButton) createAppButton.addEventListener("click", () => modules.apps.openAppEditor());
 
+    if (appManagerSearchInput) {
+      appManagerSearchInput.value = modules.state.state.appManagerKeyword || "";
+      appManagerSearchInput.addEventListener("input", () => {
+        modules.state.state.appManagerKeyword = appManagerSearchInput.value || "";
+        modules.apps.renderSavedAppsList();
+      });
+    }
+
+    if (appManagerSortInput) {
+      appManagerSortInput.value = modules.state.state.appManagerSort || "updated_desc";
+      appManagerSortInput.addEventListener("change", () => {
+        modules.state.state.appManagerSort = appManagerSortInput.value || "updated_desc";
+        modules.apps.renderSavedAppsList();
+      });
+    }
+
     if (importAppsButton) {
       importAppsButton.addEventListener("click", async () => {
         try {
           await modules.apps.importAppsFromTextarea();
-          renderSettingsDiagnostics("应用列表导入完成，Workspace 也已同步刷新。", {
+          renderSettingsDiagnostics("应用列表导入完成，工作台已同步刷新。", {
             runtime: modules.state.state.hostRuntime,
             hasApiKey: Boolean(modules.state.state.settings.apiKey)
           });
@@ -212,11 +244,46 @@
       });
     }
 
+    appEditorFieldIds.forEach((id) => {
+      const element = runtime.getById(id);
+      if (!element) return;
+      element.addEventListener("input", () => {
+        runtime.setSummaryStatus(
+          runtime.getById("appEditorStatus"),
+          modules.state.state.editingAppId
+            ? "已修改当前应用，记得保存后再切换或关闭。"
+            : "正在填写新应用，保存后会加入列表并同步到工作台。",
+          "pending"
+        );
+      });
+    });
+
+    const appInputsInput = runtime.getById("appEditorInputsInput");
+    if (appInputsInput) {
+      appInputsInput.addEventListener("input", () => {
+        modules.apps.renderAppInputsSummary(appInputsInput.value || "");
+      });
+    }
+
+    if (formatAppInputsButton && appInputsInput) {
+      formatAppInputsButton.addEventListener("click", () => {
+        try {
+          const marker = String(appInputsInput.value || "").trim();
+          appInputsInput.value = marker ? JSON.stringify(JSON.parse(marker), null, 2) : "[]";
+          modules.apps.renderAppInputsSummary(appInputsInput.value || "");
+          runtime.setSummaryStatus(runtime.getById("appEditorStatus"), "输入结构 JSON 已格式化。", "success");
+        } catch (error) {
+          modules.apps.renderAppInputsSummary(appInputsInput.value || "");
+          runtime.setSummaryStatus(runtime.getById("appEditorStatus"), `格式化失败：${error.message}`, "error");
+        }
+      });
+    }
+
     if (saveEditingAppButton) {
       saveEditingAppButton.addEventListener("click", async () => {
         try {
           await modules.apps.saveEditedApp();
-          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已保存，并已同步到 Workspace。", "success");
+          runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已保存，并已同步到工作台。", "success");
         } catch (error) {
           runtime.setSummaryStatus(runtime.getById("appEditorStatus"), `保存失败：${error.message}`, "error");
         }
@@ -227,12 +294,12 @@
       deleteEditingAppButton.addEventListener("click", async () => {
         if (!modules.state.state.editingAppId) return;
         await modules.apps.deleteAppById(modules.state.state.editingAppId);
-        modules.apps.closeAppEditor();
+        modules.apps.closeAppEditor({ force: true });
         runtime.setSummaryStatus(runtime.getById("savedAppsSummary"), "应用已删除。", "warn");
       });
     }
 
-    if (closeEditorButton) closeEditorButton.addEventListener("click", modules.apps.closeAppEditor);
+    if (closeEditorButton) closeEditorButton.addEventListener("click", () => modules.apps.closeAppEditor());
 
     document.addEventListener("click", async (event) => {
       if (event.target && event.target.closest("#appEditorBackdrop")) {

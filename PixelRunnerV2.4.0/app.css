@@ -952,6 +952,13 @@ button {
   box-shadow: 0 4px 0 #4b8e67;
 }
 
+.saved-app-item.is-editing,
+.saved-template-item.is-editing {
+  border-color: #82aee0;
+  background: rgba(58, 72, 96, 0.92);
+  box-shadow: 0 4px 0 #5e84b0;
+}
+
 .saved-app-main {
   display: flex;
   flex-direction: column;
@@ -968,6 +975,36 @@ button {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+.saved-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.saved-item-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-strong);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.saved-item-badge.is-current {
+  border-color: rgba(89, 222, 98, 0.55);
+  background: rgba(50, 116, 62, 0.45);
+}
+
+.saved-item-badge.is-editing {
+  border-color: rgba(159, 220, 255, 0.5);
+  background: rgba(69, 102, 130, 0.5);
 }
 
 .dynamic-form {

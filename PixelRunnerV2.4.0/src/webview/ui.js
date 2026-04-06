@@ -97,7 +97,7 @@
 
     if (clearButton && logWindow) {
       clearButton.addEventListener("click", () => {
-        logWindow.value = "[系统] 日志已清空，等待新的模块接入。";
+        logWindow.value = "[系统] 日志已清空，等待新的操作记录。";
       });
     }
   }

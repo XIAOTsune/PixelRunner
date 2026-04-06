@@ -2,6 +2,28 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const PROMPT_WARN_CHARS = 4000;
 
+  function getTemplateEditorDraft() {
+    const runtime = modules.runtime;
+    return JSON.stringify({
+      id: modules.state.state.editingTemplateId || "",
+      title: String(runtime.getById("templateTitleInput")?.value || "").trim(),
+      content: String(runtime.getById("templateContentInput")?.value || "")
+    });
+  }
+
+  function markTemplateEditorPristine() {
+    modules.state.state.templateEditorSnapshot = getTemplateEditorDraft();
+  }
+
+  function isTemplateEditorDirty() {
+    return getTemplateEditorDraft() !== String(modules.state.state.templateEditorSnapshot || "");
+  }
+
+  function confirmDiscardTemplateChanges() {
+    if (!isTemplateEditorDirty()) return true;
+    return global.confirm("当前模板编辑器里有未保存修改，确定放弃这些内容吗？");
+  }
+
   function getTextLength(value) {
     return Array.from(String(value || "")).length;
   }
@@ -26,7 +48,9 @@
     };
   }
 
-  function fillTemplateEditor(template) {
+  function fillTemplateEditor(template, options = {}) {
+    if (!options.force && !confirmDiscardTemplateChanges()) return false;
+
     const runtime = modules.runtime;
     const item = template && typeof template === "object" ? template : null;
     modules.state.state.editingTemplateId = item ? String(item.id) : null;
@@ -39,9 +63,12 @@
 
     runtime.setSummaryStatus(
       runtime.getById("templateStatusSummary"),
-      item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存为新模板",
+      item ? `正在编辑模板：${item.title}` : "正在新建模板，填写标题和内容后即可保存。",
       "info"
     );
+    markTemplateEditorPristine();
+    renderSavedTemplatesList();
+    return true;
   }
 
   function updateTemplateLengthHint() {
@@ -74,7 +101,7 @@
     renderSavedTemplatesList();
     renderTemplatePickerList();
     if (!options.quiet) {
-      modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条`, "info");
+      modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条。`, "info");
     }
   }
 
@@ -108,9 +135,13 @@
     else templates.unshift(nextItem);
 
     await saveTemplatesToStorage(templates);
-    fillTemplateEditor(null);
+    fillTemplateEditor(null, { force: true });
     modules.ui.logToWorkspace(`模板已保存：${nextItem.title}`, "success");
-    modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已保存并同步到工作台选择器", "success");
+    modules.runtime.setSummaryStatus(
+      modules.runtime.getById("templateStatusSummary"),
+      `模板已保存：${nextItem.title}，并已同步到工作台选择器。`,
+      "success"
+    );
   }
 
   async function deleteTemplateById(templateId) {
@@ -119,10 +150,10 @@
     const nextTemplates = modules.state.state.templates.filter((item) => String(item.id) !== String(templateId));
     await saveTemplatesToStorage(nextTemplates);
     if (String(modules.state.state.editingTemplateId || "") === String(templateId)) {
-      fillTemplateEditor(null);
+      fillTemplateEditor(null, { force: true });
     }
     modules.ui.logToWorkspace(`模板已删除：${target.title}`, "warn");
-    modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除", "warn");
+    modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除。", "warn");
   }
 
   function exportTemplatesToTextarea() {
@@ -160,8 +191,8 @@
       exportedAt: new Date().toISOString(),
       templates
     }, null, 2);
-    modules.runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `模板导入完成，共 ${templates.length} 条`, "success");
-    modules.ui.logToWorkspace(`模板导入完成，共 ${templates.length} 条`, "success");
+    modules.runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `模板导入完成，共 ${templates.length} 条。`, "success");
+    modules.ui.logToWorkspace(`模板导入完成，共 ${templates.length} 条。`, "success");
   }
 
   function renderSavedTemplatesList() {
@@ -169,28 +200,56 @@
     const listEl = runtime.getById("savedTemplatesList");
     const summaryEl = runtime.getById("savedTemplatesSummary");
     const transferInput = runtime.getById("templateTransferInput");
-    const templates = modules.state.state.templates;
+    const state = modules.state.state;
+    const keyword = String(state.templateManagerKeyword || "").trim().toLowerCase();
+    const sort = String(state.templateManagerSort || "updated_desc");
+    const templates = state.templates
+      .filter((item) => {
+        if (!keyword) return true;
+        return `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword);
+      })
+      .slice()
+      .sort((left, right) => {
+        if (sort === "title_asc") return String(left.title || "").localeCompare(String(right.title || ""), "zh-CN");
+        if (sort === "length_desc") return getTextLength(right.content) - getTextLength(left.content);
+        if (sort === "created_desc") return Number(right.createdAt || 0) - Number(left.createdAt || 0);
+        return Number(right.updatedAt || 0) - Number(left.updatedAt || 0);
+      });
+    const totalCount = state.templates.length;
     if (!listEl || !summaryEl) return;
 
-    runtime.setSummaryStatus(summaryEl, `已保存模板：${templates.length} 条`, "info");
-    if (transferInput && !transferInput.dataset.userEdited && templates.length > 0) {
+    runtime.setSummaryStatus(summaryEl, `已保存模板：显示 ${templates.length} / 共 ${totalCount} 条`, "info");
+    if (transferInput && !transferInput.dataset.userEdited && totalCount > 0) {
       exportTemplatesToTextarea();
+    }
+
+    if (totalCount === 0) {
+      listEl.innerHTML = `
+        <div class="picker-empty">
+          <strong>还没有已保存模板</strong>
+          <p>可以先创建常用提示词模板，工作台里的提示词字段会直接接入模板选择器。</p>
+        </div>
+      `;
+      return;
     }
 
     if (templates.length === 0) {
       listEl.innerHTML = `
         <div class="picker-empty">
-          <strong>还没有已保存模板</strong>
-          <p>可先创建常用提示词模板，工作台里的 prompt 字段会直接接入模板选择器。</p>
+          <strong>没有匹配的模板</strong>
+          <p>换个关键词，或者调整排序方式后再试试。</p>
         </div>
       `;
       return;
     }
 
     listEl.innerHTML = templates.map((item) => `
-      <article class="list-item saved-template-item" data-template-id="${runtime.escapeHtml(String(item.id))}">
+      <article class="list-item saved-template-item ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${runtime.escapeHtml(String(item.id))}">
         <div class="saved-template-main">
-          <strong>${runtime.escapeHtml(item.title)}</strong>
+          <div class="saved-item-heading">
+            <strong>${runtime.escapeHtml(item.title)}</strong>
+            ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? '<span class="saved-item-badge is-editing">正在编辑</span>' : ""}
+          </div>
           <span>${runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span>
           <span>${runtime.escapeHtml(getTailPreview(item.content, 28))}</span>
         </div>
@@ -207,7 +266,8 @@
     return {
       mode,
       targetKey: String(config.targetKey || ""),
-      maxSelection: mode === "single" ? 1 : Math.max(1, Math.min(10, Number(config.maxSelection) || 5))
+      maxSelection: mode === "single" ? 1 : Math.max(1, Math.min(10, Number(config.maxSelection) || 5)),
+      applyMode: config.applyMode === "append" ? "append" : "replace"
     };
   }
 
@@ -218,7 +278,9 @@
     picker.targetKey = next.targetKey;
     picker.mode = next.mode;
     picker.maxSelection = next.maxSelection;
+    picker.keyword = "";
     picker.selectedIds = [];
+    picker.applyMode = next.applyMode;
     modules.workspace.setModalOpen("templatePickerModal", true);
     syncTemplatePickerUi();
     renderTemplatePickerList();
@@ -228,17 +290,19 @@
     const picker = modules.state.state.templatePicker;
     picker.open = false;
     picker.targetKey = "";
+    picker.keyword = "";
     picker.selectedIds = [];
     picker.mode = "multiple";
     picker.maxSelection = 5;
+    picker.applyMode = "replace";
     modules.workspace.setModalOpen("templatePickerModal", false);
   }
 
   function getPickerSelectionInfo() {
     const picker = modules.state.state.templatePicker;
     return picker.mode === "single"
-      ? "单选模式：点击模板后立即写入字段"
-      : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}`;
+      ? "单选模式：点击模板后会立即写入目标字段。"
+      : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}，可组合写入同一个字段。`;
   }
 
   function syncTemplatePickerUi() {
@@ -246,9 +310,16 @@
     const titleEl = runtime.getById("templatePickerTitle");
     const infoEl = runtime.getById("templatePickerSelectionInfo");
     const applyButton = runtime.getById("btnApplyTemplateSelection");
+    const searchInput = runtime.getById("templatePickerSearchInput");
+    const applyModeInput = runtime.getById("templatePickerApplyMode");
     const picker = modules.state.state.templatePicker;
     if (titleEl) titleEl.textContent = picker.mode === "single" ? "选择提示词模板" : "组合提示词模板";
     if (infoEl) infoEl.textContent = getPickerSelectionInfo();
+    if (searchInput) searchInput.value = picker.keyword || "";
+    if (applyModeInput) {
+      applyModeInput.value = picker.applyMode || "replace";
+      applyModeInput.disabled = picker.mode === "single";
+    }
     if (applyButton) applyButton.hidden = picker.mode === "single";
     if (applyButton) applyButton.disabled = picker.selectedIds.length === 0;
   }
@@ -256,22 +327,40 @@
   function renderTemplatePickerList() {
     const runtime = modules.runtime;
     const listEl = runtime.getById("templatePickerList");
+    const statsEl = runtime.getById("templatePickerStats");
     if (!listEl) return;
-    const templates = modules.state.state.templates;
     const picker = modules.state.state.templatePicker;
+    const templates = modules.state.state.templates;
+    const keyword = String(picker.keyword || "").trim().toLowerCase();
+    const visibleTemplates = !keyword
+      ? templates
+      : templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
+
+    if (statsEl) statsEl.textContent = `${visibleTemplates.length} / ${templates.length}`;
 
     if (templates.length === 0) {
       listEl.innerHTML = `
         <div class="picker-empty">
           <strong>还没有可用模板</strong>
-          <p>先去 Settings 创建模板，再回到工作台选择。</p>
+          <p>先去设置页创建模板，再回到工作台选择。</p>
         </div>
       `;
       syncTemplatePickerUi();
       return;
     }
 
-    listEl.innerHTML = templates.map((item) => {
+    if (visibleTemplates.length === 0) {
+      listEl.innerHTML = `
+        <div class="picker-empty">
+          <strong>没有匹配的模板</strong>
+          <p>可以换个关键词，或者先去设置页补充模板内容。</p>
+        </div>
+      `;
+      syncTemplatePickerUi();
+      return;
+    }
+
+    listEl.innerHTML = visibleTemplates.map((item) => {
       const isSelected = picker.selectedIds.includes(String(item.id));
       return `
         <button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${runtime.escapeHtml(String(item.id))}">
@@ -302,7 +391,7 @@
     return true;
   }
 
-  function applyTemplatesToField(fieldKey, templateIds) {
+  function applyTemplatesToField(fieldKey, templateIds, options = {}) {
     const key = String(fieldKey || "").trim();
     if (!key) throw new Error("未找到目标字段");
     const selected = (Array.isArray(templateIds) ? templateIds : [])
@@ -310,7 +399,12 @@
       .filter(Boolean);
     if (selected.length === 0) throw new Error("请至少选择一个模板");
 
-    const content = selected.map((item) => String(item.content || "")).join("\n");
+    const applyMode = options.applyMode === "append" ? "append" : "replace";
+    const existingValue = String(modules.state.state.formValues[key] || "");
+    const incomingContent = selected.map((item) => String(item.content || "")).join("\n");
+    const content = applyMode === "append" && existingValue.trim()
+      ? `${existingValue.replace(/\s+$/g, "")}\n\n${incomingContent}`
+      : incomingContent;
     const length = getTextLength(content);
     if (length > PROMPT_WARN_CHARS) {
       throw new Error(`组合后的提示词长度 ${length} 超出建议上限 ${PROMPT_WARN_CHARS}`);
@@ -318,7 +412,10 @@
 
     modules.state.state.formValues[key] = content;
     modules.workspace.renderWorkspace();
-    modules.ui.logToWorkspace(`已将 ${selected.length} 条模板写入字段：${key}`, "success");
+    modules.ui.logToWorkspace(
+      `${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段：${key}`,
+      "success"
+    );
   }
 
   function bindTemplateActions() {
@@ -333,14 +430,43 @@
     const pickerCloseButton = runtime.getById("templatePickerModalClose");
     const pickerApplyButton = runtime.getById("btnApplyTemplateSelection");
     const pickerList = runtime.getById("templatePickerList");
+    const pickerSearchInput = runtime.getById("templatePickerSearchInput");
+    const pickerApplyMode = runtime.getById("templatePickerApplyMode");
+    const managerSearchInput = runtime.getById("templateManagerSearchInput");
+    const managerSortInput = runtime.getById("templateManagerSortInput");
 
     [titleInput, contentInput].filter(Boolean).forEach((element) => {
-      element.addEventListener("input", updateTemplateLengthHint);
+      element.addEventListener("input", () => {
+        updateTemplateLengthHint();
+        runtime.setSummaryStatus(
+          runtime.getById("templateStatusSummary"),
+          modules.state.state.editingTemplateId
+            ? "已修改当前模板，记得保存后再切换。"
+            : "正在填写新模板，保存后会同步到工作台选择器。",
+          "pending"
+        );
+      });
     });
 
     if (transferInput) {
       transferInput.addEventListener("input", () => {
         transferInput.dataset.userEdited = "true";
+      });
+    }
+
+    if (managerSearchInput) {
+      managerSearchInput.value = modules.state.state.templateManagerKeyword || "";
+      managerSearchInput.addEventListener("input", () => {
+        modules.state.state.templateManagerKeyword = managerSearchInput.value || "";
+        renderSavedTemplatesList();
+      });
+    }
+
+    if (managerSortInput) {
+      managerSortInput.value = modules.state.state.templateManagerSort || "updated_desc";
+      managerSortInput.addEventListener("change", () => {
+        modules.state.state.templateManagerSort = managerSortInput.value || "updated_desc";
+        renderSavedTemplatesList();
       });
     }
 
@@ -371,7 +497,7 @@
     if (exportButton) {
       exportButton.addEventListener("click", () => {
         exportTemplatesToTextarea();
-        runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), "模板 JSON 已导出到下方文本框", "success");
+        runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), "模板 JSON 已导出到下方文本框。", "success");
       });
     }
 
@@ -408,7 +534,7 @@
         const picker = modules.state.state.templatePicker;
         if (picker.mode === "single") {
           try {
-            applyTemplatesToField(picker.targetKey, [templateId]);
+            applyTemplatesToField(picker.targetKey, [templateId], { applyMode: "replace" });
             closeTemplatePicker();
           } catch (error) {
             modules.ui.logToWorkspace(error.message, "warn");
@@ -422,11 +548,27 @@
       });
     }
 
+    if (pickerSearchInput) {
+      pickerSearchInput.addEventListener("input", () => {
+        modules.state.state.templatePicker.keyword = pickerSearchInput.value || "";
+        renderTemplatePickerList();
+      });
+    }
+
+    if (pickerApplyMode) {
+      pickerApplyMode.addEventListener("change", () => {
+        modules.state.state.templatePicker.applyMode = pickerApplyMode.value === "append" ? "append" : "replace";
+        syncTemplatePickerUi();
+      });
+    }
+
     if (pickerApplyButton) {
       pickerApplyButton.addEventListener("click", () => {
         try {
           const picker = modules.state.state.templatePicker;
-          applyTemplatesToField(picker.targetKey, picker.selectedIds);
+          applyTemplatesToField(picker.targetKey, picker.selectedIds, {
+            applyMode: picker.applyMode
+          });
           closeTemplatePicker();
         } catch (error) {
           modules.ui.logToWorkspace(error.message, "warn");
@@ -434,7 +576,7 @@
       });
     }
 
-    fillTemplateEditor(null);
+    fillTemplateEditor(null, { force: true });
     updateTemplateLengthHint();
   }
 
@@ -454,6 +596,9 @@
     openTemplatePicker,
     closeTemplatePicker,
     applyTemplatesToField,
-    bindTemplateActions
+    bindTemplateActions,
+    isTemplateEditorDirty,
+    confirmDiscardTemplateChanges,
+    markTemplateEditorPristine
   };
 })(window);

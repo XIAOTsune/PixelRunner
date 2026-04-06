@@ -42,7 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
     })
     .catch((error) => {
       modules.settings.renderSettingsStatus(`初始化失败：${error.message}`, "error");
-      modules.settings.renderSettingsDiagnostics("应用初始化未完成，请先检查 src/webview-entry.js 和 bridge。", {
+      modules.settings.renderSettingsDiagnostics("应用初始化未完成，请先检查 src/webview-entry.js 与宿主桥接。", {
         runtime: modules.state.state.hostRuntime,
         hasApiKey: false
       });

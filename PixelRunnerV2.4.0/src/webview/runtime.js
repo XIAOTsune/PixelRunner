@@ -72,7 +72,7 @@
       clearTimeout(pending.timer);
 
       if (payload.error) {
-        pending.reject(new Error(String(payload.error.message || "Bridge request failed")));
+        pending.reject(new Error(String(payload.error.message || "宿主通信请求失败")));
         return;
       }
 
@@ -84,7 +84,7 @@
 
   function callHost(method, args = [], options = {}) {
     if (!isPluginRuntime()) {
-      return Promise.reject(new Error("Host bridge unavailable in browser preview"));
+      return Promise.reject(new Error("浏览器预览模式下不可使用宿主桥接能力"));
     }
 
     ensureBridgeListener();
@@ -95,7 +95,7 @@
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         bridgeState.pending.delete(id);
-        reject(new Error(`Bridge timeout: ${method}`));
+        reject(new Error(`宿主通信超时：${method}`));
       }, timeoutMs);
 
       bridgeState.pending.set(id, { resolve, reject, timer });
@@ -104,7 +104,7 @@
       if (!posted) {
         clearTimeout(timer);
         bridgeState.pending.delete(id);
-        reject(new Error(`Failed to post host message: ${method}`));
+        reject(new Error(`发送宿主消息失败：${method}`));
       }
     });
   }

@@ -21,19 +21,27 @@
     currentApp: null,
     templates: [],
     appPickerKeyword: "",
+    appManagerKeyword: "",
+    appManagerSort: "updated_desc",
+    templateManagerKeyword: "",
+    templateManagerSort: "updated_desc",
     settings: { ...DEFAULT_SETTINGS },
     settingsLoaded: false,
     hostRuntime: null,
     currentDocumentInfo: null,
     editingAppId: null,
     editingTemplateId: null,
+    appEditorSnapshot: "",
+    templateEditorSnapshot: "",
     formValues: {},
     templatePicker: {
       open: false,
       targetKey: "",
       selectedIds: [],
+      keyword: "",
       mode: "multiple",
-      maxSelection: 5
+      maxSelection: 5,
+      applyMode: "replace"
     },
     imageCapture: {
       asset: null,
@@ -76,18 +84,18 @@
       .filter((item) => item && typeof item === "object")
       .map((item, index) => {
         const source = item && typeof item === "object" ? item : {};
-        const key = String(item.key || item.name || `param_${index + 1}`).trim();
+        const key = String(source.key || source.name || `param_${index + 1}`).trim();
         if (!key) return null;
 
         return {
           ...source,
           key,
-          label: String(item.label || item.name || key).trim(),
-          name: String(item.name || item.label || key).trim(),
-          type: String(item.type || "text").trim() || "text",
-          required: item.required !== false,
-          default: item.default,
-          options: Array.isArray(item.options) ? item.options : undefined
+          label: String(source.label || source.name || key).trim(),
+          name: String(source.name || source.label || key).trim(),
+          type: String(source.type || "text").trim() || "text",
+          required: source.required !== false,
+          default: source.default,
+          options: Array.isArray(source.options) ? source.options : undefined
         };
       })
       .filter(Boolean);
