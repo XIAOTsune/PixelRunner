@@ -141,7 +141,7 @@ button {
 .app-shell {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 6px;
   width: 100%;
   height: calc(100vh - 8px);
   min-height: calc(100vh - 10px);
@@ -293,6 +293,7 @@ button {
   border-radius: 12px;
   flex-wrap: nowrap;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .nav-tab {
@@ -348,6 +349,7 @@ button {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding-top: 2px;
   padding-right: 2px;
   scrollbar-width: thin;
   scrollbar-color: #5c7389 rgba(255, 255, 255, 0.04);
@@ -375,7 +377,7 @@ button {
 .panel-view {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 6px;
 }
 
 .panel-view.is-hidden {
@@ -399,8 +401,9 @@ button {
   gap: 4px;
   padding: 6px 9px;
   border-radius: var(--radius-xl);
-  margin-bottom: 1px;
+  margin-bottom: 0;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .panel-header-main {
@@ -479,7 +482,7 @@ button {
 .settings-grid {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 6px;
 }
 
 .surface-card {
@@ -498,7 +501,6 @@ button {
 .settings-grid > .surface-card:first-child {
   border-top-left-radius: 14px;
   border-top-right-radius: 14px;
-  border-top: 0;
 }
 
 .workspace-grid > .surface-card:last-child,
