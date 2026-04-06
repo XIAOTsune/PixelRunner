@@ -590,11 +590,11 @@ button {
     0 0 0 1px rgba(25, 36, 48, 0.5);
 }
 
-.workspace-app-bar {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 14px;
+.workspace-app-toolbar {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .workspace-app-label {
@@ -605,29 +605,22 @@ button {
 }
 
 .workspace-app-meta {
-  min-height: 94px;
+  min-height: 40px;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 4px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(42, 57, 72, 0.94), rgba(37, 51, 65, 0.98));
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(28, 38, 50, 0.95);
   border: 1px solid rgba(84, 108, 130, 0.72);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
   color: #d7e3ee;
-  font-size: 12px;
-}
-
-.workspace-app-meta strong {
-  font-size: 15px;
-  line-height: 1.2;
+  font-size: 13px;
 }
 
 .workspace-app-summary {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  min-width: 0;
 }
 
 .workspace-app-placeholder {
@@ -638,35 +631,22 @@ button {
 
 .workspace-app-name {
   color: var(--text-strong);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   line-height: 1.2;
-}
-
-.workspace-app-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  color: #c5d5e3;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.workspace-app-desc {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace-app-actions {
-  align-self: stretch;
   align-items: center;
 }
 
 .workspace-app-actions .mini-btn {
-  min-width: 96px;
-  min-height: 48px;
-  border-radius: 18px;
+  min-width: 88px;
+  min-height: 40px;
+  border-radius: 12px;
   font-size: 12px;
 }
 
@@ -714,18 +694,18 @@ button {
 .workspace-input-card .dynamic-form,
 .workspace-input-card .image-capture-shell,
 .workspace-input-card .image-binding-card {
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .workspace-input-card .field-input {
-  min-height: 44px;
-  padding: 8px 12px;
-  border-radius: 16px;
+  min-height: 38px;
+  padding: 6px 10px;
+  border-radius: 10px;
   font-size: 14px;
 }
 
 .workspace-input-card .field-textarea {
-  min-height: 132px;
+  min-height: 110px;
 }
 
 .workspace-input-card .field-label {
@@ -756,24 +736,14 @@ button {
 
 .workspace-input-card .mini-btn,
 .workspace-input-card .secondary-btn {
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 16px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
   font-size: 12px;
 }
 
-.workspace-input-card #imageInputContainer .empty-panel {
-  padding: 10px 14px;
-}
-
-.workspace-input-card #imageInputContainer .empty-panel h4 {
-  margin-bottom: 4px;
-  font-size: 12px;
-}
-
-.workspace-input-card #imageInputContainer .empty-panel p {
-  font-size: 11px;
-  line-height: 1.45;
+.workspace-input-card #imageInputContainer[hidden] {
+  display: none !important;
 }
 
 .workspace-run-card {
@@ -1419,10 +1389,72 @@ button {
 
 .image-capture-field-card {
   cursor: pointer;
+  gap: 10px;
 }
 
 .image-capture-field-card:hover {
   background: rgba(46, 63, 79, 0.92);
+}
+
+.image-capture-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.image-capture-field-title {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.image-capture-clear-btn {
+  flex: 0 0 auto;
+}
+
+.image-capture-stage {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(103, 126, 150, 0.75);
+  border-radius: 14px;
+  background: rgba(23, 31, 41, 0.86);
+}
+
+.image-capture-stage-empty {
+  flex-direction: column;
+  gap: 10px;
+  color: #dbe8f5;
+  text-align: center;
+}
+
+.image-capture-stage-icon {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 2px solid rgba(92, 117, 140, 0.8);
+  background: rgba(58, 79, 99, 0.75);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.image-capture-stage-text {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.image-capture-stage-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.image-capture-field-actions {
+  justify-content: flex-start;
 }
 
 .image-preview-frame {
@@ -1601,9 +1633,8 @@ button {
     padding: 4px;
   }
 
-  .workspace-app-bar {
-    grid-template-columns: 1fr;
-    gap: 10px;
+  .workspace-app-toolbar {
+    flex-wrap: wrap;
   }
 
   .workspace-app-actions {

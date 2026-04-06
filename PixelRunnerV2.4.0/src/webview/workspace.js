@@ -271,24 +271,21 @@
     if (!imageInputContainer) return;
 
     const imageInputs = findImageInputs(state.currentApp);
+    imageInputContainer.hidden = false;
     if (!state.currentApp) {
       imageInputContainer.innerHTML =
-        '<div class="empty-panel"><h4>图像输入区</h4><p>等待应用选择后，再接入图像捕获和图像字段映射。</p></div>';
+        '<div class="empty-panel"><h4>图像</h4><p>图像字段会在这里显示。</p></div>';
       return;
     }
 
     if (imageInputs.length === 0) {
-      imageInputContainer.innerHTML =
-        '<div class="empty-panel"><h4>图像输入区</h4><p>当前应用没有图像字段。后续如果输入结构里出现 image/file 类型，会在这里统一管理捕获与预处理。</p></div>';
+      imageInputContainer.innerHTML = "";
+      imageInputContainer.hidden = true;
       return;
     }
 
-    imageInputContainer.innerHTML = `
-      <div class="empty-panel">
-        <h4>图像输入</h4>
-        <p>直接点击下方图像字段即可从 Photoshop 当前选区捕获；如果没有选区，会回落到当前文档。</p>
-      </div>
-    `;
+    imageInputContainer.innerHTML = "";
+    imageInputContainer.hidden = true;
   }
 
   function renderImageField(input) {
@@ -299,27 +296,31 @@
     const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
     const asset = state.formValues[key];
     const hasAssignedAsset = hasImageAsset(asset);
-    const captureLabel = hasAssignedAsset ? "重新捕获" : "点击从 Photoshop 选区捕获";
-    const meta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"}` : "尚未捕获图像";
+    const captureLabel = hasAssignedAsset ? "重新捕获" : "点击从 PS 选区捕获";
+    const captureSource = hasAssignedAsset ? (asset.capturedFromSelection ? "已从 PS 选区捕获" : "已从当前文档捕获") : "";
 
     return `
       <div class="field dynamic-field">
         <span class="field-label">${label}${requiredMark}</span>
         <div class="input-zone">
           <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
+            <div class="image-capture-field-head">
+              <span class="image-capture-field-title">${label}</span>
+              <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
+            </div>
             ${
               hasAssignedAsset
-                ? `<div class="image-preview-frame"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>`
-                : '<div class="empty-panel"><h4>点击从 PS 选区捕获</h4><p>如果没有选区，会自动回落到当前文档。</p></div>'
+                ? `<div class="image-preview-frame image-capture-stage"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>`
+                : `
+                  <div class="image-capture-stage image-capture-stage-empty">
+                    <div class="image-capture-stage-icon">↑</div>
+                    <div class="image-capture-stage-text">点击从 PS 选区捕获</div>
+                  </div>
+                `
             }
-            <div class="image-meta-grid">
-              <span class="image-meta-pill">${runtime.escapeHtml(meta)}</span>
-              ${hasAssignedAsset && asset.capturedFromSelection ? '<span class="image-meta-pill">来源：选区</span>' : ""}
-              ${hasAssignedAsset && !asset.capturedFromSelection ? '<span class="image-meta-pill">来源：文档</span>' : ""}
-            </div>
-            <div class="inline-actions">
+            ${captureSource ? `<div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}</div>` : ""}
+            <div class="inline-actions image-capture-field-actions">
               <button class="mini-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
-              <button class="mini-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清除</button>
             </div>
           </div>
         </div>
@@ -337,18 +338,7 @@
   function renderAppMeta(app) {
     const runtime = modules.runtime;
     if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
-    const description = String(app.description || "").trim();
-    return `
-      <div class="workspace-app-summary">
-        <div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div>
-        <div class="workspace-app-stats">
-          <span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>
-          <span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>
-          <span>图像项：${runtime.escapeHtml(String(findImageInputs(app).length))}</span>
-        </div>
-        ${description ? `<div class="workspace-app-desc">${runtime.escapeHtml(description)}</div>` : ""}
-      </div>
-    `;
+    return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
   }
 
   function updateRunButtonState() {
