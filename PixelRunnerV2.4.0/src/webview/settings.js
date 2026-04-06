@@ -33,6 +33,20 @@
     summaryEl.classList.toggle("is-empty", !hasAccount);
   }
 
+  function formatParseDebug(debugRecord) {
+    if (!debugRecord || typeof debugRecord !== "object") return "暂无解析调试记录。";
+    return JSON.stringify(debugRecord, null, 2);
+  }
+
+  async function loadParseDebug() {
+    const box = modules.runtime.getById("parseDebugOutput");
+    const raw = await modules.runtime.storageGetItem("rh_last_parse_debug");
+    const parsed = modules.runtime.readJsonText(raw, null);
+    const text = formatParseDebug(parsed);
+    if (box) box.textContent = text;
+    return parsed;
+  }
+
   function fillSettingsForm(settings) {
     if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
     if (modules.runtime.getById("settingsPollIntervalInput")) modules.runtime.getById("settingsPollIntervalInput").value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
@@ -137,6 +151,7 @@
     const deleteEditingAppButton = runtime.getById("btnDeleteEditingApp");
     const saveTemplateButton = runtime.getById("btnSaveTemplate");
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
+    const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
     const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput"];
 
     bindAppManagerControls();
@@ -233,6 +248,26 @@
       });
     }
 
+    if (loadParseDebugButton) {
+      loadParseDebugButton.addEventListener("click", async () => {
+        try {
+          const debug = await loadParseDebug();
+          renderSettingsDiagnostics(
+            debug ? "已加载最近一次应用解析调试记录。" : "当前还没有解析调试记录，请先解析一次应用。",
+            {
+              runtime: modules.state.state.hostRuntime,
+              hasApiKey: Boolean(modules.state.state.settings.apiKey)
+            }
+          );
+        } catch (error) {
+          renderSettingsDiagnostics(`读取解析调试记录失败：${error.message}`, {
+            runtime: modules.state.state.hostRuntime,
+            hasApiKey: Boolean(modules.state.state.settings.apiKey)
+          });
+        }
+      });
+    }
+
     ["templateTitleInput", "templateContentInput"].forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
@@ -272,6 +307,7 @@
   modules.settings = {
     renderSettingsStatus,
     renderSettingsDiagnostics,
+    loadParseDebug,
     initializeSettings,
     bindSettingsActions
   };
