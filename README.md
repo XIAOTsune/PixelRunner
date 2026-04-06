@@ -10,6 +10,7 @@
     <img src="https://img.shields.io/badge/tests-347-2EA043" alt="tests" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-3DA639" alt="license" />
   </p>
+  <p><strong>当前发布版本：2.3.3</strong></p>
 </div>
 
 <p align="center">
