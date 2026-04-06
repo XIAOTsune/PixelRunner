@@ -56,11 +56,7 @@
     if (runtime.getById("templateTitleInput")) runtime.getById("templateTitleInput").value = item ? item.title || "" : "";
     if (runtime.getById("templateContentInput")) runtime.getById("templateContentInput").value = item ? item.content || "" : "";
     updateTemplateLengthHint();
-    runtime.setSummaryStatus(
-      runtime.getById("templateStatusSummary"),
-      item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。",
-      "info"
-    );
+    runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。", "info");
     markTemplateEditorPristine();
     renderSavedTemplatesList();
     return true;
@@ -176,9 +172,7 @@
   function getVisibleTemplates() {
     const state = modules.state.state;
     const keyword = String(state.templateManagerKeyword || "").trim().toLowerCase();
-    const list = !keyword
-      ? [...state.templates]
-      : state.templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
+    const list = !keyword ? [...state.templates] : state.templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
 
     const sortMode = String(state.templateManagerSort || "updated_desc");
     list.sort((a, b) => {
@@ -197,11 +191,7 @@
 
     const templates = getVisibleTemplates();
     const keyword = String(modules.state.state.templateManagerKeyword || "").trim();
-    modules.runtime.setSummaryStatus(
-      summaryEl,
-      keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`,
-      "info"
-    );
+    modules.runtime.setSummaryStatus(summaryEl, keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`, "info");
 
     if (templates.length === 0) {
       listEl.innerHTML =
@@ -212,10 +202,7 @@
     }
 
     listEl.innerHTML = templates
-      .map(
-        (item) =>
-          `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`
-      )
+      .map((item) => `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`)
       .join("");
   }
 
@@ -258,9 +245,7 @@
 
   function getPickerSelectionInfo() {
     const picker = modules.state.state.templatePicker;
-    return picker.mode === "single"
-      ? "单选模式：点击模板后会立即写入目标字段。"
-      : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}，可组合写入同一个字段。`;
+    return picker.mode === "single" ? "单选模式：点击模板后会立即写入目标字段。" : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}，可组合写入同一个字段。`;
   }
 
   function syncTemplatePickerUi() {
@@ -292,18 +277,14 @@
     const picker = modules.state.state.templatePicker;
     const templates = modules.state.state.templates;
     const keyword = String(picker.keyword || "").trim().toLowerCase();
-    const visibleTemplates = !keyword
-      ? templates
-      : templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
+    const visibleTemplates = !keyword ? templates : templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
 
     if (statsEl) statsEl.textContent = `${visibleTemplates.length} / ${templates.length}`;
-
     if (templates.length === 0) {
       listEl.innerHTML = `<div class="picker-empty"><strong>还没有可用模板</strong><p>先去设置页创建模板，再回到工作台选择。</p></div>`;
       syncTemplatePickerUi();
       return;
     }
-
     if (visibleTemplates.length === 0) {
       listEl.innerHTML = `<div class="picker-empty"><strong>没有匹配的模板</strong><p>换个关键词再试试。</p></div>`;
       syncTemplatePickerUi();
@@ -337,6 +318,7 @@
   function applyTemplatesToField(fieldKey, templateIds, options = {}) {
     const key = String(fieldKey || "").trim();
     if (!key) throw new Error("未找到目标字段");
+
     const selected = (Array.isArray(templateIds) ? templateIds : [])
       .map((id) => modules.state.state.templates.find((item) => String(item.id) === String(id)))
       .filter(Boolean);
@@ -345,10 +327,7 @@
     const applyMode = options.applyMode === "append" ? "append" : "replace";
     const existingValue = String(modules.state.state.formValues[key] || "");
     const incomingContent = selected.map((item) => String(item.content || "")).join("\n");
-    const content =
-      applyMode === "append" && existingValue.trim()
-        ? `${existingValue.replace(/\s+$/g, "")}\n\n${incomingContent}`
-        : incomingContent;
+    const content = applyMode === "append" && existingValue.trim() ? `${existingValue.replace(/\s+$/g, "")}\n\n${incomingContent}` : incomingContent;
     const length = getTextLength(content);
     if (length > PROMPT_WARN_CHARS) {
       throw new Error(`组合后的提示词长度 ${length} 超出建议上限 ${PROMPT_WARN_CHARS}`);
@@ -376,11 +355,7 @@
     [titleInput, contentInput].filter(Boolean).forEach((element) => {
       element.addEventListener("input", () => {
         updateTemplateLengthHint();
-        runtime.setSummaryStatus(
-          runtime.getById("templateStatusSummary"),
-          modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。",
-          "pending"
-        );
+        runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。", "pending");
       });
     });
 

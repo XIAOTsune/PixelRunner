@@ -229,7 +229,8 @@ var PixelRunnerWebviewBundle = (() => {
       const now = Date.now();
       const appId = String(source.appId || source.webappId || source.id || "").trim();
       const id = String(source.id || "").trim() || runtime.createId("app");
-      const name = String(source.name || source.title || `应用 ${index + 1}`).trim() || `应用 ${index + 1}`;
+      const fallbackName = `应用 ${index + 1}`;
+      const name = String(source.name || source.title || fallbackName).trim() || fallbackName;
       return {
         id,
         appId,
@@ -1182,17 +1183,20 @@ ${text}` : text;
     }
     function analyzeAppInputsText(text) {
       const marker = String(text || "").trim();
-      if (!marker) {
-        return { normalized: [], summary: "当前应用还没有输入结构。", status: "info" };
-      }
+      if (!marker) return { normalized: [], summary: "当前应用还没有输入结构。", status: "info" };
       const parsed = JSON.parse(marker);
       if (!Array.isArray(parsed)) throw new Error("输入结构必须是 JSON 数组");
       const normalized = modules.state.normalizeAppInputs(parsed);
       const imageCount = normalized.filter((item) => item.type === "image" || item.type === "file").length;
       const promptCount = normalized.filter((item) => modules.state.isPromptLikeInput(item)).length;
+      const requiredCount = normalized.filter((item) => item.required).length;
+      const optionalCount = Math.max(0, normalized.length - requiredCount);
+      const selectCount = normalized.filter((item) => item.type === "select" || item.type === "enum").length;
+      const booleanCount = normalized.filter((item) => ["boolean", "switch", "checkbox"].includes(String(item.type || "").toLowerCase())).length;
+      const previewKeys = normalized.slice(0, 5).map((item) => item.label || item.name || item.key).filter(Boolean).join("、");
       return {
         normalized,
-        summary: `已识别 ${normalized.length} 个输入项，其中图像 ${imageCount} 个，提示词 ${promptCount} 个。`,
+        summary: normalized.length > 0 ? `已识别 ${normalized.length} 个输入项，其中必填 ${requiredCount} 个、选填 ${optionalCount} 个、图像 ${imageCount} 个、提示词 ${promptCount} 个、选项 ${selectCount} 个、布尔 ${booleanCount} 个。${previewKeys ? `字段预览：${previewKeys}${normalized.length > 5 ? "等" : ""}。` : ""}` : "已解析输入结构，但暂未识别到可用字段。",
         status: normalized.length > 0 ? "success" : "info"
       };
     }
@@ -1250,15 +1254,9 @@ ${text}` : text;
       });
       const sortMode = String(state.appManagerSort || "updated_desc");
       list.sort((a, b) => {
-        if (sortMode === "name_asc") {
-          return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
-        }
-        if (sortMode === "name_desc") {
-          return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
-        }
-        if (sortMode === "created_desc") {
-          return Number(b.createdAt || 0) - Number(a.createdAt || 0);
-        }
+        if (sortMode === "name_asc") return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
+        if (sortMode === "name_desc") return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
+        if (sortMode === "created_desc") return Number(b.createdAt || 0) - Number(a.createdAt || 0);
         return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
       });
       return list;
@@ -1270,10 +1268,7 @@ ${text}` : text;
       const statsEl = runtime.getById("appPickerStats");
       if (!listEl) return;
       const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
-      const visibleApps = !keyword ? state.apps : state.apps.filter((item) => {
-        const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase();
-        return marker.includes(keyword);
-      });
+      const visibleApps = !keyword ? state.apps : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
       if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
       if (visibleApps.length === 0) {
         listEl.innerHTML = state.apps.length === 0 ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>` : `<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
@@ -1292,16 +1287,16 @@ ${text}` : text;
       if (!listEl || !summaryEl) return;
       const visibleApps = getVisibleApps();
       const keyword = String(state.appManagerKeyword || "").trim();
-      const summaryText = keyword ? `已保存应用：${visibleApps.length} / ${state.apps.length} 个` : `已保存应用：${state.apps.length} 个`;
-      runtime.setSummaryStatus(summaryEl, summaryText, "info");
+      runtime.setSummaryStatus(summaryEl, keyword ? `已保存应用：${visibleApps.length} / ${state.apps.length} 个` : `已保存应用：${state.apps.length} 个`, "info");
       if (visibleApps.length === 0) {
         listEl.innerHTML = state.apps.length === 0 ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>输入应用 ID 或链接后解析并保存。</p></div>` : `<div class="picker-empty"><strong>没有匹配到应用</strong><p>调整搜索词后再试一次。</p></div>`;
         return;
       }
       listEl.innerHTML = visibleApps.map((app) => {
         const isEditing = String(modules.state.state.editingAppId || "") === String(app.id);
+        const isCurrent = state.currentApp && String(state.currentApp.id) === String(app.id);
         const description = String(app.description || "").trim();
-        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></article>`;
+        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></article>`;
       }).join("");
     }
     async function setCurrentAppById(appId, options = {}) {
@@ -1325,10 +1320,7 @@ ${text}` : text;
       if (persistedId && await setCurrentAppById(persistedId, { quiet: true })) return;
       state.currentApp = null;
       state.formValues = {};
-      if (state.apps[0]) {
-        await setCurrentAppById(state.apps[0].id, { quiet: true });
-        return;
-      }
+      if (state.apps[0]) return setCurrentAppById(state.apps[0].id, { quiet: true });
       modules.workspace.renderWorkspace();
       if (!options.quiet) modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
     }
@@ -1364,9 +1356,7 @@ ${text}` : text;
           });
         });
       }
-      if (closeButton) {
-        closeButton.addEventListener("click", () => modules.workspace.setModalOpen("appPickerModal", false));
-      }
+      if (closeButton) closeButton.addEventListener("click", () => modules.workspace.setModalOpen("appPickerModal", false));
       document.addEventListener("click", async (event) => {
         if (event.target && event.target.closest("#appPickerBackdrop")) {
           modules.workspace.setModalOpen("appPickerModal", false);
@@ -1399,11 +1389,7 @@ ${text}` : text;
       renderAppInputsSummary(runtime.getById("appEditorInputsInput")?.value || "[]");
       const deleteButton = runtime.getById("btnDeleteEditingApp");
       if (deleteButton) deleteButton.hidden = !safeApp;
-      modules.runtime.setSummaryStatus(
-        runtime.getById("appEditorStatus"),
-        safeApp ? `正在编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "输入应用 ID 或链接后解析，确认名称后保存。",
-        "info"
-      );
+      modules.runtime.setSummaryStatus(runtime.getById("appEditorStatus"), safeApp ? `正在编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "输入应用 ID 或链接后解析，确认名称后保存。", "info");
       markAppEditorPristine();
       renderSavedAppsList();
     }
@@ -1439,21 +1425,14 @@ ${text}` : text;
         runtime.setSummaryStatus(statusEl, `当前是浏览器预览模式，已提取应用 ID：${normalizedAppId}。完整解析请在 UXP 插件内测试。`, "warn");
         return { ok: true, appId: normalizedAppId, name: preferredName || "", description: "", inputs: [] };
       }
-      const result = await modules.runtime.callHost(
-        "runninghub.parseApp",
-        [{ appId: normalizedAppId, apiKey, preferredName }],
-        { timeoutMs: 45e3 }
-      );
+      const result = await modules.runtime.callHost("runninghub.parseApp", [{ appId: normalizedAppId, apiKey, preferredName }], { timeoutMs: 45e3 });
       if (nameEl) nameEl.value = result && result.name ? result.name : preferredName;
       if (descriptionEl) descriptionEl.value = result && result.description ? result.description : "";
       if (inputsEl) inputsEl.value = JSON.stringify(result && result.inputs || [], null, 2);
       renderAppInputsSummary(inputsEl?.value || "[]");
       const inputCount = Array.isArray(result && result.inputs) ? result.inputs.length : 0;
-      runtime.setSummaryStatus(
-        statusEl,
-        `解析成功：${result.name || normalizedAppId}，共识别 ${inputCount} 个输入项，请确认后保存。`,
-        "success"
-      );
+      runtime.setSummaryStatus(statusEl, `解析成功：${result.name || normalizedAppId}，共识别 ${inputCount} 个输入项，请确认后保存。`, "success");
+      modules.ui.logToWorkspace(`应用解析成功：${result.name || normalizedAppId}，共 ${inputCount} 个输入项。`, "success");
       return result;
     }
     function readAppEditorForm() {
@@ -1483,13 +1462,9 @@ ${text}` : text;
         updatedAt: now
       });
       const nextApps = [...apps];
-      if (existingIndex >= 0) {
-        nextApps[existingIndex] = nextApp;
-      } else if (duplicateIndex >= 0) {
-        nextApps[duplicateIndex] = nextApp;
-      } else {
-        nextApps.unshift(nextApp);
-      }
+      if (existingIndex >= 0) nextApps[existingIndex] = nextApp;
+      else if (duplicateIndex >= 0) nextApps[duplicateIndex] = nextApp;
+      else nextApps.unshift(nextApp);
       await saveAppsToStorage(nextApps);
       await setCurrentAppById(nextApp.id, { quiet: true });
       modules.runtime.setSummaryStatus(modules.runtime.getById("appEditorStatus"), `应用已保存：${nextApp.name}`, "success");
@@ -1507,9 +1482,8 @@ ${text}` : text;
         fillAppEditor(null);
       }
       if (modules.state.state.currentApp && String(modules.state.state.currentApp.id) === String(appId)) {
-        if (nextApps[0]) {
-          await setCurrentAppById(nextApps[0].id, { quiet: true });
-        } else {
+        if (nextApps[0]) await setCurrentAppById(nextApps[0].id, { quiet: true });
+        else {
           modules.state.state.currentApp = null;
           modules.state.state.formValues = {};
           await persistCurrentAppId("");
@@ -1609,11 +1583,7 @@ ${text}` : text;
       if (runtime.getById("templateTitleInput")) runtime.getById("templateTitleInput").value = item ? item.title || "" : "";
       if (runtime.getById("templateContentInput")) runtime.getById("templateContentInput").value = item ? item.content || "" : "";
       updateTemplateLengthHint();
-      runtime.setSummaryStatus(
-        runtime.getById("templateStatusSummary"),
-        item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。",
-        "info"
-      );
+      runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。", "info");
       markTemplateEditorPristine();
       renderSavedTemplatesList();
       return true;
@@ -1736,18 +1706,12 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       if (!listEl || !summaryEl) return;
       const templates = getVisibleTemplates();
       const keyword = String(modules.state.state.templateManagerKeyword || "").trim();
-      modules.runtime.setSummaryStatus(
-        summaryEl,
-        keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`,
-        "info"
-      );
+      modules.runtime.setSummaryStatus(summaryEl, keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`, "info");
       if (templates.length === 0) {
         listEl.innerHTML = modules.state.state.templates.length === 0 ? `<div class="picker-empty"><strong>还没有已保存模板</strong><p>点击“创建模板”开始整理常用提示词。</p></div>` : `<div class="picker-empty"><strong>没有匹配的模板</strong><p>换个关键词再试试。</p></div>`;
         return;
       }
-      listEl.innerHTML = templates.map(
-        (item) => `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`
-      ).join("");
+      listEl.innerHTML = templates.map((item) => `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`).join("");
     }
     function normalizePickerConfig(config = {}) {
       const mode = config.mode === "single" ? "single" : "multiple";
@@ -1881,11 +1845,7 @@ ${incomingContent}` : incomingContent;
       [titleInput, contentInput].filter(Boolean).forEach((element) => {
         element.addEventListener("input", () => {
           updateTemplateLengthHint();
-          runtime.setSummaryStatus(
-            runtime.getById("templateStatusSummary"),
-            modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。",
-            "pending"
-          );
+          runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。", "pending");
         });
       });
       if (managerSearchInput) {
@@ -2175,7 +2135,13 @@ ${incomingContent}` : incomingContent;
         parseAppButton.addEventListener("click", async () => {
           parseAppButton.disabled = true;
           try {
-            await modules.apps.parseAppReference();
+            const parsed = await modules.apps.parseAppReference();
+            if (parsed) {
+              renderSettingsDiagnostics(`应用解析完成：${parsed.name || parsed.appId || "未命名应用"}。`, {
+                runtime: modules.state.state.hostRuntime,
+                hasApiKey: Boolean(modules.state.state.settings.apiKey)
+              });
+            }
           } catch (error) {
             runtime.setSummaryStatus(runtime.getById("appEditorStatus"), error.message, "error");
           } finally {

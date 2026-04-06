@@ -199,7 +199,13 @@
       parseAppButton.addEventListener("click", async () => {
         parseAppButton.disabled = true;
         try {
-          await modules.apps.parseAppReference();
+          const parsed = await modules.apps.parseAppReference();
+          if (parsed) {
+            renderSettingsDiagnostics(`应用解析完成：${parsed.name || parsed.appId || "未命名应用"}。`, {
+              runtime: modules.state.state.hostRuntime,
+              hasApiKey: Boolean(modules.state.state.settings.apiKey)
+            });
+          }
         } catch (error) {
           runtime.setSummaryStatus(runtime.getById("appEditorStatus"), error.message, "error");
         } finally {

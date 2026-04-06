@@ -107,7 +107,8 @@
     const now = Date.now();
     const appId = String(source.appId || source.webappId || source.id || "").trim();
     const id = String(source.id || "").trim() || runtime.createId("app");
-    const name = String(source.name || source.title || `应用 ${index + 1}`).trim() || `应用 ${index + 1}`;
+    const fallbackName = `应用 ${index + 1}`;
+    const name = String(source.name || source.title || fallbackName).trim() || fallbackName;
 
     return {
       id,

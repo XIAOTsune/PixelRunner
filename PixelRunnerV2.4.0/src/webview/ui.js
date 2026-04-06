@@ -108,49 +108,49 @@
         id: "btnObserver",
         payload: { action: "observerLayer", layerName: "黑白观察层" },
         pending: "正在创建黑白观察层...",
-        success: (result) => result && result.message ? result.message : "已创建黑白观察层"
+        success: (result) => (result && result.message ? result.message : "已创建黑白观察层")
       },
       {
         id: "btnNeutralGray",
         payload: { action: "neutralGrayLayer" },
         pending: "正在创建中性灰图层...",
-        success: (result) => result && result.message ? result.message : "已创建中性灰图层"
+        success: (result) => (result && result.message ? result.message : "已创建中性灰图层")
       },
       {
         id: "btnGaussianBlur",
         payload: { action: "gaussianBlur", radius: 4 },
         pending: "正在执行高斯模糊...",
-        success: (result) => result && result.message ? result.message : "已执行高斯模糊"
+        success: (result) => (result && result.message ? result.message : "已执行高斯模糊")
       },
       {
         id: "btnSharpen",
         payload: { action: "sharpen" },
         pending: "正在执行锐化...",
-        success: (result) => result && result.message ? result.message : "已执行锐化"
+        success: (result) => (result && result.message ? result.message : "已执行锐化")
       },
       {
         id: "btnHighPass",
         payload: { action: "highPass", radius: 2 },
         pending: "正在执行高反差保留...",
-        success: (result) => result && result.message ? result.message : "已执行高反差保留"
+        success: (result) => (result && result.message ? result.message : "已执行高反差保留")
       },
       {
         id: "btnStamp",
         payload: { action: "stampVisible", layerName: "盖印图层" },
         pending: "正在生成盖印图层...",
-        success: (result) => result && result.message ? result.message : "已生成盖印图层"
+        success: (result) => (result && result.message ? result.message : "已生成盖印图层")
       },
       {
         id: "btnContentAwareFill",
         payload: { action: "contentAwareFill" },
         pending: "正在触发内容识别填充...",
-        success: (result) => result && result.message ? result.message : "已触发内容识别填充"
+        success: (result) => (result && result.message ? result.message : "已触发内容识别填充")
       },
       {
         id: "btnSelectAndMask",
         payload: { action: "selectAndMask" },
         pending: "正在触发选择并遮住...",
-        success: (result) => result && result.message ? result.message : "已触发选择并遮住"
+        success: (result) => (result && result.message ? result.message : "已触发选择并遮住")
       }
     ];
 

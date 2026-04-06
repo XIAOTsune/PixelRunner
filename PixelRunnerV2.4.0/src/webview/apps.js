@@ -56,9 +56,7 @@
 
   function analyzeAppInputsText(text) {
     const marker = String(text || "").trim();
-    if (!marker) {
-      return { normalized: [], summary: "当前应用还没有输入结构。", status: "info" };
-    }
+    if (!marker) return { normalized: [], summary: "当前应用还没有输入结构。", status: "info" };
 
     const parsed = JSON.parse(marker);
     if (!Array.isArray(parsed)) throw new Error("输入结构必须是 JSON 数组");
@@ -66,9 +64,22 @@
     const normalized = modules.state.normalizeAppInputs(parsed);
     const imageCount = normalized.filter((item) => item.type === "image" || item.type === "file").length;
     const promptCount = normalized.filter((item) => modules.state.isPromptLikeInput(item)).length;
+    const requiredCount = normalized.filter((item) => item.required).length;
+    const optionalCount = Math.max(0, normalized.length - requiredCount);
+    const selectCount = normalized.filter((item) => item.type === "select" || item.type === "enum").length;
+    const booleanCount = normalized.filter((item) => ["boolean", "switch", "checkbox"].includes(String(item.type || "").toLowerCase())).length;
+    const previewKeys = normalized
+      .slice(0, 5)
+      .map((item) => item.label || item.name || item.key)
+      .filter(Boolean)
+      .join("、");
+
     return {
       normalized,
-      summary: `已识别 ${normalized.length} 个输入项，其中图像 ${imageCount} 个，提示词 ${promptCount} 个。`,
+      summary:
+        normalized.length > 0
+          ? `已识别 ${normalized.length} 个输入项，其中必填 ${requiredCount} 个、选填 ${optionalCount} 个、图像 ${imageCount} 个、提示词 ${promptCount} 个、选项 ${selectCount} 个、布尔 ${booleanCount} 个。${previewKeys ? `字段预览：${previewKeys}${normalized.length > 5 ? "等" : ""}。` : ""}`
+          : "已解析输入结构，但暂未识别到可用字段。",
       status: normalized.length > 0 ? "success" : "info"
     };
   }
@@ -138,15 +149,9 @@
 
     const sortMode = String(state.appManagerSort || "updated_desc");
     list.sort((a, b) => {
-      if (sortMode === "name_asc") {
-        return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
-      }
-      if (sortMode === "name_desc") {
-        return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
-      }
-      if (sortMode === "created_desc") {
-        return Number(b.createdAt || 0) - Number(a.createdAt || 0);
-      }
+      if (sortMode === "name_asc") return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
+      if (sortMode === "name_desc") return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
+      if (sortMode === "created_desc") return Number(b.createdAt || 0) - Number(a.createdAt || 0);
       return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
     });
     return list;
@@ -162,10 +167,7 @@
     const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
     const visibleApps = !keyword
       ? state.apps
-      : state.apps.filter((item) => {
-          const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase();
-          return marker.includes(keyword);
-        });
+      : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
 
     if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
     if (visibleApps.length === 0) {
@@ -193,10 +195,7 @@
 
     const visibleApps = getVisibleApps();
     const keyword = String(state.appManagerKeyword || "").trim();
-    const summaryText = keyword
-      ? `已保存应用：${visibleApps.length} / ${state.apps.length} 个`
-      : `已保存应用：${state.apps.length} 个`;
-    runtime.setSummaryStatus(summaryEl, summaryText, "info");
+    runtime.setSummaryStatus(summaryEl, keyword ? `已保存应用：${visibleApps.length} / ${state.apps.length} 个` : `已保存应用：${state.apps.length} 个`, "info");
 
     if (visibleApps.length === 0) {
       listEl.innerHTML =
@@ -209,8 +208,9 @@
     listEl.innerHTML = visibleApps
       .map((app) => {
         const isEditing = String(modules.state.state.editingAppId || "") === String(app.id);
+        const isCurrent = state.currentApp && String(state.currentApp.id) === String(app.id);
         const description = String(app.description || "").trim();
-        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></article>`;
+        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></article>`;
       })
       .join("");
   }
@@ -240,10 +240,7 @@
 
     state.currentApp = null;
     state.formValues = {};
-    if (state.apps[0]) {
-      await setCurrentAppById(state.apps[0].id, { quiet: true });
-      return;
-    }
+    if (state.apps[0]) return setCurrentAppById(state.apps[0].id, { quiet: true });
 
     modules.workspace.renderWorkspace();
     if (!options.quiet) modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
@@ -285,9 +282,7 @@
       });
     }
 
-    if (closeButton) {
-      closeButton.addEventListener("click", () => modules.workspace.setModalOpen("appPickerModal", false));
-    }
+    if (closeButton) closeButton.addEventListener("click", () => modules.workspace.setModalOpen("appPickerModal", false));
 
     document.addEventListener("click", async (event) => {
       if (event.target && event.target.closest("#appPickerBackdrop")) {
@@ -329,12 +324,7 @@
     const deleteButton = runtime.getById("btnDeleteEditingApp");
     if (deleteButton) deleteButton.hidden = !safeApp;
 
-    modules.runtime.setSummaryStatus(
-      runtime.getById("appEditorStatus"),
-      safeApp ? `正在编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "输入应用 ID 或链接后解析，确认名称后保存。",
-      "info"
-    );
-
+    modules.runtime.setSummaryStatus(runtime.getById("appEditorStatus"), safeApp ? `正在编辑应用：${modules.state.getAppDisplayName(safeApp)}` : "输入应用 ID 或链接后解析，确认名称后保存。", "info");
     markAppEditorPristine();
     renderSavedAppsList();
   }
@@ -363,7 +353,6 @@
     const descriptionEl = runtime.getById("appEditorDescriptionInput");
     const inputsEl = runtime.getById("appEditorInputsInput");
     const normalizedAppId = normalizeAppId(inputEl?.value || "");
-
     if (!normalizedAppId) throw new Error("请先输入有效的应用 ID 或 URL");
 
     if (inputEl) inputEl.value = normalizedAppId;
@@ -378,11 +367,7 @@
       return { ok: true, appId: normalizedAppId, name: preferredName || "", description: "", inputs: [] };
     }
 
-    const result = await modules.runtime.callHost(
-      "runninghub.parseApp",
-      [{ appId: normalizedAppId, apiKey, preferredName }],
-      { timeoutMs: 45000 }
-    );
+    const result = await modules.runtime.callHost("runninghub.parseApp", [{ appId: normalizedAppId, apiKey, preferredName }], { timeoutMs: 45000 });
 
     if (nameEl) nameEl.value = result && result.name ? result.name : preferredName;
     if (descriptionEl) descriptionEl.value = result && result.description ? result.description : "";
@@ -390,11 +375,8 @@
     renderAppInputsSummary(inputsEl?.value || "[]");
 
     const inputCount = Array.isArray(result && result.inputs) ? result.inputs.length : 0;
-    runtime.setSummaryStatus(
-      statusEl,
-      `解析成功：${result.name || normalizedAppId}，共识别 ${inputCount} 个输入项，请确认后保存。`,
-      "success"
-    );
+    runtime.setSummaryStatus(statusEl, `解析成功：${result.name || normalizedAppId}，共识别 ${inputCount} 个输入项，请确认后保存。`, "success");
+    modules.ui.logToWorkspace(`应用解析成功：${result.name || normalizedAppId}，共 ${inputCount} 个输入项。`, "success");
     return result;
   }
 
@@ -424,23 +406,14 @@
     const nextApp = modules.state.normalizeAppRecord({
       ...formValue,
       id: duplicateIndex >= 0 ? apps[duplicateIndex].id : formValue.id,
-      createdAt:
-        existingIndex >= 0
-          ? apps[existingIndex].createdAt
-          : duplicateIndex >= 0
-            ? apps[duplicateIndex].createdAt
-            : now,
+      createdAt: existingIndex >= 0 ? apps[existingIndex].createdAt : duplicateIndex >= 0 ? apps[duplicateIndex].createdAt : now,
       updatedAt: now
     });
 
     const nextApps = [...apps];
-    if (existingIndex >= 0) {
-      nextApps[existingIndex] = nextApp;
-    } else if (duplicateIndex >= 0) {
-      nextApps[duplicateIndex] = nextApp;
-    } else {
-      nextApps.unshift(nextApp);
-    }
+    if (existingIndex >= 0) nextApps[existingIndex] = nextApp;
+    else if (duplicateIndex >= 0) nextApps[duplicateIndex] = nextApp;
+    else nextApps.unshift(nextApp);
 
     await saveAppsToStorage(nextApps);
     await setCurrentAppById(nextApp.id, { quiet: true });
@@ -463,9 +436,8 @@
     }
 
     if (modules.state.state.currentApp && String(modules.state.state.currentApp.id) === String(appId)) {
-      if (nextApps[0]) {
-        await setCurrentAppById(nextApps[0].id, { quiet: true });
-      } else {
+      if (nextApps[0]) await setCurrentAppById(nextApps[0].id, { quiet: true });
+      else {
         modules.state.state.currentApp = null;
         modules.state.state.formValues = {};
         await persistCurrentAppId("");
@@ -481,7 +453,6 @@
   async function importAppsFromTextarea() {
     const input = modules.runtime.getById("appTransferInput");
     if (!input) return;
-
     const marker = String(input.value || "").trim();
     if (!marker) throw new Error("请先粘贴应用列表 JSON");
 
