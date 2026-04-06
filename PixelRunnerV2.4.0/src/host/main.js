@@ -5,6 +5,7 @@ import {
   pollRunningHubTask,
   submitRunningHubTask
 } from "./runninghub.js";
+import { parseRunningHubApp } from "./runninghub-parser.js";
 import {
   capturePhotoshopDocumentPreview,
   getPhotoshopDocumentInfo,
@@ -60,6 +61,9 @@ async function handleBridgeRequest(message, webviewEl) {
         break;
       case "runninghub.fetchAccountStatus":
         result = await fetchRunningHubAccountStatus(message.args);
+        break;
+      case "runninghub.parseApp":
+        result = await parseRunningHubApp(message.args);
         break;
       case "photoshop.getActiveDocumentInfo":
         result = await getPhotoshopDocumentInfo();

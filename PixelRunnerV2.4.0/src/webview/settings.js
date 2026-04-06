@@ -8,12 +8,16 @@
   function renderSettingsDiagnostics(message, options = {}) {
     const box = modules.runtime.getById("settingsDiagnosticBox");
     if (!box) return;
+
     const runtimeText = options.runtime ? `<p>宿主环境：${modules.runtime.escapeHtml(options.runtime)}</p>` : "";
     const apiKeyText = options.hasApiKey ? "<p>API Key：已配置，会写入宿主本地存储。</p>" : "<p>API Key：尚未配置。</p>";
     const appText = `<p>已保存应用：${modules.runtime.escapeHtml(String(modules.state.state.apps.length))} 个。</p>`;
     const templateText = `<p>已保存模板：${modules.runtime.escapeHtml(String(modules.state.state.templates.length))} 条。</p>`;
     const currentApp = modules.state.state.currentApp;
-    const currentAppText = currentApp ? `<p>当前应用：${modules.runtime.escapeHtml(modules.state.getAppDisplayName(currentApp))}。</p>` : "<p>当前应用：尚未选择。</p>";
+    const currentAppText = currentApp
+      ? `<p>当前应用：${modules.runtime.escapeHtml(modules.state.getAppDisplayName(currentApp))}。</p>`
+      : "<p>当前应用：尚未选择。</p>";
+
     box.innerHTML = `<p>${modules.runtime.escapeHtml(String(message || ""))}</p>${runtimeText}${apiKeyText}${appText}${templateText}${currentAppText}`;
   }
 
@@ -22,6 +26,7 @@
     const coinsEl = modules.runtime.getById("accountCoinsValue");
     const summaryEl = modules.runtime.getById("accountSummary");
     if (!balanceEl || !coinsEl || !summaryEl) return;
+
     const hasAccount = account && account.ok;
     balanceEl.textContent = hasAccount && account.balance != null ? String(account.balance) : "--";
     coinsEl.textContent = hasAccount && account.coins != null ? String(account.coins) : "--";
@@ -45,18 +50,29 @@
   async function loadSettingsSnapshot() {
     const apiKey = String((await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY)) || "").trim();
     const rawSettings = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS), {});
-    return modules.state.normalizeSettings({ apiKey, pollInterval: rawSettings && rawSettings.pollInterval, timeout: rawSettings && rawSettings.timeout });
+    return modules.state.normalizeSettings({
+      apiKey,
+      pollInterval: rawSettings && rawSettings.pollInterval,
+      timeout: rawSettings && rawSettings.timeout
+    });
   }
 
   async function saveSettingsSnapshot(settings) {
     const normalized = modules.state.normalizeSettings(settings);
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.SETTINGS, JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout }));
+    await modules.runtime.storageSetItem(
+      modules.state.STORAGE_KEYS.SETTINGS,
+      JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout })
+    );
+
     modules.state.state.settings = normalized;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(normalized);
     renderSettingsStatus("设置已保存到宿主本地存储。", "success");
-    renderSettingsDiagnostics("当前设置已同步。", { runtime: modules.state.state.hostRuntime, hasApiKey: Boolean(normalized.apiKey) });
+    renderSettingsDiagnostics("当前设置已同步。", {
+      runtime: modules.state.state.hostRuntime,
+      hasApiKey: Boolean(normalized.apiKey)
+    });
     modules.ui.logToWorkspace(`设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s。`, "success");
   }
 
@@ -72,12 +88,17 @@
     } catch (_) {
       modules.state.state.hostRuntime = modules.runtime.isPluginRuntime() ? "uxp-host" : "browser-preview";
     }
+
     const snapshot = await loadSettingsSnapshot();
     modules.state.state.settings = snapshot;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(snapshot);
     renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
-    renderSettingsDiagnostics("当前设置快照已读取完成。", { runtime: modules.state.state.hostRuntime, hasApiKey: Boolean(snapshot.apiKey) });
+    renderSettingsDiagnostics("当前设置快照已读取完成。", {
+      runtime: modules.state.state.hostRuntime,
+      hasApiKey: Boolean(snapshot.apiKey)
+    });
+
     if (snapshot.apiKey && modules.runtime.isPluginRuntime()) {
       try {
         updateAccountSummary(await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: snapshot.apiKey }]));
@@ -86,6 +107,24 @@
       }
     } else {
       updateAccountSummary(null);
+    }
+  }
+
+  function bindAppManagerControls() {
+    const runtime = modules.runtime;
+    const searchInput = runtime.getById("appManagerSearchInput");
+    const sortInput = runtime.getById("appManagerSortInput");
+    if (searchInput) {
+      searchInput.addEventListener("input", () => {
+        modules.state.state.appManagerKeyword = searchInput.value || "";
+        modules.apps.renderSavedAppsList();
+      });
+    }
+    if (sortInput) {
+      sortInput.addEventListener("change", () => {
+        modules.state.state.appManagerSort = sortInput.value || "updated_desc";
+        modules.apps.renderSavedAppsList();
+      });
     }
   }
 
@@ -100,6 +139,8 @@
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput"];
 
+    bindAppManagerControls();
+
     fieldIds.forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
@@ -113,13 +154,18 @@
         try {
           await saveSettingsSnapshot(readSettingsForm());
           if (modules.state.state.settings.apiKey && modules.runtime.isPluginRuntime()) {
-            updateAccountSummary(await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: modules.state.state.settings.apiKey }]));
+            updateAccountSummary(
+              await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: modules.state.state.settings.apiKey }])
+            );
           } else {
             updateAccountSummary(null);
           }
         } catch (error) {
           renderSettingsStatus(`设置保存失败：${error.message}`, "error");
-          renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", { runtime: modules.state.state.hostRuntime, hasApiKey: Boolean(runtime.getById("settingsApiKeyInput")?.value) });
+          renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", {
+            runtime: modules.state.state.hostRuntime,
+            hasApiKey: Boolean(runtime.getById("settingsApiKeyInput")?.value)
+          });
           modules.ui.logToWorkspace(`设置保存失败：${error.message}`, "error");
         } finally {
           saveButton.disabled = false;
@@ -135,20 +181,30 @@
     }
 
     if (parseAppButton) {
-      parseAppButton.addEventListener("click", () => {
+      parseAppButton.addEventListener("click", async () => {
+        parseAppButton.disabled = true;
         try {
-          modules.apps.parseAppReference();
+          await modules.apps.parseAppReference();
         } catch (error) {
           runtime.setSummaryStatus(runtime.getById("appEditorStatus"), error.message, "error");
+        } finally {
+          parseAppButton.disabled = false;
         }
       });
     }
 
-    ["appEditorAppIdInput", "appEditorNameInput"].forEach((id) => {
+    ["appEditorAppIdInput", "appEditorNameInput", "appEditorDescriptionInput", "appEditorInputsInput"].forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
       element.addEventListener("input", () => {
-        runtime.setSummaryStatus(runtime.getById("appEditorStatus"), modules.state.state.editingAppId ? "已修改当前应用，记得保存。" : "输入应用 ID 或链接后解析，确认名称后保存。", "pending");
+        if (id === "appEditorInputsInput") {
+          modules.apps.renderAppInputsSummary(element.value || "[]");
+        }
+        runtime.setSummaryStatus(
+          runtime.getById("appEditorStatus"),
+          modules.state.state.editingAppId ? "已修改当前应用，记得保存。" : "输入应用 ID 或链接后解析，确认名称后保存。",
+          "pending"
+        );
       });
     });
 
@@ -199,6 +255,7 @@
     document.addEventListener("click", async (event) => {
       const actionTarget = event.target && event.target.closest("[data-action]");
       if (!actionTarget) return;
+
       const action = actionTarget.getAttribute("data-action");
       const appId = actionTarget.getAttribute("data-app-id");
       if (action === "edit-app" && appId) {

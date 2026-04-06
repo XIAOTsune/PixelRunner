@@ -272,6 +272,21 @@
                 <button id="btnDeleteEditingApp" class="secondary-btn" type="button" hidden>删除当前应用</button>
                 <button id="btnSaveEditingApp" class="primary-btn" type="button">保存应用</button>
               </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">搜索应用</span>
+                  <input id="appManagerSearchInput" class="field-input" type="search" placeholder="按名称、ID 或说明搜索" />
+                </label>
+                <label class="field">
+                  <span class="field-label">排序方式</span>
+                  <select id="appManagerSortInput" class="field-input">
+                    <option value="updated_desc">最近更新优先</option>
+                    <option value="created_desc">最近创建优先</option>
+                    <option value="name_asc">名称 A-Z</option>
+                    <option value="name_desc">名称 Z-A</option>
+                  </select>
+                </label>
+              </div>
               <div id="savedAppsSummary" class="summary-strip">应用列表尚未加载</div>
               <div id="savedAppsList" class="list-shell compact-list-shell"></div>
               <textarea id="appTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>

@@ -144,9 +144,7 @@
       .map((item, index) => normalizeTemplateRecord(item, index))
       .filter((item) => {
         if (!item) return false;
-        if (seenIds.has(item.id)) {
-          item.id = modules.runtime.createId("tpl");
-        }
+        if (seenIds.has(item.id)) item.id = modules.runtime.createId("tpl");
         seenIds.add(item.id);
         return true;
       });
