@@ -58,6 +58,7 @@
       taskId: "",
       placedAt: 0
     },
+    runningTasks: [],
     runningTask: {
       taskId: "",
       appName: "",

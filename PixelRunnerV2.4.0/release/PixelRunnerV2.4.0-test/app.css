@@ -762,6 +762,20 @@ button {
   font-size: 12px;
 }
 
+.workspace-input-card #imageInputContainer .empty-panel {
+  padding: 10px 14px;
+}
+
+.workspace-input-card #imageInputContainer .empty-panel h4 {
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.workspace-input-card #imageInputContainer .empty-panel p {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .workspace-run-card {
   gap: 12px;
 }
@@ -793,6 +807,51 @@ button {
   display: flex;
   align-items: center;
   padding: 8px 12px;
+  font-size: 12px;
+}
+
+.running-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.running-task-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(86, 110, 132, 0.7);
+  background: rgba(41, 57, 72, 0.88);
+}
+
+.running-task-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.running-task-title {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.running-task-meta {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.running-task-empty {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(93, 116, 138, 0.7);
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -1356,6 +1415,14 @@ button {
   flex-direction: column;
   gap: 6px;
   padding: 8px;
+}
+
+.image-capture-field-card {
+  cursor: pointer;
+}
+
+.image-capture-field-card:hover {
+  background: rgba(46, 63, 79, 0.92);
 }
 
 .image-preview-frame {

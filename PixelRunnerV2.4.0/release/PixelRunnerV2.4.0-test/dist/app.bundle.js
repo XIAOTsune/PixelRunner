@@ -189,6 +189,7 @@ var PixelRunnerWebviewBundle = (() => {
         taskId: "",
         placedAt: 0
       },
+      runningTasks: [],
       runningTask: {
         taskId: "",
         appName: "",
@@ -605,6 +606,12 @@ ${text}` : text;
       modules.state.state.formValues[key] = null;
       renderWorkspace();
     }
+    async function captureAndAssignToInput(key) {
+      const asset = await captureCurrentDocumentImage();
+      modules.state.state.formValues[key] = cloneCaptureAsset(asset);
+      renderWorkspace();
+      return asset;
+    }
     function renderCaptureSummary(asset) {
       if (!hasImageAsset(asset)) {
         return '<div class="empty-panel"><h4>图像输入区</h4><p>点击“捕获当前文档”后，这里会显示预览，并可把捕获结果绑定到下方图像字段。</p></div>';
@@ -665,8 +672,6 @@ ${text}` : text;
       const imageInputContainer = runtime.getById("imageInputContainer");
       if (!imageInputContainer) return;
       const imageInputs = findImageInputs(state.currentApp);
-      const selectedAsset = getSelectedCaptureAsset();
-      const captureAssets = getCaptureAssets();
       if (!state.currentApp) {
         imageInputContainer.innerHTML = '<div class="empty-panel"><h4>图像输入区</h4><p>等待应用选择后，再接入图像捕获和图像字段映射。</p></div>';
         return;
@@ -676,32 +681,11 @@ ${text}` : text;
         return;
       }
       imageInputContainer.innerHTML = `
-      <div class="image-capture-shell">
-        <div class="card-head">
-          <div>
-            <h4>Photoshop 图像捕获</h4>
-            <p>宿主负责抓取当前文档，界面负责预览、压缩参数和字段绑定。</p>
-          </div>
-          <div class="inline-actions">
-            <button id="btnCaptureDocumentImage" class="mini-btn" type="button">捕获当前文档</button>
-            <button id="btnClearCapturedImage" class="mini-btn" type="button" ${hasImageAsset(selectedAsset) ? "" : "disabled"}>移除当前</button>
-          </div>
-        </div>
-        <div class="dual-grid">
-          <label class="field">
-            <span class="field-label">最大边长</span>
-            <input id="imageCaptureMaxDimension" class="field-input" type="number" min="256" max="4096" step="128" />
-          </label>
-          <label class="field">
-            <span class="field-label">JPEG 质量</span>
-            <input id="imageCaptureQuality" class="field-input" type="number" min="20" max="100" step="1" />
-          </label>
-        </div>
-        ${renderCaptureSummary(selectedAsset)}
-        ${renderCaptureLibrary(captureAssets, state.imageCapture.selectedAssetId)}
+      <div class="empty-panel">
+        <h4>图像输入</h4>
+        <p>直接点击下方图像字段即可从 Photoshop 当前选区捕获；如果没有选区，会回落到当前文档。</p>
       </div>
     `;
-      syncImageCaptureControls();
     }
     function renderImageField(input) {
       const runtime = modules.runtime;
@@ -711,23 +695,21 @@ ${text}` : text;
       const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
       const asset = state.formValues[key];
       const hasAssignedAsset = hasImageAsset(asset);
-      const captureReady = hasImageAsset(getSelectedCaptureAsset());
-      const transferMode = getImageTransferModeLabel(input);
-      const meta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"}` : "尚未绑定图像";
+      const captureLabel = hasAssignedAsset ? "重新捕获" : "点击从 Photoshop 选区捕获";
+      const meta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"}` : "尚未捕获图像";
       return `
       <div class="field dynamic-field">
         <span class="field-label">${label}${requiredMark}</span>
         <div class="input-zone">
-          <div class="image-binding-card">
-            ${hasAssignedAsset ? `<div class="image-preview-frame"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>` : '<div class="empty-panel"><h4>等待图像绑定</h4><p>先在上方捕获当前文档，再绑定到这个字段。</p></div>'}
+          <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
+            ${hasAssignedAsset ? `<div class="image-preview-frame"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>` : '<div class="empty-panel"><h4>点击从 PS 选区捕获</h4><p>如果没有选区，会自动回落到当前文档。</p></div>'}
             <div class="image-meta-grid">
               <span class="image-meta-pill">${runtime.escapeHtml(meta)}</span>
-              <span class="image-meta-pill">字段：${runtime.escapeHtml(key)}</span>
-              <span class="image-meta-pill">上传方式：${runtime.escapeHtml(transferMode)}</span>
-              ${hasAssignedAsset && asset.assetId ? `<span class="image-meta-pill">来源 #${runtime.escapeHtml(String(asset.assetId).slice(-6))}</span>` : ""}
+              ${hasAssignedAsset && asset.capturedFromSelection ? '<span class="image-meta-pill">来源：选区</span>' : ""}
+              ${hasAssignedAsset && !asset.capturedFromSelection ? '<span class="image-meta-pill">来源：文档</span>' : ""}
             </div>
             <div class="inline-actions">
-              <button class="mini-btn" type="button" data-action="assign-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${captureReady ? "" : "disabled"}>使用当前捕获</button>
+              <button class="mini-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
               <button class="mini-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清除</button>
             </div>
           </div>
@@ -762,22 +744,37 @@ ${text}` : text;
       const runButton = modules.runtime.getById("btnRun");
       const cancelButton = modules.runtime.getById("btnCancelJob");
       const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
+      const runningTaskList = modules.runtime.getById("runningTaskList");
       const statusChip = modules.runtime.getById("workspaceInputStatusChip");
       const hasCurrentApp = !!state.currentApp;
-      const hasRunningTask = Boolean(state.runningTask && state.runningTask.taskId);
+      const runningTasks = Array.isArray(state.runningTasks) ? state.runningTasks.filter((item) => item && item.taskId) : [];
+      const hasRunningTask = runningTasks.length > 0;
       if (runButton) {
-        runButton.disabled = !hasCurrentApp || hasRunningTask;
-        runButton.textContent = hasRunningTask ? "任务进行中..." : hasCurrentApp ? `运行新任务：${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
+        runButton.disabled = !hasCurrentApp;
+        runButton.textContent = hasRunningTask ? `继续运行（当前 ${runningTasks.length} 个任务）` : hasCurrentApp ? `运行新任务：${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
       }
       if (cancelButton) {
         cancelButton.disabled = !hasRunningTask;
-        cancelButton.textContent = "取消任务";
+        cancelButton.textContent = hasRunningTask ? "取消最近任务" : "取消最近任务";
       }
       if (taskStatusSummary) {
-        taskStatusSummary.textContent = hasRunningTask ? `任务进行中：${state.runningTask.appName}，Task ID: ${state.runningTask.taskId}` : hasCurrentApp ? `已准备好运行 ${modules.state.getAppDisplayName(state.currentApp)}，可直接提交任务。` : "后台任务：暂时空闲，请先选择一个应用。";
+        taskStatusSummary.textContent = hasRunningTask ? `当前共有 ${runningTasks.length} 个任务进行中，可在下方逐个取消。` : hasCurrentApp ? `已准备好运行 ${modules.state.getAppDisplayName(state.currentApp)}，可直接提交任务。` : "后台任务：暂时空闲，请先选择一个应用。";
       }
       if (statusChip) {
-        statusChip.textContent = hasRunningTask ? "任务运行中" : hasCurrentApp ? `已加载 ${modules.state.getAppInputCount(state.currentApp)} 个输入项` : "等待选择应用";
+        statusChip.textContent = hasRunningTask ? `运行中 ${runningTasks.length}` : hasCurrentApp ? `已加载 ${modules.state.getAppInputCount(state.currentApp)} 个输入项` : "等待选择应用";
+      }
+      if (runningTaskList) {
+        runningTaskList.innerHTML = hasRunningTask ? runningTasks.map(
+          (task) => `
+                <div class="running-task-item">
+                  <div class="running-task-main">
+                    <div class="running-task-title">${modules.runtime.escapeHtml(task.appName || "未命名任务")}</div>
+                    <div class="running-task-meta">Task ID: ${modules.runtime.escapeHtml(task.taskId)} | 状态：${modules.runtime.escapeHtml(task.status || "running")}</div>
+                  </div>
+                  <button class="mini-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(task.taskId)}">取消</button>
+                </div>
+              `
+        ).join("") : '<div class="running-task-empty">当前没有进行中的任务。</div>';
       }
     }
     function renderField(input) {
@@ -873,16 +870,40 @@ ${text}` : text;
       state.lastRunPayload = payload;
       return payload;
     }
-    function setRunningTask(taskId, appName, status = "running") {
-      modules.state.state.runningTask = {
-        taskId: String(taskId || ""),
-        appName: String(appName || ""),
-        status: String(status || "running")
+    function syncPrimaryRunningTask() {
+      const tasks = Array.isArray(modules.state.state.runningTasks) ? modules.state.state.runningTasks : [];
+      const firstTask = tasks[0] || null;
+      modules.state.state.runningTask = firstTask ? { taskId: String(firstTask.taskId || ""), appName: String(firstTask.appName || ""), status: String(firstTask.status || "running") } : { taskId: "", appName: "", status: "idle" };
+    }
+    function upsertRunningTask(taskId, appName, status = "running") {
+      const state = modules.state.state;
+      const normalizedTaskId = String(taskId || "").trim();
+      if (!normalizedTaskId) return;
+      const nextTask = {
+        taskId: normalizedTaskId,
+        appName: String(appName || "").trim(),
+        status: String(status || "running").trim() || "running"
       };
+      const list = Array.isArray(state.runningTasks) ? state.runningTasks.slice() : [];
+      const index = list.findIndex((item) => String(item.taskId || "") === normalizedTaskId);
+      if (index >= 0) list[index] = { ...list[index], ...nextTask };
+      else list.unshift(nextTask);
+      state.runningTasks = list;
+      syncPrimaryRunningTask();
+      updateRunButtonState();
+    }
+    function removeRunningTask(taskId = "") {
+      const state = modules.state.state;
+      const normalizedTaskId = String(taskId || "").trim();
+      state.runningTasks = (Array.isArray(state.runningTasks) ? state.runningTasks : []).filter(
+        (item) => String(item.taskId || "") !== normalizedTaskId
+      );
+      syncPrimaryRunningTask();
       updateRunButtonState();
     }
     function clearRunningTask() {
-      modules.state.state.runningTask = { taskId: "", appName: "", status: "idle" };
+      modules.state.state.runningTasks = [];
+      syncPrimaryRunningTask();
       updateRunButtonState();
     }
     function clearLastResult() {
@@ -1077,10 +1098,13 @@ ${text}` : text;
       }
       if (runButton) {
         runButton.addEventListener("click", async () => {
+          let submittedTaskId = "";
+          let submittedAppName = "";
           try {
             validateRunPayload();
             clearLastResult();
             const payload = buildRunPayload();
+            submittedAppName = payload.appName;
             const sourceDocument = await captureSourceDocumentInfo();
             const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
             if (!modules.runtime.isPluginRuntime()) {
@@ -1094,14 +1118,15 @@ ${text}` : text;
               timeoutMs: Math.max(1e4, Number(payload.settings.timeout || 180) * 1e3 + 5e3)
             });
             modules.ui.logToWorkspace(`任务已提交：${submitResult.taskId}`, "success");
-            setRunningTask(submitResult.taskId, payload.appName, "submitted");
+            submittedTaskId = String(submitResult.taskId || "");
+            upsertRunningTask(submitResult.taskId, payload.appName, "submitted");
             if (taskStatusSummary) taskStatusSummary.textContent = `正在轮询任务结果：${submitResult.taskId}`;
             const pollResult = await modules.runtime.callHost(
               "runninghub.pollTask",
               [{ apiKey: payload.apiKey, taskId: submitResult.taskId, settings: payload.settings }],
               { timeoutMs: Math.max(15e3, Number(payload.settings.timeout || 180) * 1e3 + 15e3) }
             );
-            clearRunningTask();
+            removeRunningTask(submitResult.taskId);
             setLastResult({
               appName: payload.appName,
               sourceDocument,
@@ -1115,16 +1140,17 @@ ${text}` : text;
               taskStatusSummary.textContent = `任务已完成并自动贴回 Photoshop：${payload.appName} -> ${placedDocumentId}`;
             }
           } catch (error) {
-            clearRunningTask();
+            if (submittedTaskId) removeRunningTask(submittedTaskId);
             modules.ui.logToWorkspace(error.message, "warn");
             const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
-            if (taskStatusSummary) taskStatusSummary.textContent = `任务失败：${error.message}`;
+            if (taskStatusSummary) taskStatusSummary.textContent = `任务失败：${submittedAppName || "当前任务"}，${error.message}`;
           }
         });
       }
       if (cancelButton) {
         cancelButton.addEventListener("click", async () => {
-          const runningTask = modules.state.state.runningTask;
+          const runningTasks = Array.isArray(modules.state.state.runningTasks) ? modules.state.state.runningTasks : [];
+          const runningTask = runningTasks[0] || null;
           const apiKey = modules.state.state.settings.apiKey;
           if (!runningTask || !runningTask.taskId) {
             modules.ui.logToWorkspace("当前没有可取消的任务。", "info");
@@ -1133,7 +1159,7 @@ ${text}` : text;
           try {
             await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId: runningTask.taskId }], { timeoutMs: 2e4 });
             modules.ui.logToWorkspace(`任务已取消：${runningTask.taskId}`, "warn");
-            clearRunningTask();
+            removeRunningTask(runningTask.taskId);
             const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
             if (taskStatusSummary) taskStatusSummary.textContent = `任务已取消：${runningTask.taskId}`;
           } catch (error) {
@@ -1141,6 +1167,44 @@ ${text}` : text;
           }
         });
       }
+      document.addEventListener("click", async (event) => {
+        const target = event.target && event.target.closest('[data-action="cancel-running-task"][data-task-id], [data-action="capture-field-image"][data-form-key]');
+        if (!target) return;
+        const action = target.getAttribute("data-action");
+        if (action === "capture-field-image") {
+          const key = target.getAttribute("data-form-key");
+          if (!key) return;
+          const button = target.matches("button") ? target : target.querySelector('[data-action="capture-field-image"][data-form-key]');
+          if (button) button.disabled = true;
+          try {
+            const asset = await captureAndAssignToInput(key);
+            modules.ui.logToWorkspace(
+              `已捕获并写入字段：${key} (${asset.capturedFromSelection ? "选区" : "文档"})`,
+              "success"
+            );
+          } catch (error) {
+            modules.ui.logToWorkspace(`图像捕获失败：${error.message}`, "error");
+          } finally {
+            if (button) button.disabled = false;
+          }
+          return;
+        }
+        if (action === "cancel-running-task") {
+          const taskId = String(target.getAttribute("data-task-id") || "").trim();
+          const apiKey = modules.state.state.settings.apiKey;
+          if (!taskId) return;
+          target.disabled = true;
+          try {
+            await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId }], { timeoutMs: 2e4 });
+            removeRunningTask(taskId);
+            modules.ui.logToWorkspace(`任务已取消：${taskId}`, "warn");
+          } catch (error) {
+            modules.ui.logToWorkspace(`取消任务失败：${error.message}`, "error");
+          } finally {
+            target.disabled = false;
+          }
+        }
+      });
     }
     modules.workspace = {
       setModalOpen,

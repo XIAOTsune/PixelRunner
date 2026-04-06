@@ -595,8 +595,11 @@ var PixelRunnerHostBundle = (() => {
     const docInfo = getDocumentInfo(doc);
     const maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(options.maxDimension) || 1536)));
     const quality = Math.max(20, Math.min(100, Math.floor(Number(options.quality) || 82)));
-    const width = Math.max(1, Number(docInfo.width) || 1);
-    const height = Math.max(1, Number(docInfo.height) || 1);
+    const selectionBounds = normalizeBounds(docInfo.selectionBounds);
+    const sourceWidth = selectionBounds ? Math.max(1, Number(selectionBounds.right) - Number(selectionBounds.left)) : Math.max(1, Number(docInfo.width) || 1);
+    const sourceHeight = selectionBounds ? Math.max(1, Number(selectionBounds.bottom) - Number(selectionBounds.top)) : Math.max(1, Number(docInfo.height) || 1);
+    const width = sourceWidth;
+    const height = sourceHeight;
     const ratio = Math.min(1, maxDimension / Math.max(width, height));
     const targetWidth = Math.max(1, Math.round(width * ratio));
     const targetHeight = Math.max(1, Math.round(height * ratio));
@@ -604,6 +607,7 @@ var PixelRunnerHostBundle = (() => {
     try {
       pixels = await imaging.getPixels({
         documentID: Number(doc.id),
+        sourceBounds: selectionBounds || void 0,
         targetSize: { width: targetWidth, height: targetHeight },
         componentSize: 8,
         applyAlpha: true
@@ -621,6 +625,8 @@ var PixelRunnerHostBundle = (() => {
         source: "photoshop-document",
         document: docInfo,
         documentId: docInfo.documentId,
+        selectionBounds,
+        capturedFromSelection: Boolean(selectionBounds),
         width: targetWidth,
         height: targetHeight,
         originalWidth: width,

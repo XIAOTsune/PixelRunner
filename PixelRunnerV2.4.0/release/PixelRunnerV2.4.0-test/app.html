@@ -70,8 +70,8 @@
 
             <div id="imageInputContainer" class="input-zone input-zone-image">
               <div class="empty-panel">
-                <h4>图像输入区</h4>
-                <p>这里统一管理 Photoshop 图像捕获、预览、压缩参数和字段绑定。</p>
+                <h4>图像输入</h4>
+                <p>图像字段支持直接从 Photoshop 当前选区捕获；没有选区时回落到当前文档。</p>
               </div>
             </div>
 
@@ -91,8 +91,11 @@
               </div>
             </div>
             <div class="action-row workspace-run-actions">
-              <button id="btnCancelJob" class="secondary-btn workspace-cancel-btn" type="button" disabled>取消任务</button>
+              <button id="btnCancelJob" class="secondary-btn workspace-cancel-btn" type="button" disabled>取消最近任务</button>
               <button id="btnRun" class="primary-btn workspace-run-btn" type="button" disabled>开始运行</button>
+            </div>
+            <div id="runningTaskList" class="running-task-list">
+              <div class="running-task-empty">当前没有进行中的任务。</div>
             </div>
             <div id="taskStatusSummary" class="summary-strip">后台任务：暂时空闲</div>
           </section>
