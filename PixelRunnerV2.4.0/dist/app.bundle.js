@@ -459,7 +459,9 @@ ${text}` : text;
       return modules.state.isPromptLikeInput(input) && !isImageInput(input);
     }
     function hasImageAsset(asset) {
-      return Boolean(asset && typeof asset === "object" && ((asset.dataUrl || "").trim() || (asset.base64 || "").trim() || (asset.url || "").trim()));
+      return Boolean(
+        asset && typeof asset === "object" && ((asset.dataUrl || "").trim() || (asset.base64 || "").trim() || (asset.url || "").trim())
+      );
     }
     function findImageInputs(app) {
       return (Array.isArray(app && app.inputs) ? app.inputs : []).filter(isImageInput);
@@ -470,7 +472,7 @@ ${text}` : text;
       return `PixelRunner - ${appName}`;
     }
     function formatSelectionLabel(selectionBounds) {
-      if (!selectionBounds) return "full document";
+      if (!selectionBounds) return "整张文档";
       const width = Math.max(0, Number(selectionBounds.right) - Number(selectionBounds.left));
       const height = Math.max(0, Number(selectionBounds.bottom) - Number(selectionBounds.top));
       return `${Math.round(width)}x${Math.round(height)}`;
@@ -486,9 +488,16 @@ ${text}` : text;
       const state = modules.state.state;
       const maxDimensionInput = modules.runtime.getById("imageCaptureMaxDimension");
       const qualityInput = modules.runtime.getById("imageCaptureQuality");
-      if (maxDimensionInput) state.imageCapture.maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(maxDimensionInput.value) || 1536)));
-      if (qualityInput) state.imageCapture.quality = Math.max(20, Math.min(100, Math.floor(Number(qualityInput.value) || 82)));
-      return { maxDimension: state.imageCapture.maxDimension, quality: state.imageCapture.quality };
+      if (maxDimensionInput) {
+        state.imageCapture.maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(maxDimensionInput.value) || 1536)));
+      }
+      if (qualityInput) {
+        state.imageCapture.quality = Math.max(20, Math.min(100, Math.floor(Number(qualityInput.value) || 82)));
+      }
+      return {
+        maxDimension: state.imageCapture.maxDimension,
+        quality: state.imageCapture.quality
+      };
     }
     function syncImageCaptureControls() {
       const state = modules.state.state;
@@ -542,9 +551,16 @@ ${text}` : text;
     }
     function pushCapturedAsset(asset) {
       const state = modules.state.state;
-      const nextAsset = cloneCaptureAsset({ ...asset, assetId: asset && asset.assetId ? asset.assetId : createCaptureAssetId(), capturedAt: Number(asset && asset.capturedAt) > 0 ? Number(asset.capturedAt) : Date.now() });
+      const nextAsset = cloneCaptureAsset({
+        ...asset,
+        assetId: asset && asset.assetId ? asset.assetId : createCaptureAssetId(),
+        capturedAt: Number(asset && asset.capturedAt) > 0 ? Number(asset.capturedAt) : Date.now()
+      });
       if (!nextAsset) return null;
-      state.imageCapture.assets = [nextAsset, ...getCaptureAssets().filter((item) => String(item.assetId || "") !== String(nextAsset.assetId || ""))].slice(0, 12);
+      state.imageCapture.assets = [
+        nextAsset,
+        ...getCaptureAssets().filter((item) => String(item.assetId || "") !== String(nextAsset.assetId || ""))
+      ].slice(0, 12);
       state.imageCapture.selectedAssetId = String(nextAsset.assetId || "");
       state.imageCapture.asset = nextAsset;
       return nextAsset;
@@ -591,7 +607,7 @@ ${text}` : text;
     }
     function renderCaptureSummary(asset) {
       if (!hasImageAsset(asset)) {
-        return `<div class="empty-panel"><h4>图像输入区</h4><p>点击“捕获当前文档”后，界面会显示预览，并可把捕获结果绑定到下方图像字段。</p></div>`;
+        return '<div class="empty-panel"><h4>图像输入区</h4><p>点击“捕获当前文档”后，这里会显示预览，并可把捕获结果绑定到下方图像字段。</p></div>';
       }
       const documentText = asset.document ? formatDocumentLabel(asset.document) : `文档 #${asset.documentId || "-"}`;
       const capturedText = asset.capturedAt ? new Date(asset.capturedAt).toLocaleTimeString() : "-";
@@ -602,8 +618,8 @@ ${text}` : text;
           <span class="image-meta-pill">${modules.runtime.escapeHtml(documentText)}</span>
           <span class="image-meta-pill">${modules.runtime.escapeHtml(String(asset.width || "-"))}x${modules.runtime.escapeHtml(String(asset.height || "-"))}</span>
           <span class="image-meta-pill">JPEG ${modules.runtime.escapeHtml(String(asset.quality || "-"))}</span>
-          <span class="image-meta-pill">Max ${modules.runtime.escapeHtml(String(asset.maxDimension || "-"))}</span>
-          <span class="image-meta-pill">#${modules.runtime.escapeHtml(String(asset.assetId || "").slice(-6) || "-")}</span>
+          <span class="image-meta-pill">最大边长 ${modules.runtime.escapeHtml(String(asset.maxDimension || "-"))}</span>
+          <span class="image-meta-pill">来源 #${modules.runtime.escapeHtml(String(asset.assetId || "").slice(-6) || "-")}</span>
           <span class="image-meta-pill">${modules.runtime.escapeHtml(capturedText)}</span>
         </div>
       </div>
@@ -614,22 +630,30 @@ ${text}` : text;
       return `
       <div class="image-capture-shell">
         <div class="card-head">
-          <div><h4>已捕获图像</h4><p>可切换当前选中图像，再分别绑定到不同图片字段。</p></div>
-          <div class="inline-actions"><button id="btnClearAllCapturedImages" class="mini-btn" type="button">清空全部</button></div>
+          <div>
+            <h4>已捕获图像</h4>
+            <p>可切换当前选中图像，再分别绑定到不同图像字段。</p>
+          </div>
+          <div class="inline-actions">
+            <button id="btnClearAllCapturedImages" class="mini-btn" type="button">清空全部</button>
+          </div>
         </div>
         <div class="tool-list">
           ${assets.map((asset) => {
         const documentText = asset.document ? formatDocumentLabel(asset.document) : `文档 #${asset.documentId || "-"}`;
         const isSelected = String(asset.assetId || "") === String(selectedAssetId || "");
         return `
-              <article class="tool-item">
-                <div><h4>${modules.runtime.escapeHtml(documentText)}</h4><p>${modules.runtime.escapeHtml(`${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"} / #${String(asset.assetId || "").slice(-6)}`)}</p></div>
-                <div class="inline-actions">
-                  <button class="mini-btn" type="button" data-action="select-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}" ${isSelected ? "disabled" : ""}>${isSelected ? "当前选中" : "选中"}</button>
-                  <button class="mini-btn" type="button" data-action="remove-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}">移除</button>
-                </div>
-              </article>
-            `;
+                <article class="tool-item">
+                  <div>
+                    <h4>${modules.runtime.escapeHtml(documentText)}</h4>
+                    <p>${modules.runtime.escapeHtml(`${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"} / #${String(asset.assetId || "").slice(-6)}`)}</p>
+                  </div>
+                  <div class="inline-actions">
+                    <button class="mini-btn" type="button" data-action="select-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}" ${isSelected ? "disabled" : ""}>${isSelected ? "当前选中" : "选中"}</button>
+                    <button class="mini-btn" type="button" data-action="remove-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}">移除</button>
+                  </div>
+                </article>
+              `;
       }).join("")}
         </div>
       </div>
@@ -644,25 +668,34 @@ ${text}` : text;
       const selectedAsset = getSelectedCaptureAsset();
       const captureAssets = getCaptureAssets();
       if (!state.currentApp) {
-        imageInputContainer.innerHTML = `<div class="empty-panel"><h4>图像输入区</h4><p>等待应用选择后，再接入图像捕获和图像输入映射。</p></div>`;
+        imageInputContainer.innerHTML = '<div class="empty-panel"><h4>图像输入区</h4><p>等待应用选择后，再接入图像捕获和图像字段映射。</p></div>';
         return;
       }
       if (imageInputs.length === 0) {
-        imageInputContainer.innerHTML = `<div class="empty-panel"><h4>图像输入区</h4><p>当前应用没有图像字段，后续如果输入结构里出现 image/file 类型，会在这里统一管理捕获与预处理。</p></div>`;
+        imageInputContainer.innerHTML = '<div class="empty-panel"><h4>图像输入区</h4><p>当前应用没有图像字段。后续如果输入结构里出现 image/file 类型，会在这里统一管理捕获与预处理。</p></div>';
         return;
       }
       imageInputContainer.innerHTML = `
       <div class="image-capture-shell">
         <div class="card-head">
-          <div><h4>Photoshop 图像捕获</h4><p>宿主负责抓取当前文档，界面层负责预览、压缩参数和字段绑定。</p></div>
+          <div>
+            <h4>Photoshop 图像捕获</h4>
+            <p>宿主负责抓取当前文档，界面负责预览、压缩参数和字段绑定。</p>
+          </div>
           <div class="inline-actions">
             <button id="btnCaptureDocumentImage" class="mini-btn" type="button">捕获当前文档</button>
             <button id="btnClearCapturedImage" class="mini-btn" type="button" ${hasImageAsset(selectedAsset) ? "" : "disabled"}>移除当前</button>
           </div>
         </div>
         <div class="dual-grid">
-          <label class="field"><span class="field-label">最大边长</span><input id="imageCaptureMaxDimension" class="field-input" type="number" min="256" max="4096" step="128" /></label>
-          <label class="field"><span class="field-label">JPEG 质量</span><input id="imageCaptureQuality" class="field-input" type="number" min="20" max="100" step="1" /></label>
+          <label class="field">
+            <span class="field-label">最大边长</span>
+            <input id="imageCaptureMaxDimension" class="field-input" type="number" min="256" max="4096" step="128" />
+          </label>
+          <label class="field">
+            <span class="field-label">JPEG 质量</span>
+            <input id="imageCaptureQuality" class="field-input" type="number" min="20" max="100" step="1" />
+          </label>
         </div>
         ${renderCaptureSummary(selectedAsset)}
         ${renderCaptureLibrary(captureAssets, state.imageCapture.selectedAssetId)}
@@ -686,7 +719,7 @@ ${text}` : text;
         <span class="field-label">${label}${requiredMark}</span>
         <div class="input-zone">
           <div class="image-binding-card">
-            ${hasAssignedAsset ? `<div class="image-preview-frame"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>` : `<div class="empty-panel"><h4>等待图像绑定</h4><p>先在上方捕获当前文档，再绑定到这个字段。</p></div>`}
+            ${hasAssignedAsset ? `<div class="image-preview-frame"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>` : '<div class="empty-panel"><h4>等待图像绑定</h4><p>先在上方捕获当前文档，再绑定到这个字段。</p></div>'}
             <div class="image-meta-grid">
               <span class="image-meta-pill">${runtime.escapeHtml(meta)}</span>
               <span class="image-meta-pill">字段：${runtime.escapeHtml(key)}</span>
@@ -708,6 +741,22 @@ ${text}` : text;
       const tail = modules.templates.getTailPreview(text, 24);
       return `<div class="prompt-length-hint ${length >= modules.templates.PROMPT_WARN_CHARS ? "is-warning" : ""}">长度 ${modules.runtime.escapeHtml(String(length))} 字符 | 末尾预览 ${modules.runtime.escapeHtml(tail)}</div>`;
     }
+    function renderAppMeta(app) {
+      const runtime = modules.runtime;
+      if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
+      const description = String(app.description || "").trim();
+      return `
+      <div class="workspace-app-summary">
+        <div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div>
+        <div class="workspace-app-stats">
+          <span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span>
+          <span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>
+          <span>图像项：${runtime.escapeHtml(String(findImageInputs(app).length))}</span>
+        </div>
+        ${description ? `<div class="workspace-app-desc">${runtime.escapeHtml(description)}</div>` : ""}
+      </div>
+    `;
+    }
     function updateRunButtonState() {
       const state = modules.state.state;
       const runButton = modules.runtime.getById("btnRun");
@@ -718,14 +767,14 @@ ${text}` : text;
       const hasRunningTask = Boolean(state.runningTask && state.runningTask.taskId);
       if (runButton) {
         runButton.disabled = !hasCurrentApp || hasRunningTask;
-        runButton.textContent = hasRunningTask ? "任务进行中..." : hasCurrentApp ? `运行 ${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
+        runButton.textContent = hasRunningTask ? "任务进行中..." : hasCurrentApp ? `运行新任务：${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
       }
       if (cancelButton) {
         cancelButton.disabled = !hasRunningTask;
         cancelButton.textContent = "取消任务";
       }
       if (taskStatusSummary) {
-        taskStatusSummary.textContent = hasRunningTask ? `任务进行中：${state.runningTask.appName}，Task ID: ${state.runningTask.taskId}` : hasCurrentApp ? `当前应用：${modules.state.getAppDisplayName(state.currentApp)}，动态表单已接入，可以直接提交任务。` : "后台任务：暂时空闲，请先选择一个应用。";
+        taskStatusSummary.textContent = hasRunningTask ? `任务进行中：${state.runningTask.appName}，Task ID: ${state.runningTask.taskId}` : hasCurrentApp ? `已准备好运行 ${modules.state.getAppDisplayName(state.currentApp)}，可直接提交任务。` : "后台任务：暂时空闲，请先选择一个应用。";
       }
       if (statusChip) {
         statusChip.textContent = hasRunningTask ? "任务运行中" : hasCurrentApp ? `已加载 ${modules.state.getAppInputCount(state.currentApp)} 个输入项` : "等待选择应用";
@@ -742,7 +791,16 @@ ${text}` : text;
       if (isImageInput(input)) return renderImageField(input);
       if (input.type === "textarea" || input.type === "multiline" || isPromptField(input)) {
         const currentValue = String(value ?? "");
-        return `<label class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}"><span class="field-label"><span>${label}${requiredMark}</span>${isPromptField(input) ? `<button class="mini-btn template-trigger-btn" type="button" data-action="open-template-picker" data-form-key="${escapedKey}">模板</button>` : ""}</span><textarea class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(String(value ?? ""))}</textarea>${isPromptField(input) ? renderPromptHint(currentValue) : ""}</label>`;
+        return `
+        <label class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
+          <span class="field-label">
+            <span>${label}${requiredMark}</span>
+            ${isPromptField(input) ? `<button class="mini-btn template-trigger-btn" type="button" data-action="open-template-picker" data-form-key="${escapedKey}">预设</button>` : ""}
+          </span>
+          <textarea class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
+          ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
+        </label>
+      `;
       }
       if (input.type === "number" || input.type === "int" || input.type === "float") {
         return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="number" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
@@ -766,19 +824,14 @@ ${text}` : text;
       const appPickerMeta = runtime.getById("appPickerMeta");
       const dynamicInputContainer = runtime.getById("dynamicInputContainer");
       if (appPickerMeta) {
-        if (!state.currentApp) {
-          appPickerMeta.innerHTML = "暂未选择应用";
-        } else {
-          const description = String(state.currentApp.description || "").trim();
-          appPickerMeta.innerHTML = `<div><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</strong></div><div>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(state.currentApp))}</div><div>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(state.currentApp)))}</div><div>图像项：${runtime.escapeHtml(String(findImageInputs(state.currentApp).length))}</div>${description ? `<div>说明：${runtime.escapeHtml(description)}</div>` : ""}`;
-        }
+        appPickerMeta.innerHTML = renderAppMeta(state.currentApp);
       }
       renderImageInputArea();
       if (dynamicInputContainer) {
         if (!state.currentApp) {
-          dynamicInputContainer.innerHTML = `<div class="empty-panel"><h4>动态表单区</h4><p>请先选择一个已保存应用，后续这里会根据输入结构动态渲染表单。</p></div>`;
+          dynamicInputContainer.innerHTML = '<div class="empty-panel"><h4>动态表单区</h4><p>请先选择一个已保存应用，后续这里会根据输入结构动态渲染表单。</p></div>';
         } else if (!Array.isArray(state.currentApp.inputs) || state.currentApp.inputs.length === 0) {
-          dynamicInputContainer.innerHTML = `<div class="empty-panel"><h4>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</h4><p>当前应用还没有输入结构。你可以先去设置页编辑应用，手动填写输入 JSON。</p></div>`;
+          dynamicInputContainer.innerHTML = `<div class="empty-panel"><h4>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</h4><p>当前应用还没有输入结构。你可以先去设置页编辑应用，手动补齐输入 JSON。</p></div>`;
         } else {
           dynamicInputContainer.innerHTML = `<div class="dynamic-form">${state.currentApp.inputs.map(renderField).join("")}</div>`;
         }
@@ -807,7 +860,12 @@ ${text}` : text;
       const payload = {
         appId: state.currentApp ? state.currentApp.appId : "",
         appName: state.currentApp ? state.currentApp.name : "",
-        app: state.currentApp ? { id: state.currentApp.id, appId: state.currentApp.appId, name: state.currentApp.name, inputs: Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [] } : null,
+        app: state.currentApp ? {
+          id: state.currentApp.id,
+          appId: state.currentApp.appId,
+          name: state.currentApp.name,
+          inputs: Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : []
+        } : null,
         apiKey: state.settings.apiKey || "",
         inputs: { ...state.formValues },
         settings: { pollInterval: state.settings.pollInterval, timeout: state.settings.timeout }
@@ -816,7 +874,11 @@ ${text}` : text;
       return payload;
     }
     function setRunningTask(taskId, appName, status = "running") {
-      modules.state.state.runningTask = { taskId: String(taskId || ""), appName: String(appName || ""), status: String(status || "running") };
+      modules.state.state.runningTask = {
+        taskId: String(taskId || ""),
+        appName: String(appName || ""),
+        status: String(status || "running")
+      };
       updateRunButtonState();
     }
     function clearRunningTask() {
@@ -1028,13 +1090,24 @@ ${text}` : text;
             }
             if (!payload.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
             if (taskStatusSummary) taskStatusSummary.textContent = `正在提交任务：${payload.appName}`;
-            const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], { timeoutMs: Math.max(1e4, Number(payload.settings.timeout || 180) * 1e3 + 5e3) });
+            const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {
+              timeoutMs: Math.max(1e4, Number(payload.settings.timeout || 180) * 1e3 + 5e3)
+            });
             modules.ui.logToWorkspace(`任务已提交：${submitResult.taskId}`, "success");
             setRunningTask(submitResult.taskId, payload.appName, "submitted");
             if (taskStatusSummary) taskStatusSummary.textContent = `正在轮询任务结果：${submitResult.taskId}`;
-            const pollResult = await modules.runtime.callHost("runninghub.pollTask", [{ apiKey: payload.apiKey, taskId: submitResult.taskId, settings: payload.settings }], { timeoutMs: Math.max(15e3, Number(payload.settings.timeout || 180) * 1e3 + 15e3) });
+            const pollResult = await modules.runtime.callHost(
+              "runninghub.pollTask",
+              [{ apiKey: payload.apiKey, taskId: submitResult.taskId, settings: payload.settings }],
+              { timeoutMs: Math.max(15e3, Number(payload.settings.timeout || 180) * 1e3 + 15e3) }
+            );
             clearRunningTask();
-            setLastResult({ appName: payload.appName, sourceDocument, outputUrl: pollResult.outputUrl, taskId: submitResult.taskId });
+            setLastResult({
+              appName: payload.appName,
+              sourceDocument,
+              outputUrl: pollResult.outputUrl,
+              taskId: submitResult.taskId
+            });
             modules.ui.logToWorkspace(`任务已完成，结果地址：${pollResult.outputUrl}`, "success");
             const placementResponse = await autoPlaceLastResult();
             if (taskStatusSummary) {

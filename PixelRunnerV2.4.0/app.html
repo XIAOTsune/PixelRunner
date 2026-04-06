@@ -24,7 +24,7 @@
 
     <main id="appMain" class="panel-main">
       <section id="viewWorkspace" class="panel-view active">
-        <div class="panel-header-strip">
+        <div class="panel-header-strip workspace-header-strip">
           <div class="panel-header-main">
             <div class="panel-heading-group">
               <p class="panel-eyebrow">任务工作台</p>
@@ -47,26 +47,25 @@
           </div>
         </div>
 
-        <div class="workspace-grid">
-          <section class="surface-card">
-            <div class="card-head">
-              <div>
-                <h3 class="card-title">选择应用</h3>
-              </div>
-              <div class="inline-actions">
+        <div class="workspace-grid workspace-grid-classic">
+          <section class="surface-card workspace-app-card">
+            <div class="workspace-app-bar">
+              <div class="workspace-app-label">选择应用</div>
+              <div id="appPickerMeta" class="selection-meta workspace-app-meta">暂未选择应用</div>
+              <div class="inline-actions workspace-app-actions">
                 <button id="btnOpenAppPicker" class="mini-btn" type="button">切换</button>
                 <button id="btnRefreshWorkspaceApps" class="mini-btn" type="button">刷新</button>
               </div>
             </div>
-            <div id="appPickerMeta" class="selection-meta">暂未选择应用</div>
           </section>
 
-          <section id="workspaceInputArea" class="surface-card">
-            <div class="card-head">
-              <div>
-                <h3 class="card-title">准备输入参数</h3>
+          <section id="workspaceInputArea" class="surface-card workspace-input-card">
+            <div class="workspace-section-head">
+              <div class="workspace-section-title-group">
+                <div class="workspace-section-kicker">输入参数</div>
+                <h3 class="card-title workspace-section-title">准备输入参数</h3>
               </div>
-              <span id="workspaceInputStatusChip" class="status-chip">等待选择应用</span>
+              <span id="workspaceInputStatusChip" class="status-chip workspace-section-chip">等待选择应用</span>
             </div>
 
             <div id="imageInputContainer" class="input-zone input-zone-image">
@@ -84,15 +83,16 @@
             </div>
           </section>
 
-          <section class="surface-card action-card">
-            <div class="card-head">
-              <div>
-                <h3 class="card-title">提交任务</h3>
+          <section class="surface-card workspace-run-card">
+            <div class="workspace-section-head workspace-run-head">
+              <div class="workspace-section-title-group">
+                <div class="workspace-section-kicker">执行控制</div>
+                <h3 class="card-title workspace-section-title">提交任务</h3>
               </div>
             </div>
-            <div class="action-row">
-              <button id="btnCancelJob" class="secondary-btn" type="button" disabled>取消任务</button>
-              <button id="btnRun" class="primary-btn" type="button" disabled>开始运行</button>
+            <div class="action-row workspace-run-actions">
+              <button id="btnCancelJob" class="secondary-btn workspace-cancel-btn" type="button" disabled>取消任务</button>
+              <button id="btnRun" class="primary-btn workspace-run-btn" type="button" disabled>开始运行</button>
             </div>
             <div id="taskStatusSummary" class="summary-strip">后台任务：暂时空闲</div>
           </section>

@@ -485,6 +485,10 @@ button {
   gap: 6px;
 }
 
+.workspace-grid-classic {
+  gap: 12px;
+}
+
 .surface-card {
   display: flex;
   flex-direction: column;
@@ -566,6 +570,230 @@ button {
     box-shadow 170ms var(--press-ease),
     border-color 170ms ease,
     background 170ms ease;
+}
+
+.workspace-header-strip {
+  margin-bottom: 4px;
+}
+
+.workspace-app-card,
+.workspace-input-card,
+.workspace-run-card {
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(92, 117, 140, 0.58);
+  background:
+    linear-gradient(180deg, rgba(33, 46, 60, 0.96) 0%, rgba(28, 39, 51, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(25, 36, 48, 0.5);
+}
+
+.workspace-app-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.workspace-app-label {
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.workspace-app-meta {
+  min-height: 94px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(42, 57, 72, 0.94), rgba(37, 51, 65, 0.98));
+  border: 1px solid rgba(84, 108, 130, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  color: #d7e3ee;
+  font-size: 12px;
+}
+
+.workspace-app-meta strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.workspace-app-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-app-placeholder {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workspace-app-name {
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.workspace-app-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #c5d5e3;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.workspace-app-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-app-actions {
+  align-self: stretch;
+  align-items: center;
+}
+
+.workspace-app-actions .mini-btn {
+  min-width: 96px;
+  min-height: 48px;
+  border-radius: 18px;
+  font-size: 12px;
+}
+
+.workspace-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-section-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workspace-section-kicker {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.workspace-section-title {
+  font-size: 14px;
+}
+
+.workspace-section-chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.workspace-input-card .input-zone {
+  border-radius: 18px;
+}
+
+.workspace-input-card #imageInputContainer,
+.workspace-input-card #dynamicInputContainer {
+  overflow: hidden;
+}
+
+.workspace-input-card .empty-panel,
+.workspace-input-card .dynamic-form,
+.workspace-input-card .image-capture-shell,
+.workspace-input-card .image-binding-card {
+  padding: 14px 16px;
+}
+
+.workspace-input-card .field-input {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 14px;
+}
+
+.workspace-input-card .field-textarea {
+  min-height: 132px;
+}
+
+.workspace-input-card .field-label {
+  font-size: 12px;
+}
+
+.workspace-input-card .empty-panel h4,
+.workspace-input-card .tool-item h4 {
+  font-size: 14px;
+}
+
+.workspace-input-card .empty-panel p,
+.workspace-input-card .tool-item p,
+.workspace-input-card .summary-strip,
+.workspace-input-card .selection-meta,
+.workspace-input-card .prompt-length-hint {
+  font-size: 12px;
+}
+
+.workspace-input-card .image-preview-frame img {
+  max-height: 240px;
+}
+
+.workspace-input-card .image-meta-pill {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.workspace-input-card .mini-btn,
+.workspace-input-card .secondary-btn {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 16px;
+  font-size: 12px;
+}
+
+.workspace-run-card {
+  gap: 12px;
+}
+
+.workspace-run-head {
+  align-items: center;
+}
+
+.workspace-run-actions {
+  align-items: stretch;
+  gap: 10px;
+}
+
+.workspace-cancel-btn {
+  flex: 0 0 168px;
+  min-height: 46px;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.workspace-run-btn {
+  min-height: 46px;
+  border-radius: 16px;
+  font-size: 14px;
+}
+
+.workspace-run-card .summary-strip {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
 }
 
 .input-zone:hover {
@@ -1304,6 +1532,31 @@ button {
 @media (max-width: 640px) {
   body {
     padding: 4px;
+  }
+
+  .workspace-app-bar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .workspace-app-actions {
+    width: 100%;
+  }
+
+  .workspace-app-actions .mini-btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .workspace-section-head,
+  .workspace-run-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-cancel-btn {
+    flex-basis: auto;
+    width: 100%;
   }
 
   #viewTools .tool-list {
