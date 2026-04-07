@@ -118,6 +118,45 @@
           </div>
         </div>
 
+        <details class="surface-card tool-glow-card tool-glow-collapsible">
+          <summary class="tool-glow-summary">
+            <div class="tool-glow-summary-main">
+              <h3 class="card-title">辉光</h3>
+              <p class="subtle-note">默认折叠，按需展开使用。</p>
+            </div>
+            <span id="glowStrengthValue" class="status-chip">强度 35%</span>
+          </summary>
+          <div class="tool-glow-body">
+            <p class="subtle-note">优先压出高光区域，再叠加多层扩散，让辉光更像真实高光而不是整层发灰。</p>
+            <div class="glow-slider-stack">
+              <label class="field glow-slider-field">
+                <span class="field-label">强度</span>
+                <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="35" />
+              </label>
+              <label class="field glow-slider-field">
+                <span class="field-label">半径</span>
+                <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="18" />
+              </label>
+              <label class="field glow-slider-field">
+                <span class="field-label">阈值</span>
+                <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="58" />
+              </label>
+              <label class="field glow-slider-field">
+                <span class="field-label">淡化</span>
+                <input id="glowFadeInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="28" />
+              </label>
+              <label class="field glow-slider-field">
+                <span class="field-label">饱和度</span>
+                <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="0" />
+              </label>
+            </div>
+            <div class="glow-control-grid">
+              <button id="btnGlow" class="primary-btn glow-run-btn" type="button">执行辉光</button>
+            </div>
+            <div id="glowHint" class="summary-strip">将复制当前图层并生成新的辉光层，不会直接破坏原图层。</div>
+          </div>
+        </details>
+
         <div class="tool-group-grid">
           <section class="surface-card">
             <div class="card-head">

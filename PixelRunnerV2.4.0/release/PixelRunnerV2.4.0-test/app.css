@@ -981,6 +981,81 @@ button {
   padding-top: 2px;
 }
 
+.tool-glow-card {
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(98, 128, 152, 0.62);
+  background:
+    radial-gradient(circle at top right, rgba(159, 220, 255, 0.1), transparent 36%),
+    radial-gradient(circle at left center, rgba(255, 213, 106, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(31, 45, 59, 0.98) 0%, rgba(24, 34, 45, 0.99) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(25, 36, 48, 0.42);
+}
+
+.tool-glow-collapsible {
+  padding: 0;
+  overflow: hidden;
+}
+
+.tool-glow-summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.tool-glow-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-glow-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-glow-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(98, 128, 152, 0.36);
+}
+
+.glow-slider-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.glow-control-grid {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.glow-slider-field {
+  flex: 1 1 auto;
+}
+
+.glow-strength-slider {
+  min-height: 30px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.glow-run-btn {
+  width: 100%;
+  min-height: 38px;
+}
+
 #viewTools .tool-list {
   display: flex;
   flex-direction: column;
@@ -1797,6 +1872,7 @@ button {
 #btnSharpen:active,
 #btnHighPass:active,
 #btnContentAwareFill:active,
+#btnGlow:active,
 #btnStamp.is-pressed,
 #btnSelectAndMask.is-pressed,
 #btnObserver.is-pressed,
@@ -1804,8 +1880,22 @@ button {
 #btnGaussianBlur.is-pressed,
 #btnSharpen.is-pressed,
 #btnHighPass.is-pressed,
-#btnContentAwareFill.is-pressed {
+#btnContentAwareFill.is-pressed,
+#btnGlow.is-pressed {
   box-shadow: 0 2px 0 #35506a;
+}
+
+#btnGlow {
+  --btn-edge: #b98338;
+  background: linear-gradient(180deg, #ffd26c, #f4a84f);
+  color: #2b1f07;
+  border-color: #b98338;
+  box-shadow: 3px 4px 0 #b98338;
+}
+
+#btnGlow:hover {
+  border-color: #b98338;
+  box-shadow: 0 5px 0 #b98338;
 }
 
 #btnRun {
@@ -1837,6 +1927,7 @@ button {
 #btnSharpen,
 #btnHighPass,
 #btnContentAwareFill,
+#btnGlow,
 #btnDonate,
 #btnDonateTools,
 #btnDonateSettings,
@@ -1990,6 +2081,15 @@ button {
 
   #viewTools .tool-item {
     flex-basis: auto;
+    width: 100%;
+  }
+
+  .glow-control-grid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .glow-run-btn {
     width: 100%;
   }
 
