@@ -226,6 +226,7 @@
     let glowPreviewInFlight = false;
     let glowPreviewNeedsReplay = false;
     let glowPreviewOpen = false;
+    let glowLastPreviewSignature = "";
 
     const readGlowSlider = (input, fallback, min, max) => {
       if (!input) return fallback;
@@ -281,8 +282,17 @@
       }], { timeoutMs: 60000 });
     };
 
+    const getGlowStateSignature = () => {
+      const state = readGlowState();
+      return [state.strength, state.radius, state.threshold, state.fade, state.saturation].join("|");
+    };
+
     const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
       if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
+      const nextSignature = getGlowStateSignature();
+      if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && !glowPreviewNeedsReplay) {
+        return;
+      }
       if (glowPreviewInFlight) {
         glowPreviewNeedsReplay = true;
         return;
@@ -297,6 +307,7 @@
       try {
         const result = await callGlowHostAction(action);
         const message = result && result.message ? result.message : "辉光预览已更新。";
+        glowLastPreviewSignature = nextSignature;
         setGlowPreviewBadge("预览中", "success");
         setGlowStatus(message, "success");
       } catch (error) {
@@ -320,7 +331,7 @@
       glowPreviewTimer = window.setTimeout(() => {
         glowPreviewTimer = 0;
         void runGlowPreviewUpdate("glowPreviewUpdate");
-      }, 220);
+      }, 320);
     };
 
     const flushGlowPreviewUpdate = async () => {
@@ -345,6 +356,7 @@
 
     const openGlowModal = async () => {
       glowPreviewOpen = true;
+      glowLastPreviewSignature = "";
       modules.workspace.setModalOpen("glowModal", true);
       updateGlowLabels();
 
@@ -366,6 +378,7 @@
 
     const closeGlowModal = async (discardPreview = true) => {
       glowPreviewOpen = false;
+      glowLastPreviewSignature = "";
       if (glowPreviewTimer) {
         clearTimeout(glowPreviewTimer);
         glowPreviewTimer = 0;
