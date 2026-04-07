@@ -499,8 +499,8 @@ var PixelRunnerHostBundle = (() => {
   }
 
   // src/host/photoshop/service.js
-  var DEFAULT_UPLOAD_TARGET_BYTES = 1e7;
-  var DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 11e6;
+  var DEFAULT_UPLOAD_TARGET_BYTES = 9e6;
+  var DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 1e7;
   var DEFAULT_UPLOAD_QUALITY_STEPS = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
   function getBoundsSize(bounds) {
     return {
@@ -619,6 +619,29 @@ var PixelRunnerHostBundle = (() => {
     } catch (_) {
     }
   }
+  async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
+    const limitedEdge = Math.max(256, Math.min(4096, Math.floor(Number(maxEdge) || 0)));
+    if (!limitedEdge) return;
+    const width = Math.max(1, Number(docRef && docRef.width && (docRef.width._value ?? docRef.width.value ?? docRef.width)) || 1);
+    const height = Math.max(1, Number(docRef && docRef.height && (docRef.height._value ?? docRef.height.value ?? docRef.height)) || 1);
+    const currentLongEdge = Math.max(width, height);
+    if (currentLongEdge <= limitedEdge) return;
+    const scale = limitedEdge / currentLongEdge;
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
+    if (typeof docRef.resizeImage === "function") {
+      await docRef.resizeImage(targetWidth, targetHeight);
+      return;
+    }
+    await action.batchPlay([{
+      _obj: "imageSize",
+      _target: [{ _ref: "document", _id: Number(docRef.id) }],
+      width: { _unit: "pixelsUnit", _value: targetWidth },
+      height: { _unit: "pixelsUnit", _value: targetHeight },
+      constrainProportions: true,
+      interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "automaticInterpolation" }
+    }], {});
+  }
   async function exportDocumentAsJpeg(storage, action, docRef, quality, filePrefix = "pixelrunner-capture") {
     const tempFolder = await storage.localFileSystem.getTemporaryFolder();
     const tempFile = await tempFolder.createFile(`${filePrefix}-${Date.now()}-${quality}.jpg`, { overwrite: true });
@@ -649,6 +672,7 @@ var PixelRunnerHostBundle = (() => {
     const action = deps.photoshop.action;
     const storage = deps.storage;
     const cropBounds = clampBoundsToDocument(selectionBounds, docInfo);
+    const maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(compressionOptions.maxDimension) || 1536)));
     const targetBytes = Math.max(1, Math.floor(Number(compressionOptions.targetBytes) || DEFAULT_UPLOAD_TARGET_BYTES));
     const hardLimitBytes = Math.max(targetBytes, Math.floor(Number(compressionOptions.hardLimitBytes) || DEFAULT_UPLOAD_HARD_LIMIT_BYTES));
     const qualitySteps = Array.isArray(compressionOptions.qualitySteps) && compressionOptions.qualitySteps.length ? compressionOptions.qualitySteps : DEFAULT_UPLOAD_QUALITY_STEPS;
@@ -664,6 +688,7 @@ var PixelRunnerHostBundle = (() => {
       if (isSelectionCapture && typeof tempDoc.crop === "function") {
         await tempDoc.crop(cropBounds);
       }
+      await resizeDocumentToLongEdge(action, tempDoc, maxDimension);
       let lastAttempt = null;
       const attempts = [];
       for (const quality of qualitySteps) {

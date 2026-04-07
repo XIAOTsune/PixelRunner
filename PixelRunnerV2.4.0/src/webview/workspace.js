@@ -153,6 +153,25 @@
     return `${title} (#${documentId})${sizeText}`;
   }
 
+  function cloneSelectionBounds(bounds) {
+    if (!bounds || typeof bounds !== "object") return null;
+    const left = Number(bounds.left);
+    const top = Number(bounds.top);
+    const right = Number(bounds.right);
+    const bottom = Number(bounds.bottom);
+    if (![left, top, right, bottom].every(Number.isFinite)) return null;
+    if (right <= left || bottom <= top) return null;
+    return { left, top, right, bottom };
+  }
+
+  function cloneDocumentInfo(docInfo) {
+    if (!docInfo || typeof docInfo !== "object") return null;
+    return {
+      ...docInfo,
+      selectionBounds: cloneSelectionBounds(docInfo.selectionBounds)
+    };
+  }
+
   function getImageCaptureSettings() {
     const state = modules.state.state;
     const maxDimensionInput = modules.runtime.getById("imageCaptureMaxDimension");
@@ -178,7 +197,8 @@
       kind: String(asset.kind || "captured-document-image"),
       source: String(asset.source || "photoshop-document"),
       documentId: Number(asset.documentId) || null,
-      document: asset.document && typeof asset.document === "object" ? { ...asset.document } : null,
+      document: cloneDocumentInfo(asset.document),
+      selectionBounds: cloneSelectionBounds(asset.selectionBounds),
       width: Number(asset.width) || null,
       height: Number(asset.height) || null,
       originalWidth: Number(asset.originalWidth) || null,
@@ -862,6 +882,42 @@
     return refreshPhotoshopDocumentStatus({ quiet: true });
   }
 
+  function resolveSourceDocumentFromImageInputs(app, formValues, fallbackDocument = null) {
+    const imageInputs = findImageInputs(app);
+    const values = formValues && typeof formValues === "object" ? formValues : {};
+
+    const resolveFromInput = (input) => {
+      const key = String((input && input.key) || "").trim();
+      if (!key) return null;
+      const asset = values[key];
+      if (!hasImageAsset(asset)) return null;
+      const assetDocument = cloneDocumentInfo(asset.document);
+      if (assetDocument && assetDocument.hasActiveDocument && Number(assetDocument.documentId) > 0) {
+        return assetDocument;
+      }
+      const documentId = Number(asset.documentId) || 0;
+      if (documentId <= 0) return null;
+      return {
+        ok: true,
+        hasActiveDocument: true,
+        documentId,
+        title: assetDocument && assetDocument.title ? assetDocument.title : "Captured Document",
+        width: assetDocument && Number.isFinite(Number(assetDocument.width)) ? Number(assetDocument.width) : null,
+        height: assetDocument && Number.isFinite(Number(assetDocument.height)) ? Number(assetDocument.height) : null,
+        selectionBounds:
+          cloneSelectionBounds(asset.selectionBounds) ||
+          cloneSelectionBounds(assetDocument && assetDocument.selectionBounds)
+      };
+    };
+
+    for (const input of imageInputs) {
+      const sourceDocument = resolveFromInput(input);
+      if (sourceDocument) return sourceDocument;
+    }
+
+    return cloneDocumentInfo(fallbackDocument);
+  }
+
   async function captureCurrentDocumentImage() {
     if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法捕获 Photoshop 图像");
     const settings = getImageCaptureSettings();
@@ -1041,13 +1097,21 @@
         taskId: remoteTaskId
       });
       modules.ui.logToWorkspace(`任务已完成，结果地址：${pollResult.outputUrl}`, "success");
-
-      const placementResponse = await autoPlaceResult({
-        appName: payload.appName,
-        sourceDocument,
-        outputUrl: pollResult.outputUrl,
-        taskId: remoteTaskId
-      });
+      let placementResponse = null;
+      try {
+        placementResponse = await autoPlaceResult({
+          appName: payload.appName,
+          sourceDocument,
+          outputUrl: pollResult.outputUrl,
+          taskId: remoteTaskId
+        });
+      } catch (placementError) {
+        const placementMessage =
+          placementError && placementError.message
+            ? placementError.message
+            : String(placementError || "自动贴回 Photoshop 失败");
+        modules.ui.logToWorkspace(`任务已完成，但自动贴回失败：${placementMessage}`, "warn");
+      }
       upsertRunningTask({
         taskId: remoteTaskId,
         remoteTaskId,
@@ -1056,7 +1120,7 @@
         detail:
           placementResponse && placementResponse.documentId
             ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}。`
-            : "任务已完成。"
+            : "任务已完成，可在任务结果地址基础上手动继续处理。"
       });
     } catch (error) {
       const message = error && error.message ? error.message : String(error || "任务执行失败");
@@ -1163,7 +1227,12 @@
           }
 
           markRunCooldown();
-          const sourceDocument = await captureSourceDocumentInfo();
+          const fallbackSourceDocument = await captureSourceDocumentInfo();
+          const sourceDocument = resolveSourceDocumentFromImageInputs(
+            modules.state.state.currentApp,
+            modules.state.state.formValues,
+            fallbackSourceDocument
+          );
           startRunTaskFlow(payload, sourceDocument);
         } catch (error) {
           modules.ui.logToWorkspace(error.message, "warn");
