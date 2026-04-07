@@ -995,23 +995,10 @@ button {
     0 0 0 1px rgba(25, 36, 48, 0.42);
 }
 
-.tool-glow-collapsible {
-  padding: 0;
-  overflow: hidden;
-}
-
-.tool-glow-summary {
-  list-style: none;
-  cursor: pointer;
+.tool-glow-launcher {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 10px;
-  padding: 10px 12px;
-}
-
-.tool-glow-summary::-webkit-details-marker {
-  display: none;
 }
 
 .tool-glow-summary-main {
@@ -1021,12 +1008,42 @@ button {
   min-width: 0;
 }
 
-.tool-glow-body {
+.tool-glow-header-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.glow-open-btn {
+  width: 100%;
+  min-height: 40px;
+}
+
+.glow-modal-card {
+  width: min(92vw, 560px);
+}
+
+.glow-modal-hero {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(98, 128, 152, 0.55);
+  background:
+    radial-gradient(circle at top left, rgba(255, 213, 106, 0.1), transparent 34%),
+    radial-gradient(circle at right center, rgba(159, 220, 255, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(34, 48, 63, 0.96), rgba(26, 36, 48, 0.98));
+}
+
+.glow-modal-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 0 12px 12px;
-  border-top: 1px solid rgba(98, 128, 152, 0.36);
+  gap: 8px;
+}
+
+.glow-modal-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .glow-slider-stack {
@@ -1039,6 +1056,11 @@ button {
   display: flex;
   align-items: stretch;
   gap: 10px;
+}
+
+.glow-modal-actions .secondary-btn,
+.glow-modal-actions .primary-btn {
+  min-height: 38px;
 }
 
 .glow-slider-field {
@@ -1838,6 +1860,9 @@ button {
   box-shadow: 0 2px 0 #5f93a7;
 }
 
+#btnOpenGlowPanel,
+#btnGlowPreviewApply,
+#btnGlowPreviewCancel,
 #btnStamp,
 #btnSelectAndMask,
 #btnObserver,
@@ -1852,6 +1877,9 @@ button {
   background: #405b74;
 }
 
+#btnOpenGlowPanel:hover,
+#btnGlowPreviewApply:hover,
+#btnGlowPreviewCancel:hover,
 #btnStamp:hover,
 #btnSelectAndMask:hover,
 #btnObserver:hover,
@@ -1864,6 +1892,9 @@ button {
   box-shadow: 0 5px 0 #35506a;
 }
 
+#btnOpenGlowPanel:active,
+#btnGlowPreviewApply:active,
+#btnGlowPreviewCancel:active,
 #btnStamp:active,
 #btnSelectAndMask:active,
 #btnObserver:active,
@@ -1872,8 +1903,11 @@ button {
 #btnSharpen:active,
 #btnHighPass:active,
 #btnContentAwareFill:active,
-#btnGlow:active,
+#btnGlowPreviewApply:active,
 #btnStamp.is-pressed,
+#btnOpenGlowPanel.is-pressed,
+#btnGlowPreviewApply.is-pressed,
+#btnGlowPreviewCancel.is-pressed,
 #btnSelectAndMask.is-pressed,
 #btnObserver.is-pressed,
 #btnNeutralGray.is-pressed,
@@ -1881,11 +1915,12 @@ button {
 #btnSharpen.is-pressed,
 #btnHighPass.is-pressed,
 #btnContentAwareFill.is-pressed,
-#btnGlow.is-pressed {
+#btnGlowPreviewApply.is-pressed {
   box-shadow: 0 2px 0 #35506a;
 }
 
-#btnGlow {
+#btnOpenGlowPanel,
+#btnGlowPreviewApply {
   --btn-edge: #b98338;
   background: linear-gradient(180deg, #ffd26c, #f4a84f);
   color: #2b1f07;
@@ -1893,9 +1928,23 @@ button {
   box-shadow: 3px 4px 0 #b98338;
 }
 
-#btnGlow:hover {
+#btnOpenGlowPanel:hover,
+#btnGlowPreviewApply:hover {
   border-color: #b98338;
   box-shadow: 0 5px 0 #b98338;
+}
+
+#btnGlowPreviewCancel {
+  --btn-edge: #44627d;
+  background: #516d86;
+  color: #edf6ff;
+  border-color: #44627d;
+  box-shadow: 3px 4px 0 #44627d;
+}
+
+#btnGlowPreviewCancel:hover {
+  border-color: #44627d;
+  box-shadow: 0 5px 0 #44627d;
 }
 
 #btnRun {
@@ -1919,6 +1968,10 @@ button {
 #btnRefreshWorkspaceApps,
 #btnClearLog,
 #appPickerModalClose,
+#glowModalClose,
+#btnOpenGlowPanel,
+#btnGlowPreviewApply,
+#btnGlowPreviewCancel,
 #btnStamp,
 #btnSelectAndMask,
 #btnObserver,
@@ -1927,7 +1980,6 @@ button {
 #btnSharpen,
 #btnHighPass,
 #btnContentAwareFill,
-#btnGlow,
 #btnDonate,
 #btnDonateTools,
 #btnDonateSettings,

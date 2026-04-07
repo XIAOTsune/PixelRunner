@@ -488,6 +488,13 @@ var PixelRunnerWebviewBundle = (() => {
       runninghub: "https://www.runninghub.cn",
       tutorial: "./pages/runninghub-guide.html"
     };
+    const GLOW_DEFAULTS = {
+      strength: 17,
+      radius: 82,
+      threshold: 3,
+      fade: 12,
+      saturation: 10
+    };
     function logToWorkspace(message, type = "info") {
       const runtime = modules.runtime;
       const logWindow = runtime.getById("logWindow");
@@ -573,9 +580,9 @@ ${text}` : text;
       const openLinkInPreview = (url, label) => {
         try {
           global.open(String(url || "").trim(), "_blank", "noopener");
-          setDonationStatus(`已尝试打开${label}，如果没有唤起请直接扫码。`, "success");
+          setDonationStatus(`已尝试打开 ${label}。`, "success");
         } catch (_) {
-          setDonationStatus(`打开${label}失败，请直接扫码使用。`, "error");
+          setDonationStatus(`打开 ${label} 失败，请直接扫码或手动访问。`, "error");
         }
       };
       const openExternalLink = async (url, label, developerText) => {
@@ -588,12 +595,12 @@ ${text}` : text;
         try {
           const result = await runtime.callHost("shell.openExternal", [target, developerText], { timeoutMs: 15e3 });
           if (result && result.ok) {
-            setDonationStatus(`已打开${label}。`, "success");
+            setDonationStatus(`已打开 ${label}。`, "success");
             return;
           }
-          setDonationStatus(`打开${label}失败，请直接扫码使用。`, "error");
+          setDonationStatus(`打开 ${label} 失败，请直接扫码或手动访问。`, "error");
         } catch (error) {
-          setDonationStatus(`打开${label}失败：${error.message}`, "error");
+          setDonationStatus(`打开 ${label} 失败：${error.message}`, "error");
         }
       };
       const openTutorialPage = async () => {
@@ -605,7 +612,7 @@ ${text}` : text;
           const resolved = await runtime.callHost("shell.resolveTutorialPath", [], { timeoutMs: 15e3 });
           const tutorialPath = String(resolved && resolved.path || "").trim();
           if (!tutorialPath) {
-            setDonationStatus("本地教程文件定位失败，请检查 pages/runninghub-guide.html。", "error");
+            setDonationStatus("无法定位本地教程文件，请检查 pages/runninghub-guide.html。", "error");
             return;
           }
           const opened = await runtime.callHost(
@@ -632,7 +639,7 @@ ${text}` : text;
       donationCards.forEach((card) => {
         card.addEventListener("click", () => {
           const label = card.id === "donationWxCard" ? "微信赞助链接" : "支付宝赞助链接";
-          void openExternalLink(card.getAttribute("data-donation-url"), label, `将尝试打开${label}。`);
+          void openExternalLink(card.getAttribute("data-donation-url"), label, `将尝试打开 ${label}。`);
         });
       });
       if (btnOpenRunningHubSite) {
@@ -652,14 +659,26 @@ ${text}` : text;
       }
     }
     function bindToolActions() {
-      const glowStrengthInput = modules.runtime.getById("glowStrengthInput");
-      const glowRadiusInput = modules.runtime.getById("glowRadiusInput");
-      const glowThresholdInput = modules.runtime.getById("glowThresholdInput");
-      const glowFadeInput = modules.runtime.getById("glowFadeInput");
-      const glowSaturationInput = modules.runtime.getById("glowSaturationInput");
-      const glowStrengthValue = modules.runtime.getById("glowStrengthValue");
-      const glowHint = modules.runtime.getById("glowHint");
-      const glowButton = modules.runtime.getById("btnGlow");
+      const runtime = modules.runtime;
+      const glowStrengthInput = runtime.getById("glowStrengthInput");
+      const glowRadiusInput = runtime.getById("glowRadiusInput");
+      const glowThresholdInput = runtime.getById("glowThresholdInput");
+      const glowFadeInput = runtime.getById("glowFadeInput");
+      const glowSaturationInput = runtime.getById("glowSaturationInput");
+      const glowStrengthValue = runtime.getById("glowStrengthValue");
+      const glowRadiusValue = runtime.getById("glowRadiusValue");
+      const glowThresholdValue = runtime.getById("glowThresholdValue");
+      const glowPreviewState = runtime.getById("glowPreviewState");
+      const glowHint = runtime.getById("glowHint");
+      const glowQuickHint = runtime.getById("glowQuickHint");
+      const glowOpenButton = runtime.getById("btnOpenGlowPanel");
+      const glowApplyButton = runtime.getById("btnGlowPreviewApply");
+      const glowCancelButton = runtime.getById("btnGlowPreviewCancel");
+      const glowModalClose = runtime.getById("glowModalClose");
+      let glowPreviewTimer = 0;
+      let glowPreviewInFlight = false;
+      let glowPreviewNeedsReplay = false;
+      let glowPreviewOpen = false;
       const readGlowSlider = (input, fallback, min, max) => {
         if (!input) return fallback;
         const parsed = Number(input.value);
@@ -667,82 +686,220 @@ ${text}` : text;
         return Math.max(min, Math.min(max, Math.round(parsed)));
       };
       const readGlowState = () => ({
-        strength: readGlowSlider(glowStrengthInput, 35, 0, 100),
-        radius: readGlowSlider(glowRadiusInput, 18, 1, 120),
-        threshold: readGlowSlider(glowThresholdInput, 58, 0, 100),
-        fade: readGlowSlider(glowFadeInput, 28, 0, 100),
-        saturation: readGlowSlider(glowSaturationInput, 0, -100, 100)
+        strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
+        radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
+        threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
+        fade: readGlowSlider(glowFadeInput, GLOW_DEFAULTS.fade, 0, 100),
+        saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100)
       });
-      const updateGlowStrengthLabel = () => {
-        if (!glowStrengthValue) return;
-        const state = readGlowState();
-        glowStrengthValue.textContent = `强度 ${state.strength}%`;
+      const setGlowButtonsDisabled = (disabled) => {
+        [glowOpenButton, glowApplyButton, glowCancelButton, glowModalClose].filter(Boolean).forEach((button) => {
+          button.disabled = disabled;
+        });
       };
-      updateGlowStrengthLabel();
+      const setGlowStatus = (message, type = "info") => {
+        if (glowHint) runtime.setSummaryStatus(glowHint, message, type);
+      };
+      const setQuickGlowStatus = (message, type = "info") => {
+        if (glowQuickHint) runtime.setSummaryStatus(glowQuickHint, message, type);
+      };
+      const setGlowPreviewBadge = (message, type = "info") => {
+        if (!glowPreviewState) return;
+        glowPreviewState.textContent = message;
+        glowPreviewState.dataset.status = type;
+      };
+      const updateGlowLabels = () => {
+        const state = readGlowState();
+        if (glowStrengthValue) glowStrengthValue.textContent = `默认强度 ${state.strength}%`;
+        if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
+        if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${state.threshold}%`;
+      };
+      const callGlowHostAction = async (action) => {
+        const state = readGlowState();
+        return runtime.callHost("photoshop.runToolAction", [{
+          action,
+          strength: state.strength,
+          radius: state.radius,
+          threshold: state.threshold,
+          fade: state.fade,
+          saturation: state.saturation
+        }], { timeoutMs: 6e4 });
+      };
+      const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
+        if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
+        if (glowPreviewInFlight) {
+          glowPreviewNeedsReplay = true;
+          return;
+        }
+        glowPreviewInFlight = true;
+        glowPreviewNeedsReplay = false;
+        const state = readGlowState();
+        setGlowPreviewBadge("正在预览", "pending");
+        setGlowStatus(`正在更新辉光预览：强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
+        try {
+          const result = await callGlowHostAction(action);
+          const message = result && result.message ? result.message : "辉光预览已更新。";
+          setGlowPreviewBadge("预览中", "success");
+          setGlowStatus(message, "success");
+        } catch (error) {
+          const message = `辉光预览失败：${error.message}`;
+          setGlowPreviewBadge("预览失败", "error");
+          setGlowStatus(message, "error");
+          logToWorkspace(message, "error");
+        } finally {
+          glowPreviewInFlight = false;
+        }
+        if (glowPreviewNeedsReplay && glowPreviewOpen) {
+          glowPreviewNeedsReplay = false;
+          void runGlowPreviewUpdate("glowPreviewUpdate");
+        }
+      };
+      const scheduleGlowPreviewUpdate = () => {
+        if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
+        if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+        glowPreviewTimer = window.setTimeout(() => {
+          glowPreviewTimer = 0;
+          void runGlowPreviewUpdate("glowPreviewUpdate");
+        }, 220);
+      };
+      const flushGlowPreviewUpdate = async () => {
+        if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
+        if (glowPreviewTimer) {
+          clearTimeout(glowPreviewTimer);
+          glowPreviewTimer = 0;
+        }
+        if (glowPreviewInFlight) {
+          glowPreviewNeedsReplay = true;
+        }
+        while (glowPreviewInFlight || glowPreviewNeedsReplay) {
+          if (!glowPreviewInFlight && glowPreviewNeedsReplay) {
+            glowPreviewNeedsReplay = false;
+            await runGlowPreviewUpdate("glowPreviewUpdate");
+          } else {
+            await new Promise((resolve) => window.setTimeout(resolve, 80));
+          }
+        }
+        await runGlowPreviewUpdate("glowPreviewUpdate");
+      };
+      const openGlowModal = async () => {
+        glowPreviewOpen = true;
+        modules.workspace.setModalOpen("glowModal", true);
+        updateGlowLabels();
+        if (!runtime.isPluginRuntime()) {
+          setGlowPreviewBadge("浏览器预览", "warn");
+          setGlowStatus("浏览器预览模式下不会真正生成 Photoshop 预览层。", "warn");
+          setQuickGlowStatus("浏览器预览模式下可查看 UI，但不会执行实际辉光。", "warn");
+          return;
+        }
+        setGlowButtonsDisabled(true);
+        try {
+          await runGlowPreviewUpdate("glowPreviewStart");
+          setQuickGlowStatus("辉光面板已打开，可实时拖动滑杆预览。", "success");
+        } finally {
+          setGlowButtonsDisabled(false);
+        }
+      };
+      const closeGlowModal = async (discardPreview = true) => {
+        glowPreviewOpen = false;
+        if (glowPreviewTimer) {
+          clearTimeout(glowPreviewTimer);
+          glowPreviewTimer = 0;
+        }
+        if (discardPreview && runtime.isPluginRuntime()) {
+          setGlowButtonsDisabled(true);
+          try {
+            await runtime.callHost("photoshop.runToolAction", [{ action: "glowPreviewCancel" }], { timeoutMs: 3e4 });
+            setQuickGlowStatus("已取消辉光预览并清理临时预览层。", "info");
+          } catch (error) {
+            const message = `取消辉光预览失败：${error.message}`;
+            setQuickGlowStatus(message, "error");
+            logToWorkspace(message, "error");
+          } finally {
+            setGlowButtonsDisabled(false);
+          }
+        }
+        modules.workspace.setModalOpen("glowModal", false);
+      };
+      updateGlowLabels();
       [glowStrengthInput, glowRadiusInput, glowThresholdInput, glowFadeInput, glowSaturationInput].filter(Boolean).forEach((input) => {
-        input.addEventListener("input", updateGlowStrengthLabel);
-        input.addEventListener("change", updateGlowStrengthLabel);
+        input.addEventListener("input", () => {
+          updateGlowLabels();
+          scheduleGlowPreviewUpdate();
+        });
+        input.addEventListener("change", () => {
+          updateGlowLabels();
+          scheduleGlowPreviewUpdate();
+        });
       });
-      if (glowButton) {
-        glowButton.addEventListener("click", async () => {
+      if (glowOpenButton) {
+        glowOpenButton.addEventListener("click", () => {
+          void openGlowModal();
+        });
+      }
+      if (glowApplyButton) {
+        glowApplyButton.addEventListener("click", async () => {
           const state = readGlowState();
-          if (!modules.runtime.isPluginRuntime()) {
-            logToWorkspace(`浏览器预览模式下不会执行辉光动作：强度 ${state.strength}%`, "info");
-            if (glowHint) modules.runtime.setSummaryStatus(glowHint, "浏览器预览模式下不能直接执行 Photoshop 辉光。", "warn");
+          if (!runtime.isPluginRuntime()) {
+            setGlowStatus("浏览器预览模式下不会把辉光应用到 Photoshop。", "warn");
+            await closeGlowModal(false);
             return;
           }
-          glowButton.disabled = true;
-          if (glowHint) {
-            modules.runtime.setSummaryStatus(
-              glowHint,
-              `正在生成高光辉光：强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`,
-              "pending"
-            );
-          }
-          logToWorkspace(`正在执行辉光动作：强度 ${state.strength}% ，半径 ${state.radius} ，阈值 ${state.threshold}%...`, "info");
+          setGlowButtonsDisabled(true);
           try {
-            const result = await modules.runtime.callHost("photoshop.runToolAction", [{
-              action: "glow",
-              strength: state.strength,
-              radius: state.radius,
-              threshold: state.threshold,
-              fade: state.fade,
-              saturation: state.saturation
-            }], { timeoutMs: 45e3 });
-            const successMessage = result && result.message ? result.message : "已生成辉光层";
+            await flushGlowPreviewUpdate();
+            const result = await callGlowHostAction("glowPreviewCommit");
+            const successMessage = result && result.message ? result.message : `已生成 Glow ${state.strength}%`;
             logToWorkspace(successMessage, "success");
-            if (glowHint) modules.runtime.setSummaryStatus(glowHint, successMessage, "success");
+            setGlowStatus(successMessage, "success");
+            setQuickGlowStatus(`默认参数：强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "success");
+            glowPreviewOpen = false;
+            modules.workspace.setModalOpen("glowModal", false);
           } catch (error) {
-            const message = `辉光执行失败：${error.message}`;
+            const message = `应用辉光失败：${error.message}`;
             logToWorkspace(message, "error");
-            if (glowHint) modules.runtime.setSummaryStatus(glowHint, message, "error");
+            setGlowStatus(message, "error");
           } finally {
-            glowButton.disabled = false;
+            setGlowButtonsDisabled(false);
           }
         });
       }
+      if (glowCancelButton) {
+        glowCancelButton.addEventListener("click", () => {
+          void closeGlowModal(true);
+        });
+      }
+      if (glowModalClose) {
+        glowModalClose.addEventListener("click", () => {
+          void closeGlowModal(true);
+        });
+      }
+      document.addEventListener("click", (event) => {
+        if (event.target && event.target.closest("#glowBackdrop")) {
+          void closeGlowModal(true);
+        }
+      });
       const toolConfigs = [
         { id: "btnObserver", payload: { action: "observerLayer", layerName: "黑白观察层" }, pending: "正在创建黑白观察层...", success: (result) => result && result.message ? result.message : "已创建黑白观察层" },
         { id: "btnNeutralGray", payload: { action: "neutralGrayLayer" }, pending: "正在创建中性灰图层...", success: (result) => result && result.message ? result.message : "已创建中性灰图层" },
-        { id: "btnGaussianBlur", payload: { action: "gaussianBlur", radius: 4 }, pending: "正在执行高斯模糊...", success: (result) => result && result.message ? result.message : "已执行高斯模糊" },
-        { id: "btnSharpen", payload: { action: "sharpen" }, pending: "正在执行锐化...", success: (result) => result && result.message ? result.message : "已执行锐化" },
-        { id: "btnHighPass", payload: { action: "highPass", radius: 2 }, pending: "正在执行高反差保留...", success: (result) => result && result.message ? result.message : "已执行高反差保留" },
+        { id: "btnGaussianBlur", payload: { action: "gaussianBlur", radius: 4 }, pending: "正在打开高斯模糊...", success: (result) => result && result.message ? result.message : "已打开高斯模糊" },
+        { id: "btnSharpen", payload: { action: "sharpen" }, pending: "正在打开锐化...", success: (result) => result && result.message ? result.message : "已打开锐化" },
+        { id: "btnHighPass", payload: { action: "highPass", radius: 2 }, pending: "正在打开高反差保留...", success: (result) => result && result.message ? result.message : "已打开高反差保留" },
         { id: "btnStamp", payload: { action: "stampVisible", layerName: "盖印图层" }, pending: "正在生成盖印图层...", success: (result) => result && result.message ? result.message : "已生成盖印图层" },
         { id: "btnContentAwareFill", payload: { action: "contentAwareFill" }, pending: "正在触发内容识别填充...", success: (result) => result && result.message ? result.message : "已触发内容识别填充" },
         { id: "btnSelectAndMask", payload: { action: "selectAndMask" }, pending: "正在触发选择并遮住...", success: (result) => result && result.message ? result.message : "已触发选择并遮住" }
       ];
       toolConfigs.forEach((config) => {
-        const button = modules.runtime.getById(config.id);
+        const button = runtime.getById(config.id);
         if (!button) return;
         button.addEventListener("click", async () => {
-          if (!modules.runtime.isPluginRuntime()) {
+          if (!runtime.isPluginRuntime()) {
             logToWorkspace(`浏览器预览模式下不会执行工具动作：${config.id}`, "info");
             return;
           }
           button.disabled = true;
           logToWorkspace(config.pending, "info");
           try {
-            const result = await modules.runtime.callHost("photoshop.runToolAction", [config.payload], { timeoutMs: 45e3 });
+            const result = await runtime.callHost("photoshop.runToolAction", [config.payload], { timeoutMs: 45e3 });
             logToWorkspace(config.success(result), "success");
           } catch (error) {
             logToWorkspace(`工具执行失败：${error.message}`, "error");

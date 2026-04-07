@@ -339,6 +339,12 @@ var PixelRunnerHostBundle = (() => {
   }
 
   // src/host/photoshop/tool-actions.js
+  var GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
+  var glowPreviewSession = {
+    documentId: 0,
+    previewLayerId: 0,
+    sourceLayerId: 0
+  };
   function buildToolCommandResponse(actionName, app, message, extra = {}) {
     return {
       ok: true,
@@ -354,11 +360,11 @@ var PixelRunnerHostBundle = (() => {
     return Math.min(max, Math.max(min, parsed));
   }
   function getGlowConfig(payload = {}) {
-    const strength = clampNumber(payload.strength, 0, 100, 35);
-    const radius = clampNumber(payload.radius, 1, 120, 18);
-    const threshold = clampNumber(payload.threshold, 0, 100, 58);
-    const fade = clampNumber(payload.fade, 0, 100, 28);
-    const saturation = clampNumber(payload.saturation, -100, 100, 0);
+    const strength = clampNumber(payload.strength, 0, 100, 17);
+    const radius = clampNumber(payload.radius, 1, 120, 82);
+    const threshold = clampNumber(payload.threshold, 0, 100, 3);
+    const fade = clampNumber(payload.fade, 0, 100, 12);
+    const saturation = clampNumber(payload.saturation, -100, 100, 10);
     const baseOpacity = Math.round(14 + strength * 0.3);
     const fadeRatio = 1 - fade / 150;
     const coreRadius = Math.max(0.8, Number((radius * 0.28).toFixed(1)));
@@ -510,6 +516,13 @@ var PixelRunnerHostBundle = (() => {
       makeVisible: false
     }], {});
   }
+  async function selectLayerById(action, layerId) {
+    await action.batchPlay([{
+      _obj: "select",
+      _target: [{ _ref: "layer", _id: layerId }],
+      makeVisible: false
+    }], {});
+  }
   async function deleteActiveLayer(action) {
     await action.batchPlay([{
       _obj: "delete",
@@ -520,6 +533,15 @@ var PixelRunnerHostBundle = (() => {
     try {
       await selectLayerByName(action, layerName);
       await deleteActiveLayer(action);
+    } catch (_) {
+    }
+  }
+  async function deleteLayerById(action, layerId) {
+    try {
+      await action.batchPlay([{
+        _obj: "delete",
+        _target: [{ _ref: "layer", _id: layerId }]
+      }], {});
     } catch (_) {
     }
   }
@@ -558,6 +580,115 @@ var PixelRunnerHostBundle = (() => {
     await action.batchPlay([{
       _obj: "mergeVisible"
     }], {});
+  }
+  function getActiveLayerId(app) {
+    const activeLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    const layerId = Number(activeLayer && activeLayer.id);
+    return Number.isFinite(layerId) && layerId > 0 ? layerId : 0;
+  }
+  function resetGlowPreviewSessionState() {
+    glowPreviewSession.documentId = 0;
+    glowPreviewSession.previewLayerId = 0;
+    glowPreviewSession.sourceLayerId = 0;
+  }
+  async function clearGlowPreviewLayer(app, action, fallbackDocument = null) {
+    const targetDocumentId = Number(glowPreviewSession.documentId) || Number(fallbackDocument && fallbackDocument.id) || 0;
+    const originalDocument = app && app.activeDocument ? app.activeDocument : null;
+    try {
+      if (targetDocumentId > 0) {
+        await activateDocument(app, action, targetDocumentId);
+      } else if (fallbackDocument) {
+        app.activeDocument = fallbackDocument;
+      }
+      if (glowPreviewSession.previewLayerId > 0) {
+        await deleteLayerById(action, glowPreviewSession.previewLayerId);
+      } else {
+        await deleteLayerByName(action, GLOW_PREVIEW_LAYER_NAME);
+      }
+    } finally {
+      if (originalDocument) {
+        try {
+          app.activeDocument = originalDocument;
+        } catch (_) {
+        }
+      }
+    }
+    glowPreviewSession.previewLayerId = 0;
+  }
+  async function createGlowLayerFromDocument(config, app, document2, action, saveOptions = {}) {
+    const originalDocument = document2;
+    const sourceName = `${config.layerName} Source`;
+    const baseName = `${config.layerName} Base`;
+    let tempDoc = null;
+    let importedLayer = null;
+    try {
+      tempDoc = await document2.duplicate(`${config.layerName} Temp`, true);
+      app.activeDocument = tempDoc;
+      await convertDocumentTo8Bit(action);
+      await renameActiveLayer2(action, baseName);
+      await selectHighlights(action, config);
+      await copySelectionToLayer(action);
+      await renameActiveLayer2(action, sourceName);
+      await clearSelection(action);
+      await deleteLayerByName(action, baseName);
+      if (config.sourceSaturation !== 0) {
+        await applyHueSaturation(action, config.sourceSaturation);
+      }
+      if (Math.abs(config.isolationExposure) > 0.01 || Math.abs(config.isolationGamma - 1) > 0.01) {
+        await applyExposureIsolation(action, config.isolationExposure, config.isolationGamma);
+      }
+      await selectChannel(action, "red");
+      await applyLevelsOutput(action, 242);
+      await selectChannel(action, "grain");
+      await applyLevelsOutput(action, 242);
+      await selectChannel(action, "blue");
+      await applyLevelsOutput(action, 242);
+      await selectChannel(action, "RGB");
+      for (let index = 0; index < config.glowRadii.length; index += 1) {
+        await selectLayerByName(action, sourceName);
+        await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
+        await renameActiveLayer2(action, `${config.layerName} Glow ${index + 1}`);
+        await applyGaussianBlur(action, config.glowRadii[index]);
+        await applyExposureIsolation(action, config.glowExposure, config.glowGamma);
+        await setActiveLayerStyle(action, config.glowOpacities[index], "screen");
+      }
+      await deleteLayerByName(action, sourceName);
+      await mergeVisibleLayers(action);
+      await renameActiveLayer2(action, config.layerName);
+      await applyExposureIsolation(action, 0, config.finalGamma);
+      const outputMax = Math.max(96, 255 - config.channelOutputClamp);
+      await selectChannel(action, "red");
+      await applyLevelsOutput(action, outputMax);
+      await selectChannel(action, "grain");
+      await applyLevelsOutput(action, outputMax);
+      await selectChannel(action, "blue");
+      await applyLevelsOutput(action, outputMax);
+      await selectChannel(action, "RGB");
+      if (config.finalVibrance !== 0 || config.finalSaturation !== 0) {
+        await applyVibrance(action, config.finalVibrance, config.finalSaturation);
+      }
+      await setActiveLayerStyle(action, 100, "screen");
+      const tempResultLayer = tempDoc && tempDoc.activeLayers && tempDoc.activeLayers[0];
+      if (!tempResultLayer) {
+        throw new Error("Glow result layer was not created.");
+      }
+      importedLayer = await tempResultLayer.duplicate(originalDocument);
+      app.activeDocument = originalDocument;
+      await renameActiveLayer2(action, config.layerName);
+      await setActiveLayerStyle(action, 100, "screen");
+    } finally {
+      try {
+        app.activeDocument = originalDocument;
+      } catch (_) {
+      }
+      if (tempDoc) {
+        try {
+          await tempDoc.close(saveOptions.DONOTSAVECHANGES);
+        } catch (_) {
+        }
+      }
+    }
+    return importedLayer;
   }
   async function runDialogToolAction(actionName, payload, core, action, app) {
     if (actionName === "gaussianBlur") {
@@ -689,87 +820,63 @@ var PixelRunnerHostBundle = (() => {
           }
         }
       }
-      case "glow": {
+      case "glow":
+      case "glowPreviewStart":
+      case "glowPreviewUpdate":
+      case "glowPreviewCommit":
+      case "glowPreviewCancel": {
         const config = getGlowConfig(payload);
-        const saveOptions = constants.SaveOptions || {};
         const originalDocument = document2;
-        const sourceName = `${config.layerName} Source`;
-        const baseName = `${config.layerName} Base`;
-        let tempDoc = null;
         let importedLayer = null;
-        try {
-          tempDoc = await document2.duplicate(`${config.layerName} Temp`, true);
-          app.activeDocument = tempDoc;
-          await convertDocumentTo8Bit(action);
-          await renameActiveLayer2(action, baseName);
-          await selectHighlights(action, config);
-          await copySelectionToLayer(action);
-          await renameActiveLayer2(action, sourceName);
-          await clearSelection(action);
-          await deleteLayerByName(action, baseName);
-          if (config.sourceSaturation !== 0) {
-            await applyHueSaturation(action, config.sourceSaturation);
+        if (actionName === "glowPreviewCancel") {
+          await clearGlowPreviewLayer(app, action, originalDocument);
+          resetGlowPreviewSessionState();
+          return buildToolCommandResponse(actionName, app, "已清理辉光预览层。");
+        }
+        if (actionName === "glowPreviewStart") {
+          if (Number(glowPreviewSession.documentId) && Number(glowPreviewSession.documentId) !== Number(originalDocument.id)) {
+            await clearGlowPreviewLayer(app, action, originalDocument);
+            resetGlowPreviewSessionState();
           }
-          if (Math.abs(config.isolationExposure) > 0.01 || Math.abs(config.isolationGamma - 1) > 0.01) {
-            await applyExposureIsolation(action, config.isolationExposure, config.isolationGamma);
+          glowPreviewSession.documentId = Number(originalDocument.id) || 0;
+          glowPreviewSession.sourceLayerId = getActiveLayerId(app);
+        }
+        if (actionName === "glowPreviewUpdate" || actionName === "glowPreviewStart") {
+          if (Number(glowPreviewSession.documentId) && Number(glowPreviewSession.documentId) !== Number(originalDocument.id)) {
+            glowPreviewSession.documentId = Number(originalDocument.id) || 0;
           }
-          await selectChannel(action, "red");
-          await applyLevelsOutput(action, 242);
-          await selectChannel(action, "grain");
-          await applyLevelsOutput(action, 242);
-          await selectChannel(action, "blue");
-          await applyLevelsOutput(action, 242);
-          await selectChannel(action, "RGB");
-          for (let index = 0; index < config.glowRadii.length; index += 1) {
-            await selectLayerByName(action, sourceName);
-            await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
-            await renameActiveLayer2(action, `${config.layerName} Glow ${index + 1}`);
-            await applyGaussianBlur(action, config.glowRadii[index]);
-            await applyExposureIsolation(action, config.glowExposure, config.glowGamma);
-            await setActiveLayerStyle(action, config.glowOpacities[index], "screen");
-          }
-          await deleteLayerByName(action, sourceName);
-          await mergeVisibleLayers(action);
-          await renameActiveLayer2(action, config.layerName);
-          await applyExposureIsolation(action, 0, config.finalGamma);
-          const outputMax = Math.max(96, 255 - config.channelOutputClamp);
-          await selectChannel(action, "red");
-          await applyLevelsOutput(action, outputMax);
-          await selectChannel(action, "grain");
-          await applyLevelsOutput(action, outputMax);
-          await selectChannel(action, "blue");
-          await applyLevelsOutput(action, outputMax);
-          await selectChannel(action, "RGB");
-          if (config.finalVibrance !== 0 || config.finalSaturation !== 0) {
-            await applyVibrance(action, config.finalVibrance, config.finalSaturation);
-          }
-          await setActiveLayerStyle(action, 100, "screen");
-          const tempResultLayer = tempDoc && tempDoc.activeLayers && tempDoc.activeLayers[0];
-          if (!tempResultLayer) {
-            throw new Error("Glow result layer was not created.");
-          }
-          importedLayer = await tempResultLayer.duplicate(originalDocument);
-          app.activeDocument = originalDocument;
-          if (importedLayer) {
-            try {
-              importedLayer.name = config.layerName;
-            } catch (_) {
-            }
-          }
-          await renameActiveLayer2(action, config.layerName);
-          await setActiveLayerStyle(action, 100, "screen");
-        } finally {
-          try {
-            app.activeDocument = originalDocument;
-          } catch (_) {
-          }
-          if (tempDoc) {
-            try {
-              await tempDoc.close(saveOptions.DONOTSAVECHANGES);
-            } catch (_) {
-            }
+          await clearGlowPreviewLayer(app, action, originalDocument);
+          importedLayer = await createGlowLayerFromDocument({ ...config, layerName: GLOW_PREVIEW_LAYER_NAME }, app, originalDocument, action, constants.SaveOptions || {});
+          glowPreviewSession.documentId = Number(originalDocument.id) || 0;
+          glowPreviewSession.previewLayerId = Number(importedLayer && importedLayer.id || getActiveLayerId(app) || 0);
+          return buildToolCommandResponse(actionName, app, `已更新辉光预览：强度 ${config.strength}% / 半径 ${config.radius} / 阈值 ${config.threshold}%。`, {
+            layerName: GLOW_PREVIEW_LAYER_NAME,
+            layerId: glowPreviewSession.previewLayerId
+          });
+        }
+        if (actionName === "glowPreviewCommit") {
+          if (glowPreviewSession.previewLayerId > 0 && Number(glowPreviewSession.documentId) === Number(originalDocument.id)) {
+            await selectLayerById(action, glowPreviewSession.previewLayerId);
+            await renameActiveLayer2(action, config.layerName);
+            await setActiveLayerStyle(action, 100, "screen");
+            const committedLayerId = glowPreviewSession.previewLayerId;
+            resetGlowPreviewSessionState();
+            return buildToolCommandResponse(actionName, app, `已将辉光预览应用为 ${config.layerName}。`, {
+              layerName: config.layerName,
+              strength: config.strength,
+              radius: config.radius,
+              threshold: config.threshold,
+              fade: config.fade,
+              saturation: config.saturation,
+              layerId: committedLayerId
+            });
           }
         }
+        if (actionName === "glow") {
+          await clearGlowPreviewLayer(app, action, originalDocument);
+          resetGlowPreviewSessionState();
+        }
+        importedLayer = await createGlowLayerFromDocument(config, app, originalDocument, action, constants.SaveOptions || {});
         const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
         return buildToolCommandResponse(actionName, app, `Created rebuilt glow layer from isolated highlight source: strength ${config.strength}%, radius ${config.radius}, threshold ${config.threshold}%.`, {
           layerName: String(importedLayer && importedLayer.name || activeLayer && activeLayer.name || config.layerName),
