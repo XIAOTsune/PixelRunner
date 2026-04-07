@@ -315,12 +315,23 @@
                 <button id="btnResetTemplateEditor" class="secondary-btn" type="button">创建模板</button>
                 <button id="btnSaveTemplate" class="primary-btn" type="button">保存模板</button>
               </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">搜索模板</span>
+                  <input id="templateManagerSearchInput" class="field-input" type="search" placeholder="按标题或内容关键词搜索" />
+                </label>
+                <label class="field">
+                  <span class="field-label">排序方式</span>
+                  <select id="templateManagerSortInput" class="field-input">
+                    <option value="updated_desc">最近更新优先</option>
+                    <option value="created_desc">最近创建优先</option>
+                    <option value="title_asc">标题 A-Z</option>
+                    <option value="title_desc">标题 Z-A</option>
+                  </select>
+                </label>
+              </div>
               <div id="savedTemplatesSummary" class="summary-strip">模板列表尚未加载</div>
               <div id="savedTemplatesList" class="list-shell compact-list-shell"></div>
-              <input id="templateManagerSearchInput" class="field-input is-hidden" type="search" hidden />
-              <select id="templateManagerSortInput" class="field-input is-hidden" hidden>
-                <option value="updated_desc">updated_desc</option>
-              </select>
               <textarea id="templateTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
             </div>
           </section>

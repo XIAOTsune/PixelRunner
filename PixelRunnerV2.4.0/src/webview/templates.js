@@ -48,6 +48,13 @@
     };
   }
 
+  function getTemplatePreview(content, maxChars = 48) {
+    const text = String(content || "").replace(/\s+/g, " ").trim();
+    if (!text) return "暂无内容预览";
+    const preview = Array.from(text).slice(0, Math.max(1, Number(maxChars) || 48)).join("");
+    return preview.length < text.length ? `${preview}...` : preview;
+  }
+
   function fillTemplateEditor(template, options = {}) {
     if (!options.force && !confirmDiscardTemplateChanges()) return false;
     const runtime = modules.runtime;
@@ -116,6 +123,7 @@
     else templates.unshift(nextItem);
     await saveTemplatesToStorage(templates);
     modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), `模板已保存：${nextItem.title}`, "success");
+    modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), `已保存模板：${templates.length} 条`, "success");
     modules.ui.logToWorkspace(`模板已保存：${nextItem.title}`, "success");
     fillTemplateEditor(null, { force: true });
   }
@@ -128,6 +136,7 @@
     if (String(modules.state.state.editingTemplateId || "") === String(templateId)) fillTemplateEditor(null, { force: true });
     modules.ui.logToWorkspace(`模板已删除：${target.title}`, "warn");
     modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除。", "warn");
+    modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), `已保存模板：${nextTemplates.length} 条`, "warn");
   }
 
   function exportTemplatesToTextarea() {
@@ -191,7 +200,11 @@
 
     const templates = getVisibleTemplates();
     const keyword = String(modules.state.state.templateManagerKeyword || "").trim();
-    modules.runtime.setSummaryStatus(summaryEl, keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`, "info");
+    modules.runtime.setSummaryStatus(
+      summaryEl,
+      keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`,
+      "info"
+    );
 
     if (templates.length === 0) {
       listEl.innerHTML =
@@ -202,7 +215,10 @@
     }
 
     listEl.innerHTML = templates
-      .map((item) => `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`)
+      .map((item) => {
+        const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
+        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`;
+      })
       .join("");
   }
 
@@ -335,6 +351,11 @@
 
     modules.state.state.formValues[key] = content;
     modules.workspace.renderWorkspace();
+    modules.runtime.setSummaryStatus(
+      modules.runtime.getById("templatePickerSelectionInfo"),
+      `${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段 ${key}`,
+      "success"
+    );
     modules.ui.logToWorkspace(`${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段：${key}`, "success");
   }
 

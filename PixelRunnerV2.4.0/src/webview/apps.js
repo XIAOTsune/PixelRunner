@@ -84,6 +84,17 @@
     };
   }
 
+  function summarizeParsedApp(result) {
+    const inputs = Array.isArray(result && result.inputs) ? result.inputs : [];
+    const analysis = analyzeAppInputsText(JSON.stringify(inputs));
+    const summary = String(analysis.summary || "").replace(/^已识别\s*/, "");
+    return {
+      name: String((result && (result.name || result.appId)) || "未命名应用"),
+      inputCount: inputs.length,
+      summary
+    };
+  }
+
   function renderAppInputsSummary(text) {
     const summaryEl = modules.runtime.getById("appEditorSchemaSummary");
     if (!summaryEl) return;
@@ -374,9 +385,9 @@
     if (inputsEl) inputsEl.value = JSON.stringify((result && result.inputs) || [], null, 2);
     renderAppInputsSummary(inputsEl?.value || "[]");
 
-    const inputCount = Array.isArray(result && result.inputs) ? result.inputs.length : 0;
-    runtime.setSummaryStatus(statusEl, `解析成功：${result.name || normalizedAppId}，共识别 ${inputCount} 个输入项，请确认后保存。`, "success");
-    modules.ui.logToWorkspace(`应用解析成功：${result.name || normalizedAppId}，共 ${inputCount} 个输入项。`, "success");
+    const parsedSummary = summarizeParsedApp(result);
+    runtime.setSummaryStatus(statusEl, `解析成功：${parsedSummary.name}。${parsedSummary.summary} 请确认名称和输入结构后保存。`, "success");
+    modules.ui.logToWorkspace(`应用解析成功：${parsedSummary.name}。${parsedSummary.summary}`, "success");
     return result;
   }
 

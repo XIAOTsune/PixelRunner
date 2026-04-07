@@ -500,13 +500,6 @@ ${text}` : text;
         quality: state.imageCapture.quality
       };
     }
-    function syncImageCaptureControls() {
-      const state = modules.state.state;
-      const maxDimensionInput = modules.runtime.getById("imageCaptureMaxDimension");
-      const qualityInput = modules.runtime.getById("imageCaptureQuality");
-      if (maxDimensionInput) maxDimensionInput.value = String(state.imageCapture.maxDimension || 1536);
-      if (qualityInput) qualityInput.value = String(state.imageCapture.quality || 82);
-    }
     function cloneCaptureAsset(asset) {
       if (!hasImageAsset(asset)) return null;
       return {
@@ -534,22 +527,6 @@ ${text}` : text;
     function getCaptureAssets() {
       return Array.isArray(modules.state.state.imageCapture.assets) ? modules.state.state.imageCapture.assets.filter(hasImageAsset) : [];
     }
-    function getSelectedCaptureAsset() {
-      const state = modules.state.state;
-      const assets = getCaptureAssets();
-      const selected = assets.find((asset) => String(asset.assetId || "") === String(state.imageCapture.selectedAssetId || "")) || assets[0] || null;
-      state.imageCapture.asset = selected || null;
-      state.imageCapture.selectedAssetId = selected ? String(selected.assetId || "") : "";
-      return selected;
-    }
-    function setSelectedCaptureAsset(assetId) {
-      const state = modules.state.state;
-      const assets = getCaptureAssets();
-      const selected = assets.find((asset) => String(asset.assetId || "") === String(assetId || "")) || assets[0] || null;
-      state.imageCapture.selectedAssetId = selected ? String(selected.assetId || "") : "";
-      state.imageCapture.asset = selected || null;
-      return selected;
-    }
     function pushCapturedAsset(asset) {
       const state = modules.state.state;
       const nextAsset = cloneCaptureAsset({
@@ -566,42 +543,6 @@ ${text}` : text;
       state.imageCapture.asset = nextAsset;
       return nextAsset;
     }
-    function removeCapturedAsset(assetId) {
-      const state = modules.state.state;
-      const targetId = String(assetId || "").trim();
-      if (!targetId) return;
-      state.imageCapture.assets = getCaptureAssets().filter((asset) => String(asset.assetId || "") !== targetId);
-      Object.keys(state.formValues).forEach((key) => {
-        const value = state.formValues[key];
-        if (value && typeof value === "object" && String(value.assetId || "") === targetId) state.formValues[key] = null;
-      });
-      setSelectedCaptureAsset(state.imageCapture.selectedAssetId === targetId ? "" : state.imageCapture.selectedAssetId);
-    }
-    function clearAllCapturedAssets() {
-      const state = modules.state.state;
-      state.imageCapture.assets = [];
-      state.imageCapture.selectedAssetId = "";
-      state.imageCapture.asset = null;
-      Object.keys(state.formValues).forEach((key) => {
-        if (hasImageAsset(state.formValues[key])) state.formValues[key] = null;
-      });
-    }
-    function getImageTransferModeLabel(input) {
-      if (!input || typeof input !== "object") return "dataUrl";
-      if (input.passObject === true) return "object";
-      const marker = String(input.imageValueMode || input.valueMode || input.transferMode || input.transport || "").trim().toLowerCase();
-      if (marker === "base64") return "base64";
-      if (marker === "url") return "url";
-      if (marker === "object" || marker === "json") return "object";
-      return "dataUrl";
-    }
-    function assignCaptureToInput(key, assetId = "") {
-      const selectedAsset = assetId ? getCaptureAssets().find((item) => String(item.assetId || "") === String(assetId)) : getSelectedCaptureAsset();
-      const asset = cloneCaptureAsset(selectedAsset);
-      if (!asset) throw new Error("请先捕获一张 Photoshop 图像");
-      modules.state.state.formValues[key] = asset;
-      renderWorkspace();
-    }
     function clearImageInputValue(key) {
       modules.state.state.formValues[key] = null;
       renderWorkspace();
@@ -612,60 +553,6 @@ ${text}` : text;
       renderWorkspace();
       return asset;
     }
-    function renderCaptureSummary(asset) {
-      if (!hasImageAsset(asset)) {
-        return '<div class="empty-panel"><h4>图像输入区</h4><p>点击“捕获当前文档”后，这里会显示预览，并可把捕获结果绑定到下方图像字段。</p></div>';
-      }
-      const documentText = asset.document ? formatDocumentLabel(asset.document) : `文档 #${asset.documentId || "-"}`;
-      const capturedText = asset.capturedAt ? new Date(asset.capturedAt).toLocaleTimeString() : "-";
-      return `
-      <div class="image-capture-shell">
-        <div class="image-preview-frame"><img src="${modules.runtime.escapeHtml(asset.dataUrl)}" alt="Photoshop 捕获预览" /></div>
-        <div class="image-meta-grid">
-          <span class="image-meta-pill">${modules.runtime.escapeHtml(documentText)}</span>
-          <span class="image-meta-pill">${modules.runtime.escapeHtml(String(asset.width || "-"))}x${modules.runtime.escapeHtml(String(asset.height || "-"))}</span>
-          <span class="image-meta-pill">JPEG ${modules.runtime.escapeHtml(String(asset.quality || "-"))}</span>
-          <span class="image-meta-pill">最大边长 ${modules.runtime.escapeHtml(String(asset.maxDimension || "-"))}</span>
-          <span class="image-meta-pill">来源 #${modules.runtime.escapeHtml(String(asset.assetId || "").slice(-6) || "-")}</span>
-          <span class="image-meta-pill">${modules.runtime.escapeHtml(capturedText)}</span>
-        </div>
-      </div>
-    `;
-    }
-    function renderCaptureLibrary(assets, selectedAssetId) {
-      if (!Array.isArray(assets) || assets.length === 0) return "";
-      return `
-      <div class="image-capture-shell">
-        <div class="card-head">
-          <div>
-            <h4>已捕获图像</h4>
-            <p>可切换当前选中图像，再分别绑定到不同图像字段。</p>
-          </div>
-          <div class="inline-actions">
-            <button id="btnClearAllCapturedImages" class="mini-btn" type="button">清空全部</button>
-          </div>
-        </div>
-        <div class="tool-list">
-          ${assets.map((asset) => {
-        const documentText = asset.document ? formatDocumentLabel(asset.document) : `文档 #${asset.documentId || "-"}`;
-        const isSelected = String(asset.assetId || "") === String(selectedAssetId || "");
-        return `
-                <article class="tool-item">
-                  <div>
-                    <h4>${modules.runtime.escapeHtml(documentText)}</h4>
-                    <p>${modules.runtime.escapeHtml(`${asset.width || "-"}x${asset.height || "-"} / ${asset.mimeType || "image/jpeg"} / #${String(asset.assetId || "").slice(-6)}`)}</p>
-                  </div>
-                  <div class="inline-actions">
-                    <button class="mini-btn" type="button" data-action="select-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}" ${isSelected ? "disabled" : ""}>${isSelected ? "当前选中" : "选中"}</button>
-                    <button class="mini-btn" type="button" data-action="remove-captured-image" data-capture-id="${modules.runtime.escapeHtml(String(asset.assetId || ""))}">移除</button>
-                  </div>
-                </article>
-              `;
-      }).join("")}
-        </div>
-      </div>
-    `;
-    }
     function renderImageInputArea() {
       const runtime = modules.runtime;
       const state = modules.state.state;
@@ -674,7 +561,7 @@ ${text}` : text;
       const imageInputs = findImageInputs(state.currentApp);
       imageInputContainer.hidden = false;
       if (!state.currentApp) {
-        imageInputContainer.innerHTML = '<div class="empty-panel"><h4>图像</h4><p>图像字段会在这里显示。</p></div>';
+        imageInputContainer.innerHTML = '<div class="empty-panel"><h4>图像输入</h4><p>选择应用后，这里只会保留需要从 Photoshop 捕获的图像字段。</p></div>';
         return;
       }
       if (imageInputs.length === 0) {
@@ -682,8 +569,12 @@ ${text}` : text;
         imageInputContainer.hidden = true;
         return;
       }
-      imageInputContainer.innerHTML = "";
-      imageInputContainer.hidden = true;
+      imageInputContainer.innerHTML = `
+      <div class="empty-panel image-input-overview">
+        <h4>图像输入</h4>
+        <p>下方共有 ${imageInputs.length} 个图像字段。直接点击字段即可从 Photoshop 当前选区捕获，没有选区时会自动使用整张文档。</p>
+      </div>
+    `;
     }
     function renderImageField(input) {
       const runtime = modules.runtime;
@@ -693,24 +584,25 @@ ${text}` : text;
       const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
       const asset = state.formValues[key];
       const hasAssignedAsset = hasImageAsset(asset);
-      const captureLabel = hasAssignedAsset ? "重新捕获" : "点击从 PS 选区捕获";
-      const captureSource = hasAssignedAsset ? asset.capturedFromSelection ? "已从 PS 选区捕获" : "已从当前文档捕获" : "";
+      const captureLabel = hasAssignedAsset ? "重新捕获" : "捕获图像";
+      const captureSource = hasAssignedAsset ? asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档" : "点击此区域直接捕获图像";
+      const captureMeta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"}` : "未捕获";
       return `
       <div class="field dynamic-field">
         <span class="field-label">${label}${requiredMark}</span>
         <div class="input-zone">
           <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
             <div class="image-capture-field-head">
-              <span class="image-capture-field-title">${label}</span>
+              <span class="image-capture-field-title">${hasAssignedAsset ? captureMeta : "等待捕获"}</span>
               <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
             </div>
             ${hasAssignedAsset ? `<div class="image-preview-frame image-capture-stage"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>` : `
                   <div class="image-capture-stage image-capture-stage-empty">
                     <div class="image-capture-stage-icon">↑</div>
-                    <div class="image-capture-stage-text">点击从 PS 选区捕获</div>
+                    <div class="image-capture-stage-text">点击捕获</div>
                   </div>
                 `}
-            ${captureSource ? `<div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}</div>` : ""}
+            <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}</div>
             <div class="inline-actions image-capture-field-actions">
               <button class="mini-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
             </div>
@@ -730,6 +622,37 @@ ${text}` : text;
       if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
       return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
     }
+    function getRunningTasks() {
+      return Array.isArray(modules.state.state.runningTasks) ? modules.state.state.runningTasks.filter((item) => item && item.taskId) : [];
+    }
+    function getTaskStatusLabel(status) {
+      const normalized = String(status || "").trim().toLowerCase();
+      if (!normalized) return "运行中";
+      if (normalized === "submitted") return "已提交";
+      if (normalized === "running") return "运行中";
+      if (normalized === "queued") return "排队中";
+      if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "已完成";
+      if (normalized === "failed" || normalized === "error") return "失败";
+      if (normalized === "cancelled" || normalized === "canceled") return "已取消";
+      return status;
+    }
+    function renderRunningTaskList(tasks) {
+      if (!Array.isArray(tasks) || tasks.length === 0) return "";
+      return tasks.map((task, index) => {
+        const appName = modules.runtime.escapeHtml(task.appName || `任务 ${index + 1}`);
+        const taskId = String(task.taskId || "").trim();
+        const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "-";
+        return `
+          <div class="running-task-item">
+            <div class="running-task-main">
+              <div class="running-task-title">${appName}</div>
+              <div class="running-task-meta">${modules.runtime.escapeHtml(getTaskStatusLabel(task.status || "running"))} · ${modules.runtime.escapeHtml(shortTaskId)}</div>
+            </div>
+            <button class="mini-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(taskId)}">取消</button>
+          </div>
+        `;
+      }).join("");
+    }
     function updateRunButtonState() {
       const state = modules.state.state;
       const runButton = modules.runtime.getById("btnRun");
@@ -738,34 +661,25 @@ ${text}` : text;
       const runningTaskList = modules.runtime.getById("runningTaskList");
       const statusChip = modules.runtime.getById("workspaceInputStatusChip");
       const hasCurrentApp = !!state.currentApp;
-      const runningTasks = Array.isArray(state.runningTasks) ? state.runningTasks.filter((item) => item && item.taskId) : [];
+      const runningTasks = getRunningTasks();
       const hasRunningTask = runningTasks.length > 0;
       if (runButton) {
         runButton.disabled = !hasCurrentApp;
-        runButton.textContent = hasRunningTask ? `继续运行（当前 ${runningTasks.length} 个任务）` : hasCurrentApp ? `运行新任务：${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
+        runButton.textContent = hasRunningTask ? "运行新任务" : hasCurrentApp ? `运行 ${modules.state.getAppDisplayName(state.currentApp)}` : "开始运行";
       }
       if (cancelButton) {
         cancelButton.disabled = !hasRunningTask;
-        cancelButton.textContent = hasRunningTask ? "取消最近任务" : "取消最近任务";
+        cancelButton.textContent = runningTasks.length > 1 ? "取消最近任务" : "取消任务";
       }
       if (taskStatusSummary) {
-        taskStatusSummary.textContent = hasRunningTask ? `当前共有 ${runningTasks.length} 个任务进行中，可在下方逐个取消。` : hasCurrentApp ? `已准备好运行 ${modules.state.getAppDisplayName(state.currentApp)}，可直接提交任务。` : "后台任务：暂时空闲，请先选择一个应用。";
+        taskStatusSummary.textContent = hasRunningTask ? `后台任务：运行中 ${runningTasks.length} 个，可逐个取消。` : hasCurrentApp ? `后台任务：无，已就绪，可直接运行 ${modules.state.getAppDisplayName(state.currentApp)}。` : "后台任务：无，请先选择应用。";
       }
       if (statusChip) {
         statusChip.textContent = hasRunningTask ? `运行中 ${runningTasks.length}` : hasCurrentApp ? `已加载 ${modules.state.getAppInputCount(state.currentApp)} 个输入项` : "等待选择应用";
       }
       if (runningTaskList) {
-        runningTaskList.innerHTML = hasRunningTask ? runningTasks.map(
-          (task) => `
-                <div class="running-task-item">
-                  <div class="running-task-main">
-                    <div class="running-task-title">${modules.runtime.escapeHtml(task.appName || "未命名任务")}</div>
-                    <div class="running-task-meta">Task ID: ${modules.runtime.escapeHtml(task.taskId)} | 状态：${modules.runtime.escapeHtml(task.status || "running")}</div>
-                  </div>
-                  <button class="mini-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(task.taskId)}">取消</button>
-                </div>
-              `
-        ).join("") : '<div class="running-task-empty">当前没有进行中的任务。</div>';
+        runningTaskList.hidden = !hasRunningTask;
+        runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : "";
       }
     }
     function renderField(input) {
@@ -938,12 +852,6 @@ ${text}` : text;
       renderWorkspace();
       return asset;
     }
-    function clearCapturedImage() {
-      const selectedAsset = getSelectedCaptureAsset();
-      if (!selectedAsset) return;
-      removeCapturedAsset(selectedAsset.assetId);
-      renderWorkspace();
-    }
     function isMissingRequiredValue(value) {
       if (typeof value === "boolean") return false;
       if (hasImageAsset(value)) return false;
@@ -991,7 +899,6 @@ ${text}` : text;
       const runButton = modules.runtime.getById("btnRun");
       const cancelButton = modules.runtime.getById("btnCancelJob");
       const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
-      const imageInputContainer = modules.runtime.getById("imageInputContainer");
       if (dynamicInputContainer) {
         dynamicInputContainer.addEventListener("input", (event) => {
           const element = event.target;
@@ -1027,63 +934,9 @@ ${text}` : text;
             modules.templates.openTemplatePicker({ mode: "multiple", maxSelection: 5, targetKey: key });
             return;
           }
-          if (action === "assign-captured-image") {
-            try {
-              assignCaptureToInput(key);
-              modules.ui.logToWorkspace(`已将当前捕获图像绑定到字段：${key}`, "success");
-            } catch (error) {
-              modules.ui.logToWorkspace(error.message, "warn");
-            }
-            return;
-          }
           if (action === "clear-captured-image") {
             clearImageInputValue(key);
             modules.ui.logToWorkspace(`已清除字段图像：${key}`, "info");
-          }
-        });
-      }
-      if (imageInputContainer) {
-        imageInputContainer.addEventListener("input", () => {
-          getImageCaptureSettings();
-        });
-        imageInputContainer.addEventListener("click", async (event) => {
-          const captureButton = event.target && event.target.closest("#btnCaptureDocumentImage");
-          const clearButton = event.target && event.target.closest("#btnClearCapturedImage");
-          const clearAllButton = event.target && event.target.closest("#btnClearAllCapturedImages");
-          const selectAssetButton = event.target && event.target.closest('[data-action="select-captured-image"][data-capture-id]');
-          const removeAssetButton = event.target && event.target.closest('[data-action="remove-captured-image"][data-capture-id]');
-          if (captureButton) {
-            captureButton.disabled = true;
-            try {
-              await captureCurrentDocumentImage();
-            } catch (error) {
-              modules.ui.logToWorkspace(`图像捕获失败：${error.message}`, "error");
-            } finally {
-              captureButton.disabled = false;
-            }
-            return;
-          }
-          if (clearButton) {
-            clearCapturedImage();
-            modules.ui.logToWorkspace("已移除当前选中的捕获图像。", "info");
-            return;
-          }
-          if (clearAllButton) {
-            clearAllCapturedAssets();
-            renderWorkspace();
-            modules.ui.logToWorkspace("已清空全部捕获图像，并解除字段绑定。", "info");
-            return;
-          }
-          if (selectAssetButton) {
-            setSelectedCaptureAsset(selectAssetButton.getAttribute("data-capture-id"));
-            renderWorkspace();
-            modules.ui.logToWorkspace("已切换当前选中的捕获图像。", "info");
-            return;
-          }
-          if (removeAssetButton) {
-            removeCapturedAsset(removeAssetButton.getAttribute("data-capture-id"));
-            renderWorkspace();
-            modules.ui.logToWorkspace("已移除一张捕获图像。", "info");
           }
         });
       }
@@ -1272,6 +1125,16 @@ ${text}` : text;
         normalized,
         summary: normalized.length > 0 ? `已识别 ${normalized.length} 个输入项，其中必填 ${requiredCount} 个、选填 ${optionalCount} 个、图像 ${imageCount} 个、提示词 ${promptCount} 个、选项 ${selectCount} 个、布尔 ${booleanCount} 个。${previewKeys ? `字段预览：${previewKeys}${normalized.length > 5 ? "等" : ""}。` : ""}` : "已解析输入结构，但暂未识别到可用字段。",
         status: normalized.length > 0 ? "success" : "info"
+      };
+    }
+    function summarizeParsedApp(result) {
+      const inputs = Array.isArray(result && result.inputs) ? result.inputs : [];
+      const analysis = analyzeAppInputsText(JSON.stringify(inputs));
+      const summary = String(analysis.summary || "").replace(/^已识别\s*/, "");
+      return {
+        name: String(result && (result.name || result.appId) || "未命名应用"),
+        inputCount: inputs.length,
+        summary
       };
     }
     function renderAppInputsSummary(text) {
@@ -1504,9 +1367,9 @@ ${text}` : text;
       if (descriptionEl) descriptionEl.value = result && result.description ? result.description : "";
       if (inputsEl) inputsEl.value = JSON.stringify(result && result.inputs || [], null, 2);
       renderAppInputsSummary(inputsEl?.value || "[]");
-      const inputCount = Array.isArray(result && result.inputs) ? result.inputs.length : 0;
-      runtime.setSummaryStatus(statusEl, `解析成功：${result.name || normalizedAppId}，共识别 ${inputCount} 个输入项，请确认后保存。`, "success");
-      modules.ui.logToWorkspace(`应用解析成功：${result.name || normalizedAppId}，共 ${inputCount} 个输入项。`, "success");
+      const parsedSummary = summarizeParsedApp(result);
+      runtime.setSummaryStatus(statusEl, `解析成功：${parsedSummary.name}。${parsedSummary.summary} 请确认名称和输入结构后保存。`, "success");
+      modules.ui.logToWorkspace(`应用解析成功：${parsedSummary.name}。${parsedSummary.summary}`, "success");
       return result;
     }
     function readAppEditorForm() {
@@ -1649,6 +1512,12 @@ ${text}` : text;
         warning
       };
     }
+    function getTemplatePreview(content, maxChars = 48) {
+      const text = String(content || "").replace(/\s+/g, " ").trim();
+      if (!text) return "暂无内容预览";
+      const preview = Array.from(text).slice(0, Math.max(1, Number(maxChars) || 48)).join("");
+      return preview.length < text.length ? `${preview}...` : preview;
+    }
     function fillTemplateEditor(template, options = {}) {
       if (!options.force && !confirmDiscardTemplateChanges()) return false;
       const runtime = modules.runtime;
@@ -1711,6 +1580,7 @@ ${text}` : text;
       else templates.unshift(nextItem);
       await saveTemplatesToStorage(templates);
       modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), `模板已保存：${nextItem.title}`, "success");
+      modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), `已保存模板：${templates.length} 条`, "success");
       modules.ui.logToWorkspace(`模板已保存：${nextItem.title}`, "success");
       fillTemplateEditor(null, { force: true });
     }
@@ -1722,6 +1592,7 @@ ${text}` : text;
       if (String(modules.state.state.editingTemplateId || "") === String(templateId)) fillTemplateEditor(null, { force: true });
       modules.ui.logToWorkspace(`模板已删除：${target.title}`, "warn");
       modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除。", "warn");
+      modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), `已保存模板：${nextTemplates.length} 条`, "warn");
     }
     function exportTemplatesToTextarea() {
       const input = modules.runtime.getById("templateTransferInput");
@@ -1780,12 +1651,19 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       if (!listEl || !summaryEl) return;
       const templates = getVisibleTemplates();
       const keyword = String(modules.state.state.templateManagerKeyword || "").trim();
-      modules.runtime.setSummaryStatus(summaryEl, keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`, "info");
+      modules.runtime.setSummaryStatus(
+        summaryEl,
+        keyword ? `已保存模板：${templates.length} / ${modules.state.state.templates.length} 条` : `已保存模板：${templates.length} 条`,
+        "info"
+      );
       if (templates.length === 0) {
         listEl.innerHTML = modules.state.state.templates.length === 0 ? `<div class="picker-empty"><strong>还没有已保存模板</strong><p>点击“创建模板”开始整理常用提示词。</p></div>` : `<div class="picker-empty"><strong>没有匹配的模板</strong><p>换个关键词再试试。</p></div>`;
         return;
       }
-      listEl.innerHTML = templates.map((item) => `<article class="list-item saved-template-item compact-card ${String(modules.state.state.editingTemplateId || "") === String(item.id) ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`).join("");
+      listEl.innerHTML = templates.map((item) => {
+        const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
+        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`;
+      }).join("");
     }
     function normalizePickerConfig(config = {}) {
       const mode = config.mode === "single" ? "single" : "multiple";
@@ -1901,6 +1779,11 @@ ${incomingContent}` : incomingContent;
       }
       modules.state.state.formValues[key] = content;
       modules.workspace.renderWorkspace();
+      modules.runtime.setSummaryStatus(
+        modules.runtime.getById("templatePickerSelectionInfo"),
+        `${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段 ${key}`,
+        "success"
+      );
       modules.ui.logToWorkspace(`${applyMode === "append" ? "已追加" : "已写入"} ${selected.length} 条模板到字段：${key}`, "success");
     }
     function bindTemplateActions() {

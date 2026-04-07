@@ -747,7 +747,7 @@ button {
 }
 
 .workspace-run-card {
-  gap: 12px;
+  gap: 8px;
 }
 
 .workspace-run-head {
@@ -756,43 +756,43 @@ button {
 
 .workspace-run-actions {
   align-items: stretch;
-  gap: 10px;
+  gap: 8px;
 }
 
 .workspace-cancel-btn {
-  flex: 0 0 168px;
-  min-height: 46px;
-  border-radius: 16px;
-  font-size: 13px;
+  flex: 0 0 142px;
+  min-height: 42px;
+  border-radius: 14px;
+  font-size: 12px;
 }
 
 .workspace-run-btn {
-  min-height: 46px;
-  border-radius: 16px;
-  font-size: 14px;
+  min-height: 42px;
+  border-radius: 14px;
+  font-size: 13px;
 }
 
 .workspace-run-card .summary-strip {
-  min-height: 38px;
+  min-height: 34px;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 7px 10px;
   font-size: 12px;
 }
 
 .running-task-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .running-task-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(86, 110, 132, 0.7);
   background: rgba(41, 57, 72, 0.88);
 }
@@ -806,14 +806,14 @@ button {
 
 .running-task-title {
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.2;
 }
 
 .running-task-meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.35;
 }
 
@@ -1389,7 +1389,7 @@ button {
 
 .image-capture-field-card {
   cursor: pointer;
-  gap: 10px;
+  gap: 8px;
 }
 
 .image-capture-field-card:hover {
@@ -1413,7 +1413,7 @@ button {
 }
 
 .image-capture-stage {
-  min-height: 180px;
+  min-height: 164px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1443,18 +1443,22 @@ button {
 }
 
 .image-capture-stage-text {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .image-capture-stage-note {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.4;
 }
 
 .image-capture-field-actions {
   justify-content: flex-start;
+}
+
+.image-input-overview {
+  padding: 8px 10px;
 }
 
 .image-preview-frame {
