@@ -752,14 +752,14 @@ ${text}` : text;
       if (!kind) return rawValue;
       if (typeof rawValue === "number") {
         if (!Number.isFinite(rawValue)) return "";
-        return kind === "int" ? Math.round(rawValue) : Number(rawValue.toFixed(1));
+        return kind === "int" ? Math.round(rawValue) : rawValue;
       }
       const text = String(rawValue ?? "").trim();
       if (!text) return "";
       if (isNumericInputInterimValue(text)) return text;
       const numericValue = Number(text);
       if (!Number.isFinite(numericValue)) return text;
-      return kind === "int" ? Math.round(numericValue) : Number(numericValue.toFixed(1));
+      return kind === "int" ? Math.round(numericValue) : numericValue;
     }
     function formatNumericInputValue(input, rawValue) {
       const normalizedValue = normalizeNumericValue(input, rawValue);
@@ -767,11 +767,11 @@ ${text}` : text;
         return String(normalizedValue ?? "");
       }
       if (typeof normalizedValue === "number") {
-        return isFloatNumericInput(input, rawValue) ? normalizedValue.toFixed(1) : String(normalizedValue);
+        return isFloatNumericInput(input, rawValue) ? String(normalizedValue) : String(normalizedValue);
       }
       const parsed = Number(normalizedValue);
       if (!Number.isFinite(parsed)) return String(normalizedValue ?? "");
-      return isFloatNumericInput(input, rawValue) ? parsed.toFixed(1) : String(Math.round(parsed));
+      return isFloatNumericInput(input, rawValue) ? String(parsed) : String(Math.round(parsed));
     }
     function getNumericInputStep(input, rawValue = void 0) {
       const explicitStep = Number(input && input.step);
