@@ -670,7 +670,10 @@
         ...current,
         ...nextTask,
         createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
-        submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt
+        submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
+        finishedAt: Number(nextTask.finishedAt) > 0 ? Number(nextTask.finishedAt) : Number(current.finishedAt) || 0,
+        placementDocumentId:
+          Number(nextTask.placementDocumentId) > 0 ? Number(nextTask.placementDocumentId) : Number(current.placementDocumentId) || 0
       };
     } else {
       list.unshift(nextTask);
@@ -698,6 +701,7 @@
       ...nextTaskPatch,
       taskId: normalizedNextTaskId,
       remoteTaskId: String(nextTaskPatch.remoteTaskId || normalizedNextTaskId).trim(),
+      finishedAt: Number(nextTaskPatch.finishedAt) > 0 ? Number(nextTaskPatch.finishedAt) : Number(current.finishedAt) || 0,
       updatedAt: Date.now()
     };
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);

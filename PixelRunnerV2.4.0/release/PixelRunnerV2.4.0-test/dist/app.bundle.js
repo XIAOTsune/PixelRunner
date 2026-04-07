@@ -2313,9 +2313,21 @@ ${incomingContent}` : incomingContent;
     }
     function fillSettingsForm(settings) {
       if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
-      if (modules.runtime.getById("settingsPollIntervalInput")) modules.runtime.getById("settingsPollIntervalInput").value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
-      if (modules.runtime.getById("settingsTimeoutInput")) modules.runtime.getById("settingsTimeoutInput").value = String(settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout);
-      if (modules.runtime.getById("settingsMaxConcurrentTasksInput")) modules.runtime.getById("settingsMaxConcurrentTasksInput").value = String(settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks);
+      if (modules.runtime.getById("settingsPollIntervalInput")) {
+        modules.runtime.getById("settingsPollIntervalInput").value = String(
+          settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval
+        );
+      }
+      if (modules.runtime.getById("settingsTimeoutInput")) {
+        modules.runtime.getById("settingsTimeoutInput").value = String(
+          settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout
+        );
+      }
+      if (modules.runtime.getById("settingsMaxConcurrentTasksInput")) {
+        modules.runtime.getById("settingsMaxConcurrentTasksInput").value = String(
+          settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks
+        );
+      }
     }
     function readSettingsForm() {
       return modules.state.normalizeSettings({
@@ -2340,7 +2352,11 @@ ${incomingContent}` : incomingContent;
       await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
       await modules.runtime.storageSetItem(
         modules.state.STORAGE_KEYS.SETTINGS,
-        JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout, maxConcurrentTasks: normalized.maxConcurrentTasks })
+        JSON.stringify({
+          pollInterval: normalized.pollInterval,
+          timeout: normalized.timeout,
+          maxConcurrentTasks: normalized.maxConcurrentTasks
+        })
       );
       modules.state.state.settings = normalized;
       modules.state.state.settingsLoaded = true;
@@ -2350,7 +2366,10 @@ ${incomingContent}` : incomingContent;
         runtime: modules.state.state.hostRuntime,
         hasApiKey: Boolean(normalized.apiKey)
       });
-      modules.ui.logToWorkspace(`设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s。`, "success");
+      modules.ui.logToWorkspace(
+        `设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s，并发 ${normalized.maxConcurrentTasks} 个。`,
+        "success"
+      );
     }
     async function initializeSettings() {
       renderSettingsStatus("正在读取本地设置...", "info");
@@ -2454,10 +2473,13 @@ ${incomingContent}` : incomingContent;
           try {
             const parsed = await modules.apps.parseAppReference();
             if (parsed) {
-              renderSettingsDiagnostics(`应用解析完成：${parsed.name || parsed.appId || "未命名应用"}。`, {
-                runtime: modules.state.state.hostRuntime,
-                hasApiKey: Boolean(modules.state.state.settings.apiKey)
-              });
+              renderSettingsDiagnostics(
+                `应用解析完成：${parsed.name || parsed.appId || "未命名应用"}。`,
+                {
+                  runtime: modules.state.state.hostRuntime,
+                  hasApiKey: Boolean(modules.state.state.settings.apiKey)
+                }
+              );
             }
           } catch (error) {
             runtime.setSummaryStatus(runtime.getById("appEditorStatus"), error.message, "error");

@@ -800,6 +800,8 @@ button {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .running-task-title {
@@ -827,10 +829,12 @@ button {
 
 .running-task-inline-btn {
   flex: 0 0 auto;
-  min-width: 56px;
+  min-width: 42px;
+  max-width: 64px;
   min-height: 28px;
   border-radius: 10px;
-  padding: 0 10px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .running-task-empty {
@@ -1775,12 +1779,13 @@ button {
   }
 
   .running-task-topline-actions {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-start;
   }
 
   .running-task-inline-btn {
-    width: 100%;
+    width: auto;
+    max-width: none;
   }
 
   #viewTools .tool-list {

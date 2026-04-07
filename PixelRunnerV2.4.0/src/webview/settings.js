@@ -10,7 +10,9 @@
     if (!box) return;
 
     const runtimeText = options.runtime ? `<p>宿主环境：${modules.runtime.escapeHtml(options.runtime)}</p>` : "";
-    const apiKeyText = options.hasApiKey ? "<p>API Key：已配置，会写入宿主本地存储。</p>" : "<p>API Key：尚未配置。</p>";
+    const apiKeyText = options.hasApiKey
+      ? "<p>API Key：已配置，会写入宿主本地存储。</p>"
+      : "<p>API Key：尚未配置。</p>";
     const appText = `<p>已保存应用：${modules.runtime.escapeHtml(String(modules.state.state.apps.length))} 个。</p>`;
     const templateText = `<p>已保存模板：${modules.runtime.escapeHtml(String(modules.state.state.templates.length))} 条。</p>`;
     const currentApp = modules.state.state.currentApp;
@@ -49,9 +51,21 @@
 
   function fillSettingsForm(settings) {
     if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
-    if (modules.runtime.getById("settingsPollIntervalInput")) modules.runtime.getById("settingsPollIntervalInput").value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
-    if (modules.runtime.getById("settingsTimeoutInput")) modules.runtime.getById("settingsTimeoutInput").value = String(settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout);
-    if (modules.runtime.getById("settingsMaxConcurrentTasksInput")) modules.runtime.getById("settingsMaxConcurrentTasksInput").value = String(settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks);
+    if (modules.runtime.getById("settingsPollIntervalInput")) {
+      modules.runtime.getById("settingsPollIntervalInput").value = String(
+        settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval
+      );
+    }
+    if (modules.runtime.getById("settingsTimeoutInput")) {
+      modules.runtime.getById("settingsTimeoutInput").value = String(
+        settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout
+      );
+    }
+    if (modules.runtime.getById("settingsMaxConcurrentTasksInput")) {
+      modules.runtime.getById("settingsMaxConcurrentTasksInput").value = String(
+        settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks
+      );
+    }
   }
 
   function readSettingsForm() {
@@ -79,18 +93,28 @@
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
     await modules.runtime.storageSetItem(
       modules.state.STORAGE_KEYS.SETTINGS,
-      JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout, maxConcurrentTasks: normalized.maxConcurrentTasks })
+      JSON.stringify({
+        pollInterval: normalized.pollInterval,
+        timeout: normalized.timeout,
+        maxConcurrentTasks: normalized.maxConcurrentTasks
+      })
     );
 
     modules.state.state.settings = normalized;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(normalized);
+    if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
+      modules.workspace.updateRunButtonState();
+    }
     renderSettingsStatus("设置已保存到宿主本地存储。", "success");
     renderSettingsDiagnostics("当前设置已同步。", {
       runtime: modules.state.state.hostRuntime,
       hasApiKey: Boolean(normalized.apiKey)
     });
-    modules.ui.logToWorkspace(`设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s。`, "success");
+    modules.ui.logToWorkspace(
+      `设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s，并发 ${normalized.maxConcurrentTasks} 个。`,
+      "success"
+    );
   }
 
   async function initializeSettings() {
@@ -204,10 +228,13 @@
         try {
           const parsed = await modules.apps.parseAppReference();
           if (parsed) {
-            renderSettingsDiagnostics(`应用解析完成：${parsed.name || parsed.appId || "未命名应用"}。`, {
-              runtime: modules.state.state.hostRuntime,
-              hasApiKey: Boolean(modules.state.state.settings.apiKey)
-            });
+            renderSettingsDiagnostics(
+              `应用解析完成：${parsed.name || parsed.appId || "未命名应用"}。`,
+              {
+                runtime: modules.state.state.hostRuntime,
+                hasApiKey: Boolean(modules.state.state.settings.apiKey)
+              }
+            );
           }
         } catch (error) {
           runtime.setSummaryStatus(runtime.getById("appEditorStatus"), error.message, "error");
@@ -226,7 +253,9 @@
         }
         runtime.setSummaryStatus(
           runtime.getById("appEditorStatus"),
-          modules.state.state.editingAppId ? "已修改当前应用，记得保存。" : "输入应用 ID 或链接后解析，确认名称后保存。",
+          modules.state.state.editingAppId
+            ? "已修改当前应用，记得保存。"
+            : "输入应用 ID 或链接后解析，确认名称后保存。",
           "pending"
         );
       });
