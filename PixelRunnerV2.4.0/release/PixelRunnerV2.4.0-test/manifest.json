@@ -1,6 +1,6 @@
 {
   "id": "com.tsune.pixelrunner",
-  "name": "PixelRunner",
+  "name": "PixelRunner（小T修图助手）",
   "version": "2.4.0",
   "main": "index.html",
   "manifestVersion": 5,
@@ -9,7 +9,7 @@
       "type": "panel",
       "id": "mainPanel",
       "label": {
-        "default": "PixelRunner"
+        "default": "PixelRunner（小T修图助手）"
       },
       "minimumSize": {
         "width": 280,
