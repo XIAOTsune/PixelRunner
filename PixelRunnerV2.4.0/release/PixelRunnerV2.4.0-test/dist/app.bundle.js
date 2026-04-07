@@ -733,6 +733,9 @@ ${text}` : text;
       if (isTaskTerminalStatus(task.status)) return false;
       return Boolean(String(task.remoteTaskId || task.taskId || "").trim()) && String(task.status || "").trim().toLowerCase() !== "submitting";
     }
+    function isTaskDeletable(task) {
+      return Boolean(task && typeof task === "object" && isTaskTerminalStatus(task.status));
+    }
     function getActiveRunningTasks() {
       return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status));
     }
@@ -821,17 +824,20 @@ ${text}` : text;
         const durationLabel = `${isTaskTerminalStatus(task.status) ? "耗时" : "已运行"} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
         const canCancel = isTaskCancellable(task);
+        const canDelete = isTaskDeletable(task);
         return `
           <div class="running-task-item">
             <div class="running-task-main">
               <div class="running-task-topline">
                 <div class="running-task-title">${appName}</div>
-                <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
+                <div class="running-task-topline-actions">
+                  <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
+                  ${canCancel ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">取消</button>` : canDelete ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="delete-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">删除</button>` : ""}
+                </div>
               </div>
               <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · ${modules.runtime.escapeHtml(durationLabel)}</div>
               <div class="running-task-detail">${detail}</div>
             </div>
-            ${canCancel ? `<button class="mini-btn running-task-cancel-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">取消</button>` : ""}
           </div>
         `;
       }).join("");
@@ -1054,6 +1060,16 @@ ${text}` : text;
       syncPrimaryRunningTask();
       updateRunButtonState();
       return state.runningTasks.find((item) => String(item.taskId || "") === normalizedNextTaskId) || null;
+    }
+    function deleteRunningTask(taskId = "") {
+      const state = modules.state.state;
+      const normalizedTaskId = String(taskId || "").trim();
+      if (!normalizedTaskId) return;
+      state.runningTasks = (Array.isArray(state.runningTasks) ? state.runningTasks : []).filter(
+        (item) => String(item.taskId || "") !== normalizedTaskId
+      );
+      syncPrimaryRunningTask();
+      updateRunButtonState();
     }
     function clearLastResult() {
       modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", taskId: "", placedAt: 0 };
@@ -1354,7 +1370,7 @@ ${text}` : text;
         });
       }
       document.addEventListener("click", async (event) => {
-        const target = event.target && event.target.closest('[data-action="cancel-running-task"][data-task-id]');
+        const target = event.target && event.target.closest("[data-action][data-task-id]");
         if (!target) return;
         const action = target.getAttribute("data-action");
         if (action === "cancel-running-task") {
@@ -1381,6 +1397,13 @@ ${text}` : text;
           } finally {
             target.disabled = false;
           }
+          return;
+        }
+        if (action === "delete-running-task") {
+          const taskId = String(target.getAttribute("data-task-id") || "").trim();
+          if (!taskId) return;
+          deleteRunningTask(taskId);
+          modules.ui.logToWorkspace(`已删除任务卡片：${taskId}`, "info");
         }
       });
     }

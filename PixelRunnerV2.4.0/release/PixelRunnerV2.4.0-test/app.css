@@ -795,6 +795,13 @@ button {
   gap: 8px;
 }
 
+.running-task-topline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
 .running-task-title {
   color: var(--text-strong);
   font-size: 12px;
@@ -818,11 +825,12 @@ button {
   flex: 0 0 auto;
 }
 
-.running-task-cancel-btn {
+.running-task-inline-btn {
   flex: 0 0 auto;
-  min-width: 64px;
-  min-height: 32px;
+  min-width: 56px;
+  min-height: 28px;
   border-radius: 10px;
+  padding: 0 10px;
 }
 
 .running-task-empty {
@@ -1766,7 +1774,12 @@ button {
     align-items: flex-start;
   }
 
-  .running-task-cancel-btn {
+  .running-task-topline-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .running-task-inline-btn {
     width: 100%;
   }
 
