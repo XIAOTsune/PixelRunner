@@ -170,7 +170,6 @@
     const state = modules.state.state;
     const key = String(input.key || "").trim();
     const label = runtime.escapeHtml(input.label || input.name || key);
-    const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
     const asset = state.formValues[key];
     const hasAssignedAsset = hasImageAsset(asset);
     const previewSrc = getImageAssetPreviewSrc(asset);
@@ -178,36 +177,32 @@
     const captureSource = hasAssignedAsset
       ? (asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
       : "点击此区域直接捕获图像";
-    const captureMeta = hasAssignedAsset
-      ? `${asset.width || "-"}x${asset.height || "-"}`
-      : "未捕获";
+    const captureMeta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"}` : "";
+    const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
 
     return `
-      <div class="field dynamic-field">
-        <span class="field-label">${label}${requiredMark}</span>
-        <div class="input-zone">
-          <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
-            <div class="image-capture-field-head">
-              <span class="image-capture-field-title">${hasAssignedAsset ? captureMeta : "等待捕获"}</span>
+      <div class="field dynamic-field image-field">
+        <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
+          <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}">
+            <div class="image-capture-stage-corners">
+              <span class="image-capture-corner-label">${label}${requiredMark}</span>
+              <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
             </div>
-            <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}">
-              ${
-                hasAssignedAsset && previewSrc
-                  ? `<div class="image-preview-frame image-capture-preview"><img src="${runtime.escapeHtml(previewSrc)}" alt="${label}" /></div>`
-                  : `
-                    <div class="image-capture-stage-empty-inner">
-                      <div class="image-capture-stage-icon">↑</div>
-                      <div class="image-capture-stage-text">点击捕获</div>
-                    </div>
-                  `
-              }
-              <div class="inline-actions image-capture-stage-actions">
-                <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
-                <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
-              </div>
+            ${
+              hasAssignedAsset && previewSrc
+                ? `<div class="image-preview-frame image-capture-preview"><img src="${runtime.escapeHtml(previewSrc)}" alt="${label}" /></div>`
+                : `
+                  <div class="image-capture-stage-empty-inner">
+                    <div class="image-capture-stage-icon">↑</div>
+                    <div class="image-capture-stage-text">点击捕获</div>
+                  </div>
+                `
+            }
+            <div class="inline-actions image-capture-stage-actions">
+              <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
             </div>
-            <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}</div>
           </div>
+          <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}${captureMeta ? ` · ${runtime.escapeHtml(captureMeta)}` : ""}</div>
         </div>
       </div>
     `;

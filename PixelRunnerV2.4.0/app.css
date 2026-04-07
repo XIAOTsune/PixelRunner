@@ -1376,25 +1376,19 @@ button {
   padding: 8px;
 }
 
+.image-field {
+  margin-bottom: 2px;
+}
+
 .image-capture-field-card {
   cursor: pointer;
-  gap: 8px;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
 }
 
 .image-capture-field-card:hover {
-  background: rgba(46, 63, 79, 0.92);
-}
-
-.image-capture-field-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.image-capture-field-title {
-  color: var(--muted);
-  font-size: 12px;
+  background: transparent;
 }
 
 .image-capture-clear-btn {
@@ -1402,7 +1396,7 @@ button {
 }
 
 .image-capture-stage {
-  min-height: 164px;
+  min-height: 210px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1427,8 +1421,42 @@ button {
 }
 
 .image-capture-stage-filled {
-  padding: 0;
   border-style: solid;
+}
+
+.image-capture-stage-corners {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.image-capture-stage-corners .mini-btn {
+  pointer-events: auto;
+}
+
+.image-capture-corner-label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  max-width: calc(100% - 88px);
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(52, 73, 92, 0.82);
+  border: 1px solid rgba(106, 131, 155, 0.68);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .image-capture-stage-icon {
@@ -1458,26 +1486,27 @@ button {
 .image-capture-preview {
   width: 100%;
   height: 100%;
-  min-height: 164px;
+  min-height: 210px;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
 .image-capture-preview img {
-  max-height: 164px;
+  max-height: 210px;
+  object-fit: contain;
 }
 
 .image-capture-stage-actions {
   position: absolute;
   left: 12px;
-  right: 12px;
   bottom: 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   pointer-events: none;
+  z-index: 2;
 }
 
 .image-capture-stage-actions .mini-btn {
@@ -1489,10 +1518,6 @@ button {
   min-height: 32px;
   padding: 0 12px;
   border-radius: 10px;
-}
-
-.image-capture-primary-btn {
-  margin-right: auto;
 }
 
 .image-input-overview {

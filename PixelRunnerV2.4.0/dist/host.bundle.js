@@ -511,6 +511,46 @@ var PixelRunnerHostBundle = (() => {
       y: (Number(bounds.top) + Number(bounds.bottom)) / 2
     };
   }
+  function arrayBufferToBase64(buffer) {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return "";
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const chunkSize = 32768;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      const chunk = bytes.subarray(index, index + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  }
+  function extractEncodedBase64(encoded) {
+    if (!encoded) return "";
+    if (typeof encoded === "string") return encoded.trim();
+    if (encoded instanceof ArrayBuffer) return arrayBufferToBase64(encoded);
+    if (ArrayBuffer.isView(encoded)) {
+      const view = encoded;
+      return arrayBufferToBase64(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength));
+    }
+    if (typeof encoded === "object") {
+      const direct = [
+        encoded.base64,
+        encoded.data,
+        encoded.value,
+        encoded.string,
+        encoded.output
+      ].find((item) => typeof item === "string" && item.trim());
+      if (direct) return direct.trim();
+      const nestedBuffer = [encoded.arrayBuffer, encoded.buffer, encoded.dataBuffer].find(
+        (item) => item instanceof ArrayBuffer || ArrayBuffer.isView(item)
+      );
+      if (nestedBuffer instanceof ArrayBuffer) return arrayBufferToBase64(nestedBuffer);
+      if (nestedBuffer && ArrayBuffer.isView(nestedBuffer)) {
+        return arrayBufferToBase64(
+          nestedBuffer.buffer.slice(nestedBuffer.byteOffset, nestedBuffer.byteOffset + nestedBuffer.byteLength)
+        );
+      }
+    }
+    return "";
+  }
   function parseLayerBounds(bounds) {
     return normalizeBounds(bounds);
   }
@@ -618,7 +658,10 @@ var PixelRunnerHostBundle = (() => {
         format: "jpeg",
         quality
       });
-      const base64 = String(encoded || "");
+      const base64 = extractEncodedBase64(encoded);
+      if (!base64) {
+        throw new Error("Photoshop returned an empty capture payload");
+      }
       return {
         ok: true,
         kind: "captured-document-image",
