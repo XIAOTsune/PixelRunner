@@ -51,13 +51,15 @@
     if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
     if (modules.runtime.getById("settingsPollIntervalInput")) modules.runtime.getById("settingsPollIntervalInput").value = String(settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval);
     if (modules.runtime.getById("settingsTimeoutInput")) modules.runtime.getById("settingsTimeoutInput").value = String(settings.timeout ?? modules.state.DEFAULT_SETTINGS.timeout);
+    if (modules.runtime.getById("settingsMaxConcurrentTasksInput")) modules.runtime.getById("settingsMaxConcurrentTasksInput").value = String(settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks);
   }
 
   function readSettingsForm() {
     return modules.state.normalizeSettings({
       apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
-      timeout: modules.runtime.getById("settingsTimeoutInput")?.value
+      timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
+      maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value
     });
   }
 
@@ -67,7 +69,8 @@
     return modules.state.normalizeSettings({
       apiKey,
       pollInterval: rawSettings && rawSettings.pollInterval,
-      timeout: rawSettings && rawSettings.timeout
+      timeout: rawSettings && rawSettings.timeout,
+      maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks
     });
   }
 
@@ -76,7 +79,7 @@
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
     await modules.runtime.storageSetItem(
       modules.state.STORAGE_KEYS.SETTINGS,
-      JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout })
+      JSON.stringify({ pollInterval: normalized.pollInterval, timeout: normalized.timeout, maxConcurrentTasks: normalized.maxConcurrentTasks })
     );
 
     modules.state.state.settings = normalized;
@@ -152,7 +155,7 @@
     const saveTemplateButton = runtime.getById("btnSaveTemplate");
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
-    const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput"];
+    const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput", "settingsMaxConcurrentTasksInput"];
 
     bindAppManagerControls();
 

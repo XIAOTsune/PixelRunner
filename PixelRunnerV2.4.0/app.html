@@ -84,7 +84,6 @@
               </div>
             </div>
             <div class="action-row workspace-run-actions">
-              <button id="btnCancelJob" class="secondary-btn workspace-cancel-btn" type="button" disabled>取消最近任务</button>
               <button id="btnRun" class="primary-btn workspace-run-btn" type="button" disabled>开始运行</button>
             </div>
             <div id="runningTaskList" class="running-task-list">
@@ -339,6 +338,10 @@
                 <label class="field">
                   <span class="field-label">任务超时（秒）</span>
                   <input id="settingsTimeoutInput" class="field-input" type="number" min="10" max="600" placeholder="10-600 秒" />
+                </label>
+                <label class="field">
+                  <span class="field-label">最大并发任务数</span>
+                  <input id="settingsMaxConcurrentTasksInput" class="field-input" type="number" min="1" max="100" placeholder="1-100" />
                 </label>
               </div>
             </div>

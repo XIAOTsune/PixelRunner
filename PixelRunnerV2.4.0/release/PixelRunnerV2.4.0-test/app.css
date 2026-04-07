@@ -748,14 +748,8 @@ button {
   gap: 8px;
 }
 
-.workspace-cancel-btn {
-  flex: 0 0 142px;
-  min-height: 42px;
-  border-radius: 14px;
-  font-size: 12px;
-}
-
 .workspace-run-btn {
+  width: 100%;
   min-height: 42px;
   border-radius: 14px;
   font-size: 13px;
@@ -777,10 +771,10 @@ button {
 
 .running-task-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 10px;
   border-radius: 12px;
   border: 1px solid rgba(86, 110, 132, 0.7);
   background: rgba(41, 57, 72, 0.88);
@@ -790,7 +784,15 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+.running-task-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .running-task-title {
@@ -804,6 +806,23 @@ button {
   color: var(--muted);
   font-size: 10px;
   line-height: 1.35;
+}
+
+.running-task-detail {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.running-task-status-chip {
+  flex: 0 0 auto;
+}
+
+.running-task-cancel-btn {
+  flex: 0 0 auto;
+  min-width: 64px;
+  min-height: 32px;
+  border-radius: 10px;
 }
 
 .running-task-empty {
@@ -851,6 +870,28 @@ button {
     box-shadow 170ms var(--press-ease),
     border-color 170ms ease,
     filter 170ms ease;
+}
+
+.status-chip[data-status="success"] {
+  color: #dffbea;
+  border-color: rgba(66, 183, 113, 0.65);
+  background: rgba(45, 112, 71, 0.34);
+}
+
+.status-chip[data-status="error"] {
+  color: #ffe3df;
+  border-color: rgba(205, 109, 109, 0.7);
+  background: rgba(113, 49, 49, 0.36);
+}
+
+.status-chip[data-status="warn"] {
+  color: #fff2cf;
+  border-color: rgba(214, 171, 83, 0.7);
+  background: rgba(111, 85, 29, 0.36);
+}
+
+.status-chip[data-status="info"] {
+  color: #e8f2ff;
 }
 
 .status-chip:hover {
@@ -1612,7 +1653,6 @@ button {
   box-shadow: 0 2px 0 #5f93a7;
 }
 
-#btnCancelJob,
 #btnStamp,
 #btnSelectAndMask,
 #btnObserver,
@@ -1627,7 +1667,6 @@ button {
   background: #405b74;
 }
 
-#btnCancelJob:hover,
 #btnStamp:hover,
 #btnSelectAndMask:hover,
 #btnObserver:hover,
@@ -1640,7 +1679,6 @@ button {
   box-shadow: 0 5px 0 #35506a;
 }
 
-#btnCancelJob:active,
 #btnStamp:active,
 #btnSelectAndMask:active,
 #btnObserver:active,
@@ -1649,7 +1687,6 @@ button {
 #btnSharpen:active,
 #btnHighPass:active,
 #btnContentAwareFill:active,
-#btnCancelJob.is-pressed,
 #btnStamp.is-pressed,
 #btnSelectAndMask.is-pressed,
 #btnObserver.is-pressed,
@@ -1682,7 +1719,6 @@ button {
 #btnRefreshWorkspaceApps,
 #btnClearLog,
 #appPickerModalClose,
-#btnCancelJob,
 #btnStamp,
 #btnSelectAndMask,
 #btnObserver,
@@ -1722,8 +1758,15 @@ button {
     align-items: stretch;
   }
 
-  .workspace-cancel-btn {
-    flex-basis: auto;
+  .running-task-item {
+    flex-direction: column;
+  }
+
+  .running-task-topline {
+    align-items: flex-start;
+  }
+
+  .running-task-cancel-btn {
     width: 100%;
   }
 

@@ -13,7 +13,8 @@
   const DEFAULT_SETTINGS = {
     apiKey: "",
     pollInterval: 2,
-    timeout: 180
+    timeout: 180,
+    maxConcurrentTasks: 3
   };
 
   const state = {
@@ -70,11 +71,13 @@
     const source = settings && typeof settings === "object" ? settings : {};
     const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
     const timeout = Math.min(600, Math.max(10, Math.floor(Number(source.timeout) || DEFAULT_SETTINGS.timeout)));
+    const maxConcurrentTasks = Math.min(100, Math.max(1, Math.floor(Number(source.maxConcurrentTasks) || DEFAULT_SETTINGS.maxConcurrentTasks)));
 
     return {
       apiKey: String(source.apiKey || "").trim(),
       pollInterval,
-      timeout
+      timeout,
+      maxConcurrentTasks
     };
   }
 

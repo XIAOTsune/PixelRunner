@@ -1,5 +1,9 @@
 ﻿(function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
+  const RUN_BUTTON_COOLDOWN_MS = 1500;
+  const TASK_CARD_LIMIT = 24;
+  let runButtonCooldownUntil = 0;
+  let taskTickerHandle = 0;
 
   function setModalOpen(modalId, open) {
     const modal = modules.runtime.getById(modalId);
@@ -304,9 +308,58 @@
       : [];
   }
 
+  function isTaskTerminalStatus(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    return ["succeeded", "success", "done", "failed", "error", "cancelled", "canceled"].includes(normalized);
+  }
+
+  function isTaskCancellable(task) {
+    if (!task || typeof task !== "object") return false;
+    if (isTaskTerminalStatus(task.status)) return false;
+    return Boolean(String(task.remoteTaskId || task.taskId || "").trim()) && String(task.status || "").trim().toLowerCase() !== "submitting";
+  }
+
+  function getActiveRunningTasks() {
+    return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status));
+  }
+
+  function getMaxConcurrentTasks() {
+    return Math.max(1, Number(modules.state.state.settings.maxConcurrentTasks) || modules.state.DEFAULT_SETTINGS.maxConcurrentTasks || 3);
+  }
+
+  function isRunCooldownActive() {
+    return Date.now() < runButtonCooldownUntil;
+  }
+
+  function formatTaskDuration(ms) {
+    const totalSeconds = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  function getTaskElapsedMs(task) {
+    if (!task || typeof task !== "object") return 0;
+    const startedAt = Number(task.submittedAt || task.createdAt || 0);
+    const endedAt = Number(task.finishedAt || 0);
+    if (!startedAt) return 0;
+    return Math.max(0, (endedAt || Date.now()) - startedAt);
+  }
+
+  function getTaskStatusTone(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    if (["succeeded", "success", "done"].includes(normalized)) return "success";
+    if (["failed", "error"].includes(normalized)) return "error";
+    if (["cancelled", "canceled"].includes(normalized)) return "warn";
+    return "info";
+  }
+
   function getTaskStatusLabel(status) {
     const normalized = String(status || "").trim().toLowerCase();
     if (!normalized) return "运行中";
+    if (normalized === "submitting") return "提交中";
     if (normalized === "submitted") return "已提交";
     if (normalized === "running") return "运行中";
     if (normalized === "queued") return "排队中";
@@ -316,20 +369,72 @@
     return status;
   }
 
+  function getTaskStatusDetail(task) {
+    if (!task || typeof task !== "object") return "";
+    if (task.detail) return String(task.detail);
+    const normalized = String(task.status || "").trim().toLowerCase();
+    if (normalized === "submitting") return "正在提交到 RunningHub...";
+    if (normalized === "submitted") return "任务已创建，等待 RunningHub 执行。";
+    if (normalized === "running") return "任务执行中，正在等待结果返回。";
+    if (normalized === "queued") return "任务排队中，尚未开始执行。";
+    if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "任务已完成。";
+    if (normalized === "failed" || normalized === "error") return task.errorMessage || "任务执行失败。";
+    if (normalized === "cancelled" || normalized === "canceled") return "任务已取消。";
+    return "";
+  }
+
+  function sortRunningTasks(tasks) {
+    return tasks
+      .slice()
+      .sort((left, right) => {
+        const leftActive = isTaskTerminalStatus(left.status) ? 1 : 0;
+        const rightActive = isTaskTerminalStatus(right.status) ? 1 : 0;
+        if (leftActive !== rightActive) return leftActive - rightActive;
+        return Number(right.updatedAt || right.createdAt || 0) - Number(left.updatedAt || left.createdAt || 0);
+      });
+  }
+
+  function ensureTaskTickerState() {
+    const hasActiveTask = getActiveRunningTasks().length > 0;
+    if (hasActiveTask && !taskTickerHandle) {
+      taskTickerHandle = window.setInterval(() => {
+        updateRunButtonState();
+      }, 1000);
+      return;
+    }
+    if (!hasActiveTask && taskTickerHandle) {
+      window.clearInterval(taskTickerHandle);
+      taskTickerHandle = 0;
+    }
+  }
+
   function renderRunningTaskList(tasks) {
     if (!Array.isArray(tasks) || tasks.length === 0) return "";
-    return tasks
+    return sortRunningTasks(tasks)
       .map((task, index) => {
         const appName = modules.runtime.escapeHtml(task.appName || `任务 ${index + 1}`);
-        const taskId = String(task.taskId || "").trim();
-        const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "-";
+        const taskId = String(task.remoteTaskId || task.taskId || "").trim();
+        const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "等待分配任务 ID";
+        const statusLabel = getTaskStatusLabel(task.status || "running");
+        const statusTone = getTaskStatusTone(task.status || "running");
+        const durationLabel = `${isTaskTerminalStatus(task.status) ? "耗时" : "已运行"} ${formatTaskDuration(getTaskElapsedMs(task))}`;
+        const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
+        const canCancel = isTaskCancellable(task);
         return `
           <div class="running-task-item">
             <div class="running-task-main">
-              <div class="running-task-title">${appName}</div>
-              <div class="running-task-meta">${modules.runtime.escapeHtml(getTaskStatusLabel(task.status || "running"))} · ${modules.runtime.escapeHtml(shortTaskId)}</div>
+              <div class="running-task-topline">
+                <div class="running-task-title">${appName}</div>
+                <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
+              </div>
+              <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · ${modules.runtime.escapeHtml(durationLabel)}</div>
+              <div class="running-task-detail">${detail}</div>
             </div>
-            <button class="mini-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(taskId)}">取消</button>
+            ${
+              canCancel
+                ? `<button class="mini-btn running-task-cancel-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">取消</button>`
+                : ""
+            }
           </div>
         `;
       })
@@ -339,39 +444,55 @@
   function updateRunButtonState() {
     const state = modules.state.state;
     const runButton = modules.runtime.getById("btnRun");
-    const cancelButton = modules.runtime.getById("btnCancelJob");
     const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
     const runningTaskList = modules.runtime.getById("runningTaskList");
     const hasCurrentApp = !!state.currentApp;
     const runningTasks = getRunningTasks();
+    const activeRunningTasks = getActiveRunningTasks();
     const hasRunningTask = runningTasks.length > 0;
+    const activeCount = activeRunningTasks.length;
+    const maxConcurrentTasks = getMaxConcurrentTasks();
+    const concurrencyReached = activeCount >= maxConcurrentTasks;
+    const cooldownActive = isRunCooldownActive();
+    const cooldownSeconds = Math.max(1, Math.ceil((runButtonCooldownUntil - Date.now()) / 1000));
 
     if (runButton) {
-      runButton.disabled = !hasCurrentApp;
-      runButton.textContent = hasRunningTask
-        ? "运行新任务"
-        : hasCurrentApp
-          ? `运行 ${modules.state.getAppDisplayName(state.currentApp)}`
-          : "开始运行";
-    }
-
-    if (cancelButton) {
-      cancelButton.disabled = !hasRunningTask;
-      cancelButton.textContent = runningTasks.length > 1 ? "取消最近任务" : "取消任务";
+      runButton.disabled = !hasCurrentApp || concurrencyReached || cooldownActive;
+      if (!hasCurrentApp) {
+        runButton.textContent = "开始运行";
+      } else if (concurrencyReached) {
+        runButton.textContent = `并发已满 ${activeCount}/${maxConcurrentTasks}`;
+      } else if (cooldownActive) {
+        runButton.textContent = `请稍候 ${cooldownSeconds}s`;
+      } else if (activeCount > 0) {
+        runButton.textContent = `运行新任务 ${activeCount}/${maxConcurrentTasks}`;
+      } else {
+        runButton.textContent = `运行 ${modules.state.getAppDisplayName(state.currentApp)}`;
+      }
     }
 
     if (taskStatusSummary) {
-      taskStatusSummary.textContent = hasRunningTask
-        ? `后台任务：运行中 ${runningTasks.length} 个，可逐个取消。`
-        : hasCurrentApp
-          ? `后台任务：无，已就绪，可直接运行 ${modules.state.getAppDisplayName(state.currentApp)}。`
-          : "后台任务：无，请先选择应用。";
+      if (!hasCurrentApp) {
+        taskStatusSummary.textContent = "后台任务：无，请先选择应用。";
+      } else if (concurrencyReached) {
+        taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，已达到并发上限，请等待任务完成或在卡片中取消。`;
+      } else if (cooldownActive) {
+        taskStatusSummary.textContent = `后台任务：已进入提交冷却，${cooldownSeconds}s 后可继续发送新任务。`;
+      } else if (activeCount > 0) {
+        taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，可继续发送新任务，也可在卡片中逐个取消。`;
+      } else if (hasRunningTask) {
+        taskStatusSummary.textContent = `后台任务：当前无进行中任务，已保留最近 ${runningTasks.length} 条任务卡片。`;
+      } else {
+        taskStatusSummary.textContent = `后台任务：无，已就绪，可直接运行 ${modules.state.getAppDisplayName(state.currentApp)}。`;
+      }
     }
 
     if (runningTaskList) {
-      runningTaskList.hidden = !hasRunningTask;
-      runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : "";
+      runningTaskList.hidden = false;
+      runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : '<div class="running-task-empty">运行后的任务会显示在这里。</div>';
     }
+
+    ensureTaskTickerState();
   }
   function renderField(input) {
     const runtime = modules.runtime;
@@ -480,7 +601,11 @@
         : null,
       apiKey: state.settings.apiKey || "",
       inputs: normalizePayloadInputs(state.currentApp, state.formValues),
-      settings: { pollInterval: state.settings.pollInterval, timeout: state.settings.timeout }
+      settings: {
+        pollInterval: state.settings.pollInterval,
+        timeout: state.settings.timeout,
+        maxConcurrentTasks: state.settings.maxConcurrentTasks
+      }
     };
     state.lastRunPayload = payload;
     return payload;
@@ -494,38 +619,82 @@
       : { taskId: "", appName: "", status: "idle" };
   }
 
-  function upsertRunningTask(taskId, appName, status = "running") {
+  function createLocalTaskId() {
+    return `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function upsertRunningTask(taskOrTaskId, appName = "", status = "running") {
     const state = modules.state.state;
-    const normalizedTaskId = String(taskId || "").trim();
-    if (!normalizedTaskId) return;
+    const patch =
+      taskOrTaskId && typeof taskOrTaskId === "object"
+        ? { ...taskOrTaskId }
+        : {
+            taskId: String(taskOrTaskId || "").trim(),
+            appName: String(appName || "").trim(),
+            status: String(status || "running").trim() || "running"
+          };
+    const normalizedTaskId = String(patch.taskId || "").trim();
+    if (!normalizedTaskId) return null;
+
+    const now = Date.now();
     const nextTask = {
       taskId: normalizedTaskId,
-      appName: String(appName || "").trim(),
-      status: String(status || "running").trim() || "running"
+      remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
+      appName: String(patch.appName || "").trim(),
+      status: String(patch.status || "running").trim() || "running",
+      detail: String(patch.detail || "").trim(),
+      errorMessage: String(patch.errorMessage || "").trim(),
+      outputUrl: String(patch.outputUrl || "").trim(),
+      sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
+      createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
+      submittedAt: Number(patch.submittedAt) > 0 ? Number(patch.submittedAt) : now,
+      finishedAt: Number(patch.finishedAt) > 0 ? Number(patch.finishedAt) : 0,
+      updatedAt: Number(patch.updatedAt) > 0 ? Number(patch.updatedAt) : now,
+      placementDocumentId: Number(patch.placementDocumentId) > 0 ? Number(patch.placementDocumentId) : 0
     };
+
     const list = Array.isArray(state.runningTasks) ? state.runningTasks.slice() : [];
     const index = list.findIndex((item) => String(item.taskId || "") === normalizedTaskId);
-    if (index >= 0) list[index] = { ...list[index], ...nextTask };
-    else list.unshift(nextTask);
-    state.runningTasks = list;
+    if (index >= 0) {
+      const current = list[index];
+      list[index] = {
+        ...current,
+        ...nextTask,
+        createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
+        submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt
+      };
+    } else {
+      list.unshift(nextTask);
+    }
+
+    state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     syncPrimaryRunningTask();
     updateRunButtonState();
+    return state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
   }
 
-  function removeRunningTask(taskId = "") {
+  function replaceRunningTaskId(currentTaskId, nextTaskPatch = {}) {
     const state = modules.state.state;
-    const normalizedTaskId = String(taskId || "").trim();
-    state.runningTasks = (Array.isArray(state.runningTasks) ? state.runningTasks : []).filter(
-      (item) => String(item.taskId || "") !== normalizedTaskId
-    );
-    syncPrimaryRunningTask();
-    updateRunButtonState();
-  }
+    const normalizedCurrentTaskId = String(currentTaskId || "").trim();
+    const normalizedNextTaskId = String(nextTaskPatch.taskId || "").trim();
+    if (!normalizedCurrentTaskId || !normalizedNextTaskId) return null;
 
-  function clearRunningTask() {
-    modules.state.state.runningTasks = [];
+    const list = Array.isArray(state.runningTasks) ? state.runningTasks.slice() : [];
+    const index = list.findIndex((item) => String(item.taskId || "") === normalizedCurrentTaskId);
+    if (index < 0) return upsertRunningTask(nextTaskPatch);
+
+    const current = list[index];
+    list[index] = {
+      ...current,
+      ...nextTaskPatch,
+      taskId: normalizedNextTaskId,
+      remoteTaskId: String(nextTaskPatch.remoteTaskId || normalizedNextTaskId).trim(),
+      updatedAt: Date.now()
+    };
+    state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     syncPrimaryRunningTask();
     updateRunButtonState();
+    return state.runningTasks.find((item) => String(item.taskId || "") === normalizedNextTaskId) || null;
   }
 
   function clearLastResult() {
@@ -654,8 +823,7 @@
     };
   }
 
-  async function autoPlaceLastResult() {
-    const result = modules.state.state.lastResult;
+  async function autoPlaceResult(result) {
     if (!result || !result.outputUrl) throw new Error("当前没有可自动贴回 Photoshop 的结果");
     if (!modules.runtime.isPluginRuntime()) {
       modules.ui.logToWorkspace(`浏览器预览模式不会自动贴回结果，输出地址：${result.outputUrl}`, "info");
@@ -673,9 +841,116 @@
     modules.ui.logToWorkspace(`${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || placementPayload.layerName}`, "success");
     return response;
   }
+
+  async function autoPlaceLastResult() {
+    return autoPlaceResult(modules.state.state.lastResult);
+  }
+
+  function markRunCooldown() {
+    runButtonCooldownUntil = Date.now() + RUN_BUTTON_COOLDOWN_MS;
+    updateRunButtonState();
+    window.setTimeout(() => {
+      updateRunButtonState();
+    }, RUN_BUTTON_COOLDOWN_MS + 80);
+  }
+
+  async function startRunTaskFlow(payload, sourceDocument) {
+    const tempTaskId = createLocalTaskId();
+    upsertRunningTask({
+      taskId: tempTaskId,
+      remoteTaskId: "",
+      appName: payload.appName,
+      status: "submitting",
+      detail: "正在提交到 RunningHub...",
+      sourceDocument,
+      createdAt: Date.now(),
+      submittedAt: Date.now()
+    });
+
+    try {
+      modules.ui.logToWorkspace(
+        `[运行提交] appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
+        "info"
+      );
+
+      const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {
+        timeoutMs: Math.max(10000, Number(payload.settings.timeout || 180) * 1000 + 5000)
+      });
+
+      const remoteTaskId = String(submitResult.taskId || "").trim();
+      modules.ui.logToWorkspace(`任务已提交：${remoteTaskId}`, "success");
+      replaceRunningTaskId(tempTaskId, {
+        taskId: remoteTaskId,
+        remoteTaskId,
+        appName: payload.appName,
+        status: "running",
+        detail: "任务已提交，正在等待 RunningHub 返回结果。",
+        sourceDocument,
+        submittedAt: Date.now()
+      });
+
+      const pollResult = await modules.runtime.callHost(
+        "runninghub.pollTask",
+        [{ apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
+        { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
+      );
+
+      upsertRunningTask({
+        taskId: remoteTaskId,
+        remoteTaskId,
+        appName: payload.appName,
+        status: "succeeded",
+        detail: "任务已完成，结果已返回。",
+        outputUrl: String(pollResult.outputUrl || "").trim(),
+        sourceDocument,
+        finishedAt: Date.now()
+      });
+      setLastResult({
+        appName: payload.appName,
+        sourceDocument,
+        outputUrl: pollResult.outputUrl,
+        taskId: remoteTaskId
+      });
+      modules.ui.logToWorkspace(`任务已完成，结果地址：${pollResult.outputUrl}`, "success");
+
+      const placementResponse = await autoPlaceResult({
+        appName: payload.appName,
+        sourceDocument,
+        outputUrl: pollResult.outputUrl,
+        taskId: remoteTaskId
+      });
+      upsertRunningTask({
+        taskId: remoteTaskId,
+        remoteTaskId,
+        appName: payload.appName,
+        status: "succeeded",
+        detail:
+          placementResponse && placementResponse.documentId
+            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}。`
+            : "任务已完成。"
+      });
+    } catch (error) {
+      const message = error && error.message ? error.message : String(error || "任务执行失败");
+      const normalizedMessage = String(message).trim();
+      const latestTask = getRunningTasks().find((item) => String(item.taskId || "") === tempTaskId);
+      const currentTaskId = latestTask ? tempTaskId : String((payload && payload.taskId) || "").trim();
+      const activeTask = latestTask || getRunningTasks().find((item) => String(item.appName || "") === String(payload.appName || "").trim() && !isTaskTerminalStatus(item.status));
+      const targetTaskId = activeTask ? String(activeTask.taskId || "").trim() : tempTaskId;
+      const cancelled = /cancel/i.test(normalizedMessage);
+      upsertRunningTask({
+        taskId: targetTaskId,
+        appName: payload.appName,
+        status: cancelled ? "cancelled" : "failed",
+        detail: cancelled ? "任务已取消。" : normalizedMessage,
+        errorMessage: cancelled ? "" : normalizedMessage,
+        sourceDocument,
+        finishedAt: Date.now()
+      });
+      modules.ui.logToWorkspace(normalizedMessage, cancelled ? "warn" : "error");
+    }
+  }
   function bindWorkspaceActions() {
     const runButton = modules.runtime.getById("btnRun");
-    const cancelButton = modules.runtime.getById("btnCancelJob");
     const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
 
     if (dynamicInputContainer) {
@@ -734,87 +1009,29 @@
 
     if (runButton) {
       runButton.addEventListener("click", async () => {
-        let submittedTaskId = "";
-        let submittedAppName = "";
         try {
           validateRunPayload();
           clearLastResult();
           const payload = buildRunPayload();
-          submittedAppName = payload.appName;
-          const sourceDocument = await captureSourceDocumentInfo();
-          const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
-
           if (!modules.runtime.isPluginRuntime()) {
-            if (taskStatusSummary) taskStatusSummary.textContent = `浏览器预览模式已生成 ${payload.appName} 的任务负载。`;
             modules.ui.logToWorkspace(`浏览器预览模式已生成任务负载：${JSON.stringify(payload)}`, "info");
             return;
           }
-
           if (!payload.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
-          if (!payload.appId) {
-            throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
+          if (!payload.appId) throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
+          if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
+            throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
           }
-          modules.ui.logToWorkspace(
-            `[运行提交] appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
-            "info"
-          );
-          if (taskStatusSummary) taskStatusSummary.textContent = `正在提交任务：${payload.appName}`;
-
-          const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {
-            timeoutMs: Math.max(10000, Number(payload.settings.timeout || 180) * 1000 + 5000)
-          });
-
-          modules.ui.logToWorkspace(`任务已提交：${submitResult.taskId}`, "success");
-          submittedTaskId = String(submitResult.taskId || "");
-          upsertRunningTask(submitResult.taskId, payload.appName, "submitted");
-          if (taskStatusSummary) taskStatusSummary.textContent = `正在轮询任务结果：${submitResult.taskId}`;
-
-          const pollResult = await modules.runtime.callHost(
-            "runninghub.pollTask",
-            [{ apiKey: payload.apiKey, taskId: submitResult.taskId, settings: payload.settings }],
-            { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
-          );
-
-          removeRunningTask(submitResult.taskId);
-          setLastResult({
-            appName: payload.appName,
-            sourceDocument,
-            outputUrl: pollResult.outputUrl,
-            taskId: submitResult.taskId
-          });
-          modules.ui.logToWorkspace(`任务已完成，结果地址：${pollResult.outputUrl}`, "success");
-
-          const placementResponse = await autoPlaceLastResult();
-          if (taskStatusSummary) {
-            const placedDocumentId = placementResponse && placementResponse.documentId ? `#${placementResponse.documentId}` : "-";
-            taskStatusSummary.textContent = `任务已完成并自动贴回 Photoshop：${payload.appName} -> ${placedDocumentId}`;
+          if (isRunCooldownActive()) {
+            throw new Error("请不要短时间连续点击运行按钮，稍后再试。");
           }
+
+          markRunCooldown();
+          const sourceDocument = await captureSourceDocumentInfo();
+          startRunTaskFlow(payload, sourceDocument);
         } catch (error) {
-          if (submittedTaskId) removeRunningTask(submittedTaskId);
           modules.ui.logToWorkspace(error.message, "warn");
-          const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
-          if (taskStatusSummary) taskStatusSummary.textContent = `任务失败：${submittedAppName || "当前任务"}，${error.message}`;
-        }
-      });
-    }
-
-    if (cancelButton) {
-      cancelButton.addEventListener("click", async () => {
-        const runningTasks = Array.isArray(modules.state.state.runningTasks) ? modules.state.state.runningTasks : [];
-        const runningTask = runningTasks[0] || null;
-        const apiKey = modules.state.state.settings.apiKey;
-        if (!runningTask || !runningTask.taskId) {
-          modules.ui.logToWorkspace("当前没有可取消的任务。", "info");
-          return;
-        }
-        try {
-          await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId: runningTask.taskId }], { timeoutMs: 20000 });
-          modules.ui.logToWorkspace(`任务已取消：${runningTask.taskId}`, "warn");
-          removeRunningTask(runningTask.taskId);
-          const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
-          if (taskStatusSummary) taskStatusSummary.textContent = `任务已取消：${runningTask.taskId}`;
-        } catch (error) {
-          modules.ui.logToWorkspace(`取消任务失败：${error.message}`, "error");
+          updateRunButtonState();
         }
       });
     }
@@ -828,11 +1045,21 @@
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
         const apiKey = modules.state.state.settings.apiKey;
         if (!taskId) return;
+        const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === taskId);
+        const remoteTaskId = String((currentTask && (currentTask.remoteTaskId || currentTask.taskId)) || taskId).trim();
+        if (!remoteTaskId) return;
         target.disabled = true;
         try {
-          await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId }], { timeoutMs: 20000 });
-          removeRunningTask(taskId);
-          modules.ui.logToWorkspace(`任务已取消：${taskId}`, "warn");
+          await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId: remoteTaskId }], { timeoutMs: 20000 });
+          upsertRunningTask({
+            taskId,
+            remoteTaskId,
+            appName: currentTask && currentTask.appName ? currentTask.appName : "",
+            status: "cancelled",
+            detail: "任务已取消。",
+            finishedAt: Date.now()
+          });
+          modules.ui.logToWorkspace(`任务已取消：${remoteTaskId}`, "warn");
         } catch (error) {
           modules.ui.logToWorkspace(`取消任务失败：${error.message}`, "error");
         } finally {
