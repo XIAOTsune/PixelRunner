@@ -1031,8 +1031,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-height: 140px;
-  max-height: 200px;
+  min-height: 220px;
+  max-height: min(56vh, 460px);
   overflow: auto;
 }
 
@@ -1106,8 +1106,8 @@ button {
   flex-direction: column;
   gap: 10px;
   width: min(92vw, 520px);
-  max-height: min(88vh, 720px);
-  margin: 24px auto;
+  max-height: min(92vh, 860px);
+  margin: 16px auto;
   padding: 10px;
   border-radius: 16px;
   border: 2px solid var(--ink);

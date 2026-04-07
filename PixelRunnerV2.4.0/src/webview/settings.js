@@ -106,6 +106,9 @@
     if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
       modules.workspace.updateRunButtonState();
     }
+    if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") {
+      modules.workspace.renderWorkspace();
+    }
     renderSettingsStatus("设置已保存到宿主本地存储。", "success");
     renderSettingsDiagnostics("当前设置已同步。", {
       runtime: modules.state.state.hostRuntime,
@@ -186,6 +189,21 @@
     fieldIds.forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
+      if (id === "settingsMaxConcurrentTasksInput") {
+        element.addEventListener("input", () => {
+          const previewSettings = modules.state.normalizeSettings({
+            ...modules.state.state.settings,
+            maxConcurrentTasks: element.value
+          });
+          modules.state.state.settings.maxConcurrentTasks = previewSettings.maxConcurrentTasks;
+          if (
+            modules.workspace &&
+            typeof modules.workspace.updateRunButtonState === "function"
+          ) {
+            modules.workspace.updateRunButtonState();
+          }
+        });
+      }
       element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
     });
 
