@@ -153,6 +153,7 @@ export async function getActiveDocumentInfo() {
 }
 
 export async function captureDocumentPreview(options = {}) {
+  console.log("[PixelRunner/Photoshop] captureDocumentPreview:start", options);
   const { photoshop } = await ensureDeps();
   const app = photoshop.app;
   const imaging = photoshop.imaging;
@@ -200,7 +201,7 @@ export async function captureDocumentPreview(options = {}) {
     if (!base64) {
       throw new Error("Photoshop returned an empty capture payload");
     }
-    return {
+    const result = {
       ok: true,
       kind: "captured-document-image",
       source: "photoshop-document",
@@ -218,6 +219,14 @@ export async function captureDocumentPreview(options = {}) {
       base64,
       dataUrl: buildDataUrl("image/jpeg", base64)
     };
+    console.log("[PixelRunner/Photoshop] captureDocumentPreview:success", {
+      documentId: result.documentId,
+      width: result.width,
+      height: result.height,
+      capturedFromSelection: result.capturedFromSelection,
+      hasBase64: Boolean(result.base64)
+    });
+    return result;
   } finally {
     try {
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();

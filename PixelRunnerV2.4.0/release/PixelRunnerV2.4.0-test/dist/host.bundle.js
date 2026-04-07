@@ -624,6 +624,7 @@ var PixelRunnerHostBundle = (() => {
     return getDocumentInfo(photoshop.app && photoshop.app.activeDocument);
   }
   async function captureDocumentPreview(options = {}) {
+    console.log("[PixelRunner/Photoshop] captureDocumentPreview:start", options);
     const { photoshop } = await ensureDeps();
     const app = photoshop.app;
     const imaging = photoshop.imaging;
@@ -662,7 +663,7 @@ var PixelRunnerHostBundle = (() => {
       if (!base64) {
         throw new Error("Photoshop returned an empty capture payload");
       }
-      return {
+      const result = {
         ok: true,
         kind: "captured-document-image",
         source: "photoshop-document",
@@ -680,6 +681,14 @@ var PixelRunnerHostBundle = (() => {
         base64,
         dataUrl: buildDataUrl("image/jpeg", base64)
       };
+      console.log("[PixelRunner/Photoshop] captureDocumentPreview:success", {
+        documentId: result.documentId,
+        width: result.width,
+        height: result.height,
+        capturedFromSelection: result.capturedFromSelection,
+        hasBase64: Boolean(result.base64)
+      });
+      return result;
     } finally {
       try {
         pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
@@ -1970,6 +1979,7 @@ var PixelRunnerHostBundle = (() => {
     if (!message || typeof message !== "object" || !message.method) return;
     if (!webviewEl || typeof webviewEl.postMessage !== "function") return;
     try {
+      console.log("[PixelRunner/Host] bridge request", message.method, message.id || "");
       let result = null;
       switch (message.method) {
         case "host.ping":
@@ -2014,8 +2024,13 @@ var PixelRunnerHostBundle = (() => {
         default:
           throw new Error(`Unknown bridge method: ${message.method}`);
       }
+      console.log("[PixelRunner/Host] bridge success", message.method, {
+        id: message.id || "",
+        hasResult: result !== null && result !== void 0
+      });
       webviewEl.postMessage(createBridgeResponse(message, result, null));
     } catch (error) {
+      console.error("[PixelRunner/Host] bridge error", message.method, error);
       webviewEl.postMessage(createBridgeResponse(message, null, error));
     }
   }

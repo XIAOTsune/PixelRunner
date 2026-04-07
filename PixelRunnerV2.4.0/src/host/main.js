@@ -35,6 +35,7 @@ async function handleBridgeRequest(message, webviewEl) {
   if (!webviewEl || typeof webviewEl.postMessage !== "function") return;
 
   try {
+    console.log("[PixelRunner/Host] bridge request", message.method, message.id || "");
     let result = null;
 
     switch (message.method) {
@@ -81,8 +82,13 @@ async function handleBridgeRequest(message, webviewEl) {
         throw new Error(`Unknown bridge method: ${message.method}`);
     }
 
+    console.log("[PixelRunner/Host] bridge success", message.method, {
+      id: message.id || "",
+      hasResult: result !== null && result !== undefined
+    });
     webviewEl.postMessage(createBridgeResponse(message, result, null));
   } catch (error) {
+    console.error("[PixelRunner/Host] bridge error", message.method, error);
     webviewEl.postMessage(createBridgeResponse(message, null, error));
   }
 }

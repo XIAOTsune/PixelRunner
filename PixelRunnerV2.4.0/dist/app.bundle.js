@@ -559,9 +559,20 @@ ${text}` : text;
       modules.state.state.formValues[key] = null;
       renderWorkspace();
     }
+    function logImageCaptureTrace(message, data = null) {
+      const detail = data && typeof data === "object" ? ` ${JSON.stringify(data)}` : "";
+      modules.ui.logToWorkspace(`[图像捕获] ${message}${detail}`, "info");
+    }
     async function captureAndAssignToInput(key) {
+      logImageCaptureTrace("开始写入字段", { key });
       const asset = await captureCurrentDocumentImage();
       modules.state.state.formValues[key] = cloneCaptureAsset(asset);
+      logImageCaptureTrace("字段写入完成", {
+        key,
+        width: asset && asset.width ? asset.width : null,
+        height: asset && asset.height ? asset.height : null,
+        capturedFromSelection: Boolean(asset && asset.capturedFromSelection)
+      });
       renderWorkspace();
       return asset;
     }
@@ -603,7 +614,7 @@ ${text}` : text;
               <span class="image-capture-corner-label">${label}${requiredMark}</span>
               <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
             </div>
-            ${hasAssignedAsset && previewSrc ? `<div class="image-preview-frame image-capture-preview"><img src="${runtime.escapeHtml(previewSrc)}" alt="${label}" /></div>` : `
+            ${hasAssignedAsset && previewSrc ? `<div class="image-capture-preview"><img src="${runtime.escapeHtml(previewSrc)}" alt="${label}" /></div>` : `
                   <div class="image-capture-stage-empty-inner">
                     <div class="image-capture-stage-icon">↑</div>
                     <div class="image-capture-stage-text">点击捕获</div>
@@ -849,11 +860,47 @@ ${text}` : text;
     async function captureCurrentDocumentImage() {
       if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法捕获 Photoshop 图像");
       const settings = getImageCaptureSettings();
+      logImageCaptureTrace("准备调用宿主捕获", settings);
       const captured = await modules.runtime.callHost("photoshop.captureDocumentPreview", [settings], { timeoutMs: 3e4 });
+      logImageCaptureTrace("宿主已返回捕获结果", {
+        ok: Boolean(captured && captured.ok),
+        width: captured && captured.width,
+        height: captured && captured.height,
+        hasBase64: Boolean(captured && String(captured.base64 || "").trim()),
+        hasDataUrl: Boolean(captured && String(captured.dataUrl || "").trim())
+      });
       const asset = pushCapturedAsset(captured);
+      if (!asset) {
+        throw new Error("宿主已返回结果，但未生成可用预览资源");
+      }
       modules.ui.logToWorkspace(`已捕获 Photoshop 文档图像：${asset.width}x${asset.height}，JPEG ${asset.quality}`, "success");
       renderWorkspace();
       return asset;
+    }
+    async function handleCaptureFieldClick(actionTarget) {
+      const key = actionTarget && actionTarget.getAttribute("data-form-key");
+      if (!key) return;
+      const triggerButton = actionTarget.matches("button") ? actionTarget : actionTarget.querySelector('.image-capture-primary-btn[data-action="capture-field-image"][data-form-key]');
+      const card = actionTarget.closest(".image-capture-field-card");
+      if (triggerButton && triggerButton.disabled || card && card.dataset.captureBusy === "true") return;
+      if (triggerButton) triggerButton.disabled = true;
+      if (card) card.dataset.captureBusy = "true";
+      try {
+        logImageCaptureTrace("收到点击事件", {
+          key,
+          trigger: actionTarget.matches("button") ? "button" : "card"
+        });
+        const asset = await captureAndAssignToInput(key);
+        modules.ui.logToWorkspace(
+          `已捕获并写入字段：${key} (${asset.capturedFromSelection ? "选区" : "文档"})`,
+          "success"
+        );
+      } catch (error) {
+        modules.ui.logToWorkspace(`图像捕获失败：${error.message}`, "error");
+      } finally {
+        if (card) delete card.dataset.captureBusy;
+        if (triggerButton) triggerButton.disabled = false;
+      }
     }
     function isMissingRequiredValue(value) {
       if (typeof value === "boolean") return false;
@@ -938,10 +985,15 @@ ${text}` : text;
             return;
           }
           if (action === "clear-captured-image") {
+            event.preventDefault();
             event.stopPropagation();
             clearImageInputValue(key);
             modules.ui.logToWorkspace(`已清除字段图像：${key}`, "info");
             return;
+          }
+          if (action === "capture-field-image") {
+            event.preventDefault();
+            handleCaptureFieldClick(actionTarget);
           }
         });
       }
@@ -1017,27 +1069,9 @@ ${text}` : text;
         });
       }
       document.addEventListener("click", async (event) => {
-        const target = event.target && event.target.closest('[data-action="cancel-running-task"][data-task-id], [data-action="capture-field-image"][data-form-key]');
+        const target = event.target && event.target.closest('[data-action="cancel-running-task"][data-task-id]');
         if (!target) return;
         const action = target.getAttribute("data-action");
-        if (action === "capture-field-image") {
-          const key = target.getAttribute("data-form-key");
-          if (!key) return;
-          const button = target.matches("button") ? target : target.querySelector('[data-action="capture-field-image"][data-form-key]');
-          if (button) button.disabled = true;
-          try {
-            const asset = await captureAndAssignToInput(key);
-            modules.ui.logToWorkspace(
-              `已捕获并写入字段：${key} (${asset.capturedFromSelection ? "选区" : "文档"})`,
-              "success"
-            );
-          } catch (error) {
-            modules.ui.logToWorkspace(`图像捕获失败：${error.message}`, "error");
-          } finally {
-            if (button) button.disabled = false;
-          }
-          return;
-        }
         if (action === "cancel-running-task") {
           const taskId = String(target.getAttribute("data-task-id") || "").trim();
           const apiKey = modules.state.state.settings.apiKey;
