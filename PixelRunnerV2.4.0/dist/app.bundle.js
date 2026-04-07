@@ -505,6 +505,7 @@ ${text}` : text;
       return {
         assetId: String(asset.assetId || ""),
         capturedAt: Number(asset.capturedAt) || 0,
+        capturedFromSelection: Boolean(asset.capturedFromSelection),
         kind: String(asset.kind || "captured-document-image"),
         source: String(asset.source || "photoshop-document"),
         documentId: Number(asset.documentId) || null,
@@ -520,6 +521,17 @@ ${text}` : text;
         base64: String(asset.base64 || ""),
         url: String(asset.url || "")
       };
+    }
+    function getImageAssetPreviewSrc(asset) {
+      if (!asset || typeof asset !== "object") return "";
+      const dataUrl = String(asset.dataUrl || "").trim();
+      if (dataUrl) return dataUrl;
+      const base64 = String(asset.base64 || "").trim();
+      if (base64) {
+        const mimeType = String(asset.mimeType || "image/jpeg").trim() || "image/jpeg";
+        return `data:${mimeType};base64,${base64}`;
+      }
+      return String(asset.url || "").trim();
     }
     function createCaptureAssetId() {
       return `capture-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -559,9 +571,9 @@ ${text}` : text;
       const imageInputContainer = runtime.getById("imageInputContainer");
       if (!imageInputContainer) return;
       const imageInputs = findImageInputs(state.currentApp);
-      imageInputContainer.hidden = false;
+      imageInputContainer.hidden = true;
       if (!state.currentApp) {
-        imageInputContainer.innerHTML = '<div class="empty-panel"><h4>图像输入</h4><p>选择应用后，这里只会保留需要从 Photoshop 捕获的图像字段。</p></div>';
+        imageInputContainer.innerHTML = "";
         return;
       }
       if (imageInputs.length === 0) {
@@ -569,12 +581,7 @@ ${text}` : text;
         imageInputContainer.hidden = true;
         return;
       }
-      imageInputContainer.innerHTML = `
-      <div class="empty-panel image-input-overview">
-        <h4>图像输入</h4>
-        <p>下方共有 ${imageInputs.length} 个图像字段。直接点击字段即可从 Photoshop 当前选区捕获，没有选区时会自动使用整张文档。</p>
-      </div>
-    `;
+      imageInputContainer.innerHTML = "";
     }
     function renderImageField(input) {
       const runtime = modules.runtime;
@@ -584,6 +591,7 @@ ${text}` : text;
       const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
       const asset = state.formValues[key];
       const hasAssignedAsset = hasImageAsset(asset);
+      const previewSrc = getImageAssetPreviewSrc(asset);
       const captureLabel = hasAssignedAsset ? "重新捕获" : "捕获图像";
       const captureSource = hasAssignedAsset ? asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档" : "点击此区域直接捕获图像";
       const captureMeta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"}` : "未捕获";
@@ -594,18 +602,20 @@ ${text}` : text;
           <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
             <div class="image-capture-field-head">
               <span class="image-capture-field-title">${hasAssignedAsset ? captureMeta : "等待捕获"}</span>
-              <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
             </div>
-            ${hasAssignedAsset ? `<div class="image-preview-frame image-capture-stage"><img src="${runtime.escapeHtml(asset.dataUrl)}" alt="${label}" /></div>` : `
-                  <div class="image-capture-stage image-capture-stage-empty">
-                    <div class="image-capture-stage-icon">↑</div>
-                    <div class="image-capture-stage-text">点击捕获</div>
-                  </div>
-                `}
+            <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}">
+              ${hasAssignedAsset && previewSrc ? `<div class="image-preview-frame image-capture-preview"><img src="${runtime.escapeHtml(previewSrc)}" alt="${label}" /></div>` : `
+                    <div class="image-capture-stage-empty-inner">
+                      <div class="image-capture-stage-icon">↑</div>
+                      <div class="image-capture-stage-text">点击捕获</div>
+                    </div>
+                  `}
+              <div class="inline-actions image-capture-stage-actions">
+                <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
+                <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
+              </div>
+            </div>
             <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}</div>
-            <div class="inline-actions image-capture-field-actions">
-              <button class="mini-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
-            </div>
           </div>
         </div>
       </div>
@@ -659,7 +669,6 @@ ${text}` : text;
       const cancelButton = modules.runtime.getById("btnCancelJob");
       const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
       const runningTaskList = modules.runtime.getById("runningTaskList");
-      const statusChip = modules.runtime.getById("workspaceInputStatusChip");
       const hasCurrentApp = !!state.currentApp;
       const runningTasks = getRunningTasks();
       const hasRunningTask = runningTasks.length > 0;
@@ -673,9 +682,6 @@ ${text}` : text;
       }
       if (taskStatusSummary) {
         taskStatusSummary.textContent = hasRunningTask ? `后台任务：运行中 ${runningTasks.length} 个，可逐个取消。` : hasCurrentApp ? `后台任务：无，已就绪，可直接运行 ${modules.state.getAppDisplayName(state.currentApp)}。` : "后台任务：无，请先选择应用。";
-      }
-      if (statusChip) {
-        statusChip.textContent = hasRunningTask ? `运行中 ${runningTasks.length}` : hasCurrentApp ? `已加载 ${modules.state.getAppInputCount(state.currentApp)} 个输入项` : "等待选择应用";
       }
       if (runningTaskList) {
         runningTaskList.hidden = !hasRunningTask;
@@ -935,8 +941,10 @@ ${text}` : text;
             return;
           }
           if (action === "clear-captured-image") {
+            event.stopPropagation();
             clearImageInputValue(key);
             modules.ui.logToWorkspace(`已清除字段图像：${key}`, "info");
+            return;
           }
         });
       }

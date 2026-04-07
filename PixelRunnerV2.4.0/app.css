@@ -660,7 +660,7 @@ button {
 .workspace-section-title-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
 }
 
 .workspace-section-kicker {
@@ -668,17 +668,6 @@ button {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
-}
-
-.workspace-section-title {
-  font-size: 14px;
-}
-
-.workspace-section-chip {
-  min-height: 34px;
-  padding: 0 14px;
-  border-radius: 999px;
-  font-size: 11px;
 }
 
 .workspace-input-card .input-zone {
@@ -1399,8 +1388,8 @@ button {
 .image-capture-field-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 8px;
 }
 
 .image-capture-field-title {
@@ -1417,16 +1406,29 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   border: 2px dashed rgba(103, 126, 150, 0.75);
   border-radius: 14px;
   background: rgba(23, 31, 41, 0.86);
+  overflow: hidden;
 }
 
 .image-capture-stage-empty {
-  flex-direction: column;
-  gap: 10px;
   color: #dbe8f5;
   text-align: center;
+}
+
+.image-capture-stage-empty-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-capture-stage-filled {
+  padding: 0;
+  border-style: solid;
 }
 
 .image-capture-stage-icon {
@@ -1453,8 +1455,44 @@ button {
   line-height: 1.4;
 }
 
-.image-capture-field-actions {
-  justify-content: flex-start;
+.image-capture-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 164px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.image-capture-preview img {
+  max-height: 164px;
+}
+
+.image-capture-stage-actions {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.image-capture-stage-actions .mini-btn {
+  pointer-events: auto;
+}
+
+.image-capture-primary-btn,
+.image-capture-clear-btn {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+
+.image-capture-primary-btn {
+  margin-right: auto;
 }
 
 .image-input-overview {
