@@ -235,14 +235,15 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
           hardLimitBytes
         };
       }
-      return;
     }
 
-    const error = new Error("图片压缩后仍超过上传限制");
-    error.attempts = attempts;
-    error.targetBytes = targetBytes;
-    error.hardLimitBytes = hardLimitBytes;
-    throw error;
+    if (!uploadResult) {
+      const error = new Error("图片压缩后仍超过上传限制");
+      error.attempts = attempts;
+      error.targetBytes = targetBytes;
+      error.hardLimitBytes = hardLimitBytes;
+      throw error;
+    }
   } finally {
     await closeDocumentWithoutSaving(action, tempDoc);
   }
@@ -252,7 +253,7 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
   }
 
   const base64 = arrayBufferToBase64(uploadResult.arrayBuffer);
-  return {
+  const asset = {
     mimeType: uploadResult.mimeType,
     base64,
     dataUrl: buildDataUrl(uploadResult.mimeType, base64),
@@ -262,6 +263,14 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     hardLimitBytes: uploadResult.hardLimitBytes,
     attempts: uploadResult.attempts || []
   };
+  console.log("[PixelRunner/Photoshop] buildCompressedUploadAsset:success", {
+    bytes: asset.bytes,
+    quality: asset.quality,
+    targetBytes: asset.targetBytes,
+    hardLimitBytes: asset.hardLimitBytes,
+    hasBase64: Boolean(asset.base64)
+  });
+  return asset;
 }
 
 async function transformLayerScale(action, layerId, scaleXPercent, scaleYPercent) {

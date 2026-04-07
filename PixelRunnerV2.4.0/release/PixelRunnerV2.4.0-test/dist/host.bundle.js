@@ -682,23 +682,26 @@ var PixelRunnerHostBundle = (() => {
             targetBytes,
             hardLimitBytes
           };
-          return;
+          break;
         }
       }
       if (lastAttempt && lastAttempt.bytes <= hardLimitBytes) {
-        uploadResult = {
-          ...lastAttempt,
-          attempts,
-          targetBytes,
-          hardLimitBytes
-        };
-        return;
+        if (!uploadResult) {
+          uploadResult = {
+            ...lastAttempt,
+            attempts,
+            targetBytes,
+            hardLimitBytes
+          };
+        }
       }
-      const error = new Error("图片压缩后仍超过上传限制");
-      error.attempts = attempts;
-      error.targetBytes = targetBytes;
-      error.hardLimitBytes = hardLimitBytes;
-      throw error;
+      if (!uploadResult) {
+        const error = new Error("图片压缩后仍超过上传限制");
+        error.attempts = attempts;
+        error.targetBytes = targetBytes;
+        error.hardLimitBytes = hardLimitBytes;
+        throw error;
+      }
     } finally {
       await closeDocumentWithoutSaving(action, tempDoc);
     }
@@ -706,7 +709,7 @@ var PixelRunnerHostBundle = (() => {
       throw new Error("Failed to build upload asset");
     }
     const base64 = arrayBufferToBase64(uploadResult.arrayBuffer);
-    return {
+    const asset = {
       mimeType: uploadResult.mimeType,
       base64,
       dataUrl: buildDataUrl(uploadResult.mimeType, base64),
@@ -716,6 +719,14 @@ var PixelRunnerHostBundle = (() => {
       hardLimitBytes: uploadResult.hardLimitBytes,
       attempts: uploadResult.attempts || []
     };
+    console.log("[PixelRunner/Photoshop] buildCompressedUploadAsset:success", {
+      bytes: asset.bytes,
+      quality: asset.quality,
+      targetBytes: asset.targetBytes,
+      hardLimitBytes: asset.hardLimitBytes,
+      hasBase64: Boolean(asset.base64)
+    });
+    return asset;
   }
   async function transformLayerScale(action, layerId, scaleXPercent, scaleYPercent) {
     await action.batchPlay([{
