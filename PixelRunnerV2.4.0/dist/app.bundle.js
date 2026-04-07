@@ -111,6 +111,129 @@ var PixelRunnerWebviewBundle = (() => {
         return fallback;
       }
     }
+    function getUxpFileSystem() {
+      return global && global.uxp && global.uxp.storage && global.uxp.storage.localFileSystem ? global.uxp.storage.localFileSystem : null;
+    }
+    async function saveTextFile(defaultName, text, options = {}) {
+      const filename = String(defaultName || "export.txt").trim() || "export.txt";
+      const content = String(text == null ? "" : text);
+      const fileSystem = getUxpFileSystem();
+      if (fileSystem && typeof fileSystem.getFileForSaving === "function") {
+        const entry = await fileSystem.getFileForSaving(filename);
+        if (!entry) return { outcome: "cancelled", savedPath: "" };
+        await entry.write(content);
+        return {
+          outcome: "saved",
+          savedPath: String(entry.nativePath || entry.name || filename)
+        };
+      }
+      if (typeof global.showSaveFilePicker === "function") {
+        try {
+          const handle = await global.showSaveFilePicker({
+            suggestedName: filename,
+            types: [
+              {
+                description: String(options.description || "Text File"),
+                accept: { [String(options.mimeType || "text/plain")]: [String(options.extension || ".txt")] }
+              }
+            ]
+          });
+          if (!handle) return { outcome: "cancelled", savedPath: "" };
+          const writable = await handle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          return { outcome: "saved", savedPath: String(handle.name || filename) };
+        } catch (error) {
+          if (error && error.name === "AbortError") return { outcome: "cancelled", savedPath: "" };
+          throw error;
+        }
+      }
+      if (typeof document !== "undefined" && typeof global.URL !== "undefined" && typeof global.Blob !== "undefined") {
+        const blob = new Blob([content], { type: String(options.mimeType || "text/plain") });
+        const href = global.URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.download = filename;
+        anchor.style.display = "none";
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        global.setTimeout(() => global.URL.revokeObjectURL(href), 0);
+        return { outcome: "saved", savedPath: filename };
+      }
+      return { outcome: "unsupported", savedPath: "" };
+    }
+    async function openTextFile(options = {}) {
+      const fileSystem = getUxpFileSystem();
+      if (fileSystem && typeof fileSystem.getFileForOpening === "function") {
+        const picked = await fileSystem.getFileForOpening();
+        const entry = Array.isArray(picked) ? picked[0] : picked;
+        if (!entry) return { outcome: "cancelled", name: "", text: "" };
+        const text = await entry.read();
+        return {
+          outcome: "loaded",
+          name: String(entry.name || ""),
+          text: String(text == null ? "" : text)
+        };
+      }
+      if (typeof global.showOpenFilePicker === "function") {
+        try {
+          const handles = await global.showOpenFilePicker({
+            multiple: false,
+            types: [
+              {
+                description: String(options.description || "Text File"),
+                accept: { [String(options.mimeType || "text/plain")]: [String(options.extension || ".txt")] }
+              }
+            ]
+          });
+          const handle = Array.isArray(handles) ? handles[0] : null;
+          if (!handle) return { outcome: "cancelled", name: "", text: "" };
+          const file = await handle.getFile();
+          return {
+            outcome: "loaded",
+            name: String(file.name || ""),
+            text: await file.text()
+          };
+        } catch (error) {
+          if (error && error.name === "AbortError") return { outcome: "cancelled", name: "", text: "" };
+          throw error;
+        }
+      }
+      if (typeof document !== "undefined") {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = String(options.accept || ".json,application/json,text/plain");
+        input.style.display = "none";
+        document.body.appendChild(input);
+        const result = await new Promise((resolve, reject) => {
+          input.addEventListener(
+            "change",
+            async () => {
+              try {
+                const file = input.files && input.files[0];
+                if (!file) {
+                  resolve({ outcome: "cancelled", name: "", text: "" });
+                  return;
+                }
+                resolve({
+                  outcome: "loaded",
+                  name: String(file.name || ""),
+                  text: await file.text()
+                });
+              } catch (error) {
+                reject(error);
+              }
+            },
+            { once: true }
+          );
+          input.click();
+        });
+        document.body.removeChild(input);
+        return result;
+      }
+      return { outcome: "unsupported", name: "", text: "" };
+    }
     function setSummaryStatus(element, message, type = "info") {
       if (!element) return;
       element.textContent = String(message || "");
@@ -127,7 +250,9 @@ var PixelRunnerWebviewBundle = (() => {
       storageGetItem,
       storageSetItem,
       readJsonText,
-      setSummaryStatus
+      setSummaryStatus,
+      saveTextFile,
+      openTextFile
     };
   })(window);
 
@@ -352,6 +477,12 @@ var PixelRunnerWebviewBundle = (() => {
   // src/webview/ui.js
   (function initUiModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const DONATION_LINKS = {
+      wx: "wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI",
+      zfb: "https://qr.alipay.com/fkx12142r0sdwj4kizujk2f",
+      runninghub: "https://www.runninghub.cn",
+      tutorial: "./pages/runninghub-guide.html"
+    };
     function logToWorkspace(message, type = "info") {
       const runtime = modules.runtime;
       const logWindow = runtime.getById("logWindow");
@@ -387,7 +518,7 @@ ${text}` : text;
       });
     }
     function bindTactileFeedback() {
-      document.querySelectorAll(".ghost-btn, .mini-btn, .secondary-btn, .primary-btn, .nav-tab").forEach((element) => {
+      document.querySelectorAll(".ghost-btn, .mini-btn, .secondary-btn, .primary-btn, .nav-tab, .donation-card").forEach((element) => {
         let releaseTimer = null;
         const clearPressed = () => {
           if (releaseTimer) clearTimeout(releaseTimer);
@@ -417,15 +548,56 @@ ${text}` : text;
     function bindPlaceholderActions() {
       const runtime = modules.runtime;
       const logWindow = runtime.getById("logWindow");
-      const donateButtons = ["btnDonate", "btnDonateTools", "btnDonateSettings"].map((id) => runtime.getById(id)).filter(Boolean);
       const clearButton = runtime.getById("btnClearLog");
+      const donateButtons = ["btnDonate", "btnDonateTools", "btnDonateSettings"].map((id) => runtime.getById(id)).filter(Boolean);
+      const donationModalClose = runtime.getById("donationModalClose");
+      const donationStatusHint = runtime.getById("donationStatusHint");
+      const donationCards = ["donationWxCard", "donationZfbCard"].map((id) => runtime.getById(id)).filter(Boolean);
+      const btnOpenRunningHubSite = runtime.getById("btnOpenRunningHubSite");
+      const btnOpenTutorialSite = runtime.getById("btnOpenTutorialSite");
+      const setDonationStatus = (message, type = "info") => {
+        runtime.setSummaryStatus(donationStatusHint, message, type);
+      };
+      const openDonationModal = () => {
+        modules.workspace.setModalOpen("donationModal", true);
+        setDonationStatus("二维码已就绪，可点击二维码尝试打开链接。", "info");
+      };
+      const closeDonationModal = () => {
+        modules.workspace.setModalOpen("donationModal", false);
+      };
+      const tryOpenLink = (url, label) => {
+        const target = String(url || "").trim();
+        if (!target) return;
+        try {
+          global.open(target, "_blank", "noopener");
+          setDonationStatus(`已尝试打开${label}，若未唤起请直接扫码。`, "success");
+        } catch (_) {
+          setDonationStatus(`打开${label}失败，请直接扫码使用。`, "error");
+        }
+      };
       donateButtons.forEach((button) => {
-        if (!logWindow) return;
-        button.addEventListener("click", () => {
-          logWindow.value += "\n[提示] 支持项目入口已预留，后续会接入正式弹窗和外链。";
-          logWindow.scrollTop = logWindow.scrollHeight;
+        button.addEventListener("click", openDonationModal);
+      });
+      if (donationModalClose) donationModalClose.addEventListener("click", closeDonationModal);
+      document.addEventListener("click", (event) => {
+        if (event.target && event.target.closest("#donationBackdrop")) closeDonationModal();
+      });
+      donationCards.forEach((card) => {
+        card.addEventListener("click", () => {
+          const label = card.id === "donationWxCard" ? "微信赞助链接" : "支付宝赞助链接";
+          tryOpenLink(card.getAttribute("data-donation-url"), label);
         });
       });
+      if (btnOpenRunningHubSite) {
+        btnOpenRunningHubSite.addEventListener("click", () => {
+          tryOpenLink(DONATION_LINKS.runninghub, "RunningHub");
+        });
+      }
+      if (btnOpenTutorialSite) {
+        btnOpenTutorialSite.addEventListener("click", () => {
+          tryOpenLink(DONATION_LINKS.tutorial, "教程页面");
+        });
+      }
       if (clearButton && logWindow) {
         clearButton.addEventListener("click", () => {
           logWindow.value = "[系统] 日志已清空，等待新的操作记录。";
@@ -464,7 +636,14 @@ ${text}` : text;
         });
       });
     }
-    modules.ui = { logToWorkspace, setActiveView, bindTabs, bindTactileFeedback, bindPlaceholderActions, bindToolActions };
+    modules.ui = {
+      logToWorkspace,
+      setActiveView,
+      bindTabs,
+      bindTactileFeedback,
+      bindPlaceholderActions,
+      bindToolActions
+    };
   })(window);
 
   // src/webview/workspace.js
@@ -1936,6 +2115,7 @@ ${text}` : text;
   (function initTemplatesModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
     const PROMPT_WARN_CHARS = 4e3;
+    const TEMPLATE_FILE_PREFIX = "pixelrunner_prompt_templates";
     function getTemplateEditorDraft() {
       const runtime = modules.runtime;
       return JSON.stringify({
@@ -1976,6 +2156,24 @@ ${text}` : text;
       const preview = Array.from(text).slice(0, Math.max(1, Number(maxChars) || 48)).join("");
       return preview.length < text.length ? `${preview}...` : preview;
     }
+    function buildTemplateBundle(templates) {
+      return {
+        format: "pixelrunner.prompt-templates",
+        version: 1,
+        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        templates: Array.isArray(templates) ? templates : []
+      };
+    }
+    function buildTemplateExportFilename() {
+      const now = /* @__PURE__ */ new Date();
+      const yyyy = String(now.getFullYear());
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      return `${TEMPLATE_FILE_PREFIX}_${yyyy}-${mm}-${dd}.json`;
+    }
+    function getTemplateTitleKey(template) {
+      return String(template && template.title || "").trim().toLowerCase();
+    }
     function fillTemplateEditor(template, options = {}) {
       if (!options.force && !confirmDiscardTemplateChanges()) return false;
       const runtime = modules.runtime;
@@ -1984,7 +2182,11 @@ ${text}` : text;
       if (runtime.getById("templateTitleInput")) runtime.getById("templateTitleInput").value = item ? item.title || "" : "";
       if (runtime.getById("templateContentInput")) runtime.getById("templateContentInput").value = item ? item.content || "" : "";
       updateTemplateLengthHint();
-      runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。", "info");
+      runtime.setSummaryStatus(
+        runtime.getById("templateStatusSummary"),
+        item ? `正在编辑模板：${item.title}` : "填写标题和内容后即可保存模板。",
+        "info"
+      );
       markTemplateEditorPristine();
       renderSavedTemplatesList();
       return true;
@@ -2014,14 +2216,20 @@ ${text}` : text;
       modules.state.state.templates = await loadTemplatesFromStorage();
       renderSavedTemplatesList();
       renderTemplatePickerList();
-      if (!options.quiet) modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条。`, "info");
+      if (!options.quiet) {
+        modules.ui.logToWorkspace(`模板列表已刷新，共 ${modules.state.state.templates.length} 条。`, "info");
+      }
     }
     function readTemplateEditorForm() {
       const title = String(modules.runtime.getById("templateTitleInput")?.value || "").trim();
       const content = String(modules.runtime.getById("templateContentInput")?.value || "");
       if (!title) throw new Error("请先填写模板标题");
       if (!content.trim()) throw new Error("请先填写模板内容");
-      return { id: modules.state.state.editingTemplateId || modules.runtime.createId("tpl"), title, content };
+      return {
+        id: modules.state.state.editingTemplateId || modules.runtime.createId("tpl"),
+        title,
+        content
+      };
     }
     async function saveEditedTemplate() {
       const formValue = readTemplateEditorForm();
@@ -2047,7 +2255,9 @@ ${text}` : text;
       if (!target) return;
       const nextTemplates = modules.state.state.templates.filter((item) => String(item.id) !== String(templateId));
       await saveTemplatesToStorage(nextTemplates);
-      if (String(modules.state.state.editingTemplateId || "") === String(templateId)) fillTemplateEditor(null, { force: true });
+      if (String(modules.state.state.editingTemplateId || "") === String(templateId)) {
+        fillTemplateEditor(null, { force: true });
+      }
       modules.ui.logToWorkspace(`模板已删除：${target.title}`, "warn");
       modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), "模板已删除。", "warn");
       modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), `已保存模板：${nextTemplates.length} 条`, "warn");
@@ -2056,38 +2266,120 @@ ${text}` : text;
       const input = modules.runtime.getById("templateTransferInput");
       if (!input) return;
       input.dataset.userEdited = "";
-      input.value = JSON.stringify(
-        {
-          format: "pixelrunner.prompt-templates",
-          version: 1,
-          exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          templates: modules.state.state.templates
-        },
-        null,
-        2
-      );
+      input.value = JSON.stringify(buildTemplateBundle(modules.state.state.templates), null, 2);
+    }
+    function mergeImportedTemplates(importedTemplates) {
+      const currentTemplates = Array.isArray(modules.state.state.templates) ? modules.state.state.templates.slice() : [];
+      const titleIndexMap = /* @__PURE__ */ new Map();
+      currentTemplates.forEach((template, index) => {
+        const key = getTemplateTitleKey(template);
+        if (key && !titleIndexMap.has(key)) titleIndexMap.set(key, index);
+      });
+      let added = 0;
+      let replaced = 0;
+      importedTemplates.forEach((template) => {
+        const key = getTemplateTitleKey(template);
+        if (key && titleIndexMap.has(key)) {
+          const targetIndex = titleIndexMap.get(key);
+          const previous = currentTemplates[targetIndex] || {};
+          currentTemplates[targetIndex] = modules.state.normalizeTemplateRecord({
+            ...template,
+            id: previous.id || template.id,
+            createdAt: previous.createdAt || template.createdAt,
+            updatedAt: Date.now()
+          });
+          replaced += 1;
+          return;
+        }
+        currentTemplates.push(
+          modules.state.normalizeTemplateRecord({
+            ...template,
+            id: template.id || modules.runtime.createId("tpl"),
+            createdAt: template.createdAt || Date.now(),
+            updatedAt: Date.now()
+          })
+        );
+        if (key) titleIndexMap.set(key, currentTemplates.length - 1);
+        added += 1;
+      });
+      return {
+        templates: modules.state.normalizeTemplateList(currentTemplates),
+        added,
+        replaced
+      };
+    }
+    function parseImportedTemplatesText(text) {
+      let parsed = JSON.parse(String(text || "").trim());
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.templates)) parsed = parsed.templates;
+      const templates = modules.state.normalizeTemplateList(parsed);
+      if (templates.length === 0) throw new Error("没有解析到可导入的模板");
+      return templates;
     }
     async function importTemplatesFromTextarea() {
       const input = modules.runtime.getById("templateTransferInput");
       if (!input) return;
       const text = String(input.value || "").trim();
       if (!text) throw new Error("请先粘贴模板 JSON");
-      let parsed = JSON.parse(text);
-      if (parsed && typeof parsed === "object" && Array.isArray(parsed.templates)) parsed = parsed.templates;
-      const templates = modules.state.normalizeTemplateList(parsed);
-      if (templates.length === 0) throw new Error("没有解析到可导入的模板");
-      await saveTemplatesToStorage(templates);
+      const importedTemplates = parseImportedTemplatesText(text);
+      const merged = mergeImportedTemplates(importedTemplates);
+      await saveTemplatesToStorage(merged.templates);
       input.dataset.userEdited = "";
-      input.value = JSON.stringify(
-        {
-          format: "pixelrunner.prompt-templates",
-          version: 1,
-          exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-          templates
-        },
-        null,
-        2
+      input.value = JSON.stringify(buildTemplateBundle(merged.templates), null, 2);
+      return {
+        added: merged.added,
+        replaced: merged.replaced,
+        total: merged.templates.length
+      };
+    }
+    async function exportTemplatesAsJson() {
+      exportTemplatesToTextarea();
+      const text = String(modules.runtime.getById("templateTransferInput")?.value || "");
+      const result = await modules.runtime.saveTextFile(buildTemplateExportFilename(), text, {
+        mimeType: "application/json",
+        extension: ".json",
+        description: "JSON Files"
+      });
+      if (result.outcome === "cancelled") return result;
+      if (result.outcome === "unsupported") {
+        throw new Error("当前环境不支持导出文件");
+      }
+      modules.runtime.setSummaryStatus(
+        modules.runtime.getById("templateStatusSummary"),
+        `模板 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`,
+        "success"
       );
+      modules.ui.logToWorkspace(`模板 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`, "success");
+      return result;
+    }
+    async function importTemplatesFromJsonFile() {
+      const result = await modules.runtime.openTextFile({
+        mimeType: "application/json",
+        extension: ".json",
+        description: "JSON Files",
+        accept: ".json,application/json,text/plain"
+      });
+      if (result.outcome === "cancelled") return result;
+      if (result.outcome === "unsupported") {
+        throw new Error("当前环境不支持导入文件");
+      }
+      const input = modules.runtime.getById("templateTransferInput");
+      if (input) input.value = String(result.text || "");
+      const summary = await importTemplatesFromTextarea();
+      modules.runtime.setSummaryStatus(
+        modules.runtime.getById("templateStatusSummary"),
+        `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条`,
+        "success"
+      );
+      modules.runtime.setSummaryStatus(
+        modules.runtime.getById("savedTemplatesSummary"),
+        `已保存模板：${summary.total} 条`,
+        "success"
+      );
+      modules.ui.logToWorkspace(
+        `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条。`,
+        "success"
+      );
+      return summary;
     }
     function getVisibleTemplates() {
       const state = modules.state.state;
@@ -2159,7 +2451,7 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
     }
     function getPickerSelectionInfo() {
       const picker = modules.state.state.templatePicker;
-      return picker.mode === "single" ? "单选模式：点击模板后会立即写入目标字段。" : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}，可组合写入同一个字段。`;
+      return picker.mode === "single" ? "单选模式：点击模板后会立刻写入目标字段。" : `已选择 ${picker.selectedIds.length} / ${picker.maxSelection}，可组合写入同一个字段。`;
     }
     function syncTemplatePickerUi() {
       const titleEl = modules.runtime.getById("templatePickerTitle");
@@ -2250,6 +2542,8 @@ ${incomingContent}` : incomingContent;
       const contentInput = runtime.getById("templateContentInput");
       const saveButton = runtime.getById("btnSaveTemplate");
       const resetButton = runtime.getById("btnResetTemplateEditor");
+      const exportButton = runtime.getById("btnExportTemplatesJson");
+      const importButton = runtime.getById("btnImportTemplatesJson");
       const pickerCloseButton = runtime.getById("templatePickerModalClose");
       const pickerApplyButton = runtime.getById("btnApplyTemplateSelection");
       const pickerList = runtime.getById("templatePickerList");
@@ -2260,7 +2554,11 @@ ${incomingContent}` : incomingContent;
       [titleInput, contentInput].filter(Boolean).forEach((element) => {
         element.addEventListener("input", () => {
           updateTemplateLengthHint();
-          runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。", "pending");
+          runtime.setSummaryStatus(
+            runtime.getById("templateStatusSummary"),
+            modules.state.state.editingTemplateId ? "已修改当前模板，记得保存后再切换。" : "正在填写新模板，保存后会加入下方列表。",
+            "pending"
+          );
         });
       });
       if (managerSearchInput) {
@@ -2284,7 +2582,35 @@ ${incomingContent}` : incomingContent;
           }
         });
       }
-      if (resetButton) resetButton.addEventListener("click", () => fillTemplateEditor(null));
+      if (resetButton) {
+        resetButton.addEventListener("click", () => fillTemplateEditor(null));
+      }
+      if (exportButton) {
+        exportButton.addEventListener("click", async () => {
+          exportButton.disabled = true;
+          try {
+            await exportTemplatesAsJson();
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `导出失败：${error.message}`, "error");
+            modules.ui.logToWorkspace(`模板导出失败：${error.message}`, "error");
+          } finally {
+            exportButton.disabled = false;
+          }
+        });
+      }
+      if (importButton) {
+        importButton.addEventListener("click", async () => {
+          importButton.disabled = true;
+          try {
+            await importTemplatesFromJsonFile();
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("templateStatusSummary"), `导入失败：${error.message}`, "error");
+            modules.ui.logToWorkspace(`模板导入失败：${error.message}`, "error");
+          } finally {
+            importButton.disabled = false;
+          }
+        });
+      }
       document.addEventListener("click", async (event) => {
         const actionTarget = event.target && event.target.closest("[data-action][data-template-id]");
         if (actionTarget) {
@@ -2363,6 +2689,8 @@ ${incomingContent}` : incomingContent;
       deleteTemplateById,
       importTemplatesFromTextarea,
       exportTemplatesToTextarea,
+      importTemplatesFromJsonFile,
+      exportTemplatesAsJson,
       openTemplatePicker,
       closeTemplatePicker,
       applyTemplatesToField,

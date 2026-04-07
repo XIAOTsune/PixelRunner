@@ -142,6 +142,142 @@
     }
   }
 
+  function getUxpFileSystem() {
+    return global && global.uxp && global.uxp.storage && global.uxp.storage.localFileSystem
+      ? global.uxp.storage.localFileSystem
+      : null;
+  }
+
+  async function saveTextFile(defaultName, text, options = {}) {
+    const filename = String(defaultName || "export.txt").trim() || "export.txt";
+    const content = String(text == null ? "" : text);
+    const fileSystem = getUxpFileSystem();
+    if (fileSystem && typeof fileSystem.getFileForSaving === "function") {
+      const entry = await fileSystem.getFileForSaving(filename);
+      if (!entry) return { outcome: "cancelled", savedPath: "" };
+      await entry.write(content);
+      return {
+        outcome: "saved",
+        savedPath: String(entry.nativePath || entry.name || filename)
+      };
+    }
+
+    if (typeof global.showSaveFilePicker === "function") {
+      try {
+        const handle = await global.showSaveFilePicker({
+          suggestedName: filename,
+          types: [
+            {
+              description: String(options.description || "Text File"),
+              accept: { [String(options.mimeType || "text/plain")]: [String(options.extension || ".txt")] }
+            }
+          ]
+        });
+        if (!handle) return { outcome: "cancelled", savedPath: "" };
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        return { outcome: "saved", savedPath: String(handle.name || filename) };
+      } catch (error) {
+        if (error && error.name === "AbortError") return { outcome: "cancelled", savedPath: "" };
+        throw error;
+      }
+    }
+
+    if (typeof document !== "undefined" && typeof global.URL !== "undefined" && typeof global.Blob !== "undefined") {
+      const blob = new Blob([content], { type: String(options.mimeType || "text/plain") });
+      const href = global.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = filename;
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      global.setTimeout(() => global.URL.revokeObjectURL(href), 0);
+      return { outcome: "saved", savedPath: filename };
+    }
+
+    return { outcome: "unsupported", savedPath: "" };
+  }
+
+  async function openTextFile(options = {}) {
+    const fileSystem = getUxpFileSystem();
+    if (fileSystem && typeof fileSystem.getFileForOpening === "function") {
+      const picked = await fileSystem.getFileForOpening();
+      const entry = Array.isArray(picked) ? picked[0] : picked;
+      if (!entry) return { outcome: "cancelled", name: "", text: "" };
+      const text = await entry.read();
+      return {
+        outcome: "loaded",
+        name: String(entry.name || ""),
+        text: String(text == null ? "" : text)
+      };
+    }
+
+    if (typeof global.showOpenFilePicker === "function") {
+      try {
+        const handles = await global.showOpenFilePicker({
+          multiple: false,
+          types: [
+            {
+              description: String(options.description || "Text File"),
+              accept: { [String(options.mimeType || "text/plain")]: [String(options.extension || ".txt")] }
+            }
+          ]
+        });
+        const handle = Array.isArray(handles) ? handles[0] : null;
+        if (!handle) return { outcome: "cancelled", name: "", text: "" };
+        const file = await handle.getFile();
+        return {
+          outcome: "loaded",
+          name: String(file.name || ""),
+          text: await file.text()
+        };
+      } catch (error) {
+        if (error && error.name === "AbortError") return { outcome: "cancelled", name: "", text: "" };
+        throw error;
+      }
+    }
+
+    if (typeof document !== "undefined") {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = String(options.accept || ".json,application/json,text/plain");
+      input.style.display = "none";
+      document.body.appendChild(input);
+
+      const result = await new Promise((resolve, reject) => {
+        input.addEventListener(
+          "change",
+          async () => {
+            try {
+              const file = input.files && input.files[0];
+              if (!file) {
+                resolve({ outcome: "cancelled", name: "", text: "" });
+                return;
+              }
+              resolve({
+                outcome: "loaded",
+                name: String(file.name || ""),
+                text: await file.text()
+              });
+            } catch (error) {
+              reject(error);
+            }
+          },
+          { once: true }
+        );
+        input.click();
+      });
+
+      document.body.removeChild(input);
+      return result;
+    }
+
+    return { outcome: "unsupported", name: "", text: "" };
+  }
+
   function setSummaryStatus(element, message, type = "info") {
     if (!element) return;
     element.textContent = String(message || "");
@@ -159,6 +295,8 @@
     storageGetItem,
     storageSetItem,
     readJsonText,
-    setSummaryStatus
+    setSummaryStatus,
+    saveTextFile,
+    openTextFile
   };
 })(window);

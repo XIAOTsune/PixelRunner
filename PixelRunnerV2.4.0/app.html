@@ -307,6 +307,10 @@
                 <button id="btnResetTemplateEditor" class="secondary-btn" type="button">创建模板</button>
                 <button id="btnSaveTemplate" class="primary-btn" type="button">保存模板</button>
               </div>
+              <div class="action-row">
+                <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出 JSON</button>
+                <button id="btnImportTemplatesJson" class="secondary-btn" type="button">导入 JSON</button>
+              </div>
               <div class="dual-grid">
                 <label class="field">
                   <span class="field-label">搜索模板</span>
@@ -425,6 +429,38 @@
       <div class="action-row">
         <button id="btnApplyTemplateSelection" class="primary-btn" type="button">应用模板</button>
       </div>
+    </section>
+  </div>
+
+  <div id="donationModal" class="overlay-modal">
+    <div id="donationBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card donation-overlay-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">支持项目</p>
+          <h3 class="card-title">感谢支持 PixelRunner</h3>
+        </div>
+        <button id="donationModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="action-row donation-shortcuts">
+        <button id="btnOpenRunningHubSite" class="secondary-btn" type="button">打开 RunningHub</button>
+        <button id="btnOpenTutorialSite" class="secondary-btn" type="button">打开教程</button>
+      </div>
+
+      <div class="donation-grid">
+        <button id="donationWxCard" class="donation-card" type="button" data-donation-url="wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI">
+          <img id="donationWxImage" src="icons/vx.png" alt="微信赞助二维码" width="136" height="136" loading="eager" />
+          <span class="donation-label">微信赞助</span>
+        </button>
+        <button id="donationZfbCard" class="donation-card" type="button" data-donation-url="https://qr.alipay.com/fkx12142r0sdwj4kizujk2f">
+          <img id="donationZfbImage" src="icons/zfb.png" alt="支付宝赞助二维码" width="136" height="136" loading="eager" />
+          <span class="donation-label">支付宝赞助</span>
+        </button>
+      </div>
+
+      <div id="donationStatusHint" class="summary-strip donation-status">二维码已就绪，可点击二维码尝试打开链接。</div>
+      <div class="donation-tip">感谢支持。可直接手机扫码；如果当前环境支持，也可以点击二维码尝试唤起对应链接。</div>
     </section>
   </div>
 
