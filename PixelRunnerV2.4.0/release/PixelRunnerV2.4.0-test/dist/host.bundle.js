@@ -1274,6 +1274,10 @@ var PixelRunnerHostBundle = (() => {
     const text = String(message || "").toLowerCase();
     return /(processing|pending|running|queue|wait|运行中|排队|处理中)/i.test(text);
   }
+  function isAbortLikeMessage(message) {
+    const text = String(message || "").trim().toLowerCase();
+    return text.includes("request aborted by user") || text.includes("signal is aborted") || text.includes("operation was aborted") || text.includes("the user aborted a request") || text.includes("aborterror");
+  }
   async function submitRunningHubTask(args = []) {
     const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
     const app = payload.app && typeof payload.app === "object" ? payload.app : {};
@@ -1429,7 +1433,7 @@ var PixelRunnerHostBundle = (() => {
           if (localController && localController.signal.aborted) {
             throw new Error("Task polling cancelled");
           }
-          if (!isPendingMessage(error && error.message)) {
+          if (!isPendingMessage(error && error.message) && !isAbortLikeMessage(error && error.message)) {
             throw error;
           }
         }

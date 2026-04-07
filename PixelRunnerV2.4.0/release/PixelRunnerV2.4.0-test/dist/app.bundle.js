@@ -1030,7 +1030,9 @@ ${text}` : text;
           ...current,
           ...nextTask,
           createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
-          submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt
+          submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
+          finishedAt: Number(nextTask.finishedAt) > 0 ? Number(nextTask.finishedAt) : Number(current.finishedAt) || 0,
+          placementDocumentId: Number(nextTask.placementDocumentId) > 0 ? Number(nextTask.placementDocumentId) : Number(current.placementDocumentId) || 0
         };
       } else {
         list.unshift(nextTask);
@@ -1054,6 +1056,7 @@ ${text}` : text;
         ...nextTaskPatch,
         taskId: normalizedNextTaskId,
         remoteTaskId: String(nextTaskPatch.remoteTaskId || normalizedNextTaskId).trim(),
+        finishedAt: Number(nextTaskPatch.finishedAt) > 0 ? Number(nextTaskPatch.finishedAt) : Number(current.finishedAt) || 0,
         updatedAt: Date.now()
       };
       state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
@@ -1590,7 +1593,7 @@ ${text}` : text;
         const isEditing = String(modules.state.state.editingAppId || "") === String(app.id);
         const isCurrent = state.currentApp && String(state.currentApp.id) === String(app.id);
         const description = String(app.description || "").trim();
-        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></article>`;
+        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
       }).join("");
     }
     async function setCurrentAppById(appId, options = {}) {
@@ -2019,7 +2022,7 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       }
       listEl.innerHTML = templates.map((item) => {
         const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
-        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><strong>${modules.runtime.escapeHtml(item.title)}</strong><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></article>`;
+        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
       }).join("");
     }
     function normalizePickerConfig(config = {}) {
@@ -2361,6 +2364,9 @@ ${incomingContent}` : incomingContent;
       modules.state.state.settings = normalized;
       modules.state.state.settingsLoaded = true;
       fillSettingsForm(normalized);
+      if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
+        modules.workspace.updateRunButtonState();
+      }
       renderSettingsStatus("设置已保存到宿主本地存储。", "success");
       renderSettingsDiagnostics("当前设置已同步。", {
         runtime: modules.state.state.hostRuntime,

@@ -1345,6 +1345,32 @@ button {
   min-width: 0;
 }
 
+.compact-card-main {
+  width: 100%;
+}
+
+.compact-card-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.compact-card-topline strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-card-topline .compact-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
 .saved-item-heading {
   display: flex;
   align-items: center;
@@ -1752,16 +1778,76 @@ button {
   }
 
   .workspace-app-toolbar {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
   }
 
   .workspace-app-actions {
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
+    gap: 6px;
   }
 
   .workspace-app-actions .mini-btn {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: 64px;
+    min-height: 30px;
+    padding: 0 8px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
+  .workspace-app-meta {
+    min-height: 36px;
+    padding: 7px 10px;
+  }
+
+  .workspace-app-name,
+  .workspace-app-placeholder {
+    font-size: 12px;
+  }
+
+  .workspace-input-card .empty-panel,
+  .workspace-input-card .dynamic-form,
+  .workspace-input-card .image-capture-shell,
+  .workspace-input-card .image-binding-card {
+    padding: 8px 10px;
+  }
+
+  .image-capture-stage {
+    min-height: 136px;
+    border-radius: 12px;
+  }
+
+  .image-capture-preview {
+    min-height: 136px;
+  }
+
+  .image-capture-preview img {
+    max-height: 136px;
+  }
+
+  .image-capture-stage-corners {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+  }
+
+  .image-capture-stage-actions {
+    left: 10px;
+    bottom: 10px;
+  }
+
+  .image-capture-primary-btn,
+  .image-capture-clear-btn {
+    min-height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .image-capture-stage-note {
+    font-size: 9px;
   }
 
   .workspace-section-head,
@@ -1786,6 +1872,43 @@ button {
   .running-task-inline-btn {
     width: auto;
     max-width: none;
+  }
+
+  .saved-app-item,
+  .saved-template-item {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .compact-card {
+    padding: 7px 8px;
+  }
+
+  .compact-card-topline {
+    gap: 6px;
+  }
+
+  .compact-card-topline strong {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .compact-card-topline .compact-card-actions {
+    gap: 4px;
+  }
+
+  .compact-card-topline .mini-btn {
+    min-width: 42px;
+    min-height: 26px;
+    padding: 0 8px;
+    border-radius: 9px;
+    font-size: 10px;
+  }
+
+  .saved-app-main span,
+  .saved-template-main span {
+    font-size: 10px;
+    line-height: 1.3;
   }
 
   #viewTools .tool-list {
