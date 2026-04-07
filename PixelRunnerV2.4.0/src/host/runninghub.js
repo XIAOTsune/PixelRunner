@@ -275,15 +275,17 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
       continue;
     }
 
-    let normalizedValue = normalizeInputValue(input, rawValue);
+    let normalizedValue = rawValue;
     const typeMarker = String((input && (input.type || input.fieldType)) || "").trim().toLowerCase();
-    if (isImageLikeInput(input) && normalizedValue && typeof normalizedValue === "object") {
-      normalizedValue = await uploadImageValue(apiKey, normalizedValue, settings);
+    if (isImageLikeInput(input)) {
+      normalizedValue = await uploadImageValue(apiKey, rawValue, settings);
       console.log("[PixelRunner/RunningHub] image uploaded", {
         key,
         fieldName: String((input && (input.fieldName || input.name || key)) || key),
         valueType: /^https?:\/\//i.test(String(normalizedValue || "")) ? "url" : "token"
       });
+    } else {
+      normalizedValue = normalizeInputValue(input, rawValue);
     }
 
     normalizedValues[key] = normalizedValue;
