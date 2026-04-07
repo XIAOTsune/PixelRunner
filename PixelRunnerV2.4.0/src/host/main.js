@@ -6,6 +6,7 @@ import {
   submitRunningHubTask
 } from "./runninghub.js";
 import { parseRunningHubApp } from "./runninghub-parser.js";
+import { openExternalUrl, openLocalPath, resolveTutorialPath } from "./shell.js";
 import {
   capturePhotoshopDocumentPreview,
   getPhotoshopDocumentInfo,
@@ -77,6 +78,15 @@ async function handleBridgeRequest(message, webviewEl) {
         break;
       case "photoshop.placeResultFromUrl":
         result = await placeResultIntoPhotoshop(message.args);
+        break;
+      case "shell.openExternal":
+        result = await openExternalUrl(message.args);
+        break;
+      case "shell.openPath":
+        result = await openLocalPath(message.args);
+        break;
+      case "shell.resolveTutorialPath":
+        result = await resolveTutorialPath();
         break;
       default:
         throw new Error(`Unknown bridge method: ${message.method}`);

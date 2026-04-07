@@ -98,14 +98,62 @@
       modules.workspace.setModalOpen("donationModal", false);
     };
 
-    const tryOpenLink = (url, label) => {
-      const target = String(url || "").trim();
-      if (!target) return;
+    const openLinkInPreview = (url, label) => {
       try {
-        global.open(target, "_blank", "noopener");
+        global.open(String(url || "").trim(), "_blank", "noopener");
         setDonationStatus(`已尝试打开${label}，若未唤起请直接扫码。`, "success");
       } catch (_) {
         setDonationStatus(`打开${label}失败，请直接扫码使用。`, "error");
+      }
+    };
+
+    const openExternalLink = async (url, label, developerText) => {
+      const target = String(url || "").trim();
+      if (!target) return;
+
+      if (!runtime.isPluginRuntime()) {
+        openLinkInPreview(target, label);
+        return;
+      }
+
+      try {
+        const result = await runtime.callHost("shell.openExternal", [target, developerText], { timeoutMs: 15000 });
+        if (result && result.ok) {
+          setDonationStatus(`已打开${label}。`, "success");
+          return;
+        }
+        setDonationStatus(`打开${label}失败，请直接扫码使用。`, "error");
+      } catch (error) {
+        setDonationStatus(`打开${label}失败：${error.message}`, "error");
+      }
+    };
+
+    const openTutorialPage = async () => {
+      if (!runtime.isPluginRuntime()) {
+        openLinkInPreview(DONATION_LINKS.tutorial, "教程页面");
+        return;
+      }
+
+      try {
+        const resolved = await runtime.callHost("shell.resolveTutorialPath", [], { timeoutMs: 15000 });
+        const tutorialPath = String((resolved && resolved.path) || "").trim();
+        if (!tutorialPath) {
+          setDonationStatus("本地教程文件定位失败，请检查 pages/runninghub-guide.html。", "error");
+          return;
+        }
+
+        const opened = await runtime.callHost(
+          "shell.openPath",
+          [tutorialPath, "将使用系统默认浏览器打开本地教程页面。"],
+          { timeoutMs: 15000 }
+        );
+        if (opened && opened.ok) {
+          setDonationStatus("已打开教程页面。", "success");
+          return;
+        }
+        setDonationStatus("打开教程失败，请检查系统默认浏览器设置。", "error");
+      } catch (error) {
+        setDonationStatus(`打开教程失败：${error.message}`, "error");
       }
     };
 
@@ -122,19 +170,19 @@
     donationCards.forEach((card) => {
       card.addEventListener("click", () => {
         const label = card.id === "donationWxCard" ? "微信赞助链接" : "支付宝赞助链接";
-        tryOpenLink(card.getAttribute("data-donation-url"), label);
+        void openExternalLink(card.getAttribute("data-donation-url"), label, `将尝试打开${label}。`);
       });
     });
 
     if (btnOpenRunningHubSite) {
       btnOpenRunningHubSite.addEventListener("click", () => {
-        tryOpenLink(DONATION_LINKS.runninghub, "RunningHub");
+        void openExternalLink(DONATION_LINKS.runninghub, "RunningHub", "将使用系统默认浏览器打开 RunningHub 官网。");
       });
     }
 
     if (btnOpenTutorialSite) {
       btnOpenTutorialSite.addEventListener("click", () => {
-        tryOpenLink(DONATION_LINKS.tutorial, "教程页面");
+        void openTutorialPage();
       });
     }
 

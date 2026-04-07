@@ -201,7 +201,13 @@
     if (!input || typeof input !== "object") return false;
     const key = String(input.key || "").toLowerCase();
     const label = String(input.label || input.name || "").toLowerCase();
-    return /prompt|negative|positive|提示词|负向|正向/.test(`${key} ${label}`);
+    const fieldType = String(input.fieldType || input.type || "").toLowerCase();
+    const hint = `${key} ${label} ${fieldType}`;
+
+    if (/prompt|negative|positive|hint/.test(hint)) return true;
+    if (/提示词|负向|正向|输入文本|文本输入/.test(hint)) return true;
+    if ((fieldType.includes("text") || fieldType.includes("string")) && /(input|text|string|文本|输入)/.test(hint)) return true;
+    return false;
   }
 
   function buildDefaultFormValues(app) {

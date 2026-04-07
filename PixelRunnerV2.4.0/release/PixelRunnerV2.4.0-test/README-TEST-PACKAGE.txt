@@ -13,6 +13,7 @@ Included:
 - app.css
 - dist
 - icons
+- pages
 
 Not included:
 - docs/

@@ -24,7 +24,8 @@ function getIncludedEntries(version) {
       "style.css",
       "app.css",
       "dist",
-      "icons"
+      "icons",
+      "pages"
     ]
   };
 }
