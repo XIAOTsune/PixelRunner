@@ -466,13 +466,14 @@
   function buildRunPayload() {
     const state = modules.state.state;
     collectFormValuesFromDom();
+    const currentAppId = modules.state.resolveAppId(state.currentApp);
     const payload = {
-      appId: state.currentApp ? state.currentApp.appId : "",
+      appId: currentAppId,
       appName: state.currentApp ? state.currentApp.name : "",
       app: state.currentApp
         ? {
             id: state.currentApp.id,
-            appId: state.currentApp.appId,
+            appId: currentAppId,
             name: state.currentApp.name,
             inputs: Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : []
           }
@@ -750,6 +751,13 @@
           }
 
           if (!payload.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
+          if (!payload.appId) {
+            throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
+          }
+          modules.ui.logToWorkspace(
+            `[运行提交] appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
+            "info"
+          );
           if (taskStatusSummary) taskStatusSummary.textContent = `正在提交任务：${payload.appName}`;
 
           const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {

@@ -102,11 +102,34 @@
       .filter(Boolean);
   }
 
+  function resolveAppId(source) {
+    if (!source || typeof source !== "object") return "";
+    const candidates = [
+      source.appId,
+      source.webappId,
+      source.webAppId,
+      source.workflowId,
+      source.workflowID,
+      source.code,
+      source.appid,
+      source.webappid
+    ];
+
+    for (let index = 0; index < candidates.length; index += 1) {
+      const value = String(candidates[index] == null ? "" : candidates[index]).trim();
+      if (!value) continue;
+      if (["null", "undefined"].includes(value.toLowerCase())) continue;
+      return value;
+    }
+
+    return "";
+  }
+
   function normalizeAppRecord(app, index = 0) {
     const runtime = modules.runtime;
     const source = app && typeof app === "object" ? app : {};
     const now = Date.now();
-    const appId = String(source.appId || source.webappId || source.id || "").trim();
+    const appId = resolveAppId(source);
     const id = String(source.id || "").trim() || runtime.createId("app");
     const fallbackName = `应用 ${index + 1}`;
     const name = String(source.name || source.title || fallbackName).trim() || fallbackName;
@@ -213,6 +236,7 @@
     state,
     normalizeSettings,
     normalizeAppInputs,
+    resolveAppId,
     normalizeAppRecord,
     normalizeAppList,
     normalizeTemplateRecord,

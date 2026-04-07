@@ -224,11 +224,31 @@ var PixelRunnerWebviewBundle = (() => {
         };
       }).filter(Boolean);
     }
+    function resolveAppId(source) {
+      if (!source || typeof source !== "object") return "";
+      const candidates = [
+        source.appId,
+        source.webappId,
+        source.webAppId,
+        source.workflowId,
+        source.workflowID,
+        source.code,
+        source.appid,
+        source.webappid
+      ];
+      for (let index = 0; index < candidates.length; index += 1) {
+        const value = String(candidates[index] == null ? "" : candidates[index]).trim();
+        if (!value) continue;
+        if (["null", "undefined"].includes(value.toLowerCase())) continue;
+        return value;
+      }
+      return "";
+    }
     function normalizeAppRecord(app, index = 0) {
       const runtime = modules.runtime;
       const source = app && typeof app === "object" ? app : {};
       const now = Date.now();
-      const appId = String(source.appId || source.webappId || source.id || "").trim();
+      const appId = resolveAppId(source);
       const id = String(source.id || "").trim() || runtime.createId("app");
       const fallbackName = `应用 ${index + 1}`;
       const name = String(source.name || source.title || fallbackName).trim() || fallbackName;
@@ -313,6 +333,7 @@ var PixelRunnerWebviewBundle = (() => {
       state,
       normalizeSettings,
       normalizeAppInputs,
+      resolveAppId,
       normalizeAppRecord,
       normalizeAppList,
       normalizeTemplateRecord,
@@ -826,12 +847,13 @@ ${text}` : text;
     function buildRunPayload() {
       const state = modules.state.state;
       collectFormValuesFromDom();
+      const currentAppId = modules.state.resolveAppId(state.currentApp);
       const payload = {
-        appId: state.currentApp ? state.currentApp.appId : "",
+        appId: currentAppId,
         appName: state.currentApp ? state.currentApp.name : "",
         app: state.currentApp ? {
           id: state.currentApp.id,
-          appId: state.currentApp.appId,
+          appId: currentAppId,
           name: state.currentApp.name,
           inputs: Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : []
         } : null,
@@ -1072,6 +1094,13 @@ ${text}` : text;
               return;
             }
             if (!payload.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
+            if (!payload.appId) {
+              throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
+            }
+            modules.ui.logToWorkspace(
+              `[运行提交] appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
+              "info"
+            );
             if (taskStatusSummary) taskStatusSummary.textContent = `正在提交任务：${payload.appName}`;
             const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {
               timeoutMs: Math.max(1e4, Number(payload.settings.timeout || 180) * 1e3 + 5e3)
