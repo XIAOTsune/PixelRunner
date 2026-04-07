@@ -484,6 +484,82 @@ ${text}` : text;
       const type = String(input && input.type || "").trim().toLowerCase();
       return type === "image" || type === "file";
     }
+    function getNumericInputKind(input, rawValue = void 0) {
+      if (!input || typeof input !== "object") return "";
+      const typeMarker = String(input.type || input.fieldType || "").trim().toLowerCase();
+      if (!typeMarker) return "";
+      if (/(^|[^a-z])(int|integer)([^a-z]|$)/.test(typeMarker)) return "int";
+      if (/(^|[^a-z])(float|double|decimal)([^a-z]|$)/.test(typeMarker)) return "float";
+      if (typeMarker !== "number") return "";
+      const precision = Number(input.precision ?? input.decimals);
+      if (Number.isFinite(precision)) return precision > 0 ? "float" : "int";
+      const explicitStep = Number(input.step);
+      if (Number.isFinite(explicitStep) && explicitStep > 0) {
+        return Number.isInteger(explicitStep) ? "int" : "float";
+      }
+      const numericCandidates = [rawValue, input.default, input.min, input.max];
+      if (numericCandidates.some((candidate) => {
+        const num = Number(candidate);
+        return Number.isFinite(num) && !Number.isInteger(num);
+      })) {
+        return "float";
+      }
+      return "int";
+    }
+    function isNumericInput(input, rawValue = void 0) {
+      return Boolean(getNumericInputKind(input, rawValue));
+    }
+    function isFloatNumericInput(input, rawValue = void 0) {
+      const kind = getNumericInputKind(input, rawValue);
+      return kind === "float";
+    }
+    function isIntegerNumericInput(input, rawValue = void 0) {
+      const kind = getNumericInputKind(input, rawValue);
+      return kind === "int";
+    }
+    function isNumericInputInterimValue(value) {
+      const text = String(value ?? "").trim();
+      return text === "" || /^[+-]$/.test(text) || /^[+-]?\.$/.test(text) || /^[+-]?\d+\.$/.test(text);
+    }
+    function normalizeNumericValue(input, rawValue) {
+      const kind = getNumericInputKind(input, rawValue);
+      if (!kind) return rawValue;
+      if (typeof rawValue === "number") {
+        if (!Number.isFinite(rawValue)) return "";
+        return kind === "int" ? Math.round(rawValue) : Number(rawValue.toFixed(1));
+      }
+      const text = String(rawValue ?? "").trim();
+      if (!text) return "";
+      if (isNumericInputInterimValue(text)) return text;
+      const numericValue = Number(text);
+      if (!Number.isFinite(numericValue)) return text;
+      return kind === "int" ? Math.round(numericValue) : Number(numericValue.toFixed(1));
+    }
+    function formatNumericInputValue(input, rawValue) {
+      const normalizedValue = normalizeNumericValue(input, rawValue);
+      if (normalizedValue === "" || isNumericInputInterimValue(normalizedValue)) {
+        return String(normalizedValue ?? "");
+      }
+      if (typeof normalizedValue === "number") {
+        return isFloatNumericInput(input, rawValue) ? normalizedValue.toFixed(1) : String(normalizedValue);
+      }
+      const parsed = Number(normalizedValue);
+      if (!Number.isFinite(parsed)) return String(normalizedValue ?? "");
+      return isFloatNumericInput(input, rawValue) ? parsed.toFixed(1) : String(Math.round(parsed));
+    }
+    function getNumericInputStep(input, rawValue = void 0) {
+      const explicitStep = Number(input && input.step);
+      if (Number.isFinite(explicitStep) && explicitStep > 0) return explicitStep;
+      return isFloatNumericInput(input, rawValue) ? 0.1 : 1;
+    }
+    function getNormalizedFieldValue(input, rawValue) {
+      if (isImageInput(input)) return rawValue;
+      if (isNumericInput(input)) return normalizeNumericValue(input, rawValue);
+      if (input && (input.type === "boolean" || input.type === "switch" || input.type === "checkbox")) {
+        return Boolean(rawValue);
+      }
+      return rawValue;
+    }
     function isPromptField(input) {
       return modules.state.isPromptLikeInput(input) && !isImageInput(input);
     }
@@ -603,10 +679,16 @@ ${text}` : text;
       const source = formValues && typeof formValues === "object" ? formValues : {};
       const out = { ...source };
       inputs.forEach((input) => {
-        if (!isImageInput(input)) return;
         const key = String(input && input.key || "").trim();
         if (!key || !(key in out)) return;
+        if (!isImageInput(input)) return;
         out[key] = buildImageInputPayloadValue(out[key]);
+      });
+      inputs.forEach((input) => {
+        if (!isNumericInput(input)) return;
+        const key = String(input && input.key || "").trim();
+        if (!key || !(key in out)) return;
+        out[key] = normalizeNumericValue(input, out[key]);
       });
       return out;
     }
@@ -914,7 +996,10 @@ ${text}` : text;
       `;
       }
       if (input.type === "number" || input.type === "int" || input.type === "float") {
-        return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="number" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
+        const numberKind = getNumericInputKind(input, value) || "int";
+        const step = getNumericInputStep(input, value);
+        const formattedValue = formatNumericInputValue(input, value);
+        return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="number" data-form-key="${escapedKey}" data-number-kind="${runtime.escapeHtml(numberKind)}" step="${runtime.escapeHtml(String(step))}" value="${runtime.escapeHtml(formattedValue)}" /></label>`;
       }
       if (input.type === "boolean" || input.type === "switch" || input.type === "checkbox") {
         return `<label class="field toggle-field"><span class="field-label">${label}${requiredMark}</span><label class="checkbox-line"><input type="checkbox" data-form-key="${escapedKey}" ${value ? "checked" : ""} /><span>启用</span></label></label>`;
@@ -962,7 +1047,13 @@ ${text}` : text;
         }
         const inputMeta = (state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
         if (inputMeta && isImageInput(inputMeta)) return;
-        if (element.matches("input, textarea, select")) state.formValues[key] = element.value;
+        if (element.matches("input, textarea, select")) {
+          const nextValue = inputMeta ? getNormalizedFieldValue(inputMeta, element.value) : element.value;
+          state.formValues[key] = nextValue;
+          if (inputMeta && isNumericInput(inputMeta) && element.matches('input[type="number"]') && !isNumericInputInterimValue(nextValue)) {
+            element.value = formatNumericInputValue(inputMeta, nextValue);
+          }
+        }
       });
     }
     function buildRunPayload() {
@@ -1308,7 +1399,9 @@ ${text}` : text;
             return;
           }
           const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
-          if (!inputMeta || !isImageInput(inputMeta)) modules.state.state.formValues[key] = element.value;
+          if (!inputMeta || isImageInput(inputMeta)) return;
+          const nextValue = getNormalizedFieldValue(inputMeta, element.value);
+          modules.state.state.formValues[key] = nextValue;
         });
         dynamicInputContainer.addEventListener("change", (event) => {
           const element = event.target;
@@ -1320,7 +1413,12 @@ ${text}` : text;
             return;
           }
           const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
-          if (!inputMeta || !isImageInput(inputMeta)) modules.state.state.formValues[key] = element.value;
+          if (!inputMeta || isImageInput(inputMeta)) return;
+          const nextValue = getNormalizedFieldValue(inputMeta, element.value);
+          modules.state.state.formValues[key] = nextValue;
+          if (isNumericInput(inputMeta) && element.matches('input[type="number"]')) {
+            element.value = formatNumericInputValue(inputMeta, nextValue);
+          }
         });
         dynamicInputContainer.addEventListener("click", (event) => {
           const actionTarget = event.target && event.target.closest("[data-action][data-form-key]");
