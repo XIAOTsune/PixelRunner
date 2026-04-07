@@ -499,6 +499,9 @@ var PixelRunnerHostBundle = (() => {
   }
 
   // src/host/photoshop/service.js
+  var DEFAULT_UPLOAD_TARGET_BYTES = 1e7;
+  var DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 11e6;
+  var DEFAULT_UPLOAD_QUALITY_STEPS = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
   function getBoundsSize(bounds) {
     return {
       width: Math.max(1, Number(bounds.right) - Number(bounds.left)),
@@ -553,6 +556,168 @@ var PixelRunnerHostBundle = (() => {
   }
   function parseLayerBounds(bounds) {
     return normalizeBounds(bounds);
+  }
+  function clampBoundsToDocument(bounds, docInfo) {
+    const width = Math.max(1, Number(docInfo && docInfo.width) || 1);
+    const height = Math.max(1, Number(docInfo && docInfo.height) || 1);
+    if (!bounds) {
+      return {
+        left: 0,
+        top: 0,
+        right: width,
+        bottom: height
+      };
+    }
+    const left = Math.max(0, Math.min(width - 1, Math.floor(Number(bounds.left) || 0)));
+    const top = Math.max(0, Math.min(height - 1, Math.floor(Number(bounds.top) || 0)));
+    const right = Math.max(left + 1, Math.min(width, Math.ceil(Number(bounds.right) || width)));
+    const bottom = Math.max(top + 1, Math.min(height, Math.ceil(Number(bounds.bottom) || height)));
+    return { left, top, right, bottom };
+  }
+  function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension) {
+    const width = Math.max(1, Number(sourceWidth) || 1);
+    const height = Math.max(1, Number(sourceHeight) || 1);
+    const limitedMax = Math.max(256, Math.min(4096, Math.floor(Number(maxDimension) || 1536)));
+    const ratio = Math.min(1, limitedMax / Math.max(width, height));
+    return {
+      width: Math.max(1, Math.round(width * ratio)),
+      height: Math.max(1, Math.round(height * ratio))
+    };
+  }
+  async function getPixelsWithFallback(imaging, options) {
+    try {
+      return await imaging.getPixels(options);
+    } catch (error) {
+      const fallbackOptions = { ...options };
+      delete fallbackOptions.componentSize;
+      return imaging.getPixels(fallbackOptions);
+    }
+  }
+  async function closeDocumentWithoutSaving(action, docRef) {
+    if (!docRef) return;
+    if (typeof docRef.closeWithoutSaving === "function") {
+      await docRef.closeWithoutSaving();
+      return;
+    }
+    await action.batchPlay([{
+      _obj: "close",
+      _target: [{ _ref: "document", _id: Number(docRef.id) }],
+      saving: { _enum: "yesNo", _value: "no" }
+    }], {});
+  }
+  function jpegDescriptor(quality) {
+    return {
+      _obj: "JPEG",
+      extendedQuality: Math.max(1, Math.min(12, Math.floor(Number(quality) || 8))),
+      matteColor: { _enum: "matteColor", _value: "none" }
+    };
+  }
+  async function deleteFileQuietly(file) {
+    if (!file || typeof file.delete !== "function") return;
+    try {
+      await file.delete();
+    } catch (_) {
+    }
+  }
+  async function exportDocumentAsJpeg(storage, action, docRef, quality, filePrefix = "pixelrunner-capture") {
+    const tempFolder = await storage.localFileSystem.getTemporaryFolder();
+    const tempFile = await tempFolder.createFile(`${filePrefix}-${Date.now()}-${quality}.jpg`, { overwrite: true });
+    try {
+      const sessionToken = await storage.localFileSystem.createSessionToken(tempFile);
+      await action.batchPlay([{
+        _obj: "save",
+        as: jpegDescriptor(quality),
+        in: { _path: sessionToken, _kind: "local" },
+        documentID: Number(docRef.id),
+        copy: true,
+        lowerCase: true,
+        saveStage: { _enum: "saveStageType", _value: "saveStageOS" }
+      }], {});
+      const rawBuffer = await tempFile.read({ format: storage.formats.binary });
+      const arrayBuffer = rawBuffer instanceof ArrayBuffer ? rawBuffer : ArrayBuffer.isView(rawBuffer) ? rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength) : new Uint8Array(rawBuffer || []).buffer;
+      return {
+        arrayBuffer,
+        bytes: Math.max(0, Number(arrayBuffer && arrayBuffer.byteLength) || 0),
+        mimeType: "image/jpeg"
+      };
+    } finally {
+      await deleteFileQuietly(tempFile);
+    }
+  }
+  async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compressionOptions = {}, modalDeps = null) {
+    const deps = modalDeps && typeof modalDeps === "object" ? modalDeps : await ensureDeps();
+    const action = deps.photoshop.action;
+    const storage = deps.storage;
+    const cropBounds = clampBoundsToDocument(selectionBounds, docInfo);
+    const targetBytes = Math.max(1, Math.floor(Number(compressionOptions.targetBytes) || DEFAULT_UPLOAD_TARGET_BYTES));
+    const hardLimitBytes = Math.max(targetBytes, Math.floor(Number(compressionOptions.hardLimitBytes) || DEFAULT_UPLOAD_HARD_LIMIT_BYTES));
+    const qualitySteps = Array.isArray(compressionOptions.qualitySteps) && compressionOptions.qualitySteps.length ? compressionOptions.qualitySteps : DEFAULT_UPLOAD_QUALITY_STEPS;
+    let uploadResult = null;
+    let tempDoc = null;
+    try {
+      tempDoc = await doc.duplicate("pixelrunner_upload_capture");
+      try {
+        await tempDoc.flatten();
+      } catch (_) {
+      }
+      const isSelectionCapture = selectionBounds && (cropBounds.left > 0 || cropBounds.top > 0 || cropBounds.right < Math.max(1, Number(docInfo.width) || 1) || cropBounds.bottom < Math.max(1, Number(docInfo.height) || 1));
+      if (isSelectionCapture && typeof tempDoc.crop === "function") {
+        await tempDoc.crop(cropBounds);
+      }
+      let lastAttempt = null;
+      const attempts = [];
+      for (const quality of qualitySteps) {
+        const exported = await exportDocumentAsJpeg(storage, action, tempDoc, quality, "pixelrunner-upload");
+        const attempt = {
+          quality: Math.max(1, Math.min(12, Math.floor(Number(quality) || 8))),
+          bytes: exported.bytes
+        };
+        attempts.push(attempt);
+        lastAttempt = { ...exported, quality: attempt.quality };
+        if (exported.bytes <= targetBytes) {
+          uploadResult = {
+            ...exported,
+            quality: attempt.quality,
+            attempts,
+            targetBytes,
+            hardLimitBytes
+          };
+          break;
+        }
+      }
+      if (lastAttempt && lastAttempt.bytes <= hardLimitBytes) {
+        if (!uploadResult) {
+          uploadResult = {
+            ...lastAttempt,
+            attempts,
+            targetBytes,
+            hardLimitBytes
+          };
+        }
+        return;
+      }
+      const error = new Error("图片压缩后仍超过上传限制");
+      error.attempts = attempts;
+      error.targetBytes = targetBytes;
+      error.hardLimitBytes = hardLimitBytes;
+      throw error;
+    } finally {
+      await closeDocumentWithoutSaving(action, tempDoc);
+    }
+    if (!uploadResult || !(uploadResult.arrayBuffer instanceof ArrayBuffer)) {
+      throw new Error("Failed to build upload asset");
+    }
+    const base64 = arrayBufferToBase64(uploadResult.arrayBuffer);
+    return {
+      mimeType: uploadResult.mimeType,
+      base64,
+      dataUrl: buildDataUrl(uploadResult.mimeType, base64),
+      bytes: uploadResult.bytes,
+      quality: uploadResult.quality,
+      targetBytes: uploadResult.targetBytes,
+      hardLimitBytes: uploadResult.hardLimitBytes,
+      attempts: uploadResult.attempts || []
+    };
   }
   async function transformLayerScale(action, layerId, scaleXPercent, scaleYPercent) {
     await action.batchPlay([{
@@ -625,9 +790,11 @@ var PixelRunnerHostBundle = (() => {
   }
   async function captureDocumentPreview(options = {}) {
     console.log("[PixelRunner/Photoshop] captureDocumentPreview:start", options);
-    const { photoshop } = await ensureDeps();
+    const deps = await ensureDeps();
+    const { photoshop } = deps;
     const app = photoshop.app;
     const imaging = photoshop.imaging;
+    const core = photoshop.core;
     const doc = app && app.activeDocument;
     if (!doc) throw new Error("No active Photoshop document");
     if (!imaging || typeof imaging.getPixels !== "function" || typeof imaging.encodeImageData !== "function") {
@@ -636,65 +803,76 @@ var PixelRunnerHostBundle = (() => {
     const docInfo = getDocumentInfo(doc);
     const maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(options.maxDimension) || 1536)));
     const quality = Math.max(20, Math.min(100, Math.floor(Number(options.quality) || 82)));
-    const selectionBounds = normalizeBounds(docInfo.selectionBounds);
-    const sourceWidth = selectionBounds ? Math.max(1, Number(selectionBounds.right) - Number(selectionBounds.left)) : Math.max(1, Number(docInfo.width) || 1);
-    const sourceHeight = selectionBounds ? Math.max(1, Number(selectionBounds.bottom) - Number(selectionBounds.top)) : Math.max(1, Number(docInfo.height) || 1);
-    const width = sourceWidth;
-    const height = sourceHeight;
-    const ratio = Math.min(1, maxDimension / Math.max(width, height));
-    const targetWidth = Math.max(1, Math.round(width * ratio));
-    const targetHeight = Math.max(1, Math.round(height * ratio));
-    let pixels = null;
-    try {
-      pixels = await imaging.getPixels({
-        documentID: Number(doc.id),
-        sourceBounds: selectionBounds || void 0,
-        targetSize: { width: targetWidth, height: targetHeight },
-        componentSize: 8,
-        applyAlpha: true
-      });
-      const encoded = await imaging.encodeImageData({
-        imageData: pixels.imageData,
-        base64: true,
-        format: "jpeg",
-        quality
-      });
-      const base64 = extractEncodedBase64(encoded);
-      if (!base64) {
-        throw new Error("Photoshop returned an empty capture payload");
-      }
-      const result = {
-        ok: true,
-        kind: "captured-document-image",
-        source: "photoshop-document",
-        document: docInfo,
-        documentId: docInfo.documentId,
-        selectionBounds,
-        capturedFromSelection: Boolean(selectionBounds),
-        width: targetWidth,
-        height: targetHeight,
-        originalWidth: width,
-        originalHeight: height,
-        mimeType: "image/jpeg",
-        quality,
-        maxDimension,
-        base64,
-        dataUrl: buildDataUrl("image/jpeg", base64)
-      };
-      console.log("[PixelRunner/Photoshop] captureDocumentPreview:success", {
-        documentId: result.documentId,
-        width: result.width,
-        height: result.height,
-        capturedFromSelection: result.capturedFromSelection,
-        hasBase64: Boolean(result.base64)
-      });
-      return result;
-    } finally {
+    const rawSelectionBounds = normalizeBounds(docInfo.selectionBounds);
+    const selectionBounds = rawSelectionBounds ? clampBoundsToDocument(rawSelectionBounds, docInfo) : null;
+    const captureBounds = clampBoundsToDocument(selectionBounds, docInfo);
+    const sourceWidth = Math.max(1, Number(captureBounds.right) - Number(captureBounds.left));
+    const sourceHeight = Math.max(1, Number(captureBounds.bottom) - Number(captureBounds.top));
+    const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension);
+    return core.executeAsModal(async () => {
+      const uploadAsset = await buildCompressedUploadAsset(doc, docInfo, selectionBounds, options, deps);
+      let pixels = null;
       try {
-        pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
-      } catch (_) {
+        pixels = await getPixelsWithFallback(imaging, {
+          documentID: Number(doc.id),
+          sourceBounds: captureBounds,
+          targetSize,
+          componentSize: 8,
+          applyAlpha: true
+        });
+        const encoded = await imaging.encodeImageData({
+          imageData: pixels.imageData,
+          base64: true,
+          format: "jpeg",
+          quality
+        });
+        const base64 = extractEncodedBase64(encoded);
+        if (!base64) {
+          throw new Error("Photoshop returned an empty capture payload");
+        }
+        const result = {
+          ok: true,
+          kind: "captured-document-image",
+          source: "photoshop-document",
+          document: docInfo,
+          documentId: docInfo.documentId,
+          selectionBounds,
+          capturedFromSelection: Boolean(selectionBounds),
+          width: targetSize.width,
+          height: targetSize.height,
+          originalWidth: sourceWidth,
+          originalHeight: sourceHeight,
+          mimeType: "image/jpeg",
+          quality,
+          maxDimension,
+          base64,
+          dataUrl: buildDataUrl("image/jpeg", base64),
+          uploadMimeType: uploadAsset.mimeType,
+          uploadBase64: uploadAsset.base64,
+          uploadDataUrl: uploadAsset.dataUrl,
+          uploadBytes: uploadAsset.bytes,
+          uploadQuality: uploadAsset.quality,
+          uploadTargetBytes: uploadAsset.targetBytes,
+          uploadHardLimitBytes: uploadAsset.hardLimitBytes,
+          compressionAttempts: uploadAsset.attempts
+        };
+        console.log("[PixelRunner/Photoshop] captureDocumentPreview:success", {
+          documentId: result.documentId,
+          width: result.width,
+          height: result.height,
+          capturedFromSelection: result.capturedFromSelection,
+          hasBase64: Boolean(result.base64),
+          uploadBytes: result.uploadBytes,
+          uploadQuality: result.uploadQuality
+        });
+        return result;
+      } finally {
+        try {
+          pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
+        } catch (_) {
+        }
       }
-    }
+    }, { commandName: "PixelRunner Capture Preview" });
   }
   async function runToolAction(payload = {}) {
     const context = await ensureActiveDocument();
@@ -997,16 +1175,19 @@ var PixelRunnerHostBundle = (() => {
       return { ok: false, balance: null, coins: null };
     }
     const result = await fetchJsonWithTimeout("https://www.runninghub.cn/uc/openapi/accountStatus", {
-      method: "GET",
+      method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`
-      }
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ apikey: apiKey })
     });
     const data = result && (result.data || result.result) || {};
+    const account = data && data.accountStatus && typeof data.accountStatus === "object" ? data.accountStatus : data;
     return {
       ok: true,
-      balance: data.balance ?? data.amount ?? data.walletBalance ?? null,
-      coins: data.coins ?? data.rhCoins ?? data.integral ?? null,
+      balance: account.remainMoney ?? account.balance ?? account.amount ?? account.walletBalance ?? account.money ?? null,
+      coins: account.remainCoins ?? account.coins ?? account.rhCoins ?? account.integral ?? null,
       result
     };
   }

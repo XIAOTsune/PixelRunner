@@ -252,17 +252,20 @@ export async function fetchRunningHubAccountStatus(args = []) {
   }
 
   const result = await fetchJsonWithTimeout("https://www.runninghub.cn/uc/openapi/accountStatus", {
-    method: "GET",
+    method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`
-    }
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ apikey: apiKey })
   });
 
   const data = (result && (result.data || result.result)) || {};
+  const account = data && data.accountStatus && typeof data.accountStatus === "object" ? data.accountStatus : data;
   return {
     ok: true,
-    balance: data.balance ?? data.amount ?? data.walletBalance ?? null,
-    coins: data.coins ?? data.rhCoins ?? data.integral ?? null,
+    balance: account.remainMoney ?? account.balance ?? account.amount ?? account.walletBalance ?? account.money ?? null,
+    coins: account.remainCoins ?? account.coins ?? account.rhCoins ?? account.integral ?? null,
     result
   };
 }

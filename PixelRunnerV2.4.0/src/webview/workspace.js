@@ -21,7 +21,13 @@
     return Boolean(
       asset &&
         typeof asset === "object" &&
-        (((asset.dataUrl || "").trim() || (asset.base64 || "").trim() || (asset.url || "").trim()))
+        (
+          ((asset.dataUrl || "").trim() ||
+            (asset.base64 || "").trim() ||
+            (asset.url || "").trim() ||
+            (asset.uploadDataUrl || "").trim() ||
+            (asset.uploadBase64 || "").trim())
+        )
     );
   }
 
@@ -88,7 +94,20 @@
       mimeType: String(asset.mimeType || "image/jpeg"),
       dataUrl: String(asset.dataUrl || ""),
       base64: String(asset.base64 || ""),
-      url: String(asset.url || "")
+      url: String(asset.url || ""),
+      uploadMimeType: String(asset.uploadMimeType || asset.mimeType || "image/jpeg"),
+      uploadDataUrl: String(asset.uploadDataUrl || ""),
+      uploadBase64: String(asset.uploadBase64 || ""),
+      uploadBytes: Number(asset.uploadBytes) || null,
+      uploadQuality: Number(asset.uploadQuality) || null,
+      uploadTargetBytes: Number(asset.uploadTargetBytes) || null,
+      uploadHardLimitBytes: Number(asset.uploadHardLimitBytes) || null,
+      compressionAttempts: Array.isArray(asset.compressionAttempts)
+        ? asset.compressionAttempts.map((attempt) => ({
+            quality: Number(attempt && attempt.quality) || null,
+            bytes: Number(attempt && attempt.bytes) || null
+          }))
+        : []
     };
   }
 
@@ -101,7 +120,47 @@
       const mimeType = String(asset.mimeType || "image/jpeg").trim() || "image/jpeg";
       return `data:${mimeType};base64,${base64}`;
     }
+    const uploadDataUrl = String(asset.uploadDataUrl || "").trim();
+    if (uploadDataUrl) return uploadDataUrl;
+    const uploadBase64 = String(asset.uploadBase64 || "").trim();
+    if (uploadBase64) {
+      const uploadMimeType = String(asset.uploadMimeType || asset.mimeType || "image/jpeg").trim() || "image/jpeg";
+      return `data:${uploadMimeType};base64,${uploadBase64}`;
+    }
     return String(asset.url || "").trim();
+  }
+
+  function buildImageInputPayloadValue(asset) {
+    if (!asset || typeof asset !== "object") return asset;
+    const uploadDataUrl = String(asset.uploadDataUrl || "").trim();
+    const uploadBase64 = String(asset.uploadBase64 || "").trim();
+    const uploadMimeType = String(asset.uploadMimeType || asset.mimeType || "image/jpeg").trim() || "image/jpeg";
+    const previewDataUrl = String(asset.dataUrl || "").trim();
+    const previewBase64 = String(asset.base64 || "").trim();
+    const payloadValue = {
+      dataUrl: uploadDataUrl || previewDataUrl,
+      base64: uploadBase64 || previewBase64,
+      url: String(asset.url || "").trim(),
+      mimeType: uploadMimeType,
+      width: Number(asset.originalWidth) || Number(asset.width) || null,
+      height: Number(asset.originalHeight) || Number(asset.height) || null,
+      bytes: Number(asset.uploadBytes) || null,
+      quality: Number(asset.uploadQuality) || null
+    };
+    return payloadValue;
+  }
+
+  function normalizePayloadInputs(app, formValues) {
+    const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
+    const source = formValues && typeof formValues === "object" ? formValues : {};
+    const out = { ...source };
+    inputs.forEach((input) => {
+      if (!isImageInput(input)) return;
+      const key = String((input && input.key) || "").trim();
+      if (!key || !(key in out)) return;
+      out[key] = buildImageInputPayloadValue(out[key]);
+    });
+    return out;
   }
 
   function createCaptureAssetId() {
@@ -189,7 +248,13 @@
     const captureSource = hasAssignedAsset
       ? (asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
       : "点击此区域直接捕获图像";
-    const captureMeta = hasAssignedAsset ? `${asset.width || "-"}x${asset.height || "-"}` : "";
+    const captureMeta = hasAssignedAsset
+      ? [
+          `${asset.originalWidth || asset.width || "-"}x${asset.originalHeight || asset.height || "-"}`,
+          asset.uploadBytes ? `${(asset.uploadBytes / (1024 * 1024)).toFixed(2)}MB` : "",
+          asset.uploadQuality ? `Q${asset.uploadQuality}` : ""
+        ].filter(Boolean).join(" · ")
+      : "";
     const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
 
     return `
@@ -413,7 +478,7 @@
           }
         : null,
       apiKey: state.settings.apiKey || "",
-      inputs: { ...state.formValues },
+      inputs: normalizePayloadInputs(state.currentApp, state.formValues),
       settings: { pollInterval: state.settings.pollInterval, timeout: state.settings.timeout }
     };
     state.lastRunPayload = payload;
@@ -508,13 +573,18 @@
       width: captured && captured.width,
       height: captured && captured.height,
       hasBase64: Boolean(captured && String(captured.base64 || "").trim()),
-      hasDataUrl: Boolean(captured && String(captured.dataUrl || "").trim())
+      hasDataUrl: Boolean(captured && String(captured.dataUrl || "").trim()),
+      uploadBytes: captured && captured.uploadBytes,
+      uploadQuality: captured && captured.uploadQuality
     });
     const asset = pushCapturedAsset(captured);
     if (!asset) {
       throw new Error("宿主已返回结果，但未生成可用预览资源");
     }
-    modules.ui.logToWorkspace(`已捕获 Photoshop 文档图像：${asset.width}x${asset.height}，JPEG ${asset.quality}`, "success");
+    modules.ui.logToWorkspace(
+      `已捕获 Photoshop 文档图像：预览 ${asset.width}x${asset.height}，上传 ${(asset.uploadBytes || 0) / (1024 * 1024) > 0 ? `${((asset.uploadBytes || 0) / (1024 * 1024)).toFixed(2)}MB` : "-"}`,
+      "success"
+    );
     renderWorkspace();
     return asset;
   }
