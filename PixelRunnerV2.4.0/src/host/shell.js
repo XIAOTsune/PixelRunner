@@ -28,6 +28,18 @@ function createFileUrlFromPath(nativePath) {
   return "";
 }
 
+function joinNativePath(basePath, segments = []) {
+  const normalizedBase = String(basePath || "").trim().replace(/[\\/]+$/, "");
+  if (!normalizedBase) return "";
+  const cleanSegments = (Array.isArray(segments) ? segments : [])
+    .map((segment) => String(segment || "").trim().replace(/^[\\/]+|[\\/]+$/g, ""))
+    .filter(Boolean);
+  if (!cleanSegments.length) return normalizedBase;
+
+  const separator = normalizedBase.includes("\\") && !normalizedBase.includes("/") ? "\\" : "/";
+  return `${normalizedBase}${separator}${cleanSegments.join(separator)}`;
+}
+
 export async function resolveTutorialPath() {
   try {
     const { storage } = getUxpModule();
@@ -55,8 +67,7 @@ export async function resolveTutorialPath() {
     }
 
     if (pluginFolder.nativePath) {
-      const basePath = String(pluginFolder.nativePath || "").replace(/[\\/]+$/, "");
-      const path = `${basePath}\\${TUTORIAL_RELATIVE_PATH.join("\\")}`;
+      const path = joinNativePath(pluginFolder.nativePath, TUTORIAL_RELATIVE_PATH);
       return { ok: true, path, url: createFileUrlFromPath(path) };
     }
   } catch (_) {
