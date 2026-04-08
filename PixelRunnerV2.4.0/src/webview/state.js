@@ -218,6 +218,11 @@
       const key = String(input.key || "").trim();
       if (!key) return;
 
+      if (input.type === "image" || input.type === "file") {
+        values[key] = null;
+        return;
+      }
+
       if (input.default != null) {
         values[key] = input.default;
         return;
@@ -225,11 +230,6 @@
 
       if (input.type === "boolean" || input.type === "switch" || input.type === "checkbox") {
         values[key] = false;
-        return;
-      }
-
-      if (input.type === "image" || input.type === "file") {
-        values[key] = null;
         return;
       }
 

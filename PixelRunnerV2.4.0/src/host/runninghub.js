@@ -1,4 +1,7 @@
 const runninghubTaskControllers = new Map();
+const blankImageTokenCache = new Map();
+const BLANK_IMAGE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2fJ0QAAAAASUVORK5CYII=";
 
 function normalizeAppId(value) {
   const normalized = String(value == null ? "" : value).trim();
@@ -29,6 +32,53 @@ function isFilledInputValue(value) {
   }
 
   return String(value).trim() !== "";
+}
+
+function isProbablyBase64String(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length < 16 || text.length % 4 !== 0) return false;
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(text);
+}
+
+function normalizeBase64Text(value) {
+  const text = String(value || "").trim().replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  if (!text) return "";
+  const padding = text.length % 4;
+  if (padding === 1) return "";
+  if (padding > 1) return `${text}${"=".repeat(4 - padding)}`;
+  return text;
+}
+
+function classifyImageSubmissionValue(imageValue) {
+  if (imageValue instanceof ArrayBuffer || ArrayBuffer.isView(imageValue)) {
+    return { mode: "upload", value: imageValue };
+  }
+
+  if (imageValue && typeof imageValue === "object") {
+    if (typeof imageValue.dataUrl === "string" && imageValue.dataUrl.trim()) {
+      return { mode: "upload", value: imageValue };
+    }
+    if (typeof imageValue.base64 === "string" && imageValue.base64.trim()) {
+      return { mode: "upload", value: imageValue };
+    }
+    if (typeof imageValue.url === "string" && imageValue.url.trim()) {
+      return { mode: "passthrough", value: String(imageValue.url).trim() };
+    }
+    if (typeof imageValue.value === "string" && imageValue.value.trim()) {
+      return { mode: "passthrough", value: String(imageValue.value).trim() };
+    }
+    return { mode: "empty", value: null };
+  }
+
+  const text = String(imageValue || "").trim();
+  if (!text) return { mode: "empty", value: null };
+  if (/^https?:\/\//i.test(text)) {
+    return { mode: "passthrough", value: text };
+  }
+  if (/^data:[^;,]+;base64,/i.test(text)) {
+    return { mode: "upload", value: text };
+  }
+  return { mode: "passthrough", value: text };
 }
 
 function normalizeImageInputValue(input, value) {
@@ -77,7 +127,11 @@ function parseDataUrl(value) {
 }
 
 function base64ToArrayBuffer(base64) {
-  const binaryString = atob(String(base64 || "").trim());
+  const normalized = normalizeBase64Text(base64);
+  if (!normalized || !isProbablyBase64String(normalized)) {
+    throw new Error("Image input is not valid base64");
+  }
+  const binaryString = atob(normalized);
   const bytes = new Uint8Array(binaryString.length);
   for (let index = 0; index < binaryString.length; index += 1) {
     bytes[index] = binaryString.charCodeAt(index);
@@ -99,12 +153,21 @@ function normalizeUploadBuffer(imageValue) {
     if (typeof imageValue.base64 === "string" && imageValue.base64.trim()) {
       return base64ToArrayBuffer(imageValue.base64);
     }
+    if (imageValue.arrayBuffer instanceof ArrayBuffer) return imageValue.arrayBuffer;
+    if (ArrayBuffer.isView(imageValue.arrayBuffer)) {
+      return imageValue.arrayBuffer.buffer.slice(
+        imageValue.arrayBuffer.byteOffset,
+        imageValue.arrayBuffer.byteOffset + imageValue.arrayBuffer.byteLength
+      );
+    }
   }
 
   if (typeof imageValue === "string" && imageValue.trim()) {
     const parsed = parseDataUrl(imageValue);
     if (parsed && parsed.base64) return base64ToArrayBuffer(parsed.base64);
-    return base64ToArrayBuffer(imageValue);
+    if (isProbablyBase64String(normalizeBase64Text(imageValue))) {
+      return base64ToArrayBuffer(imageValue);
+    }
   }
 
   throw new Error("Image input is invalid");
@@ -182,6 +245,31 @@ async function uploadImageValue(apiKey, imageValue, settings = {}) {
   }
 
   throw lastError || new Error("Image upload failed");
+}
+
+async function getBlankImageToken(apiKey, settings = {}) {
+  const cacheKey = String(apiKey || "").trim();
+  if (!cacheKey) throw new Error("RunningHub API Key is missing");
+  const cached = blankImageTokenCache.get(cacheKey);
+  if (cached) return cached;
+
+  const pending = uploadImageValue(cacheKey, BLANK_IMAGE_PNG_BASE64, settings)
+    .then((token) => {
+      const normalized = String(token || "").trim();
+      if (!normalized) {
+        blankImageTokenCache.delete(cacheKey);
+        throw new Error("Blank image upload returned empty token");
+      }
+      blankImageTokenCache.set(cacheKey, normalized);
+      return normalized;
+    })
+    .catch((error) => {
+      blankImageTokenCache.delete(cacheKey);
+      throw error;
+    });
+
+  blankImageTokenCache.set(cacheKey, pending);
+  return pending;
 }
 
 function normalizeInputValue(input, value) {
@@ -268,7 +356,26 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     const input = inputs[index];
     const key = String((input && input.key) || "").trim() || `param_${index + 1}`;
     const rawValue = values[key];
+    const isImageInput = isImageLikeInput(input);
     if (!isFilledInputValue(rawValue)) {
+      if (isImageInput && !(input && input.required)) {
+        const blankToken = await getBlankImageToken(apiKey, settings);
+        normalizedValues[key] = blankToken;
+        nodeParams[key] = blankToken;
+        const optionalFieldName = String((input && (input.fieldName || input.name)) || "").trim();
+        if (optionalFieldName && !(optionalFieldName in nodeParams)) nodeParams[optionalFieldName] = blankToken;
+        nodeInfoList.push({
+          nodeId: input && input.nodeId ? input.nodeId : key,
+          fieldName: String((input && (input.fieldName || input.key || input.name)) || key).trim(),
+          fieldValue: blankToken,
+          ...(input && input.fieldType ? { fieldType: input.fieldType } : {})
+        });
+        console.log("[PixelRunner/RunningHub] optional image empty, using blank placeholder", {
+          key,
+          fieldName: String((input && (input.fieldName || input.name || key)) || key)
+        });
+        continue;
+      }
       if (input && input.required && typeof rawValue !== "boolean") {
         throw new Error(`Missing required input: ${input.label || input.name || key}`);
       }
@@ -277,8 +384,32 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
 
     let normalizedValue = rawValue;
     const typeMarker = String((input && (input.type || input.fieldType)) || "").trim().toLowerCase();
-    if (isImageLikeInput(input)) {
-      normalizedValue = await uploadImageValue(apiKey, rawValue, settings);
+    if (isImageInput) {
+      const imageSubmission = classifyImageSubmissionValue(rawValue);
+      if (imageSubmission.mode === "empty") {
+        if (input && input.required) {
+          throw new Error(`Missing required input: ${input.label || input.name || key}`);
+        }
+        normalizedValue = await getBlankImageToken(apiKey, settings);
+        console.log("[PixelRunner/RunningHub] optional image normalized to blank placeholder", {
+          key,
+          fieldName: String((input && (input.fieldName || input.name || key)) || key)
+        });
+      } else if (imageSubmission.mode === "upload") {
+        try {
+          normalizedValue = await uploadImageValue(apiKey, imageSubmission.value, settings);
+        } catch (error) {
+          console.warn("[PixelRunner/RunningHub] image upload classification failed", {
+            key,
+            fieldName: String((input && (input.fieldName || input.name || key)) || key),
+            mode: imageSubmission.mode,
+            message: error && error.message ? error.message : String(error || "")
+          });
+          throw error;
+        }
+      } else {
+        normalizedValue = imageSubmission.value;
+      }
       console.log("[PixelRunner/RunningHub] image uploaded", {
         key,
         fieldName: String((input && (input.fieldName || input.name || key)) || key),
@@ -300,7 +431,7 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
       fieldValue: normalizedValue
     };
     if (input && input.fieldType) payload.fieldType = input.fieldType;
-    if (input && input.fieldData !== undefined && !isImageLikeInput(input)) {
+    if (input && input.fieldData !== undefined && !isImageInput) {
       payload.fieldData = input.fieldData;
     }
     nodeInfoList.push(payload);

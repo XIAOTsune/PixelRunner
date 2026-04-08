@@ -444,16 +444,16 @@ var PixelRunnerWebviewBundle = (() => {
       inputs.forEach((input) => {
         const key = String(input.key || "").trim();
         if (!key) return;
+        if (input.type === "image" || input.type === "file") {
+          values[key] = null;
+          return;
+        }
         if (input.default != null) {
           values[key] = input.default;
           return;
         }
         if (input.type === "boolean" || input.type === "switch" || input.type === "checkbox") {
           values[key] = false;
-          return;
-        }
-        if (input.type === "image" || input.type === "file") {
-          values[key] = null;
           return;
         }
         values[key] = "";
@@ -1031,6 +1031,20 @@ ${text}` : text;
       return Boolean(
         asset && typeof asset === "object" && ((asset.dataUrl || "").trim() || (asset.base64 || "").trim() || (asset.url || "").trim() || (asset.uploadDataUrl || "").trim() || (asset.uploadBase64 || "").trim())
       );
+    }
+    function hasImageFieldValue(value) {
+      if (hasImageAsset(value)) return true;
+      if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
+      if (typeof value === "string") {
+        const text = value.trim();
+        return Boolean(text && (/^https?:\/\//i.test(text) || /^data:[^;,]+;base64,/i.test(text)));
+      }
+      if (value && typeof value === "object") {
+        return Boolean(
+          typeof value.dataUrl === "string" && value.dataUrl.trim() || typeof value.base64 === "string" && value.base64.trim() || typeof value.url === "string" && value.url.trim()
+        );
+      }
+      return false;
     }
     function findImageInputs(app) {
       return (Array.isArray(app && app.inputs) ? app.inputs : []).filter(isImageInput);
@@ -1759,8 +1773,9 @@ ${text}` : text;
         if (triggerButton) triggerButton.disabled = false;
       }
     }
-    function isMissingRequiredValue(value) {
+    function isMissingRequiredValue(input, value) {
       if (typeof value === "boolean") return false;
+      if (isImageInput(input)) return !hasImageFieldValue(value);
       if (hasImageAsset(value)) return false;
       if (value && typeof value === "object") return true;
       return String(value ?? "").trim() === "";
@@ -1770,7 +1785,7 @@ ${text}` : text;
       const app = state.currentApp;
       if (!app) throw new Error("请先选择一个应用");
       collectFormValuesFromDom();
-      const missing = (Array.isArray(app.inputs) ? app.inputs : []).filter((input) => input.required).filter((input) => isMissingRequiredValue(state.formValues[input.key]));
+      const missing = (Array.isArray(app.inputs) ? app.inputs : []).filter((input) => input.required).filter((input) => isMissingRequiredValue(input, state.formValues[input.key]));
       if (missing.length > 0) throw new Error(`请先填写必填项：${missing.map((item) => item.label || item.key).join("、")}`);
     }
     function buildAutoPlacementPayload(result) {

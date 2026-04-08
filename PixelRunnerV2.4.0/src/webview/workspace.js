@@ -125,6 +125,23 @@
     );
   }
 
+  function hasImageFieldValue(value) {
+    if (hasImageAsset(value)) return true;
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true;
+    if (typeof value === "string") {
+      const text = value.trim();
+      return Boolean(text && (/^https?:\/\//i.test(text) || /^data:[^;,]+;base64,/i.test(text)));
+    }
+    if (value && typeof value === "object") {
+      return Boolean(
+        (typeof value.dataUrl === "string" && value.dataUrl.trim()) ||
+        (typeof value.base64 === "string" && value.base64.trim()) ||
+        (typeof value.url === "string" && value.url.trim())
+      );
+    }
+    return false;
+  }
+
   function findImageInputs(app) {
     return (Array.isArray(app && app.inputs) ? app.inputs : []).filter(isImageInput);
   }
@@ -977,8 +994,9 @@
     }
   }
 
-  function isMissingRequiredValue(value) {
+  function isMissingRequiredValue(input, value) {
     if (typeof value === "boolean") return false;
+    if (isImageInput(input)) return !hasImageFieldValue(value);
     if (hasImageAsset(value)) return false;
     if (value && typeof value === "object") return true;
     return String(value ?? "").trim() === "";
@@ -991,7 +1009,7 @@
     collectFormValuesFromDom();
     const missing = (Array.isArray(app.inputs) ? app.inputs : [])
       .filter((input) => input.required)
-      .filter((input) => isMissingRequiredValue(state.formValues[input.key]));
+      .filter((input) => isMissingRequiredValue(input, state.formValues[input.key]));
     if (missing.length > 0) throw new Error(`请先填写必填项：${missing.map((item) => item.label || item.key).join("、")}`);
   }
 
