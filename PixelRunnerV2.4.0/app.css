@@ -426,6 +426,71 @@ button {
   flex-wrap: wrap;
 }
 
+.sound-toggle-btn {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: #496781;
+  border-color: #35506a;
+  box-shadow: 3px 4px 0 #35506a;
+  color: #e7f1f7;
+}
+
+.sound-toggle-btn:hover {
+  border-color: #8caecd;
+  box-shadow: 0 5px 0 #35506a;
+}
+
+.sound-toggle-btn[data-enabled="false"] {
+  background: #324658;
+  color: #98afc4;
+}
+
+.sound-toggle-btn[data-enabled="false"] .sound-wave,
+.sound-toggle-btn[data-enabled="false"] .sound-wave-outer {
+  opacity: 0;
+}
+
+.sound-toggle-btn[data-enabled="true"] .sound-off-line {
+  opacity: 0;
+}
+
+.sound-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sound-toggle-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sound-toggle-icon .sound-body {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.sound-player-frame {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  inset: auto;
+}
+
 .panel-eyebrow {
   margin: 0;
   color: var(--accent);

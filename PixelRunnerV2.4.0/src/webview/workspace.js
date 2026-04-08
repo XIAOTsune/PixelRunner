@@ -655,6 +655,10 @@
       runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : '<div class="running-task-empty">运行后的任务会显示在这里。</div>';
     }
 
+    if (modules.sound && typeof modules.sound.handleQueueState === "function") {
+      modules.sound.handleQueueState(activeCount);
+    }
+
     ensureTaskTickerState();
   }
   function renderField(input) {

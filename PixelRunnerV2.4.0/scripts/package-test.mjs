@@ -21,11 +21,13 @@ function getIncludedEntries(version) {
       "manifest.json",
       "index.html",
       "app.html",
+      "sound-player.html",
       "style.css",
       "app.css",
       "dist",
       "icons",
-      "pages"
+      "pages",
+      "video"
     ]
   };
 }

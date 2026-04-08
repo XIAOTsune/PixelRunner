@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   modules.ui.bindPlaceholderActions();
   modules.templates.bindTemplateActions();
   modules.settings.bindSettingsActions();
+  modules.sound.initialize();
 
   Promise.all([
     modules.apps.refreshWorkspaceApps({ quiet: true }),

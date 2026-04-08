@@ -9,11 +9,13 @@ Included:
 - manifest.json
 - index.html
 - app.html
+- sound-player.html
 - style.css
 - app.css
 - dist
 - icons
 - pages
+- video
 
 Not included:
 - docs/

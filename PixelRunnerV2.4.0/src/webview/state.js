@@ -7,7 +7,8 @@
     APPS: "rh_ai_apps_v2",
     PROMPT_TEMPLATES: "rh_prompt_templates",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
-    CURRENT_APP_ID: "pixelrunner.current_app_id"
+    CURRENT_APP_ID: "pixelrunner.current_app_id",
+    SOUND_ENABLED: "pixelrunner.sound_enabled"
   };
 
   const DEFAULT_SETTINGS = {
@@ -64,6 +65,10 @@
       taskId: "",
       appName: "",
       status: "idle"
+    },
+    sound: {
+      enabled: true,
+      playerReady: false
     }
   };
 

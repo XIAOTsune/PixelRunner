@@ -42,6 +42,16 @@
                 <strong id="accountCoinsValue" class="metric-value">--</strong>
               </div>
             </div>
+            <button id="btnSoundToggle" class="mini-btn sound-toggle-btn" type="button" aria-pressed="true" title="任务完成提示音已开启" aria-label="切换任务完成提示音">
+              <span class="sound-toggle-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path class="sound-wave" d="M14.5 8.5a5 5 0 0 1 0 7"></path>
+                  <path class="sound-wave sound-wave-outer" d="M17.5 6a8.5 8.5 0 0 1 0 12"></path>
+                  <path class="sound-body" d="M4 14V10h3.4L12 6.5v11l-4.6-3.5z"></path>
+                  <path class="sound-off-line" d="M5 5l14 14"></path>
+                </svg>
+              </span>
+            </button>
             <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
             <span class="version-text">v2.4.0</span>
           </div>
@@ -530,6 +540,16 @@
       <div id="glowHint" class="summary-strip">打开面板后会在 Photoshop 中生成一个可反复更新的预览辉光层。</div>
     </section>
   </div>
+
+  <iframe
+    id="soundPlayerFrame"
+    class="sound-player-frame"
+    src="sound-player.html"
+    title="提示音播放器"
+    aria-hidden="true"
+    tabindex="-1"
+    allow="autoplay">
+  </iframe>
 
   <script src="dist/app.bundle.js"></script>
 </body>
