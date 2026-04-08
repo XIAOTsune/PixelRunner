@@ -14,9 +14,13 @@ async function readManifestVersion() {
   return String(manifest.version || "0.0.0");
 }
 
-function getIncludedEntries(version) {
+function getBuildChannel() {
+  return process.argv.includes("--release") ? "release" : "test";
+}
+
+function getIncludedEntries(version, channel) {
   return {
-    packageDirName: `PixelRunnerV${version}-test`,
+    packageDirName: channel === "release" ? `PixelRunnerV${version}` : `PixelRunnerV${version}-test`,
     entries: [
       "manifest.json",
       "index.html",
@@ -32,14 +36,15 @@ function getIncludedEntries(version) {
   };
 }
 
-function buildReadme(version, packageDirName, entries) {
+function buildReadme(version, packageDirName, entries, channel) {
   const fileList = entries.map((entry) => `- ${entry}`).join("\n");
-  return `# PixelRunner Test Package
+  const packageLabel = channel === "release" ? "Release" : "Test";
+  return `# PixelRunner ${packageLabel} Package
 
 Version: ${version}
 Folder: ${packageDirName}
 
-This test package contains only the runtime files required by the Photoshop UXP plugin shell and the bundled WebView UI.
+This package contains only the runtime files required by the Photoshop UXP plugin shell and the bundled WebView UI.
 
 Included:
 ${fileList}
@@ -62,8 +67,10 @@ Why:
 
 async function main() {
   const version = await readManifestVersion();
-  const { packageDirName, entries } = getIncludedEntries(version);
+  const channel = getBuildChannel();
+  const { packageDirName, entries } = getIncludedEntries(version, channel);
   const packageDir = path.join(releaseRoot, packageDirName);
+  const readmeFileName = channel === "release" ? "README-RELEASE-PACKAGE.txt" : "README-TEST-PACKAGE.txt";
 
   await mkdir(releaseRoot, { recursive: true });
   await rm(packageDir, { recursive: true, force: true });
@@ -76,12 +83,12 @@ async function main() {
   }
 
   await writeFile(
-    path.join(packageDir, "README-TEST-PACKAGE.txt"),
-    buildReadme(version, packageDirName, entries),
+    path.join(packageDir, readmeFileName),
+    buildReadme(version, packageDirName, entries, channel),
     "utf8"
   );
 
-  console.log(`PixelRunner test package created at: ${packageDir}`);
+  console.log(`PixelRunner ${channel} package created at: ${packageDir}`);
 }
 
 main().catch((error) => {

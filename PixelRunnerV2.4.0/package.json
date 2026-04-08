@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node ./scripts/build.mjs",
     "build:watch": "node ./scripts/build.mjs --watch",
-    "package:test": "node ./scripts/package-test.mjs"
+    "package:test": "node ./scripts/package-test.mjs",
+    "package:release": "node ./scripts/package-test.mjs --release"
   },
   "devDependencies": {
     "esbuild": "^0.25.3"

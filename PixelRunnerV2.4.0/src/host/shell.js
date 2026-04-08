@@ -11,6 +11,23 @@ function isShellSuccess(result) {
   return result === "" || result === true || result == null;
 }
 
+function createFileUrlFromPath(nativePath) {
+  const rawPath = String(nativePath || "").trim();
+  if (!rawPath) return "";
+
+  const normalized = rawPath.replace(/\\/g, "/");
+  if (/^[a-zA-Z]:\//.test(normalized)) {
+    return encodeURI(`file:///${normalized}`);
+  }
+  if (normalized.startsWith("//")) {
+    return encodeURI(`file:${normalized}`);
+  }
+  if (normalized.startsWith("/")) {
+    return encodeURI(`file://${normalized}`);
+  }
+  return "";
+}
+
 export async function resolveTutorialPath() {
   try {
     const { storage } = getUxpModule();
@@ -28,7 +45,8 @@ export async function resolveTutorialPath() {
         if (pagesFolder && typeof pagesFolder.getEntry === "function") {
           const tutorialEntry = await pagesFolder.getEntry(TUTORIAL_RELATIVE_PATH[1]);
           if (tutorialEntry && tutorialEntry.nativePath) {
-            return { ok: true, path: String(tutorialEntry.nativePath) };
+            const path = String(tutorialEntry.nativePath);
+            return { ok: true, path, url: createFileUrlFromPath(path) };
           }
         }
       } catch (_) {
@@ -38,13 +56,14 @@ export async function resolveTutorialPath() {
 
     if (pluginFolder.nativePath) {
       const basePath = String(pluginFolder.nativePath || "").replace(/[\\/]+$/, "");
-      return { ok: true, path: `${basePath}\\${TUTORIAL_RELATIVE_PATH.join("\\")}` };
+      const path = `${basePath}\\${TUTORIAL_RELATIVE_PATH.join("\\")}`;
+      return { ok: true, path, url: createFileUrlFromPath(path) };
     }
   } catch (_) {
-    return { ok: false, path: "" };
+    return { ok: false, path: "", url: "" };
   }
 
-  return { ok: false, path: "" };
+  return { ok: false, path: "", url: "" };
 }
 
 export async function openExternalUrl(args = []) {
@@ -76,9 +95,24 @@ export async function openLocalPath(args = []) {
   }
 
   const result = await shell.openPath(targetPath, String(developerText || ""));
+  if (!isShellSuccess(result)) {
+    const fileUrl = createFileUrlFromPath(targetPath);
+    if (fileUrl && typeof shell.openExternal === "function") {
+      const fallbackResult = await shell.openExternal(fileUrl, String(developerText || ""));
+      return {
+        ok: isShellSuccess(fallbackResult),
+        result: fallbackResult == null ? "" : String(fallbackResult),
+        path: targetPath,
+        url: fileUrl,
+        via: "openExternal"
+      };
+    }
+  }
   return {
     ok: isShellSuccess(result),
     result: result == null ? "" : String(result),
-    path: targetPath
+    path: targetPath,
+    url: createFileUrlFromPath(targetPath),
+    via: "openPath"
   };
 }

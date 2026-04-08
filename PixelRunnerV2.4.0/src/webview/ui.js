@@ -148,16 +148,23 @@
       try {
         const resolved = await runtime.callHost("shell.resolveTutorialPath", [], { timeoutMs: 15000 });
         const tutorialPath = String((resolved && resolved.path) || "").trim();
-        if (!tutorialPath) {
+        const tutorialUrl = String((resolved && resolved.url) || "").trim();
+        if (!tutorialPath && !tutorialUrl) {
           setDonationStatus("无法定位本地教程文件，请检查 pages/runninghub-guide.html。", "error");
           return;
         }
 
-        const opened = await runtime.callHost(
-          "shell.openPath",
-          [tutorialPath, "将使用系统默认浏览器打开本地教程页面。"],
-          { timeoutMs: 15000 }
-        );
+        const opened = tutorialUrl
+          ? await runtime.callHost(
+              "shell.openExternal",
+              [tutorialUrl, "将使用系统默认浏览器打开本地教程页面。"],
+              { timeoutMs: 15000 }
+            )
+          : await runtime.callHost(
+              "shell.openPath",
+              [tutorialPath, "将使用系统默认浏览器打开本地教程页面。"],
+              { timeoutMs: 15000 }
+            );
         if (opened && opened.ok) {
           setDonationStatus("已打开教程页面。", "success");
           return;

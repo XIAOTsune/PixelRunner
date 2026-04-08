@@ -1,0 +1,558 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PixelRunner</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <a class="skip-link" href="#appMain">跳到主要内容</a>
+
+  <div class="app-shell">
+    <nav class="view-nav">
+      <button id="tabWorkspace" class="nav-tab active" type="button">
+        <span class="nav-tab-label">工作台</span>
+      </button>
+      <button id="tabTools" class="nav-tab" type="button">
+        <span class="nav-tab-label">工具箱</span>
+      </button>
+      <button id="tabSettings" class="nav-tab" type="button">
+        <span class="nav-tab-label">设置</span>
+      </button>
+    </nav>
+
+    <main id="appMain" class="panel-main">
+      <section id="viewWorkspace" class="panel-view active">
+        <div class="panel-header-strip workspace-header-strip">
+          <div class="panel-header-main">
+            <div class="panel-heading-group">
+              <p class="panel-eyebrow">任务工作台</p>
+              <h2 class="panel-title">RunningHub 任务工作台</h2>
+            </div>
+          </div>
+          <div class="panel-header-side workspace-header-side">
+            <div id="accountSummary" class="account-summary is-empty">
+              <div class="metric-pill">
+                <span class="metric-label">余额</span>
+                <strong id="accountBalanceValue" class="metric-value">--</strong>
+              </div>
+              <div class="metric-pill">
+                <span class="metric-label">RH 币</span>
+                <strong id="accountCoinsValue" class="metric-value">--</strong>
+              </div>
+            </div>
+            <button id="btnSoundToggle" class="mini-btn sound-toggle-btn" type="button" aria-pressed="true" title="任务完成提示音已开启" aria-label="切换任务完成提示音">
+              <span class="sound-toggle-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path class="sound-wave" d="M14.5 8.5a5 5 0 0 1 0 7"></path>
+                  <path class="sound-wave sound-wave-outer" d="M17.5 6a8.5 8.5 0 0 1 0 12"></path>
+                  <path class="sound-body" d="M4 14V10h3.4L12 6.5v11l-4.6-3.5z"></path>
+                  <path class="sound-off-line" d="M5 5l14 14"></path>
+                </svg>
+              </span>
+            </button>
+            <div class="workspace-header-actions">
+              <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
+              <span class="version-text">v2.4.0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="workspace-grid workspace-grid-classic">
+          <section class="surface-card workspace-app-card">
+            <div class="workspace-app-toolbar">
+              <div class="workspace-app-label">选择应用</div>
+              <div class="inline-actions workspace-app-actions">
+                <button id="btnOpenAppPicker" class="mini-btn" type="button">切换</button>
+                <button id="btnRefreshWorkspaceApps" class="mini-btn" type="button">刷新</button>
+              </div>
+            </div>
+            <div id="appPickerMeta" class="selection-meta workspace-app-meta">暂未选择应用</div>
+          </section>
+
+          <section id="workspaceInputArea" class="surface-card workspace-input-card">
+            <div class="workspace-section-head">
+              <div class="workspace-section-title-group">
+                <div class="workspace-section-kicker">输入参数</div>
+              </div>
+            </div>
+
+            <div id="imageInputContainer" class="input-zone input-zone-image" hidden></div>
+
+            <div id="dynamicInputContainer" class="input-zone input-zone-form">
+              <div class="empty-panel">
+                <h4>动态表单区</h4>
+                <p>这里会根据应用输入结构渲染文本、图像、布尔和枚举字段。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="surface-card workspace-run-card">
+            <div class="workspace-section-head workspace-run-head">
+              <div class="workspace-section-title-group">
+                <div class="workspace-section-kicker">执行控制</div>
+                <h3 class="card-title workspace-section-title">提交任务</h3>
+              </div>
+            </div>
+            <div class="action-row workspace-run-actions">
+              <button id="btnRun" class="primary-btn workspace-run-btn" type="button" disabled>开始运行</button>
+            </div>
+            <div id="runningTaskList" class="running-task-list">
+              <div class="running-task-empty">当前没有进行中的任务。</div>
+            </div>
+            <div id="taskStatusSummary" class="summary-strip">后台任务：暂时空闲</div>
+          </section>
+
+          <section class="surface-card log-card">
+            <div class="card-head">
+              <div>
+                <h3 class="card-title">运行日志</h3>
+              </div>
+              <button id="btnClearLog" class="mini-btn" type="button">清空</button>
+            </div>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.0 已启动，等待选择应用并提交任务。</textarea>
+          </section>
+        </div>
+      </section>
+
+      <section id="viewTools" class="panel-view is-hidden">
+        <div class="panel-header-strip">
+          <div class="panel-header-main">
+            <div class="panel-heading-group">
+              <p class="panel-eyebrow">常用工具</p>
+              <h2 class="panel-title">工具箱</h2>
+            </div>
+          </div>
+          <div class="panel-header-side">
+            <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
+            <span class="version-text">v2.4.0</span>
+          </div>
+        </div>
+
+        <section class="surface-card tool-glow-card">
+          <div class="tool-glow-launcher">
+            <div class="tool-glow-summary-main">
+              <div class="tool-glow-header-line">
+                <h3 class="card-title">辉光</h3>
+                <span id="glowStrengthValue" class="status-chip">默认强度 17%</span>
+              </div>
+              <p class="subtle-note">点击打开独立预览面板，实时调节高光辉光，再确认生成最终结果层。</p>
+            </div>
+            <button id="btnOpenGlowPanel" class="primary-btn glow-open-btn" type="button">打开辉光面板</button>
+          </div>
+          <div id="glowQuickHint" class="summary-strip">默认参数已切换为当前这组更自然的高光辉光手感。</div>
+        </section>
+
+        <div class="tool-group-grid">
+          <section class="surface-card">
+            <div class="card-head">
+              <h3 class="card-title">图层辅助</h3>
+              <span class="status-chip">2 项预置</span>
+            </div>
+            <div class="tool-list">
+              <article class="tool-item">
+                <div>
+                  <h4>黑白观察层</h4>
+                  <p>用于快速检查明暗和反差。</p>
+                </div>
+                <button id="btnObserver" class="mini-btn" type="button">创建</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>中性灰图层</h4>
+                  <p>预留 50% 灰加柔光的修图入口。</p>
+                </div>
+                <button id="btnNeutralGray" class="mini-btn" type="button">创建</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="surface-card">
+            <div class="card-head">
+              <h3 class="card-title">滤镜与修复</h3>
+              <span class="status-chip">4 项预置</span>
+            </div>
+            <div class="tool-list">
+              <article class="tool-item">
+                <div>
+                  <h4>高斯模糊</h4>
+                  <p>保留系统滤镜对话框入口。</p>
+                </div>
+                <button id="btnGaussianBlur" class="mini-btn" type="button">运行</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>锐化</h4>
+                  <p>快速执行常用锐化动作。</p>
+                </div>
+                <button id="btnSharpen" class="mini-btn" type="button">运行</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>高反差保留</h4>
+                  <p>为精修流程预留可配置入口。</p>
+                </div>
+                <button id="btnHighPass" class="mini-btn" type="button">运行</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>内容识别填充</h4>
+                  <p>与选区上下文联动的修复动作。</p>
+                </div>
+                <button id="btnContentAwareFill" class="mini-btn" type="button">运行</button>
+              </article>
+            </div>
+          </section>
+          <section class="surface-card">
+            <div class="card-head">
+              <h3 class="card-title">合并操作</h3>
+              <span class="status-chip">2 项预置</span>
+            </div>
+            <div class="tool-list">
+              <article class="tool-item">
+                <div>
+                  <h4>选择并遮住</h4>
+                  <p>打开 Photoshop 原生面板，需先存在选区。</p>
+                </div>
+                <button id="btnSelectAndMask" class="mini-btn" type="button">运行</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>盖印图层</h4>
+                  <p>高频合并动作的快捷入口。</p>
+                </div>
+                <button id="btnStamp" class="mini-btn" type="button">执行</button>
+              </article>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="viewSettings" class="panel-view is-hidden">
+        <div class="panel-header-strip">
+          <div class="panel-header-main">
+            <div class="panel-heading-group">
+              <p class="panel-eyebrow">运行设置</p>
+              <h2 class="panel-title">设置</h2>
+            </div>
+          </div>
+          <div class="panel-header-side">
+            <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
+            <span class="version-text">v2.4.0</span>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <section class="surface-card">
+            <div class="card-head">
+              <h3 class="card-title">API 设置</h3>
+            </div>
+            <div class="form-stack">
+              <label class="field">
+                <span class="field-label">RunningHub API Key</span>
+                <input id="settingsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
+              </label>
+              <div class="action-row">
+                <button id="btnResetSettings" class="secondary-btn" type="button">重置</button>
+                <button id="btnSaveSettings" class="primary-btn" type="button">保存设置</button>
+              </div>
+              <div id="settingsStatusSummary" class="summary-strip">设置尚未加载</div>
+            </div>
+          </section>
+
+          <section class="surface-card settings-manage-card">
+            <div class="settings-section-head">
+              <span class="settings-section-checkbox"></span>
+              <h3 class="card-title">AI 应用管理</h3>
+            </div>
+            <div class="form-stack">
+              <label class="field">
+                <span class="field-label">应用 ID / URL</span>
+                <input id="appEditorAppIdInput" class="field-input" type="text" placeholder="例如：123456 或 RunningHub 应用链接" />
+              </label>
+              <div class="action-row">
+                <button id="btnParseApp" class="secondary-btn" type="button">解析</button>
+              </div>
+              <label class="field">
+                <span class="field-label">应用名称</span>
+                <input id="appEditorNameInput" class="field-input" type="text" placeholder="例如：SDXL 风格化" />
+              </label>
+              <label class="field is-hidden">
+                <span class="field-label">说明</span>
+                <textarea id="appEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
+              </label>
+              <label class="field is-hidden">
+                <span class="field-label">输入结构 JSON</span>
+                <textarea id="appEditorInputsInput" class="field-input field-textarea" rows="8"></textarea>
+              </label>
+              <div id="appEditorSchemaSummary" class="summary-strip is-hidden">输入结构摘要</div>
+              <div id="appEditorStatus" class="summary-strip">输入应用 ID 或链接后解析，确认名称后保存。</div>
+              <div class="action-row">
+                <button id="btnDeleteEditingApp" class="secondary-btn" type="button" hidden>删除当前应用</button>
+                <button id="btnSaveEditingApp" class="primary-btn" type="button">保存应用</button>
+              </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">搜索应用</span>
+                  <input id="appManagerSearchInput" class="field-input" type="search" placeholder="按名称、ID 或说明搜索" />
+                </label>
+                <label class="field">
+                  <span class="field-label">排序方式</span>
+                  <select id="appManagerSortInput" class="field-input">
+                    <option value="updated_desc">最近更新优先</option>
+                    <option value="created_desc">最近创建优先</option>
+                    <option value="name_asc">名称 A-Z</option>
+                    <option value="name_desc">名称 Z-A</option>
+                  </select>
+                </label>
+              </div>
+              <div id="savedAppsSummary" class="summary-strip">应用列表尚未加载</div>
+              <div id="savedAppsList" class="list-shell compact-list-shell"></div>
+              <textarea id="appTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
+            </div>
+          </section>
+
+          <section class="surface-card settings-manage-card">
+            <div class="settings-section-head">
+              <span class="settings-section-checkbox"></span>
+              <h3 class="card-title">提示词模板</h3>
+            </div>
+            <div class="form-stack">
+              <label class="field">
+                <span class="field-label">模板标题</span>
+                <input id="templateTitleInput" class="field-input" type="text" placeholder="例如：高质量二次元" />
+              </label>
+              <label class="field">
+                <span class="field-label">模板内容</span>
+                <textarea id="templateContentInput" class="field-input field-textarea" rows="5" placeholder="输入模板文本"></textarea>
+              </label>
+              <div id="templateLengthHint" class="summary-strip">提示：插件本地不会截断模板内容。</div>
+              <div id="templateStatusSummary" class="summary-strip">填写标题和内容后即可保存模板。</div>
+              <div class="action-row">
+                <button id="btnResetTemplateEditor" class="secondary-btn" type="button">创建模板</button>
+                <button id="btnSaveTemplate" class="primary-btn" type="button">保存模板</button>
+              </div>
+              <div class="action-row">
+                <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出 JSON</button>
+                <button id="btnImportTemplatesJson" class="secondary-btn" type="button">导入 JSON</button>
+              </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">搜索模板</span>
+                  <input id="templateManagerSearchInput" class="field-input" type="search" placeholder="按标题或内容关键词搜索" />
+                </label>
+                <label class="field">
+                  <span class="field-label">排序方式</span>
+                  <select id="templateManagerSortInput" class="field-input">
+                    <option value="updated_desc">最近更新优先</option>
+                    <option value="created_desc">最近创建优先</option>
+                    <option value="title_asc">标题 A-Z</option>
+                    <option value="title_desc">标题 Z-A</option>
+                  </select>
+                </label>
+              </div>
+              <div id="savedTemplatesSummary" class="summary-strip">模板列表尚未加载</div>
+              <div id="savedTemplatesList" class="list-shell compact-list-shell"></div>
+              <textarea id="templateTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
+            </div>
+          </section>
+          <details class="surface-card settings-collapsible">
+            <summary class="settings-collapse-summary">高级设置</summary>
+            <div class="form-stack collapsible-body">
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">轮询间隔（秒）</span>
+                  <input id="settingsPollIntervalInput" class="field-input" type="number" min="1" max="15" placeholder="1-15 秒" />
+                </label>
+                <label class="field">
+                  <span class="field-label">任务超时（秒）</span>
+                  <input id="settingsTimeoutInput" class="field-input" type="number" min="10" max="600" placeholder="10-600 秒" />
+                </label>
+                <label class="field">
+                  <span class="field-label">最大并发任务数</span>
+                  <input id="settingsMaxConcurrentTasksInput" class="field-input" type="number" min="1" max="100" placeholder="1-100" />
+                </label>
+              </div>
+            </div>
+          </details>
+
+          <details class="surface-card settings-collapsible">
+            <summary class="settings-collapse-summary">环境诊断</summary>
+            <div class="collapsible-body">
+              <div id="settingsDiagnosticBox" class="diagnostic-box">
+                <p>这里会显示环境摘要、存储状态与运行诊断信息。</p>
+              </div>
+              <div class="action-row">
+                <button id="btnLoadParseDebug" class="secondary-btn" type="button">加载最近解析调试</button>
+              </div>
+              <pre id="parseDebugOutput" class="diagnostic-box">这里会显示最近一次应用解析的调试记录。</pre>
+            </div>
+          </details>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="appPickerModal" class="overlay-modal">
+    <div id="appPickerBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工作台</p>
+          <h3 id="appPickerTitle" class="card-title">选择已保存应用</h3>
+        </div>
+        <button id="appPickerModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <label class="field">
+        <span class="field-label">搜索应用</span>
+        <input id="appPickerSearchInput" class="field-input" type="search" placeholder="输入应用名称或应用 ID 进行筛选" />
+      </label>
+
+      <div class="picker-toolbar">
+        <span class="picker-caption">已保存应用</span>
+        <span id="appPickerStats" class="picker-stats">0 / 0</span>
+      </div>
+
+      <div id="appPickerList" class="picker-list"></div>
+    </section>
+  </div>
+
+  <div id="templatePickerModal" class="overlay-modal">
+    <div id="templatePickerBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工作台</p>
+          <h3 id="templatePickerTitle" class="card-title">选择提示词模板</h3>
+        </div>
+        <button id="templatePickerModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <label class="field">
+        <span class="field-label">搜索模板</span>
+        <input id="templatePickerSearchInput" class="field-input" type="search" placeholder="输入标题或内容关键词筛选" />
+      </label>
+
+      <div class="dual-grid">
+        <label class="field">
+          <span class="field-label">写入方式</span>
+          <select id="templatePickerApplyMode" class="field-input">
+            <option value="replace">替换当前字段内容</option>
+            <option value="append">追加到当前字段末尾</option>
+          </select>
+        </label>
+        <div class="field">
+          <span class="field-label">模板统计</span>
+          <div id="templatePickerStats" class="summary-strip">0 / 0</div>
+        </div>
+      </div>
+
+      <div id="templatePickerSelectionInfo" class="summary-strip">已选择 0 / 5</div>
+      <div id="templatePickerList" class="picker-list"></div>
+
+      <div class="action-row">
+        <button id="btnApplyTemplateSelection" class="primary-btn" type="button">应用模板</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="donationModal" class="overlay-modal">
+    <div id="donationBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card donation-overlay-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">支持项目</p>
+          <h3 class="card-title">感谢支持 PixelRunner</h3>
+        </div>
+        <button id="donationModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="action-row donation-shortcuts">
+        <button id="btnOpenRunningHubSite" class="secondary-btn" type="button">打开 RunningHub</button>
+        <button id="btnOpenTutorialSite" class="secondary-btn" type="button">打开教程</button>
+      </div>
+
+      <div class="donation-grid">
+        <button id="donationWxCard" class="donation-card" type="button" data-donation-url="wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI">
+          <img id="donationWxImage" src="icons/vx.png" alt="微信赞助二维码" width="136" height="136" loading="eager" />
+          <span class="donation-label">微信赞助</span>
+        </button>
+        <button id="donationZfbCard" class="donation-card" type="button" data-donation-url="https://qr.alipay.com/fkx12142r0sdwj4kizujk2f">
+          <img id="donationZfbImage" src="icons/zfb.png" alt="支付宝赞助二维码" width="136" height="136" loading="eager" />
+          <span class="donation-label">支付宝赞助</span>
+        </button>
+      </div>
+
+      <div id="donationStatusHint" class="summary-strip donation-status">二维码已就绪，可点击二维码尝试打开链接。</div>
+      <div class="donation-tip">感谢支持。可直接手机扫码；如果当前环境支持，也可以点击二维码尝试唤起对应链接。</div>
+    </section>
+  </div>
+
+  <div id="glowModal" class="overlay-modal">
+    <div id="glowBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card glow-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 class="card-title">辉光预览面板</h3>
+        </div>
+        <button id="glowModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="glow-modal-hero">
+        <div class="glow-modal-hero-copy">
+          <div class="glow-modal-badges">
+            <span id="glowPreviewState" class="status-chip">实时预览</span>
+            <span id="glowRadiusValue" class="status-chip">半径 82</span>
+            <span id="glowThresholdValue" class="status-chip">阈值 3%</span>
+          </div>
+          <p class="subtle-note">拖动滑杆会更新同一个预览辉光层。确认时转成正式结果层，取消时会清理预览层。</p>
+        </div>
+      </div>
+
+      <div class="glow-slider-stack">
+        <label class="field glow-slider-field">
+          <span class="field-label">强度</span>
+          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="17" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">半径</span>
+          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="82" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">阈值</span>
+          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="3" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">淡化</span>
+          <input id="glowFadeInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="12" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">饱和度</span>
+          <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="10" />
+        </label>
+      </div>
+
+      <div class="glow-control-grid glow-modal-actions">
+        <button id="btnGlowPreviewCancel" class="secondary-btn glow-cancel-btn" type="button">取消预览</button>
+        <button id="btnGlowPreviewApply" class="primary-btn glow-run-btn" type="button">应用辉光</button>
+      </div>
+      <div id="glowHint" class="summary-strip">打开面板后会在 Photoshop 中生成一个可反复更新的预览辉光层。</div>
+    </section>
+  </div>
+
+  <iframe
+    id="soundPlayerFrame"
+    class="sound-player-frame"
+    src="sound-player.html"
+    title="提示音播放器"
+    aria-hidden="true"
+    tabindex="-1"
+    allow="autoplay">
+  </iframe>
+
+  <script src="dist/app.bundle.js"></script>
+</body>
+</html>
