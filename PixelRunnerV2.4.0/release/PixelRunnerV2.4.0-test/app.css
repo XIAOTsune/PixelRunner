@@ -981,6 +981,103 @@ button {
   padding-top: 2px;
 }
 
+.tool-glow-card {
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(98, 128, 152, 0.62);
+  background:
+    radial-gradient(circle at top right, rgba(159, 220, 255, 0.1), transparent 36%),
+    radial-gradient(circle at left center, rgba(255, 213, 106, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(31, 45, 59, 0.98) 0%, rgba(24, 34, 45, 0.99) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(25, 36, 48, 0.42);
+}
+
+.tool-glow-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-glow-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-glow-header-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.glow-open-btn {
+  width: 100%;
+  min-height: 40px;
+}
+
+.glow-modal-card {
+  width: min(92vw, 560px);
+}
+
+.glow-modal-hero {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(98, 128, 152, 0.55);
+  background:
+    radial-gradient(circle at top left, rgba(255, 213, 106, 0.1), transparent 34%),
+    radial-gradient(circle at right center, rgba(159, 220, 255, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(34, 48, 63, 0.96), rgba(26, 36, 48, 0.98));
+}
+
+.glow-modal-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.glow-modal-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.glow-slider-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.glow-control-grid {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.glow-modal-actions .secondary-btn,
+.glow-modal-actions .primary-btn {
+  min-height: 38px;
+}
+
+.glow-slider-field {
+  flex: 1 1 auto;
+}
+
+.glow-strength-slider {
+  min-height: 30px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.glow-run-btn {
+  width: 100%;
+  min-height: 38px;
+}
+
 #viewTools .tool-list {
   display: flex;
   flex-direction: column;
@@ -1763,6 +1860,9 @@ button {
   box-shadow: 0 2px 0 #5f93a7;
 }
 
+#btnOpenGlowPanel,
+#btnGlowPreviewApply,
+#btnGlowPreviewCancel,
 #btnStamp,
 #btnSelectAndMask,
 #btnObserver,
@@ -1777,6 +1877,9 @@ button {
   background: #405b74;
 }
 
+#btnOpenGlowPanel:hover,
+#btnGlowPreviewApply:hover,
+#btnGlowPreviewCancel:hover,
 #btnStamp:hover,
 #btnSelectAndMask:hover,
 #btnObserver:hover,
@@ -1789,6 +1892,9 @@ button {
   box-shadow: 0 5px 0 #35506a;
 }
 
+#btnOpenGlowPanel:active,
+#btnGlowPreviewApply:active,
+#btnGlowPreviewCancel:active,
 #btnStamp:active,
 #btnSelectAndMask:active,
 #btnObserver:active,
@@ -1797,15 +1903,48 @@ button {
 #btnSharpen:active,
 #btnHighPass:active,
 #btnContentAwareFill:active,
+#btnGlowPreviewApply:active,
 #btnStamp.is-pressed,
+#btnOpenGlowPanel.is-pressed,
+#btnGlowPreviewApply.is-pressed,
+#btnGlowPreviewCancel.is-pressed,
 #btnSelectAndMask.is-pressed,
 #btnObserver.is-pressed,
 #btnNeutralGray.is-pressed,
 #btnGaussianBlur.is-pressed,
 #btnSharpen.is-pressed,
 #btnHighPass.is-pressed,
-#btnContentAwareFill.is-pressed {
+#btnContentAwareFill.is-pressed,
+#btnGlowPreviewApply.is-pressed {
   box-shadow: 0 2px 0 #35506a;
+}
+
+#btnOpenGlowPanel,
+#btnGlowPreviewApply {
+  --btn-edge: #b98338;
+  background: linear-gradient(180deg, #ffd26c, #f4a84f);
+  color: #2b1f07;
+  border-color: #b98338;
+  box-shadow: 3px 4px 0 #b98338;
+}
+
+#btnOpenGlowPanel:hover,
+#btnGlowPreviewApply:hover {
+  border-color: #b98338;
+  box-shadow: 0 5px 0 #b98338;
+}
+
+#btnGlowPreviewCancel {
+  --btn-edge: #44627d;
+  background: #516d86;
+  color: #edf6ff;
+  border-color: #44627d;
+  box-shadow: 3px 4px 0 #44627d;
+}
+
+#btnGlowPreviewCancel:hover {
+  border-color: #44627d;
+  box-shadow: 0 5px 0 #44627d;
 }
 
 #btnRun {
@@ -1829,6 +1968,10 @@ button {
 #btnRefreshWorkspaceApps,
 #btnClearLog,
 #appPickerModalClose,
+#glowModalClose,
+#btnOpenGlowPanel,
+#btnGlowPreviewApply,
+#btnGlowPreviewCancel,
 #btnStamp,
 #btnSelectAndMask,
 #btnObserver,
@@ -1990,6 +2133,15 @@ button {
 
   #viewTools .tool-item {
     flex-basis: auto;
+    width: 100%;
+  }
+
+  .glow-control-grid {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .glow-run-btn {
     width: 100%;
   }
 

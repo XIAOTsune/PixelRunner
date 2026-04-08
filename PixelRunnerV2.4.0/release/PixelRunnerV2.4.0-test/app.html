@@ -118,6 +118,20 @@
           </div>
         </div>
 
+        <section class="surface-card tool-glow-card">
+          <div class="tool-glow-launcher">
+            <div class="tool-glow-summary-main">
+              <div class="tool-glow-header-line">
+                <h3 class="card-title">辉光</h3>
+                <span id="glowStrengthValue" class="status-chip">默认强度 17%</span>
+              </div>
+              <p class="subtle-note">点击打开独立预览面板，实时调节高光辉光，再确认生成最终结果层。</p>
+            </div>
+            <button id="btnOpenGlowPanel" class="primary-btn glow-open-btn" type="button">打开辉光面板</button>
+          </div>
+          <div id="glowQuickHint" class="summary-strip">默认参数已切换为当前这组更自然的高光辉光手感。</div>
+        </section>
+
         <div class="tool-group-grid">
           <section class="surface-card">
             <div class="card-head">
@@ -461,6 +475,59 @@
 
       <div id="donationStatusHint" class="summary-strip donation-status">二维码已就绪，可点击二维码尝试打开链接。</div>
       <div class="donation-tip">感谢支持。可直接手机扫码；如果当前环境支持，也可以点击二维码尝试唤起对应链接。</div>
+    </section>
+  </div>
+
+  <div id="glowModal" class="overlay-modal">
+    <div id="glowBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card glow-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 class="card-title">辉光预览面板</h3>
+        </div>
+        <button id="glowModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="glow-modal-hero">
+        <div class="glow-modal-hero-copy">
+          <div class="glow-modal-badges">
+            <span id="glowPreviewState" class="status-chip">实时预览</span>
+            <span id="glowRadiusValue" class="status-chip">半径 82</span>
+            <span id="glowThresholdValue" class="status-chip">阈值 3%</span>
+          </div>
+          <p class="subtle-note">拖动滑杆会更新同一个预览辉光层。确认时转成正式结果层，取消时会清理预览层。</p>
+        </div>
+      </div>
+
+      <div class="glow-slider-stack">
+        <label class="field glow-slider-field">
+          <span class="field-label">强度</span>
+          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="17" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">半径</span>
+          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="82" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">阈值</span>
+          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="3" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">淡化</span>
+          <input id="glowFadeInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="12" />
+        </label>
+        <label class="field glow-slider-field">
+          <span class="field-label">饱和度</span>
+          <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="10" />
+        </label>
+      </div>
+
+      <div class="glow-control-grid glow-modal-actions">
+        <button id="btnGlowPreviewCancel" class="secondary-btn glow-cancel-btn" type="button">取消预览</button>
+        <button id="btnGlowPreviewApply" class="primary-btn glow-run-btn" type="button">应用辉光</button>
+      </div>
+      <div id="glowHint" class="summary-strip">打开面板后会在 Photoshop 中生成一个可反复更新的预览辉光层。</div>
     </section>
   </div>
 
