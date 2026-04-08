@@ -417,6 +417,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 0;
+  min-width: 0;
 }
 
 .panel-header-side {
@@ -506,6 +507,7 @@ button {
   font-weight: 800;
   color: var(--text-strong);
   line-height: 1.1;
+  overflow-wrap: anywhere;
 }
 
 .account-summary {
@@ -639,6 +641,37 @@ button {
 
 .workspace-header-strip {
   margin-bottom: 4px;
+}
+
+.workspace-header-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.workspace-header-side .account-summary {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.workspace-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workspace-header-actions .ghost-btn {
+  flex: 0 0 auto;
+}
+
+.workspace-header-actions .version-text {
+  flex: 0 0 auto;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .workspace-app-card,
@@ -2057,6 +2090,63 @@ button {
     padding: 4px;
   }
 
+  .workspace-header-strip {
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  .workspace-header-side {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 6px;
+    width: 100%;
+  }
+
+  .workspace-header-side .account-summary {
+    gap: 4px;
+  }
+
+  .workspace-header-side .metric-pill {
+    min-height: 20px;
+    padding: 0 6px;
+  }
+
+  .workspace-header-side .metric-label {
+    font-size: 8px;
+  }
+
+  .workspace-header-side .metric-value {
+    font-size: 9px;
+  }
+
+  .workspace-header-actions {
+    gap: 4px;
+  }
+
+  .workspace-header-actions .ghost-btn {
+    min-height: 26px;
+    padding: 0 8px;
+    border-radius: 11px;
+    box-shadow: 2px 3px 0 var(--btn-shadow);
+    font-size: 11px;
+  }
+
+  .workspace-header-actions .version-text {
+    font-size: 11px;
+  }
+
+  .workspace-header-side .sound-toggle-btn {
+    width: 30px;
+    min-width: 30px;
+    min-height: 30px;
+    border-radius: 10px;
+    box-shadow: 2px 3px 0 #35506a;
+  }
+
+  .workspace-header-side .sound-toggle-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
   .workspace-app-toolbar {
     flex-wrap: nowrap;
     align-items: center;
@@ -2253,6 +2343,34 @@ button {
 
   .panel-header-side {
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 460px) {
+  .workspace-header-strip {
+    align-items: stretch;
+  }
+
+  .workspace-header-strip .panel-header-main {
+    width: 100%;
+  }
+
+  .workspace-header-strip .panel-eyebrow {
+    font-size: 7px;
+  }
+
+  .workspace-header-strip .panel-title {
+    font-size: 12px;
+    line-height: 1.02;
+  }
+
+  .workspace-header-side {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .workspace-header-side .account-summary {
+    justify-content: flex-start;
   }
 }
 
