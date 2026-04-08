@@ -498,8 +498,7 @@ var PixelRunnerWebviewBundle = (() => {
       strength: 17,
       radius: 82,
       threshold: 3,
-      fade: 12,
-      saturation: 10
+      saturation: 75
     };
     const GLOW_STYLE_LABELS = {
       natural: "自然",
@@ -680,7 +679,6 @@ ${text}` : text;
       const glowStrengthInput = runtime.getById("glowStrengthInput");
       const glowRadiusInput = runtime.getById("glowRadiusInput");
       const glowThresholdInput = runtime.getById("glowThresholdInput");
-      const glowFadeInput = runtime.getById("glowFadeInput");
       const glowSaturationInput = runtime.getById("glowSaturationInput");
       const glowStrengthValue = runtime.getById("glowStrengthValue");
       const glowStyleBadge = runtime.getById("glowStyleBadge");
@@ -714,7 +712,6 @@ ${text}` : text;
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
         radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
-        fade: readGlowSlider(glowFadeInput, GLOW_DEFAULTS.fade, 0, 100),
         saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100)
       });
       const setGlowButtonsDisabled = (disabled) => {
@@ -748,13 +745,12 @@ ${text}` : text;
           strength: state.strength,
           radius: state.radius,
           threshold: state.threshold,
-          fade: state.fade,
           saturation: state.saturation
         }], { timeoutMs: 6e4 });
       };
       const getGlowStateSignature = () => {
         const state = readGlowState();
-        return [state.style, state.strength, state.radius, state.threshold, state.fade, state.saturation].join("|");
+        return [state.style, state.strength, state.radius, state.threshold, state.saturation].join("|");
       };
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
@@ -859,7 +855,7 @@ ${text}` : text;
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
-      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowFadeInput, glowSaturationInput].filter(Boolean).forEach((input) => {
+      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowSaturationInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
           scheduleGlowPreviewUpdate();

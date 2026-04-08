@@ -92,14 +92,25 @@ function normalizeGlowStyle(style) {
   return "natural";
 }
 
+function getStyleFade(style) {
+  switch (normalizeGlowStyle(style)) {
+    case "soft":
+      return 20;
+    case "dreamy":
+      return 28;
+    default:
+      return 12;
+  }
+}
+
 function getGlowConfig(payload = {}) {
   const style = normalizeGlowStyle(payload.style);
   const stylePreset = GLOW_STYLE_PRESETS[style];
   const strength = clampNumber(payload.strength, 0, 100, 17);
   const radius = clampNumber(payload.radius, 1, 120, 82);
   const threshold = clampNumber(payload.threshold, 0, 100, 3);
-  const fade = clampNumber(payload.fade, 0, 100, 12);
-  const saturation = clampNumber(payload.saturation, -100, 100, 10);
+  const fade = getStyleFade(style);
+  const saturation = clampNumber(payload.saturation, -100, 100, 75);
   const strengthRatio = strength / 100;
   const fadeRatio = 1 - fade / 140;
   const bloomOpacityBase = Math.round(18 + strength * 0.38);
@@ -213,12 +224,26 @@ async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
   return { scale, width: targetWidth, height: targetHeight };
 }
 
-async function convertDocumentTo8Bit(action) {
+function getDocumentBitDepth(doc) {
+  const raw = doc && doc.bitsPerChannel;
+  const numeric = Number(raw && (raw._value ?? raw.value ?? raw));
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const text = String(raw && (raw._value ?? raw.value ?? raw) || "").toLowerCase();
+  if (text.includes("thirty") || text.includes("32")) return 32;
+  if (text.includes("sixteen") || text.includes("16")) return 16;
+  if (text.includes("eight") || text.includes("8")) return 8;
+  return 0;
+}
+
+async function normalizeWorkingDocumentBitDepth(action, docRef) {
+  const bitDepth = getDocumentBitDepth(docRef);
+  if (!bitDepth || bitDepth <= 16) return bitDepth || 0;
   await action.batchPlay([{
     _obj: "convertMode",
-    depth: 8,
+    depth: 16,
     merge: false
   }], {});
+  return 16;
 }
 
 async function applyExposureIsolation(action, exposure, gammaCorrection) {
@@ -510,12 +535,19 @@ function createPreviewGlowConfig(config) {
     detailOpacity: clampNumber(config.detailOpacity + 2, 10, 48, config.detailOpacity),
     coreOpacity: clampNumber(config.coreOpacity + 2, 16, 84, config.coreOpacity),
     haloOpacity: clampNumber(config.haloOpacity + 1, 14, 84, config.haloOpacity),
-    glowRadii: sampledRadii.length ? sampledRadii : config.glowRadii,
+    coreRadius: clampNumber(config.coreRadius, 0.5, 18, config.coreRadius),
+    haloRadius: clampNumber(config.haloRadius, 0.8, 36, config.haloRadius),
+    glowRadii: (sampledRadii.length ? sampledRadii : config.glowRadii).map((radius, index) => {
+      const maxRadius = [20, 42, 72][index] || 72;
+      return clampNumber(radius, 0.5, maxRadius, radius);
+    }),
     glowOpacities: sampledOpacities.map((opacity, index, list) => {
       const boost = index === list.length - 1 ? 1.08 : 1.04;
       return clampNumber(Math.round(opacity * boost), 8, 84, opacity);
     }),
-    channelOutputClamp: clampNumber(config.channelOutputClamp - 4, 0, 120, config.channelOutputClamp)
+    channelOutputClamp: clampNumber(config.channelOutputClamp - 4, 0, 120, config.channelOutputClamp),
+    finalSaturation: clampNumber(config.finalSaturation, -70, 90, config.finalSaturation),
+    finalVibrance: clampNumber(config.finalVibrance, -40, 80, config.finalVibrance)
   };
 }
 
@@ -573,11 +605,11 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     tempDoc = await document.duplicate(`${config.layerName} Temp`, true);
     app.activeDocument = tempDoc;
 
-    await convertDocumentTo8Bit(action);
+    await normalizeWorkingDocumentBitDepth(action, tempDoc);
     const resizeInfo = previewMaxEdge > 0
       ? await resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge)
       : { scale: 1, width: sourceSize.width, height: sourceSize.height };
-    let workingConfig = createScaledGlowConfig(config, resizeInfo.scale);
+    let workingConfig = createScaledGlowConfig(config, Number(resizeInfo.scale) || 1);
     if (previewMaxEdge > 0) {
       workingConfig = createPreviewGlowConfig(workingConfig);
     }
@@ -885,7 +917,6 @@ async function runModalToolAction(actionName, payload, app, document, action, co
             strength: config.strength,
             radius: config.radius,
             threshold: config.threshold,
-            fade: config.fade,
             saturation: config.saturation,
             layerId: committedLayerId
           });
@@ -913,7 +944,6 @@ async function runModalToolAction(actionName, payload, app, document, action, co
         strength: config.strength,
         radius: config.radius,
         threshold: config.threshold,
-        fade: config.fade,
         saturation: config.saturation,
         coreRadius: config.coreRadius,
         bloomRadius: config.bloomRadius,
