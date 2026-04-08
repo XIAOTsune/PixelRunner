@@ -340,7 +340,60 @@ var PixelRunnerHostBundle = (() => {
 
   // src/host/photoshop/tool-actions.js
   var GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
-  var GLOW_PREVIEW_MAX_EDGE = 1440;
+  var GLOW_PREVIEW_MAX_EDGE = 1280;
+  var GLOW_STYLE_PRESETS = {
+    natural: {
+      detailOpacityWeight: 1,
+      coreOpacityWeight: 1,
+      haloOpacityWeight: 1,
+      coreRadiusWeight: 1,
+      haloRadiusWeight: 1,
+      glowRadiusWeight: 1,
+      glowOpacityWeight: 1,
+      highlightFuzzinessWeight: 1,
+      highlightLowerLimitBias: 0,
+      sourceSaturationBias: 0,
+      finalSaturationWeight: 1,
+      finalVibranceWeight: 1,
+      isolationGammaBias: 0,
+      glowGammaBias: 0,
+      finalGammaBias: 0
+    },
+    soft: {
+      detailOpacityWeight: 0.84,
+      coreOpacityWeight: 0.88,
+      haloOpacityWeight: 0.92,
+      coreRadiusWeight: 0.94,
+      haloRadiusWeight: 1.08,
+      glowRadiusWeight: 1.16,
+      glowOpacityWeight: 0.88,
+      highlightFuzzinessWeight: 1.12,
+      highlightLowerLimitBias: -10,
+      sourceSaturationBias: -6,
+      finalSaturationWeight: 0.82,
+      finalVibranceWeight: 0.74,
+      isolationGammaBias: 0.04,
+      glowGammaBias: 0.08,
+      finalGammaBias: 0.05
+    },
+    dreamy: {
+      detailOpacityWeight: 0.72,
+      coreOpacityWeight: 0.94,
+      haloOpacityWeight: 1.08,
+      coreRadiusWeight: 0.98,
+      haloRadiusWeight: 1.16,
+      glowRadiusWeight: 1.3,
+      glowOpacityWeight: 1.12,
+      highlightFuzzinessWeight: 1.2,
+      highlightLowerLimitBias: -16,
+      sourceSaturationBias: 4,
+      finalSaturationWeight: 1.1,
+      finalVibranceWeight: 1.16,
+      isolationGammaBias: 0.05,
+      glowGammaBias: 0.12,
+      finalGammaBias: 0.08
+    }
+  };
   var glowPreviewSession = {
     documentId: 0,
     previewLayerId: 0,
@@ -360,7 +413,17 @@ var PixelRunnerHostBundle = (() => {
     if (!Number.isFinite(parsed)) return fallback;
     return Math.min(max, Math.max(min, parsed));
   }
+  function roundToTenth(value, min = 0.1) {
+    return Math.max(min, Number(Number(value).toFixed(1)));
+  }
+  function normalizeGlowStyle(style) {
+    const key = String(style || "").trim().toLowerCase();
+    if (key && Object.prototype.hasOwnProperty.call(GLOW_STYLE_PRESETS, key)) return key;
+    return "natural";
+  }
   function getGlowConfig(payload = {}) {
+    const style = normalizeGlowStyle(payload.style);
+    const stylePreset = GLOW_STYLE_PRESETS[style];
     const strength = clampNumber(payload.strength, 0, 100, 17);
     const radius = clampNumber(payload.radius, 1, 120, 82);
     const threshold = clampNumber(payload.threshold, 0, 100, 3);
@@ -369,19 +432,32 @@ var PixelRunnerHostBundle = (() => {
     const strengthRatio = strength / 100;
     const fadeRatio = 1 - fade / 140;
     const bloomOpacityBase = Math.round(18 + strength * 0.38);
-    const detailOpacity = clampNumber(Math.round(18 + strength * 0.22 - fade * 0.1), 12, 44, 24);
-    const coreOpacity = clampNumber(Math.round(26 + strength * 0.48 - fade * 0.06), 18, 82, 34);
-    const coreRadius = Math.max(0.8, Number((radius * 0.16).toFixed(1)));
-    const haloRadius = Math.max(coreRadius + 0.6, Number((radius * 0.34).toFixed(1)));
-    const midRadius = Math.max(haloRadius + 0.8, Number((radius * 0.72).toFixed(1)));
-    const bloomRadius = Math.max(midRadius + 1.2, Number((radius * 1.36).toFixed(1)));
-    const highlightFuzziness = clampNumber(Math.round(10 + radius * 0.22 + fade * 0.18), 6, 42, 18);
+    const detailOpacity = clampNumber(Math.round((18 + strength * 0.22 - fade * 0.1) * stylePreset.detailOpacityWeight), 10, 44, 24);
+    const coreOpacity = clampNumber(Math.round((26 + strength * 0.48 - fade * 0.06) * stylePreset.coreOpacityWeight), 16, 82, 34);
+    const haloOpacity = clampNumber(Math.round(Math.max(20, coreOpacity - 8) * stylePreset.haloOpacityWeight), 14, 84, 24);
+    const coreRadius = Math.max(0.8, roundToTenth(radius * 0.16 * stylePreset.coreRadiusWeight, 0.8));
+    const haloRadius = Math.max(coreRadius + 0.6, roundToTenth(radius * 0.34 * stylePreset.haloRadiusWeight, coreRadius + 0.6));
+    const midRadius = Math.max(haloRadius + 0.8, roundToTenth(radius * 0.72 * Math.max(1, stylePreset.glowRadiusWeight * 0.94), haloRadius + 0.8));
+    const bloomRadius = Math.max(midRadius + 1.2, roundToTenth(radius * 1.36 * stylePreset.glowRadiusWeight, midRadius + 1.2));
+    const highlightFuzziness = clampNumber(Math.round((10 + radius * 0.22 + fade * 0.18) * stylePreset.highlightFuzzinessWeight), 6, 52, 18);
     const channelOutputClamp = clampNumber(Math.round(18 + threshold * 0.28 + fade * 0.1), 0, 120, 30);
-    const sourceSaturation = clampNumber(Math.round(-24 + saturation * 0.4), -100, 50, -24);
-    const finalSaturation = clampNumber(Math.round(saturation * 0.85), -100, 100, 0);
-    const finalVibrance = clampNumber(Math.round(saturation * 0.65), -100, 100, 0);
-    const highlightLowerLimit = clampNumber(Math.round(208 + threshold * 0.42), 180, 252, 220);
+    const sourceSaturation = clampNumber(Math.round(-24 + saturation * 0.4 + stylePreset.sourceSaturationBias), -100, 50, -24);
+    const finalSaturation = clampNumber(Math.round(saturation * 0.85 * stylePreset.finalSaturationWeight), -100, 100, 0);
+    const finalVibrance = clampNumber(Math.round(saturation * 0.65 * stylePreset.finalVibranceWeight), -100, 100, 0);
+    const highlightLowerLimit = clampNumber(Math.round(208 + threshold * 0.42 + stylePreset.highlightLowerLimitBias), 172, 252, 220);
+    const glowRadiiBase = [0.22, 0.48, 0.82, 1.18, 1.62].map((factor, index) => {
+      const minRadius = [0.8, 1.4, 2.1, 2.8, 3.8][index];
+      return Math.max(minRadius, roundToTenth(radius * factor * stylePreset.glowRadiusWeight, minRadius));
+    });
+    const glowOpacitiesBase = [
+      Math.min(78, Math.max(20, bloomOpacityBase)),
+      Math.min(68, Math.max(16, Math.round(bloomOpacityBase * (0.86 * fadeRatio)))),
+      Math.min(56, Math.max(12, Math.round(bloomOpacityBase * (0.68 * fadeRatio)))),
+      Math.min(44, Math.max(9, Math.round(bloomOpacityBase * (0.5 * fadeRatio)))),
+      Math.min(34, Math.max(6, Math.round(bloomOpacityBase * (0.34 * fadeRatio))))
+    ].map((opacity, index) => clampNumber(Math.round(opacity * stylePreset.glowOpacityWeight), index === 0 ? 18 : 6, 84, opacity));
     return {
+      style,
       strength,
       radius,
       threshold,
@@ -392,32 +468,21 @@ var PixelRunnerHostBundle = (() => {
       finalVibrance,
       detailOpacity,
       coreOpacity,
+      haloOpacity,
       coreRadius,
       haloRadius,
       midRadius,
       bloomRadius,
-      glowRadii: [
-        Math.max(0.8, Number((radius * 0.22).toFixed(1))),
-        Math.max(1.4, Number((radius * 0.48).toFixed(1))),
-        Math.max(2.1, Number((radius * 0.82).toFixed(1))),
-        Math.max(2.8, Number((radius * 1.18).toFixed(1))),
-        Math.max(3.8, Number((radius * 1.62).toFixed(1)))
-      ],
-      glowOpacities: [
-        Math.min(78, Math.max(20, bloomOpacityBase)),
-        Math.min(68, Math.max(16, Math.round(bloomOpacityBase * (0.86 * fadeRatio)))),
-        Math.min(56, Math.max(12, Math.round(bloomOpacityBase * (0.68 * fadeRatio)))),
-        Math.min(44, Math.max(9, Math.round(bloomOpacityBase * (0.5 * fadeRatio)))),
-        Math.min(34, Math.max(6, Math.round(bloomOpacityBase * (0.34 * fadeRatio))))
-      ],
+      glowRadii: glowRadiiBase,
+      glowOpacities: glowOpacitiesBase,
       sourceOpacity: clampNumber(Math.round(20 + strength * 0.28), 14, 48, 24),
       isolationExposure: Number((-(0.04 + threshold / 100 * 0.42 + strengthRatio * 0.06)).toFixed(2)),
-      isolationGamma: Number((1.01 + fade / 100 * 0.22).toFixed(2)),
+      isolationGamma: Number((1.01 + fade / 100 * 0.22 + stylePreset.isolationGammaBias).toFixed(2)),
       coreExposure: Number((-(0.01 + threshold / 100 * 0.12)).toFixed(2)),
       coreGamma: Number((0.94 + fade / 100 * 0.08).toFixed(2)),
       glowExposure: Number((-(0.07 + fade / 100 * 0.12)).toFixed(2)),
-      glowGamma: Number((1.08 + fade / 100 * 0.18).toFixed(2)),
-      finalGamma: Number((1.01 + fade / 100 * 0.15).toFixed(2)),
+      glowGamma: Number((1.08 + fade / 100 * 0.18 + stylePreset.glowGammaBias).toFixed(2)),
+      finalGamma: Number((1.01 + fade / 100 * 0.15 + stylePreset.finalGammaBias).toFixed(2)),
       highlightFuzziness,
       highlightLowerLimit,
       channelOutputClamp,
@@ -697,11 +762,37 @@ var PixelRunnerHostBundle = (() => {
     if (safeScale >= 0.999) return config;
     return {
       ...config,
-      coreRadius: Math.max(0.5, Number((config.coreRadius * safeScale).toFixed(1))),
-      midRadius: Math.max(0.8, Number((config.midRadius * safeScale).toFixed(1))),
-      bloomRadius: Math.max(1.2, Number((config.bloomRadius * safeScale).toFixed(1))),
-      glowRadii: (Array.isArray(config.glowRadii) ? config.glowRadii : []).map((radius) => Math.max(0.5, Number((radius * safeScale).toFixed(1))))
+      coreRadius: Math.max(0.5, roundToTenth(config.coreRadius * safeScale, 0.5)),
+      haloRadius: Math.max(0.8, roundToTenth(config.haloRadius * safeScale, 0.8)),
+      midRadius: Math.max(0.8, roundToTenth(config.midRadius * safeScale, 0.8)),
+      bloomRadius: Math.max(1.2, roundToTenth(config.bloomRadius * safeScale, 1.2)),
+      glowRadii: (Array.isArray(config.glowRadii) ? config.glowRadii : []).map((radius) => Math.max(0.5, roundToTenth(radius * safeScale, 0.5)))
     };
+  }
+  function createPreviewGlowConfig(config) {
+    const sampledRadii = Array.isArray(config.glowRadii) ? config.glowRadii.filter((_, index, list) => index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1) : [];
+    const sampledOpacities = Array.isArray(config.glowOpacities) ? config.glowOpacities.filter((_, index, list) => index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1) : [];
+    return {
+      ...config,
+      detailOpacity: clampNumber(config.detailOpacity + 2, 10, 48, config.detailOpacity),
+      coreOpacity: clampNumber(config.coreOpacity + 2, 16, 84, config.coreOpacity),
+      haloOpacity: clampNumber(config.haloOpacity + 1, 14, 84, config.haloOpacity),
+      glowRadii: sampledRadii.length ? sampledRadii : config.glowRadii,
+      glowOpacities: sampledOpacities.map((opacity, index, list) => {
+        const boost = index === list.length - 1 ? 1.08 : 1.04;
+        return clampNumber(Math.round(opacity * boost), 8, 84, opacity);
+      }),
+      channelOutputClamp: clampNumber(config.channelOutputClamp - 4, 0, 120, config.channelOutputClamp)
+    };
+  }
+  function getGlowPreviewMaxEdge(config) {
+    const radius = Number(config && config.radius) || 0;
+    const style = normalizeGlowStyle(config && config.style);
+    let maxEdge = GLOW_PREVIEW_MAX_EDGE;
+    if (radius >= 96) maxEdge = 1080;
+    else if (radius >= 72) maxEdge = 1180;
+    if (style === "dreamy") maxEdge -= 60;
+    return Math.max(960, Math.min(GLOW_PREVIEW_MAX_EDGE, maxEdge));
   }
   async function fitImportedLayerToDocument(app, action, layerId, targetWidth, targetHeight) {
     if (!(layerId > 0) || !(targetWidth > 0) || !(targetHeight > 0)) return;
@@ -742,7 +833,10 @@ var PixelRunnerHostBundle = (() => {
       app.activeDocument = tempDoc;
       await convertDocumentTo8Bit(action);
       const resizeInfo = previewMaxEdge > 0 ? await resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge) : { scale: 1, width: sourceSize.width, height: sourceSize.height };
-      const workingConfig = createScaledGlowConfig(config, resizeInfo.scale);
+      let workingConfig = createScaledGlowConfig(config, resizeInfo.scale);
+      if (previewMaxEdge > 0) {
+        workingConfig = createPreviewGlowConfig(workingConfig);
+      }
       await renameActiveLayer2(action, baseName);
       await selectHighlights(action, workingConfig);
       await copySelectionToLayer(action);
@@ -775,7 +869,7 @@ var PixelRunnerHostBundle = (() => {
       await renameActiveLayer2(action, haloName);
       await applyGaussianBlur(action, workingConfig.haloRadius);
       await applyExposureIsolation(action, workingConfig.glowExposure, Number((workingConfig.glowGamma - 0.04).toFixed(2)));
-      await setActiveLayerStyle(action, Math.max(workingConfig.coreOpacity - 8, workingConfig.detailOpacity), "screen");
+      await setActiveLayerStyle(action, workingConfig.haloOpacity, "screen");
       for (let index = 0; index < workingConfig.glowRadii.length; index += 1) {
         await selectLayerByName(action, detailName);
         await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
@@ -990,7 +1084,7 @@ var PixelRunnerHostBundle = (() => {
             originalDocument,
             action,
             constants.SaveOptions || {},
-            { previewMaxEdge: GLOW_PREVIEW_MAX_EDGE }
+            { previewMaxEdge: getGlowPreviewMaxEdge(config) }
           );
           glowPreviewSession.documentId = Number(originalDocument.id) || 0;
           glowPreviewSession.previewLayerId = Number(importedLayer && importedLayer.id || getActiveLayerId(app) || 0);
@@ -1021,6 +1115,7 @@ var PixelRunnerHostBundle = (() => {
             const committedLayerId = Number(importedLayer && importedLayer.id || getActiveLayerId(app) || 0);
             return buildToolCommandResponse(actionName, app, `已按全分辨率生成 ${config.layerName}。`, {
               layerName: config.layerName,
+              style: config.style,
               strength: config.strength,
               radius: config.radius,
               threshold: config.threshold,
@@ -1045,6 +1140,7 @@ var PixelRunnerHostBundle = (() => {
         const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
         return buildToolCommandResponse(actionName, app, `Created rebuilt glow layer from isolated highlight source: strength ${config.strength}%, radius ${config.radius}, threshold ${config.threshold}%.`, {
           layerName: String(importedLayer && importedLayer.name || activeLayer && activeLayer.name || config.layerName),
+          style: config.style,
           strength: config.strength,
           radius: config.radius,
           threshold: config.threshold,

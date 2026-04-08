@@ -1165,6 +1165,10 @@ button {
   flex: 1 1 auto;
 }
 
+.glow-style-field .field-input {
+  min-height: 36px;
+}
+
 .glow-strength-slider {
   min-height: 30px;
   padding: 0;

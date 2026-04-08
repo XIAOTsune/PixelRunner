@@ -494,11 +494,17 @@ var PixelRunnerWebviewBundle = (() => {
       tutorial: "./pages/runninghub-guide.html"
     };
     const GLOW_DEFAULTS = {
+      style: "natural",
       strength: 17,
       radius: 82,
       threshold: 3,
       fade: 12,
       saturation: 10
+    };
+    const GLOW_STYLE_LABELS = {
+      natural: "自然",
+      soft: "柔和",
+      dreamy: "梦幻"
     };
     function logToWorkspace(message, type = "info") {
       const runtime = modules.runtime;
@@ -670,12 +676,14 @@ ${text}` : text;
     }
     function bindToolActions() {
       const runtime = modules.runtime;
+      const glowStyleInput = runtime.getById("glowStyleInput");
       const glowStrengthInput = runtime.getById("glowStrengthInput");
       const glowRadiusInput = runtime.getById("glowRadiusInput");
       const glowThresholdInput = runtime.getById("glowThresholdInput");
       const glowFadeInput = runtime.getById("glowFadeInput");
       const glowSaturationInput = runtime.getById("glowSaturationInput");
       const glowStrengthValue = runtime.getById("glowStrengthValue");
+      const glowStyleBadge = runtime.getById("glowStyleBadge");
       const glowRadiusValue = runtime.getById("glowRadiusValue");
       const glowThresholdValue = runtime.getById("glowThresholdValue");
       const glowPreviewState = runtime.getById("glowPreviewState");
@@ -696,7 +704,13 @@ ${text}` : text;
         if (!Number.isFinite(parsed)) return fallback;
         return Math.max(min, Math.min(max, Math.round(parsed)));
       };
+      const readGlowStyle = () => {
+        const nextStyle = String(glowStyleInput && glowStyleInput.value || GLOW_DEFAULTS.style).trim().toLowerCase();
+        return GLOW_STYLE_LABELS[nextStyle] ? nextStyle : GLOW_DEFAULTS.style;
+      };
+      const getGlowStyleLabel = (style) => GLOW_STYLE_LABELS[String(style || "").trim().toLowerCase()] || GLOW_STYLE_LABELS[GLOW_DEFAULTS.style];
       const readGlowState = () => ({
+        style: readGlowStyle(),
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
         radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
@@ -721,7 +735,8 @@ ${text}` : text;
       };
       const updateGlowLabels = () => {
         const state = readGlowState();
-        if (glowStrengthValue) glowStrengthValue.textContent = `默认强度 ${state.strength}%`;
+        if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
+        if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
         if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
         if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${state.threshold}%`;
       };
@@ -729,6 +744,7 @@ ${text}` : text;
         const state = readGlowState();
         return runtime.callHost("photoshop.runToolAction", [{
           action,
+          style: state.style,
           strength: state.strength,
           radius: state.radius,
           threshold: state.threshold,
@@ -738,7 +754,7 @@ ${text}` : text;
       };
       const getGlowStateSignature = () => {
         const state = readGlowState();
-        return [state.strength, state.radius, state.threshold, state.fade, state.saturation].join("|");
+        return [state.style, state.strength, state.radius, state.threshold, state.fade, state.saturation].join("|");
       };
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
@@ -754,7 +770,7 @@ ${text}` : text;
         glowPreviewNeedsReplay = false;
         const state = readGlowState();
         setGlowPreviewBadge("正在预览", "pending");
-        setGlowStatus(`正在更新辉光预览：强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
+        setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
         try {
           const result = await callGlowHostAction(action);
           const message = result && result.message ? result.message : "辉光预览已更新。";
@@ -780,7 +796,7 @@ ${text}` : text;
         glowPreviewTimer = window.setTimeout(() => {
           glowPreviewTimer = 0;
           void runGlowPreviewUpdate("glowPreviewUpdate");
-        }, 320);
+        }, 220);
       };
       const flushGlowPreviewUpdate = async () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
@@ -815,7 +831,7 @@ ${text}` : text;
         setGlowButtonsDisabled(true);
         try {
           await runGlowPreviewUpdate("glowPreviewStart");
-          setQuickGlowStatus("辉光面板已打开，可实时拖动滑杆预览。", "success");
+          setQuickGlowStatus(`辉光面板已打开，当前风格为 ${getGlowStyleLabel(readGlowState().style)}。`, "success");
         } finally {
           setGlowButtonsDisabled(false);
         }
@@ -843,7 +859,7 @@ ${text}` : text;
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
-      [glowStrengthInput, glowRadiusInput, glowThresholdInput, glowFadeInput, glowSaturationInput].filter(Boolean).forEach((input) => {
+      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowFadeInput, glowSaturationInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
           scheduleGlowPreviewUpdate();
@@ -873,7 +889,7 @@ ${text}` : text;
             const successMessage = result && result.message ? result.message : `已生成 Glow ${state.strength}%`;
             logToWorkspace(successMessage, "success");
             setGlowStatus(successMessage, "success");
-            setQuickGlowStatus(`默认参数：强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "success");
+            setQuickGlowStatus(`${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "success");
             glowPreviewOpen = false;
             modules.workspace.setModalOpen("glowModal", false);
           } catch (error) {

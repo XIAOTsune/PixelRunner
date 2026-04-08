@@ -135,7 +135,7 @@
             <div class="tool-glow-summary-main">
               <div class="tool-glow-header-line">
                 <h3 class="card-title">辉光</h3>
-                <span id="glowStrengthValue" class="status-chip">默认强度 17%</span>
+                <span id="glowStrengthValue" class="status-chip">自然 17%</span>
               </div>
               <p class="subtle-note">点击打开独立预览面板，实时调节高光辉光，再确认生成最终结果层。</p>
             </div>
@@ -505,6 +505,7 @@
         <div class="glow-modal-hero-copy">
           <div class="glow-modal-badges">
             <span id="glowPreviewState" class="status-chip">实时预览</span>
+            <span id="glowStyleBadge" class="status-chip">风格 自然</span>
             <span id="glowRadiusValue" class="status-chip">半径 82</span>
             <span id="glowThresholdValue" class="status-chip">阈值 3%</span>
           </div>
@@ -513,6 +514,14 @@
       </div>
 
       <div class="glow-slider-stack">
+        <label class="field glow-slider-field glow-style-field">
+          <span class="field-label">风格</span>
+          <select id="glowStyleInput" class="field-input">
+            <option value="natural" selected>自然</option>
+            <option value="soft">柔和</option>
+            <option value="dreamy">梦幻</option>
+          </select>
+        </label>
         <label class="field glow-slider-field">
           <span class="field-label">强度</span>
           <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="17" />
