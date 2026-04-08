@@ -366,11 +366,15 @@ var PixelRunnerHostBundle = (() => {
     const threshold = clampNumber(payload.threshold, 0, 100, 3);
     const fade = clampNumber(payload.fade, 0, 100, 12);
     const saturation = clampNumber(payload.saturation, -100, 100, 10);
-    const baseOpacity = Math.round(14 + strength * 0.3);
-    const fadeRatio = 1 - fade / 150;
-    const coreRadius = Math.max(0.8, Number((radius * 0.28).toFixed(1)));
-    const midRadius = Math.max(coreRadius + 0.5, Number((radius * 0.62).toFixed(1)));
-    const bloomRadius = Math.max(midRadius + 0.5, Number((radius * 1.2).toFixed(1)));
+    const strengthRatio = strength / 100;
+    const fadeRatio = 1 - fade / 140;
+    const bloomOpacityBase = Math.round(18 + strength * 0.38);
+    const detailOpacity = clampNumber(Math.round(18 + strength * 0.22 - fade * 0.1), 12, 44, 24);
+    const coreOpacity = clampNumber(Math.round(26 + strength * 0.48 - fade * 0.06), 18, 82, 34);
+    const coreRadius = Math.max(0.8, Number((radius * 0.16).toFixed(1)));
+    const haloRadius = Math.max(coreRadius + 0.6, Number((radius * 0.34).toFixed(1)));
+    const midRadius = Math.max(haloRadius + 0.8, Number((radius * 0.72).toFixed(1)));
+    const bloomRadius = Math.max(midRadius + 1.2, Number((radius * 1.36).toFixed(1)));
     const highlightFuzziness = clampNumber(Math.round(10 + radius * 0.22 + fade * 0.18), 6, 42, 18);
     const channelOutputClamp = clampNumber(Math.round(18 + threshold * 0.28 + fade * 0.1), 0, 120, 30);
     const sourceSaturation = clampNumber(Math.round(-24 + saturation * 0.4), -100, 50, -24);
@@ -386,29 +390,34 @@ var PixelRunnerHostBundle = (() => {
       sourceSaturation,
       finalSaturation,
       finalVibrance,
+      detailOpacity,
+      coreOpacity,
       coreRadius,
+      haloRadius,
       midRadius,
       bloomRadius,
       glowRadii: [
-        Math.max(0.7, Number((radius * 0.18).toFixed(1))),
-        Math.max(1.1, Number((radius * 0.4).toFixed(1))),
-        Math.max(1.8, Number((radius * 0.7).toFixed(1))),
-        Math.max(2.4, Number((radius * 1.05).toFixed(1))),
-        Math.max(3.2, Number((radius * 1.45).toFixed(1)))
+        Math.max(0.8, Number((radius * 0.22).toFixed(1))),
+        Math.max(1.4, Number((radius * 0.48).toFixed(1))),
+        Math.max(2.1, Number((radius * 0.82).toFixed(1))),
+        Math.max(2.8, Number((radius * 1.18).toFixed(1))),
+        Math.max(3.8, Number((radius * 1.62).toFixed(1)))
       ],
       glowOpacities: [
-        Math.min(72, Math.max(18, baseOpacity)),
-        Math.min(60, Math.max(14, Math.round(baseOpacity * (0.82 * fadeRatio)))),
-        Math.min(50, Math.max(10, Math.round(baseOpacity * (0.64 * fadeRatio)))),
-        Math.min(42, Math.max(8, Math.round(baseOpacity * (0.48 * fadeRatio)))),
-        Math.min(34, Math.max(6, Math.round(baseOpacity * (0.34 * fadeRatio))))
+        Math.min(78, Math.max(20, bloomOpacityBase)),
+        Math.min(68, Math.max(16, Math.round(bloomOpacityBase * (0.86 * fadeRatio)))),
+        Math.min(56, Math.max(12, Math.round(bloomOpacityBase * (0.68 * fadeRatio)))),
+        Math.min(44, Math.max(9, Math.round(bloomOpacityBase * (0.5 * fadeRatio)))),
+        Math.min(34, Math.max(6, Math.round(bloomOpacityBase * (0.34 * fadeRatio))))
       ],
-      sourceOpacity: Math.min(54, Math.max(12, Math.round(baseOpacity * 0.65))),
-      isolationExposure: Number((-(0.05 + threshold / 100 * 0.35)).toFixed(2)),
-      isolationGamma: Number((1.02 + fade / 100 * 0.2).toFixed(2)),
-      glowExposure: Number((-(0.08 + fade / 100 * 0.1)).toFixed(2)),
-      glowGamma: Number((1.12 + fade / 100 * 0.14).toFixed(2)),
-      finalGamma: Number((1.02 + fade / 100 * 0.12).toFixed(2)),
+      sourceOpacity: clampNumber(Math.round(20 + strength * 0.28), 14, 48, 24),
+      isolationExposure: Number((-(0.04 + threshold / 100 * 0.42 + strengthRatio * 0.06)).toFixed(2)),
+      isolationGamma: Number((1.01 + fade / 100 * 0.22).toFixed(2)),
+      coreExposure: Number((-(0.01 + threshold / 100 * 0.12)).toFixed(2)),
+      coreGamma: Number((0.94 + fade / 100 * 0.08).toFixed(2)),
+      glowExposure: Number((-(0.07 + fade / 100 * 0.12)).toFixed(2)),
+      glowGamma: Number((1.08 + fade / 100 * 0.18).toFixed(2)),
+      finalGamma: Number((1.01 + fade / 100 * 0.15).toFixed(2)),
       highlightFuzziness,
       highlightLowerLimit,
       channelOutputClamp,
@@ -721,6 +730,9 @@ var PixelRunnerHostBundle = (() => {
     const originalDocument = document2;
     const sourceName = `${config.layerName} Source`;
     const baseName = `${config.layerName} Base`;
+    const detailName = `${config.layerName} Detail`;
+    const coreName = `${config.layerName} Core`;
+    const haloName = `${config.layerName} Halo`;
     const previewMaxEdge = Math.max(0, Math.floor(Number(options.previewMaxEdge) || 0));
     const sourceSize = getDocumentPixelSize(document2);
     let tempDoc = null;
@@ -750,15 +762,28 @@ var PixelRunnerHostBundle = (() => {
       await selectChannel(action, "blue");
       await applyLevelsOutput(action, 242);
       await selectChannel(action, "RGB");
+      await renameActiveLayer2(action, detailName);
+      await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
+      await selectLayerByName(action, detailName);
+      await duplicateActiveLayer(action, coreName);
+      await renameActiveLayer2(action, coreName);
+      await applyGaussianBlur(action, workingConfig.coreRadius);
+      await applyExposureIsolation(action, workingConfig.coreExposure, workingConfig.coreGamma);
+      await setActiveLayerStyle(action, workingConfig.coreOpacity, "screen");
+      await selectLayerByName(action, detailName);
+      await duplicateActiveLayer(action, haloName);
+      await renameActiveLayer2(action, haloName);
+      await applyGaussianBlur(action, workingConfig.haloRadius);
+      await applyExposureIsolation(action, workingConfig.glowExposure, Number((workingConfig.glowGamma - 0.04).toFixed(2)));
+      await setActiveLayerStyle(action, Math.max(workingConfig.coreOpacity - 8, workingConfig.detailOpacity), "screen");
       for (let index = 0; index < workingConfig.glowRadii.length; index += 1) {
-        await selectLayerByName(action, sourceName);
+        await selectLayerByName(action, detailName);
         await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
         await renameActiveLayer2(action, `${config.layerName} Glow ${index + 1}`);
         await applyGaussianBlur(action, workingConfig.glowRadii[index]);
         await applyExposureIsolation(action, workingConfig.glowExposure, workingConfig.glowGamma);
         await setActiveLayerStyle(action, workingConfig.glowOpacities[index], "screen");
       }
-      await deleteLayerByName(action, sourceName);
       await mergeVisibleLayers(action);
       await renameActiveLayer2(action, config.layerName);
       await applyExposureIsolation(action, 0, workingConfig.finalGamma);
