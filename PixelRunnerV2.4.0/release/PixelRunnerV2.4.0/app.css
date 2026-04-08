@@ -1165,6 +1165,14 @@ button {
   flex: 1 1 auto;
 }
 
+.glow-field-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: rgba(207, 221, 233, 0.78);
+}
+
 .glow-style-field .field-input {
   min-height: 36px;
 }

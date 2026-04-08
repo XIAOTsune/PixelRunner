@@ -495,10 +495,10 @@ var PixelRunnerWebviewBundle = (() => {
     };
     const GLOW_DEFAULTS = {
       style: "natural",
-      strength: 17,
-      radius: 82,
-      threshold: 3,
-      saturation: 75
+      strength: 47,
+      radius: 81,
+      threshold: 81,
+      saturation: 81
     };
     const GLOW_STYLE_LABELS = {
       natural: "自然",

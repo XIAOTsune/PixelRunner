@@ -106,11 +106,11 @@ function getStyleFade(style) {
 function getGlowConfig(payload = {}) {
   const style = normalizeGlowStyle(payload.style);
   const stylePreset = GLOW_STYLE_PRESETS[style];
-  const strength = clampNumber(payload.strength, 0, 100, 17);
-  const radius = clampNumber(payload.radius, 1, 120, 82);
-  const threshold = clampNumber(payload.threshold, 0, 100, 3);
+  const strength = clampNumber(payload.strength, 0, 100, 47);
+  const radius = clampNumber(payload.radius, 1, 120, 81);
+  const threshold = clampNumber(payload.threshold, 0, 100, 81);
   const fade = getStyleFade(style);
-  const saturation = clampNumber(payload.saturation, -100, 100, 75);
+  const saturation = clampNumber(payload.saturation, -100, 100, 81);
   const strengthRatio = strength / 100;
   const fadeRatio = 1 - fade / 140;
   const bloomOpacityBase = Math.round(18 + strength * 0.38);
