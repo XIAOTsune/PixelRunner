@@ -2,8 +2,10 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const RUN_BUTTON_COOLDOWN_MS = 1500;
   const TASK_CARD_LIMIT = 24;
+  const TASK_TRACKING_INTERVAL_MS = 15000;
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
+  const taskTrackingTimers = new Map();
 
   function setModalOpen(modalId, open) {
     const modal = modules.runtime.getById(modalId);
@@ -500,6 +502,9 @@
     if (normalized === "submitted") return "已提交";
     if (normalized === "running") return "运行中";
     if (normalized === "queued") return "排队中";
+    if (normalized === "tracking") return "追踪中";
+    if (normalized === "remote-running") return "云端运行中";
+    if (normalized === "timeout") return "等待超时";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "已完成";
     if (normalized === "failed" || normalized === "error") return "失败";
     if (normalized === "cancelled" || normalized === "canceled") return "已取消";
@@ -514,6 +519,9 @@
     if (normalized === "submitted") return "任务已创建，等待 RunningHub 执行。";
     if (normalized === "running") return "任务执行中，正在等待结果返回。";
     if (normalized === "queued") return "任务排队中，尚未开始执行。";
+    if (normalized === "tracking") return "本地等待已超时，插件正在后台追踪云端状态。";
+    if (normalized === "remote-running") return "云端仍在运行，本地已切换为后台追踪。";
+    if (normalized === "timeout") return "本地等待超时，尚未确认云端最终状态。";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "任务已完成。";
     if (normalized === "failed" || normalized === "error") return task.errorMessage || "任务执行失败。";
     if (normalized === "cancelled" || normalized === "canceled") return "任务已取消。";
@@ -856,11 +864,150 @@
     const state = modules.state.state;
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId) return;
+    stopTaskStatusTracking(normalizedTaskId);
     state.runningTasks = (Array.isArray(state.runningTasks) ? state.runningTasks : []).filter(
       (item) => String(item.taskId || "") !== normalizedTaskId
     );
     syncPrimaryRunningTask();
     updateRunButtonState();
+  }
+
+  function stopTaskStatusTracking(taskId = "") {
+    const normalizedTaskId = String(taskId || "").trim();
+    if (!normalizedTaskId) return;
+    const timerId = taskTrackingTimers.get(normalizedTaskId);
+    if (!timerId) return;
+    window.clearInterval(timerId);
+    taskTrackingTimers.delete(normalizedTaskId);
+  }
+
+  async function finalizeTrackedTaskSuccess(taskId, payload, sourceDocument, statusResult) {
+    const remoteTaskId = String(taskId || "").trim();
+    const outputUrl = String((statusResult && statusResult.outputUrl) || "").trim();
+    if (!remoteTaskId || !outputUrl) return;
+
+    stopTaskStatusTracking(remoteTaskId);
+    upsertRunningTask({
+      taskId: remoteTaskId,
+      remoteTaskId,
+      appName: payload.appName,
+      status: "succeeded",
+      detail: "后台追踪确认任务已完成，结果已返回。",
+      outputUrl,
+      sourceDocument,
+      finishedAt: Date.now()
+    });
+    setLastResult({
+      appName: payload.appName,
+      sourceDocument,
+      outputUrl,
+      taskId: remoteTaskId
+    });
+    modules.ui.logToWorkspace(`后台追踪发现任务已完成，结果地址：${outputUrl}`, "success");
+
+    try {
+      const placementResponse = await autoPlaceResult({
+        appName: payload.appName,
+        sourceDocument,
+        outputUrl,
+        taskId: remoteTaskId
+      });
+      upsertRunningTask({
+        taskId: remoteTaskId,
+        remoteTaskId,
+        appName: payload.appName,
+        status: "succeeded",
+        detail:
+          placementResponse && placementResponse.documentId
+            ? `后台追踪确认完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}。`
+            : "后台追踪确认完成，可继续查看结果。"
+      });
+    } catch (placementError) {
+      const placementMessage =
+        placementError && placementError.message
+          ? placementError.message
+          : String(placementError || "自动贴回 Photoshop 失败");
+      modules.ui.logToWorkspace(`后台追踪确认任务完成，但自动贴回失败：${placementMessage}`, "warn");
+      upsertRunningTask({
+        taskId: remoteTaskId,
+        remoteTaskId,
+        appName: payload.appName,
+        status: "succeeded",
+        detail: `后台追踪确认任务已完成，但自动贴回失败：${placementMessage}`
+      });
+    }
+  }
+
+  function startTaskStatusTracking(taskId, payload, sourceDocument) {
+    const remoteTaskId = String(taskId || "").trim();
+    if (!remoteTaskId || taskTrackingTimers.has(remoteTaskId) || !modules.runtime.isPluginRuntime()) return;
+
+    const trackOnce = async () => {
+      try {
+        const statusResult = await modules.runtime.callHost(
+          "runninghub.fetchTaskStatus",
+          [{ apiKey: payload.apiKey, taskId: remoteTaskId, timeoutMs: 30000 }],
+          { timeoutMs: 35000 }
+        );
+        const remoteStatus = String((statusResult && statusResult.status) || "").trim().toUpperCase();
+
+        if (statusResult && String(statusResult.outputUrl || "").trim()) {
+          await finalizeTrackedTaskSuccess(remoteTaskId, payload, sourceDocument, statusResult);
+          return;
+        }
+
+        if (statusResult && statusResult.failed) {
+          stopTaskStatusTracking(remoteTaskId);
+          const failMessage = String(
+            (statusResult && statusResult.message) || `RunningHub 返回失败状态 ${remoteStatus || "FAILED"}`
+          ).trim();
+          upsertRunningTask({
+            taskId: remoteTaskId,
+            remoteTaskId,
+            appName: payload.appName,
+            status: "failed",
+            detail: `后台追踪确认云端任务失败：${failMessage}`,
+            errorMessage: failMessage,
+            sourceDocument,
+            finishedAt: Date.now()
+          });
+          modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
+          return;
+        }
+
+        const nextStatus =
+          statusResult && statusResult.stillRunning
+            ? (remoteStatus === "QUEUED" || remoteStatus === "QUEUE" ? "queued" : "remote-running")
+            : "tracking";
+        const nextDetail =
+          statusResult && statusResult.stillRunning
+            ? `云端状态：${remoteStatus || "RUNNING"}，插件继续后台追踪中。`
+            : `暂未获取到终态结果${statusResult && statusResult.message ? `：${statusResult.message}` : "，插件继续后台追踪中。"}`;
+        upsertRunningTask({
+          taskId: remoteTaskId,
+          remoteTaskId,
+          appName: payload.appName,
+          status: nextStatus,
+          detail: nextDetail,
+          sourceDocument
+        });
+      } catch (error) {
+        upsertRunningTask({
+          taskId: remoteTaskId,
+          remoteTaskId,
+          appName: payload.appName,
+          status: "tracking",
+          detail: `后台追踪暂时失败：${error.message || error}，稍后会继续重试。`,
+          sourceDocument
+        });
+      }
+    };
+
+    const timerId = window.setInterval(() => {
+      void trackOnce();
+    }, TASK_TRACKING_INTERVAL_MS);
+    taskTrackingTimers.set(remoteTaskId, timerId);
+    void trackOnce();
   }
 
   function clearLastResult() {
@@ -1098,6 +1245,23 @@
         { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
       );
 
+      if (pollResult && pollResult.timedOut) {
+        const timeoutDetail = pollResult.stillRunning
+          ? `本地等待超时，但云端状态仍为 ${pollResult.status || "RUNNING"}，已切换为后台追踪。`
+          : `本地等待超时，当前状态：${pollResult.status || "未知"}。已切换为后台追踪继续确认。`;
+        upsertRunningTask({
+          taskId: remoteTaskId,
+          remoteTaskId,
+          appName: payload.appName,
+          status: pollResult.stillRunning ? "remote-running" : "tracking",
+          detail: timeoutDetail,
+          sourceDocument
+        });
+        modules.ui.logToWorkspace(timeoutDetail, "warn");
+        startTaskStatusTracking(remoteTaskId, payload, sourceDocument);
+        return;
+      }
+
       upsertRunningTask({
         taskId: remoteTaskId,
         remoteTaskId,
@@ -1148,6 +1312,7 @@
       const activeTask = latestTask || getRunningTasks().find((item) => String(item.appName || "") === String(payload.appName || "").trim() && !isTaskTerminalStatus(item.status));
       const targetTaskId = activeTask ? String(activeTask.taskId || "").trim() : tempTaskId;
       const cancelled = /cancel/i.test(normalizedMessage);
+      if (cancelled) stopTaskStatusTracking(targetTaskId);
       upsertRunningTask({
         taskId: targetTaskId,
         appName: payload.appName,

@@ -1,6 +1,7 @@
 import { createBridgeResponse, getById, registerListener, setHostStatus } from "./bridge.js";
 import {
   cancelRunningHubTask,
+  fetchRunningHubTaskStatus,
   fetchRunningHubAccountStatus,
   pollRunningHubTask,
   submitRunningHubTask
@@ -57,6 +58,9 @@ async function handleBridgeRequest(message, webviewEl) {
         break;
       case "runninghub.pollTask":
         result = await pollRunningHubTask(message.args);
+        break;
+      case "runninghub.fetchTaskStatus":
+        result = await fetchRunningHubTaskStatus(message.args);
         break;
       case "runninghub.cancelTask":
         result = await cancelRunningHubTask(message.args);

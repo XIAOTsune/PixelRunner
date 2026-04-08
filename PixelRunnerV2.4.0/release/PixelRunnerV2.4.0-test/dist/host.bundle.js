@@ -1976,6 +1976,56 @@ var PixelRunnerHostBundle = (() => {
     const text = String(message || "").trim().toLowerCase();
     return text.includes("request aborted by user") || text.includes("signal is aborted") || text.includes("operation was aborted") || text.includes("the user aborted a request") || text.includes("aborterror");
   }
+  async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
+    const timeoutMs = Math.max(5e3, Number(options.timeoutMs) || 3e4);
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => {
+      try {
+        controller.abort();
+      } catch (_) {
+      }
+    }, timeoutMs) : null;
+    try {
+      const response = await fetch("https://www.runninghub.cn/task/openapi/outputs", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ apiKey, taskId }),
+        signal: controller ? controller.signal : options.signal
+      });
+      const text = await response.text();
+      let result = null;
+      try {
+        result = text ? JSON.parse(text) : null;
+      } catch (_) {
+        result = { rawText: text };
+      }
+      return { ok: response.ok, status: response.status, result };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "") {
+    const result = snapshot && snapshot.result;
+    const payloadData = result && (result.data || result.result) || result;
+    const status = extractTaskStatus(payloadData);
+    const outputUrl = extractOutputUrl(payloadData);
+    const message = String(
+      result && (result.message || result.msg || result.error) || fallbackMessage || (snapshot && !snapshot.ok ? `Request failed (HTTP ${snapshot.status})` : "")
+    ).trim();
+    return {
+      ok: Boolean(snapshot && snapshot.ok),
+      taskId,
+      status,
+      outputUrl,
+      message,
+      stillRunning: isPendingStatus(status) || isPendingMessage(message),
+      failed: isFailedStatus(status),
+      raw: result || null
+    };
+  }
   async function submitRunningHubTask(args = []) {
     const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
     const app = payload.app && typeof payload.app === "object" ? payload.app : {};
@@ -2102,19 +2152,15 @@ var PixelRunnerHostBundle = (() => {
           throw new Error("Task polling cancelled");
         }
         try {
-          const result = await fetchJsonWithTimeout(
-            "https://www.runninghub.cn/task/openapi/outputs",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({ apiKey, taskId }),
-              signal: localController ? localController.signal : void 0
-            },
-            3e4
-          );
+          const snapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
+            signal: localController ? localController.signal : void 0,
+            timeoutMs: 3e4
+          });
+          const result = snapshot.result;
+          if (!snapshot.ok) {
+            const message = result && (result.message || result.msg || result.error) || `Request failed (HTTP ${snapshot.status})`;
+            throw new Error(String(message));
+          }
           const payloadData = result && (result.data || result.result) || result;
           const outputUrl = extractOutputUrl(payloadData);
           if (outputUrl) {
@@ -2137,10 +2183,45 @@ var PixelRunnerHostBundle = (() => {
         }
         await sleep(pollIntervalMs);
       }
-      throw new Error("Task polling timed out. Please check the RunningHub task list later.");
+      const timeoutSnapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
+        signal: localController ? localController.signal : void 0,
+        timeoutMs: 3e4
+      });
+      const timeoutStatus = buildTaskStatusResponse(taskId, timeoutSnapshot, "Task polling timed out");
+      if (timeoutStatus.outputUrl) {
+        return {
+          ok: true,
+          taskId,
+          status: "SUCCEEDED",
+          outputUrl: timeoutStatus.outputUrl,
+          result: timeoutSnapshot.result
+        };
+      }
+      return {
+        ok: false,
+        taskId,
+        timedOut: true,
+        status: timeoutStatus.status || "TIMEOUT",
+        stillRunning: timeoutStatus.stillRunning,
+        failed: timeoutStatus.failed,
+        outputUrl: "",
+        message: timeoutStatus.message || (timeoutStatus.stillRunning ? "Task polling timed out, but RunningHub still reports the task as running." : "Task polling timed out before RunningHub returned a terminal result."),
+        result: timeoutSnapshot.result || null
+      };
     } finally {
       runninghubTaskControllers.delete(taskId);
     }
+  }
+  async function fetchRunningHubTaskStatus(args = []) {
+    const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+    const apiKey = String(payload.apiKey || "").trim();
+    const taskId = String(payload.taskId || "").trim();
+    if (!apiKey) throw new Error("RunningHub API Key is missing");
+    if (!taskId) throw new Error("RunningHub taskId is missing");
+    const snapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
+      timeoutMs: Math.max(5e3, Number(payload.timeoutMs) || 3e4)
+    });
+    return buildTaskStatusResponse(taskId, snapshot);
   }
   async function cancelRunningHubTask(args = []) {
     const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
@@ -3145,6 +3226,9 @@ var PixelRunnerHostBundle = (() => {
           break;
         case "runninghub.pollTask":
           result = await pollRunningHubTask(message.args);
+          break;
+        case "runninghub.fetchTaskStatus":
+          result = await fetchRunningHubTaskStatus(message.args);
           break;
         case "runninghub.cancelTask":
           result = await cancelRunningHubTask(message.args);
