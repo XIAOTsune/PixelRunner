@@ -498,7 +498,8 @@ var PixelRunnerWebviewBundle = (() => {
       strength: 47,
       radius: 81,
       threshold: 81,
-      saturation: 81
+      saturation: 81,
+      brightnessBias: 0
     };
     const GLOW_STYLE_LABELS = {
       natural: "自然",
@@ -680,6 +681,7 @@ ${text}` : text;
       const glowRadiusInput = runtime.getById("glowRadiusInput");
       const glowThresholdInput = runtime.getById("glowThresholdInput");
       const glowSaturationInput = runtime.getById("glowSaturationInput");
+      const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
       const glowStrengthValue = runtime.getById("glowStrengthValue");
       const glowStyleBadge = runtime.getById("glowStyleBadge");
       const glowRadiusValue = runtime.getById("glowRadiusValue");
@@ -712,7 +714,8 @@ ${text}` : text;
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
         radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
-        saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100)
+        saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100),
+        brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
       });
       const setGlowButtonsDisabled = (disabled) => {
         [glowOpenButton, glowApplyButton, glowCancelButton, glowModalClose].filter(Boolean).forEach((button) => {
@@ -745,18 +748,20 @@ ${text}` : text;
           strength: state.strength,
           radius: state.radius,
           threshold: state.threshold,
-          saturation: state.saturation
+          saturation: state.saturation,
+          brightnessBias: state.brightnessBias
         }], { timeoutMs: 6e4 });
       };
       const getGlowStateSignature = () => {
         const state = readGlowState();
-        return [state.style, state.strength, state.radius, state.threshold, state.saturation].join("|");
+        return [state.style, state.strength, state.radius, state.threshold, state.saturation, state.brightnessBias].join("|");
       };
       const getGlowPreviewDelay = () => {
         const state = readGlowState();
         let delay = 220;
         if (state.radius >= 72) delay = 280;
         if (state.radius >= 92 || state.strength >= 76) delay = 340;
+        if (state.brightnessBias >= 32) delay += 20;
         if (state.style === "dreamy") delay += 20;
         return delay;
       };
@@ -864,7 +869,7 @@ ${text}` : text;
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
-      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowSaturationInput].filter(Boolean).forEach((input) => {
+      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowSaturationInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
           scheduleGlowPreviewUpdate();

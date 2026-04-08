@@ -543,6 +543,14 @@
           <span class="field-hint glow-field-hint">控制色彩浓度</span>
           <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="81" />
         </label>
+        <details class="surface-card glow-advanced-panel">
+          <summary class="glow-advanced-summary">高级参数：亮度偏置</summary>
+          <label class="field glow-slider-field glow-advanced-field">
+            <span class="field-label">亮度偏置</span>
+            <span class="field-hint glow-field-hint">轻推亮部显现与高光扩张，正值更抬高光，负值更克制</span>
+            <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
+          </label>
+        </details>
       </div>
 
       <div class="glow-control-grid glow-modal-actions">
