@@ -495,10 +495,10 @@ var PixelRunnerWebviewBundle = (() => {
     };
     const GLOW_DEFAULTS = {
       style: "natural",
-      strength: 17,
-      radius: 82,
-      threshold: 3,
-      saturation: 75
+      strength: 47,
+      radius: 81,
+      threshold: 81,
+      saturation: 81
     };
     const GLOW_STYLE_LABELS = {
       natural: "自然",
@@ -752,6 +752,14 @@ ${text}` : text;
         const state = readGlowState();
         return [state.style, state.strength, state.radius, state.threshold, state.saturation].join("|");
       };
+      const getGlowPreviewDelay = () => {
+        const state = readGlowState();
+        let delay = 220;
+        if (state.radius >= 72) delay = 280;
+        if (state.radius >= 92 || state.strength >= 76) delay = 340;
+        if (state.style === "dreamy") delay += 20;
+        return delay;
+      };
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         const nextSignature = getGlowStateSignature();
@@ -789,10 +797,11 @@ ${text}` : text;
       const scheduleGlowPreviewUpdate = () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+        const delay = getGlowPreviewDelay();
         glowPreviewTimer = window.setTimeout(() => {
           glowPreviewTimer = 0;
           void runGlowPreviewUpdate("glowPreviewUpdate");
-        }, 220);
+        }, delay);
       };
       const flushGlowPreviewUpdate = async () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;

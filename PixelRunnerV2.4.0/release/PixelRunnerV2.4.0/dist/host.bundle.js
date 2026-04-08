@@ -792,9 +792,76 @@ var PixelRunnerHostBundle = (() => {
       glowRadii: (Array.isArray(config.glowRadii) ? config.glowRadii : []).map((radius) => Math.max(0.5, roundToTenth(radius * safeScale, 0.5)))
     };
   }
-  function createPreviewGlowConfig(config) {
-    const sampledRadii = Array.isArray(config.glowRadii) ? config.glowRadii.filter((_, index, list) => index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1) : [];
-    const sampledOpacities = Array.isArray(config.glowOpacities) ? config.glowOpacities.filter((_, index, list) => index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1) : [];
+  function pickGlowPreviewSamples(values, sampleCount) {
+    const list = Array.isArray(values) ? values.filter((value) => Number.isFinite(Number(value))) : [];
+    if (!list.length) return [];
+    const safeCount = Math.max(1, Math.min(list.length, Math.floor(Number(sampleCount) || 0)));
+    if (safeCount >= list.length) return list.slice();
+    const indexes = /* @__PURE__ */ new Set();
+    for (let index = 0; index < safeCount; index += 1) {
+      const ratio = safeCount === 1 ? 0 : index / (safeCount - 1);
+      indexes.add(Math.round(ratio * (list.length - 1)));
+    }
+    return Array.from(indexes).sort((left, right) => left - right).map((index) => list[index]);
+  }
+  function getGlowPreviewProfile(config) {
+    const radius = Number(config && config.radius) || 0;
+    const strength = Number(config && config.strength) || 0;
+    const threshold = Number(config && config.threshold) || 0;
+    const style = normalizeGlowStyle(config && config.style);
+    let maxEdge = GLOW_PREVIEW_MAX_EDGE;
+    let sampleCount = 3;
+    let radiusCaps = [18, 40, 70];
+    let opacityBoost = 1.04;
+    let channelOutputClampOffset = -4;
+    let finalSaturationMin = -70;
+    let finalSaturationMax = 88;
+    let finalVibranceMin = -40;
+    let finalVibranceMax = 76;
+    if (radius >= 70) {
+      maxEdge = 1160;
+      radiusCaps = [16, 34, 58];
+      finalSaturationMax = 84;
+      finalVibranceMax = 70;
+    }
+    if (radius >= 92 || strength >= 76) {
+      maxEdge = 1080;
+      sampleCount = 2;
+      radiusCaps = [15, 28];
+      opacityBoost = 1.08;
+      channelOutputClampOffset = -6;
+      finalSaturationMax = 80;
+      finalVibranceMax = 64;
+    }
+    if (style === "dreamy") {
+      maxEdge -= 80;
+      opacityBoost += 0.02;
+      channelOutputClampOffset -= 1;
+      finalSaturationMax -= 4;
+      finalVibranceMax -= 4;
+    } else if (style === "soft") {
+      maxEdge -= 20;
+      finalSaturationMax -= 2;
+    }
+    if (threshold >= 88) {
+      opacityBoost += 0.02;
+      finalSaturationMin = -64;
+    }
+    return {
+      maxEdge: Math.max(960, Math.min(GLOW_PREVIEW_MAX_EDGE, maxEdge)),
+      sampleCount,
+      radiusCaps,
+      opacityBoost,
+      channelOutputClampOffset,
+      finalSaturationMin,
+      finalSaturationMax,
+      finalVibranceMin,
+      finalVibranceMax
+    };
+  }
+  function createPreviewGlowConfig(config, previewProfile = getGlowPreviewProfile(config)) {
+    const sampledRadii = pickGlowPreviewSamples(config.glowRadii, previewProfile.sampleCount);
+    const sampledOpacities = pickGlowPreviewSamples(config.glowOpacities, previewProfile.sampleCount);
     return {
       ...config,
       detailOpacity: clampNumber(config.detailOpacity + 2, 10, 48, config.detailOpacity),
@@ -803,26 +870,35 @@ var PixelRunnerHostBundle = (() => {
       coreRadius: clampNumber(config.coreRadius, 0.5, 18, config.coreRadius),
       haloRadius: clampNumber(config.haloRadius, 0.8, 36, config.haloRadius),
       glowRadii: (sampledRadii.length ? sampledRadii : config.glowRadii).map((radius, index) => {
-        const maxRadius = [20, 42, 72][index] || 72;
+        const maxRadius = previewProfile.radiusCaps[index] || previewProfile.radiusCaps[previewProfile.radiusCaps.length - 1] || 72;
         return clampNumber(radius, 0.5, maxRadius, radius);
       }),
       glowOpacities: sampledOpacities.map((opacity, index, list) => {
-        const boost = index === list.length - 1 ? 1.08 : 1.04;
+        const boost = index === list.length - 1 ? previewProfile.opacityBoost + 0.04 : previewProfile.opacityBoost;
         return clampNumber(Math.round(opacity * boost), 8, 84, opacity);
       }),
-      channelOutputClamp: clampNumber(config.channelOutputClamp - 4, 0, 120, config.channelOutputClamp),
-      finalSaturation: clampNumber(config.finalSaturation, -70, 90, config.finalSaturation),
-      finalVibrance: clampNumber(config.finalVibrance, -40, 80, config.finalVibrance)
+      channelOutputClamp: clampNumber(
+        config.channelOutputClamp + previewProfile.channelOutputClampOffset,
+        0,
+        120,
+        config.channelOutputClamp
+      ),
+      finalSaturation: clampNumber(
+        config.finalSaturation,
+        previewProfile.finalSaturationMin,
+        previewProfile.finalSaturationMax,
+        config.finalSaturation
+      ),
+      finalVibrance: clampNumber(
+        config.finalVibrance,
+        previewProfile.finalVibranceMin,
+        previewProfile.finalVibranceMax,
+        config.finalVibrance
+      )
     };
   }
   function getGlowPreviewMaxEdge(config) {
-    const radius = Number(config && config.radius) || 0;
-    const style = normalizeGlowStyle(config && config.style);
-    let maxEdge = GLOW_PREVIEW_MAX_EDGE;
-    if (radius >= 96) maxEdge = 1080;
-    else if (radius >= 72) maxEdge = 1180;
-    if (style === "dreamy") maxEdge -= 60;
-    return Math.max(960, Math.min(GLOW_PREVIEW_MAX_EDGE, maxEdge));
+    return getGlowPreviewProfile(config).maxEdge;
   }
   async function fitImportedLayerToDocument(app, action, layerId, targetWidth, targetHeight) {
     if (!(layerId > 0) || !(targetWidth > 0) || !(targetHeight > 0)) return;
@@ -865,7 +941,7 @@ var PixelRunnerHostBundle = (() => {
       const resizeInfo = previewMaxEdge > 0 ? await resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge) : { scale: 1, width: sourceSize.width, height: sourceSize.height };
       let workingConfig = createScaledGlowConfig(config, Number(resizeInfo.scale) || 1);
       if (previewMaxEdge > 0) {
-        workingConfig = createPreviewGlowConfig(workingConfig);
+        workingConfig = createPreviewGlowConfig(workingConfig, getGlowPreviewProfile(config));
       }
       await renameActiveLayer2(action, baseName);
       await selectHighlights(action, workingConfig);
