@@ -27,6 +27,18 @@ function getBoundsCenter(bounds) {
   };
 }
 
+function isFullDocumentBounds(bounds, docInfo) {
+  if (!bounds || !docInfo) return false;
+  const width = Math.max(1, Number(docInfo.width) || 1);
+  const height = Math.max(1, Number(docInfo.height) || 1);
+  return (
+    Math.abs(Number(bounds.left) - 0) < 0.01 &&
+    Math.abs(Number(bounds.top) - 0) < 0.01 &&
+    Math.abs(Number(bounds.right) - width) < 0.01 &&
+    Math.abs(Number(bounds.bottom) - height) < 0.01
+  );
+}
+
 function arrayBufferToBase64(buffer) {
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return "";
   const bytes = new Uint8Array(buffer);
@@ -355,12 +367,25 @@ async function alignPlacedLayerToBounds(doc, action, targetBounds, options = {})
 
   const currentSize = getBoundsSize(bounds);
   const targetSize = getBoundsSize(targetBounds);
-  const scale = options.mode === "cover"
-    ? Math.max(targetSize.width / currentSize.width, targetSize.height / currentSize.height)
-    : Math.min(targetSize.width / currentSize.width, targetSize.height / currentSize.height);
+  const scaleX = targetSize.width / currentSize.width;
+  const scaleY = targetSize.height / currentSize.height;
+  const useStretch = String(options.mode || "").trim().toLowerCase() === "stretch";
+  const uniformScale = options.mode === "cover"
+    ? Math.max(scaleX, scaleY)
+    : Math.min(scaleX, scaleY);
 
-  if (Number.isFinite(scale) && scale > 0 && Math.abs(scale - 1) > 0.001) {
-    await transformLayerScale(action, layer.id, scale * 100, scale * 100);
+  if (useStretch) {
+    if (
+      Number.isFinite(scaleX) &&
+      Number.isFinite(scaleY) &&
+      scaleX > 0 &&
+      scaleY > 0 &&
+      (Math.abs(scaleX - 1) > 0.0001 || Math.abs(scaleY - 1) > 0.0001)
+    ) {
+      await transformLayerScale(action, layer.id, scaleX * 100, scaleY * 100);
+    }
+  } else if (Number.isFinite(uniformScale) && uniformScale > 0 && Math.abs(uniformScale - 1) > 0.001) {
+    await transformLayerScale(action, layer.id, uniformScale * 100, uniformScale * 100);
   }
 
   const nextLayer = doc && doc.activeLayers && doc.activeLayers[0];
@@ -503,11 +528,14 @@ export async function placeImageFromUrl(payload) {
   const sessionToken = await fs.createSessionToken(tempFile);
   const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
   const targetBounds = normalizeBounds(options.targetBounds);
-  const placementMode = String(options.fitMode || "contain").trim().toLowerCase() === "cover" ? "cover" : "contain";
-  const applyMask = options.applyMask !== false;
+  const normalizedMode = String(options.fitMode || "contain").trim().toLowerCase();
+  const placementMode = normalizedMode === "cover" ? "cover" : normalizedMode === "stretch" ? "stretch" : "contain";
 
   await core.executeAsModal(async () => {
-    const targetDocument = await activateDocument(app, action, targetDocumentId);
+    const activeTargetDocument = await activateDocument(app, action, targetDocumentId);
+    const targetDocInfo = getDocumentInfo(activeTargetDocument || app.activeDocument);
+    const isFullBoundsTarget = isFullDocumentBounds(targetBounds, targetDocInfo);
+    const applyMask = options.applyMask !== false && !isFullBoundsTarget;
     await action.batchPlay([{
       _obj: "placeEvent",
       null: { _path: sessionToken, _kind: "local" },
@@ -520,7 +548,7 @@ export async function placeImageFromUrl(payload) {
     }], {});
 
     if (targetBounds) {
-      await alignPlacedLayerToBounds(targetDocument || app.activeDocument, action, targetBounds, {
+      await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, targetBounds, {
         mode: placementMode,
         applyMask
       });

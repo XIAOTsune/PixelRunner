@@ -191,6 +191,19 @@
     };
   }
 
+  function getDocumentCanvasBounds(docInfo) {
+    if (!docInfo || typeof docInfo !== "object") return null;
+    const width = Number(docInfo.width);
+    const height = Number(docInfo.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return {
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: height
+    };
+  }
+
   function getImageCaptureSettings() {
     const state = modules.state.state;
     const maxDimensionInput = modules.runtime.getById("imageCaptureMaxDimension");
@@ -1162,13 +1175,17 @@
 
   function buildAutoPlacementPayload(result) {
     const sourceDocument = result && result.sourceDocument && typeof result.sourceDocument === "object" ? result.sourceDocument : null;
+    const selectionBounds = sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null;
+    const documentBounds = getDocumentCanvasBounds(sourceDocument);
+    const targetBounds = selectionBounds || documentBounds || null;
+    const useFullDocumentBounds = !selectionBounds && !!documentBounds;
     return {
       url: result && result.outputUrl ? result.outputUrl : "",
       taskId: result && result.taskId ? result.taskId : "",
       targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
-      targetBounds: sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null,
-      applyMask: Boolean(sourceDocument && sourceDocument.selectionBounds),
-      fitMode: "contain",
+      targetBounds,
+      applyMask: Boolean(selectionBounds),
+      fitMode: useFullDocumentBounds ? "stretch" : "contain",
       layerName: getResultDefaultLayerName()
     };
   }
