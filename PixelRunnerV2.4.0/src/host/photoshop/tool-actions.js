@@ -548,10 +548,13 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
 
     importedLayer = await tempResultLayer.duplicate(originalDocument);
     app.activeDocument = originalDocument;
+    const importedLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
+    if (importedLayerId > 0) {
+      await selectLayerById(action, importedLayerId);
+    }
     await renameActiveLayer(action, config.layerName);
     await setActiveLayerStyle(action, 100, "screen");
     if (previewMaxEdge > 0) {
-      const importedLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
       await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
     }
   } finally {
