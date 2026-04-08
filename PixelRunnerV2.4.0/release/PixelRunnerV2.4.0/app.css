@@ -1165,10 +1165,64 @@ button {
   flex: 1 1 auto;
 }
 
+.glow-field-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: rgba(207, 221, 233, 0.78);
+}
+
+.glow-style-field .field-input {
+  min-height: 36px;
+}
+
 .glow-strength-slider {
   min-height: 30px;
   padding: 0;
   border-radius: 999px;
+}
+
+.glow-advanced-panel {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  border-color: rgba(98, 128, 152, 0.48);
+  background:
+    linear-gradient(180deg, rgba(35, 48, 62, 0.88), rgba(27, 37, 49, 0.94));
+}
+
+.glow-advanced-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 11px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(233, 241, 247, 0.92);
+}
+
+.glow-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.glow-advanced-summary::after {
+  content: "展开";
+  float: right;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(194, 208, 220, 0.72);
+}
+
+.glow-advanced-panel[open] .glow-advanced-summary {
+  border-bottom: 1px solid rgba(98, 128, 152, 0.35);
+}
+
+.glow-advanced-panel[open] .glow-advanced-summary::after {
+  content: "收起";
+}
+
+.glow-advanced-field {
+  padding: 10px 12px 12px;
 }
 
 .glow-run-btn {

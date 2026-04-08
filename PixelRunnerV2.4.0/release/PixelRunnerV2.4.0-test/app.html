@@ -135,7 +135,7 @@
             <div class="tool-glow-summary-main">
               <div class="tool-glow-header-line">
                 <h3 class="card-title">辉光</h3>
-                <span id="glowStrengthValue" class="status-chip">默认强度 17%</span>
+                <span id="glowStrengthValue" class="status-chip">自然 47%</span>
               </div>
               <p class="subtle-note">点击打开独立预览面板，实时调节高光辉光，再确认生成最终结果层。</p>
             </div>
@@ -505,34 +505,52 @@
         <div class="glow-modal-hero-copy">
           <div class="glow-modal-badges">
             <span id="glowPreviewState" class="status-chip">实时预览</span>
-            <span id="glowRadiusValue" class="status-chip">半径 82</span>
-            <span id="glowThresholdValue" class="status-chip">阈值 3%</span>
+            <span id="glowStyleBadge" class="status-chip">风格 自然</span>
+            <span id="glowRadiusValue" class="status-chip">半径 81</span>
+            <span id="glowThresholdValue" class="status-chip">阈值 81%</span>
           </div>
           <p class="subtle-note">拖动滑杆会更新同一个预览辉光层。确认时转成正式结果层，取消时会清理预览层。</p>
         </div>
       </div>
 
       <div class="glow-slider-stack">
+        <label class="field glow-slider-field glow-style-field">
+          <span class="field-label">风格</span>
+          <span class="field-hint glow-field-hint">控制整体气质</span>
+          <select id="glowStyleInput" class="field-input">
+            <option value="natural" selected>自然</option>
+            <option value="soft">柔和</option>
+            <option value="dreamy">梦幻</option>
+          </select>
+        </label>
         <label class="field glow-slider-field">
           <span class="field-label">强度</span>
-          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="17" />
+          <span class="field-hint glow-field-hint">控制亮度感</span>
+          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="47" />
         </label>
         <label class="field glow-slider-field">
           <span class="field-label">半径</span>
-          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="82" />
+          <span class="field-hint glow-field-hint">控制扩散范围</span>
+          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="81" />
         </label>
         <label class="field glow-slider-field">
           <span class="field-label">阈值</span>
-          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="3" />
-        </label>
-        <label class="field glow-slider-field">
-          <span class="field-label">淡化</span>
-          <input id="glowFadeInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="12" />
+          <span class="field-hint glow-field-hint">控制亮部筛选</span>
+          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="81" />
         </label>
         <label class="field glow-slider-field">
           <span class="field-label">饱和度</span>
-          <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="10" />
+          <span class="field-hint glow-field-hint">控制色彩浓度</span>
+          <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="81" />
         </label>
+        <details class="surface-card glow-advanced-panel">
+          <summary class="glow-advanced-summary">高级参数：亮度偏置</summary>
+          <label class="field glow-slider-field glow-advanced-field">
+            <span class="field-label">亮度偏置</span>
+            <span class="field-hint glow-field-hint">轻推亮部显现与高光扩张，正值更抬高光，负值更克制</span>
+            <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
+          </label>
+        </details>
       </div>
 
       <div class="glow-control-grid glow-modal-actions">

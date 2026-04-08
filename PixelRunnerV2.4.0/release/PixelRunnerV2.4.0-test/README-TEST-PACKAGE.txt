@@ -3,7 +3,7 @@
 Version: 2.4.0
 Folder: PixelRunnerV2.4.0-test
 
-This test package contains only the runtime files required by the Photoshop UXP plugin shell and the bundled WebView UI.
+This package contains only the runtime files required by the Photoshop UXP plugin shell and the bundled WebView UI.
 
 Included:
 - manifest.json
