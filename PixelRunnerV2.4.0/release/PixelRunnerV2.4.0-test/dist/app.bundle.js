@@ -1960,6 +1960,7 @@ ${text}` : text;
       };
       const normalizedTaskId = String(patch.taskId || "").trim();
       if (!normalizedTaskId) return null;
+      const hasOwn = (key) => Object.prototype.hasOwnProperty.call(patch, key);
       const now = Date.now();
       const nextTask = {
         taskId: normalizedTaskId,
@@ -1968,11 +1969,11 @@ ${text}` : text;
         status: String(patch.status || "running").trim() || "running",
         detail: String(patch.detail || "").trim(),
         errorMessage: String(patch.errorMessage || "").trim(),
-        charge: normalizeTaskChargeValue(patch.charge),
-        balanceCharge: normalizeTaskChargeValue(patch.balanceCharge),
-        coinsCharge: normalizeTaskChargeValue(patch.coinsCharge),
-        chargeDisplay: String(patch.chargeDisplay || "").trim(),
-        accountSnapshot: patch.accountSnapshot && typeof patch.accountSnapshot === "object" ? { ...patch.accountSnapshot } : null,
+        charge: hasOwn("charge") ? normalizeTaskChargeValue(patch.charge) : void 0,
+        balanceCharge: hasOwn("balanceCharge") ? normalizeTaskChargeValue(patch.balanceCharge) : void 0,
+        coinsCharge: hasOwn("coinsCharge") ? normalizeTaskChargeValue(patch.coinsCharge) : void 0,
+        chargeDisplay: hasOwn("chargeDisplay") ? String(patch.chargeDisplay || "").trim() : void 0,
+        accountSnapshot: hasOwn("accountSnapshot") ? patch.accountSnapshot && typeof patch.accountSnapshot === "object" ? { ...patch.accountSnapshot } : null : void 0,
         failureCode: String(patch.failureCode || "").trim(),
         failureLabel: String(patch.failureLabel || "").trim(),
         outputUrl: String(patch.outputUrl || "").trim(),
@@ -1990,6 +1991,11 @@ ${text}` : text;
         list[index] = {
           ...current,
           ...nextTask,
+          charge: nextTask.charge !== void 0 ? nextTask.charge : current.charge,
+          balanceCharge: nextTask.balanceCharge !== void 0 ? nextTask.balanceCharge : current.balanceCharge,
+          coinsCharge: nextTask.coinsCharge !== void 0 ? nextTask.coinsCharge : current.coinsCharge,
+          chargeDisplay: nextTask.chargeDisplay !== void 0 ? nextTask.chargeDisplay : current.chargeDisplay,
+          accountSnapshot: nextTask.accountSnapshot !== void 0 ? nextTask.accountSnapshot : current.accountSnapshot,
           createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
           submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
           finishedAt: Number(nextTask.finishedAt) > 0 ? Number(nextTask.finishedAt) : Number(current.finishedAt) || 0,
