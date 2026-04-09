@@ -285,6 +285,11 @@ var PixelRunnerWebviewBundle = (() => {
       templateManagerSort: "updated_desc",
       settings: { ...DEFAULT_SETTINGS },
       settingsLoaded: false,
+      accountSummary: {
+        balance: null,
+        coins: null,
+        updatedAt: 0
+      },
       hostRuntime: null,
       currentDocumentInfo: null,
       editingAppId: null,
@@ -1143,6 +1148,8 @@ ${text}` : text;
     const TASK_TRACKING_INTERVAL_MS = 15e3;
     let runButtonCooldownUntil = 0;
     let taskTickerHandle = 0;
+    let accountRefreshTimer = 0;
+    let accountSettlementChain = Promise.resolve(null);
     const taskTrackingTimers = /* @__PURE__ */ new Map();
     function setModalOpen(modalId, open) {
       const modal = modules.runtime.getById(modalId);
@@ -1594,6 +1601,101 @@ ${text}` : text;
       if (normalized === "cancelled" || normalized === "canceled") return "任务已取消。";
       return "";
     }
+    function normalizeTaskChargeValue(value) {
+      if (value == null) return null;
+      if (typeof value === "number") return Number.isFinite(value) ? Math.abs(Number(value.toFixed(2))) : null;
+      const text = String(value).trim();
+      if (!text) return null;
+      const matched = text.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+      if (!matched) return null;
+      const parsed = Number(matched[0]);
+      return Number.isFinite(parsed) ? Math.abs(Number(parsed.toFixed(2))) : null;
+    }
+    function formatTaskChargeDisplay(task) {
+      if (!task || typeof task !== "object") return "";
+      const explicit = String(task.chargeDisplay || "").trim();
+      if (explicit) return explicit;
+      const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
+      const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
+      const parts = [];
+      if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(2)}R`);
+      if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(2)}RH`);
+      return parts.join(" · ");
+    }
+    function getCurrentAccountSnapshot() {
+      const accountSummary = modules.state.state.accountSummary || {};
+      return {
+        balance: Number.isFinite(Number(accountSummary.balance)) ? Number(accountSummary.balance) : null,
+        coins: Number.isFinite(Number(accountSummary.coins)) ? Number(accountSummary.coins) : null,
+        updatedAt: Number(accountSummary.updatedAt) || 0
+      };
+    }
+    function buildTaskChargePatchFromAccounts(beforeAccount, afterAccount) {
+      const beforeBalance = Number(beforeAccount && beforeAccount.balance);
+      const afterBalance = Number(afterAccount && afterAccount.balance);
+      const beforeCoins = Number(beforeAccount && beforeAccount.coins);
+      const afterCoins = Number(afterAccount && afterAccount.coins);
+      const balanceCharge = Number.isFinite(beforeBalance) && Number.isFinite(afterBalance) && beforeBalance > afterBalance ? Number((beforeBalance - afterBalance).toFixed(2)) : null;
+      const coinsCharge = Number.isFinite(beforeCoins) && Number.isFinite(afterCoins) && beforeCoins > afterCoins ? Number((beforeCoins - afterCoins).toFixed(2)) : null;
+      if (balanceCharge === null && coinsCharge === null) return null;
+      return {
+        charge: balanceCharge,
+        balanceCharge,
+        coinsCharge,
+        chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+      };
+    }
+    async function refreshAccountAndPatchTaskCharge(taskId) {
+      const normalizedTaskId = String(taskId || "").trim();
+      if (!normalizedTaskId || !modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return null;
+      accountSettlementChain = accountSettlementChain.catch(() => null).then(async () => {
+        const beforeAccount = getCurrentAccountSnapshot();
+        const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
+        const chargePatch = buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot());
+        if (chargePatch) {
+          upsertRunningTask({
+            taskId: normalizedTaskId,
+            ...chargePatch
+          });
+        }
+        return chargePatch;
+      });
+      return accountSettlementChain;
+    }
+    function inferTaskFailureCode(task) {
+      if (!task || typeof task !== "object") return "";
+      const explicit = String(task.failureCode || "").trim().toLowerCase();
+      if (explicit) return explicit;
+      const status = String(task.status || "").trim().toLowerCase();
+      const text = `${task.failureLabel || ""} ${task.errorMessage || ""} ${task.detail || ""}`.toLowerCase();
+      if (status === "timeout" || /timeout|超时/.test(text)) return "timeout";
+      if (status === "cancelled" || status === "canceled" || /cancel|取消/.test(text)) return "cancelled";
+      if (/欠费|余额不足|insufficient|not enough balance|lack of balance|recharge|quota/.test(text)) return "insufficient_balance";
+      if (/违规|violation|forbidden|policy|safety|sensitive|blocked|ban/.test(text)) return "violation";
+      if (status === "failed" || status === "error") return "failed";
+      return "";
+    }
+    function getTaskFailureLabel(task) {
+      if (!task || typeof task !== "object") return "";
+      const explicit = String(task.failureLabel || "").trim();
+      if (explicit) return explicit;
+      const code = inferTaskFailureCode(task);
+      if (code === "timeout") return "超时";
+      if (code === "cancelled") return "已取消";
+      if (code === "insufficient_balance") return "欠费";
+      if (code === "violation") return "违规";
+      if (code === "failed") return "失败";
+      return "";
+    }
+    function scheduleAccountSummaryRefresh(delayMs = 1200) {
+      if (!modules.runtime.isPluginRuntime()) return;
+      if (!modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return;
+      if (accountRefreshTimer) window.clearTimeout(accountRefreshTimer);
+      accountRefreshTimer = window.setTimeout(() => {
+        accountRefreshTimer = 0;
+        void modules.settings.refreshAccountSummary({ quiet: true, force: true });
+      }, Math.max(0, Number(delayMs) || 0));
+    }
     function sortRunningTasks(tasks) {
       return tasks.slice().sort((left, right) => {
         const leftActive = isTaskTerminalStatus(left.status) ? 1 : 0;
@@ -1625,6 +1727,9 @@ ${text}` : text;
         const statusTone = getTaskStatusTone(task.status || "running");
         const durationLabel = `${isTaskTerminalStatus(task.status) ? "耗时" : "已运行"} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
+        const chargeDisplay = formatTaskChargeDisplay(task);
+        const failureLabel = getTaskFailureLabel(task);
+        const detailPrefix = failureLabel && ["failed", "error", "cancelled", "canceled", "timeout"].includes(String(task.status || "").trim().toLowerCase()) ? `失败原因：${failureLabel}${detail ? " · " : ""}` : "";
         const canCancel = isTaskCancellable(task);
         const canDelete = isTaskDeletable(task);
         return `
@@ -1637,8 +1742,8 @@ ${text}` : text;
                   ${canCancel ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">取消</button>` : canDelete ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="delete-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">删除</button>` : ""}
                 </div>
               </div>
-              <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · ${modules.runtime.escapeHtml(durationLabel)}</div>
-              <div class="running-task-detail">${detail}</div>
+              <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · ${modules.runtime.escapeHtml(durationLabel)}${chargeDisplay ? ` · ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
+              <div class="running-task-detail">${modules.runtime.escapeHtml(detailPrefix)}${detail}</div>
             </div>
           </div>
         `;
@@ -1757,6 +1862,41 @@ ${text}` : text;
       }
       updateRunButtonState();
     }
+    function cloneWorkspaceFormValue(value) {
+      if (value == null) return value;
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+      if (hasImageAsset(value)) return cloneCaptureAsset(value);
+      if (Array.isArray(value)) return value.map(cloneWorkspaceFormValue);
+      if (value && typeof value === "object") {
+        const out = {};
+        Object.keys(value).forEach((key) => {
+          out[key] = cloneWorkspaceFormValue(value[key]);
+        });
+        return out;
+      }
+      return value;
+    }
+    function captureWorkspaceFormSnapshot() {
+      const state = modules.state.state;
+      collectFormValuesFromDom();
+      return {
+        appId: String(state.currentApp && state.currentApp.id || ""),
+        formValues: cloneWorkspaceFormValue(state.formValues || {})
+      };
+    }
+    function restoreWorkspaceFormSnapshot(snapshot) {
+      const state = modules.state.state;
+      const currentAppId = String(state.currentApp && state.currentApp.id || "");
+      if (!snapshot || typeof snapshot !== "object" || !snapshot.formValues || currentAppId !== String(snapshot.appId || "")) {
+        return false;
+      }
+      state.formValues = {
+        ...modules.state.buildDefaultFormValues(state.currentApp),
+        ...cloneWorkspaceFormValue(snapshot.formValues)
+      };
+      renderWorkspace();
+      return true;
+    }
     function collectFormValuesFromDom() {
       const state = modules.state.state;
       const container = modules.runtime.getById("dynamicInputContainer");
@@ -1828,6 +1968,13 @@ ${text}` : text;
         status: String(patch.status || "running").trim() || "running",
         detail: String(patch.detail || "").trim(),
         errorMessage: String(patch.errorMessage || "").trim(),
+        charge: normalizeTaskChargeValue(patch.charge),
+        balanceCharge: normalizeTaskChargeValue(patch.balanceCharge),
+        coinsCharge: normalizeTaskChargeValue(patch.coinsCharge),
+        chargeDisplay: String(patch.chargeDisplay || "").trim(),
+        accountSnapshot: patch.accountSnapshot && typeof patch.accountSnapshot === "object" ? { ...patch.accountSnapshot } : null,
+        failureCode: String(patch.failureCode || "").trim(),
+        failureLabel: String(patch.failureLabel || "").trim(),
         outputUrl: String(patch.outputUrl || "").trim(),
         sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
         createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
@@ -1908,10 +2055,19 @@ ${text}` : text;
         appName: payload.appName,
         status: "succeeded",
         detail: "后台追踪确认任务已完成，结果已返回。",
+        charge: statusResult && statusResult.charge,
+        balanceCharge: statusResult && statusResult.balanceCharge,
+        coinsCharge: statusResult && statusResult.coinsCharge,
+        chargeDisplay: statusResult && statusResult.chargeDisplay,
         outputUrl,
         sourceDocument,
         finishedAt: Date.now()
       });
+      if (statusResult && (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null)) {
+        scheduleAccountSummaryRefresh();
+      } else {
+        await refreshAccountAndPatchTaskCharge(remoteTaskId);
+      }
       setLastResult({
         appName: payload.appName,
         sourceDocument,
@@ -1972,9 +2128,23 @@ ${text}` : text;
               status: "failed",
               detail: `后台追踪确认云端任务失败：${failMessage}`,
               errorMessage: failMessage,
+              charge: statusResult && statusResult.charge,
+              balanceCharge: statusResult && statusResult.balanceCharge,
+              coinsCharge: statusResult && statusResult.coinsCharge,
+              chargeDisplay: statusResult && statusResult.chargeDisplay,
+              failureLabel: getTaskFailureLabel({
+                status: "failed",
+                errorMessage: failMessage,
+                detail: failMessage
+              }),
               sourceDocument,
               finishedAt: Date.now()
             });
+            if (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null) {
+              scheduleAccountSummaryRefresh();
+            } else {
+              await refreshAccountAndPatchTaskCharge(remoteTaskId);
+            }
             modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
             return;
           }
@@ -2182,6 +2352,7 @@ ${text}` : text;
         appName: payload.appName,
         status: "submitting",
         detail: "正在提交到 RunningHub...",
+        accountSnapshot: getCurrentAccountSnapshot(),
         sourceDocument,
         createdAt: Date.now(),
         submittedAt: Date.now()
@@ -2205,6 +2376,7 @@ ${text}` : text;
           sourceDocument,
           submittedAt: Date.now()
         });
+        scheduleAccountSummaryRefresh(600);
         const pollResult = await modules.runtime.callHost(
           "runninghub.pollTask",
           [{ apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
@@ -2224,16 +2396,55 @@ ${text}` : text;
           startTaskStatusTracking(remoteTaskId, payload, sourceDocument);
           return;
         }
+        if (pollResult && pollResult.failed) {
+          const failedMessage = String(pollResult.message || "任务执行失败").trim();
+          const failureLabel = getTaskFailureLabel({
+            status: pollResult.status || "failed",
+            errorMessage: failedMessage,
+            detail: failedMessage
+          });
+          upsertRunningTask({
+            taskId: remoteTaskId,
+            remoteTaskId,
+            appName: payload.appName,
+            status: "failed",
+            detail: failedMessage,
+            errorMessage: failedMessage,
+            charge: pollResult.charge,
+            balanceCharge: pollResult.balanceCharge,
+            coinsCharge: pollResult.coinsCharge,
+            chargeDisplay: pollResult.chargeDisplay,
+            failureLabel,
+            sourceDocument,
+            finishedAt: Date.now()
+          });
+          if (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null) {
+            scheduleAccountSummaryRefresh();
+          } else {
+            await refreshAccountAndPatchTaskCharge(remoteTaskId);
+          }
+          modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
+          return;
+        }
         upsertRunningTask({
           taskId: remoteTaskId,
           remoteTaskId,
           appName: payload.appName,
           status: "succeeded",
           detail: "任务已完成，结果已返回。",
+          charge: pollResult && pollResult.charge,
+          balanceCharge: pollResult && pollResult.balanceCharge,
+          coinsCharge: pollResult && pollResult.coinsCharge,
+          chargeDisplay: pollResult && pollResult.chargeDisplay,
           outputUrl: String(pollResult.outputUrl || "").trim(),
           sourceDocument,
           finishedAt: Date.now()
         });
+        if (pollResult && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
+          scheduleAccountSummaryRefresh();
+        } else {
+          await refreshAccountAndPatchTaskCharge(remoteTaskId);
+        }
         setLastResult({
           appName: payload.appName,
           sourceDocument,
@@ -2268,6 +2479,11 @@ ${text}` : text;
         const activeTask = latestTask || getRunningTasks().find((item) => String(item.appName || "") === String(payload.appName || "").trim() && !isTaskTerminalStatus(item.status));
         const targetTaskId = activeTask ? String(activeTask.taskId || "").trim() : tempTaskId;
         const cancelled = /cancel/i.test(normalizedMessage);
+        const failureLabel = getTaskFailureLabel({
+          status: cancelled ? "cancelled" : "failed",
+          errorMessage: normalizedMessage,
+          detail: normalizedMessage
+        });
         if (cancelled) stopTaskStatusTracking(targetTaskId);
         upsertRunningTask({
           taskId: targetTaskId,
@@ -2275,9 +2491,11 @@ ${text}` : text;
           status: cancelled ? "cancelled" : "failed",
           detail: cancelled ? "任务已取消。" : normalizedMessage,
           errorMessage: cancelled ? "" : normalizedMessage,
+          failureLabel,
           sourceDocument,
           finishedAt: Date.now()
         });
+        scheduleAccountSummaryRefresh();
         modules.ui.logToWorkspace(normalizedMessage, cancelled ? "warn" : "error");
       }
     }
@@ -2391,8 +2609,10 @@ ${text}` : text;
               appName: currentTask && currentTask.appName ? currentTask.appName : "",
               status: "cancelled",
               detail: "任务已取消。",
+              failureLabel: "已取消",
               finishedAt: Date.now()
             });
+            scheduleAccountSummaryRefresh();
             modules.ui.logToWorkspace(`任务已取消：${remoteTaskId}`, "warn");
           } catch (error) {
             modules.ui.logToWorkspace(`取消任务失败：${error.message}`, "error");
@@ -2414,6 +2634,8 @@ ${text}` : text;
       updateRunButtonState,
       renderWorkspace,
       buildRunPayload,
+      captureWorkspaceFormSnapshot,
+      restoreWorkspaceFormSnapshot,
       bindWorkspaceActions,
       refreshPhotoshopDocumentStatus
     };
@@ -2627,6 +2849,32 @@ ${text}` : text;
       renderAppPickerList();
       if (!options.quiet) modules.ui.logToWorkspace(`应用列表已刷新，共 ${modules.state.state.apps.length} 个应用。`);
     }
+    async function refreshCurrentWorkspaceApp(options = {}) {
+      const state = modules.state.state;
+      const currentApp = state.currentApp;
+      if (!currentApp) {
+        await refreshWorkspaceApps(options);
+        return false;
+      }
+      const snapshot = modules.workspace && typeof modules.workspace.captureWorkspaceFormSnapshot === "function" ? modules.workspace.captureWorkspaceFormSnapshot() : null;
+      const alternateApp = state.apps.find((item) => String(item.id || "") !== String(currentApp.id || ""));
+      if (alternateApp) {
+        await setCurrentAppById(alternateApp.id, { quiet: true });
+      } else {
+        state.currentApp = null;
+        state.formValues = {};
+        modules.workspace.renderWorkspace();
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await setCurrentAppById(currentApp.id, { quiet: true });
+      if (snapshot && modules.workspace && typeof modules.workspace.restoreWorkspaceFormSnapshot === "function") {
+        modules.workspace.restoreWorkspaceFormSnapshot(snapshot);
+      }
+      if (!options.quiet) {
+        modules.ui.logToWorkspace(`已重新切换当前应用：${modules.state.getAppDisplayName(currentApp)}，已保留当前参数与提示词。`, "info");
+      }
+      return true;
+    }
     function bindAppPicker() {
       const runtime = modules.runtime;
       const state = modules.state.state;
@@ -2645,7 +2893,8 @@ ${text}` : text;
       }
       if (refreshButton) {
         refreshButton.addEventListener("click", async () => {
-          await refreshWorkspaceApps();
+          await refreshCurrentWorkspaceApp();
+          modules.ui.logToWorkspace("已执行工作台应用刷新：通过切换后切回当前应用来避开同任务缓存。", "info");
           modules.settings.renderSettingsDiagnostics("应用列表已从宿主本地存储刷新。", {
             runtime: state.hostRuntime,
             hasApiKey: Boolean(state.settings.apiKey)
@@ -2827,6 +3076,7 @@ ${text}` : text;
       deleteAppById,
       importAppsFromTextarea,
       exportAppsToTextarea,
+      refreshCurrentWorkspaceApp,
       isAppEditorDirty,
       confirmDiscardAppEditorChanges,
       markAppEditorPristine
@@ -3426,6 +3676,7 @@ ${incomingContent}` : incomingContent;
   // src/webview/settings.js
   (function initSettingsModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    let accountRefreshPromise = null;
     function renderSettingsStatus(message, type = "info") {
       modules.runtime.setSummaryStatus(modules.runtime.getById("settingsStatusSummary"), message, type);
     }
@@ -3449,6 +3700,48 @@ ${incomingContent}` : incomingContent;
       balanceEl.textContent = hasAccount && account.balance != null ? String(account.balance) : "--";
       coinsEl.textContent = hasAccount && account.coins != null ? String(account.coins) : "--";
       summaryEl.classList.toggle("is-empty", !hasAccount);
+      modules.state.state.accountSummary = {
+        balance: hasAccount && account.balance != null ? Number(account.balance) : null,
+        coins: hasAccount && account.coins != null ? Number(account.coins) : null,
+        updatedAt: Date.now()
+      };
+    }
+    function setApiKeyVisibility(visible) {
+      const input = modules.runtime.getById("settingsApiKeyInput");
+      const toggleButton = modules.runtime.getById("btnResetSettings");
+      const nextVisible = Boolean(visible);
+      if (input) {
+        input.type = nextVisible ? "text" : "password";
+      }
+      if (toggleButton) {
+        toggleButton.dataset.visible = nextVisible ? "true" : "false";
+        toggleButton.setAttribute("aria-pressed", nextVisible ? "true" : "false");
+        toggleButton.setAttribute("aria-label", nextVisible ? "隐藏 API Key" : "显示 API Key");
+        toggleButton.setAttribute("title", nextVisible ? "隐藏 API Key" : "显示 API Key");
+      }
+    }
+    async function refreshAccountSummary(options = {}) {
+      const apiKey = String((options.apiKey != null ? options.apiKey : modules.state.state.settings.apiKey) || "").trim();
+      if (!apiKey || !modules.runtime.isPluginRuntime()) {
+        updateAccountSummary(null);
+        return null;
+      }
+      if (!options.force && accountRefreshPromise) {
+        return accountRefreshPromise;
+      }
+      accountRefreshPromise = modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey }], { timeoutMs: 15e3 }).then((account) => {
+        updateAccountSummary(account);
+        return account;
+      }).catch((error) => {
+        if (!options.quiet && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+          modules.ui.logToWorkspace(`余额刷新失败：${error.message || error}`, "warn");
+        }
+        updateAccountSummary(null);
+        return null;
+      }).finally(() => {
+        accountRefreshPromise = null;
+      });
+      return accountRefreshPromise;
     }
     function formatParseDebug(debugRecord) {
       if (!debugRecord || typeof debugRecord !== "object") return "暂无解析调试记录。";
@@ -3544,20 +3837,13 @@ ${incomingContent}` : incomingContent;
       modules.state.state.settings = snapshot;
       modules.state.state.settingsLoaded = true;
       fillSettingsForm(snapshot);
+      setApiKeyVisibility(false);
       renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
       renderSettingsDiagnostics("当前设置快照已读取完成。", {
         runtime: modules.state.state.hostRuntime,
         hasApiKey: Boolean(snapshot.apiKey)
       });
-      if (snapshot.apiKey && modules.runtime.isPluginRuntime()) {
-        try {
-          updateAccountSummary(await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: snapshot.apiKey }]));
-        } catch (_) {
-          updateAccountSummary(null);
-        }
-      } else {
-        updateAccountSummary(null);
-      }
+      await refreshAccountSummary({ apiKey: snapshot.apiKey, quiet: true });
     }
     function bindAppManagerControls() {
       const runtime = modules.runtime;
@@ -3611,13 +3897,7 @@ ${incomingContent}` : incomingContent;
           renderSettingsStatus("正在保存设置...", "info");
           try {
             await saveSettingsSnapshot(readSettingsForm());
-            if (modules.state.state.settings.apiKey && modules.runtime.isPluginRuntime()) {
-              updateAccountSummary(
-                await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: modules.state.state.settings.apiKey }])
-              );
-            } else {
-              updateAccountSummary(null);
-            }
+            await refreshAccountSummary({ quiet: true, force: true });
           } catch (error) {
             renderSettingsStatus(`设置保存失败：${error.message}`, "error");
             renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", {
@@ -3631,8 +3911,11 @@ ${incomingContent}` : incomingContent;
         });
       }
       if (resetButton) {
+        setApiKeyVisibility(false);
         resetButton.addEventListener("click", () => {
-          fillSettingsForm(modules.state.state.settingsLoaded ? modules.state.state.settings : modules.state.DEFAULT_SETTINGS);
+          const input = runtime.getById("settingsApiKeyInput");
+          const visible = input ? input.type !== "password" : false;
+          setApiKeyVisibility(!visible);
           renderSettingsStatus("表单已恢复为当前已加载设置。", "info");
         });
       }
@@ -3747,6 +4030,8 @@ ${incomingContent}` : incomingContent;
     modules.settings = {
       renderSettingsStatus,
       renderSettingsDiagnostics,
+      updateAccountSummary,
+      refreshAccountSummary,
       loadParseDebug,
       initializeSettings,
       bindSettingsActions

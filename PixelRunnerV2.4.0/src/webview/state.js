@@ -29,6 +29,11 @@
     templateManagerSort: "updated_desc",
     settings: { ...DEFAULT_SETTINGS },
     settingsLoaded: false,
+    accountSummary: {
+      balance: null,
+      coins: null,
+      updatedAt: 0
+    },
     hostRuntime: null,
     currentDocumentInfo: null,
     editingAppId: null,

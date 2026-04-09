@@ -480,6 +480,120 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
+function collectCandidateValues(payload, predicate, results = [], seen = new Set(), depth = 0) {
+  if (!payload || depth > 6) return results;
+  if (typeof payload !== "object") return results;
+  if (seen.has(payload)) return results;
+  seen.add(payload);
+
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => collectCandidateValues(item, predicate, results, seen, depth + 1));
+    return results;
+  }
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (predicate(key, value, payload)) {
+      results.push(value);
+    }
+    if (value && typeof value === "object") {
+      collectCandidateValues(value, predicate, results, seen, depth + 1);
+    }
+  });
+
+  return results;
+}
+
+function parseChargeValue(value) {
+  if (value == null) return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  const matched = text.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+  if (!matched) return null;
+  const parsed = Number(matched[0]);
+  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
+}
+
+function extractTaskChargeByKeys(payload, keys = []) {
+  const candidates = collectCandidateValues(
+    payload,
+    (key) => {
+      const normalized = String(key || "").trim().toLowerCase();
+      return keys.includes(normalized);
+    }
+  );
+
+  for (const candidate of candidates) {
+    const parsed = parseChargeValue(candidate);
+    if (parsed !== null) return Math.abs(parsed);
+  }
+  return null;
+}
+
+function extractTaskBalanceCharge(payload) {
+  return extractTaskChargeByKeys(payload, [
+    "consume",
+    "consumefee",
+    "consumemoney",
+    "deduct",
+    "deductfee",
+    "deductmoney",
+    "usedmoney",
+    "spentmoney",
+    "billingamount",
+    "taskcost",
+    "moneycost",
+    "feecost",
+    "cost",
+    "fee",
+    "charge"
+  ]);
+}
+
+function extractTaskCoinsCharge(payload) {
+  return extractTaskChargeByKeys(payload, [
+    "consumecoins",
+    "deductcoins",
+    "usedcoins",
+    "spentcoins",
+    "coinscost",
+    "coincost",
+    "coincharge",
+    "rhcoinscost",
+    "rhcoincost",
+    "rhcoincharge",
+    "consumerhcoins",
+    "deductrhcoins",
+    "usedrhcoins",
+    "spentrhcoins",
+    "integralcost",
+    "integralcharge"
+  ]);
+}
+
+function formatBalanceChargeDisplay(charge) {
+  const parsed = parseChargeValue(charge);
+  if (parsed === null) return "";
+  return `-${parsed.toFixed(2)}R`;
+}
+
+function formatCoinsChargeDisplay(charge) {
+  const parsed = parseChargeValue(charge);
+  if (parsed === null) return "";
+  return Number.isInteger(parsed) ? `-${parsed}RH` : `-${parsed.toFixed(2)}RH`;
+}
+
+function formatTaskChargeDisplay(balanceCharge, coinsCharge) {
+  const parts = [];
+  const balanceText = formatBalanceChargeDisplay(balanceCharge);
+  const coinsText = formatCoinsChargeDisplay(coinsCharge);
+  if (balanceText) parts.push(balanceText);
+  if (coinsText) parts.push(coinsText);
+  return parts.join(" · ");
+}
+
 function extractOutputUrl(payload) {
   if (!payload) return "";
   if (typeof payload === "string") {
@@ -593,6 +707,8 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "") {
   const payloadData = (result && (result.data || result.result)) || result;
   const status = extractTaskStatus(payloadData);
   const outputUrl = extractOutputUrl(payloadData);
+  const balanceCharge = extractTaskBalanceCharge(payloadData || result);
+  const coinsCharge = extractTaskCoinsCharge(payloadData || result);
   const message = String(
     (result && (result.message || result.msg || result.error)) ||
     fallbackMessage ||
@@ -604,6 +720,10 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "") {
     taskId,
     status,
     outputUrl,
+    charge: balanceCharge,
+    balanceCharge,
+    coinsCharge,
+    chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge),
     message,
     stillRunning: isPendingStatus(status) || isPendingMessage(message),
     failed: isFailedStatus(status),
@@ -771,12 +891,35 @@ export async function pollRunningHubTask(args = []) {
         const payloadData = (result && (result.data || result.result)) || result;
         const outputUrl = extractOutputUrl(payloadData);
         if (outputUrl) {
-          return { ok: true, taskId, status: "SUCCEEDED", outputUrl, result };
+          const balanceCharge = extractTaskBalanceCharge(payloadData || result);
+          const coinsCharge = extractTaskCoinsCharge(payloadData || result);
+          return {
+            ok: true,
+            taskId,
+            status: "SUCCEEDED",
+            outputUrl,
+            charge: balanceCharge,
+            balanceCharge,
+            coinsCharge,
+            chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge),
+            result
+          };
         }
 
         const status = extractTaskStatus(payloadData);
         if (isFailedStatus(status)) {
-          throw new Error((result && (result.message || result.msg)) || `Task failed (${status})`);
+          const failedStatus = buildTaskStatusResponse(taskId, snapshot, `Task failed (${status})`);
+          return {
+            ok: false,
+            taskId,
+            failed: true,
+            status: failedStatus.status || status || "FAILED",
+            outputUrl: "",
+            charge: failedStatus.charge,
+            chargeDisplay: failedStatus.chargeDisplay,
+            message: failedStatus.message || `Task failed (${status})`,
+            result
+          };
         }
 
         if (!isPendingStatus(status) && !isPendingMessage(result && (result.message || result.msg))) {

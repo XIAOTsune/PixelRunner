@@ -205,6 +205,38 @@ button {
     filter 170ms ease;
 }
 
+.api-visibility-btn {
+  min-width: 42px;
+  padding-inline: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.api-visibility-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+.api-visibility-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.api-visibility-btn[data-visible="true"] .eye-off-line {
+  display: none;
+}
+
+.api-visibility-btn[data-visible="false"] .eye-pupil {
+  opacity: 0.55;
+}
+
 .ghost-btn::before,
 .mini-btn::before,
 .secondary-btn::before,

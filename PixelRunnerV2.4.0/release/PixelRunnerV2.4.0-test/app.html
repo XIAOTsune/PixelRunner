@@ -254,7 +254,15 @@
                 <input id="settingsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
               </label>
               <div class="action-row">
-                <button id="btnResetSettings" class="secondary-btn" type="button">重置</button>
+                <button id="btnResetSettings" class="secondary-btn api-visibility-btn" type="button" aria-label="显示 API Key" title="显示 API Key" aria-pressed="false">
+                  <span class="api-visibility-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path class="eye-outline" d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6Z"></path>
+                      <circle class="eye-pupil" cx="12" cy="12" r="3.2"></circle>
+                      <path class="eye-off-line" d="M4.5 4.5 19.5 19.5"></path>
+                    </svg>
+                  </span>
+                </button>
                 <button id="btnSaveSettings" class="primary-btn" type="button">保存设置</button>
               </div>
               <div id="settingsStatusSummary" class="summary-strip">设置尚未加载</div>

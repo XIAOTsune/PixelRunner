@@ -1,5 +1,6 @@
 (function initSettingsModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
+  let accountRefreshPromise = null;
 
   function renderSettingsStatus(message, type = "info") {
     modules.runtime.setSummaryStatus(modules.runtime.getById("settingsStatusSummary"), message, type);
@@ -33,6 +34,57 @@
     balanceEl.textContent = hasAccount && account.balance != null ? String(account.balance) : "--";
     coinsEl.textContent = hasAccount && account.coins != null ? String(account.coins) : "--";
     summaryEl.classList.toggle("is-empty", !hasAccount);
+    modules.state.state.accountSummary = {
+      balance: hasAccount && account.balance != null ? Number(account.balance) : null,
+      coins: hasAccount && account.coins != null ? Number(account.coins) : null,
+      updatedAt: Date.now()
+    };
+  }
+
+  function setApiKeyVisibility(visible) {
+    const input = modules.runtime.getById("settingsApiKeyInput");
+    const toggleButton = modules.runtime.getById("btnResetSettings");
+    const nextVisible = Boolean(visible);
+    if (input) {
+      input.type = nextVisible ? "text" : "password";
+    }
+    if (toggleButton) {
+      toggleButton.dataset.visible = nextVisible ? "true" : "false";
+      toggleButton.setAttribute("aria-pressed", nextVisible ? "true" : "false");
+      toggleButton.setAttribute("aria-label", nextVisible ? "隐藏 API Key" : "显示 API Key");
+      toggleButton.setAttribute("title", nextVisible ? "隐藏 API Key" : "显示 API Key");
+    }
+  }
+
+  async function refreshAccountSummary(options = {}) {
+    const apiKey = String((options.apiKey != null ? options.apiKey : modules.state.state.settings.apiKey) || "").trim();
+    if (!apiKey || !modules.runtime.isPluginRuntime()) {
+      updateAccountSummary(null);
+      return null;
+    }
+
+    if (!options.force && accountRefreshPromise) {
+      return accountRefreshPromise;
+    }
+
+    accountRefreshPromise = modules.runtime
+      .callHost("runninghub.fetchAccountStatus", [{ apiKey }], { timeoutMs: 15000 })
+      .then((account) => {
+        updateAccountSummary(account);
+        return account;
+      })
+      .catch((error) => {
+        if (!options.quiet && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+          modules.ui.logToWorkspace(`余额刷新失败：${error.message || error}`, "warn");
+        }
+        updateAccountSummary(null);
+        return null;
+      })
+      .finally(() => {
+        accountRefreshPromise = null;
+      });
+
+    return accountRefreshPromise;
   }
 
   function formatParseDebug(debugRecord) {
@@ -137,21 +189,14 @@
     modules.state.state.settings = snapshot;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(snapshot);
+    setApiKeyVisibility(false);
     renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
     renderSettingsDiagnostics("当前设置快照已读取完成。", {
       runtime: modules.state.state.hostRuntime,
       hasApiKey: Boolean(snapshot.apiKey)
     });
 
-    if (snapshot.apiKey && modules.runtime.isPluginRuntime()) {
-      try {
-        updateAccountSummary(await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: snapshot.apiKey }]));
-      } catch (_) {
-        updateAccountSummary(null);
-      }
-    } else {
-      updateAccountSummary(null);
-    }
+    await refreshAccountSummary({ apiKey: snapshot.apiKey, quiet: true });
   }
 
   function bindAppManagerControls() {
@@ -213,13 +258,7 @@
         renderSettingsStatus("正在保存设置...", "info");
         try {
           await saveSettingsSnapshot(readSettingsForm());
-          if (modules.state.state.settings.apiKey && modules.runtime.isPluginRuntime()) {
-            updateAccountSummary(
-              await modules.runtime.callHost("runninghub.fetchAccountStatus", [{ apiKey: modules.state.state.settings.apiKey }])
-            );
-          } else {
-            updateAccountSummary(null);
-          }
+          await refreshAccountSummary({ quiet: true, force: true });
         } catch (error) {
           renderSettingsStatus(`设置保存失败：${error.message}`, "error");
           renderSettingsDiagnostics("保存设置时发生错误，请检查宿主桥接与当前环境。", {
@@ -234,8 +273,11 @@
     }
 
     if (resetButton) {
+      setApiKeyVisibility(false);
       resetButton.addEventListener("click", () => {
-        fillSettingsForm(modules.state.state.settingsLoaded ? modules.state.state.settings : modules.state.DEFAULT_SETTINGS);
+        const input = runtime.getById("settingsApiKeyInput");
+        const visible = input ? input.type !== "password" : false;
+        setApiKeyVisibility(!visible);
         renderSettingsStatus("表单已恢复为当前已加载设置。", "info");
       });
     }
@@ -363,6 +405,8 @@
   modules.settings = {
     renderSettingsStatus,
     renderSettingsDiagnostics,
+    updateAccountSummary,
+    refreshAccountSummary,
     loadParseDebug,
     initializeSettings,
     bindSettingsActions
