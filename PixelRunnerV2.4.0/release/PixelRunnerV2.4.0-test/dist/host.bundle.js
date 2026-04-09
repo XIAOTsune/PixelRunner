@@ -2213,14 +2213,14 @@ var PixelRunnerHostBundle = (() => {
   function parseChargeValue(value) {
     if (value == null) return null;
     if (typeof value === "number") {
-      return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+      return Number.isFinite(value) ? Number(value.toFixed(3)) : null;
     }
     const text = String(value).trim();
     if (!text) return null;
     const matched = text.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
     if (!matched) return null;
     const parsed = Number(matched[0]);
-    return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
+    return Number.isFinite(parsed) ? Number(parsed.toFixed(3)) : null;
   }
   function extractTaskChargeByKeys(payload, keys = []) {
     const candidates = collectCandidateValues(
@@ -2278,12 +2278,12 @@ var PixelRunnerHostBundle = (() => {
   function formatBalanceChargeDisplay(charge) {
     const parsed = parseChargeValue(charge);
     if (parsed === null) return "";
-    return `-${parsed.toFixed(2)}R`;
+    return `-${parsed.toFixed(3)}R`;
   }
   function formatCoinsChargeDisplay(charge) {
     const parsed = parseChargeValue(charge);
     if (parsed === null) return "";
-    return Number.isInteger(parsed) ? `-${parsed}RH` : `-${parsed.toFixed(2)}RH`;
+    return Number.isInteger(parsed) ? `-${parsed}RH` : `-${parsed.toFixed(3)}RH`;
   }
   function formatTaskChargeDisplay(balanceCharge, coinsCharge) {
     const parts = [];

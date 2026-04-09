@@ -548,13 +548,13 @@
 
   function normalizeTaskChargeValue(value) {
     if (value == null) return null;
-    if (typeof value === "number") return Number.isFinite(value) ? Math.abs(Number(value.toFixed(2))) : null;
+    if (typeof value === "number") return Number.isFinite(value) ? Math.abs(Number(value.toFixed(3))) : null;
     const text = String(value).trim();
     if (!text) return null;
     const matched = text.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
     if (!matched) return null;
     const parsed = Number(matched[0]);
-    return Number.isFinite(parsed) ? Math.abs(Number(parsed.toFixed(2))) : null;
+    return Number.isFinite(parsed) ? Math.abs(Number(parsed.toFixed(3))) : null;
   }
 
   function formatTaskChargeDisplay(task) {
@@ -564,8 +564,8 @@
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
     const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
     const parts = [];
-    if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(2)}R`);
-    if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(2)}RH`);
+    if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(3)}R`);
+    if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
     return parts.join(" · ");
   }
 
@@ -585,11 +585,11 @@
     const afterCoins = Number(afterAccount && afterAccount.coins);
     const balanceCharge =
       Number.isFinite(beforeBalance) && Number.isFinite(afterBalance) && beforeBalance > afterBalance
-        ? Number((beforeBalance - afterBalance).toFixed(2))
+        ? Number((beforeBalance - afterBalance).toFixed(3))
         : null;
     const coinsCharge =
       Number.isFinite(beforeCoins) && Number.isFinite(afterCoins) && beforeCoins > afterCoins
-        ? Number((beforeCoins - afterCoins).toFixed(2))
+        ? Number((beforeCoins - afterCoins).toFixed(3))
         : null;
 
     if (balanceCharge === null && coinsCharge === null) return null;
@@ -1079,6 +1079,7 @@
     const remoteTaskId = String(taskId || "").trim();
     const outputUrl = String((statusResult && statusResult.outputUrl) || "").trim();
     if (!remoteTaskId || !outputUrl) return;
+    const completedAt = Date.now();
 
     stopTaskStatusTracking(remoteTaskId);
     upsertRunningTask({
@@ -1093,7 +1094,7 @@
       chargeDisplay: statusResult && statusResult.chargeDisplay,
       outputUrl,
       sourceDocument,
-      finishedAt: Date.now()
+      finishedAt: completedAt
     });
     if (statusResult && (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null)) {
       scheduleAccountSummaryRefresh();
@@ -1171,6 +1172,7 @@
 
         if (statusResult && statusResult.failed) {
           stopTaskStatusTracking(remoteTaskId);
+          const finishedAt = Date.now();
           const failMessage = String(
             (statusResult && statusResult.message) || `RunningHub 返回失败状态 ${remoteStatus || "FAILED"}`
           ).trim();
@@ -1191,7 +1193,7 @@
               detail: failMessage
             }),
             sourceDocument,
-            finishedAt: Date.now()
+            finishedAt
           });
           if (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null) {
             scheduleAccountSummaryRefresh();
@@ -1591,6 +1593,7 @@
       }
 
       if (pollResult && pollResult.failed) {
+        const finishedAt = Date.now();
         const failedMessage = String(pollResult.message || "任务执行失败").trim();
         const failureLabel = getTaskFailureLabel({
           status: pollResult.status || "failed",
@@ -1610,7 +1613,7 @@
           chargeDisplay: pollResult.chargeDisplay,
           failureLabel,
           sourceDocument,
-          finishedAt: Date.now()
+          finishedAt
         });
         if (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null) {
           scheduleAccountSummaryRefresh();
@@ -1621,6 +1624,7 @@
         return;
       }
 
+      const completedAt = Date.now();
       upsertRunningTask({
         taskId: remoteTaskId,
         remoteTaskId,
@@ -1633,7 +1637,7 @@
         chargeDisplay: pollResult && pollResult.chargeDisplay,
         outputUrl: String(pollResult.outputUrl || "").trim(),
         sourceDocument,
-        finishedAt: Date.now()
+        finishedAt: completedAt
       });
       if (pollResult && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
         scheduleAccountSummaryRefresh();
