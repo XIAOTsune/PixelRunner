@@ -7,7 +7,10 @@
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
   let accountSettlementChain = Promise.resolve(null);
+  let autoPlacementRetryTimer = 0;
+  let autoPlacementProcessing = false;
   const taskTrackingTimers = new Map();
+  const pendingAutoPlacements = new Map();
 
   function setModalOpen(modalId, open) {
     const modal = modules.runtime.getById(modalId);
@@ -1105,17 +1108,27 @@
     });
     modules.ui.logToWorkspace(`后台追踪发现任务已完成，结果地址：${outputUrl}`, "success");
 
-    try {
-      const placementResponse = await autoPlaceResult({
-        appName: payload.appName,
-        sourceDocument,
-        outputUrl,
-        taskId: remoteTaskId
-      });
-      upsertRunningTask({
-        taskId: remoteTaskId,
-        remoteTaskId,
-        appName: payload.appName,
+      try {
+        const placementResponse = await autoPlaceResult({
+          appName: payload.appName,
+          sourceDocument,
+          outputUrl,
+          taskId: remoteTaskId
+        });
+        if (placementResponse && placementResponse.queued) {
+          upsertRunningTask({
+            taskId: remoteTaskId,
+            remoteTaskId,
+            appName: payload.appName,
+            status: "succeeded",
+            detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
+          });
+          return;
+        }
+        upsertRunningTask({
+          taskId: remoteTaskId,
+          remoteTaskId,
+          appName: payload.appName,
         status: "succeeded",
         detail:
           placementResponse && placementResponse.documentId
@@ -1391,6 +1404,87 @@
     };
   }
 
+  function isAutoPlacementBlockedError(error) {
+    const message = String((error && error.message) || error || "").toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes("modal") ||
+      message.includes("executeasmodal") ||
+      message.includes("host is in a modal state") ||
+      message.includes("photoshop is busy") ||
+      message.includes("another modal") ||
+      message.includes("command is currently unavailable") ||
+      message.includes("the object is currently in use")
+    );
+  }
+
+  function schedulePendingAutoPlacementRetry(delayMs = 4000) {
+    if (autoPlacementRetryTimer || pendingAutoPlacements.size === 0) return;
+    autoPlacementRetryTimer = window.setTimeout(() => {
+      autoPlacementRetryTimer = 0;
+      void flushPendingAutoPlacements();
+    }, Math.max(1000, Number(delayMs) || 4000));
+  }
+
+  function queueAutoPlacement(result) {
+    if (!result || !result.outputUrl) return null;
+    const taskId = String(result.taskId || "").trim() || `placement-${Date.now()}`;
+    pendingAutoPlacements.set(taskId, {
+      ...result,
+      taskId,
+      queuedAt: Date.now(),
+      attempts: Number((pendingAutoPlacements.get(taskId) && pendingAutoPlacements.get(taskId).attempts) || 0)
+    });
+    schedulePendingAutoPlacementRetry();
+    return pendingAutoPlacements.get(taskId);
+  }
+
+  async function flushPendingAutoPlacements() {
+    if (autoPlacementProcessing || pendingAutoPlacements.size === 0 || !modules.runtime.isPluginRuntime()) return;
+    autoPlacementProcessing = true;
+    try {
+      for (const [taskId, queued] of Array.from(pendingAutoPlacements.entries())) {
+        try {
+          const placementPayload = buildAutoPlacementPayload(queued);
+          const response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+          pendingAutoPlacements.delete(taskId);
+          modules.state.state.lastResult.placedAt = Date.now();
+          if (response && response.document) modules.state.state.currentDocumentInfo = response.document;
+          upsertRunningTask({
+            taskId,
+            remoteTaskId: taskId,
+            detail:
+              response && response.documentId
+                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}。`
+                : "任务已完成，并已在 Photoshop 空闲后自动贴回。"
+          });
+          modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
+        } catch (error) {
+          if (isAutoPlacementBlockedError(error)) {
+            pendingAutoPlacements.set(taskId, {
+              ...queued,
+              attempts: Number(queued.attempts || 0) + 1
+            });
+            continue;
+          }
+          pendingAutoPlacements.delete(taskId);
+          const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 失败");
+          upsertRunningTask({
+            taskId,
+            remoteTaskId: taskId,
+            detail: `任务已完成，但自动贴回失败：${message}`
+          });
+          modules.ui.logToWorkspace(`返图重试失败：${message}`, "warn");
+        }
+      }
+    } finally {
+      autoPlacementProcessing = false;
+      if (pendingAutoPlacements.size > 0) {
+        schedulePendingAutoPlacementRetry(4000);
+      }
+    }
+  }
+
   async function autoPlaceResult(result) {
     if (!result || !result.outputUrl) throw new Error("当前没有可自动贴回 Photoshop 的结果");
     if (!modules.runtime.isPluginRuntime()) {
@@ -1399,7 +1493,21 @@
     }
     await refreshPhotoshopDocumentStatus({ quiet: true });
     const placementPayload = buildAutoPlacementPayload(result);
-    const response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+    let response = null;
+    try {
+      response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+    } catch (error) {
+      if (isAutoPlacementBlockedError(error)) {
+        queueAutoPlacement(result);
+        return {
+          ok: false,
+          queued: true,
+          blocked: true,
+          message: "Photoshop 当前正在执行液化或其他模态操作，返图已暂停，待可执行时会自动继续。"
+        };
+      }
+      throw error;
+    }
     modules.state.state.lastResult.placedAt = Date.now();
     if (response && response.document) modules.state.state.currentDocumentInfo = response.document;
     const sourceDocument = result.sourceDocument;
@@ -1547,6 +1655,16 @@
           outputUrl: pollResult.outputUrl,
           taskId: remoteTaskId
         });
+        if (placementResponse && placementResponse.queued) {
+          upsertRunningTask({
+            taskId: remoteTaskId,
+            remoteTaskId,
+            appName: payload.appName,
+            status: "succeeded",
+            detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
+          });
+          return;
+        }
       } catch (placementError) {
         const placementMessage =
           placementError && placementError.message
