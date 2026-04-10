@@ -521,14 +521,16 @@
           </div>
           <div class="action-row ai-optimize-modal-actions ai-optimize-run-actions">
             <button id="btnStartAiOptimize" class="primary-btn" type="button">开始优化</button>
-            <button id="btnAiOptimizeAppend" class="secondary-btn" type="button" disabled>追加到当前</button>
-            <button id="btnAiOptimizeReplace" class="secondary-btn" type="button" disabled>替换当前</button>
           </div>
           <div id="aiOptimizeTaskCard"></div>
           <div id="aiOptimizeStatus" class="summary-strip">点击“开始优化”后，这里会显示 AI 返回的优化提示词。</div>
 
           <div class="ai-optimize-block-head">
             <h4 class="card-title">优化结果</h4>
+            <div class="inline-actions ai-optimize-result-actions">
+              <button id="btnAiOptimizeAppend" class="secondary-btn" type="button" disabled>追加到当前</button>
+              <button id="btnAiOptimizeReplace" class="secondary-btn" type="button" disabled>替换当前</button>
+            </div>
           </div>
           <label class="field">
             <span class="field-label">结果文本</span>

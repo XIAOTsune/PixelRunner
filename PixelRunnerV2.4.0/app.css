@@ -1993,13 +1993,13 @@ button {
 .ai-optimize-modal-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
-  gap: 12px;
+  gap: 10px;
 }
 
 .ai-optimize-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -2052,7 +2052,7 @@ button {
 
 .ai-optimize-image-picker {
   min-height: 0;
-  max-height: 138px;
+  max-height: 112px;
 }
 
 .ai-optimize-field-hint {
@@ -2064,7 +2064,7 @@ button {
 }
 
 .ai-optimize-result-input {
-  min-height: 320px;
+  min-height: 248px;
 }
 
 .ai-optimize-modal-actions {
@@ -2072,12 +2072,47 @@ button {
 }
 
 .ai-optimize-run-actions {
-  gap: 8px;
+  gap: 0;
   flex-wrap: nowrap;
 }
 
 .ai-optimize-task-item {
-  min-height: 92px;
+  min-height: 74px;
+}
+
+.ai-optimize-task-item .running-task-item {
+  padding: 8px 10px;
+}
+
+.ai-optimize-task-item .running-task-main {
+  gap: 2px;
+}
+
+.ai-optimize-task-item .running-task-detail {
+  line-height: 1.35;
+}
+
+.ai-optimize-result-actions {
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ai-optimize-result-actions .secondary-btn {
+  flex: 0 0 auto;
+  min-width: 112px;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+#btnStartAiOptimize {
+  flex: 0 0 auto;
+  min-width: 164px;
+}
+
+#aiOptimizeStatus {
+  min-height: 30px;
+  padding: 6px 10px;
 }
 
 .ai-optimize-modal-card::-webkit-scrollbar,
@@ -2529,12 +2564,23 @@ button {
     align-items: stretch;
   }
 
+  .ai-optimize-result-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .ai-optimize-result-actions .secondary-btn,
+  #btnStartAiOptimize {
+    width: 100%;
+    min-width: 0;
+  }
+
   .ai-optimize-result-input {
-    min-height: 240px;
+    min-height: 210px;
   }
 
   .ai-optimize-image-picker {
-    max-height: 120px;
+    max-height: 100px;
   }
 
   .hero-card {
