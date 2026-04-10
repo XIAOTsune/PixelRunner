@@ -3,6 +3,7 @@
   const RUN_BUTTON_COOLDOWN_MS = 1500;
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
+  const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -10,6 +11,7 @@
   let autoPlacementRetryTimer = 0;
   let autoPlacementProcessing = false;
   const taskTrackingTimers = new Map();
+  const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
 
   function setModalOpen(modalId, open) {
@@ -649,6 +651,34 @@
     return "";
   }
 
+  function isPermanentTrackingErrorMessage(message) {
+    const text = String(message || "").trim().toLowerCase();
+    if (!text) return false;
+    return (
+      text.includes("api key") ||
+      text.includes("apikey") ||
+      text.includes("unauthorized") ||
+      text.includes("forbidden") ||
+      text.includes("access denied") ||
+      text.includes("invalid token") ||
+      text.includes("token is invalid") ||
+      text.includes("taskid is missing") ||
+      text.includes("task id is missing") ||
+      text.includes("task not found") ||
+      text.includes("not found") ||
+      text.includes("does not exist") ||
+      text.includes("unknown task") ||
+      text.includes("unknown bridge method")
+    );
+  }
+
+  function shouldStopTrackingFromStatusResult(statusResult) {
+    if (!statusResult || typeof statusResult !== "object") return false;
+    if (String(statusResult.outputUrl || "").trim()) return false;
+    if (statusResult.stillRunning || statusResult.failed) return false;
+    return statusResult.ok === false;
+  }
+
   function scheduleAccountSummaryRefresh(delayMs = 1200) {
     if (!modules.runtime.isPluginRuntime()) return;
     if (!modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return;
@@ -1070,9 +1100,11 @@
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId) return;
     const timerId = taskTrackingTimers.get(normalizedTaskId);
-    if (!timerId) return;
-    window.clearInterval(timerId);
-    taskTrackingTimers.delete(normalizedTaskId);
+    if (timerId) {
+      window.clearInterval(timerId);
+      taskTrackingTimers.delete(normalizedTaskId);
+    }
+    taskTrackingFailureCounts.delete(normalizedTaskId);
   }
 
   async function finalizeTrackedTaskSuccess(taskId, payload, sourceDocument, statusResult) {
@@ -1155,6 +1187,7 @@
   function startTaskStatusTracking(taskId, payload, sourceDocument) {
     const remoteTaskId = String(taskId || "").trim();
     if (!remoteTaskId || taskTrackingTimers.has(remoteTaskId) || !modules.runtime.isPluginRuntime()) return;
+    taskTrackingFailureCounts.set(remoteTaskId, 0);
 
     const trackOnce = async () => {
       try {
@@ -1167,6 +1200,31 @@
 
         if (statusResult && String(statusResult.outputUrl || "").trim()) {
           await finalizeTrackedTaskSuccess(remoteTaskId, payload, sourceDocument, statusResult);
+          return;
+        }
+
+        if (shouldStopTrackingFromStatusResult(statusResult)) {
+          stopTaskStatusTracking(remoteTaskId);
+          const finishedAt = Date.now();
+          const failMessage = String(
+            (statusResult && statusResult.message) || "后台追踪已停止：RunningHub 未返回可继续追踪的有效状态。"
+          ).trim();
+          upsertRunningTask({
+            taskId: remoteTaskId,
+            remoteTaskId,
+            appName: payload.appName,
+            status: "failed",
+            detail: `后台追踪已停止：${failMessage}`,
+            errorMessage: failMessage,
+            failureLabel: getTaskFailureLabel({
+              status: "failed",
+              errorMessage: failMessage,
+              detail: failMessage
+            }),
+            sourceDocument,
+            finishedAt
+          });
+          modules.ui.logToWorkspace(`后台追踪已停止：${failMessage}`, "error");
           return;
         }
 
@@ -1204,6 +1262,8 @@
           return;
         }
 
+        taskTrackingFailureCounts.set(remoteTaskId, 0);
+
         const nextStatus =
           statusResult && statusResult.stillRunning
             ? (remoteStatus === "QUEUED" || remoteStatus === "QUEUE" ? "queued" : "remote-running")
@@ -1221,12 +1281,40 @@
           sourceDocument
         });
       } catch (error) {
+        const message = String(error && error.message ? error.message : error || "后台追踪失败").trim();
+        const nextFailureCount = Number(taskTrackingFailureCounts.get(remoteTaskId) || 0) + 1;
+        taskTrackingFailureCounts.set(remoteTaskId, nextFailureCount);
+
+        if (isPermanentTrackingErrorMessage(message) || nextFailureCount >= TASK_TRACKING_MAX_TEMP_FAILURES) {
+          stopTaskStatusTracking(remoteTaskId);
+          const finalMessage = isPermanentTrackingErrorMessage(message)
+            ? message
+            : `${message}（已连续失败 ${nextFailureCount} 次，停止自动重试）`;
+          upsertRunningTask({
+            taskId: remoteTaskId,
+            remoteTaskId,
+            appName: payload.appName,
+            status: "failed",
+            detail: `后台追踪已停止：${finalMessage}`,
+            errorMessage: finalMessage,
+            failureLabel: getTaskFailureLabel({
+              status: "failed",
+              errorMessage: finalMessage,
+              detail: finalMessage
+            }),
+            sourceDocument,
+            finishedAt: Date.now()
+          });
+          modules.ui.logToWorkspace(`后台追踪已停止：${finalMessage}`, "error");
+          return;
+        }
+
         upsertRunningTask({
           taskId: remoteTaskId,
           remoteTaskId,
           appName: payload.appName,
           status: "tracking",
-          detail: `后台追踪暂时失败：${error.message || error}，稍后会继续重试。`,
+          detail: `后台追踪暂时失败：${message}，稍后会继续重试（${nextFailureCount}/${TASK_TRACKING_MAX_TEMP_FAILURES}）。`,
           sourceDocument
         });
       }
