@@ -5246,7 +5246,7 @@ ${incomingContent}` : incomingContent;
       }
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.4.0"
+        version: "2.4.1"
       });
     }).catch((error) => {
       modules.settings.renderSettingsStatus(`初始化失败：${error.message}`, "error");
