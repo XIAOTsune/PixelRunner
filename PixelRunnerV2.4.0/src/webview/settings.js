@@ -118,6 +118,11 @@
         settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks
       );
     }
+    if (modules.runtime.getById("settingsAiOptimizeAppIdInput")) {
+      modules.runtime.getById("settingsAiOptimizeAppIdInput").value = String(
+        settings.aiOptimizeAppId ?? modules.state.DEFAULT_AI_OPTIMIZE_APP_ID
+      );
+    }
   }
 
   function readSettingsForm() {
@@ -125,7 +130,8 @@
       apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
-      maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value
+      maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
+      aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || ""
     });
   }
 
@@ -136,7 +142,8 @@
       apiKey,
       pollInterval: rawSettings && rawSettings.pollInterval,
       timeout: rawSettings && rawSettings.timeout,
-      maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks
+      maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
+      aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId
     });
   }
 
@@ -148,7 +155,8 @@
       JSON.stringify({
         pollInterval: normalized.pollInterval,
         timeout: normalized.timeout,
-        maxConcurrentTasks: normalized.maxConcurrentTasks
+        maxConcurrentTasks: normalized.maxConcurrentTasks,
+        aiOptimizeAppId: normalized.aiOptimizeAppId
       })
     );
 
@@ -221,13 +229,20 @@
     const runtime = modules.runtime;
     const saveButton = runtime.getById("btnSaveSettings");
     const resetButton = runtime.getById("btnResetSettings");
+    const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const parseAppButton = runtime.getById("btnParseApp");
     const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
     const deleteEditingAppButton = runtime.getById("btnDeleteEditingApp");
     const saveTemplateButton = runtime.getById("btnSaveTemplate");
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
-    const fieldIds = ["settingsApiKeyInput", "settingsPollIntervalInput", "settingsTimeoutInput", "settingsMaxConcurrentTasksInput"];
+    const fieldIds = [
+      "settingsApiKeyInput",
+      "settingsPollIntervalInput",
+      "settingsTimeoutInput",
+      "settingsMaxConcurrentTasksInput",
+      "settingsAiOptimizeAppIdInput"
+    ];
 
     bindAppManagerControls();
 
@@ -279,6 +294,14 @@
         const visible = input ? input.type !== "password" : false;
         setApiKeyVisibility(!visible);
         renderSettingsStatus("表单已恢复为当前已加载设置。", "info");
+      });
+    }
+
+    if (resetAiOptimizeButton) {
+      resetAiOptimizeButton.addEventListener("click", () => {
+        const input = runtime.getById("settingsAiOptimizeAppIdInput");
+        if (input) input.value = modules.state.DEFAULT_AI_OPTIMIZE_APP_ID;
+        renderSettingsStatus("AI 优化应用 ID 已恢复为内置默认值，记得保存设置。", "pending");
       });
     }
 

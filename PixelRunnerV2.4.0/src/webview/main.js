@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   modules.ui.bindToolActions();
   modules.apps.bindAppPicker();
   modules.workspace.bindWorkspaceActions();
+  modules.aiOptimize.bindModalEvents();
   modules.ui.bindPlaceholderActions();
   modules.templates.bindTemplateActions();
   modules.settings.bindSettingsActions();

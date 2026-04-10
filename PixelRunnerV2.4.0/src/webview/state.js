@@ -11,11 +11,14 @@
     SOUND_ENABLED: "pixelrunner.sound_enabled"
   };
 
+  const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
+
   const DEFAULT_SETTINGS = {
     apiKey: "",
     pollInterval: 2,
     timeout: 180,
-    maxConcurrentTasks: 3
+    maxConcurrentTasks: 3,
+    aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID
   };
 
   const state = {
@@ -87,7 +90,8 @@
       apiKey: String(source.apiKey || "").trim(),
       pollInterval,
       timeout,
-      maxConcurrentTasks
+      maxConcurrentTasks,
+      aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID
     };
   }
 
@@ -251,6 +255,7 @@
 
   modules.state = {
     STORAGE_KEYS,
+    DEFAULT_AI_OPTIMIZE_APP_ID,
     DEFAULT_SETTINGS,
     state,
     normalizeSettings,

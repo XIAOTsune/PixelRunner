@@ -3,6 +3,7 @@ import "./webview/state.js";
 import "./webview/ui.js";
 import "./webview/sound.js";
 import "./webview/workspace.js";
+import "./webview/ai-optimize.js";
 import "./webview/apps.js";
 import "./webview/templates.js";
 import "./webview/settings.js";

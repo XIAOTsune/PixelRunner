@@ -120,6 +120,14 @@
     return modules.state.isPromptLikeInput(input) && !isImageInput(input);
   }
 
+  function isPrimaryPromptField(input) {
+    if (!isPromptField(input) || !modules.aiOptimize || typeof modules.aiOptimize.getPrimaryPromptInput !== "function") {
+      return false;
+    }
+    const primaryPrompt = modules.aiOptimize.getPrimaryPromptInput(modules.state.state.currentApp);
+    return Boolean(primaryPrompt && String(primaryPrompt.key || "") === String((input && input.key) || ""));
+  }
+
   function hasImageAsset(asset) {
     return Boolean(
       asset &&
@@ -828,11 +836,29 @@
 
     if (input.type === "textarea" || input.type === "multiline" || isPromptField(input)) {
       const currentValue = String(value ?? "");
+      const showAiOptimizeButton = isPrimaryPromptField(input);
+      const aiOptimizeAvailability =
+        showAiOptimizeButton && modules.aiOptimize && typeof modules.aiOptimize.getAvailability === "function"
+          ? modules.aiOptimize.getAvailability(key)
+          : { available: false, reason: "" };
       return `
         <label class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
           <span class="field-label">
             <span>${label}${requiredMark}</span>
-            ${isPromptField(input) ? `<button class="mini-btn template-trigger-btn" type="button" data-action="open-template-picker" data-form-key="${escapedKey}">预设</button>` : ""}
+            ${
+              isPromptField(input)
+                ? `
+                  <span class="prompt-action-group">
+                    <button class="mini-btn template-trigger-btn" type="button" data-action="open-template-picker" data-form-key="${escapedKey}">预设</button>
+                    ${
+                      showAiOptimizeButton
+                        ? `<button class="mini-btn ai-optimize-trigger-btn" type="button" data-action="open-ai-optimize" data-form-key="${escapedKey}" ${aiOptimizeAvailability.available ? "" : "disabled"} title="${runtime.escapeHtml(aiOptimizeAvailability.available ? "基于当前图片和主 prompt 生成优化建议" : aiOptimizeAvailability.reason || "当前不可用")}">AI优化</button>`
+                        : ""
+                    }
+                  </span>
+                `
+                : ""
+            }
           </span>
           <textarea class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
           ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
@@ -1853,6 +1879,12 @@
 
         if (action === "open-template-picker") {
           modules.templates.openTemplatePicker({ mode: "multiple", maxSelection: 5, targetKey: key });
+          return;
+        }
+
+        if (action === "open-ai-optimize") {
+          event.preventDefault();
+          modules.aiOptimize.openModal(key);
           return;
         }
 

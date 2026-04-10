@@ -382,6 +382,13 @@
                   <input id="settingsMaxConcurrentTasksInput" class="field-input" type="number" min="1" max="100" placeholder="1-100" />
                 </label>
               </div>
+              <label class="field">
+                <span class="field-label">AI 优化应用 ID</span>
+                <input id="settingsAiOptimizeAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub AI优化应用 ID" />
+              </label>
+              <div class="action-row">
+                <button id="btnResetAiOptimizeAppId" class="secondary-btn" type="button">恢复默认</button>
+              </div>
             </div>
           </details>
 
@@ -462,6 +469,73 @@
 
       <div class="action-row">
         <button id="btnApplyTemplateSelection" class="primary-btn" type="button">应用模板</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="aiOptimizeModal" class="overlay-modal">
+    <div id="aiOptimizeBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card ai-optimize-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工作台辅助工具</p>
+          <h3 class="card-title">AI优化提示词</h3>
+        </div>
+        <button id="aiOptimizeModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div id="aiOptimizeGuide" class="summary-strip ai-optimize-guide">请先在当前应用中导入图片并填写主提示词，然后再使用 AI优化。</div>
+
+      <div class="ai-optimize-modal-grid">
+        <section class="ai-optimize-block">
+          <div class="ai-optimize-block-head">
+            <h4 class="card-title">当前内容</h4>
+          </div>
+          <div class="ai-optimize-image-card">
+            <img id="aiOptimizeImagePreview" class="ai-optimize-image-preview" alt="当前图片预览" hidden />
+            <div id="aiOptimizeImageMeta" class="summary-strip">未检测到可用图片输入</div>
+          </div>
+          <div class="ai-optimize-image-picker-wrap">
+            <div class="ai-optimize-block-head ai-optimize-subhead">
+              <h5 class="card-title">参考图片</h5>
+              <div id="aiOptimizeImageMode" class="inline-actions ai-optimize-image-mode"></div>
+            </div>
+            <div id="aiOptimizeImageModeHint" class="summary-strip">当前会使用你选中的这张图作为 AI优化参考图。</div>
+            <div id="aiOptimizeImagePicker" class="picker-list ai-optimize-image-picker"></div>
+          </div>
+          <label class="field">
+            <span class="field-label">原始提示词</span>
+            <span class="field-hint ai-optimize-field-hint">这里会自动带入当前应用主 prompt。运行前可以微调，但不会自动覆盖原字段。</span>
+            <textarea id="aiOptimizePromptInput" class="field-input field-textarea" rows="5" placeholder="这里会自动带入当前主 prompt"></textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">附加优化要求</span>
+            <span class="field-hint ai-optimize-field-hint">这里用于补充你希望 AI 重点优化的方向，例如保留主体、强化光影、控制风格等。</span>
+            <textarea id="aiOptimizeExtraInput" class="field-input field-textarea" rows="3" placeholder="例如：保留主体姿态，强化 3D 效果，减少背景杂乱"></textarea>
+          </label>
+        </section>
+
+        <section class="ai-optimize-block">
+          <div class="ai-optimize-block-head">
+            <h4 class="card-title">运行状态</h4>
+          </div>
+          <div class="action-row ai-optimize-modal-actions ai-optimize-run-actions">
+            <button id="btnStartAiOptimize" class="primary-btn" type="button">开始优化</button>
+            <button id="btnAiOptimizeAppend" class="secondary-btn" type="button" disabled>追加到当前</button>
+            <button id="btnAiOptimizeReplace" class="secondary-btn" type="button" disabled>替换当前</button>
+          </div>
+          <div id="aiOptimizeTaskCard"></div>
+          <div id="aiOptimizeStatus" class="summary-strip">点击“开始优化”后，这里会显示 AI 返回的优化提示词。</div>
+
+          <div class="ai-optimize-block-head">
+            <h4 class="card-title">优化结果</h4>
+          </div>
+          <label class="field">
+            <span class="field-label">结果文本</span>
+            <span class="field-hint ai-optimize-field-hint">这里显示 RunningHub 返回的 `.txt` 内容。确认没问题后，再手动选择“替换当前”或“追加到当前”。</span>
+            <textarea id="aiOptimizeResultInput" class="field-input field-textarea ai-optimize-result-input" rows="10" placeholder="点击“开始优化”后，这里会显示 AI 返回的优化提示词。"></textarea>
+          </label>
+        </section>
       </div>
     </section>
   </div>

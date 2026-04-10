@@ -4,6 +4,7 @@ import {
   fetchRunningHubTaskStatus,
   fetchRunningHubAccountStatus,
   pollRunningHubTask,
+  runAiOptimizeTask,
   submitRunningHubTask
 } from "./runninghub.js";
 import { parseRunningHubApp } from "./runninghub-parser.js";
@@ -67,6 +68,9 @@ async function handleBridgeRequest(message, webviewEl) {
         break;
       case "runninghub.fetchAccountStatus":
         result = await fetchRunningHubAccountStatus(message.args);
+        break;
+      case "runninghub.runAiOptimize":
+        result = await runAiOptimizeTask(message.args);
         break;
       case "runninghub.parseApp":
         result = await parseRunningHubApp(message.args);

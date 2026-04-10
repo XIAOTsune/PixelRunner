@@ -1,3 +1,5 @@
+import { parseRunningHubApp } from "./runninghub-parser.js";
+
 const runninghubTaskControllers = new Map();
 const blankImageTokenCache = new Map();
 const BLANK_IMAGE_PNG_BASE64 =
@@ -629,6 +631,183 @@ function extractOutputUrl(payload) {
   return "";
 }
 
+function looksLikeTxtUrl(value) {
+  const text = String(value || "").trim();
+  if (!/^https?:\/\//i.test(text)) return false;
+  return /\.txt(?:[?#]|$)/i.test(text);
+}
+
+function looksLikeTxtName(value) {
+  return /\.txt$/i.test(String(value || "").trim());
+}
+
+function collectTxtResultCandidates(payload, results = [], seen = new Set(), depth = 0) {
+  if (payload == null || depth > 8) return results;
+
+  if (typeof payload === "string") {
+    if (looksLikeTxtUrl(payload) && !seen.has(payload)) {
+      seen.add(payload);
+      results.push({ url: payload, fileName: "" });
+    }
+    return results;
+  }
+
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => collectTxtResultCandidates(item, results, seen, depth + 1));
+    return results;
+  }
+
+  if (typeof payload !== "object") return results;
+
+  const source = payload;
+  const fileName = String(
+    source.fileName || source.filename || source.name || source.title || source.label || source.key || ""
+  ).trim();
+  const directUrl = String(
+    source.url || source.fileUrl || source.downloadUrl || source.download_url || source.resultUrl || source.textUrl || ""
+  ).trim();
+
+  if (directUrl && (looksLikeTxtUrl(directUrl) || looksLikeTxtName(fileName))) {
+    const marker = `${directUrl}|${fileName}`;
+    if (!seen.has(marker)) {
+      seen.add(marker);
+      results.push({ url: directUrl, fileName });
+    }
+  }
+
+  Object.values(source).forEach((value) => {
+    if (value && typeof value === "object") {
+      collectTxtResultCandidates(value, results, seen, depth + 1);
+      return;
+    }
+    if (typeof value === "string" && looksLikeTxtUrl(value) && !seen.has(value)) {
+      seen.add(value);
+      results.push({ url: value, fileName });
+    }
+  });
+
+  return results;
+}
+
+async function fetchTextWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_) {}
+      }, timeoutMs)
+    : null;
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller ? controller.signal : options.signal
+    });
+    if (!response.ok) {
+      throw new Error(`Request failed (HTTP ${response.status})`);
+    }
+    return await response.text();
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function pickPreferredPromptInput(inputs) {
+  const list = Array.isArray(inputs) ? inputs : [];
+  const promptLike = list.filter((input) => {
+    const hint = `${input && input.key ? input.key : ""} ${input && input.label ? input.label : ""} ${input && input.name ? input.name : ""}`.toLowerCase();
+    return /prompt|positive/.test(hint) && !/negative/.test(hint);
+  });
+  if (promptLike.length === 0) return null;
+  const priority = ["prompt", "positive_prompt"];
+  for (const key of priority) {
+    const matched = promptLike.find((input) => String(input && input.key || "").trim().toLowerCase() === key);
+    if (matched) return matched;
+  }
+  return promptLike[0];
+}
+
+function pickPreferredTextInput(inputs) {
+  const list = Array.isArray(inputs) ? inputs : [];
+  const promptInput = pickPreferredPromptInput(list);
+  if (promptInput) return promptInput;
+  return list.find((input) => !isImageLikeInput(input)) || null;
+}
+
+function buildAiOptimizePromptText(payload = {}) {
+  const sections = [];
+  const basePrompt = String(payload.prompt || "").trim();
+  const extraRequirement = String(payload.extraRequirement || "").trim();
+  if (basePrompt) sections.push(`当前主 prompt：\n${basePrompt}`);
+  if (extraRequirement) sections.push(`附加优化需求：\n${extraRequirement}`);
+  return sections.join("\n\n");
+}
+
+async function runAiOptimizeInternal(payload = {}) {
+  const apiKey = String(payload.apiKey || "").trim();
+  const appId = normalizeAppId(payload.appId);
+  const image = payload.image;
+  const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
+  if (!apiKey) throw new Error("RunningHub API Key is missing");
+  if (!appId) throw new Error("AI optimize appId is missing");
+  if (!image) throw new Error("AI optimize image is missing");
+
+  const parsedApp = await parseRunningHubApp([{ appId, apiKey, preferredName: "AI优化" }]);
+  const inputs = Array.isArray(parsedApp && parsedApp.inputs) ? parsedApp.inputs : [];
+  const imageInput = inputs.find((input) => isImageLikeInput(input));
+  if (!imageInput) throw new Error("AI 优化应用未识别到图片输入项");
+  const textInput = pickPreferredTextInput(inputs);
+  if (!textInput) throw new Error("AI 优化应用未识别到可写入的提示词输入项");
+
+  const submissionInputs = {};
+  submissionInputs[imageInput.key] = image;
+  submissionInputs[textInput.key] = buildAiOptimizePromptText(payload);
+
+  const submitResult = await submitRunningHubTask([{
+    apiKey,
+    appId,
+    appName: "AI优化",
+    app: {
+      id: `ai-optimize-${appId}`,
+      appId,
+      name: "AI优化",
+      inputs
+    },
+    inputs: submissionInputs,
+    settings
+  }]);
+  const taskId = String((submitResult && submitResult.taskId) || "").trim();
+  const pollResult = await pollRunningHubTask([{ apiKey, taskId, settings }]);
+  if (!pollResult || pollResult.failed) {
+    throw new Error(String((pollResult && pollResult.message) || "AI 优化任务执行失败"));
+  }
+  if (pollResult.timedOut) {
+    throw new Error(String((pollResult && pollResult.message) || "AI 优化任务超时"));
+  }
+
+  const txtCandidates = collectTxtResultCandidates((pollResult && pollResult.result) || null);
+  const txtCandidate = txtCandidates[0] || null;
+  if (!txtCandidate || !txtCandidate.url) {
+    throw new Error("AI 优化应用未返回可解析的 .txt 文本结果，请检查工作流输出配置。");
+  }
+
+  const textContent = String(await fetchTextWithTimeout(txtCandidate.url, {}, Math.max(10000, Number(settings.timeout || 180) * 1000))).trim();
+  if (!textContent) {
+    throw new Error("AI 优化应用返回的 .txt 结果为空。");
+  }
+
+  return {
+    ok: true,
+    taskId,
+    text: textContent,
+    txtUrl: txtCandidate.url,
+    txtFileName: txtCandidate.fileName || "",
+    outputUrl: String((pollResult && pollResult.outputUrl) || "").trim(),
+    raw: pollResult && pollResult.result ? pollResult.result : null
+  };
+}
+
 function extractTaskStatus(payload) {
   if (!payload || typeof payload !== "object") return "";
   return String(payload.status || payload.state || payload.taskStatus || "").toUpperCase();
@@ -1013,4 +1192,9 @@ export async function cancelRunningHubTask(args = []) {
   });
 
   return { ok: true, taskId, result };
+}
+
+export async function runAiOptimizeTask(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  return runAiOptimizeInternal(payload);
 }
