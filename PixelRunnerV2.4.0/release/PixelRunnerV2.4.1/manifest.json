@@ -31,6 +31,13 @@
         {
           "width": 23,
           "height": 23,
+          "path": "icons/toolbar.png",
+          "scale": [1],
+          "theme": ["darkest", "dark", "medium"]
+        },
+        {
+          "width": 23,
+          "height": 23,
           "path": "icons/toolbar@1x.png",
           "scale": [1],
           "theme": ["darkest", "dark", "medium"]
@@ -41,6 +48,13 @@
           "path": "icons/toolbar@2x.png",
           "scale": [2],
           "theme": ["darkest", "dark", "medium"]
+        },
+        {
+          "width": 23,
+          "height": 23,
+          "path": "icons/toolbar.png",
+          "scale": [1],
+          "theme": ["lightest", "light"]
         },
         {
           "width": 23,
@@ -67,6 +81,14 @@
     {
       "width": 24,
       "height": 24,
+      "path": "icons/plugin.png",
+      "scale": [1],
+      "theme": ["darkest", "dark", "medium"],
+      "species": ["pluginList", "generic"]
+    },
+    {
+      "width": 24,
+      "height": 24,
       "path": "icons/plugin@1x.png",
       "scale": [1],
       "theme": ["darkest", "dark", "medium"],
@@ -78,6 +100,14 @@
       "path": "icons/plugin@2x.png",
       "scale": [2],
       "theme": ["darkest", "dark", "medium"],
+      "species": ["pluginList", "generic"]
+    },
+    {
+      "width": 24,
+      "height": 24,
+      "path": "icons/plugin.png",
+      "scale": [1],
+      "theme": ["lightest", "light"],
       "species": ["pluginList", "generic"]
     },
     {
