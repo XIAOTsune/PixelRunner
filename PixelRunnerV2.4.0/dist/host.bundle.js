@@ -2230,11 +2230,15 @@ var PixelRunnerHostBundle = (() => {
         return keys.includes(normalized);
       }
     );
+    let total = 0;
+    let matched = false;
     for (const candidate of candidates) {
       const parsed = parseChargeValue(candidate);
-      if (parsed !== null) return Math.abs(parsed);
+      if (parsed === null) continue;
+      total += Math.abs(parsed);
+      matched = true;
     }
-    return null;
+    return matched ? Number(total.toFixed(3)) : null;
   }
   function extractTaskBalanceCharge(payload) {
     return extractTaskChargeByKeys(payload, [

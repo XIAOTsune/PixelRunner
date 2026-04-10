@@ -1534,6 +1534,8 @@
 
   async function startRunTaskFlow(payload, sourceDocument) {
     const tempTaskId = createLocalTaskId();
+    let activeTaskId = tempTaskId;
+    let activeRemoteTaskId = "";
     upsertRunningTask({
       taskId: tempTaskId,
       remoteTaskId: "",
@@ -1557,6 +1559,8 @@
       });
 
       const remoteTaskId = String(submitResult.taskId || "").trim();
+      activeTaskId = remoteTaskId || tempTaskId;
+      activeRemoteTaskId = remoteTaskId;
       modules.ui.logToWorkspace(`任务已提交：${remoteTaskId}`, "success");
       replaceRunningTaskId(tempTaskId, {
         taskId: remoteTaskId,
@@ -1689,19 +1693,19 @@
     } catch (error) {
       const message = error && error.message ? error.message : String(error || "任务执行失败");
       const normalizedMessage = String(message).trim();
-      const latestTask = getRunningTasks().find((item) => String(item.taskId || "") === tempTaskId);
-      const currentTaskId = latestTask ? tempTaskId : String((payload && payload.taskId) || "").trim();
-      const activeTask = latestTask || getRunningTasks().find((item) => String(item.appName || "") === String(payload.appName || "").trim() && !isTaskTerminalStatus(item.status));
-      const targetTaskId = activeTask ? String(activeTask.taskId || "").trim() : tempTaskId;
       const cancelled = /cancel/i.test(normalizedMessage);
       const failureLabel = getTaskFailureLabel({
         status: cancelled ? "cancelled" : "failed",
         errorMessage: normalizedMessage,
         detail: normalizedMessage
       });
-      if (cancelled) stopTaskStatusTracking(targetTaskId);
+      if (cancelled && activeRemoteTaskId) {
+        stopTaskStatusTracking(activeRemoteTaskId);
+        pendingAutoPlacements.delete(activeRemoteTaskId);
+      }
       upsertRunningTask({
-        taskId: targetTaskId,
+        taskId: activeTaskId,
+        remoteTaskId: activeRemoteTaskId,
         appName: payload.appName,
         status: cancelled ? "cancelled" : "failed",
         detail: cancelled ? "任务已取消。" : normalizedMessage,
@@ -1827,6 +1831,8 @@
         if (!remoteTaskId) return;
         target.disabled = true;
         try {
+          stopTaskStatusTracking(remoteTaskId);
+          pendingAutoPlacements.delete(remoteTaskId);
           await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId: remoteTaskId }], { timeoutMs: 20000 });
           upsertRunningTask({
             taskId,
