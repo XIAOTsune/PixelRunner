@@ -2863,6 +2863,10 @@ ${text}` : text;
   // src/webview/ai-optimize.js
   (function initAiOptimizeModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const DEFAULT_UPLOAD_MAX_DIMENSION = 1536;
+    const DEFAULT_UPLOAD_TARGET_BYTES = 9e6;
+    const DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 1e7;
+    const DEFAULT_UPLOAD_QUALITY_STEPS = [0.92, 0.88, 0.84, 0.8, 0.76, 0.72, 0.68, 0.64, 0.6, 0.56, 0.52, 0.48];
     let taskTicker = 0;
     let composeSequence = 0;
     const state = {
