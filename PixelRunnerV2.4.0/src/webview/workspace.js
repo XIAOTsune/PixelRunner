@@ -1844,12 +1844,18 @@
         if (!key) return;
         if (element.matches('input[type="checkbox"]')) {
           modules.state.state.formValues[key] = Boolean(element.checked);
+          if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+            modules.aiOptimize.handleWorkspacePromptChange(key, modules.state.state.formValues[key]);
+          }
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
         if (!inputMeta || isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
         modules.state.state.formValues[key] = nextValue;
+        if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+          modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
+        }
       });
 
       dynamicInputContainer.addEventListener("change", (event) => {
@@ -1859,12 +1865,18 @@
         if (!key) return;
         if (element.matches('input[type="checkbox"]')) {
           modules.state.state.formValues[key] = Boolean(element.checked);
+          if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+            modules.aiOptimize.handleWorkspacePromptChange(key, modules.state.state.formValues[key]);
+          }
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
         if (!inputMeta || isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
         modules.state.state.formValues[key] = nextValue;
+        if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+          modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
+        }
         if (isNumericInput(inputMeta) && element.matches('input[type="number"]')) {
           element.value = formatNumericInputValue(inputMeta, nextValue);
         }

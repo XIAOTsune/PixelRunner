@@ -2710,12 +2710,18 @@ ${text}` : text;
           if (!key) return;
           if (element.matches('input[type="checkbox"]')) {
             modules.state.state.formValues[key] = Boolean(element.checked);
+            if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+              modules.aiOptimize.handleWorkspacePromptChange(key, modules.state.state.formValues[key]);
+            }
             return;
           }
           const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
           if (!inputMeta || isImageInput(inputMeta)) return;
           const nextValue = getNormalizedFieldValue(inputMeta, element.value);
           modules.state.state.formValues[key] = nextValue;
+          if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+            modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
+          }
         });
         dynamicInputContainer.addEventListener("change", (event) => {
           const element = event.target;
@@ -2724,12 +2730,18 @@ ${text}` : text;
           if (!key) return;
           if (element.matches('input[type="checkbox"]')) {
             modules.state.state.formValues[key] = Boolean(element.checked);
+            if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+              modules.aiOptimize.handleWorkspacePromptChange(key, modules.state.state.formValues[key]);
+            }
             return;
           }
           const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
           if (!inputMeta || isImageInput(inputMeta)) return;
           const nextValue = getNormalizedFieldValue(inputMeta, element.value);
           modules.state.state.formValues[key] = nextValue;
+          if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
+            modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
+          }
           if (isNumericInput(inputMeta) && element.matches('input[type="number"]')) {
             element.value = formatNumericInputValue(inputMeta, nextValue);
           }
@@ -2866,11 +2878,15 @@ ${text}` : text;
       statusMessage: "点击“开始优化”后，这里会显示 AI 返回的优化提示词。",
       statusType: "info",
       running: false,
+      canceling: false,
       taskId: "",
       taskStatus: "idle",
-      taskDetail: "待开始",
+      taskDetail: "等待开始运行。",
       taskStartedAt: 0,
       taskUpdatedAt: 0,
+      balanceCharge: null,
+      coinsCharge: null,
+      chargeDisplay: "",
       txtUrl: "",
       availableImages: [],
       selectedImageKey: "",
@@ -2947,6 +2963,7 @@ ${text}` : text;
       const normalized = String(status || "").trim().toLowerCase();
       if (normalized === "running") return "运行中";
       if (normalized === "success") return "已完成";
+      if (normalized === "cancelled" || normalized === "canceled") return "已取消";
       if (normalized === "error") return "失败";
       return "待开始";
     }
@@ -2954,8 +2971,34 @@ ${text}` : text;
       const normalized = String(status || "").trim().toLowerCase();
       if (normalized === "running") return "pending";
       if (normalized === "success") return "success";
+      if (normalized === "cancelled" || normalized === "canceled") return "warn";
       if (normalized === "error") return "error";
       return "info";
+    }
+    function normalizeTaskChargeValue(value) {
+      if (value == null) return null;
+      if (typeof value === "number") return Number.isFinite(value) ? Math.abs(Number(value.toFixed(3))) : null;
+      const text = String(value || "").trim();
+      if (!text) return null;
+      const matched = text.replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+      if (!matched) return null;
+      const parsed = Number(matched[0]);
+      return Number.isFinite(parsed) ? Math.abs(Number(parsed.toFixed(3))) : null;
+    }
+    function formatTaskChargeDisplay() {
+      const explicit = String(state.chargeDisplay || "").trim();
+      if (explicit) return explicit;
+      const balanceCharge = normalizeTaskChargeValue(state.balanceCharge);
+      const coinsCharge = normalizeTaskChargeValue(state.coinsCharge);
+      const parts = [];
+      if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(3)}R`);
+      if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
+      return parts.join(" · ");
+    }
+    function setTaskCharge(result) {
+      state.balanceCharge = result && result.balanceCharge != null ? normalizeTaskChargeValue(result.balanceCharge) : null;
+      state.coinsCharge = result && result.coinsCharge != null ? normalizeTaskChargeValue(result.coinsCharge) : null;
+      state.chargeDisplay = String(result && result.chargeDisplay || "").trim();
     }
     function formatElapsed(startedAt, updatedAt = Date.now()) {
       const diff = Math.max(0, Number(updatedAt || 0) - Number(startedAt || 0));
@@ -2965,6 +3008,242 @@ ${text}` : text;
       if (minutes <= 0) return `${remainSeconds}s`;
       return `${minutes}m ${remainSeconds}s`;
     }
+    function looksLikeTxtUrl(value) {
+      return /\.txt(?:$|[?#])/i.test(String(value || "").trim());
+    }
+    function looksLikeTxtName(value) {
+      return /\.txt$/i.test(String(value || "").trim());
+    }
+    function collectTxtResultCandidates(payload, results = [], seen = /* @__PURE__ */ new Set(), depth = 0) {
+      if (!payload || depth > 6) return results;
+      if (typeof payload === "string") {
+        if (looksLikeTxtUrl(payload) && !seen.has(payload)) {
+          seen.add(payload);
+          results.push({ url: payload, fileName: "" });
+        }
+        return results;
+      }
+      if (Array.isArray(payload)) {
+        payload.forEach((item) => collectTxtResultCandidates(item, results, seen, depth + 1));
+        return results;
+      }
+      if (typeof payload !== "object") return results;
+      const source = payload;
+      const fileName = String(
+        source.fileName || source.filename || source.name || source.title || source.label || source.key || ""
+      ).trim();
+      const directUrl = String(
+        source.url || source.fileUrl || source.downloadUrl || source.download_url || source.resultUrl || source.textUrl || ""
+      ).trim();
+      if (directUrl && (looksLikeTxtUrl(directUrl) || looksLikeTxtName(fileName))) {
+        const marker = `${directUrl}|${fileName}`;
+        if (!seen.has(marker)) {
+          seen.add(marker);
+          results.push({ url: directUrl, fileName });
+        }
+      }
+      Object.values(source).forEach((value) => {
+        if (value && typeof value === "object") {
+          collectTxtResultCandidates(value, results, seen, depth + 1);
+          return;
+        }
+        if (typeof value === "string" && looksLikeTxtUrl(value) && !seen.has(value)) {
+          seen.add(value);
+          results.push({ url: value, fileName });
+        }
+      });
+      return results;
+    }
+    function pickPreferredPromptInput(inputs) {
+      const list = Array.isArray(inputs) ? inputs : [];
+      const promptLike = list.filter((input) => {
+        const hint = `${input && input.key ? input.key : ""} ${input && input.label ? input.label : ""} ${input && input.name ? input.name : ""}`.toLowerCase();
+        return /prompt|positive/.test(hint) && !/negative/.test(hint);
+      });
+      if (promptLike.length === 0) return null;
+      const priority = ["prompt", "positive_prompt"];
+      for (const key of priority) {
+        const matched = promptLike.find((input) => String(input && input.key || "").trim().toLowerCase() === key);
+        if (matched) return matched;
+      }
+      return promptLike[0];
+    }
+    function pickPreferredTextInput(inputs) {
+      const list = Array.isArray(inputs) ? inputs : [];
+      const promptInput = pickPreferredPromptInput(list);
+      if (promptInput) return promptInput;
+      return list.find((input) => !isImageInput(input)) || null;
+    }
+    function buildAiOptimizePromptText() {
+      const sections = [];
+      const basePrompt = String(state.promptValue || "").trim();
+      const extraRequirement = String(state.extraRequirement || "").trim();
+      if (basePrompt) sections.push(`??? prompt?
+${basePrompt}`);
+      if (extraRequirement) sections.push(`???????
+${extraRequirement}`);
+      return sections.join("\n\n");
+    }
+    function getBase64ByteLength(base64) {
+      const text = String(base64 || "").trim();
+      if (!text) return 0;
+      const padding = text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0;
+      return Math.max(0, Math.floor(text.length * 3 / 4) - padding);
+    }
+    function getAssetUploadPayload(asset) {
+      if (!asset || typeof asset !== "object") return null;
+      const dataUrl = String(asset.uploadDataUrl || asset.dataUrl || "").trim();
+      const base64 = String(asset.uploadBase64 || asset.base64 || "").trim();
+      const mimeType = String(asset.uploadMimeType || asset.mimeType || "image/jpeg").trim() || "image/jpeg";
+      if (!dataUrl && !base64 && !String(asset.url || "").trim()) return null;
+      return {
+        dataUrl,
+        base64,
+        url: String(asset.url || "").trim(),
+        mimeType,
+        width: Number(asset.originalWidth) || Number(asset.width) || null,
+        height: Number(asset.originalHeight) || Number(asset.height) || null,
+        bytes: Number(asset.uploadBytes) || getBase64ByteLength(base64),
+        quality: Number(asset.uploadQuality) || null
+      };
+    }
+    function getScaledDimensions(width, height, maxDimension) {
+      const safeWidth = Math.max(1, Math.round(Number(width) || 1));
+      const safeHeight = Math.max(1, Math.round(Number(height) || 1));
+      const longEdge = Math.max(safeWidth, safeHeight);
+      if (longEdge <= maxDimension) {
+        return { width: safeWidth, height: safeHeight };
+      }
+      const scale = maxDimension / longEdge;
+      return {
+        width: Math.max(1, Math.round(safeWidth * scale)),
+        height: Math.max(1, Math.round(safeHeight * scale))
+      };
+    }
+    function canvasToBlob(canvas, quality) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("AI??????????"));
+            return;
+          }
+          resolve(blob);
+        }, "image/jpeg", quality);
+      });
+    }
+    function readBlobAsDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("AI??????????"));
+        reader.readAsDataURL(blob);
+      });
+    }
+    async function buildCompressedUploadPayload(asset) {
+      const src = getImagePreviewSrc(asset);
+      if (!src) {
+        throw new Error("????????????????");
+      }
+      const image = await loadImageElement(src);
+      const targetSize = getScaledDimensions(image.width, image.height, DEFAULT_UPLOAD_MAX_DIMENSION);
+      const canvas = document.createElement("canvas");
+      canvas.width = targetSize.width;
+      canvas.height = targetSize.height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("??????? AI????????");
+      }
+      context.fillStyle = "#101720";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      let fallbackPayload = null;
+      for (const quality of DEFAULT_UPLOAD_QUALITY_STEPS) {
+        const blob = await canvasToBlob(canvas, quality);
+        const dataUrl = await readBlobAsDataUrl(blob);
+        const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : "";
+        const payload = {
+          dataUrl,
+          base64,
+          url: "",
+          mimeType: "image/jpeg",
+          width: canvas.width,
+          height: canvas.height,
+          bytes: blob.size,
+          quality: Math.round(quality * 100)
+        };
+        fallbackPayload = payload;
+        if (blob.size <= DEFAULT_UPLOAD_TARGET_BYTES) {
+          return payload;
+        }
+        if (blob.size <= DEFAULT_UPLOAD_HARD_LIMIT_BYTES) {
+          fallbackPayload = payload;
+        }
+      }
+      if (fallbackPayload) return fallbackPayload;
+      throw new Error("AI????????????????");
+    }
+    async function prepareImageForSubmission(asset) {
+      const payload = getAssetUploadPayload(asset);
+      if (payload && String(asset && asset.uploadDataUrl || "").trim()) {
+        return payload;
+      }
+      return payload && payload.bytes > 0 && payload.bytes <= DEFAULT_UPLOAD_HARD_LIMIT_BYTES ? payload : buildCompressedUploadPayload(asset);
+    }
+    async function resolveResultText(pollResult, timeoutSeconds) {
+      const txtCandidates = collectTxtResultCandidates(pollResult && pollResult.result || null);
+      const txtCandidate = txtCandidates[0] || null;
+      if (!txtCandidate || !txtCandidate.url) {
+        throw new Error("AI优化应用未返回可解析的 .txt 文本结果，请检查工作流输出配置。");
+      }
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timeoutMs = Math.max(1e4, Number(timeoutSeconds || 180) * 1e3);
+      const timer = controller ? global.setTimeout(() => controller.abort(), timeoutMs) : 0;
+      try {
+        const response = await fetch(txtCandidate.url, {
+          method: "GET",
+          signal: controller ? controller.signal : void 0
+        });
+        if (!response.ok) {
+          throw new Error(`读取优化结果失败 (HTTP ${response.status})`);
+        }
+        const text = String(await response.text()).trim();
+        if (!text) {
+          throw new Error("AI优化应用返回的 .txt 结果为空。");
+        }
+        return {
+          text,
+          txtUrl: txtCandidate.url,
+          txtFileName: txtCandidate.fileName || ""
+        };
+      } finally {
+        if (timer) global.clearTimeout(timer);
+      }
+    }
+    function updateWorkspacePromptHint(field, text) {
+      if (!field || !modules.templates) return;
+      const hint = field.querySelector(".prompt-length-hint");
+      if (!hint) return;
+      const value = String(text || "");
+      const length = modules.templates.getTextLength(value);
+      const tail = modules.templates.getTailPreview(value, 24);
+      hint.textContent = `长度 ${length} 字符 | 末尾预览 ${tail}`;
+      hint.classList.toggle("is-warning", length >= modules.templates.PROMPT_WARN_CHARS);
+    }
+    function syncPromptToWorkspace(value) {
+      if (!state.promptKey) return;
+      const nextValue = String(value ?? "");
+      modules.state.state.formValues[state.promptKey] = nextValue;
+      const container = modules.runtime.getById("dynamicInputContainer");
+      if (!container) return;
+      const target = Array.from(container.querySelectorAll("[data-form-key]")).find((element) => {
+        return String(element.getAttribute("data-form-key") || "") === state.promptKey;
+      });
+      if (!target) return;
+      if ("value" in target && target.value !== nextValue) {
+        target.value = nextValue;
+      }
+      updateWorkspacePromptHint(target.closest(".prompt-field"), nextValue);
+    }
     function renderTaskCard() {
       const container = modules.runtime.getById("aiOptimizeTaskCard");
       if (!container) return;
@@ -2972,8 +3251,11 @@ ${text}` : text;
       const status = getTaskStatusLabel(state.taskStatus);
       const tone = getTaskStatusTone(state.taskStatus);
       const duration = state.taskStartedAt ? formatElapsed(state.taskStartedAt, state.taskUpdatedAt || Date.now()) : "--";
+      const chargeDisplay = formatTaskChargeDisplay();
       const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "尚未创建任务";
-      const detail = modules.runtime.escapeHtml(state.taskDetail || "待开始");
+      const detail = modules.runtime.escapeHtml(state.taskDetail || "等待开始。");
+      const showCancel = state.running && taskId;
+      const showClear = !state.running && taskId;
       container.innerHTML = `
       <div class="running-task-item ai-optimize-task-item">
         <div class="running-task-main">
@@ -2981,13 +3263,34 @@ ${text}` : text;
             <div class="running-task-title">AI优化任务</div>
             <div class="running-task-topline-actions">
               <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(tone)}">${modules.runtime.escapeHtml(status)}</span>
+              ${showCancel ? `<button id="btnCancelAiOptimizeTask" class="mini-btn running-task-inline-btn" type="button" ${state.canceling ? "disabled" : ""}>${state.canceling ? "取消中" : "取消"}</button>` : showClear ? `<button id="btnClearAiOptimizeTask" class="mini-btn running-task-inline-btn" type="button">清空</button>` : ""}
             </div>
           </div>
-          <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · 耗时 ${modules.runtime.escapeHtml(duration)}</div>
+          <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · 耗时 ${modules.runtime.escapeHtml(duration)}${chargeDisplay ? ` · ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
           <div class="running-task-detail">${detail}</div>
         </div>
       </div>
     `;
+      const cancelButton = modules.runtime.getById("btnCancelAiOptimizeTask");
+      if (cancelButton) {
+        cancelButton.addEventListener("click", () => {
+          void cancelTask();
+        });
+      }
+      const clearButton = modules.runtime.getById("btnClearAiOptimizeTask");
+      if (clearButton) {
+        clearButton.addEventListener("click", () => {
+          state.taskId = "";
+          state.taskStatus = "idle";
+          state.taskDetail = "等待开始运行。";
+          state.taskStartedAt = 0;
+          state.taskUpdatedAt = 0;
+          state.balanceCharge = null;
+          state.coinsCharge = null;
+          state.chargeDisplay = "";
+          renderModal();
+        });
+      }
     }
     function syncTaskTicker() {
       if (state.running && !taskTicker) {
@@ -3194,9 +3497,9 @@ ${text}` : text;
       if (modeHint) {
         modeHint.textContent = state.selectedImageMode === "composite" ? "当前会把所有已输入图片拼接为一张，再作为 AI优化参考图。" : "当前会使用你选中的这张图作为 AI优化参考图。";
       }
-      if (promptInput) promptInput.value = state.promptValue || "";
-      if (extraInput) extraInput.value = state.extraRequirement || "";
-      if (resultInput) resultInput.value = state.resultText || "";
+      if (promptInput && promptInput.value !== String(state.promptValue || "")) promptInput.value = state.promptValue || "";
+      if (extraInput && extraInput.value !== String(state.extraRequirement || "")) extraInput.value = state.extraRequirement || "";
+      if (resultInput && resultInput.value !== String(state.resultText || "")) resultInput.value = state.resultText || "";
       if (startButton) startButton.disabled = state.running || state.composingImage || !hasImageAsset(state.imageAsset);
       if (replaceButton) replaceButton.disabled = state.running || !String(state.resultText || "").trim();
       if (appendButton) appendButton.disabled = state.running || !String(state.resultText || "").trim();
@@ -3215,11 +3518,15 @@ ${text}` : text;
       state.extraRequirement = "";
       state.resultText = "";
       state.running = false;
+      state.canceling = false;
       state.taskId = "";
       state.taskStatus = "idle";
       state.taskDetail = "等待开始运行。";
       state.taskStartedAt = 0;
       state.taskUpdatedAt = 0;
+      state.balanceCharge = null;
+      state.coinsCharge = null;
+      state.chargeDisplay = "";
       state.txtUrl = "";
       state.statusMessage = "点击“开始优化”后，这里会显示 AI 返回的优化提示词。";
       state.statusType = "info";
@@ -3230,8 +3537,48 @@ ${text}` : text;
     function closeModal() {
       state.open = false;
       state.running = false;
+      state.canceling = false;
       syncTaskTicker();
       modules.workspace.setModalOpen("aiOptimizeModal", false);
+    }
+    async function cancelTask() {
+      const taskId = String(state.taskId || "").trim();
+      const apiKey = String(modules.state.state.settings.apiKey || "").trim();
+      if (!state.running || !taskId || !apiKey || state.canceling) return;
+      state.canceling = true;
+      state.taskDetail = "正在取消 AI优化任务...";
+      renderModal();
+      try {
+        await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId }], { timeoutMs: 2e4 });
+        state.running = false;
+        state.canceling = false;
+        state.taskStatus = "cancelled";
+        state.taskUpdatedAt = Date.now();
+        state.taskDetail = "任务已取消。";
+        setStatus("AI优化任务已取消。", "warn");
+        modules.ui.logToWorkspace(`AI优化任务已取消：${taskId}`, "warn");
+      } catch (error) {
+        state.canceling = false;
+        const message = error && error.message ? error.message : String(error || "取消 AI优化任务失败");
+        setStatus(message, "error");
+        modules.ui.logToWorkspace(message, "error");
+      } finally {
+        renderModal();
+      }
+    }
+    function applyResult(mode) {
+      const text = String(state.resultText || "").trim();
+      if (!state.promptKey || !text) return;
+      const currentValue = String(modules.state.state.formValues[state.promptKey] || "");
+      const nextValue = mode === "append" && currentValue.trim() ? `${currentValue.replace(/\s+$/g, "")}
+
+${text}` : text;
+      modules.state.state.formValues[state.promptKey] = nextValue;
+      state.promptValue = nextValue;
+      syncPromptToWorkspace(nextValue);
+      modules.workspace.renderWorkspace();
+      modules.ui.logToWorkspace(mode === "append" ? "AI优化结果已追加到当前 prompt。" : "AI优化结果已替换当前 prompt。", "success");
+      closeModal();
     }
     function bindModalEvents() {
       const promptInput = modules.runtime.getById("aiOptimizePromptInput");
@@ -3246,6 +3593,7 @@ ${text}` : text;
       if (promptInput) {
         promptInput.addEventListener("input", () => {
           state.promptValue = promptInput.value || "";
+          syncPromptToWorkspace(state.promptValue);
         });
       }
       if (extraInput) {
@@ -3316,32 +3664,82 @@ ${text}` : text;
             return;
           }
           state.running = true;
+          state.canceling = false;
           state.resultText = "";
           state.taskId = "";
           state.taskStatus = "running";
           state.taskStartedAt = Date.now();
           state.taskUpdatedAt = state.taskStartedAt;
           state.taskDetail = "正在提交 AI优化任务...";
+          state.balanceCharge = null;
+          state.coinsCharge = null;
+          state.chargeDisplay = "";
           state.txtUrl = "";
           setStatus("正在根据参考图、原始提示词和附加优化要求生成优化建议...", "pending");
           renderModal();
+          const settings = {
+            pollInterval: modules.state.state.settings.pollInterval,
+            timeout: modules.state.state.settings.timeout,
+            maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
+          };
           try {
-            const result = await modules.runtime.callHost("runninghub.runAiOptimize", [{
+            const parsedApp = await modules.runtime.callHost("runninghub.parseApp", [{
+              appId: aiOptimizeAppId,
+              apiKey,
+              preferredName: "AI优化"
+            }], {
+              timeoutMs: Math.max(3e4, Number(modules.state.state.settings.timeout || 180) * 1e3 + 15e3)
+            });
+            const inputs = Array.isArray(parsedApp && parsedApp.inputs) ? parsedApp.inputs : [];
+            const imageInput = inputs.find((input) => isImageInput(input));
+            if (!imageInput) {
+              throw new Error("AI优化应用未识别到图片输入项。");
+            }
+            const textInput = pickPreferredTextInput(inputs);
+            if (!textInput) {
+              throw new Error("AI优化应用未识别到可写入的提示词输入项。");
+            }
+            const submitPayload = {
               apiKey,
               appId: aiOptimizeAppId,
-              image: cloneValue(state.imageAsset),
-              prompt: state.promptValue,
-              extraRequirement: state.extraRequirement,
-              settings: {
-                pollInterval: modules.state.state.settings.pollInterval,
-                timeout: modules.state.state.settings.timeout,
-                maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
-              }
-            }], { timeoutMs: Math.max(3e4, Number(modules.state.state.settings.timeout || 180) * 1e3 + 15e3) });
-            state.taskId = String(result && result.taskId || "").trim();
+              appName: "AI优化",
+              app: {
+                id: `ai-optimize-${aiOptimizeAppId}`,
+                appId: aiOptimizeAppId,
+                name: "AI优化",
+                inputs
+              },
+              inputs: {
+                [imageInput.key]: await prepareImageForSubmission(state.imageAsset),
+                [textInput.key]: buildAiOptimizePromptText()
+              },
+              settings
+            };
+            const submitResult = await modules.runtime.callHost("runninghub.submitTask", [submitPayload], {
+              timeoutMs: Math.max(3e4, Number(modules.state.state.settings.timeout || 180) * 1e3 + 15e3)
+            });
+            state.taskId = String(submitResult && submitResult.taskId || "").trim();
+            state.taskUpdatedAt = Date.now();
+            state.taskDetail = "任务已提交，正在等待 RunningHub 返回结果。";
+            renderModal();
+            const pollResult = await modules.runtime.callHost("runninghub.pollTask", [{
+              apiKey,
+              taskId: state.taskId,
+              settings
+            }], {
+              timeoutMs: Math.max(3e4, Number(modules.state.state.settings.timeout || 180) * 1e3 + 15e3)
+            });
+            if (!pollResult || pollResult.failed) {
+              throw new Error(String(pollResult && pollResult.message || "AI优化任务执行失败"));
+            }
+            if (pollResult && pollResult.timedOut) {
+              throw new Error(String(pollResult && pollResult.message || "AI优化任务超时"));
+            }
+            const result = await resolveResultText(pollResult, modules.state.state.settings.timeout);
             state.taskStatus = "success";
             state.taskUpdatedAt = Date.now();
             state.taskDetail = "任务已完成，已成功解析返回的 .txt 文本结果。";
+            setTaskCharge(pollResult);
             state.txtUrl = String(result && result.txtUrl || "").trim();
             state.resultText = String(result && result.text || "").trim();
             if (!state.resultText) {
@@ -3351,29 +3749,18 @@ ${text}` : text;
             modules.ui.logToWorkspace("AI优化完成，结果已加载到弹窗。", "success");
           } catch (error) {
             const message = error && error.message ? error.message : String(error || "AI优化失败");
-            state.taskStatus = "error";
+            const cancelled = /cancel/i.test(String(message || ""));
+            state.taskStatus = cancelled ? "cancelled" : "error";
             state.taskUpdatedAt = Date.now();
-            state.taskDetail = message;
-            setStatus(message, "error");
-            modules.ui.logToWorkspace(message, "error");
+            state.taskDetail = cancelled ? "任务已取消。" : message;
+            setStatus(cancelled ? "AI优化任务已取消。" : message, cancelled ? "warn" : "error");
+            modules.ui.logToWorkspace(cancelled ? "AI优化任务已取消。" : message, cancelled ? "warn" : "error");
           } finally {
             state.running = false;
+            state.canceling = false;
             renderModal();
           }
         });
-      }
-      function applyResult(mode) {
-        const text = String(state.resultText || "").trim();
-        if (!state.promptKey || !text) return;
-        const currentValue = String(modules.state.state.formValues[state.promptKey] || "");
-        const nextValue = mode === "append" && currentValue.trim() ? `${currentValue.replace(/\s+$/g, "")}
-
-${text}` : text;
-        modules.state.state.formValues[state.promptKey] = nextValue;
-        state.promptValue = nextValue;
-        modules.workspace.renderWorkspace();
-        modules.ui.logToWorkspace(mode === "append" ? "AI优化结果已追加到当前 prompt。" : "AI优化结果已替换当前 prompt。", "success");
-        closeModal();
       }
       if (replaceButton) {
         replaceButton.addEventListener("click", () => applyResult("replace"));
@@ -3385,6 +3772,14 @@ ${text}` : text;
     modules.aiOptimize = {
       getAvailability,
       getPrimaryPromptInput,
+      isOpen() {
+        return state.open;
+      },
+      handleWorkspacePromptChange(promptKey, value) {
+        if (!state.open || !state.promptKey || String(promptKey || "") !== String(state.promptKey || "")) return;
+        state.promptValue = String(value ?? "");
+        renderModal();
+      },
       openModal,
       closeModal,
       renderModal,

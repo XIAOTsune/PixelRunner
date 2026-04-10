@@ -2009,6 +2009,11 @@ button {
   justify-content: space-between;
 }
 
+.ai-optimize-block-head .card-title,
+.ai-optimize-modal-card .field-label {
+  color: #f4fbff;
+}
+
 .ai-optimize-image-card {
   display: flex;
   flex-direction: column;
@@ -2028,6 +2033,7 @@ button {
 
 .ai-optimize-guide {
   line-height: 1.55;
+  color: #e8f4ff;
 }
 
 .ai-optimize-subhead {
@@ -2060,7 +2066,16 @@ button {
   margin-top: 2px;
   font-size: 10px;
   line-height: 1.45;
-  color: rgba(207, 221, 233, 0.78);
+  color: rgba(231, 242, 252, 0.96);
+}
+
+.ai-optimize-modal-card .summary-strip {
+  color: #dbeaf7;
+}
+
+.ai-optimize-image-picker-wrap .summary-strip,
+.ai-optimize-image-card .summary-strip {
+  color: #edf7ff;
 }
 
 .ai-optimize-result-input {
