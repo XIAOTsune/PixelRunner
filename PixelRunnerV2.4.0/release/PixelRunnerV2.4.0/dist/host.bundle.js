@@ -3682,7 +3682,7 @@ ${extraRequirement}`);
             const tutorialEntry = await pagesFolder.getEntry(TUTORIAL_RELATIVE_PATH[1]);
             if (tutorialEntry && tutorialEntry.nativePath) {
               const path = String(tutorialEntry.nativePath);
-              return { ok: true, path, url: createFileUrlFromPath(path) };
+              return { ok: true, path, url: "" };
             }
           }
         } catch (_) {
@@ -3690,7 +3690,7 @@ ${extraRequirement}`);
       }
       if (pluginFolder.nativePath) {
         const path = joinNativePath(pluginFolder.nativePath, TUTORIAL_RELATIVE_PATH);
-        return { ok: true, path, url: createFileUrlFromPath(path) };
+        return { ok: true, path, url: "" };
       }
     } catch (_) {
       return { ok: false, path: "", url: "" };
