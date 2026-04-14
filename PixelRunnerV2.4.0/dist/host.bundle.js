@@ -1318,11 +1318,19 @@ var PixelRunnerHostBundle = (() => {
       y: (Number(bounds.top) + Number(bounds.bottom)) / 2
     };
   }
+  function getAspectRatio(width, height) {
+    const w = Number(width);
+    const h = Number(height);
+    return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? w / h : 0;
+  }
   function isFullDocumentBounds(bounds, docInfo) {
     if (!bounds || !docInfo) return false;
     const width = Math.max(1, Number(docInfo.width) || 1);
     const height = Math.max(1, Number(docInfo.height) || 1);
     return Math.abs(Number(bounds.left) - 0) < 0.01 && Math.abs(Number(bounds.top) - 0) < 0.01 && Math.abs(Number(bounds.right) - width) < 0.01 && Math.abs(Number(bounds.bottom) - height) < 0.01;
+  }
+  function dimensionsNearlyMatch(widthA, heightA, widthB, heightB, tolerance = 2) {
+    return Math.abs(Number(widthA) - Number(widthB)) <= tolerance && Math.abs(Number(heightA) - Number(heightB)) <= tolerance;
   }
   function arrayBufferToBase64(buffer) {
     if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return "";
@@ -1334,6 +1342,280 @@ var PixelRunnerHostBundle = (() => {
       binary += String.fromCharCode(...chunk);
     }
     return btoa(binary);
+  }
+  function concatUint8Arrays(parts) {
+    const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+    const out = new Uint8Array(totalLength);
+    let offset = 0;
+    parts.forEach((part) => {
+      out.set(part, offset);
+      offset += part.length;
+    });
+    return out;
+  }
+  async function inflatePngData(idatBytes) {
+    if (!idatBytes || !idatBytes.length || typeof DecompressionStream !== "function") return null;
+    const stream = new Blob([idatBytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    const buffer = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buffer);
+  }
+  async function deflatePngData(bytes) {
+    if (!bytes || !bytes.length || typeof CompressionStream !== "function") return null;
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+    const buffer = await new Response(stream).arrayBuffer();
+    return new Uint8Array(buffer);
+  }
+  function paethPredictor(left, up, upLeft) {
+    const p = left + up - upLeft;
+    const pa = Math.abs(p - left);
+    const pb = Math.abs(p - up);
+    const pc = Math.abs(p - upLeft);
+    if (pa <= pb && pa <= pc) return left;
+    if (pb <= pc) return up;
+    return upLeft;
+  }
+  function unfilterPngScanlines(inflated, width, height, bytesPerPixel, bytesPerLine) {
+    const stride = bytesPerLine + 1;
+    if (!inflated || inflated.length < stride * height) return null;
+    const out = new Uint8Array(bytesPerLine * height);
+    for (let y = 0; y < height; y += 1) {
+      const filter = inflated[y * stride];
+      const srcOffset = y * stride + 1;
+      const rowOffset = y * bytesPerLine;
+      const prevRowOffset = rowOffset - bytesPerLine;
+      for (let x = 0; x < bytesPerLine; x += 1) {
+        const raw = inflated[srcOffset + x];
+        const left = x >= bytesPerPixel ? out[rowOffset + x - bytesPerPixel] : 0;
+        const up = y > 0 ? out[prevRowOffset + x] : 0;
+        const upLeft = y > 0 && x >= bytesPerPixel ? out[prevRowOffset + x - bytesPerPixel] : 0;
+        let value = raw;
+        if (filter === 1) value = raw + left;
+        else if (filter === 2) value = raw + up;
+        else if (filter === 3) value = raw + Math.floor((left + up) / 2);
+        else if (filter === 4) value = raw + paethPredictor(left, up, upLeft);
+        else if (filter !== 0) return null;
+        out[rowOffset + x] = value & 255;
+      }
+    }
+    return out;
+  }
+  var PNG_CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n += 1) {
+      let c = n;
+      for (let k = 0; k < 8; k += 1) {
+        c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+      }
+      table[n] = c >>> 0;
+    }
+    return table;
+  })();
+  function crc32(bytes) {
+    let c = 4294967295;
+    for (let index = 0; index < bytes.length; index += 1) {
+      c = PNG_CRC_TABLE[(c ^ bytes[index]) & 255] ^ c >>> 8;
+    }
+    return (c ^ 4294967295) >>> 0;
+  }
+  function asciiBytes(value) {
+    return Uint8Array.from(String(value).split("").map((char) => char.charCodeAt(0)));
+  }
+  function uint32Bytes(value) {
+    const out = new Uint8Array(4);
+    new DataView(out.buffer).setUint32(0, value >>> 0);
+    return out;
+  }
+  function buildPngChunk(type, data = new Uint8Array()) {
+    const typeBytes = asciiBytes(type);
+    const crcInput = concatUint8Arrays([typeBytes, data]);
+    return concatUint8Arrays([uint32Bytes(data.length), typeBytes, data, uint32Bytes(crc32(crcInput))]);
+  }
+  function buildPngRgbaBuffer(width, height, compressedScanlines) {
+    const ihdr = new Uint8Array(13);
+    const view = new DataView(ihdr.buffer);
+    view.setUint32(0, width >>> 0);
+    view.setUint32(4, height >>> 0);
+    ihdr[8] = 8;
+    ihdr[9] = 6;
+    ihdr[10] = 0;
+    ihdr[11] = 0;
+    ihdr[12] = 0;
+    return concatUint8Arrays([
+      Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      buildPngChunk("IHDR", ihdr),
+      buildPngChunk("IDAT", compressedScanlines),
+      buildPngChunk("IEND")
+    ]).buffer;
+  }
+  async function buildBoundsAnchoredPng(buffer, pngMeta) {
+    if (!pngMeta || pngMeta.colorType !== 6 || pngMeta.bitDepth !== 8 || pngMeta.interlaceMethod !== 0 || !pngMeta.idatParts || !pngMeta.idatParts.length) {
+      return null;
+    }
+    const bytesPerPixel = 4;
+    const bytesPerLine = pngMeta.width * bytesPerPixel;
+    const inflated = await inflatePngData(concatUint8Arrays(pngMeta.idatParts));
+    const rawPixels = unfilterPngScanlines(inflated, pngMeta.width, pngMeta.height, bytesPerPixel, bytesPerLine);
+    if (!rawPixels) return null;
+    const anchors = [
+      [0, 0],
+      [pngMeta.width - 1, 0],
+      [0, pngMeta.height - 1],
+      [pngMeta.width - 1, pngMeta.height - 1]
+    ];
+    anchors.forEach(([x, y]) => {
+      const offset = y * bytesPerLine + x * bytesPerPixel;
+      if (rawPixels[offset + 3] === 0) {
+        rawPixels[offset] = 0;
+        rawPixels[offset + 1] = 0;
+        rawPixels[offset + 2] = 0;
+        rawPixels[offset + 3] = 1;
+      }
+    });
+    const scanlines = new Uint8Array((bytesPerLine + 1) * pngMeta.height);
+    for (let y = 0; y < pngMeta.height; y += 1) {
+      const rowOffset = y * (bytesPerLine + 1);
+      scanlines[rowOffset] = 0;
+      scanlines.set(rawPixels.subarray(y * bytesPerLine, (y + 1) * bytesPerLine), rowOffset + 1);
+    }
+    const compressed = await deflatePngData(scanlines);
+    if (!compressed) return null;
+    return buildPngRgbaBuffer(pngMeta.width, pngMeta.height, compressed);
+  }
+  function getPngAlphaAt(rawPixels, x, y, info) {
+    const offset = y * info.bytesPerLine + x * info.bytesPerPixel;
+    if (info.colorType === 6) return rawPixels[offset + 3];
+    if (info.colorType === 4) return rawPixels[offset + 1];
+    if (info.colorType === 3) {
+      const index = rawPixels[offset];
+      return info.transparencyTable && index < info.transparencyTable.length ? info.transparencyTable[index] : 255;
+    }
+    if (info.colorType === 0 && info.transparentGray !== null) {
+      return rawPixels[offset] === info.transparentGray ? 0 : 255;
+    }
+    if (info.colorType === 2 && info.transparentRgb) {
+      return rawPixels[offset] === info.transparentRgb.r && rawPixels[offset + 1] === info.transparentRgb.g && rawPixels[offset + 2] === info.transparentRgb.b ? 0 : 255;
+    }
+    return 255;
+  }
+  async function readPngAlphaBounds(buffer, pngMeta) {
+    if (!pngMeta || pngMeta.interlaceMethod !== 0 || pngMeta.bitDepth !== 8 || !pngMeta.idatParts.length) return null;
+    const channelsByColorType = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+    const bytesPerPixel = channelsByColorType[pngMeta.colorType];
+    if (!bytesPerPixel) return null;
+    const inflated = await inflatePngData(concatUint8Arrays(pngMeta.idatParts));
+    const bytesPerLine = pngMeta.width * bytesPerPixel;
+    const rawPixels = unfilterPngScanlines(inflated, pngMeta.width, pngMeta.height, bytesPerPixel, bytesPerLine);
+    if (!rawPixels) return null;
+    const info = {
+      bytesPerPixel,
+      bytesPerLine,
+      colorType: pngMeta.colorType,
+      transparencyTable: pngMeta.transparencyTable,
+      transparentGray: pngMeta.transparentGray,
+      transparentRgb: pngMeta.transparentRgb
+    };
+    let left = pngMeta.width;
+    let top = pngMeta.height;
+    let right = 0;
+    let bottom = 0;
+    for (let y = 0; y < pngMeta.height; y += 1) {
+      for (let x = 0; x < pngMeta.width; x += 1) {
+        if (getPngAlphaAt(rawPixels, x, y, info) <= 0) continue;
+        if (x < left) left = x;
+        if (y < top) top = y;
+        if (x + 1 > right) right = x + 1;
+        if (y + 1 > bottom) bottom = y + 1;
+      }
+    }
+    if (right <= left || bottom <= top) return null;
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
+  }
+  async function parsePngInfo(buffer) {
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 33) return null;
+    const bytes = new Uint8Array(buffer);
+    const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+    if (!signature.every((value, index) => bytes[index] === value)) return null;
+    const view = new DataView(buffer);
+    const width = view.getUint32(16);
+    const height = view.getUint32(20);
+    const bitDepth = bytes[24];
+    const colorType = bytes[25];
+    const interlaceMethod = bytes[28];
+    let hasTransparency = colorType === 4 || colorType === 6;
+    const idatParts = [];
+    let transparencyTable = null;
+    let transparentGray = null;
+    let transparentRgb = null;
+    let offset = 8;
+    while (offset + 12 <= bytes.length) {
+      const length = view.getUint32(offset);
+      const typeOffset = offset + 4;
+      const dataOffset = offset + 8;
+      const type = String.fromCharCode(bytes[typeOffset], bytes[typeOffset + 1], bytes[typeOffset + 2], bytes[typeOffset + 3]);
+      if (type === "IDAT") {
+        idatParts.push(bytes.slice(dataOffset, dataOffset + length));
+      } else if (type === "tRNS") {
+        hasTransparency = true;
+        if (colorType === 3) {
+          transparencyTable = bytes.slice(dataOffset, dataOffset + length);
+        } else if (colorType === 0 && length >= 2) {
+          transparentGray = bytes[dataOffset + 1];
+        } else if (colorType === 2 && length >= 6) {
+          transparentRgb = {
+            r: bytes[dataOffset + 1],
+            g: bytes[dataOffset + 3],
+            b: bytes[dataOffset + 5]
+          };
+        }
+      }
+      offset += 12 + length;
+      if (type === "IEND" || offset > bytes.length) break;
+    }
+    const pngInfo = {
+      isPng: true,
+      width: Math.max(1, Number(width) || 1),
+      height: Math.max(1, Number(height) || 1),
+      bitDepth,
+      colorType,
+      interlaceMethod,
+      hasTransparency,
+      alphaBounds: null,
+      boundsAnchored: false,
+      _meta: {
+        width: Math.max(1, Number(width) || 1),
+        height: Math.max(1, Number(height) || 1),
+        bitDepth,
+        colorType,
+        interlaceMethod,
+        idatParts,
+        transparencyTable,
+        transparentGray,
+        transparentRgb
+      }
+    };
+    if (hasTransparency) {
+      try {
+        pngInfo.alphaBounds = await readPngAlphaBounds(buffer, {
+          width: pngInfo.width,
+          height: pngInfo.height,
+          bitDepth,
+          colorType,
+          interlaceMethod,
+          idatParts,
+          transparencyTable,
+          transparentGray,
+          transparentRgb
+        });
+      } catch (_) {
+        pngInfo.alphaBounds = null;
+      }
+    }
+    return pngInfo;
+  }
+  function sanitizePngInfo(pngInfo) {
+    if (!pngInfo) return null;
+    const { _meta, ...safeInfo } = pngInfo;
+    return safeInfo;
   }
   function extractEncodedBase64(encoded) {
     if (!encoded) return "";
@@ -1366,6 +1648,81 @@ var PixelRunnerHostBundle = (() => {
   }
   function parseLayerBounds2(bounds) {
     return normalizeBounds(bounds);
+  }
+  function toPixelNumber(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (value && typeof value === "object") {
+      const nested = value._value ?? value.value;
+      const parsed2 = Number(nested);
+      return Number.isFinite(parsed2) ? parsed2 : null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  function parseTransformPoint(point) {
+    if (Array.isArray(point) && point.length >= 2) {
+      const x = toPixelNumber(point[0]);
+      const y = toPixelNumber(point[1]);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    }
+    if (point && typeof point === "object") {
+      const x = toPixelNumber(point.x ?? point.horizontal ?? point.left);
+      const y = toPixelNumber(point.y ?? point.vertical ?? point.top);
+      return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+    }
+    return null;
+  }
+  function parseTransformBounds(transform) {
+    if (!transform) return null;
+    let points = [];
+    if (Array.isArray(transform)) {
+      if (transform.length >= 8 && transform.every((item) => toPixelNumber(item) !== null)) {
+        points = [
+          { x: toPixelNumber(transform[0]), y: toPixelNumber(transform[1]) },
+          { x: toPixelNumber(transform[2]), y: toPixelNumber(transform[3]) },
+          { x: toPixelNumber(transform[4]), y: toPixelNumber(transform[5]) },
+          { x: toPixelNumber(transform[6]), y: toPixelNumber(transform[7]) }
+        ];
+      } else {
+        points = transform.map(parseTransformPoint).filter(Boolean);
+      }
+    } else if (typeof transform === "object") {
+      points = [
+        transform.topLeft,
+        transform.topRight,
+        transform.bottomRight,
+        transform.bottomLeft,
+        transform.quadTopLeft,
+        transform.quadTopRight,
+        transform.quadBottomRight,
+        transform.quadBottomLeft
+      ].map(parseTransformPoint).filter(Boolean);
+    }
+    if (points.length < 2) return null;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const left = Math.min(...xs);
+    const top = Math.min(...ys);
+    const right = Math.max(...xs);
+    const bottom = Math.max(...ys);
+    return right > left && bottom > top ? { left, top, right, bottom } : null;
+  }
+  async function getActivePlacedLayerTransformBounds(action) {
+    if (!action || typeof action.batchPlay !== "function") return null;
+    try {
+      const result = await action.batchPlay([{
+        _obj: "get",
+        _target: [
+          { _property: "smartObjectMore" },
+          { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }
+        ],
+        _options: { dialogOptions: "dontDisplay" }
+      }], {});
+      const smartObjectMore = result && result[0] && result[0].smartObjectMore;
+      return parseTransformBounds(smartObjectMore && (smartObjectMore.transform || smartObjectMore.nonAffineTransform));
+    } catch (_) {
+      return null;
+    }
   }
   function clampBoundsToDocument(bounds, docInfo) {
     const width = Math.max(1, Number(docInfo && docInfo.width) || 1);
@@ -1644,12 +2001,61 @@ var PixelRunnerHostBundle = (() => {
   }
   async function alignPlacedLayerToBounds(doc, action, targetBounds, options = {}) {
     const layer = doc && doc.activeLayers && doc.activeLayers[0];
-    const bounds = parseLayerBounds2(layer && layer.bounds);
+    const transformBounds = options.preferTransformBounds ? await getActivePlacedLayerTransformBounds(action) : null;
+    const bounds = transformBounds || parseLayerBounds2(layer && layer.bounds);
     if (!layer || !bounds || !targetBounds) return;
     const currentSize = getBoundsSize(bounds);
     const targetSize = getBoundsSize(targetBounds);
-    const scaleX = targetSize.width / currentSize.width;
-    const scaleY = targetSize.height / currentSize.height;
+    const imageSize = options.imageSize || null;
+    const alphaBounds = imageSize && imageSize.alphaBounds ? imageSize.alphaBounds : null;
+    const canUseTransparentCanvas = options.mode === "transparent-png-canvas" && imageSize && Number(imageSize.width) > 0 && Number(imageSize.height) > 0 && alphaBounds && Number(alphaBounds.width) > 0 && Number(alphaBounds.height) > 0;
+    const currentAspect = getAspectRatio(currentSize.width, currentSize.height);
+    const canvasAspect = getAspectRatio(imageSize && imageSize.width, imageSize && imageSize.height);
+    const alphaAspect = getAspectRatio(alphaBounds && alphaBounds.width, alphaBounds && alphaBounds.height);
+    const currentLooksLikeFullCanvas = canUseTransparentCanvas && canvasAspect > 0 && Math.abs(currentAspect - canvasAspect) <= Math.abs(currentAspect - alphaAspect);
+    const useTransparentCanvas = canUseTransparentCanvas && !currentLooksLikeFullCanvas;
+    if (useTransparentCanvas) {
+      const canvasScale = Math.min(targetSize.width / Number(imageSize.width), targetSize.height / Number(imageSize.height));
+      if (Number.isFinite(canvasScale) && canvasScale > 0) {
+        const desiredVisibleWidth = Number(alphaBounds.width) * canvasScale;
+        const desiredVisibleHeight = Number(alphaBounds.height) * canvasScale;
+        const scaleX2 = desiredVisibleWidth / currentSize.width;
+        const scaleY2 = desiredVisibleHeight / currentSize.height;
+        const scale = Math.min(scaleX2, scaleY2);
+        if (Number.isFinite(scale) && scale > 0 && Math.abs(scale - 1) > 1e-3) {
+          await transformLayerScale2(action, layer.id, scale * 100, scale * 100);
+        }
+        const nextLayer2 = doc && doc.activeLayers && doc.activeLayers[0];
+        const nextTransformBounds2 = options.preferTransformBounds ? await getActivePlacedLayerTransformBounds(action) : null;
+        const nextBounds2 = nextTransformBounds2 || parseLayerBounds2(nextLayer2 && nextLayer2.bounds);
+        if (!nextLayer2 || !nextBounds2) return;
+        const fittedCanvasWidth = Number(imageSize.width) * canvasScale;
+        const fittedCanvasHeight = Number(imageSize.height) * canvasScale;
+        const canvasLeft = Number(targetBounds.left) + (targetSize.width - fittedCanvasWidth) / 2;
+        const canvasTop = Number(targetBounds.top) + (targetSize.height - fittedCanvasHeight) / 2;
+        const desiredVisibleCenter = {
+          x: canvasLeft + (Number(alphaBounds.left) + Number(alphaBounds.width) / 2) * canvasScale,
+          y: canvasTop + (Number(alphaBounds.top) + Number(alphaBounds.height) / 2) * canvasScale
+        };
+        const currentCenter2 = getBoundsCenter2(nextBounds2);
+        const dx2 = desiredVisibleCenter.x - currentCenter2.x;
+        const dy2 = desiredVisibleCenter.y - currentCenter2.y;
+        if (Math.abs(dx2) > 0.01 || Math.abs(dy2) > 0.01) {
+          await transformLayerOffset2(action, nextLayer2.id, dx2, dy2);
+        }
+        if (options.applyMask) {
+          await createSelectionFromBounds(doc, targetBounds);
+          await applyLayerMaskFromSelection(action);
+        }
+      }
+      return;
+    }
+    const desiredSize = options.mode === "original" && options.imageSize && Number(options.imageSize.width) > 0 && Number(options.imageSize.height) > 0 ? {
+      width: Math.min(targetSize.width, Number(options.imageSize.width)),
+      height: Math.min(targetSize.height, Number(options.imageSize.height))
+    } : targetSize;
+    const scaleX = desiredSize.width / currentSize.width;
+    const scaleY = desiredSize.height / currentSize.height;
     const useStretch = String(options.mode || "").trim().toLowerCase() === "stretch";
     const uniformScale = options.mode === "cover" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
     if (useStretch) {
@@ -1660,10 +2066,14 @@ var PixelRunnerHostBundle = (() => {
       await transformLayerScale2(action, layer.id, uniformScale * 100, uniformScale * 100);
     }
     const nextLayer = doc && doc.activeLayers && doc.activeLayers[0];
-    const nextBounds = parseLayerBounds2(nextLayer && nextLayer.bounds);
+    const nextTransformBounds = options.preferTransformBounds ? await getActivePlacedLayerTransformBounds(action) : null;
+    const nextBounds = nextTransformBounds || parseLayerBounds2(nextLayer && nextLayer.bounds);
     if (!nextLayer || !nextBounds) return;
     const currentCenter = getBoundsCenter2(nextBounds);
-    const targetCenter = getBoundsCenter2(targetBounds);
+    const targetCenter = options.mode === "original" ? {
+      x: Number(targetBounds.left) + getBoundsSize(nextBounds).width / 2,
+      y: Number(targetBounds.top) + getBoundsSize(nextBounds).height / 2
+    } : getBoundsCenter2(targetBounds);
     const dx = targetCenter.x - currentCenter.x;
     const dy = targetCenter.y - currentCenter.y;
     if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
@@ -1782,21 +2192,58 @@ var PixelRunnerHostBundle = (() => {
     const action = photoshop.action;
     if (!app || !app.activeDocument) throw new Error("No active Photoshop document");
     const buffer = await fetchBinary(url);
+    const pngInfo = await parsePngInfo(buffer);
+    let placementBuffer = buffer;
+    if (pngInfo && pngInfo.hasTransparency) {
+      try {
+        const anchoredBuffer = await buildBoundsAnchoredPng(buffer, pngInfo._meta);
+        if (anchoredBuffer instanceof ArrayBuffer && anchoredBuffer.byteLength > 0) {
+          placementBuffer = anchoredBuffer;
+          pngInfo.boundsAnchored = true;
+        }
+      } catch (_) {
+        pngInfo.boundsAnchored = false;
+      }
+    }
     const fs = storage.localFileSystem;
     const formats = storage.formats;
     const tempFolder = await fs.getTemporaryFolder();
     const tempFile = await tempFolder.createFile("pixelrunner-result.png", { overwrite: true });
-    await tempFile.write(buffer, { format: formats.binary });
+    await tempFile.write(placementBuffer, { format: formats.binary });
     const sessionToken = await fs.createSessionToken(tempFile);
     const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
     const targetBounds = normalizeBounds(options.targetBounds);
     const normalizedMode = String(options.fitMode || "contain").trim().toLowerCase();
-    const placementMode = normalizedMode === "cover" ? "cover" : normalizedMode === "stretch" ? "stretch" : "contain";
+    let placementMode = normalizedMode === "cover" ? "cover" : normalizedMode === "stretch" ? "stretch" : normalizedMode === "original" || normalizedMode === "pixel-perfect" ? "original" : "contain";
     await core.executeAsModal(async () => {
       const activeTargetDocument = await activateDocument(app, action, targetDocumentId);
       const targetDocInfo = getDocumentInfo(activeTargetDocument || app.activeDocument);
-      const isFullBoundsTarget = isFullDocumentBounds(targetBounds, targetDocInfo);
+      const documentBounds = targetDocInfo && targetDocInfo.hasActiveDocument ? {
+        left: 0,
+        top: 0,
+        right: Math.max(1, Number(targetDocInfo.width) || 1),
+        bottom: Math.max(1, Number(targetDocInfo.height) || 1)
+      } : null;
+      let effectiveTargetBounds = targetBounds;
+      const isTransparentPngResult = Boolean(pngInfo && pngInfo.hasTransparency);
+      if (isTransparentPngResult && pngInfo && documentBounds && targetBounds) {
+        const targetSize = getBoundsSize(targetBounds);
+        const docSize = getBoundsSize(documentBounds);
+        if (dimensionsNearlyMatch(pngInfo.width, pngInfo.height, docSize.width, docSize.height)) {
+          effectiveTargetBounds = documentBounds;
+        } else if (dimensionsNearlyMatch(pngInfo.width, pngInfo.height, targetSize.width, targetSize.height)) {
+          effectiveTargetBounds = targetBounds;
+        }
+      }
+      const isFullBoundsTarget = isFullDocumentBounds(effectiveTargetBounds, targetDocInfo);
       const applyMask = options.applyMask !== false && !isFullBoundsTarget;
+      if (isTransparentPngResult && pngInfo && pngInfo.boundsAnchored) {
+        placementMode = "original";
+      } else if (isTransparentPngResult && pngInfo && pngInfo.alphaBounds) {
+        placementMode = "transparent-png-canvas";
+      } else if (isTransparentPngResult && isFullBoundsTarget && normalizedMode === "stretch") {
+        placementMode = "original";
+      }
       await action.batchPlay([{
         _obj: "placeEvent",
         null: { _path: sessionToken, _kind: "local" },
@@ -1807,10 +2254,12 @@ var PixelRunnerHostBundle = (() => {
           vertical: { _unit: "pixelsUnit", _value: 0 }
         }
       }], {});
-      if (targetBounds) {
-        await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, targetBounds, {
+      if (effectiveTargetBounds) {
+        await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, effectiveTargetBounds, {
           mode: placementMode,
-          applyMask
+          imageSize: pngInfo,
+          applyMask,
+          preferTransformBounds: isTransparentPngResult
         });
       }
     }, { commandName: "Place PixelRunner Result" });
@@ -1822,7 +2271,9 @@ var PixelRunnerHostBundle = (() => {
       documentId: Number(latestInfo.documentId) || 0,
       layerName: layerName || null,
       document: latestInfo,
-      targetBounds
+      targetBounds,
+      placementMode,
+      resultImage: sanitizePngInfo(pngInfo)
     };
   }
 
