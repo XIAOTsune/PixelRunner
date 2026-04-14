@@ -158,8 +158,7 @@ async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
   const limitedEdge = Math.max(256, Math.min(4096, Math.floor(Number(maxEdge) || 0)));
   if (!limitedEdge) return;
 
-  const width = Math.max(1, Number(docRef && docRef.width && (docRef.width._value ?? docRef.width.value ?? docRef.width)) || 1);
-  const height = Math.max(1, Number(docRef && docRef.height && (docRef.height._value ?? docRef.height.value ?? docRef.height)) || 1);
+  const { width, height } = getDocumentPixelSize(docRef);
   const currentLongEdge = Math.max(width, height);
   if (currentLongEdge <= limitedEdge) return;
 
@@ -180,6 +179,13 @@ async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
     constrainProportions: true,
     interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "automaticInterpolation" }
   }], {});
+}
+
+function getDocumentPixelSize(docRef) {
+  return {
+    width: Math.max(1, Number(docRef && docRef.width && (docRef.width._value ?? docRef.width.value ?? docRef.width)) || 1),
+    height: Math.max(1, Number(docRef && docRef.height && (docRef.height._value ?? docRef.height.value ?? docRef.height)) || 1)
+  };
 }
 
 async function exportDocumentAsJpeg(storage, action, docRef, quality, filePrefix = "pixelrunner-capture") {
@@ -213,6 +219,40 @@ async function exportDocumentAsJpeg(storage, action, docRef, quality, filePrefix
   }
 }
 
+async function exportCompressedJpegCandidate(storage, action, docRef, qualitySteps, targetBytes, hardLimitBytes) {
+  let acceptedResult = null;
+  let lastAttempt = null;
+  const attempts = [];
+
+  for (const quality of qualitySteps) {
+    const exported = await exportDocumentAsJpeg(storage, action, docRef, quality, "pixelrunner-upload");
+    const dimensions = getDocumentPixelSize(docRef);
+    const attempt = {
+      quality: Math.max(1, Math.min(12, Math.floor(Number(quality) || 8))),
+      bytes: exported.bytes,
+      width: dimensions.width,
+      height: dimensions.height
+    };
+    attempts.push(attempt);
+    lastAttempt = { ...exported, quality: attempt.quality, width: attempt.width, height: attempt.height };
+    if (exported.bytes <= targetBytes) {
+      acceptedResult = {
+        ...exported,
+        quality: attempt.quality,
+        width: attempt.width,
+        height: attempt.height
+      };
+      break;
+    }
+  }
+
+  if (!acceptedResult && lastAttempt && lastAttempt.bytes <= hardLimitBytes) {
+    acceptedResult = lastAttempt;
+  }
+
+  return { acceptedResult, attempts };
+}
+
 async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compressionOptions = {}, modalDeps = null) {
   const deps = modalDeps && typeof modalDeps === "object" ? modalDeps : await ensureDeps();
   const action = deps.photoshop.action;
@@ -226,6 +266,7 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     : DEFAULT_UPLOAD_QUALITY_STEPS;
 
   let uploadResult = null;
+  let attempts = [];
 
   let tempDoc = null;
   try {
@@ -245,39 +286,38 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
       await tempDoc.crop(cropBounds);
     }
 
-    await resizeDocumentToLongEdge(action, tempDoc, maxDimension);
+    const originalCandidate = await exportCompressedJpegCandidate(
+      storage,
+      action,
+      tempDoc,
+      qualitySteps,
+      targetBytes,
+      hardLimitBytes
+    );
+    attempts = originalCandidate.attempts;
+    uploadResult = originalCandidate.acceptedResult;
 
-    let lastAttempt = null;
-    const attempts = [];
-    for (const quality of qualitySteps) {
-      const exported = await exportDocumentAsJpeg(storage, action, tempDoc, quality, "pixelrunner-upload");
-      const attempt = {
-        quality: Math.max(1, Math.min(12, Math.floor(Number(quality) || 8))),
-        bytes: exported.bytes
-      };
-      attempts.push(attempt);
-      lastAttempt = { ...exported, quality: attempt.quality };
-      if (exported.bytes <= targetBytes) {
-        uploadResult = {
-          ...exported,
-          quality: attempt.quality,
-          attempts,
-          targetBytes,
-          hardLimitBytes
-        };
-        break;
-      }
+    if (!uploadResult) {
+      await resizeDocumentToLongEdge(action, tempDoc, maxDimension);
+      const resizedCandidate = await exportCompressedJpegCandidate(
+        storage,
+        action,
+        tempDoc,
+        qualitySteps,
+        targetBytes,
+        hardLimitBytes
+      );
+      attempts = attempts.concat(resizedCandidate.attempts);
+      uploadResult = resizedCandidate.acceptedResult;
     }
 
-    if (lastAttempt && lastAttempt.bytes <= hardLimitBytes) {
-      if (!uploadResult) {
-        uploadResult = {
-          ...lastAttempt,
-          attempts,
-          targetBytes,
-          hardLimitBytes
-        };
-      }
+    if (uploadResult) {
+      uploadResult = {
+        ...uploadResult,
+        attempts,
+        targetBytes,
+        hardLimitBytes
+      };
     }
 
     if (!uploadResult) {
@@ -301,6 +341,8 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     base64,
     dataUrl: buildDataUrl(uploadResult.mimeType, base64),
     bytes: uploadResult.bytes,
+    width: uploadResult.width,
+    height: uploadResult.height,
     quality: uploadResult.quality,
     targetBytes: uploadResult.targetBytes,
     hardLimitBytes: uploadResult.hardLimitBytes,
@@ -308,6 +350,8 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
   };
   console.log("[PixelRunner/Photoshop] buildCompressedUploadAsset:success", {
     bytes: asset.bytes,
+    width: asset.width,
+    height: asset.height,
     quality: asset.quality,
     targetBytes: asset.targetBytes,
     hardLimitBytes: asset.hardLimitBytes,
@@ -479,6 +523,8 @@ export async function captureDocumentPreview(options = {}) {
         uploadBase64: uploadAsset.base64,
         uploadDataUrl: uploadAsset.dataUrl,
         uploadBytes: uploadAsset.bytes,
+        uploadWidth: uploadAsset.width,
+        uploadHeight: uploadAsset.height,
         uploadQuality: uploadAsset.quality,
         uploadTargetBytes: uploadAsset.targetBytes,
         uploadHardLimitBytes: uploadAsset.hardLimitBytes,
@@ -491,6 +537,8 @@ export async function captureDocumentPreview(options = {}) {
         capturedFromSelection: result.capturedFromSelection,
         hasBase64: Boolean(result.base64),
         uploadBytes: result.uploadBytes,
+        uploadWidth: result.uploadWidth,
+        uploadHeight: result.uploadHeight,
         uploadQuality: result.uploadQuality
       });
       return result;

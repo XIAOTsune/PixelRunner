@@ -260,13 +260,17 @@
       uploadDataUrl: String(asset.uploadDataUrl || ""),
       uploadBase64: String(asset.uploadBase64 || ""),
       uploadBytes: Number(asset.uploadBytes) || null,
+      uploadWidth: Number(asset.uploadWidth) || null,
+      uploadHeight: Number(asset.uploadHeight) || null,
       uploadQuality: Number(asset.uploadQuality) || null,
       uploadTargetBytes: Number(asset.uploadTargetBytes) || null,
       uploadHardLimitBytes: Number(asset.uploadHardLimitBytes) || null,
       compressionAttempts: Array.isArray(asset.compressionAttempts)
         ? asset.compressionAttempts.map((attempt) => ({
             quality: Number(attempt && attempt.quality) || null,
-            bytes: Number(attempt && attempt.bytes) || null
+            bytes: Number(attempt && attempt.bytes) || null,
+            width: Number(attempt && attempt.width) || null,
+            height: Number(attempt && attempt.height) || null
           }))
         : []
     };
@@ -303,8 +307,8 @@
       base64: uploadBase64 || previewBase64,
       url: String(asset.url || "").trim(),
       mimeType: uploadMimeType,
-      width: Number(asset.originalWidth) || Number(asset.width) || null,
-      height: Number(asset.originalHeight) || Number(asset.height) || null,
+      width: Number(asset.uploadWidth) || Number(asset.originalWidth) || Number(asset.width) || null,
+      height: Number(asset.uploadHeight) || Number(asset.originalHeight) || Number(asset.height) || null,
       bytes: Number(asset.uploadBytes) || null,
       quality: Number(asset.uploadQuality) || null
     };
@@ -1437,6 +1441,8 @@
       hasBase64: Boolean(captured && String(captured.base64 || "").trim()),
       hasDataUrl: Boolean(captured && String(captured.dataUrl || "").trim()),
       uploadBytes: captured && captured.uploadBytes,
+      uploadWidth: captured && captured.uploadWidth,
+      uploadHeight: captured && captured.uploadHeight,
       uploadQuality: captured && captured.uploadQuality
     });
     const asset = pushCapturedAsset(captured);
@@ -1444,7 +1450,7 @@
       throw new Error("宿主已返回结果，但未生成可用预览资源");
     }
     modules.ui.logToWorkspace(
-      `已捕获 Photoshop 文档图像：预览 ${asset.width}x${asset.height}，上传 ${(asset.uploadBytes || 0) / (1024 * 1024) > 0 ? `${((asset.uploadBytes || 0) / (1024 * 1024)).toFixed(2)}MB` : "-"}`,
+      `已捕获 Photoshop 文档图像：预览 ${asset.width}x${asset.height}，上传 ${asset.uploadWidth || "-"}x${asset.uploadHeight || "-"} · ${(asset.uploadBytes || 0) / (1024 * 1024) > 0 ? `${((asset.uploadBytes || 0) / (1024 * 1024)).toFixed(2)}MB` : "-"}`,
       "success"
     );
     renderWorkspace();
