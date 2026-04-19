@@ -251,13 +251,20 @@
   }
 
   function buildAiOptimizePromptText() {
-    const sections = [];
     const basePrompt = String(state.promptValue || "").trim();
     const extraRequirement = String(state.extraRequirement || "").trim();
-    if (basePrompt) sections.push(`??? prompt?
-${basePrompt}`);
-    if (extraRequirement) sections.push(`???????
-${extraRequirement}`);
+    const sections = [
+      "请基于参考图和以下文本，优化为可直接用于图像生成或修图工作流的正向 prompt。",
+      `【当前主 prompt】\n${basePrompt || "（未填写）"}`,
+      `【附加优化要求】\n${extraRequirement || "无。"}`
+    ];
+
+    sections.push(`【输出要求】
+1. 只输出优化后的 prompt 正文，不要输出解释、标题、Markdown 或编号。
+2. 保留当前主 prompt 中明确的人物、主体、构图、风格、材质、色彩和限制条件。
+3. 根据参考图补充清晰、可执行的画面细节，让结果适合直接提交给 RunningHub 图像工作流。
+4. 不要编造与参考图或当前主 prompt 冲突的主体信息。`);
+
     return sections.join("\n\n");
   }
 
@@ -304,7 +311,7 @@ ${extraRequirement}`);
     return new Promise((resolve, reject) => {
       canvas.toBlob((blob) => {
         if (!blob) {
-          reject(new Error("AI??????????"));
+          reject(new Error("AI优化图片压缩失败，请换一张图片或降低图片尺寸后重试。"));
           return;
         }
         resolve(blob);
@@ -316,7 +323,7 @@ ${extraRequirement}`);
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("AI??????????"));
+      reader.onerror = () => reject(new Error("AI优化图片读取失败，请重新导入图片后重试。"));
       reader.readAsDataURL(blob);
     });
   }
@@ -324,7 +331,7 @@ ${extraRequirement}`);
   async function buildCompressedUploadPayload(asset) {
     const src = getImagePreviewSrc(asset);
     if (!src) {
-      throw new Error("????????????????");
+      throw new Error("当前参考图缺少可提交的数据，请重新导入图片。");
     }
 
     const image = await loadImageElement(src);
@@ -334,7 +341,7 @@ ${extraRequirement}`);
     canvas.height = targetSize.height;
     const context = canvas.getContext("2d");
     if (!context) {
-      throw new Error("??????? AI????????");
+      throw new Error("浏览器无法创建图片压缩画布，请重启插件后重试。");
     }
 
     context.fillStyle = "#101720";
@@ -366,7 +373,7 @@ ${extraRequirement}`);
     }
 
     if (fallbackPayload) return fallbackPayload;
-    throw new Error("AI????????????????");
+    throw new Error("AI优化参考图压缩后仍超过大小限制，请换一张更小的图片后重试。");
   }
 
   async function prepareImageForSubmission(asset) {
@@ -517,6 +524,24 @@ ${extraRequirement}`);
     if (statusEl) {
       modules.runtime.setSummaryStatus(statusEl, state.statusMessage, state.statusType);
     }
+  }
+
+  function getErrorMessage(error, fallback = "AI优化失败，请稍后重试。") {
+    const raw = String((error && error.message) || error || "").trim();
+    if (!raw) return fallback;
+    if (/runninghub api key is missing/i.test(raw)) return "请先在设置页保存 RunningHub API Key。";
+    if (/runninghub app id is missing|ai optimize appid is missing/i.test(raw)) {
+      return "当前未配置 AI优化应用 ID，请到设置页高级设置中填写。";
+    }
+    if (/ai optimize image is missing/i.test(raw)) return "当前没有可提交的参考图，请先选择图片。";
+    if (/runninghub taskid is missing/i.test(raw)) return "RunningHub 未返回有效任务 ID，请稍后重试。";
+    if (/task polling timed out/i.test(raw)) return "AI优化任务等待超时，请稍后在 RunningHub 查看任务状态或重试。";
+    if (/runninghub task submission failed/i.test(raw)) return "RunningHub 任务提交失败，请检查 API Key、应用 ID 和网络状态。";
+    return raw;
+  }
+
+  function isCancelMessage(message) {
+    return /cancel|取消/i.test(String(message || ""));
   }
 
   function syncContextFromWorkspace(promptKey = "") {
@@ -769,8 +794,13 @@ ${extraRequirement}`);
     state.coinsCharge = null;
     state.chargeDisplay = "";
     state.txtUrl = "";
-    state.statusMessage = "点击“开始优化”后，这里会显示 AI 返回的优化提示词。";
-    state.statusType = "info";
+    if (String(state.promptValue || "").trim()) {
+      state.statusMessage = "点击“开始优化”后，这里会显示 AI 返回的优化提示词。";
+      state.statusType = "info";
+    } else {
+      state.statusMessage = "当前主 prompt 为空。请先填写原始提示词，或在弹窗中补齐后再开始优化。";
+      state.statusType = "warn";
+    }
     modules.workspace.setModalOpen("aiOptimizeModal", true);
     void refreshSelectedImageAsset();
     return true;
@@ -803,7 +833,7 @@ ${extraRequirement}`);
       modules.ui.logToWorkspace(`AI优化任务已取消：${taskId}`, "warn");
     } catch (error) {
       state.canceling = false;
-      const message = error && error.message ? error.message : String(error || "取消 AI优化任务失败");
+      const message = getErrorMessage(error, "取消 AI优化任务失败");
       setStatus(message, "error");
       modules.ui.logToWorkspace(message, "error");
     } finally {
@@ -813,7 +843,16 @@ ${extraRequirement}`);
 
   function applyResult(mode) {
     const text = String(state.resultText || "").trim();
-    if (!state.promptKey || !text) return;
+    if (!state.promptKey) {
+      setStatus("未找到可写回的主 prompt 字段，请重新打开 AI优化窗口。", "error");
+      renderModal();
+      return;
+    }
+    if (!text) {
+      setStatus("当前还没有可写回的 AI优化结果。", "warn");
+      renderModal();
+      return;
+    }
     const currentValue = String(modules.state.state.formValues[state.promptKey] || "");
     const nextValue =
       mode === "append" && currentValue.trim()
@@ -841,7 +880,6 @@ ${extraRequirement}`);
     if (promptInput) {
       promptInput.addEventListener("input", () => {
         state.promptValue = promptInput.value || "";
-        syncPromptToWorkspace(state.promptValue);
       });
     }
     if (extraInput) {
@@ -883,7 +921,9 @@ ${extraRequirement}`);
     });
     if (startButton) {
       startButton.addEventListener("click", async () => {
+        const localPromptValue = promptInput ? promptInput.value : state.promptValue;
         const availability = getAvailability(state.promptKey);
+        state.promptValue = String(localPromptValue || "");
         if (!availability.available) {
           setStatus(availability.reason, "warn");
           renderModal();
@@ -909,6 +949,11 @@ ${extraRequirement}`);
         }
         if (!hasImageAsset(state.imageAsset)) {
           setStatus("当前没有可提交的参考图，请先选择图片。", "warn");
+          renderModal();
+          return;
+        }
+        if (!String(state.promptValue || "").trim()) {
+          setStatus("请先填写当前主 prompt，再开始 AI优化。", "warn");
           renderModal();
           return;
         }
@@ -975,6 +1020,9 @@ ${extraRequirement}`);
           });
 
           state.taskId = String((submitResult && submitResult.taskId) || "").trim();
+          if (!state.taskId) {
+            throw new Error("RunningHub 未返回有效任务 ID，请稍后重试。");
+          }
           state.taskUpdatedAt = Date.now();
           state.taskDetail = "任务已提交，正在等待 RunningHub 返回结果。";
           renderModal();
@@ -1008,8 +1056,8 @@ ${extraRequirement}`);
           setStatus("AI优化完成。先检查结果，确认后再选择“替换当前”或“追加到当前”。", "success");
           modules.ui.logToWorkspace("AI优化完成，结果已加载到弹窗。", "success");
         } catch (error) {
-          const message = error && error.message ? error.message : String(error || "AI优化失败");
-          const cancelled = /cancel/i.test(String(message || ""));
+          const message = getErrorMessage(error);
+          const cancelled = isCancelMessage(message);
           state.taskStatus = cancelled ? "cancelled" : "error";
           state.taskUpdatedAt = Date.now();
           state.taskDetail = cancelled ? "任务已取消。" : message;

@@ -273,10 +273,6 @@
       return false;
     }
 
-    const snapshot =
-      modules.workspace && typeof modules.workspace.captureWorkspaceFormSnapshot === "function"
-        ? modules.workspace.captureWorkspaceFormSnapshot()
-        : null;
     const alternateApp = state.apps.find((item) => String(item.id || "") !== String(currentApp.id || ""));
 
     if (alternateApp) {
@@ -290,12 +286,8 @@
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     await setCurrentAppById(currentApp.id, { quiet: true });
 
-    if (snapshot && modules.workspace && typeof modules.workspace.restoreWorkspaceFormSnapshot === "function") {
-      modules.workspace.restoreWorkspaceFormSnapshot(snapshot);
-    }
-
     if (!options.quiet) {
-      modules.ui.logToWorkspace(`已重新切换当前应用：${modules.state.getAppDisplayName(currentApp)}，已保留当前参数与提示词。`, "info");
+      modules.ui.logToWorkspace(`已刷新当前应用：${modules.state.getAppDisplayName(currentApp)}，表单参数已重置。`, "info");
     }
     return true;
   }
@@ -320,9 +312,9 @@
 
     if (refreshButton) {
       refreshButton.addEventListener("click", async () => {
-        await refreshCurrentWorkspaceApp();
-        modules.ui.logToWorkspace("已执行工作台应用刷新：通过切换后切回当前应用来避开同任务缓存。", "info");
-        modules.settings.renderSettingsDiagnostics("应用列表已从宿主本地存储刷新。", {
+        await refreshCurrentWorkspaceApp({ quiet: true });
+        modules.ui.logToWorkspace("工作台应用已刷新，当前应用表单已回到默认参数。", "info");
+        modules.settings.renderSettingsDiagnostics("工作台应用已刷新，当前应用表单已回到默认参数。", {
           runtime: state.hostRuntime,
           hasApiKey: Boolean(state.settings.apiKey)
         });
