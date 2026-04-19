@@ -266,6 +266,8 @@ var PixelRunnerWebviewBundle = (() => {
       PROMPT_TEMPLATES: "rh_prompt_templates",
       LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
       CURRENT_APP_ID: "pixelrunner.current_app_id",
+      WORKSPACE_MODE: "pixelrunner.workspaceMode",
+      QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
       SOUND_ENABLED: "pixelrunner.sound_enabled"
     };
     const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
@@ -279,6 +281,8 @@ var PixelRunnerWebviewBundle = (() => {
     const state = {
       apps: [],
       currentApp: null,
+      workspaceMode: "app",
+      quickEntries: [],
       templates: [],
       appPickerKeyword: "",
       appManagerKeyword: "",
@@ -1144,6 +1148,257 @@ ${text}` : text;
     };
   })(window);
 
+  // src/webview/quick-entries.js
+  (function initQuickEntriesModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function isImageInput(input) {
+      const type = String(input && input.type || "").trim().toLowerCase();
+      return type === "image" || type === "file";
+    }
+    function normalizeImageBindings(bindings, app = null) {
+      const explicit = (Array.isArray(bindings) ? bindings : []).filter((item) => item && typeof item === "object").map((item) => ({
+        inputKey: String(item.inputKey || item.key || "").trim(),
+        source: "selectionRequired"
+      })).filter((item) => item.inputKey);
+      if (explicit.length > 0) return explicit;
+      const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
+      const imageInputs = inputs.filter(isImageInput);
+      const preferred = imageInputs.find((item) => item.required) || imageInputs[0] || null;
+      return preferred && preferred.key ? [{ inputKey: String(preferred.key), source: "selectionRequired" }] : [];
+    }
+    function clonePlainValue(value) {
+      if (value == null) return value;
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+      if (Array.isArray(value)) return value.map(clonePlainValue);
+      if (value && typeof value === "object") {
+        const out = {};
+        Object.keys(value).forEach((key) => {
+          out[key] = clonePlainValue(value[key]);
+        });
+        return out;
+      }
+      return value;
+    }
+    function normalizeInputValues(values, app = null) {
+      const source = values && typeof values === "object" ? values : {};
+      const out = {};
+      const imageKeys = new Set((Array.isArray(app && app.inputs) ? app.inputs : []).filter(isImageInput).map((item) => String(item.key || "")));
+      Object.keys(source).forEach((key) => {
+        if (!key || imageKeys.has(key)) return;
+        const value = source[key];
+        if (value && typeof value === "object") {
+          const marker = `${value.dataUrl || ""}${value.base64 || ""}${value.uploadDataUrl || ""}${value.uploadBase64 || ""}`;
+          if (marker) return;
+        }
+        out[key] = clonePlainValue(value);
+      });
+      return out;
+    }
+    function normalizeQuickEntryRecord(entry, index = 0) {
+      const runtime = modules.runtime;
+      const source = entry && typeof entry === "object" ? entry : {};
+      const now = Date.now();
+      const appRef = source.appRef && typeof source.appRef === "object" ? source.appRef : {};
+      const savedAppId = String(appRef.savedAppId || source.savedAppId || "").trim();
+      const appId = String(appRef.appId || source.appId || "").trim();
+      const appName = String(appRef.appName || source.appName || "未命名应用").trim() || "未命名应用";
+      const title = String(source.title || source.name || `快捷入口 ${index + 1}`).trim() || `快捷入口 ${index + 1}`;
+      if (!savedAppId && !appId) return null;
+      return {
+        id: String(source.id || "").trim() || runtime.createId("quick"),
+        title,
+        appRef: {
+          savedAppId,
+          appId,
+          appName
+        },
+        inputValues: normalizeInputValues(source.inputValues || source.values || {}),
+        imageBindings: normalizeImageBindings(source.imageBindings),
+        meta: {
+          createdAt: Number(source.meta && source.meta.createdAt) > 0 ? Number(source.meta.createdAt) : Number(source.createdAt) || now,
+          updatedAt: Number(source.meta && source.meta.updatedAt) > 0 ? Number(source.meta.updatedAt) : Number(source.updatedAt) || now,
+          lastRunAt: Number(source.meta && source.meta.lastRunAt) || 0,
+          runCount: Number(source.meta && source.meta.runCount) || 0
+        }
+      };
+    }
+    function normalizeQuickEntryList(entries) {
+      const seenIds = /* @__PURE__ */ new Set();
+      return (Array.isArray(entries) ? entries : []).map((item, index) => normalizeQuickEntryRecord(item, index)).filter((item) => {
+        if (!item) return false;
+        if (seenIds.has(item.id)) item.id = modules.runtime.createId("quick");
+        seenIds.add(item.id);
+        return true;
+      });
+    }
+    async function loadQuickEntriesFromStorage() {
+      const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.QUICK_ENTRIES);
+      const parsed = modules.runtime.readJsonText(raw, []);
+      const list = parsed && typeof parsed === "object" && Array.isArray(parsed.entries) ? parsed.entries : parsed;
+      return normalizeQuickEntryList(list);
+    }
+    async function saveQuickEntriesToStorage(entries) {
+      const normalized = normalizeQuickEntryList(entries);
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.QUICK_ENTRIES, JSON.stringify({ version: 1, entries: normalized }));
+      modules.state.state.quickEntries = normalized;
+      if (modules.apps && typeof modules.apps.renderAppPickerList === "function") modules.apps.renderAppPickerList();
+      if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
+      return normalized;
+    }
+    async function loadWorkspaceModeFromStorage() {
+      const mode = String(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE) || "").trim();
+      modules.state.state.workspaceMode = mode === "quick" ? "quick" : "app";
+      return modules.state.state.workspaceMode;
+    }
+    async function setWorkspaceMode(mode, options = {}) {
+      modules.state.state.workspaceMode = mode === "quick" ? "quick" : "app";
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE, modules.state.state.workspaceMode);
+      if (!options.skipRender && modules.workspace && typeof modules.workspace.renderWorkspace === "function") {
+        modules.workspace.renderWorkspace();
+      }
+      return modules.state.state.workspaceMode;
+    }
+    async function initializeQuickEntries() {
+      const [entries] = await Promise.all([loadQuickEntriesFromStorage(), loadWorkspaceModeFromStorage()]);
+      modules.state.state.quickEntries = entries;
+      return entries;
+    }
+    function buildEntryFromCurrentApp(title) {
+      const state = modules.state.state;
+      const app = state.currentApp;
+      if (!app) throw new Error("请先选择一个应用");
+      const name = String(title || "").trim();
+      if (!name) throw new Error("请先填写快捷入口名称");
+      if (!modules.state.resolveAppId(app)) throw new Error("当前应用缺少有效的 RunningHub appId");
+      if (modules.workspace && typeof modules.workspace.collectFormValuesFromDom === "function") {
+        modules.workspace.collectFormValuesFromDom();
+      }
+      const now = Date.now();
+      return normalizeQuickEntryRecord({
+        id: modules.runtime.createId("quick"),
+        title: name,
+        appRef: {
+          savedAppId: String(app.id || ""),
+          appId: modules.state.resolveAppId(app),
+          appName: modules.state.getAppDisplayName(app)
+        },
+        inputValues: normalizeInputValues(state.formValues, app),
+        imageBindings: normalizeImageBindings([], app),
+        meta: {
+          createdAt: now,
+          updatedAt: now,
+          lastRunAt: 0,
+          runCount: 0
+        }
+      }, 0);
+    }
+    async function createFromCurrentApp(title) {
+      const entry = buildEntryFromCurrentApp(title);
+      const next = [entry, ...Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries : []];
+      await saveQuickEntriesToStorage(next);
+      return entry;
+    }
+    async function renameQuickEntry(entryId, title) {
+      const id = String(entryId || "").trim();
+      const nextTitle = String(title || "").trim();
+      if (!id) throw new Error("未找到快捷入口");
+      if (!nextTitle) throw new Error("快捷入口名称不能为空");
+      const list = modules.state.state.quickEntries.slice();
+      const index = list.findIndex((item) => String(item.id) === id);
+      if (index < 0) throw new Error("未找到快捷入口");
+      list[index] = {
+        ...list[index],
+        title: nextTitle,
+        meta: {
+          ...list[index].meta || {},
+          updatedAt: Date.now()
+        }
+      };
+      await saveQuickEntriesToStorage(list);
+      return list[index];
+    }
+    async function deleteQuickEntry(entryId) {
+      const id = String(entryId || "").trim();
+      if (!id) return false;
+      const list = modules.state.state.quickEntries.filter((item) => String(item.id) !== id);
+      await saveQuickEntriesToStorage(list);
+      return true;
+    }
+    async function markQuickEntryRan(entryId) {
+      const id = String(entryId || "").trim();
+      const list = modules.state.state.quickEntries.slice();
+      const index = list.findIndex((item) => String(item.id) === id);
+      if (index < 0) return null;
+      list[index] = {
+        ...list[index],
+        meta: {
+          ...list[index].meta || {},
+          lastRunAt: Date.now(),
+          runCount: Number(list[index].meta && list[index].meta.runCount || 0) + 1
+        }
+      };
+      await saveQuickEntriesToStorage(list);
+      return list[index];
+    }
+    function getQuickEntryTitleKey(entry) {
+      return String(entry && entry.title || "").trim().toLowerCase();
+    }
+    function mergeImportedQuickEntries(entries) {
+      const current = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries.slice() : [];
+      const existingIds = new Set(current.map((item) => String(item.id || "")));
+      const titleIndexMap = /* @__PURE__ */ new Map();
+      current.forEach((entry, index) => {
+        const key = getQuickEntryTitleKey(entry);
+        if (key && !titleIndexMap.has(key)) titleIndexMap.set(key, index);
+      });
+      let added = 0;
+      let replaced = 0;
+      normalizeQuickEntryList(entries).forEach((entry, index) => {
+        const key = getQuickEntryTitleKey(entry);
+        const previousIndex = key ? titleIndexMap.get(key) : -1;
+        const previous = previousIndex >= 0 ? current[previousIndex] : null;
+        const nextEntry = normalizeQuickEntryRecord({
+          ...entry,
+          id: previous ? previous.id : entry.id,
+          meta: {
+            ...entry.meta || {},
+            createdAt: previous && previous.meta ? previous.meta.createdAt : entry.meta && entry.meta.createdAt,
+            updatedAt: Date.now(),
+            lastRunAt: previous && previous.meta ? previous.meta.lastRunAt : entry.meta && entry.meta.lastRunAt,
+            runCount: previous && previous.meta ? previous.meta.runCount : entry.meta && entry.meta.runCount
+          }
+        }, index);
+        if (!nextEntry) return;
+        if (previous) {
+          current[previousIndex] = nextEntry;
+          replaced += 1;
+          return;
+        }
+        if (!nextEntry.id || existingIds.has(nextEntry.id)) nextEntry.id = modules.runtime.createId("quick");
+        existingIds.add(nextEntry.id);
+        if (key) titleIndexMap.set(key, current.length);
+        current.push(nextEntry);
+        added += 1;
+      });
+      return { entries: normalizeQuickEntryList(current), added, replaced };
+    }
+    modules.quickEntries = {
+      normalizeQuickEntryRecord,
+      normalizeQuickEntryList,
+      loadQuickEntriesFromStorage,
+      saveQuickEntriesToStorage,
+      loadWorkspaceModeFromStorage,
+      setWorkspaceMode,
+      initializeQuickEntries,
+      createFromCurrentApp,
+      renameQuickEntry,
+      deleteQuickEntry,
+      markQuickEntryRan,
+      mergeImportedQuickEntries,
+      appendImportedQuickEntries: mergeImportedQuickEntries
+    };
+  })(window);
+
   // src/webview/workspace.js
   (function initWorkspaceModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
@@ -1483,7 +1738,7 @@ ${text}` : text;
       if (!imageInputContainer) return;
       const imageInputs = findImageInputs(state.currentApp);
       imageInputContainer.hidden = true;
-      if (!state.currentApp) {
+      if (state.workspaceMode === "quick" || !state.currentApp) {
         imageInputContainer.innerHTML = "";
         return;
       }
@@ -1543,6 +1798,10 @@ ${text}` : text;
       const runtime = modules.runtime;
       if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
       return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
+    }
+    function renderQuickModeMeta() {
+      const count = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries.length : 0;
+      return `<div class="workspace-app-summary workspace-quick-summary"><div class="workspace-app-name">快捷入口</div><span class="workspace-quick-count">已保存 ${modules.runtime.escapeHtml(String(count))} 个</span></div>`;
     }
     function getRunningTasks() {
       return Array.isArray(modules.state.state.runningTasks) ? modules.state.state.runningTasks.filter((item) => item && item.taskId) : [];
@@ -1794,9 +2053,12 @@ ${text}` : text;
       const concurrencyReached = activeCount >= maxConcurrentTasks;
       const cooldownActive = isRunCooldownActive();
       const cooldownSeconds = Math.max(1, Math.ceil((runButtonCooldownUntil - Date.now()) / 1e3));
+      const quickMode = state.workspaceMode === "quick";
       if (runButton) {
-        runButton.disabled = !hasCurrentApp || concurrencyReached || cooldownActive;
-        if (!hasCurrentApp) {
+        runButton.disabled = quickMode || !hasCurrentApp || concurrencyReached || cooldownActive;
+        if (quickMode) {
+          runButton.textContent = "点击快捷入口运行";
+        } else if (!hasCurrentApp) {
           runButton.textContent = "开始运行";
         } else if (concurrencyReached) {
           runButton.textContent = `并发已满 ${activeCount}/${maxConcurrentTasks}`;
@@ -1809,7 +2071,9 @@ ${text}` : text;
         }
       }
       if (taskStatusSummary) {
-        if (!hasCurrentApp) {
+        if (quickMode) {
+          taskStatusSummary.textContent = activeCount > 0 ? `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，快捷入口仍可在并发未满时继续提交。` : "后台任务：选择一个快捷入口即可直接运行。";
+        } else if (!hasCurrentApp) {
           taskStatusSummary.textContent = "后台任务：无，请先选择应用。";
         } else if (concurrencyReached) {
           taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，已达到并发上限，请等待任务完成或在卡片中取消。`;
@@ -1880,17 +2144,72 @@ ${text}` : text;
       }
       return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
     }
+    function getQuickEntryDisplayTitle(entry, index, entries) {
+      const title = String(entry && entry.title || "未命名快捷入口").trim() || "未命名快捷入口";
+      const sameBefore = entries.slice(0, index).filter((item) => String(item && item.title || "").trim() === title).length;
+      return sameBefore > 0 ? `${title} (${sameBefore + 1})` : title;
+    }
+    function renderQuickEntriesPanel() {
+      const runtime = modules.runtime;
+      const entries = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries : [];
+      if (entries.length === 0) {
+        return `
+        <div class="quick-entry-panel">
+          <div class="empty-panel">
+            <h4>还没有快捷入口</h4>
+            <p>切回普通应用，填好参数后点击“快捷”，即可把当前应用和非图片参数保存成一个入口。</p>
+          </div>
+        </div>
+      `;
+      }
+      return `
+      <div class="quick-entry-panel">
+        <div class="quick-entry-list">
+          ${entries.map((entry, index) => {
+        const id = runtime.escapeHtml(String(entry.id || ""));
+        const title = runtime.escapeHtml(getQuickEntryDisplayTitle(entry, index, entries));
+        const appName = runtime.escapeHtml(String(entry.appRef && entry.appRef.appName || "未命名应用"));
+        const runCount = Number(entry.meta && entry.meta.runCount) || 0;
+        return `
+                <article class="quick-entry-card" data-quick-entry-id="${id}">
+                  <div class="quick-entry-main">
+                    <strong>${title}</strong>
+                    <span>${appName} · 需要选区${runCount > 0 ? ` · 已运行 ${runtime.escapeHtml(String(runCount))} 次` : ""}</span>
+                  </div>
+                  <div class="inline-actions quick-entry-actions">
+                    <button class="mini-btn quick-entry-run-btn" type="button" data-action="run-quick-entry" data-quick-entry-id="${id}">运行</button>
+                    <button class="mini-btn" type="button" data-action="rename-quick-entry" data-quick-entry-id="${id}">改名</button>
+                    <button class="mini-btn" type="button" data-action="delete-quick-entry" data-quick-entry-id="${id}">删</button>
+                  </div>
+                </article>
+              `;
+      }).join("")}
+        </div>
+      </div>
+    `;
+    }
     function renderWorkspace() {
       const runtime = modules.runtime;
       const state = modules.state.state;
       const appPickerMeta = runtime.getById("appPickerMeta");
       const dynamicInputContainer = runtime.getById("dynamicInputContainer");
+      const workspaceInputArea = runtime.getById("workspaceInputArea");
+      const createQuickEntryButton = runtime.getById("btnCreateQuickEntry");
+      const quickMode = state.workspaceMode === "quick";
       if (appPickerMeta) {
-        appPickerMeta.innerHTML = renderAppMeta(state.currentApp);
+        appPickerMeta.innerHTML = quickMode ? renderQuickModeMeta() : renderAppMeta(state.currentApp);
+      }
+      document.body.classList.toggle("workspace-mode-quick", quickMode);
+      if (workspaceInputArea) workspaceInputArea.classList.toggle("workspace-quick-card", quickMode);
+      if (createQuickEntryButton) {
+        createQuickEntryButton.hidden = quickMode;
+        createQuickEntryButton.disabled = !state.currentApp;
       }
       renderImageInputArea();
       if (dynamicInputContainer) {
-        if (!state.currentApp) {
+        if (quickMode) {
+          dynamicInputContainer.innerHTML = renderQuickEntriesPanel();
+        } else if (!state.currentApp) {
           dynamicInputContainer.innerHTML = '<div class="empty-panel"><h4>动态表单区</h4><p>请先选择一个已保存应用，后续这里会根据输入结构动态渲染表单。</p></div>';
         } else if (!Array.isArray(state.currentApp.inputs) || state.currentApp.inputs.length === 0) {
           dynamicInputContainer.innerHTML = `<div class="empty-panel"><h4>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</h4><p>当前应用还没有输入结构。你可以先去设置页编辑应用，手动补齐输入 JSON。</p></div>`;
@@ -2412,6 +2731,90 @@ ${text}` : text;
       const missing = (Array.isArray(app.inputs) ? app.inputs : []).filter((input) => input.required).filter((input) => isMissingRequiredValue(input, state.formValues[input.key]));
       if (missing.length > 0) throw new Error(`请先填写必填项：${missing.map((item) => item.label || item.key).join("、")}`);
     }
+    function validateAppValues(app, values) {
+      const missing = (Array.isArray(app && app.inputs) ? app.inputs : []).filter((input) => input.required).filter((input) => isMissingRequiredValue(input, values[input.key]));
+      if (missing.length > 0) throw new Error(`请先填写必填项：${missing.map((item) => item.label || item.key).join("、")}`);
+    }
+    function findQuickEntryApp(entry) {
+      const appRef = entry && entry.appRef ? entry.appRef : {};
+      const savedAppId = String(appRef.savedAppId || "").trim();
+      const runningHubAppId = String(appRef.appId || "").trim();
+      return modules.state.state.apps.find((app) => savedAppId && String(app.id || "") === savedAppId) || modules.state.state.apps.find((app) => runningHubAppId && String(modules.state.resolveAppId(app)) === runningHubAppId) || null;
+    }
+    function getQuickEntryImageInput(entry, app) {
+      const imageInputs = findImageInputs(app);
+      if (imageInputs.length === 0) return null;
+      const bindings = Array.isArray(entry && entry.imageBindings) ? entry.imageBindings : [];
+      for (const binding of bindings) {
+        const key = String(binding && binding.inputKey || "").trim();
+        const matched = imageInputs.find((input) => String(input.key || "") === key);
+        if (matched) return matched;
+      }
+      return imageInputs.find((input) => input.required) || imageInputs[0] || null;
+    }
+    function buildQuickRunPayload(entry, app, values) {
+      const currentAppId = modules.state.resolveAppId(app) || String(entry.appRef && entry.appRef.appId || "").trim();
+      const payload = {
+        appId: currentAppId,
+        appName: String(entry && entry.title || modules.state.getAppDisplayName(app)),
+        app: {
+          id: app.id,
+          appId: currentAppId,
+          name: app.name,
+          inputs: Array.isArray(app.inputs) ? app.inputs : []
+        },
+        apiKey: modules.state.state.settings.apiKey || "",
+        inputs: normalizePayloadInputs(app, values),
+        settings: {
+          pollInterval: modules.state.state.settings.pollInterval,
+          timeout: modules.state.state.settings.timeout,
+          maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
+        }
+      };
+      modules.state.state.lastRunPayload = payload;
+      return payload;
+    }
+    async function ensureSelectionForQuickEntry(entry) {
+      const docInfo = await refreshPhotoshopDocumentStatus({ quiet: true });
+      if (!docInfo || !docInfo.hasActiveDocument) {
+        throw new Error("请先打开 Photoshop 文档，再运行快捷入口。");
+      }
+      if (!cloneSelectionBounds(docInfo.selectionBounds)) {
+        const title = String(entry && entry.title || "该快捷入口").trim() || "该快捷入口";
+        throw new Error(`未检测到 Photoshop 选区。
+请先框选要处理的区域，再运行“${title}”。`);
+      }
+      return docInfo;
+    }
+    async function runQuickEntry(entryId) {
+      const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId || ""));
+      if (!entry) throw new Error("未找到快捷入口");
+      const app = findQuickEntryApp(entry);
+      if (!app) throw new Error(`快捷入口引用的应用不存在：${entry.appRef && entry.appRef.appName ? entry.appRef.appName : entry.title}`);
+      if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法运行快捷入口");
+      if (!modules.state.state.settings.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
+      if (!modules.state.resolveAppId(app)) throw new Error("快捷入口引用的应用缺少有效的 appId，请重新保存应用后再创建快捷入口");
+      if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
+        throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
+      }
+      if (isRunCooldownActive()) throw new Error("请不要短时间连续点击运行按钮，稍后再试。");
+      const imageInput = getQuickEntryImageInput(entry, app);
+      if (!imageInput) throw new Error("快捷入口引用的应用没有可绑定的图片字段");
+      await ensureSelectionForQuickEntry(entry);
+      markRunCooldown();
+      clearLastResult();
+      const asset = await captureCurrentDocumentImage();
+      const values = {
+        ...modules.state.buildDefaultFormValues(app),
+        ...entry.inputValues && typeof entry.inputValues === "object" ? entry.inputValues : {},
+        [String(imageInput.key || "")]: cloneCaptureAsset(asset)
+      };
+      validateAppValues(app, values);
+      const payload = buildQuickRunPayload(entry, app, values);
+      const sourceDocument = resolveSourceDocumentFromImageInputs(app, values, asset.document || null);
+      await modules.quickEntries.markQuickEntryRan(entry.id);
+      startRunTaskFlow(payload, sourceDocument);
+    }
     function buildAutoPlacementPayload(result) {
       const sourceDocument = result && result.sourceDocument && typeof result.sourceDocument === "object" ? result.sourceDocument : null;
       const selectionBounds = sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null;
@@ -2708,6 +3111,91 @@ ${text}` : text;
     function bindWorkspaceActions() {
       const runButton = modules.runtime.getById("btnRun");
       const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
+      const createQuickEntryButton = modules.runtime.getById("btnCreateQuickEntry");
+      const quickEntryNameTitle = modules.runtime.getById("quickEntryNameTitle");
+      const quickEntryNameInput = modules.runtime.getById("quickEntryNameInput");
+      const quickEntryNameClose = modules.runtime.getById("quickEntryNameModalClose");
+      const quickEntryNameCancel = modules.runtime.getById("btnCancelQuickEntryName");
+      const quickEntryNameSave = modules.runtime.getById("btnSaveQuickEntryName");
+      const quickEntryNameHint = modules.runtime.getById("quickEntryNameHint");
+      const quickEntryDeleteClose = modules.runtime.getById("quickEntryDeleteModalClose");
+      const quickEntryDeleteCancel = modules.runtime.getById("btnCancelQuickEntryDelete");
+      const quickEntryDeleteConfirm = modules.runtime.getById("btnConfirmQuickEntryDelete");
+      const quickEntryDeleteHint = modules.runtime.getById("quickEntryDeleteHint");
+      const quickEntryDialogState = {
+        nameMode: "create",
+        targetEntryId: "",
+        deleteEntryId: ""
+      };
+      function openQuickEntryNameModal() {
+        collectFormValuesFromDom();
+        if (!modules.state.state.currentApp) {
+          modules.ui.logToWorkspace("请先选择一个应用，再保存快捷入口。", "warn");
+          return;
+        }
+        quickEntryDialogState.nameMode = "create";
+        quickEntryDialogState.targetEntryId = "";
+        if (quickEntryNameTitle) quickEntryNameTitle.textContent = "添加到快捷入口";
+        if (quickEntryNameInput) {
+          quickEntryNameInput.value = modules.state.getAppDisplayName(modules.state.state.currentApp);
+        }
+        if (quickEntryNameSave) quickEntryNameSave.textContent = "保存";
+        if (quickEntryNameHint) {
+          modules.runtime.setSummaryStatus(quickEntryNameHint, "将保存当前应用和全部非图片参数。运行时会要求先框选 Photoshop 区域。", "info");
+        }
+        setModalOpen("quickEntryNameModal", true);
+        window.setTimeout(() => quickEntryNameInput && quickEntryNameInput.focus(), 0);
+      }
+      function closeQuickEntryNameModal() {
+        setModalOpen("quickEntryNameModal", false);
+      }
+      function openQuickEntryRenameModal(entry) {
+        if (!entry) return;
+        quickEntryDialogState.nameMode = "rename";
+        quickEntryDialogState.targetEntryId = String(entry.id || "");
+        if (quickEntryNameTitle) quickEntryNameTitle.textContent = "重命名快捷入口";
+        if (quickEntryNameInput) quickEntryNameInput.value = String(entry.title || "");
+        if (quickEntryNameSave) quickEntryNameSave.textContent = "保存";
+        if (quickEntryNameHint) {
+          modules.runtime.setSummaryStatus(quickEntryNameHint, "只修改快捷入口名称，不改变保存的应用和参数。", "info");
+        }
+        setModalOpen("quickEntryNameModal", true);
+        window.setTimeout(() => {
+          if (!quickEntryNameInput) return;
+          quickEntryNameInput.focus();
+          quickEntryNameInput.select();
+        }, 0);
+      }
+      function openQuickEntryDeleteModal(entry) {
+        if (!entry) return;
+        quickEntryDialogState.deleteEntryId = String(entry.id || "");
+        if (quickEntryDeleteHint) {
+          modules.runtime.setSummaryStatus(quickEntryDeleteHint, `确定删除快捷入口“${entry.title || "未命名快捷入口"}”吗？这个操作不会删除应用卡片或提示词。`, "warn");
+        }
+        setModalOpen("quickEntryDeleteModal", true);
+      }
+      function closeQuickEntryDeleteModal() {
+        quickEntryDialogState.deleteEntryId = "";
+        setModalOpen("quickEntryDeleteModal", false);
+      }
+      async function saveQuickEntryFromModal() {
+        if (!quickEntryNameInput) return;
+        try {
+          if (quickEntryDialogState.nameMode === "rename") {
+            const entry = await modules.quickEntries.renameQuickEntry(quickEntryDialogState.targetEntryId, quickEntryNameInput.value);
+            modules.runtime.setSummaryStatus(quickEntryNameHint, `快捷入口已重命名：${entry.title}`, "success");
+            modules.ui.logToWorkspace(`快捷入口已重命名：${entry.title}`, "success");
+          } else {
+            const entry = await modules.quickEntries.createFromCurrentApp(quickEntryNameInput.value);
+            modules.runtime.setSummaryStatus(quickEntryNameHint, `快捷入口已保存：${entry.title}`, "success");
+            modules.ui.logToWorkspace(`快捷入口已保存：${entry.title}`, "success");
+          }
+          closeQuickEntryNameModal();
+        } catch (error) {
+          modules.runtime.setSummaryStatus(quickEntryNameHint, `${quickEntryDialogState.nameMode === "rename" ? "重命名" : "保存"}失败：${error.message}`, "error");
+          modules.ui.logToWorkspace(`快捷入口保存失败：${error.message}`, "error");
+        }
+      }
       if (dynamicInputContainer) {
         dynamicInputContainer.addEventListener("input", (event) => {
           const element = event.target;
@@ -2779,6 +3267,63 @@ ${text}` : text;
             handleCaptureFieldClick(actionTarget);
           }
         });
+        dynamicInputContainer.addEventListener("click", async (event) => {
+          const actionTarget = event.target && event.target.closest("[data-action][data-quick-entry-id]");
+          if (!actionTarget) return;
+          const action = actionTarget.getAttribute("data-action");
+          const entryId = actionTarget.getAttribute("data-quick-entry-id");
+          if (!action || !entryId) return;
+          if (action === "run-quick-entry") {
+            actionTarget.disabled = true;
+            try {
+              await runQuickEntry(entryId);
+            } catch (error) {
+              const message = error && error.message ? error.message : String(error || "快捷入口运行失败");
+              if (message.includes("\n") && typeof global.alert === "function") global.alert(message);
+              modules.ui.logToWorkspace(`快捷入口运行失败：${message.replace(/\s+/g, " ")}`, "warn");
+              updateRunButtonState();
+            } finally {
+              actionTarget.disabled = false;
+            }
+            return;
+          }
+          if (action === "rename-quick-entry") {
+            const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId));
+            openQuickEntryRenameModal(entry);
+            return;
+          }
+          if (action === "delete-quick-entry") {
+            const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId));
+            openQuickEntryDeleteModal(entry);
+          }
+        });
+      }
+      if (createQuickEntryButton) createQuickEntryButton.addEventListener("click", openQuickEntryNameModal);
+      if (quickEntryNameClose) quickEntryNameClose.addEventListener("click", closeQuickEntryNameModal);
+      if (quickEntryNameCancel) quickEntryNameCancel.addEventListener("click", closeQuickEntryNameModal);
+      if (quickEntryNameSave) quickEntryNameSave.addEventListener("click", saveQuickEntryFromModal);
+      if (quickEntryNameInput) {
+        quickEntryNameInput.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void saveQuickEntryFromModal();
+          }
+        });
+      }
+      if (quickEntryDeleteClose) quickEntryDeleteClose.addEventListener("click", closeQuickEntryDeleteModal);
+      if (quickEntryDeleteCancel) quickEntryDeleteCancel.addEventListener("click", closeQuickEntryDeleteModal);
+      if (quickEntryDeleteConfirm) {
+        quickEntryDeleteConfirm.addEventListener("click", async () => {
+          const entryId = quickEntryDialogState.deleteEntryId;
+          const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId));
+          try {
+            await modules.quickEntries.deleteQuickEntry(entryId);
+            modules.ui.logToWorkspace(`快捷入口已删除：${entry ? entry.title : entryId}`, "warn");
+            closeQuickEntryDeleteModal();
+          } catch (error) {
+            modules.runtime.setSummaryStatus(quickEntryDeleteHint, `删除失败：${error.message}`, "error");
+          }
+        });
       }
       if (runButton) {
         runButton.addEventListener("click", async () => {
@@ -2813,6 +3358,14 @@ ${text}` : text;
         });
       }
       document.addEventListener("click", async (event) => {
+        if (event.target && event.target.closest("#quickEntryNameBackdrop")) {
+          closeQuickEntryNameModal();
+          return;
+        }
+        if (event.target && event.target.closest("#quickEntryDeleteBackdrop")) {
+          closeQuickEntryDeleteModal();
+          return;
+        }
         const target = event.target && event.target.closest("[data-action][data-task-id]");
         if (!target) return;
         const action = target.getAttribute("data-action");
@@ -2859,6 +3412,7 @@ ${text}` : text;
       updateRunButtonState,
       renderWorkspace,
       buildRunPayload,
+      collectFormValuesFromDom,
       captureWorkspaceFormSnapshot,
       restoreWorkspaceFormSnapshot,
       bindWorkspaceActions,
@@ -3990,11 +4544,12 @@ ${text}` : text;
       const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
       const visibleApps = !keyword ? state.apps : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
       if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
+      const quickEntryButton = `<button class="picker-item picker-item-special ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>先框选 Photoshop 区域，点击入口即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
       if (visibleApps.length === 0) {
-        listEl.innerHTML = state.apps.length === 0 ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>` : `<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
+        listEl.innerHTML = state.apps.length === 0 ? `${quickEntryButton}<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>` : `${quickEntryButton}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
         return;
       }
-      listEl.innerHTML = visibleApps.map((app) => {
+      listEl.innerHTML = quickEntryButton + visibleApps.map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
         return `<button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
       }).join("");
@@ -4026,6 +4581,12 @@ ${text}` : text;
       state.currentApp = nextApp;
       state.formValues = modules.state.buildDefaultFormValues(nextApp);
       await persistCurrentAppId(nextApp.id || "");
+      if (!options.preserveWorkspaceMode && modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
+        await modules.quickEntries.setWorkspaceMode("app", { skipRender: true });
+      } else if (!options.preserveWorkspaceMode) {
+        state.workspaceMode = "app";
+        await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE, "app");
+      }
       modules.workspace.renderWorkspace();
       renderSavedAppsList();
       renderAppPickerList();
@@ -4035,12 +4596,12 @@ ${text}` : text;
     async function hydrateCurrentApp(options = {}) {
       const state = modules.state.state;
       const currentId = state.currentApp && state.currentApp.id;
-      if (currentId && await setCurrentAppById(currentId, { quiet: true })) return;
+      if (currentId && await setCurrentAppById(currentId, { quiet: true, preserveWorkspaceMode: true })) return;
       const persistedId = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID);
-      if (persistedId && await setCurrentAppById(persistedId, { quiet: true })) return;
+      if (persistedId && await setCurrentAppById(persistedId, { quiet: true, preserveWorkspaceMode: true })) return;
       state.currentApp = null;
       state.formValues = {};
-      if (state.apps[0]) return setCurrentAppById(state.apps[0].id, { quiet: true });
+      if (state.apps[0]) return setCurrentAppById(state.apps[0].id, { quiet: true, preserveWorkspaceMode: true });
       modules.workspace.renderWorkspace();
       if (!options.quiet) modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
     }
@@ -4107,6 +4668,13 @@ ${text}` : text;
         }
         const item = event.target && event.target.closest(".picker-item");
         if (!item || !listEl || !listEl.contains(item)) return;
+        if (item.getAttribute("data-action") === "select-quick-mode") {
+          await modules.quickEntries.setWorkspaceMode("quick");
+          renderAppPickerList();
+          modules.workspace.setModalOpen("appPickerModal", false);
+          modules.ui.logToWorkspace("已切换到快捷入口模式。", "info");
+          return;
+        }
         const appId = item.getAttribute("value");
         if (!appId) return;
         if (await setCurrentAppById(appId)) {
@@ -4246,9 +4814,35 @@ ${text}` : text;
       if (parsed && typeof parsed === "object" && Array.isArray(parsed.apps)) parsed = parsed.apps;
       const importedApps = modules.state.normalizeAppList(parsed);
       if (importedApps.length === 0) throw new Error("没有解析到可导入的应用记录");
-      await saveAppsToStorage(importedApps);
+      const nextApps = modules.state.state.apps.slice();
+      const existingIds = new Set(nextApps.map((item) => String(item.id || "")));
+      const nameIndexMap = /* @__PURE__ */ new Map();
+      nextApps.forEach((app, index) => {
+        const key = String(app && (app.name || app.title) || "").trim().toLowerCase();
+        if (key && !nameIndexMap.has(key)) nameIndexMap.set(key, index);
+      });
+      importedApps.forEach((app) => {
+        const key = String(app && (app.name || app.title) || "").trim().toLowerCase();
+        const previousIndex = key ? nameIndexMap.get(key) : -1;
+        const previous = previousIndex >= 0 ? nextApps[previousIndex] : null;
+        const nextId = previous ? previous.id : app.id && !existingIds.has(String(app.id)) ? app.id : modules.runtime.createId("app");
+        const nextApp = modules.state.normalizeAppRecord({
+          ...app,
+          id: nextId,
+          createdAt: previous ? previous.createdAt : app.createdAt || Date.now(),
+          updatedAt: Date.now()
+        });
+        if (previous) {
+          nextApps[previousIndex] = nextApp;
+          return;
+        }
+        existingIds.add(String(nextId));
+        if (key) nameIndexMap.set(key, nextApps.length);
+        nextApps.push(nextApp);
+      });
+      await saveAppsToStorage(nextApps);
       input.dataset.userEdited = "";
-      input.value = JSON.stringify(importedApps, null, 2);
+      input.value = JSON.stringify(nextApps, null, 2);
     }
     function exportAppsToTextarea() {
       const input = modules.runtime.getById("appTransferInput");
@@ -4285,7 +4879,7 @@ ${text}` : text;
   (function initTemplatesModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
     const PROMPT_WARN_CHARS = 4e3;
-    const TEMPLATE_FILE_PREFIX = "pixelrunner_prompt_templates";
+    const TEMPLATE_FILE_PREFIX = "pixelrunner_bundle";
     function getTemplateEditorDraft() {
       const runtime = modules.runtime;
       return JSON.stringify({
@@ -4328,10 +4922,13 @@ ${text}` : text;
     }
     function buildTemplateBundle(templates) {
       return {
-        format: "pixelrunner.prompt-templates",
+        schema: "pixelrunner.bundle",
         version: 1,
         exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        templates: Array.isArray(templates) ? templates : []
+        name: "PixelRunner 资料包",
+        apps: Array.isArray(modules.state.state.apps) ? modules.state.state.apps : [],
+        templates: Array.isArray(templates) ? templates : [],
+        quickEntries: Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries : []
       };
     }
     function buildTemplateExportFilename() {
@@ -4440,6 +5037,7 @@ ${text}` : text;
     }
     function mergeImportedTemplates(importedTemplates) {
       const currentTemplates = Array.isArray(modules.state.state.templates) ? modules.state.state.templates.slice() : [];
+      const existingIds = new Set(currentTemplates.map((item) => String(item.id || "")));
       const titleIndexMap = /* @__PURE__ */ new Map();
       currentTemplates.forEach((template, index) => {
         const key = getTemplateTitleKey(template);
@@ -4449,33 +5047,88 @@ ${text}` : text;
       let replaced = 0;
       importedTemplates.forEach((template) => {
         const key = getTemplateTitleKey(template);
-        if (key && titleIndexMap.has(key)) {
-          const targetIndex = titleIndexMap.get(key);
-          const previous = currentTemplates[targetIndex] || {};
-          currentTemplates[targetIndex] = modules.state.normalizeTemplateRecord({
-            ...template,
-            id: previous.id || template.id,
-            createdAt: previous.createdAt || template.createdAt,
-            updatedAt: Date.now()
-          });
+        const previousIndex = key ? titleIndexMap.get(key) : -1;
+        const previous = previousIndex >= 0 ? currentTemplates[previousIndex] : null;
+        const nextId = previous ? previous.id : template.id && !existingIds.has(String(template.id)) ? template.id : modules.runtime.createId("tpl");
+        const nextItem = modules.state.normalizeTemplateRecord({
+          ...template,
+          id: nextId,
+          createdAt: previous ? previous.createdAt : template.createdAt || Date.now(),
+          updatedAt: Date.now()
+        });
+        if (!nextItem) return;
+        if (previous) {
+          currentTemplates[previousIndex] = nextItem;
           replaced += 1;
           return;
         }
-        currentTemplates.push(
-          modules.state.normalizeTemplateRecord({
-            ...template,
-            id: template.id || modules.runtime.createId("tpl"),
-            createdAt: template.createdAt || Date.now(),
-            updatedAt: Date.now()
-          })
-        );
-        if (key) titleIndexMap.set(key, currentTemplates.length - 1);
+        existingIds.add(String(nextItem.id || ""));
+        if (key) titleIndexMap.set(key, currentTemplates.length);
+        currentTemplates.push(nextItem);
         added += 1;
       });
       return {
         templates: modules.state.normalizeTemplateList(currentTemplates),
         added,
         replaced
+      };
+    }
+    function getAppNameKey(app) {
+      return String(app && (app.name || app.title) || "").trim().toLowerCase();
+    }
+    function mergeImportedApps(importedApps) {
+      const currentApps = Array.isArray(modules.state.state.apps) ? modules.state.state.apps.slice() : [];
+      const existingIds = new Set(currentApps.map((item) => String(item.id || "")));
+      const nameIndexMap = /* @__PURE__ */ new Map();
+      currentApps.forEach((app, index) => {
+        const key = getAppNameKey(app);
+        if (key && !nameIndexMap.has(key)) nameIndexMap.set(key, index);
+      });
+      let added = 0;
+      let replaced = 0;
+      modules.state.normalizeAppList(importedApps).forEach((app) => {
+        const key = getAppNameKey(app);
+        const previousIndex = key ? nameIndexMap.get(key) : -1;
+        const previous = previousIndex >= 0 ? currentApps[previousIndex] : null;
+        const nextId = previous ? previous.id : app.id && !existingIds.has(String(app.id)) ? app.id : modules.runtime.createId("app");
+        const nextApp = modules.state.normalizeAppRecord({
+          ...app,
+          id: nextId,
+          createdAt: previous ? previous.createdAt : app.createdAt || Date.now(),
+          updatedAt: Date.now()
+        });
+        if (!nextApp || !nextApp.appId) return;
+        if (previous) {
+          currentApps[previousIndex] = nextApp;
+          replaced += 1;
+          return;
+        }
+        existingIds.add(String(nextApp.id || ""));
+        if (key) nameIndexMap.set(key, currentApps.length);
+        currentApps.push(nextApp);
+        added += 1;
+      });
+      return {
+        apps: modules.state.normalizeAppList(currentApps),
+        added,
+        replaced
+      };
+    }
+    function parseTransferPackageText(text) {
+      const parsed = JSON.parse(String(text || "").trim());
+      if (parsed && typeof parsed === "object" && parsed.schema === "pixelrunner.bundle") {
+        return {
+          kind: "bundle",
+          apps: Array.isArray(parsed.apps) ? parsed.apps : [],
+          templates: Array.isArray(parsed.templates) ? parsed.templates : [],
+          quickEntries: Array.isArray(parsed.quickEntries) ? parsed.quickEntries : []
+        };
+      }
+      return {
+        kind: "templates",
+        apps: [],
+        templates: parsed && typeof parsed === "object" && Array.isArray(parsed.templates) ? parsed.templates : parsed,
+        quickEntries: []
       };
     }
     function parseImportedTemplatesText(text) {
@@ -4490,15 +5143,31 @@ ${text}` : text;
       if (!input) return;
       const text = String(input.value || "").trim();
       if (!text) throw new Error("请先粘贴模板 JSON");
-      const importedTemplates = parseImportedTemplatesText(text);
-      const merged = mergeImportedTemplates(importedTemplates);
-      await saveTemplatesToStorage(merged.templates);
+      const transfer = parseTransferPackageText(text);
+      const importedTemplates = modules.state.normalizeTemplateList(transfer.templates);
+      if (transfer.kind !== "bundle" && importedTemplates.length === 0) throw new Error("没有解析到可导入的模板");
+      if (transfer.kind === "bundle" && importedTemplates.length === 0 && transfer.apps.length === 0 && transfer.quickEntries.length === 0) {
+        throw new Error("没有解析到可导入的资料包内容");
+      }
+      const mergedApps = transfer.kind === "bundle" ? mergeImportedApps(transfer.apps) : { apps: modules.state.state.apps, added: 0 };
+      const mergedTemplates = mergeImportedTemplates(importedTemplates);
+      const mergedQuickEntries = transfer.kind === "bundle" && modules.quickEntries ? modules.quickEntries.mergeImportedQuickEntries(transfer.quickEntries) : { entries: modules.state.state.quickEntries, added: 0, replaced: 0 };
+      if (transfer.kind === "bundle") await modules.apps.saveAppsToStorage(mergedApps.apps);
+      await saveTemplatesToStorage(mergedTemplates.templates);
+      if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
       input.dataset.userEdited = "";
-      input.value = JSON.stringify(buildTemplateBundle(merged.templates), null, 2);
+      input.value = JSON.stringify(buildTemplateBundle(modules.state.state.templates), null, 2);
       return {
-        added: merged.added,
-        replaced: merged.replaced,
-        total: merged.templates.length
+        appsAdded: mergedApps.added,
+        appsReplaced: mergedApps.replaced,
+        added: mergedTemplates.added,
+        replaced: mergedTemplates.replaced,
+        quickEntriesAdded: mergedQuickEntries.added,
+        quickEntriesReplaced: mergedQuickEntries.replaced,
+        total: modules.state.state.templates.length,
+        appsTotal: modules.state.state.apps.length,
+        quickEntriesTotal: modules.state.state.quickEntries.length,
+        kind: transfer.kind
       };
     }
     async function exportTemplatesAsJson() {
@@ -4515,10 +5184,10 @@ ${text}` : text;
       }
       modules.runtime.setSummaryStatus(
         modules.runtime.getById("templateStatusSummary"),
-        `模板 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`,
+        `资料包 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`,
         "success"
       );
-      modules.ui.logToWorkspace(`模板 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`, "success");
+      modules.ui.logToWorkspace(`资料包 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`, "success");
       return result;
     }
     async function importTemplatesFromJsonFile() {
@@ -4535,9 +5204,10 @@ ${text}` : text;
       const input = modules.runtime.getById("templateTransferInput");
       if (input) input.value = String(result.text || "");
       const summary = await importTemplatesFromTextarea();
+      const message = summary.kind === "bundle" ? `资料包 JSON 已导入：应用新增 ${summary.appsAdded} 个、覆盖 ${summary.appsReplaced} 个；提示词新增 ${summary.added} 条、覆盖 ${summary.replaced} 条；快捷入口新增 ${summary.quickEntriesAdded} 个、覆盖 ${summary.quickEntriesReplaced} 个。` : `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条。`;
       modules.runtime.setSummaryStatus(
         modules.runtime.getById("templateStatusSummary"),
-        `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条`,
+        message,
         "success"
       );
       modules.runtime.setSummaryStatus(
@@ -4545,10 +5215,7 @@ ${text}` : text;
         `已保存模板：${summary.total} 条`,
         "success"
       );
-      modules.ui.logToWorkspace(
-        `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条。`,
-        "success"
-      );
+      modules.ui.logToWorkspace(message, "success");
       return summary;
     }
     function getVisibleTemplates() {
@@ -5282,6 +5949,7 @@ ${incomingContent}` : incomingContent;
     modules.sound.initialize();
     Promise.all([
       modules.apps.refreshWorkspaceApps({ quiet: true }),
+      modules.quickEntries.initializeQuickEntries(),
       modules.templates.refreshTemplates({ quiet: true }),
       modules.settings.initializeSettings()
     ]).then(() => {

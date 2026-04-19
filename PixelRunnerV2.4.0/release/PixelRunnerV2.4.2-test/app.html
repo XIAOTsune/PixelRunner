@@ -66,6 +66,7 @@
               <div class="inline-actions workspace-app-actions">
                 <button id="btnOpenAppPicker" class="mini-btn" type="button">切换</button>
                 <button id="btnRefreshWorkspaceApps" class="mini-btn" type="button">刷新</button>
+                <button id="btnCreateQuickEntry" class="mini-btn" type="button" title="把当前应用和参数保存为快捷入口">快捷</button>
               </div>
             </div>
             <div id="appPickerMeta" class="selection-meta workspace-app-meta">暂未选择应用</div>
@@ -342,8 +343,8 @@
                 <button id="btnSaveTemplate" class="primary-btn" type="button">保存模板</button>
               </div>
               <div class="action-row">
-                <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出 JSON</button>
-                <button id="btnImportTemplatesJson" class="secondary-btn" type="button">导入 JSON</button>
+                <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出资料包</button>
+                <button id="btnImportTemplatesJson" class="secondary-btn" type="button">导入资料包</button>
               </div>
               <div class="dual-grid">
                 <label class="field">
@@ -431,6 +432,48 @@
       </div>
 
       <div id="appPickerList" class="picker-list"></div>
+    </section>
+  </div>
+
+  <div id="quickEntryNameModal" class="overlay-modal">
+    <div id="quickEntryNameBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card quick-entry-name-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工作台</p>
+          <h3 id="quickEntryNameTitle" class="card-title">添加到快捷入口</h3>
+        </div>
+        <button id="quickEntryNameModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <label class="field">
+        <span class="field-label">名称</span>
+        <input id="quickEntryNameInput" class="field-input" type="text" placeholder="例如：一键磨皮" />
+      </label>
+      <div id="quickEntryNameHint" class="summary-strip">将保存当前应用和全部非图片参数。运行时会要求先框选 Photoshop 区域。</div>
+      <div class="action-row">
+        <button id="btnCancelQuickEntryName" class="secondary-btn" type="button">取消</button>
+        <button id="btnSaveQuickEntryName" class="primary-btn" type="button">保存</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="quickEntryDeleteModal" class="overlay-modal">
+    <div id="quickEntryDeleteBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card quick-entry-name-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工作台</p>
+          <h3 class="card-title">删除快捷入口</h3>
+        </div>
+        <button id="quickEntryDeleteModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div id="quickEntryDeleteHint" class="summary-strip">确定删除这个快捷入口吗？</div>
+      <div class="action-row">
+        <button id="btnCancelQuickEntryDelete" class="secondary-btn" type="button">取消</button>
+        <button id="btnConfirmQuickEntryDelete" class="primary-btn" type="button">删除</button>
+      </div>
     </section>
   </div>
 

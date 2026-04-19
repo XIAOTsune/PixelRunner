@@ -181,15 +181,17 @@
       : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
 
     if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
+    const quickEntryButton = `<button class="picker-item picker-item-special ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>先框选 Photoshop 区域，点击入口即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
+
     if (visibleApps.length === 0) {
       listEl.innerHTML =
         state.apps.length === 0
-          ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>`
-          : `<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
+          ? `${quickEntryButton}<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>`
+          : `${quickEntryButton}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
       return;
     }
 
-    listEl.innerHTML = visibleApps
+    listEl.innerHTML = quickEntryButton + visibleApps
       .map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
         return `<button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
@@ -234,6 +236,12 @@
     state.currentApp = nextApp;
     state.formValues = modules.state.buildDefaultFormValues(nextApp);
     await persistCurrentAppId(nextApp.id || "");
+    if (!options.preserveWorkspaceMode && modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
+      await modules.quickEntries.setWorkspaceMode("app", { skipRender: true });
+    } else if (!options.preserveWorkspaceMode) {
+      state.workspaceMode = "app";
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE, "app");
+    }
     modules.workspace.renderWorkspace();
     renderSavedAppsList();
     renderAppPickerList();
@@ -244,14 +252,14 @@
   async function hydrateCurrentApp(options = {}) {
     const state = modules.state.state;
     const currentId = state.currentApp && state.currentApp.id;
-    if (currentId && (await setCurrentAppById(currentId, { quiet: true }))) return;
+    if (currentId && (await setCurrentAppById(currentId, { quiet: true, preserveWorkspaceMode: true }))) return;
 
     const persistedId = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID);
-    if (persistedId && (await setCurrentAppById(persistedId, { quiet: true }))) return;
+    if (persistedId && (await setCurrentAppById(persistedId, { quiet: true, preserveWorkspaceMode: true }))) return;
 
     state.currentApp = null;
     state.formValues = {};
-    if (state.apps[0]) return setCurrentAppById(state.apps[0].id, { quiet: true });
+    if (state.apps[0]) return setCurrentAppById(state.apps[0].id, { quiet: true, preserveWorkspaceMode: true });
 
     modules.workspace.renderWorkspace();
     if (!options.quiet) modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
@@ -331,6 +339,14 @@
 
       const item = event.target && event.target.closest(".picker-item");
       if (!item || !listEl || !listEl.contains(item)) return;
+
+      if (item.getAttribute("data-action") === "select-quick-mode") {
+        await modules.quickEntries.setWorkspaceMode("quick");
+        renderAppPickerList();
+        modules.workspace.setModalOpen("appPickerModal", false);
+        modules.ui.logToWorkspace("已切换到快捷入口模式。", "info");
+        return;
+      }
 
       const appId = item.getAttribute("value");
       if (!appId) return;
@@ -500,9 +516,37 @@
     const importedApps = modules.state.normalizeAppList(parsed);
     if (importedApps.length === 0) throw new Error("没有解析到可导入的应用记录");
 
-    await saveAppsToStorage(importedApps);
+    const nextApps = modules.state.state.apps.slice();
+    const existingIds = new Set(nextApps.map((item) => String(item.id || "")));
+    const nameIndexMap = new Map();
+    nextApps.forEach((app, index) => {
+      const key = String((app && (app.name || app.title)) || "").trim().toLowerCase();
+      if (key && !nameIndexMap.has(key)) nameIndexMap.set(key, index);
+    });
+
+    importedApps.forEach((app) => {
+      const key = String((app && (app.name || app.title)) || "").trim().toLowerCase();
+      const previousIndex = key ? nameIndexMap.get(key) : -1;
+      const previous = previousIndex >= 0 ? nextApps[previousIndex] : null;
+      const nextId = previous ? previous.id : app.id && !existingIds.has(String(app.id)) ? app.id : modules.runtime.createId("app");
+      const nextApp = modules.state.normalizeAppRecord({
+        ...app,
+        id: nextId,
+        createdAt: previous ? previous.createdAt : app.createdAt || Date.now(),
+        updatedAt: Date.now()
+      });
+      if (previous) {
+        nextApps[previousIndex] = nextApp;
+        return;
+      }
+      existingIds.add(String(nextId));
+      if (key) nameIndexMap.set(key, nextApps.length);
+      nextApps.push(nextApp);
+    });
+
+    await saveAppsToStorage(nextApps);
     input.dataset.userEdited = "";
-    input.value = JSON.stringify(importedApps, null, 2);
+    input.value = JSON.stringify(nextApps, null, 2);
   }
 
   function exportAppsToTextarea() {

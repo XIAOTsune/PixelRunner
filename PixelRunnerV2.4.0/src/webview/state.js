@@ -8,6 +8,8 @@
     PROMPT_TEMPLATES: "rh_prompt_templates",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
     CURRENT_APP_ID: "pixelrunner.current_app_id",
+    WORKSPACE_MODE: "pixelrunner.workspaceMode",
+    QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
     SOUND_ENABLED: "pixelrunner.sound_enabled"
   };
 
@@ -24,6 +26,8 @@
   const state = {
     apps: [],
     currentApp: null,
+    workspaceMode: "app",
+    quickEntries: [],
     templates: [],
     appPickerKeyword: "",
     appManagerKeyword: "",

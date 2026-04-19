@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   Promise.all([
     modules.apps.refreshWorkspaceApps({ quiet: true }),
+    modules.quickEntries.initializeQuickEntries(),
     modules.templates.refreshTemplates({ quiet: true }),
     modules.settings.initializeSettings()
   ])

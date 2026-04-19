@@ -1,7 +1,7 @@
 (function initTemplatesModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const PROMPT_WARN_CHARS = 4000;
-  const TEMPLATE_FILE_PREFIX = "pixelrunner_prompt_templates";
+  const TEMPLATE_FILE_PREFIX = "pixelrunner_bundle";
 
   function getTemplateEditorDraft() {
     const runtime = modules.runtime;
@@ -58,10 +58,13 @@
 
   function buildTemplateBundle(templates) {
     return {
-      format: "pixelrunner.prompt-templates",
+      schema: "pixelrunner.bundle",
       version: 1,
       exportedAt: new Date().toISOString(),
-      templates: Array.isArray(templates) ? templates : []
+      name: "PixelRunner 资料包",
+      apps: Array.isArray(modules.state.state.apps) ? modules.state.state.apps : [],
+      templates: Array.isArray(templates) ? templates : [],
+      quickEntries: Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries : []
     };
   }
 
@@ -187,39 +190,34 @@
 
   function mergeImportedTemplates(importedTemplates) {
     const currentTemplates = Array.isArray(modules.state.state.templates) ? modules.state.state.templates.slice() : [];
+    const existingIds = new Set(currentTemplates.map((item) => String(item.id || "")));
     const titleIndexMap = new Map();
-
     currentTemplates.forEach((template, index) => {
       const key = getTemplateTitleKey(template);
       if (key && !titleIndexMap.has(key)) titleIndexMap.set(key, index);
     });
-
     let added = 0;
     let replaced = 0;
     importedTemplates.forEach((template) => {
       const key = getTemplateTitleKey(template);
-      if (key && titleIndexMap.has(key)) {
-        const targetIndex = titleIndexMap.get(key);
-        const previous = currentTemplates[targetIndex] || {};
-        currentTemplates[targetIndex] = modules.state.normalizeTemplateRecord({
-          ...template,
-          id: previous.id || template.id,
-          createdAt: previous.createdAt || template.createdAt,
-          updatedAt: Date.now()
-        });
+      const previousIndex = key ? titleIndexMap.get(key) : -1;
+      const previous = previousIndex >= 0 ? currentTemplates[previousIndex] : null;
+      const nextId = previous ? previous.id : template.id && !existingIds.has(String(template.id)) ? template.id : modules.runtime.createId("tpl");
+      const nextItem = modules.state.normalizeTemplateRecord({
+        ...template,
+        id: nextId,
+        createdAt: previous ? previous.createdAt : template.createdAt || Date.now(),
+        updatedAt: Date.now()
+      });
+      if (!nextItem) return;
+      if (previous) {
+        currentTemplates[previousIndex] = nextItem;
         replaced += 1;
         return;
       }
-
-      currentTemplates.push(
-        modules.state.normalizeTemplateRecord({
-          ...template,
-          id: template.id || modules.runtime.createId("tpl"),
-          createdAt: template.createdAt || Date.now(),
-          updatedAt: Date.now()
-        })
-      );
-      if (key) titleIndexMap.set(key, currentTemplates.length - 1);
+      existingIds.add(String(nextItem.id || ""));
+      if (key) titleIndexMap.set(key, currentTemplates.length);
+      currentTemplates.push(nextItem);
       added += 1;
     });
 
@@ -227,6 +225,67 @@
       templates: modules.state.normalizeTemplateList(currentTemplates),
       added,
       replaced
+    };
+  }
+
+  function getAppNameKey(app) {
+    return String((app && (app.name || app.title)) || "").trim().toLowerCase();
+  }
+
+  function mergeImportedApps(importedApps) {
+    const currentApps = Array.isArray(modules.state.state.apps) ? modules.state.state.apps.slice() : [];
+    const existingIds = new Set(currentApps.map((item) => String(item.id || "")));
+    const nameIndexMap = new Map();
+    currentApps.forEach((app, index) => {
+      const key = getAppNameKey(app);
+      if (key && !nameIndexMap.has(key)) nameIndexMap.set(key, index);
+    });
+    let added = 0;
+    let replaced = 0;
+    modules.state.normalizeAppList(importedApps).forEach((app) => {
+      const key = getAppNameKey(app);
+      const previousIndex = key ? nameIndexMap.get(key) : -1;
+      const previous = previousIndex >= 0 ? currentApps[previousIndex] : null;
+      const nextId = previous ? previous.id : app.id && !existingIds.has(String(app.id)) ? app.id : modules.runtime.createId("app");
+      const nextApp = modules.state.normalizeAppRecord({
+        ...app,
+        id: nextId,
+        createdAt: previous ? previous.createdAt : app.createdAt || Date.now(),
+        updatedAt: Date.now()
+      });
+      if (!nextApp || !nextApp.appId) return;
+      if (previous) {
+        currentApps[previousIndex] = nextApp;
+        replaced += 1;
+        return;
+      }
+      existingIds.add(String(nextApp.id || ""));
+      if (key) nameIndexMap.set(key, currentApps.length);
+      currentApps.push(nextApp);
+      added += 1;
+    });
+    return {
+      apps: modules.state.normalizeAppList(currentApps),
+      added,
+      replaced
+    };
+  }
+
+  function parseTransferPackageText(text) {
+    const parsed = JSON.parse(String(text || "").trim());
+    if (parsed && typeof parsed === "object" && parsed.schema === "pixelrunner.bundle") {
+      return {
+        kind: "bundle",
+        apps: Array.isArray(parsed.apps) ? parsed.apps : [],
+        templates: Array.isArray(parsed.templates) ? parsed.templates : [],
+        quickEntries: Array.isArray(parsed.quickEntries) ? parsed.quickEntries : []
+      };
+    }
+    return {
+      kind: "templates",
+      apps: [],
+      templates: parsed && typeof parsed === "object" && Array.isArray(parsed.templates) ? parsed.templates : parsed,
+      quickEntries: []
     };
   }
 
@@ -244,16 +303,37 @@
     const text = String(input.value || "").trim();
     if (!text) throw new Error("请先粘贴模板 JSON");
 
-    const importedTemplates = parseImportedTemplatesText(text);
-    const merged = mergeImportedTemplates(importedTemplates);
-    await saveTemplatesToStorage(merged.templates);
+    const transfer = parseTransferPackageText(text);
+    const importedTemplates = modules.state.normalizeTemplateList(transfer.templates);
+    if (transfer.kind !== "bundle" && importedTemplates.length === 0) throw new Error("没有解析到可导入的模板");
+    if (transfer.kind === "bundle" && importedTemplates.length === 0 && transfer.apps.length === 0 && transfer.quickEntries.length === 0) {
+      throw new Error("没有解析到可导入的资料包内容");
+    }
+
+    const mergedApps = transfer.kind === "bundle" ? mergeImportedApps(transfer.apps) : { apps: modules.state.state.apps, added: 0 };
+    const mergedTemplates = mergeImportedTemplates(importedTemplates);
+    const mergedQuickEntries =
+      transfer.kind === "bundle" && modules.quickEntries
+        ? modules.quickEntries.mergeImportedQuickEntries(transfer.quickEntries)
+        : { entries: modules.state.state.quickEntries, added: 0, replaced: 0 };
+
+    if (transfer.kind === "bundle") await modules.apps.saveAppsToStorage(mergedApps.apps);
+    await saveTemplatesToStorage(mergedTemplates.templates);
+    if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
 
     input.dataset.userEdited = "";
-    input.value = JSON.stringify(buildTemplateBundle(merged.templates), null, 2);
+    input.value = JSON.stringify(buildTemplateBundle(modules.state.state.templates), null, 2);
     return {
-      added: merged.added,
-      replaced: merged.replaced,
-      total: merged.templates.length
+      appsAdded: mergedApps.added,
+      appsReplaced: mergedApps.replaced,
+      added: mergedTemplates.added,
+      replaced: mergedTemplates.replaced,
+      quickEntriesAdded: mergedQuickEntries.added,
+      quickEntriesReplaced: mergedQuickEntries.replaced,
+      total: modules.state.state.templates.length,
+      appsTotal: modules.state.state.apps.length,
+      quickEntriesTotal: modules.state.state.quickEntries.length,
+      kind: transfer.kind
     };
   }
 
@@ -273,10 +353,10 @@
 
     modules.runtime.setSummaryStatus(
       modules.runtime.getById("templateStatusSummary"),
-      `模板 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`,
+      `资料包 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`,
       "success"
     );
-    modules.ui.logToWorkspace(`模板 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`, "success");
+    modules.ui.logToWorkspace(`资料包 JSON 已导出：${result.savedPath || buildTemplateExportFilename()}`, "success");
     return result;
   }
 
@@ -297,9 +377,13 @@
     if (input) input.value = String(result.text || "");
 
     const summary = await importTemplatesFromTextarea();
+    const message =
+      summary.kind === "bundle"
+        ? `资料包 JSON 已导入：应用新增 ${summary.appsAdded} 个、覆盖 ${summary.appsReplaced} 个；提示词新增 ${summary.added} 条、覆盖 ${summary.replaced} 条；快捷入口新增 ${summary.quickEntriesAdded} 个、覆盖 ${summary.quickEntriesReplaced} 个。`
+        : `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条。`;
     modules.runtime.setSummaryStatus(
       modules.runtime.getById("templateStatusSummary"),
-      `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条`,
+      message,
       "success"
     );
     modules.runtime.setSummaryStatus(
@@ -307,10 +391,7 @@
       `已保存模板：${summary.total} 条`,
       "success"
     );
-    modules.ui.logToWorkspace(
-      `模板 JSON 已导入：新增 ${summary.added} 条，覆盖 ${summary.replaced} 条，总计 ${summary.total} 条。`,
-      "success"
-    );
+    modules.ui.logToWorkspace(message, "success");
     return summary;
   }
 

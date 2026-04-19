@@ -393,7 +393,7 @@
 
     const imageInputs = findImageInputs(state.currentApp);
     imageInputContainer.hidden = true;
-    if (!state.currentApp) {
+    if (state.workspaceMode === "quick" || !state.currentApp) {
       imageInputContainer.innerHTML = "";
       return;
     }
@@ -467,6 +467,11 @@
     const runtime = modules.runtime;
     if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
     return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
+  }
+
+  function renderQuickModeMeta() {
+    const count = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries.length : 0;
+    return `<div class="workspace-app-summary workspace-quick-summary"><div class="workspace-app-name">快捷入口</div><span class="workspace-quick-count">已保存 ${modules.runtime.escapeHtml(String(count))} 个</span></div>`;
   }
 
   function getRunningTasks() {
@@ -784,10 +789,13 @@
     const concurrencyReached = activeCount >= maxConcurrentTasks;
     const cooldownActive = isRunCooldownActive();
     const cooldownSeconds = Math.max(1, Math.ceil((runButtonCooldownUntil - Date.now()) / 1000));
+    const quickMode = state.workspaceMode === "quick";
 
     if (runButton) {
-      runButton.disabled = !hasCurrentApp || concurrencyReached || cooldownActive;
-      if (!hasCurrentApp) {
+      runButton.disabled = quickMode || !hasCurrentApp || concurrencyReached || cooldownActive;
+      if (quickMode) {
+        runButton.textContent = "点击快捷入口运行";
+      } else if (!hasCurrentApp) {
         runButton.textContent = "开始运行";
       } else if (concurrencyReached) {
         runButton.textContent = `并发已满 ${activeCount}/${maxConcurrentTasks}`;
@@ -801,7 +809,12 @@
     }
 
     if (taskStatusSummary) {
-      if (!hasCurrentApp) {
+      if (quickMode) {
+        taskStatusSummary.textContent =
+          activeCount > 0
+            ? `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，快捷入口仍可在并发未满时继续提交。`
+            : "后台任务：选择一个快捷入口即可直接运行。";
+      } else if (!hasCurrentApp) {
         taskStatusSummary.textContent = "后台任务：无，请先选择应用。";
       } else if (concurrencyReached) {
         taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，已达到并发上限，请等待任务完成或在卡片中取消。`;
@@ -895,20 +908,83 @@
     return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
   }
 
+  function getQuickEntryDisplayTitle(entry, index, entries) {
+    const title = String((entry && entry.title) || "未命名快捷入口").trim() || "未命名快捷入口";
+    const sameBefore = entries
+      .slice(0, index)
+      .filter((item) => String((item && item.title) || "").trim() === title).length;
+    return sameBefore > 0 ? `${title} (${sameBefore + 1})` : title;
+  }
+
+  function renderQuickEntriesPanel() {
+    const runtime = modules.runtime;
+    const entries = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries : [];
+    if (entries.length === 0) {
+      return `
+        <div class="quick-entry-panel">
+          <div class="empty-panel">
+            <h4>还没有快捷入口</h4>
+            <p>切回普通应用，填好参数后点击“快捷”，即可把当前应用和非图片参数保存成一个入口。</p>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="quick-entry-panel">
+        <div class="quick-entry-list">
+          ${entries
+            .map((entry, index) => {
+              const id = runtime.escapeHtml(String(entry.id || ""));
+              const title = runtime.escapeHtml(getQuickEntryDisplayTitle(entry, index, entries));
+              const appName = runtime.escapeHtml(String((entry.appRef && entry.appRef.appName) || "未命名应用"));
+              const runCount = Number(entry.meta && entry.meta.runCount) || 0;
+              return `
+                <article class="quick-entry-card" data-quick-entry-id="${id}">
+                  <div class="quick-entry-main">
+                    <strong>${title}</strong>
+                    <span>${appName} · 需要选区${runCount > 0 ? ` · 已运行 ${runtime.escapeHtml(String(runCount))} 次` : ""}</span>
+                  </div>
+                  <div class="inline-actions quick-entry-actions">
+                    <button class="mini-btn quick-entry-run-btn" type="button" data-action="run-quick-entry" data-quick-entry-id="${id}">运行</button>
+                    <button class="mini-btn" type="button" data-action="rename-quick-entry" data-quick-entry-id="${id}">改名</button>
+                    <button class="mini-btn" type="button" data-action="delete-quick-entry" data-quick-entry-id="${id}">删</button>
+                  </div>
+                </article>
+              `;
+            })
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
+
   function renderWorkspace() {
     const runtime = modules.runtime;
     const state = modules.state.state;
     const appPickerMeta = runtime.getById("appPickerMeta");
     const dynamicInputContainer = runtime.getById("dynamicInputContainer");
+    const workspaceInputArea = runtime.getById("workspaceInputArea");
+    const createQuickEntryButton = runtime.getById("btnCreateQuickEntry");
+    const quickMode = state.workspaceMode === "quick";
 
     if (appPickerMeta) {
-      appPickerMeta.innerHTML = renderAppMeta(state.currentApp);
+      appPickerMeta.innerHTML = quickMode ? renderQuickModeMeta() : renderAppMeta(state.currentApp);
+    }
+
+    document.body.classList.toggle("workspace-mode-quick", quickMode);
+    if (workspaceInputArea) workspaceInputArea.classList.toggle("workspace-quick-card", quickMode);
+    if (createQuickEntryButton) {
+      createQuickEntryButton.hidden = quickMode;
+      createQuickEntryButton.disabled = !state.currentApp;
     }
 
     renderImageInputArea();
 
     if (dynamicInputContainer) {
-      if (!state.currentApp) {
+      if (quickMode) {
+        dynamicInputContainer.innerHTML = renderQuickEntriesPanel();
+      } else if (!state.currentApp) {
         dynamicInputContainer.innerHTML =
           '<div class="empty-panel"><h4>动态表单区</h4><p>请先选择一个已保存应用，后续这里会根据输入结构动态渲染表单。</p></div>';
       } else if (!Array.isArray(state.currentApp.inputs) || state.currentApp.inputs.length === 0) {
@@ -1509,6 +1585,103 @@
     if (missing.length > 0) throw new Error(`请先填写必填项：${missing.map((item) => item.label || item.key).join("、")}`);
   }
 
+  function validateAppValues(app, values) {
+    const missing = (Array.isArray(app && app.inputs) ? app.inputs : [])
+      .filter((input) => input.required)
+      .filter((input) => isMissingRequiredValue(input, values[input.key]));
+    if (missing.length > 0) throw new Error(`请先填写必填项：${missing.map((item) => item.label || item.key).join("、")}`);
+  }
+
+  function findQuickEntryApp(entry) {
+    const appRef = entry && entry.appRef ? entry.appRef : {};
+    const savedAppId = String(appRef.savedAppId || "").trim();
+    const runningHubAppId = String(appRef.appId || "").trim();
+    return (
+      modules.state.state.apps.find((app) => savedAppId && String(app.id || "") === savedAppId) ||
+      modules.state.state.apps.find((app) => runningHubAppId && String(modules.state.resolveAppId(app)) === runningHubAppId) ||
+      null
+    );
+  }
+
+  function getQuickEntryImageInput(entry, app) {
+    const imageInputs = findImageInputs(app);
+    if (imageInputs.length === 0) return null;
+    const bindings = Array.isArray(entry && entry.imageBindings) ? entry.imageBindings : [];
+    for (const binding of bindings) {
+      const key = String((binding && binding.inputKey) || "").trim();
+      const matched = imageInputs.find((input) => String(input.key || "") === key);
+      if (matched) return matched;
+    }
+    return imageInputs.find((input) => input.required) || imageInputs[0] || null;
+  }
+
+  function buildQuickRunPayload(entry, app, values) {
+    const currentAppId = modules.state.resolveAppId(app) || String(entry.appRef && entry.appRef.appId || "").trim();
+    const payload = {
+      appId: currentAppId,
+      appName: String((entry && entry.title) || modules.state.getAppDisplayName(app)),
+      app: {
+        id: app.id,
+        appId: currentAppId,
+        name: app.name,
+        inputs: Array.isArray(app.inputs) ? app.inputs : []
+      },
+      apiKey: modules.state.state.settings.apiKey || "",
+      inputs: normalizePayloadInputs(app, values),
+      settings: {
+        pollInterval: modules.state.state.settings.pollInterval,
+        timeout: modules.state.state.settings.timeout,
+        maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
+      }
+    };
+    modules.state.state.lastRunPayload = payload;
+    return payload;
+  }
+
+  async function ensureSelectionForQuickEntry(entry) {
+    const docInfo = await refreshPhotoshopDocumentStatus({ quiet: true });
+    if (!docInfo || !docInfo.hasActiveDocument) {
+      throw new Error("请先打开 Photoshop 文档，再运行快捷入口。");
+    }
+    if (!cloneSelectionBounds(docInfo.selectionBounds)) {
+      const title = String((entry && entry.title) || "该快捷入口").trim() || "该快捷入口";
+      throw new Error(`未检测到 Photoshop 选区。\n请先框选要处理的区域，再运行“${title}”。`);
+    }
+    return docInfo;
+  }
+
+  async function runQuickEntry(entryId) {
+    const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId || ""));
+    if (!entry) throw new Error("未找到快捷入口");
+    const app = findQuickEntryApp(entry);
+    if (!app) throw new Error(`快捷入口引用的应用不存在：${entry.appRef && entry.appRef.appName ? entry.appRef.appName : entry.title}`);
+    if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法运行快捷入口");
+    if (!modules.state.state.settings.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
+    if (!modules.state.resolveAppId(app)) throw new Error("快捷入口引用的应用缺少有效的 appId，请重新保存应用后再创建快捷入口");
+    if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
+      throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
+    }
+    if (isRunCooldownActive()) throw new Error("请不要短时间连续点击运行按钮，稍后再试。");
+
+    const imageInput = getQuickEntryImageInput(entry, app);
+    if (!imageInput) throw new Error("快捷入口引用的应用没有可绑定的图片字段");
+    await ensureSelectionForQuickEntry(entry);
+
+    markRunCooldown();
+    clearLastResult();
+    const asset = await captureCurrentDocumentImage();
+    const values = {
+      ...modules.state.buildDefaultFormValues(app),
+      ...(entry.inputValues && typeof entry.inputValues === "object" ? entry.inputValues : {}),
+      [String(imageInput.key || "")]: cloneCaptureAsset(asset)
+    };
+    validateAppValues(app, values);
+    const payload = buildQuickRunPayload(entry, app, values);
+    const sourceDocument = resolveSourceDocumentFromImageInputs(app, values, asset.document || null);
+    await modules.quickEntries.markQuickEntryRan(entry.id);
+    startRunTaskFlow(payload, sourceDocument);
+  }
+
   function buildAutoPlacementPayload(result) {
     const sourceDocument = result && result.sourceDocument && typeof result.sourceDocument === "object" ? result.sourceDocument : null;
     const selectionBounds = sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null;
@@ -1841,6 +2014,97 @@
   function bindWorkspaceActions() {
     const runButton = modules.runtime.getById("btnRun");
     const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
+    const createQuickEntryButton = modules.runtime.getById("btnCreateQuickEntry");
+    const quickEntryNameTitle = modules.runtime.getById("quickEntryNameTitle");
+    const quickEntryNameInput = modules.runtime.getById("quickEntryNameInput");
+    const quickEntryNameClose = modules.runtime.getById("quickEntryNameModalClose");
+    const quickEntryNameCancel = modules.runtime.getById("btnCancelQuickEntryName");
+    const quickEntryNameSave = modules.runtime.getById("btnSaveQuickEntryName");
+    const quickEntryNameHint = modules.runtime.getById("quickEntryNameHint");
+    const quickEntryDeleteClose = modules.runtime.getById("quickEntryDeleteModalClose");
+    const quickEntryDeleteCancel = modules.runtime.getById("btnCancelQuickEntryDelete");
+    const quickEntryDeleteConfirm = modules.runtime.getById("btnConfirmQuickEntryDelete");
+    const quickEntryDeleteHint = modules.runtime.getById("quickEntryDeleteHint");
+    const quickEntryDialogState = {
+      nameMode: "create",
+      targetEntryId: "",
+      deleteEntryId: ""
+    };
+
+    function openQuickEntryNameModal() {
+      collectFormValuesFromDom();
+      if (!modules.state.state.currentApp) {
+        modules.ui.logToWorkspace("请先选择一个应用，再保存快捷入口。", "warn");
+        return;
+      }
+      quickEntryDialogState.nameMode = "create";
+      quickEntryDialogState.targetEntryId = "";
+      if (quickEntryNameTitle) quickEntryNameTitle.textContent = "添加到快捷入口";
+      if (quickEntryNameInput) {
+        quickEntryNameInput.value = modules.state.getAppDisplayName(modules.state.state.currentApp);
+      }
+      if (quickEntryNameSave) quickEntryNameSave.textContent = "保存";
+      if (quickEntryNameHint) {
+        modules.runtime.setSummaryStatus(quickEntryNameHint, "将保存当前应用和全部非图片参数。运行时会要求先框选 Photoshop 区域。", "info");
+      }
+      setModalOpen("quickEntryNameModal", true);
+      window.setTimeout(() => quickEntryNameInput && quickEntryNameInput.focus(), 0);
+    }
+
+    function closeQuickEntryNameModal() {
+      setModalOpen("quickEntryNameModal", false);
+    }
+
+    function openQuickEntryRenameModal(entry) {
+      if (!entry) return;
+      quickEntryDialogState.nameMode = "rename";
+      quickEntryDialogState.targetEntryId = String(entry.id || "");
+      if (quickEntryNameTitle) quickEntryNameTitle.textContent = "重命名快捷入口";
+      if (quickEntryNameInput) quickEntryNameInput.value = String(entry.title || "");
+      if (quickEntryNameSave) quickEntryNameSave.textContent = "保存";
+      if (quickEntryNameHint) {
+        modules.runtime.setSummaryStatus(quickEntryNameHint, "只修改快捷入口名称，不改变保存的应用和参数。", "info");
+      }
+      setModalOpen("quickEntryNameModal", true);
+      window.setTimeout(() => {
+        if (!quickEntryNameInput) return;
+        quickEntryNameInput.focus();
+        quickEntryNameInput.select();
+      }, 0);
+    }
+
+    function openQuickEntryDeleteModal(entry) {
+      if (!entry) return;
+      quickEntryDialogState.deleteEntryId = String(entry.id || "");
+      if (quickEntryDeleteHint) {
+        modules.runtime.setSummaryStatus(quickEntryDeleteHint, `确定删除快捷入口“${entry.title || "未命名快捷入口"}”吗？这个操作不会删除应用卡片或提示词。`, "warn");
+      }
+      setModalOpen("quickEntryDeleteModal", true);
+    }
+
+    function closeQuickEntryDeleteModal() {
+      quickEntryDialogState.deleteEntryId = "";
+      setModalOpen("quickEntryDeleteModal", false);
+    }
+
+    async function saveQuickEntryFromModal() {
+      if (!quickEntryNameInput) return;
+      try {
+        if (quickEntryDialogState.nameMode === "rename") {
+          const entry = await modules.quickEntries.renameQuickEntry(quickEntryDialogState.targetEntryId, quickEntryNameInput.value);
+          modules.runtime.setSummaryStatus(quickEntryNameHint, `快捷入口已重命名：${entry.title}`, "success");
+          modules.ui.logToWorkspace(`快捷入口已重命名：${entry.title}`, "success");
+        } else {
+          const entry = await modules.quickEntries.createFromCurrentApp(quickEntryNameInput.value);
+          modules.runtime.setSummaryStatus(quickEntryNameHint, `快捷入口已保存：${entry.title}`, "success");
+          modules.ui.logToWorkspace(`快捷入口已保存：${entry.title}`, "success");
+        }
+        closeQuickEntryNameModal();
+      } catch (error) {
+        modules.runtime.setSummaryStatus(quickEntryNameHint, `${quickEntryDialogState.nameMode === "rename" ? "重命名" : "保存"}失败：${error.message}`, "error");
+        modules.ui.logToWorkspace(`快捷入口保存失败：${error.message}`, "error");
+      }
+    }
 
     if (dynamicInputContainer) {
       dynamicInputContainer.addEventListener("input", (event) => {
@@ -1919,6 +2183,68 @@
           handleCaptureFieldClick(actionTarget);
         }
       });
+
+      dynamicInputContainer.addEventListener("click", async (event) => {
+        const actionTarget = event.target && event.target.closest("[data-action][data-quick-entry-id]");
+        if (!actionTarget) return;
+        const action = actionTarget.getAttribute("data-action");
+        const entryId = actionTarget.getAttribute("data-quick-entry-id");
+        if (!action || !entryId) return;
+
+        if (action === "run-quick-entry") {
+          actionTarget.disabled = true;
+          try {
+            await runQuickEntry(entryId);
+          } catch (error) {
+            const message = error && error.message ? error.message : String(error || "快捷入口运行失败");
+            if (message.includes("\n") && typeof global.alert === "function") global.alert(message);
+            modules.ui.logToWorkspace(`快捷入口运行失败：${message.replace(/\s+/g, " ")}`, "warn");
+            updateRunButtonState();
+          } finally {
+            actionTarget.disabled = false;
+          }
+          return;
+        }
+
+        if (action === "rename-quick-entry") {
+          const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId));
+          openQuickEntryRenameModal(entry);
+          return;
+        }
+
+        if (action === "delete-quick-entry") {
+          const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId));
+          openQuickEntryDeleteModal(entry);
+        }
+      });
+    }
+
+    if (createQuickEntryButton) createQuickEntryButton.addEventListener("click", openQuickEntryNameModal);
+    if (quickEntryNameClose) quickEntryNameClose.addEventListener("click", closeQuickEntryNameModal);
+    if (quickEntryNameCancel) quickEntryNameCancel.addEventListener("click", closeQuickEntryNameModal);
+    if (quickEntryNameSave) quickEntryNameSave.addEventListener("click", saveQuickEntryFromModal);
+    if (quickEntryNameInput) {
+      quickEntryNameInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void saveQuickEntryFromModal();
+        }
+      });
+    }
+    if (quickEntryDeleteClose) quickEntryDeleteClose.addEventListener("click", closeQuickEntryDeleteModal);
+    if (quickEntryDeleteCancel) quickEntryDeleteCancel.addEventListener("click", closeQuickEntryDeleteModal);
+    if (quickEntryDeleteConfirm) {
+      quickEntryDeleteConfirm.addEventListener("click", async () => {
+        const entryId = quickEntryDialogState.deleteEntryId;
+        const entry = modules.state.state.quickEntries.find((item) => String(item.id || "") === String(entryId));
+        try {
+          await modules.quickEntries.deleteQuickEntry(entryId);
+          modules.ui.logToWorkspace(`快捷入口已删除：${entry ? entry.title : entryId}`, "warn");
+          closeQuickEntryDeleteModal();
+        } catch (error) {
+          modules.runtime.setSummaryStatus(quickEntryDeleteHint, `删除失败：${error.message}`, "error");
+        }
+      });
     }
 
     if (runButton) {
@@ -1956,6 +2282,16 @@
     }
 
     document.addEventListener("click", async (event) => {
+      if (event.target && event.target.closest("#quickEntryNameBackdrop")) {
+        closeQuickEntryNameModal();
+        return;
+      }
+
+      if (event.target && event.target.closest("#quickEntryDeleteBackdrop")) {
+        closeQuickEntryDeleteModal();
+        return;
+      }
+
       const target = event.target && event.target.closest('[data-action][data-task-id]');
       if (!target) return;
 
@@ -2005,6 +2341,7 @@
     updateRunButtonState,
     renderWorkspace,
     buildRunPayload,
+    collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,
     restoreWorkspaceFormSnapshot,
     bindWorkspaceActions,
