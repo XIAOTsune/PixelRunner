@@ -1277,6 +1277,49 @@ button {
   gap: 6px;
 }
 
+.glow-inline-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(98, 128, 152, 0.46);
+  background:
+    linear-gradient(135deg, rgba(9, 14, 21, 0.72), rgba(30, 44, 57, 0.88)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 8px, transparent 8px 16px);
+}
+
+.glow-preview-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 180px;
+  max-height: 320px;
+  overflow: hidden;
+  border-radius: 11px;
+  background: rgba(7, 12, 18, 0.9);
+}
+
+.glow-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  grid-area: 1 / 1;
+}
+
+.glow-preview-effect {
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.glow-preview-meta {
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(207, 221, 233, 0.72);
+}
+
 .glow-slider-stack {
   display: flex;
   flex-direction: column;

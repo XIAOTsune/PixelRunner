@@ -14,6 +14,7 @@
     saturation: 81,
     brightnessBias: 0
   };
+  const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
   const GLOW_STYLE_LABELS = {
     natural: "自然",
     soft: "柔和",
@@ -236,12 +237,17 @@
     const glowApplyButton = runtime.getById("btnGlowPreviewApply");
     const glowCancelButton = runtime.getById("btnGlowPreviewCancel");
     const glowModalClose = runtime.getById("glowModalClose");
+    const glowInlinePreview = runtime.getById("glowInlinePreview");
+    const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
+    const glowPreviewEffectImage = runtime.getById("glowPreviewEffectImage");
+    const glowPreviewMeta = runtime.getById("glowPreviewMeta");
 
     let glowPreviewTimer = 0;
     let glowPreviewInFlight = false;
     let glowPreviewNeedsReplay = false;
     let glowPreviewOpen = false;
     let glowLastPreviewSignature = "";
+    let glowCpuSourceAsset = null;
 
     const readGlowSlider = (input, fallback, min, max) => {
       if (!input) return fallback;
@@ -294,17 +300,83 @@
       if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${state.threshold}%`;
     };
 
-    const callGlowHostAction = async (action) => {
+    const captureGlowCpuSource = async (maxDimension) => {
+      const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
+        maxDimension,
+        quality: 92,
+        uploadTargetBytes: 9_000_000,
+        uploadHardLimitBytes: 10_000_000
+      }], { timeoutMs: 45000 });
+      if (!captured || !String(captured.dataUrl || "").trim()) {
+        throw new Error("未能捕获当前 Photoshop 图像用于 CPU 辉光。");
+      }
+      return captured;
+    };
+
+    const clearGlowPreviewLayer = async () => {
+      try {
+        await runtime.callHost("photoshop.runToolAction", [{ action: "glowPreviewCancel" }], { timeoutMs: 30000 });
+      } catch (_) {}
+    };
+
+    const clearInlineGlowPreview = () => {
+      if (glowInlinePreview) glowInlinePreview.hidden = true;
+      if (glowPreviewBaseImage) glowPreviewBaseImage.removeAttribute("src");
+      if (glowPreviewEffectImage) glowPreviewEffectImage.removeAttribute("src");
+      if (glowPreviewMeta) glowPreviewMeta.textContent = "CPU 插件内预览";
+    };
+
+    const updateInlineGlowPreview = (asset, glowResult) => {
+      if (!asset || !glowResult) return;
+      const sourceDataUrl = String(asset.dataUrl || "").trim();
+      if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+      if (glowPreviewEffectImage) {
+        glowPreviewEffectImage.hidden = true;
+        glowPreviewEffectImage.removeAttribute("src");
+      }
+      if (glowInlinePreview) glowInlinePreview.hidden = false;
+      if (glowPreviewMeta) {
+        const state = readGlowState();
+        glowPreviewMeta.textContent = `CPU 插件内预览 · ${glowResult.width}x${glowResult.height} · ${glowResult.elapsedMs}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${state.threshold} / 饱和 ${state.saturation}`;
+      }
+    };
+
+    const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
-      return runtime.callHost("photoshop.runToolAction", [{
-        action,
+      if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
+        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+      }
+      const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
+      const glowResult = await modules.glowCpu.createGlowPng(sourceDataUrl, state);
+      updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
+      return {
+        ok: true,
+        message: `CPU 插件内辉光预览已更新：${glowResult.width}x${glowResult.height}，处理 ${glowResult.elapsedMs}ms。`,
+        layerName: GLOW_PREVIEW_LAYER_NAME,
+        elapsedMs: glowResult.elapsedMs
+      };
+    };
+
+    const commitGlowCpuResult = async () => {
+      const state = readGlowState();
+      await clearGlowPreviewLayer();
+      const layerName = `Glow ${state.strength}%`;
+      const result = await runtime.callHost("photoshop.runToolAction", [{
+        action: "glow",
         style: state.style,
         strength: state.strength,
         radius: state.radius,
         threshold: state.threshold,
         saturation: state.saturation,
-        brightnessBias: state.brightnessBias
-      }], { timeoutMs: 60000 });
+        brightnessBias: state.brightnessBias,
+        layerName
+      }], { timeoutMs: 120000 });
+      glowCpuSourceAsset = null;
+      return {
+        ok: true,
+        message: result && result.message ? result.message : `已按 Photoshop 原生管线生成 ${layerName}。`,
+        layerName: result && result.layerName ? result.layerName : layerName
+      };
     };
 
     const getGlowStateSignature = () => {
@@ -340,7 +412,7 @@
       setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
 
       try {
-        const result = await callGlowHostAction(action);
+        const result = await callGlowCpuPreviewAction(action);
         const message = result && result.message ? result.message : "辉光预览已更新。";
         glowLastPreviewSignature = nextSignature;
         setGlowPreviewBadge("预览中", "success");
@@ -415,23 +487,15 @@
     const closeGlowModal = async (discardPreview = true) => {
       glowPreviewOpen = false;
       glowLastPreviewSignature = "";
+      glowCpuSourceAsset = null;
+      clearInlineGlowPreview();
       if (glowPreviewTimer) {
         clearTimeout(glowPreviewTimer);
         glowPreviewTimer = 0;
       }
 
-      if (discardPreview && runtime.isPluginRuntime()) {
-        setGlowButtonsDisabled(true);
-        try {
-          await runtime.callHost("photoshop.runToolAction", [{ action: "glowPreviewCancel" }], { timeoutMs: 30000 });
-          setQuickGlowStatus("已取消辉光预览并清理临时预览层。", "info");
-        } catch (error) {
-          const message = `取消辉光预览失败：${error.message}`;
-          setQuickGlowStatus(message, "error");
-          logToWorkspace(message, "error");
-        } finally {
-          setGlowButtonsDisabled(false);
-        }
+      if (discardPreview) {
+        setQuickGlowStatus("已取消插件内辉光预览，未写回 Photoshop。", "info");
       }
 
       modules.workspace.setModalOpen("glowModal", false);
@@ -469,7 +533,7 @@
         setGlowButtonsDisabled(true);
         try {
           await flushGlowPreviewUpdate();
-          const result = await callGlowHostAction("glowPreviewCommit");
+          const result = await commitGlowCpuResult();
           const successMessage = result && result.message ? result.message : `已生成 Glow ${state.strength}%`;
           logToWorkspace(successMessage, "success");
           setGlowStatus(successMessage, "success");

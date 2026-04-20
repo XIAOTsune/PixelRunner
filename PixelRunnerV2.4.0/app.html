@@ -636,8 +636,16 @@
             <span id="glowRadiusValue" class="status-chip">半径 81</span>
             <span id="glowThresholdValue" class="status-chip">阈值 81%</span>
           </div>
-          <p class="subtle-note">拖动滑杆会更新同一个预览辉光层。确认时转成正式结果层，取消时会清理预览层。</p>
+          <p class="subtle-note">拖动滑杆只更新插件内预览，确认应用时才写回 Photoshop，减少大图层来回交换。</p>
         </div>
+      </div>
+
+      <div id="glowInlinePreview" class="glow-inline-preview" hidden>
+        <div class="glow-preview-frame">
+          <img id="glowPreviewBaseImage" class="glow-preview-image glow-preview-base" alt="辉光预览原图" />
+          <img id="glowPreviewEffectImage" class="glow-preview-image glow-preview-effect" alt="辉光预览效果" />
+        </div>
+        <div id="glowPreviewMeta" class="glow-preview-meta">CPU 插件内预览</div>
       </div>
 
       <div class="glow-slider-stack">
@@ -684,7 +692,7 @@
         <button id="btnGlowPreviewCancel" class="secondary-btn glow-cancel-btn" type="button">取消预览</button>
         <button id="btnGlowPreviewApply" class="primary-btn glow-run-btn" type="button">应用辉光</button>
       </div>
-      <div id="glowHint" class="summary-strip">打开面板后会在 Photoshop 中生成一个可反复更新的预览辉光层。</div>
+      <div id="glowHint" class="summary-strip">打开面板后会捕获当前图像，在插件内生成 CPU 辉光预览。</div>
     </section>
   </div>
 

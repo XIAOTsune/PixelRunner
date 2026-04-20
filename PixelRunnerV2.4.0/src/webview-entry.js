@@ -1,5 +1,6 @@
 import "./webview/runtime.js";
 import "./webview/state.js";
+import "./webview/glow-cpu.js";
 import "./webview/ui.js";
 import "./webview/sound.js";
 import "./webview/quick-entries.js";
