@@ -7,18 +7,24 @@
     tutorial: "./pages/runninghub-guide.html"
   };
   const GLOW_DEFAULTS = {
-    style: "natural",
-    strength: 47,
-    radius: 81,
-    threshold: 81,
-    saturation: 81,
+    style: "darkSoft",
+    strength: 40,
+    radius: 20,
+    threshold: 20,
+    saturation: 0,
     brightnessBias: 0
   };
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
   const GLOW_STYLE_LABELS = {
-    natural: "自然",
-    soft: "柔和",
-    dreamy: "梦幻"
+    none: "无",
+    darksoft: "黑柔",
+    darkSoft: "黑柔",
+    whitesoft: "白柔",
+    whiteSoft: "白柔",
+    shine: "辉光",
+    natural: "黑柔",
+    soft: "白柔",
+    dreamy: "辉光"
   };
 
   function logToWorkspace(message, type = "info") {
@@ -224,9 +230,12 @@
     const glowStrengthInput = runtime.getById("glowStrengthInput");
     const glowRadiusInput = runtime.getById("glowRadiusInput");
     const glowThresholdInput = runtime.getById("glowThresholdInput");
-    const glowSaturationInput = runtime.getById("glowSaturationInput");
     const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
     const glowStrengthValue = runtime.getById("glowStrengthValue");
+    const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
+    const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
+    const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
+    const glowExposureParamValue = runtime.getById("glowExposureParamValue");
     const glowStyleBadge = runtime.getById("glowStyleBadge");
     const glowRadiusValue = runtime.getById("glowRadiusValue");
     const glowThresholdValue = runtime.getById("glowThresholdValue");
@@ -239,7 +248,15 @@
     const glowModalClose = runtime.getById("glowModalClose");
     const glowInlinePreview = runtime.getById("glowInlinePreview");
     const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
-    const glowPreviewEffectImage = runtime.getById("glowPreviewEffectImage");
+    const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
+    const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
+    const glowPreviewProtectMaskImage = runtime.getById("glowPreviewProtectMaskImage");
+    const glowDebugPanel = document.querySelector(".glow-debug-panel");
+    const glowPreviewLumaImage = runtime.getById("glowPreviewLumaImage");
+    const glowPreviewContrastImage = runtime.getById("glowPreviewContrastImage");
+    const glowPreviewWhiteFlatImage = runtime.getById("glowPreviewWhiteFlatImage");
+    const glowPreviewSkinLikeImage = runtime.getById("glowPreviewSkinLikeImage");
+    const glowPreviewDarkProtectImage = runtime.getById("glowPreviewDarkProtectImage");
     const glowPreviewMeta = runtime.getById("glowPreviewMeta");
 
     let glowPreviewTimer = 0;
@@ -248,6 +265,7 @@
     let glowPreviewOpen = false;
     let glowLastPreviewSignature = "";
     let glowCpuSourceAsset = null;
+    let glowPreviewJobId = 0;
 
     const readGlowSlider = (input, fallback, min, max) => {
       if (!input) return fallback;
@@ -257,7 +275,7 @@
     };
 
     const readGlowStyle = () => {
-      const nextStyle = String((glowStyleInput && glowStyleInput.value) || GLOW_DEFAULTS.style).trim().toLowerCase();
+      const nextStyle = String((glowStyleInput && glowStyleInput.value) || GLOW_DEFAULTS.style).trim();
       return GLOW_STYLE_LABELS[nextStyle] ? nextStyle : GLOW_DEFAULTS.style;
     };
 
@@ -268,7 +286,7 @@
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
       radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
       threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
-      saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100),
+      saturation: 0,
       brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
     });
 
@@ -297,7 +315,11 @@
       if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
       if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
       if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
-      if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${state.threshold}%`;
+      if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
+      if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
+      if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
+      if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
+      if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
     };
 
     const captureGlowCpuSource = async (maxDimension) => {
@@ -321,39 +343,66 @@
 
     const clearInlineGlowPreview = () => {
       if (glowInlinePreview) glowInlinePreview.hidden = true;
-      if (glowPreviewBaseImage) glowPreviewBaseImage.removeAttribute("src");
-      if (glowPreviewEffectImage) glowPreviewEffectImage.removeAttribute("src");
-      if (glowPreviewMeta) glowPreviewMeta.textContent = "CPU 插件内预览";
+      [
+        glowPreviewBaseImage,
+        glowPreviewResultImage,
+        glowPreviewSourceMaskImage,
+        glowPreviewProtectMaskImage,
+        glowPreviewLumaImage,
+        glowPreviewContrastImage,
+        glowPreviewWhiteFlatImage,
+        glowPreviewSkinLikeImage,
+        glowPreviewDarkProtectImage
+      ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+      if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
     };
 
     const updateInlineGlowPreview = (asset, glowResult) => {
       if (!asset || !glowResult) return;
       const sourceDataUrl = String(asset.dataUrl || "").trim();
-      if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
-      if (glowPreviewEffectImage) {
-        glowPreviewEffectImage.hidden = true;
-        glowPreviewEffectImage.removeAttribute("src");
-      }
+      if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
+      if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+      if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
+      if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
+      if (glowPreviewLumaImage) glowPreviewLumaImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.luma || "").trim();
+      if (glowPreviewContrastImage) glowPreviewContrastImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.contrast || "").trim();
+      if (glowPreviewWhiteFlatImage) glowPreviewWhiteFlatImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.whiteFlat || "").trim();
+      if (glowPreviewSkinLikeImage) glowPreviewSkinLikeImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.skinLike || "").trim();
+      if (glowPreviewDarkProtectImage) glowPreviewDarkProtectImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.darkProtect || "").trim();
       if (glowInlinePreview) glowInlinePreview.hidden = false;
       if (glowPreviewMeta) {
         const state = readGlowState();
-        glowPreviewMeta.textContent = `CPU 插件内预览 · ${glowResult.width}x${glowResult.height} · ${glowResult.elapsedMs}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${state.threshold} / 饱和 ${state.saturation}`;
+        const timings = glowResult.timings || {};
+        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
       }
     };
 
     const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        glowCpuSourceAsset = await captureGlowCpuSource(320);
       }
       const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
-      const glowResult = await modules.glowCpu.createGlowPng(sourceDataUrl, state);
+      const jobId = glowPreviewJobId + 1;
+      glowPreviewJobId = jobId;
+      const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+        jobId,
+        includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+      });
+      if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
+        return {
+          ok: false,
+          stale: true,
+          message: "已丢弃过期辉光预览结果。"
+        };
+      }
       updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
+      const timings = glowResult.timings || {};
       return {
         ok: true,
-        message: `CPU 插件内辉光预览已更新：${glowResult.width}x${glowResult.height}，处理 ${glowResult.elapsedMs}ms。`,
+        message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
         layerName: GLOW_PREVIEW_LAYER_NAME,
-        elapsedMs: glowResult.elapsedMs
+        elapsedMs: timings.totalMs || 0
       };
     };
 
@@ -361,10 +410,11 @@
       const state = readGlowState();
       await clearGlowPreviewLayer();
       const layerName = `Glow ${state.strength}%`;
+      const commitStrength = state.style === "none" ? 0 : state.strength;
       const result = await runtime.callHost("photoshop.runToolAction", [{
         action: "glow",
         style: state.style,
-        strength: state.strength,
+        strength: commitStrength,
         radius: state.radius,
         threshold: state.threshold,
         saturation: state.saturation,
@@ -381,7 +431,7 @@
 
     const getGlowStateSignature = () => {
       const state = readGlowState();
-      return [state.style, state.strength, state.radius, state.threshold, state.saturation, state.brightnessBias].join("|");
+      return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias].join("|");
     };
 
     const getGlowPreviewDelay = () => {
@@ -390,7 +440,7 @@
       if (state.radius >= 72) delay = 280;
       if (state.radius >= 92 || state.strength >= 76) delay = 340;
       if (state.brightnessBias >= 32) delay += 20;
-      if (state.style === "dreamy") delay += 20;
+      if (state.style === "shine") delay += 20;
       return delay;
     };
 
@@ -402,6 +452,7 @@
       }
       if (glowPreviewInFlight) {
         glowPreviewNeedsReplay = true;
+        glowPreviewJobId += 1;
         return;
       }
 
@@ -413,9 +464,10 @@
 
       try {
         const result = await callGlowCpuPreviewAction(action);
+        if (result && result.stale) return;
         const message = result && result.message ? result.message : "辉光预览已更新。";
         glowLastPreviewSignature = nextSignature;
-        setGlowPreviewBadge("预览中", "success");
+        setGlowPreviewBadge("Glow Lab", "success");
         setGlowStatus(message, "success");
       } catch (error) {
         const message = `辉光预览失败：${error.message}`;
@@ -435,6 +487,7 @@
     const scheduleGlowPreviewUpdate = () => {
       if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
       if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+      glowPreviewJobId += 1;
       const delay = getGlowPreviewDelay();
       glowPreviewTimer = window.setTimeout(() => {
         glowPreviewTimer = 0;
@@ -465,6 +518,7 @@
     const openGlowModal = async () => {
       glowPreviewOpen = true;
       glowLastPreviewSignature = "";
+      glowPreviewJobId += 1;
       modules.workspace.setModalOpen("glowModal", true);
       updateGlowLabels();
 
@@ -488,6 +542,7 @@
       glowPreviewOpen = false;
       glowLastPreviewSignature = "";
       glowCpuSourceAsset = null;
+      glowPreviewJobId += 1;
       clearInlineGlowPreview();
       if (glowPreviewTimer) {
         clearTimeout(glowPreviewTimer);
@@ -502,7 +557,7 @@
     };
 
     updateGlowLabels();
-    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowSaturationInput, glowBrightnessBiasInput]
+    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput]
       .filter(Boolean)
       .forEach((input) => {
         input.addEventListener("input", () => {
@@ -559,6 +614,15 @@
     if (glowModalClose) {
       glowModalClose.addEventListener("click", () => {
         void closeGlowModal(true);
+      });
+    }
+
+    if (glowDebugPanel) {
+      glowDebugPanel.addEventListener("toggle", () => {
+        if (glowDebugPanel.open) {
+          glowLastPreviewSignature = "";
+          scheduleGlowPreviewUpdate();
+        }
       });
     }
 

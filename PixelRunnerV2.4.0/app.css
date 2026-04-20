@@ -1280,38 +1280,62 @@ button {
 .glow-inline-preview {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
   padding: 10px;
-  border-radius: 14px;
+  border-radius: 8px;
   border: 1px solid rgba(98, 128, 152, 0.46);
   background:
     linear-gradient(135deg, rgba(9, 14, 21, 0.72), rgba(30, 44, 57, 0.88)),
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 8px, transparent 8px 16px);
 }
 
-.glow-preview-frame {
-  position: relative;
+.glow-lab-grid {
   display: grid;
-  place-items: center;
-  width: 100%;
-  min-height: 180px;
-  max-height: 320px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.glow-debug-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.glow-lab-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 112px;
+  margin: 0;
   overflow: hidden;
-  border-radius: 11px;
-  background: rgba(7, 12, 18, 0.9);
+  border-radius: 8px;
+  border: 1px solid rgba(116, 144, 166, 0.35);
+  background: rgba(7, 12, 18, 0.92);
 }
 
-.glow-preview-image {
+.glow-lab-tile-wide {
+  min-height: 220px;
+}
+
+.glow-lab-image {
   display: block;
-  max-width: 100%;
-  max-height: 320px;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 84px;
+  max-height: 260px;
   object-fit: contain;
-  grid-area: 1 / 1;
+  background: rgba(0, 0, 0, 0.28);
 }
 
-.glow-preview-effect {
-  mix-blend-mode: screen;
-  pointer-events: none;
+.glow-lab-tile figcaption {
+  flex: 0 0 auto;
+  padding: 6px 7px;
+  border-top: 1px solid rgba(116, 144, 166, 0.25);
+  font-size: 10px;
+  line-height: 1.3;
+  color: rgba(218, 230, 240, 0.82);
+  background: rgba(16, 25, 34, 0.92);
 }
 
 .glow-preview-meta {
@@ -1320,10 +1344,58 @@ button {
   color: rgba(207, 221, 233, 0.72);
 }
 
+.glow-debug-panel {
+  border-radius: 8px;
+  border: 1px solid rgba(116, 144, 166, 0.28);
+  background: rgba(10, 18, 27, 0.52);
+}
+
+.glow-debug-summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(218, 230, 240, 0.84);
+}
+
+.glow-debug-summary::-webkit-details-marker {
+  display: none;
+}
+
+.glow-debug-summary::after {
+  content: "展开";
+  float: right;
+  font-weight: 500;
+  color: rgba(194, 208, 220, 0.72);
+}
+
+.glow-debug-panel[open] {
+  padding: 0 8px 8px;
+}
+
+.glow-debug-panel[open] .glow-debug-summary {
+  margin: 0 -8px;
+  border-bottom: 1px solid rgba(116, 144, 166, 0.24);
+}
+
+.glow-debug-panel[open] .glow-debug-summary::after {
+  content: "收起";
+}
+
 .glow-slider-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
+}
+
+.glow-param-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(229, 235, 243, 0.86);
 }
 
 .glow-control-grid {
@@ -2761,6 +2833,18 @@ button {
   .glow-control-grid {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .glow-lab-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .glow-debug-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .glow-lab-tile-wide {
+    grid-column: auto;
   }
 
   .glow-run-btn {

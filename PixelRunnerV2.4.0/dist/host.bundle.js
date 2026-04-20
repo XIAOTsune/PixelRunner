@@ -418,6 +418,9 @@ var PixelRunnerHostBundle = (() => {
   }
   function normalizeGlowStyle(style) {
     const key = String(style || "").trim().toLowerCase();
+    if (key === "none" || key === "darksoft") return "natural";
+    if (key === "whitesoft") return "soft";
+    if (key === "shine") return "dreamy";
     if (key && Object.prototype.hasOwnProperty.call(GLOW_STYLE_PRESETS, key)) return key;
     return "natural";
   }
@@ -645,6 +648,13 @@ var PixelRunnerHostBundle = (() => {
       }
     }], {});
   }
+  async function selectRelativeLayer(action, ordinal) {
+    await action.batchPlay([{
+      _obj: "select",
+      _target: [{ _ref: "layer", _enum: "ordinal", _value: ordinal }],
+      makeVisible: false
+    }], {});
+  }
   async function selectLayerByName(action, layerName) {
     await action.batchPlay([{
       _obj: "select",
@@ -658,6 +668,19 @@ var PixelRunnerHostBundle = (() => {
       _target: [{ _ref: "layer", _id: layerId }],
       makeVisible: false
     }], {});
+  }
+  async function activateDocumentByRef(app, action, docRef) {
+    const documentId = Number(docRef && docRef.id);
+    if (documentId > 0) {
+      return activateDocument(app, action, documentId);
+    }
+    if (docRef) {
+      try {
+        app.activeDocument = docRef;
+      } catch (_) {
+      }
+    }
+    return app && app.activeDocument ? app.activeDocument : null;
   }
   async function deleteActiveLayer(action) {
     await action.batchPlay([{
@@ -758,6 +781,29 @@ var PixelRunnerHostBundle = (() => {
     const activeLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
     const layerId = Number(activeLayer && activeLayer.id);
     return Number.isFinite(layerId) && layerId > 0 ? layerId : 0;
+  }
+  function getActiveLayerName(app) {
+    const activeLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    return String(activeLayer && activeLayer.name || "").trim();
+  }
+  function isGeneratedGlowLayerName(layerName) {
+    const name = String(layerName || "").trim().toLowerCase();
+    return name === "pixelrunner glow preview" || /^glow(\s|$)/.test(name);
+  }
+  async function selectGlowSourceLayer(app, action) {
+    let guard = 0;
+    while (isGeneratedGlowLayerName(getActiveLayerName(app)) && guard < 30) {
+      try {
+        await selectRelativeLayer(action, "backwardEnum");
+      } catch (_) {
+        break;
+      }
+      guard += 1;
+    }
+    if (isGeneratedGlowLayerName(getActiveLayerName(app))) {
+      throw new Error("当前选中的是辉光结果层，未找到可用的源图层。请先选中原图层再应用辉光。");
+    }
+    return getActiveLayerId(app);
   }
   function resetGlowPreviewSessionState() {
     glowPreviewSession.documentId = 0;
@@ -952,13 +998,20 @@ var PixelRunnerHostBundle = (() => {
     const haloName = `${config.layerName} Halo`;
     const previewMaxEdge = Math.max(0, Math.floor(Number(options.previewMaxEdge) || 0));
     const sourceSize = getDocumentPixelSize(document2);
+    const sourceLayerId = Number(options.sourceLayerId) || 0;
     let tempDoc = null;
     let importedLayer = null;
     try {
+      await activateDocumentByRef(app, action, originalDocument);
+      if (sourceLayerId > 0) {
+        await selectLayerById(action, sourceLayerId);
+      }
       tempDoc = await document2.duplicate(`${config.layerName} Temp`, true);
-      app.activeDocument = tempDoc;
+      await activateDocumentByRef(app, action, tempDoc);
       await normalizeWorkingDocumentBitDepth(action, tempDoc);
+      await activateDocumentByRef(app, action, tempDoc);
       const resizeInfo = previewMaxEdge > 0 ? await resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge) : { scale: 1, width: sourceSize.width, height: sourceSize.height };
+      await activateDocumentByRef(app, action, tempDoc);
       let workingConfig = createScaledGlowConfig(config, Number(resizeInfo.scale) || 1);
       if (previewMaxEdge > 0) {
         workingConfig = createPreviewGlowConfig(workingConfig, getGlowPreviewProfile(config));
@@ -1023,8 +1076,9 @@ var PixelRunnerHostBundle = (() => {
       if (!tempResultLayer) {
         throw new Error("Glow result layer was not created.");
       }
+      await activateDocumentByRef(app, action, tempDoc);
       importedLayer = await tempResultLayer.duplicate(originalDocument);
-      app.activeDocument = originalDocument;
+      await activateDocumentByRef(app, action, originalDocument);
       const importedLayerId = Number(importedLayer && importedLayer.id || getActiveLayerId(app) || 0);
       if (importedLayerId > 0) {
         await selectLayerById(action, importedLayerId);
@@ -1036,7 +1090,7 @@ var PixelRunnerHostBundle = (() => {
       }
     } finally {
       try {
-        app.activeDocument = originalDocument;
+        await activateDocumentByRef(app, action, originalDocument);
       } catch (_) {
       }
       if (tempDoc) {
@@ -1186,6 +1240,7 @@ var PixelRunnerHostBundle = (() => {
         const config = getGlowConfig(payload);
         const originalDocument = document2;
         let importedLayer = null;
+        let sourceLayerId = 0;
         if (actionName === "glowPreviewCancel") {
           await clearGlowPreviewLayer(app, action, originalDocument);
           resetGlowPreviewSessionState();
@@ -1210,7 +1265,10 @@ var PixelRunnerHostBundle = (() => {
             originalDocument,
             action,
             constants.SaveOptions || {},
-            { previewMaxEdge: getGlowPreviewMaxEdge(config) }
+            {
+              previewMaxEdge: getGlowPreviewMaxEdge(config),
+              sourceLayerId: glowPreviewSession.sourceLayerId
+            }
           );
           glowPreviewSession.documentId = Number(originalDocument.id) || 0;
           glowPreviewSession.previewLayerId = Number(importedLayer && importedLayer.id || getActiveLayerId(app) || 0);
@@ -1222,11 +1280,11 @@ var PixelRunnerHostBundle = (() => {
         }
         if (actionName === "glowPreviewCommit") {
           if (Number(glowPreviewSession.documentId) === Number(originalDocument.id)) {
-            const sourceLayerId = Number(glowPreviewSession.sourceLayerId) || 0;
+            const sourceLayerId2 = Number(glowPreviewSession.sourceLayerId) || 0;
             await clearGlowPreviewLayer(app, action, originalDocument);
-            if (sourceLayerId > 0) {
+            if (sourceLayerId2 > 0) {
               try {
-                await selectLayerById(action, sourceLayerId);
+                await selectLayerById(action, sourceLayerId2);
               } catch (_) {
               }
             }
@@ -1237,7 +1295,10 @@ var PixelRunnerHostBundle = (() => {
               originalDocument,
               action,
               constants.SaveOptions || {},
-              { previewMaxEdge: 0 }
+              {
+                previewMaxEdge: 0,
+                sourceLayerId: sourceLayerId2
+              }
             );
             const committedLayerId = Number(importedLayer && importedLayer.id || getActiveLayerId(app) || 0);
             return buildToolCommandResponse(actionName, app, `已按全分辨率生成 ${config.layerName}。`, {
@@ -1253,6 +1314,7 @@ var PixelRunnerHostBundle = (() => {
           }
         }
         if (actionName === "glow") {
+          sourceLayerId = await selectGlowSourceLayer(app, action);
           await clearGlowPreviewLayer(app, action, originalDocument);
           resetGlowPreviewSessionState();
         }
@@ -1262,11 +1324,22 @@ var PixelRunnerHostBundle = (() => {
           originalDocument,
           action,
           constants.SaveOptions || {},
-          { previewMaxEdge: 0 }
+          {
+            previewMaxEdge: 0,
+            sourceLayerId
+          }
         );
         const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+        const resultLayerName = String(importedLayer && importedLayer.name || activeLayer && activeLayer.name || config.layerName);
+        const resultLayerId = Number(importedLayer && importedLayer.id || activeLayer && activeLayer.id || 0) || 0;
+        if (actionName === "glow" && sourceLayerId > 0) {
+          try {
+            await selectLayerById(action, sourceLayerId);
+          } catch (_) {
+          }
+        }
         return buildToolCommandResponse(actionName, app, `Created rebuilt glow layer from isolated highlight source: strength ${config.strength}%, radius ${config.radius}, threshold ${config.threshold}%.`, {
-          layerName: String(importedLayer && importedLayer.name || activeLayer && activeLayer.name || config.layerName),
+          layerName: resultLayerName,
           style: config.style,
           strength: config.strength,
           radius: config.radius,
@@ -1277,7 +1350,8 @@ var PixelRunnerHostBundle = (() => {
           bloomRadius: config.bloomRadius,
           coreOpacity: config.glowOpacities[0],
           bloomOpacity: config.glowOpacities[config.glowOpacities.length - 1],
-          layerId: Number(importedLayer && importedLayer.id || activeLayer && activeLayer.id || 0) || 0
+          layerId: resultLayerId,
+          sourceLayerId
         });
       }
       default:

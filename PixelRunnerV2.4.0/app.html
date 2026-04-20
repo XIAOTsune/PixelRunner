@@ -632,60 +632,83 @@
         <div class="glow-modal-hero-copy">
           <div class="glow-modal-badges">
             <span id="glowPreviewState" class="status-chip">实时预览</span>
-            <span id="glowStyleBadge" class="status-chip">风格 自然</span>
-            <span id="glowRadiusValue" class="status-chip">半径 81</span>
-            <span id="glowThresholdValue" class="status-chip">阈值 81%</span>
+            <span id="glowStyleBadge" class="status-chip">风格 黑柔</span>
+            <span id="glowRadiusValue" class="status-chip">半径 20</span>
+            <span id="glowThresholdValue" class="status-chip">阈值 0.20</span>
           </div>
           <p class="subtle-note">拖动滑杆只更新插件内预览，确认应用时才写回 Photoshop，减少大图层来回交换。</p>
         </div>
       </div>
 
       <div id="glowInlinePreview" class="glow-inline-preview" hidden>
-        <div class="glow-preview-frame">
-          <img id="glowPreviewBaseImage" class="glow-preview-image glow-preview-base" alt="辉光预览原图" />
-          <img id="glowPreviewEffectImage" class="glow-preview-image glow-preview-effect" alt="辉光预览效果" />
+        <div class="glow-lab-grid">
+          <figure class="glow-lab-tile glow-lab-tile-wide">
+            <img id="glowPreviewResultImage" class="glow-lab-image" alt="辉光测试台结果图" />
+            <figcaption>预览结果</figcaption>
+          </figure>
         </div>
-        <div id="glowPreviewMeta" class="glow-preview-meta">CPU 插件内预览</div>
+        <details class="glow-debug-panel">
+          <summary class="glow-debug-summary">调试遮罩</summary>
+          <div class="glow-debug-grid">
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewSourceMaskImage" class="glow-lab-image" alt="sourceMask 调试图" />
+              <figcaption>sourceMask</figcaption>
+            </figure>
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewProtectMaskImage" class="glow-lab-image" alt="protectMask 调试图" />
+              <figcaption>protectMask</figcaption>
+            </figure>
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewLumaImage" class="glow-lab-image" alt="luma 调试图" />
+              <figcaption>luma</figcaption>
+            </figure>
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewContrastImage" class="glow-lab-image" alt="local contrast 调试图" />
+              <figcaption>local contrast</figcaption>
+            </figure>
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewWhiteFlatImage" class="glow-lab-image" alt="whiteFlat 调试图" />
+              <figcaption>whiteFlat</figcaption>
+            </figure>
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewSkinLikeImage" class="glow-lab-image" alt="skinLike 调试图" />
+              <figcaption>skinLike</figcaption>
+            </figure>
+            <figure class="glow-lab-tile">
+              <img id="glowPreviewDarkProtectImage" class="glow-lab-image" alt="darkProtect 调试图" />
+              <figcaption>darkProtect</figcaption>
+            </figure>
+          </div>
+        </details>
+        <div id="glowPreviewMeta" class="glow-preview-meta">Glow Lab 等待捕获图像</div>
       </div>
 
       <div class="glow-slider-stack">
         <label class="field glow-slider-field glow-style-field">
-          <span class="field-label">风格</span>
-          <span class="field-hint glow-field-hint">控制整体气质</span>
+          <span class="glow-param-line"><span class="field-label">风格</span></span>
           <select id="glowStyleInput" class="field-input">
-            <option value="natural" selected>自然</option>
-            <option value="soft">柔和</option>
-            <option value="dreamy">梦幻</option>
+            <option value="none">无</option>
+            <option value="darkSoft" selected>黑柔</option>
+            <option value="whiteSoft">白柔</option>
+            <option value="shine">辉光</option>
           </select>
         </label>
         <label class="field glow-slider-field">
-          <span class="field-label">强度</span>
-          <span class="field-hint glow-field-hint">控制亮度感</span>
-          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="47" />
+          <span class="glow-param-line"><span class="field-label">强度</span><span id="glowStrengthParamValue">40</span></span>
+          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="40" />
         </label>
         <label class="field glow-slider-field">
-          <span class="field-label">半径</span>
-          <span class="field-hint glow-field-hint">控制扩散范围</span>
-          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="81" />
+          <span class="glow-param-line"><span class="field-label">半径</span><span id="glowRadiusParamValue">20</span></span>
+          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="20" />
         </label>
         <label class="field glow-slider-field">
-          <span class="field-label">阈值</span>
-          <span class="field-hint glow-field-hint">控制亮部筛选</span>
-          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="81" />
+          <span class="glow-param-line"><span class="field-label">阈值</span><span id="glowThresholdParamValue">0.20</span></span>
+          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="20" />
         </label>
         <label class="field glow-slider-field">
-          <span class="field-label">饱和度</span>
-          <span class="field-hint glow-field-hint">控制色彩浓度</span>
-          <input id="glowSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="81" />
+          <span class="glow-param-line"><span class="field-label">曝光</span><span id="glowExposureParamValue">0</span></span>
+          <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
         </label>
-        <details class="surface-card glow-advanced-panel">
-          <summary class="glow-advanced-summary">高级参数：亮度偏置</summary>
-          <label class="field glow-slider-field glow-advanced-field">
-            <span class="field-label">亮度偏置</span>
-            <span class="field-hint glow-field-hint">轻推亮部显现与高光扩张，正值更抬高光，负值更克制</span>
-            <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
-          </label>
-        </details>
       </div>
 
       <div class="glow-control-grid glow-modal-actions">

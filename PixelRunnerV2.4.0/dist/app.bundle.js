@@ -497,73 +497,313 @@ var PixelRunnerWebviewBundle = (() => {
     };
   })(window);
 
-  // src/webview/glow-cpu.js
-  (function initGlowCpuModule(global) {
+  // src/webview/glow/presets.js
+  (function initGlowPresetsModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
-    function clamp(value, min, max) {
+    function clamp(value, min, max, fallback = min) {
       const parsed = Number(value);
-      if (!Number.isFinite(parsed)) return min;
+      if (!Number.isFinite(parsed)) return fallback;
       return Math.min(max, Math.max(min, parsed));
     }
+    function normalizeStyle(style) {
+      const key = String(style || "").trim().toLowerCase();
+      if (key === "none") return "none";
+      if (key === "whitesoft" || key === "soft") return "whiteSoft";
+      if (key === "shine" || key === "dreamy") return "shine";
+      return "darkSoft";
+    }
+    const STYLE_PRESETS = {
+      none: {
+        thresholdBias: 0,
+        whiteProtect: 1,
+        skinProtect: 1,
+        darkProtect: 1,
+        smallWeight: 0,
+        mediumWeight: 0,
+        largeWeight: 0,
+        softAddMix: 0,
+        warmth: 0,
+        scatter: 0
+      },
+      darkSoft: {
+        thresholdBias: 0.02,
+        whiteProtect: 0.86,
+        skinProtect: 0.78,
+        darkProtect: 0.42,
+        smallWeight: 0.42,
+        mediumWeight: 0.88,
+        largeWeight: 0.48,
+        softAddMix: 0.42,
+        warmth: 0.035,
+        scatter: 0.88
+      },
+      whiteSoft: {
+        thresholdBias: -0.02,
+        whiteProtect: 0.92,
+        skinProtect: 0.86,
+        darkProtect: 0.46,
+        smallWeight: 0.32,
+        mediumWeight: 0.94,
+        largeWeight: 0.56,
+        softAddMix: 0.52,
+        warmth: 0.025,
+        scatter: 1
+      },
+      shine: {
+        thresholdBias: -0.06,
+        whiteProtect: 0.78,
+        skinProtect: 0.74,
+        darkProtect: 0.5,
+        smallWeight: 0.3,
+        mediumWeight: 0.9,
+        largeWeight: 0.72,
+        softAddMix: 0.64,
+        warmth: 0.06,
+        scatter: 1.18
+      }
+    };
+    function normalizeGlowParams(config = {}) {
+      const style = normalizeStyle(config.style);
+      const preset = STYLE_PRESETS[style];
+      const strength = style === "none" ? 0 : clamp(config.strength, 0, 100, 47);
+      const radius = clamp(config.radius, 1, 120, 81);
+      const threshold = clamp(config.threshold, 0, 100, 81);
+      const saturation = clamp(config.saturation, -100, 100, 81);
+      const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
+      const radiusRatio = radius / 120;
+      const thresholdRatio = threshold / 100;
+      const brightnessLift = brightnessBias / 50;
+      return {
+        style,
+        strength,
+        radius,
+        threshold,
+        saturation,
+        brightnessBias,
+        source: {
+          thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
+          thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
+          localRadius: Math.max(3, Math.round(4 + radiusRatio * 10)),
+          contrastLow: 0.025,
+          contrastHigh: clamp(0.095 - thresholdRatio * 0.035, 0.038, 0.11, 0.07),
+          specularLow: 0.06,
+          specularHigh: 0.28,
+          whiteProtect: preset.whiteProtect,
+          skinProtect: preset.skinProtect,
+          darkProtect: preset.darkProtect
+        },
+        blur: {
+          smallRadius: Math.max(1, Math.round(1.5 + radiusRatio * 4)),
+          mediumRadius: Math.max(2, Math.round(5 + radiusRatio * 14)),
+          largeRadius: Math.max(3, Math.round(7 + radiusRatio * 24)),
+          smallWeight: preset.smallWeight,
+          mediumWeight: preset.mediumWeight,
+          largeWeight: preset.largeWeight * (0.7 + radiusRatio * preset.scatter),
+          passes: radius > 72 ? 2 : 1
+        },
+        composite: {
+          intensity: strength / 100 * 2.85,
+          softAddMix: preset.softAddMix,
+          warmth: preset.warmth,
+          saturation: clamp(1 + saturation / 100 * 0.38, 0.58, 1.42, 1),
+          highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
+          shadowProtect: preset.darkProtect,
+          colorProtect: 0.28
+        }
+      };
+    }
+    modules.glowPresets = {
+      clamp,
+      normalizeGlowParams
+    };
+  })(window);
+
+  // src/webview/glow/source-mask.js
+  (function initGlowSourceMaskModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
     function smoothstep(edge0, edge1, value) {
-      const width = Math.max(1e-4, edge1 - edge0);
-      const t = clamp((value - edge0) / width, 0, 1);
+      const t = clamp((value - edge0) / Math.max(1e-4, edge1 - edge0), 0, 1);
       return t * t * (3 - 2 * t);
     }
-    function getStyleParams(style) {
-      const key = String(style || "").trim().toLowerCase();
-      if (key === "soft") {
-        return {
-          thresholdBias: -0.04,
-          opacity: 0.82,
-          spread: 1.08,
-          warmth: 0.03,
-          saturation: 0.86
-        };
-      }
-      if (key === "dreamy") {
-        return {
-          thresholdBias: -0.08,
-          opacity: 1.12,
-          spread: 1.22,
-          warmth: 0.07,
-          saturation: 1.08
-        };
-      }
+    function createLayer(width, height) {
       return {
-        thresholdBias: 0,
-        opacity: 1,
-        spread: 1,
-        warmth: 0.04,
-        saturation: 1
+        width,
+        height,
+        r: new Float32Array(width * height),
+        g: new Float32Array(width * height),
+        b: new Float32Array(width * height)
       };
     }
-    function loadImage(src) {
-      return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error("Failed to load glow source image"));
-        image.src = src;
-      });
+    function blurFloatHorizontal(src, width, height, radius) {
+      const out = new Float32Array(src.length);
+      const size = radius * 2 + 1;
+      for (let y = 0; y < height; y += 1) {
+        const row = y * width;
+        let sum = 0;
+        for (let x = -radius; x <= radius; x += 1) {
+          sum += src[row + clamp(x, 0, width - 1)];
+        }
+        for (let x = 0; x < width; x += 1) {
+          out[row + x] = sum / size;
+          const removeX = clamp(x - radius, 0, width - 1);
+          const addX = clamp(x + radius + 1, 0, width - 1);
+          sum += src[row + addX] - src[row + removeX];
+        }
+      }
+      return out;
     }
-    function createCanvas(width, height) {
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.floor(width));
-      canvas.height = Math.max(1, Math.floor(height));
-      return canvas;
+    function blurFloat(src, width, height, radius) {
+      const r = Math.max(1, Math.floor(radius));
+      const horizontal = blurFloatHorizontal(src, width, height, r);
+      const out = new Float32Array(src.length);
+      const size = r * 2 + 1;
+      for (let x = 0; x < width; x += 1) {
+        let sum = 0;
+        for (let y = -r; y <= r; y += 1) {
+          sum += horizontal[clamp(y, 0, height - 1) * width + x];
+        }
+        for (let y = 0; y < height; y += 1) {
+          out[y * width + x] = sum / size;
+          const removeY = clamp(y - r, 0, height - 1);
+          const addY = clamp(y + r + 1, 0, height - 1);
+          sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
+        }
+      }
+      return out;
     }
-    function getImageDataFromSource(image) {
-      const canvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) throw new Error("Canvas 2D is unavailable for CPU glow");
-      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    function rgbToHsv(r, g, b) {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      let h = 0;
+      if (delta > 1e-4) {
+        if (max === r) h = (g - b) / delta % 6;
+        else if (max === g) h = (b - r) / delta + 2;
+        else h = (r - g) / delta + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+      }
+      return { h, s: max === 0 ? 0 : delta / max, v: max };
+    }
+    function createMaskImageData(mask, width, height, tint = null) {
+      const out = new ImageData(width, height);
+      const tr = tint ? tint[0] : 255;
+      const tg = tint ? tint[1] : 255;
+      const tb = tint ? tint[2] : 255;
+      for (let pixel = 0, index = 0; pixel < mask.length; pixel += 1, index += 4) {
+        const value = clamp(mask[pixel], 0, 1);
+        out.data[index] = Math.round(tr * value);
+        out.data[index + 1] = Math.round(tg * value);
+        out.data[index + 2] = Math.round(tb * value);
+        out.data[index + 3] = 255;
+      }
+      return out;
+    }
+    function buildSourceMask(imageData, params, options = {}) {
+      const { width, height, data } = imageData;
+      const total = width * height;
+      const luma = new Float32Array(total);
+      const maxChannelMap = new Float32Array(total);
+      const saturationMap = new Float32Array(total);
+      for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
+        const r = data[index] / 255;
+        const g = data[index + 1] / 255;
+        const b = data[index + 2] / 255;
+        const maxChannel = Math.max(r, g, b);
+        const minChannel = Math.min(r, g, b);
+        luma[pixel] = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        maxChannelMap[pixel] = maxChannel;
+        saturationMap[pixel] = maxChannel <= 0 ? 0 : (maxChannel - minChannel) / maxChannel;
+      }
+      const localMean = blurFloat(luma, width, height, params.source.localRadius);
+      const localContrast = new Float32Array(total);
+      const lumaMask = new Float32Array(total);
+      const contrastMask = new Float32Array(total);
+      const whiteFlatMask = new Float32Array(total);
+      const skinLikeMask = new Float32Array(total);
+      const darkProtect = new Float32Array(total);
+      const protectMask = new Float32Array(total);
+      const sourceMask = new Float32Array(total);
+      const sourceLayer = createLayer(width, height);
+      for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
+        const r = data[index] / 255;
+        const g = data[index + 1] / 255;
+        const b = data[index + 2] / 255;
+        const lum = luma[pixel];
+        const sat = saturationMap[pixel];
+        const contrast = Math.max(0, lum - localMean[pixel]);
+        const specular = Math.max(0, maxChannelMap[pixel] - localMean[pixel]);
+        const hsv = rgbToHsv(r, g, b);
+        const lumaScore = smoothstep(params.source.thresholdLow, params.source.thresholdHigh, lum);
+        const contrastScore = smoothstep(params.source.contrastLow, params.source.contrastHigh, contrast);
+        const specularScore = smoothstep(params.source.specularLow, params.source.specularHigh, specular);
+        const highLightness = smoothstep(0.72, 0.94, lum);
+        const lowContrast = 1 - smoothstep(0.012, 0.075, contrast);
+        const lowSat = 1 - smoothstep(0.12, 0.36, sat);
+        const whiteFlat = highLightness * lowContrast * lowSat;
+        const skinHue = hsv.h >= 5 && hsv.h <= 52 ? 1 : 0;
+        const skinColor = skinHue * smoothstep(0.16, 0.36, sat) * (1 - smoothstep(0.78, 0.96, sat)) * smoothstep(0.38, 0.74, lum) * (1 - smoothstep(0.9, 1, lum));
+        const dark = 1 - smoothstep(0.08, 0.28, lum);
+        const protection = clamp(
+          whiteFlat * params.source.whiteProtect + skinColor * params.source.skinProtect + dark * params.source.darkProtect,
+          0,
+          1
+        );
+        const reflectiveBoost = clamp(0.55 + contrastScore * 0.6 + specularScore * 0.48 + sat * 0.18, 0, 1.35);
+        const edgeSource = Math.max(contrastScore * 0.34, specularScore * 0.42) * smoothstep(0.48, 0.86, lum);
+        const mask = clamp(Math.max(lumaScore, edgeSource) * reflectiveBoost * (1 - protection * 0.76), 0, 1);
+        const colorGain = Math.pow(mask, 0.86);
+        localContrast[pixel] = contrast;
+        lumaMask[pixel] = lumaScore;
+        contrastMask[pixel] = Math.max(contrastScore, specularScore * 0.72);
+        whiteFlatMask[pixel] = whiteFlat;
+        skinLikeMask[pixel] = skinColor;
+        darkProtect[pixel] = dark;
+        protectMask[pixel] = protection;
+        sourceMask[pixel] = mask;
+        sourceLayer.r[pixel] = r * colorGain;
+        sourceLayer.g[pixel] = g * colorGain;
+        sourceLayer.b[pixel] = b * colorGain;
+      }
       return {
-        width: canvas.width,
-        height: canvas.height,
-        imageData: ctx.getImageData(0, 0, canvas.width, canvas.height)
+        width,
+        height,
+        sourceLayer,
+        masks: {
+          luma,
+          localContrast,
+          lumaMask,
+          contrastMask,
+          whiteFlatMask,
+          skinLikeMask,
+          darkProtect,
+          protectMask,
+          sourceMask
+        },
+        debugImages: options.includeDebug === false ? null : {
+          luma: createMaskImageData(lumaMask, width, height),
+          contrast: createMaskImageData(contrastMask, width, height),
+          whiteFlat: createMaskImageData(whiteFlatMask, width, height),
+          skinLike: createMaskImageData(skinLikeMask, width, height, [255, 188, 126]),
+          darkProtect: createMaskImageData(darkProtect, width, height, [120, 172, 255]),
+          sourceMask: createMaskImageData(sourceMask, width, height, [255, 244, 190]),
+          protectMask: createMaskImageData(protectMask, width, height, [142, 207, 255])
+        }
       };
     }
-    function createEmptyLayer(width, height) {
+    modules.glowSourceMask = {
+      buildSourceMask,
+      createMaskImageData
+    };
+  })(window);
+
+  // src/webview/glow/pyramid-blur.js
+  (function initGlowPyramidBlurModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function createLayer(width, height) {
       return {
         width,
         height,
@@ -575,21 +815,19 @@ var PixelRunnerWebviewBundle = (() => {
     function downsampleLayer(layer) {
       const nextWidth = Math.max(1, Math.floor(layer.width / 2));
       const nextHeight = Math.max(1, Math.floor(layer.height / 2));
-      const out = createEmptyLayer(nextWidth, nextHeight);
+      const out = createLayer(nextWidth, nextHeight);
       for (let y = 0; y < nextHeight; y += 1) {
         for (let x = 0; x < nextWidth; x += 1) {
           const sx = x * 2;
           const sy = y * 2;
-          const indexes = [
-            sy * layer.width + sx,
-            sy * layer.width + Math.min(layer.width - 1, sx + 1),
-            Math.min(layer.height - 1, sy + 1) * layer.width + sx,
-            Math.min(layer.height - 1, sy + 1) * layer.width + Math.min(layer.width - 1, sx + 1)
-          ];
+          const a = sy * layer.width + sx;
+          const b = sy * layer.width + Math.min(layer.width - 1, sx + 1);
+          const c = Math.min(layer.height - 1, sy + 1) * layer.width + sx;
+          const d = Math.min(layer.height - 1, sy + 1) * layer.width + Math.min(layer.width - 1, sx + 1);
           const target = y * nextWidth + x;
-          out.r[target] = (layer.r[indexes[0]] + layer.r[indexes[1]] + layer.r[indexes[2]] + layer.r[indexes[3]]) * 0.25;
-          out.g[target] = (layer.g[indexes[0]] + layer.g[indexes[1]] + layer.g[indexes[2]] + layer.g[indexes[3]]) * 0.25;
-          out.b[target] = (layer.b[indexes[0]] + layer.b[indexes[1]] + layer.b[indexes[2]] + layer.b[indexes[3]]) * 0.25;
+          out.r[target] = (layer.r[a] + layer.r[b] + layer.r[c] + layer.r[d]) * 0.25;
+          out.g[target] = (layer.g[a] + layer.g[b] + layer.g[c] + layer.g[d]) * 0.25;
+          out.b[target] = (layer.b[a] + layer.b[b] + layer.b[c] + layer.b[d]) * 0.25;
         }
       }
       return out;
@@ -629,7 +867,7 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return out;
     }
-    function boxBlurLayer(layer, radius, passes = 2) {
+    function boxBlurLayer(layer, radius, passes = 1) {
       const blurRadius = Math.max(1, Math.floor(radius));
       let r = layer.r;
       let g = layer.g;
@@ -639,15 +877,9 @@ var PixelRunnerWebviewBundle = (() => {
         g = blurChannelVertical(blurChannelHorizontal(g, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
         b = blurChannelVertical(blurChannelHorizontal(b, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
       }
-      return {
-        width: layer.width,
-        height: layer.height,
-        r,
-        g,
-        b
-      };
+      return { width: layer.width, height: layer.height, r, g, b };
     }
-    function addLayerUpsampled(target, source, weight) {
+    function addUpsampled(target, source, weight) {
       const xScale = source.width / target.width;
       const yScale = source.height / target.height;
       for (let y = 0; y < target.height; y += 1) {
@@ -662,48 +894,30 @@ var PixelRunnerWebviewBundle = (() => {
         }
       }
     }
-    function buildHighlightLayer(imageData, config) {
-      const { width, height, data } = imageData;
-      const layer = createEmptyLayer(width, height);
-      const style = getStyleParams(config.style);
-      const thresholdRatio = clamp(Number(config.threshold) || 0, 0, 100) / 100;
-      const radiusRatio = clamp(Number(config.radius) || 1, 1, 120) / 120;
-      const brightnessLift = clamp(Number(config.brightnessBias) || 0, -50, 50) / 50;
-      const threshold = clamp(0.34 + thresholdRatio * 0.62 + style.thresholdBias * 0.3 - brightnessLift * 0.05, 0.28, 0.97);
-      const softness = clamp(0.18 - thresholdRatio * 0.11 + radiusRatio * 0.03, 0.045, 0.2);
-      const exposure = 0.88 + brightnessLift * 0.28;
-      for (let index = 0, pixel = 0; index < data.length; index += 4, pixel += 1) {
-        const r = data[index] / 255;
-        const g = data[index + 1] / 255;
-        const b = data[index + 2] / 255;
-        const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
-        const mask = smoothstep(threshold - softness, threshold + softness, luma);
-        const excess = clamp((luma - threshold + softness) / Math.max(1e-3, 1 - threshold + softness), 0, 1);
-        const gain = mask * Math.pow(excess, 0.58) * exposure;
-        layer.r[pixel] = Math.min(1, r * gain);
-        layer.g[pixel] = Math.min(1, g * gain);
-        layer.b[pixel] = Math.min(1, b * gain);
-      }
-      return layer;
+    function buildMultiScaleGlow(sourceLayer, params) {
+      const level1 = downsampleLayer(sourceLayer);
+      const level2 = downsampleLayer(level1);
+      const level3 = downsampleLayer(level2);
+      const small = boxBlurLayer(sourceLayer, params.blur.smallRadius, 1);
+      const medium = boxBlurLayer(level1, params.blur.mediumRadius, params.blur.passes);
+      const large = boxBlurLayer(level2.width > 1 && level2.height > 1 ? level2 : level3, params.blur.largeRadius, 2);
+      const out = createLayer(sourceLayer.width, sourceLayer.height);
+      addUpsampled(out, small, params.blur.smallWeight);
+      addUpsampled(out, medium, params.blur.mediumWeight);
+      addUpsampled(out, large, params.blur.largeWeight);
+      return { glowLayer: out, levels: { small, medium, large } };
     }
-    function buildPyramidGlow(highlight, config) {
-      const radius = clamp(Number(config.radius) || 1, 1, 120);
-      const style = getStyleParams(config.style);
-      const radiusRatio = radius / 120;
-      const levels = [highlight];
-      while (levels.length < 5 && levels[levels.length - 1].width > 24 && levels[levels.length - 1].height > 24) {
-        levels.push(downsampleLayer(levels[levels.length - 1]));
-      }
-      const out = createEmptyLayer(highlight.width, highlight.height);
-      const detailWeight = 0.035 - radiusRatio * 0.025;
-      const wideWeight = 0.08 + radiusRatio * 0.2;
-      const weights = [detailWeight, 0.2, 0.3, 0.22 + radiusRatio * 0.08, wideWeight];
-      for (let level = 0; level < levels.length; level += 1) {
-        const scaleRadius = Math.max(1, Math.round(radius * style.spread * (0.8 + radiusRatio * 0.8) / Math.pow(2, level + 0.65)));
-        const blurred = boxBlurLayer(levels[level], Math.min(scaleRadius, 56), level <= 1 ? 1 : 2);
-        addLayerUpsampled(out, blurred, weights[level] || 0.06);
-      }
-      return out;
+    modules.glowPyramidBlur = {
+      createLayer,
+      buildMultiScaleGlow
+    };
+  })(window);
+
+  // src/webview/glow/compositor.js
+  (function initGlowCompositorModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
     }
     function applySaturation(r, g, b, saturation) {
       const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
@@ -713,59 +927,158 @@ var PixelRunnerWebviewBundle = (() => {
         luma + (b - luma) * saturation
       ];
     }
-    async function createGlowPng(sourceDataUrl, config = {}) {
+    function composeProtected(baseImageData, glowLayer, masks, params) {
+      const { width, height, data } = baseImageData;
+      const out = new ImageData(width, height);
+      for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+        const baseR = data[index] / 255;
+        const baseG = data[index + 1] / 255;
+        const baseB = data[index + 2] / 255;
+        const baseLuma = masks.luma[pixel];
+        const source = masks.sourceMask[pixel];
+        const protect = masks.protectMask[pixel];
+        const darkProtect = masks.darkProtect[pixel];
+        const highlightProtect = protect * params.composite.highlightProtect * (0.45 + baseLuma * 0.72);
+        const shadowProtect = darkProtect * params.composite.shadowProtect;
+        const sourceAnchor = 0.62 + source * 0.38;
+        const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+        const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
+        const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
+        const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+        const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
+        const glowR = clamp(satR * params.composite.intensity * protectGain, 0, 1);
+        const glowG = clamp(satG * params.composite.intensity * protectGain, 0, 1);
+        const glowB = clamp(satB * params.composite.intensity * protectGain, 0, 1);
+        const screenR = 1 - (1 - baseR) * (1 - glowR);
+        const screenG = 1 - (1 - baseG) * (1 - glowG);
+        const screenB = 1 - (1 - baseB) * (1 - glowB);
+        const softR = clamp(baseR + glowR * (1 - baseR * (0.58 + protect * 0.34)), 0, 1);
+        const softG = clamp(baseG + glowG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
+        const softB = clamp(baseB + glowB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
+        const mix = params.composite.softAddMix;
+        const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.78, 1);
+        const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
+        const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
+        const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);
+        out.data[index] = Math.round(clamp(resultR, 0, 1) * 255);
+        out.data[index + 1] = Math.round(clamp(resultG, 0, 1) * 255);
+        out.data[index + 2] = Math.round(clamp(resultB, 0, 1) * 255);
+        out.data[index + 3] = data[index + 3];
+      }
+      return out;
+    }
+    modules.glowCompositor = {
+      composeProtected
+    };
+  })(window);
+
+  // src/webview/glow/preview-engine.js
+  (function initGlowPreviewEngineModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function createCanvas(width, height) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(width));
+      canvas.height = Math.max(1, Math.floor(height));
+      return canvas;
+    }
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Failed to load glow source image"));
+        image.src = src;
+      });
+    }
+    function getImageDataFromImage(image) {
+      const canvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab");
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        imageData: ctx.getImageData(0, 0, canvas.width, canvas.height)
+      };
+    }
+    function imageDataToDataUrl(imageData, type = "image/png", quality = 0.9) {
+      const canvas = createCanvas(imageData.width, imageData.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab output");
+      ctx.putImageData(imageData, 0, 0);
+      return canvas.toDataURL(type, quality);
+    }
+    async function createPreview(sourceDataUrl, config = {}, options = {}) {
       if (!sourceDataUrl) throw new Error("Glow source image is missing");
+      const jobId = Number(options.jobId) || 0;
       const startedAt = performance.now();
       const image = await loadImage(sourceDataUrl);
-      const source = getImageDataFromSource(image);
-      const highlight = buildHighlightLayer(source.imageData, config);
-      const glow = buildPyramidGlow(highlight, config);
-      const style = getStyleParams(config.style);
-      const strength = clamp(Number(config.strength) || 0, 0, 100) / 100;
-      const saturation = clamp(1 + (Number(config.saturation) || 0) / 100 * 0.38, 0.55, 1.42) * style.saturation;
-      const intensity = strength * style.opacity * 1.75;
-      const canvas = createCanvas(source.width, source.height);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas 2D is unavailable for CPU glow output");
-      const output = ctx.createImageData(source.width, source.height);
-      const previewCanvas = createCanvas(source.width, source.height);
-      const previewCtx = previewCanvas.getContext("2d");
-      if (!previewCtx) throw new Error("Canvas 2D is unavailable for CPU glow preview");
-      const preview = previewCtx.createImageData(source.width, source.height);
-      for (let pixel = 0, index = 0; pixel < glow.r.length; pixel += 1, index += 4) {
-        const warmedR = glow.r[pixel] * (1 + style.warmth);
-        const warmedG = glow.g[pixel] * (1 + style.warmth * 0.42);
-        const warmedB = glow.b[pixel] * (1 - style.warmth * 0.35);
-        const [sr, sg, sb] = applySaturation(warmedR, warmedG, warmedB, saturation);
-        const effectR = clamp(sr * intensity, 0, 1);
-        const effectG = clamp(sg * intensity, 0, 1);
-        const effectB = clamp(sb * intensity, 0, 1);
-        const luma = Math.max(effectR, effectG, effectB);
-        const alpha = clamp(Math.pow(luma, 0.72) * 0.86, 0, 0.86);
-        output.data[index] = Math.round(effectR * 255);
-        output.data[index + 1] = Math.round(effectG * 255);
-        output.data[index + 2] = Math.round(effectB * 255);
-        output.data[index + 3] = 255;
-        const baseR = source.imageData.data[index] / 255;
-        const baseG = source.imageData.data[index + 1] / 255;
-        const baseB = source.imageData.data[index + 2] / 255;
-        const screenR = 1 - (1 - baseR) * (1 - effectR);
-        const screenG = 1 - (1 - baseG) * (1 - effectG);
-        const screenB = 1 - (1 - baseB) * (1 - effectB);
-        preview.data[index] = Math.round(screenR * 255);
-        preview.data[index + 1] = Math.round(screenG * 255);
-        preview.data[index + 2] = Math.round(screenB * 255);
-        preview.data[index + 3] = source.imageData.data[index + 3];
-      }
-      ctx.putImageData(output, 0, 0);
-      previewCtx.putImageData(preview, 0, 0);
+      const source = getImageDataFromImage(image);
+      const params = modules.glowPresets.normalizeGlowParams(config);
+      const sourceStartedAt = performance.now();
+      const includeDebug = options.includeDebug !== false;
+      const sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+      const sourceMs = performance.now() - sourceStartedAt;
+      const blurStartedAt = performance.now();
+      const blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+      const blurMs = performance.now() - blurStartedAt;
+      const compositeStartedAt = performance.now();
+      const previewImageData = modules.glowCompositor.composeProtected(
+        source.imageData,
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
+      const compositeMs = performance.now() - compositeStartedAt;
       return {
-        dataUrl: canvas.toDataURL("image/png"),
-        previewDataUrl: previewCanvas.toDataURL("image/jpeg", 0.9),
+        ok: true,
+        jobId,
         width: source.width,
         height: source.height,
-        elapsedMs: Math.round(performance.now() - startedAt),
-        layerMode: "black-screen"
+        baseDataUrl: sourceDataUrl,
+        previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
+        sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
+        protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
+        debugDataUrls: sourceResult.debugImages ? {
+          luma: imageDataToDataUrl(sourceResult.debugImages.luma),
+          contrast: imageDataToDataUrl(sourceResult.debugImages.contrast),
+          whiteFlat: imageDataToDataUrl(sourceResult.debugImages.whiteFlat),
+          skinLike: imageDataToDataUrl(sourceResult.debugImages.skinLike),
+          darkProtect: imageDataToDataUrl(sourceResult.debugImages.darkProtect)
+        } : {},
+        timings: {
+          sourceMs: Math.round(sourceMs),
+          blurMs: Math.round(blurMs),
+          compositeMs: Math.round(compositeMs),
+          totalMs: Math.round(performance.now() - startedAt)
+        },
+        params
+      };
+    }
+    modules.glowPreviewEngine = {
+      createPreview
+    };
+  })(window);
+
+  // src/webview/glow-cpu.js
+  (function initGlowCpuCompatModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    async function createGlowPng(sourceDataUrl, config = {}) {
+      if (!modules.glowPreviewEngine || typeof modules.glowPreviewEngine.createPreview !== "function") {
+        throw new Error("Glow preview engine is unavailable");
+      }
+      const result = await modules.glowPreviewEngine.createPreview(sourceDataUrl, config);
+      return {
+        dataUrl: result.previewDataUrl,
+        previewDataUrl: result.previewDataUrl,
+        baseDataUrl: result.baseDataUrl,
+        sourceMaskDataUrl: result.sourceMaskDataUrl,
+        protectMaskDataUrl: result.protectMaskDataUrl,
+        debugDataUrls: result.debugDataUrls,
+        timings: result.timings,
+        width: result.width,
+        height: result.height,
+        elapsedMs: result.timings ? result.timings.totalMs : 0,
+        layerMode: "webview-preview-only"
       };
     }
     modules.glowCpu = {
@@ -783,18 +1096,24 @@ var PixelRunnerWebviewBundle = (() => {
       tutorial: "./pages/runninghub-guide.html"
     };
     const GLOW_DEFAULTS = {
-      style: "natural",
-      strength: 47,
-      radius: 81,
-      threshold: 81,
-      saturation: 81,
+      style: "darkSoft",
+      strength: 40,
+      radius: 20,
+      threshold: 20,
+      saturation: 0,
       brightnessBias: 0
     };
     const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
     const GLOW_STYLE_LABELS = {
-      natural: "自然",
-      soft: "柔和",
-      dreamy: "梦幻"
+      none: "无",
+      darksoft: "黑柔",
+      darkSoft: "黑柔",
+      whitesoft: "白柔",
+      whiteSoft: "白柔",
+      shine: "辉光",
+      natural: "黑柔",
+      soft: "白柔",
+      dreamy: "辉光"
     };
     function logToWorkspace(message, type = "info") {
       const runtime = modules.runtime;
@@ -970,9 +1289,12 @@ ${text}` : text;
       const glowStrengthInput = runtime.getById("glowStrengthInput");
       const glowRadiusInput = runtime.getById("glowRadiusInput");
       const glowThresholdInput = runtime.getById("glowThresholdInput");
-      const glowSaturationInput = runtime.getById("glowSaturationInput");
       const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
       const glowStrengthValue = runtime.getById("glowStrengthValue");
+      const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
+      const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
+      const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
+      const glowExposureParamValue = runtime.getById("glowExposureParamValue");
       const glowStyleBadge = runtime.getById("glowStyleBadge");
       const glowRadiusValue = runtime.getById("glowRadiusValue");
       const glowThresholdValue = runtime.getById("glowThresholdValue");
@@ -985,7 +1307,15 @@ ${text}` : text;
       const glowModalClose = runtime.getById("glowModalClose");
       const glowInlinePreview = runtime.getById("glowInlinePreview");
       const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
-      const glowPreviewEffectImage = runtime.getById("glowPreviewEffectImage");
+      const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
+      const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
+      const glowPreviewProtectMaskImage = runtime.getById("glowPreviewProtectMaskImage");
+      const glowDebugPanel = document.querySelector(".glow-debug-panel");
+      const glowPreviewLumaImage = runtime.getById("glowPreviewLumaImage");
+      const glowPreviewContrastImage = runtime.getById("glowPreviewContrastImage");
+      const glowPreviewWhiteFlatImage = runtime.getById("glowPreviewWhiteFlatImage");
+      const glowPreviewSkinLikeImage = runtime.getById("glowPreviewSkinLikeImage");
+      const glowPreviewDarkProtectImage = runtime.getById("glowPreviewDarkProtectImage");
       const glowPreviewMeta = runtime.getById("glowPreviewMeta");
       let glowPreviewTimer = 0;
       let glowPreviewInFlight = false;
@@ -993,6 +1323,7 @@ ${text}` : text;
       let glowPreviewOpen = false;
       let glowLastPreviewSignature = "";
       let glowCpuSourceAsset = null;
+      let glowPreviewJobId = 0;
       const readGlowSlider = (input, fallback, min, max) => {
         if (!input) return fallback;
         const parsed = Number(input.value);
@@ -1000,7 +1331,7 @@ ${text}` : text;
         return Math.max(min, Math.min(max, Math.round(parsed)));
       };
       const readGlowStyle = () => {
-        const nextStyle = String(glowStyleInput && glowStyleInput.value || GLOW_DEFAULTS.style).trim().toLowerCase();
+        const nextStyle = String(glowStyleInput && glowStyleInput.value || GLOW_DEFAULTS.style).trim();
         return GLOW_STYLE_LABELS[nextStyle] ? nextStyle : GLOW_DEFAULTS.style;
       };
       const getGlowStyleLabel = (style) => GLOW_STYLE_LABELS[String(style || "").trim().toLowerCase()] || GLOW_STYLE_LABELS[GLOW_DEFAULTS.style];
@@ -1009,7 +1340,7 @@ ${text}` : text;
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
         radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
-        saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100),
+        saturation: 0,
         brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
       });
       const setGlowButtonsDisabled = (disabled) => {
@@ -1033,7 +1364,11 @@ ${text}` : text;
         if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
         if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
         if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
-        if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${state.threshold}%`;
+        if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
+        if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
+        if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
+        if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
+        if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
       };
       const captureGlowCpuSource = async (maxDimension) => {
         const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
@@ -1055,47 +1390,75 @@ ${text}` : text;
       };
       const clearInlineGlowPreview = () => {
         if (glowInlinePreview) glowInlinePreview.hidden = true;
-        if (glowPreviewBaseImage) glowPreviewBaseImage.removeAttribute("src");
-        if (glowPreviewEffectImage) glowPreviewEffectImage.removeAttribute("src");
-        if (glowPreviewMeta) glowPreviewMeta.textContent = "CPU 插件内预览";
+        [
+          glowPreviewBaseImage,
+          glowPreviewResultImage,
+          glowPreviewSourceMaskImage,
+          glowPreviewProtectMaskImage,
+          glowPreviewLumaImage,
+          glowPreviewContrastImage,
+          glowPreviewWhiteFlatImage,
+          glowPreviewSkinLikeImage,
+          glowPreviewDarkProtectImage
+        ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+        if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
       };
       const updateInlineGlowPreview = (asset, glowResult) => {
         if (!asset || !glowResult) return;
         const sourceDataUrl = String(asset.dataUrl || "").trim();
-        if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
-        if (glowPreviewEffectImage) {
-          glowPreviewEffectImage.hidden = true;
-          glowPreviewEffectImage.removeAttribute("src");
-        }
+        if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
+        if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+        if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
+        if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
+        if (glowPreviewLumaImage) glowPreviewLumaImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.luma || "").trim();
+        if (glowPreviewContrastImage) glowPreviewContrastImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.contrast || "").trim();
+        if (glowPreviewWhiteFlatImage) glowPreviewWhiteFlatImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.whiteFlat || "").trim();
+        if (glowPreviewSkinLikeImage) glowPreviewSkinLikeImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.skinLike || "").trim();
+        if (glowPreviewDarkProtectImage) glowPreviewDarkProtectImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.darkProtect || "").trim();
         if (glowInlinePreview) glowInlinePreview.hidden = false;
         if (glowPreviewMeta) {
           const state = readGlowState();
-          glowPreviewMeta.textContent = `CPU 插件内预览 · ${glowResult.width}x${glowResult.height} · ${glowResult.elapsedMs}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${state.threshold} / 饱和 ${state.saturation}`;
+          const timings = glowResult.timings || {};
+          glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
         }
       };
       const callGlowCpuPreviewAction = async (action) => {
         const state = readGlowState();
         if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-          glowCpuSourceAsset = await captureGlowCpuSource(1280);
+          glowCpuSourceAsset = await captureGlowCpuSource(320);
         }
         const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
-        const glowResult = await modules.glowCpu.createGlowPng(sourceDataUrl, state);
+        const jobId = glowPreviewJobId + 1;
+        glowPreviewJobId = jobId;
+        const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+          jobId,
+          includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+        });
+        if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
+          return {
+            ok: false,
+            stale: true,
+            message: "已丢弃过期辉光预览结果。"
+          };
+        }
         updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
+        const timings = glowResult.timings || {};
         return {
           ok: true,
-          message: `CPU 插件内辉光预览已更新：${glowResult.width}x${glowResult.height}，处理 ${glowResult.elapsedMs}ms。`,
+          message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
           layerName: GLOW_PREVIEW_LAYER_NAME,
-          elapsedMs: glowResult.elapsedMs
+          elapsedMs: timings.totalMs || 0
         };
       };
       const commitGlowCpuResult = async () => {
         const state = readGlowState();
         await clearGlowPreviewLayer();
         const layerName = `Glow ${state.strength}%`;
+        const commitStrength = state.style === "none" ? 0 : state.strength;
         const result = await runtime.callHost("photoshop.runToolAction", [{
           action: "glow",
           style: state.style,
-          strength: state.strength,
+          strength: commitStrength,
           radius: state.radius,
           threshold: state.threshold,
           saturation: state.saturation,
@@ -1111,7 +1474,7 @@ ${text}` : text;
       };
       const getGlowStateSignature = () => {
         const state = readGlowState();
-        return [state.style, state.strength, state.radius, state.threshold, state.saturation, state.brightnessBias].join("|");
+        return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias].join("|");
       };
       const getGlowPreviewDelay = () => {
         const state = readGlowState();
@@ -1119,7 +1482,7 @@ ${text}` : text;
         if (state.radius >= 72) delay = 280;
         if (state.radius >= 92 || state.strength >= 76) delay = 340;
         if (state.brightnessBias >= 32) delay += 20;
-        if (state.style === "dreamy") delay += 20;
+        if (state.style === "shine") delay += 20;
         return delay;
       };
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
@@ -1130,6 +1493,7 @@ ${text}` : text;
         }
         if (glowPreviewInFlight) {
           glowPreviewNeedsReplay = true;
+          glowPreviewJobId += 1;
           return;
         }
         glowPreviewInFlight = true;
@@ -1139,9 +1503,10 @@ ${text}` : text;
         setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
         try {
           const result = await callGlowCpuPreviewAction(action);
+          if (result && result.stale) return;
           const message = result && result.message ? result.message : "辉光预览已更新。";
           glowLastPreviewSignature = nextSignature;
-          setGlowPreviewBadge("预览中", "success");
+          setGlowPreviewBadge("Glow Lab", "success");
           setGlowStatus(message, "success");
         } catch (error) {
           const message = `辉光预览失败：${error.message}`;
@@ -1159,6 +1524,7 @@ ${text}` : text;
       const scheduleGlowPreviewUpdate = () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+        glowPreviewJobId += 1;
         const delay = getGlowPreviewDelay();
         glowPreviewTimer = window.setTimeout(() => {
           glowPreviewTimer = 0;
@@ -1187,6 +1553,7 @@ ${text}` : text;
       const openGlowModal = async () => {
         glowPreviewOpen = true;
         glowLastPreviewSignature = "";
+        glowPreviewJobId += 1;
         modules.workspace.setModalOpen("glowModal", true);
         updateGlowLabels();
         if (!runtime.isPluginRuntime()) {
@@ -1207,6 +1574,7 @@ ${text}` : text;
         glowPreviewOpen = false;
         glowLastPreviewSignature = "";
         glowCpuSourceAsset = null;
+        glowPreviewJobId += 1;
         clearInlineGlowPreview();
         if (glowPreviewTimer) {
           clearTimeout(glowPreviewTimer);
@@ -1218,7 +1586,7 @@ ${text}` : text;
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
-      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowSaturationInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
+      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
           scheduleGlowPreviewUpdate();
@@ -1268,6 +1636,14 @@ ${text}` : text;
       if (glowModalClose) {
         glowModalClose.addEventListener("click", () => {
           void closeGlowModal(true);
+        });
+      }
+      if (glowDebugPanel) {
+        glowDebugPanel.addEventListener("toggle", () => {
+          if (glowDebugPanel.open) {
+            glowLastPreviewSignature = "";
+            scheduleGlowPreviewUpdate();
+          }
         });
       }
       document.addEventListener("click", (event) => {
