@@ -205,6 +205,51 @@ function getDocumentPixelSize(doc) {
   return { width, height };
 }
 
+function getDocumentResolutionValue(doc) {
+  const raw = doc && doc.resolution;
+  const parsed = Number(raw && (raw._value ?? raw.value ?? raw));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 72;
+}
+
+async function createTransparentTempDocument(app, action, name, size, resolution) {
+  const width = Math.max(1, Math.floor(Number(size && size.width) || 1));
+  const height = Math.max(1, Math.floor(Number(size && size.height) || 1));
+  const safeResolution = Math.max(1, Number(resolution) || 72);
+
+  if (app && app.documents && typeof app.documents.add === "function") {
+    try {
+      const doc = await app.documents.add({
+        width,
+        height,
+        resolution: safeResolution,
+        name,
+        mode: "RGBColorMode",
+        fill: "transparent"
+      });
+      if (doc) return doc;
+    } catch (_) {}
+  }
+
+  await action.batchPlay([{
+    _obj: "make",
+    new: { _class: "document" },
+    using: {
+      _obj: "document",
+      name,
+      mode: { _class: "RGBColorMode" },
+      width: { _unit: "pixelsUnit", _value: width },
+      height: { _unit: "pixelsUnit", _value: height },
+      resolution: { _unit: "densityUnit", _value: safeResolution },
+      pixelScaleFactor: 1,
+      fill: { _enum: "fill", _value: "transparent" }
+    }
+  }], {});
+
+  const doc = app && app.activeDocument ? app.activeDocument : null;
+  if (!doc) throw new Error("无法创建辉光临时文档。");
+  return doc;
+}
+
 async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
   const limitedEdge = Math.max(256, Math.min(4096, Math.floor(Number(maxEdge) || 0)));
   if (!limitedEdge) return { scale: 1, width: getDocumentPixelSize(docRef).width, height: getDocumentPixelSize(docRef).height };
@@ -378,6 +423,45 @@ async function activateDocumentByRef(app, action, docRef) {
     } catch (_) {}
   }
   return app && app.activeDocument ? app.activeDocument : null;
+}
+
+function getDocumentRefId(docRef) {
+  const documentId = Number(docRef && docRef.id);
+  return Number.isFinite(documentId) && documentId > 0 ? documentId : 0;
+}
+
+function getActiveDocumentId(app) {
+  return getDocumentRefId(app && app.activeDocument);
+}
+
+function getDocumentRefName(docRef) {
+  return String((docRef && (docRef.title || docRef.name)) || "Untitled");
+}
+
+async function ensureActiveDocumentRef(app, action, docRef, label) {
+  const expectedId = getDocumentRefId(docRef);
+  if (!(expectedId > 0)) {
+    throw new Error(`${label}: target document is unavailable.`);
+  }
+
+  await activateDocumentByRef(app, action, docRef);
+  const activeId = getActiveDocumentId(app);
+  if (activeId !== expectedId) {
+    throw new Error(`${label}: Photoshop active document drifted from "${getDocumentRefName(docRef)}" (#${expectedId}) to #${activeId || "none"}.`);
+  }
+
+  return app && app.activeDocument ? app.activeDocument : null;
+}
+
+async function runOnDocument(app, action, docRef, label, operation) {
+  const expectedId = getDocumentRefId(docRef);
+  await ensureActiveDocumentRef(app, action, docRef, label);
+  const result = await operation();
+  const activeId = getActiveDocumentId(app);
+  if (activeId !== expectedId) {
+    throw new Error(`${label}: Photoshop active document changed unexpectedly after the operation.`);
+  }
+  return result;
 }
 
 async function deleteActiveLayer(action) {
@@ -746,41 +830,78 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
   const haloName = `${config.layerName} Halo`;
   const previewMaxEdge = Math.max(0, Math.floor(Number(options.previewMaxEdge) || 0));
   const sourceSize = getDocumentPixelSize(document);
+  const sourceResolution = getDocumentResolutionValue(document);
   const sourceLayerId = Number(options.sourceLayerId) || 0;
   let tempDoc = null;
   let importedLayer = null;
 
   try {
-    await activateDocumentByRef(app, action, originalDocument);
+    const originalOp = (label, operation) => runOnDocument(app, action, originalDocument, label, operation);
+    let sourceLayer = null;
+
+    await originalOp("Prepare glow source layer", async () => {
     if (sourceLayerId > 0) {
       await selectLayerById(action, sourceLayerId);
     }
-    tempDoc = await document.duplicate(`${config.layerName} Temp`, true);
-    await activateDocumentByRef(app, action, tempDoc);
+    sourceLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    if (!sourceLayer || isGeneratedGlowLayerName(sourceLayer.name)) {
+      throw new Error("Glow source layer is unavailable. Select a non-Glow source layer before applying glow.");
+    }
+    });
+    tempDoc = await createTransparentTempDocument(
+      app,
+      action,
+      `${config.layerName} Temp`,
+      sourceSize,
+      sourceResolution
+    );
+    const tempOp = (label, operation) => runOnDocument(app, action, tempDoc, label, operation);
+    await ensureActiveDocumentRef(app, action, originalDocument, "Copy glow source layer to temp document");
+    const duplicatedSourceLayer = await (async () => {
+      if (sourceLayerId > 0) {
+        await selectLayerById(action, sourceLayerId);
+      }
+      sourceLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      if (!sourceLayer || isGeneratedGlowLayerName(sourceLayer.name)) {
+        throw new Error("Glow source layer is unavailable. Select a non-Glow source layer before applying glow.");
+      }
+      return sourceLayer.duplicate(tempDoc);
+    })();
+    const duplicatedSourceLayerId = Number(duplicatedSourceLayer && duplicatedSourceLayer.id) || 0;
+    await tempOp("Select duplicated glow source layer", async () => {
+      if (duplicatedSourceLayerId > 0) {
+        await selectLayerById(action, duplicatedSourceLayerId);
+      }
+      const activeTempLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      if (!activeTempLayer || isGeneratedGlowLayerName(activeTempLayer.name)) {
+        throw new Error("Glow source layer was not copied into the temporary document.");
+      }
+    });
 
-    await normalizeWorkingDocumentBitDepth(action, tempDoc);
-    await activateDocumentByRef(app, action, tempDoc);
+    await tempOp("Normalize glow temp document bit depth", () => normalizeWorkingDocumentBitDepth(action, tempDoc));
     const resizeInfo = previewMaxEdge > 0
-      ? await resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge)
+      ? await tempOp("Resize glow temp document", () => resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge))
       : { scale: 1, width: sourceSize.width, height: sourceSize.height };
-    await activateDocumentByRef(app, action, tempDoc);
     let workingConfig = createScaledGlowConfig(config, Number(resizeInfo.scale) || 1);
     if (previewMaxEdge > 0) {
       workingConfig = createPreviewGlowConfig(workingConfig, getGlowPreviewProfile(config));
     }
+    await tempOp("Build glow source mask", async () => {
     await renameActiveLayer(action, baseName);
     await selectHighlights(action, workingConfig);
     await copySelectionToLayer(action);
     await renameActiveLayer(action, sourceName);
     await clearSelection(action);
     await deleteLayerByName(action, baseName);
+    });
 
     if (workingConfig.sourceSaturation !== 0) {
-      await applyHueSaturation(action, workingConfig.sourceSaturation);
+      await tempOp("Adjust glow source saturation", () => applyHueSaturation(action, workingConfig.sourceSaturation));
     }
     if (Math.abs(workingConfig.isolationExposure) > 0.01 || Math.abs(workingConfig.isolationGamma - 1) > 0.01) {
-      await applyExposureIsolation(action, workingConfig.isolationExposure, workingConfig.isolationGamma);
+      await tempOp("Adjust glow source exposure", () => applyExposureIsolation(action, workingConfig.isolationExposure, workingConfig.isolationGamma));
     }
+    await tempOp("Prepare glow detail layer", async () => {
     await selectChannel(action, "red");
     await applyLevelsOutput(action, 242);
     await selectChannel(action, "grain");
@@ -790,33 +911,43 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     await selectChannel(action, "RGB");
     await renameActiveLayer(action, detailName);
     await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
+    });
 
+    await tempOp("Build glow core layer", async () => {
     await selectLayerByName(action, detailName);
     await duplicateActiveLayer(action, coreName);
     await renameActiveLayer(action, coreName);
     await applyGaussianBlur(action, workingConfig.coreRadius);
     await applyExposureIsolation(action, workingConfig.coreExposure, workingConfig.coreGamma);
     await setActiveLayerStyle(action, workingConfig.coreOpacity, "screen");
+    });
 
+    await tempOp("Build glow halo layer", async () => {
     await selectLayerByName(action, detailName);
     await duplicateActiveLayer(action, haloName);
     await renameActiveLayer(action, haloName);
     await applyGaussianBlur(action, workingConfig.haloRadius);
     await applyExposureIsolation(action, workingConfig.glowExposure, Number((workingConfig.glowGamma - 0.04).toFixed(2)));
     await setActiveLayerStyle(action, workingConfig.haloOpacity, "screen");
+    });
 
     for (let index = 0; index < workingConfig.glowRadii.length; index += 1) {
+      await tempOp(`Build glow bloom layer ${index + 1}`, async () => {
       await selectLayerByName(action, detailName);
       await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
       await renameActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
       await applyGaussianBlur(action, workingConfig.glowRadii[index]);
       await applyExposureIsolation(action, workingConfig.glowExposure, workingConfig.glowGamma);
       await setActiveLayerStyle(action, workingConfig.glowOpacities[index], "screen");
+      });
     }
 
+    await tempOp("Merge glow temp layers", async () => {
     await mergeVisibleLayers(action);
     await renameActiveLayer(action, config.layerName);
+    });
 
+    await tempOp("Finalize glow temp layer tone", async () => {
     await applyExposureIsolation(action, 0, workingConfig.finalGamma);
     const outputMax = Math.max(96, 255 - workingConfig.channelOutputClamp);
     await selectChannel(action, "red");
@@ -826,28 +957,31 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     await selectChannel(action, "blue");
     await applyLevelsOutput(action, outputMax);
     await selectChannel(action, "RGB");
+    });
     if (workingConfig.finalVibrance !== 0 || workingConfig.finalSaturation !== 0) {
-      await applyVibrance(action, workingConfig.finalVibrance, workingConfig.finalSaturation);
+      await tempOp("Finalize glow temp layer color", () => applyVibrance(action, workingConfig.finalVibrance, workingConfig.finalSaturation));
     }
-    await setActiveLayerStyle(action, 100, "screen");
+    await tempOp("Finalize glow temp layer style", () => setActiveLayerStyle(action, 100, "screen"));
 
     const tempResultLayer = tempDoc && tempDoc.activeLayers && tempDoc.activeLayers[0];
     if (!tempResultLayer) {
       throw new Error("Glow result layer was not created.");
     }
 
-    await activateDocumentByRef(app, action, tempDoc);
+    await ensureActiveDocumentRef(app, action, tempDoc, "Copy glow result layer back");
     importedLayer = await tempResultLayer.duplicate(originalDocument);
-    await activateDocumentByRef(app, action, originalDocument);
+    await ensureActiveDocumentRef(app, action, originalDocument, "Select imported glow result layer");
     const importedLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
-    if (importedLayerId > 0) {
-      await selectLayerById(action, importedLayerId);
-    }
-    await renameActiveLayer(action, config.layerName);
-    await setActiveLayerStyle(action, 100, "screen");
-    if (previewMaxEdge > 0) {
-      await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
-    }
+    await originalOp("Finalize imported glow result layer", async () => {
+      if (importedLayerId > 0) {
+        await selectLayerById(action, importedLayerId);
+      }
+      await renameActiveLayer(action, config.layerName);
+      await setActiveLayerStyle(action, 100, "screen");
+      if (previewMaxEdge > 0) {
+        await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
+      }
+    });
   } finally {
     try {
       await activateDocumentByRef(app, action, originalDocument);
