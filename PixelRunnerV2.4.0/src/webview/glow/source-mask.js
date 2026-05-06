@@ -10,6 +10,22 @@
     return t * t * (3 - 2 * t);
   }
 
+  function softThresholdMask(value, threshold, knee) {
+    const safeKnee = Math.max(0.0001, knee);
+    const soft = clamp(value - threshold + safeKnee, 0, safeKnee * 2);
+    const curved = (soft * soft) / (safeKnee * 4);
+    return clamp(Math.max(curved, value - threshold) / Math.max(value, 0.0001), 0, 1);
+  }
+
+  function boostSaturation(r, g, b, amount) {
+    const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+    return [
+      clamp(luma + (r - luma) * (1 + amount), 0, 1),
+      clamp(luma + (g - luma) * (1 + amount), 0, 1),
+      clamp(luma + (b - luma) * (1 + amount), 0, 1)
+    ];
+  }
+
   function createLayer(width, height) {
     return {
       width,
@@ -127,8 +143,11 @@
       const contrast = Math.max(0, lum - localMean[pixel]);
       const specular = Math.max(0, maxChannelMap[pixel] - localMean[pixel]);
       const hsv = rgbToHsv(r, g, b);
+      const brightness = Math.max(lum * 0.82 + maxChannelMap[pixel] * 0.18, maxChannelMap[pixel] * 0.88);
 
-      const lumaScore = smoothstep(params.source.thresholdLow, params.source.thresholdHigh, lum);
+      const lumaScore =
+        softThresholdMask(brightness, params.source.thresholdLow, params.source.thresholdKnee) *
+        smoothstep(params.source.thresholdLow - params.source.thresholdKnee * 0.92, params.source.thresholdHigh, brightness);
       const contrastScore = smoothstep(params.source.contrastLow, params.source.contrastHigh, contrast);
       const specularScore = smoothstep(params.source.specularLow, params.source.specularHigh, specular);
       const highLightness = smoothstep(0.72, 0.94, lum);
@@ -150,10 +169,14 @@
         0,
         1
       );
-      const reflectiveBoost = clamp(0.55 + contrastScore * 0.6 + specularScore * 0.48 + sat * 0.18, 0, 1.35);
-      const edgeSource = Math.max(contrastScore * 0.34, specularScore * 0.42) * smoothstep(0.48, 0.86, lum);
-      const mask = clamp(Math.max(lumaScore, edgeSource) * reflectiveBoost * (1 - protection * 0.76), 0, 1);
-      const colorGain = Math.pow(mask, 0.86);
+      const chromaSource = smoothstep(0.08, 0.46, sat) * smoothstep(0.44, 0.84, brightness);
+      const reflectiveBoost = clamp(0.5 + contrastScore * 0.46 + specularScore * 0.42 + chromaSource * 0.22, 0, 1.22);
+      const edgeSource = Math.max(contrastScore * 0.22, specularScore * 0.36) * smoothstep(0.44, 0.88, brightness);
+      const combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
+      const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.78), 0, 1);
+      const colorGain = Math.pow(mask, 0.78);
+      const chromaBoost = params.source.chromaBoost * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
+      const [sourceR, sourceG, sourceB] = boostSaturation(r, g, b, chromaBoost);
 
       localContrast[pixel] = contrast;
       lumaMask[pixel] = lumaScore;
@@ -163,9 +186,9 @@
       darkProtect[pixel] = dark;
       protectMask[pixel] = protection;
       sourceMask[pixel] = mask;
-      sourceLayer.r[pixel] = r * colorGain;
-      sourceLayer.g[pixel] = g * colorGain;
-      sourceLayer.b[pixel] = b * colorGain;
+      sourceLayer.r[pixel] = sourceR * colorGain;
+      sourceLayer.g[pixel] = sourceG * colorGain;
+      sourceLayer.b[pixel] = sourceB * colorGain;
     }
 
     return {

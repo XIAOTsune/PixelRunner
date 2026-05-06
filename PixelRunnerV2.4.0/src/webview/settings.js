@@ -125,6 +125,100 @@
     }
   }
 
+  const THEME_PRESETS = {
+    classic: {
+      "--bg-top": "#111822",
+      "--bg-mid": "#18212d",
+      "--bg-bottom": "#0c1219",
+      "--accent": "#63d67b",
+      "--accent-strong": "#28c45b",
+      "--cta": "#a9def2"
+    },
+    aurora: {
+      "--bg-top": "#0b1a20",
+      "--bg-mid": "#14333b",
+      "--bg-bottom": "#081318",
+      "--accent": "#74d8c7",
+      "--accent-strong": "#35bfa8",
+      "--cta": "#f4d47d"
+    },
+    graphite: {
+      "--bg-top": "#12151a",
+      "--bg-mid": "#202832",
+      "--bg-bottom": "#0b0e13",
+      "--accent": "#9ab0c6",
+      "--accent-strong": "#7f99b4",
+      "--cta": "#d7e1ea"
+    },
+    rose: {
+      "--bg-top": "#1d1420",
+      "--bg-mid": "#302234",
+      "--bg-bottom": "#120d16",
+      "--accent": "#ff9bb4",
+      "--accent-strong": "#e87595",
+      "--cta": "#aee7dd"
+    },
+    studio: {
+      "--bg-top": "#17171a",
+      "--bg-mid": "#252823",
+      "--bg-bottom": "#101111",
+      "--accent": "#ffd56a",
+      "--accent-strong": "#e8b93b",
+      "--cta": "#8fd6ff"
+    }
+  };
+
+  function applyTheme(theme) {
+    const normalized = modules.state.normalizeTheme(theme);
+    const root = document.documentElement;
+    const preset = THEME_PRESETS[normalized.preset] || THEME_PRESETS.classic;
+    Object.entries(preset).forEach(([key, value]) => root.style.setProperty(key, value));
+    document.body.classList.toggle("has-custom-theme-image", Boolean(normalized.customImage));
+    document.body.classList.toggle("has-glass-theme", Boolean(normalized.glass));
+    if (normalized.customImage) {
+      root.style.setProperty("--theme-image", `url("${normalized.customImage.replace(/"/g, "%22")}")`);
+    } else {
+      root.style.removeProperty("--theme-image");
+    }
+    modules.state.state.theme = normalized;
+
+    const swatches = document.querySelectorAll("[data-theme-preset]");
+    swatches.forEach((button) => {
+      button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === normalized.preset);
+    });
+    const statusEl = modules.runtime.getById("themeStatusSummary");
+    if (statusEl) {
+      modules.runtime.setSummaryStatus(
+        statusEl,
+        normalized.customImage
+          ? `自定义主题已启用：${normalized.customImageName || "背景照片"}。`
+          : `已启用${normalized.preset === "classic" ? "经典" : "预设"}主题。`,
+        "success"
+      );
+    }
+  }
+
+  async function saveThemeSnapshot(theme) {
+    const normalized = modules.state.normalizeTheme(theme);
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THEME, JSON.stringify(normalized));
+    applyTheme(normalized);
+    return normalized;
+  }
+
+  async function loadThemeSnapshot() {
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THEME);
+    return modules.state.normalizeTheme(modules.runtime.readJsonText(raw, modules.state.DEFAULT_THEME));
+  }
+
+  function readImageFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("读取主题照片失败，请换一张图片重试。"));
+      reader.readAsDataURL(file);
+    });
+  }
+
   function readSettingsForm() {
     return modules.state.normalizeSettings({
       apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
@@ -194,9 +288,11 @@
     }
 
     const snapshot = await loadSettingsSnapshot();
+    const theme = await loadThemeSnapshot();
     modules.state.state.settings = snapshot;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(snapshot);
+    applyTheme(theme);
     setApiKeyVisibility(false);
     renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
     renderSettingsDiagnostics("当前设置快照已读取完成。", {
@@ -218,8 +314,9 @@
       });
     }
     if (sortInput) {
+      sortInput.value = modules.state.state.appManagerSort || "manual";
       sortInput.addEventListener("change", () => {
-        modules.state.state.appManagerSort = sortInput.value || "updated_desc";
+        modules.state.state.appManagerSort = sortInput.value || "manual";
         modules.apps.renderSavedAppsList();
       });
     }
@@ -236,6 +333,8 @@
     const saveTemplateButton = runtime.getById("btnSaveTemplate");
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
+    const themeImageInput = runtime.getById("themeImageInput");
+    const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
       "settingsApiKeyInput",
       "settingsPollIntervalInput",
@@ -245,6 +344,55 @@
     ];
 
     bindAppManagerControls();
+
+    document.querySelectorAll("[data-theme-preset]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const preset = String(button.getAttribute("data-theme-preset") || "classic");
+        try {
+          await saveThemeSnapshot({
+            ...modules.state.state.theme,
+            preset,
+            customImage: "",
+            customImageName: "",
+            glass: false
+          });
+        } catch (error) {
+          runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题保存失败：${error.message}`, "error");
+        }
+      });
+    });
+
+    if (themeImageInput) {
+      themeImageInput.addEventListener("change", async () => {
+        const file = themeImageInput.files && themeImageInput.files[0];
+        if (!file) return;
+        try {
+          const dataUrl = await readImageFileAsDataUrl(file);
+          await saveThemeSnapshot({
+            preset: "custom",
+            customImage: dataUrl,
+            customImageName: String(file.name || "自定义照片"),
+            glass: true
+          });
+        } catch (error) {
+          runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题照片应用失败：${error.message}`, "error");
+        } finally {
+          themeImageInput.value = "";
+        }
+      });
+    }
+
+    if (clearThemeImageButton) {
+      clearThemeImageButton.addEventListener("click", async () => {
+        await saveThemeSnapshot({
+          ...modules.state.state.theme,
+          preset: modules.state.state.theme.preset === "custom" ? "classic" : modules.state.state.theme.preset,
+          customImage: "",
+          customImageName: "",
+          glass: false
+        });
+      });
+    }
 
     fieldIds.forEach((id) => {
       const element = runtime.getById(id);

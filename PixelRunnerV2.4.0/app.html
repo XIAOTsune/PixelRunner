@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.4.2</span>
+              <span class="version-text">v2.4.3</span>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.2 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.3 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -127,7 +127,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.4.2</span>
+            <span class="version-text">v2.4.3</span>
           </div>
         </div>
 
@@ -240,7 +240,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.4.2</span>
+          <span class="version-text">v2.4.3</span>
           </div>
         </div>
 
@@ -309,6 +309,7 @@
                 <label class="field">
                   <span class="field-label">排序方式</span>
                   <select id="appManagerSortInput" class="field-input">
+                    <option value="manual" selected>手动排序</option>
                     <option value="updated_desc">最近更新优先</option>
                     <option value="created_desc">最近创建优先</option>
                     <option value="name_asc">名称 A-Z</option>
@@ -354,6 +355,7 @@
                 <label class="field">
                   <span class="field-label">排序方式</span>
                   <select id="templateManagerSortInput" class="field-input">
+                    <option value="manual" selected>手动排序</option>
                     <option value="updated_desc">最近更新优先</option>
                     <option value="created_desc">最近创建优先</option>
                     <option value="title_asc">标题 A-Z</option>
@@ -394,6 +396,37 @@
           </details>
 
           <details class="surface-card settings-collapsible">
+            <summary class="settings-collapse-summary">主题设置</summary>
+            <div class="form-stack collapsible-body">
+              <div class="theme-preset-grid" id="themePresetGrid">
+                <button class="theme-swatch is-selected" type="button" data-theme-preset="classic">
+                  <span style="background:#63d67b"></span><strong>经典</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="aurora">
+                  <span style="background:#74d8c7"></span><strong>极光</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="graphite">
+                  <span style="background:#9ab0c6"></span><strong>石墨</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="rose">
+                  <span style="background:#ff9bb4"></span><strong>玫瑰</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="studio">
+                  <span style="background:#ffd56a"></span><strong>影棚</strong>
+                </button>
+              </div>
+              <label class="field">
+                <span class="field-label">自定义背景照片</span>
+                <input id="themeImageInput" class="field-input" type="file" accept="image/*" />
+              </label>
+              <div class="action-row">
+                <button id="btnClearThemeImage" class="secondary-btn" type="button">移除照片</button>
+              </div>
+              <div id="themeStatusSummary" class="summary-strip">选择主题后会立即预览并保存。</div>
+            </div>
+          </details>
+
+          <details class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">环境诊断</summary>
             <div class="collapsible-body">
               <div id="settingsDiagnosticBox" class="diagnostic-box">
@@ -412,7 +445,7 @@
 
   <div id="appPickerModal" class="overlay-modal">
     <div id="appPickerBackdrop" class="overlay-backdrop"></div>
-    <section class="overlay-card">
+    <section class="overlay-card resizable-overlay-card">
       <div class="card-head">
         <div>
           <p class="card-kicker">工作台</p>
@@ -479,7 +512,7 @@
 
   <div id="templatePickerModal" class="overlay-modal">
     <div id="templatePickerBackdrop" class="overlay-backdrop"></div>
-    <section class="overlay-card">
+    <section class="overlay-card resizable-overlay-card">
       <div class="card-head">
         <div>
           <p class="card-kicker">工作台</p>
@@ -640,81 +673,86 @@
         </div>
       </div>
 
-      <div id="glowInlinePreview" class="glow-inline-preview" hidden>
-        <div class="glow-lab-grid">
-          <figure class="glow-lab-tile glow-lab-tile-wide">
-            <img id="glowPreviewResultImage" class="glow-lab-image" alt="辉光测试台结果图" />
-            <figcaption>预览结果</figcaption>
-          </figure>
-        </div>
-        <details class="glow-debug-panel">
-          <summary class="glow-debug-summary">调试遮罩</summary>
-          <div class="glow-debug-grid">
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewSourceMaskImage" class="glow-lab-image" alt="sourceMask 调试图" />
-              <figcaption>sourceMask</figcaption>
-            </figure>
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewProtectMaskImage" class="glow-lab-image" alt="protectMask 调试图" />
-              <figcaption>protectMask</figcaption>
-            </figure>
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewLumaImage" class="glow-lab-image" alt="luma 调试图" />
-              <figcaption>luma</figcaption>
-            </figure>
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewContrastImage" class="glow-lab-image" alt="local contrast 调试图" />
-              <figcaption>local contrast</figcaption>
-            </figure>
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewWhiteFlatImage" class="glow-lab-image" alt="whiteFlat 调试图" />
-              <figcaption>whiteFlat</figcaption>
-            </figure>
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewSkinLikeImage" class="glow-lab-image" alt="skinLike 调试图" />
-              <figcaption>skinLike</figcaption>
-            </figure>
-            <figure class="glow-lab-tile">
-              <img id="glowPreviewDarkProtectImage" class="glow-lab-image" alt="darkProtect 调试图" />
-              <figcaption>darkProtect</figcaption>
+      <div class="glow-workbench">
+        <div id="glowInlinePreview" class="glow-inline-preview" hidden>
+          <div class="glow-lab-grid">
+            <figure class="glow-lab-tile glow-lab-tile-wide">
+              <img id="glowPreviewResultImage" class="glow-lab-image" alt="辉光测试台结果图" />
+              <figcaption>预览结果</figcaption>
             </figure>
           </div>
-        </details>
-        <div id="glowPreviewMeta" class="glow-preview-meta">Glow Lab 等待捕获图像</div>
+          <details class="glow-debug-panel">
+            <summary class="glow-debug-summary">调试遮罩</summary>
+            <div class="glow-debug-grid">
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewSourceMaskImage" class="glow-lab-image" alt="sourceMask 调试图" />
+                <figcaption>sourceMask</figcaption>
+              </figure>
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewProtectMaskImage" class="glow-lab-image" alt="protectMask 调试图" />
+                <figcaption>protectMask</figcaption>
+              </figure>
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewLumaImage" class="glow-lab-image" alt="luma 调试图" />
+                <figcaption>luma</figcaption>
+              </figure>
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewContrastImage" class="glow-lab-image" alt="local contrast 调试图" />
+                <figcaption>local contrast</figcaption>
+              </figure>
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewWhiteFlatImage" class="glow-lab-image" alt="whiteFlat 调试图" />
+                <figcaption>whiteFlat</figcaption>
+              </figure>
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewSkinLikeImage" class="glow-lab-image" alt="skinLike 调试图" />
+                <figcaption>skinLike</figcaption>
+              </figure>
+              <figure class="glow-lab-tile">
+                <img id="glowPreviewDarkProtectImage" class="glow-lab-image" alt="darkProtect 调试图" />
+                <figcaption>darkProtect</figcaption>
+              </figure>
+            </div>
+          </details>
+          <div id="glowPreviewMeta" class="glow-preview-meta">Glow Lab 等待捕获图像</div>
+        </div>
+
+        <div class="glow-controls-panel">
+          <div class="glow-slider-stack">
+            <label class="field glow-slider-field glow-style-field">
+              <span class="glow-param-line"><span class="field-label">风格</span></span>
+              <select id="glowStyleInput" class="field-input">
+                <option value="none">无</option>
+                <option value="darkSoft" selected>黑柔</option>
+                <option value="whiteSoft">白柔</option>
+                <option value="shine">辉光</option>
+              </select>
+            </label>
+            <label class="field glow-slider-field">
+              <span class="glow-param-line"><span class="field-label">强度</span><span id="glowStrengthParamValue">40</span></span>
+              <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="40" />
+            </label>
+            <label class="field glow-slider-field">
+              <span class="glow-param-line"><span class="field-label">半径</span><span id="glowRadiusParamValue">20</span></span>
+              <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="20" />
+            </label>
+            <label class="field glow-slider-field">
+              <span class="glow-param-line"><span class="field-label">阈值</span><span id="glowThresholdParamValue">0.20</span></span>
+              <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="20" />
+            </label>
+            <label class="field glow-slider-field">
+              <span class="glow-param-line"><span class="field-label">曝光</span><span id="glowExposureParamValue">0</span></span>
+              <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
+            </label>
+          </div>
+
+          <div class="glow-control-grid glow-modal-actions">
+            <button id="btnGlowPreviewCancel" class="secondary-btn glow-cancel-btn" type="button">取消预览</button>
+            <button id="btnGlowPreviewApply" class="primary-btn glow-run-btn" type="button">应用辉光</button>
+          </div>
+        </div>
       </div>
 
-      <div class="glow-slider-stack">
-        <label class="field glow-slider-field glow-style-field">
-          <span class="glow-param-line"><span class="field-label">风格</span></span>
-          <select id="glowStyleInput" class="field-input">
-            <option value="none">无</option>
-            <option value="darkSoft" selected>黑柔</option>
-            <option value="whiteSoft">白柔</option>
-            <option value="shine">辉光</option>
-          </select>
-        </label>
-        <label class="field glow-slider-field">
-          <span class="glow-param-line"><span class="field-label">强度</span><span id="glowStrengthParamValue">40</span></span>
-          <input id="glowStrengthInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="40" />
-        </label>
-        <label class="field glow-slider-field">
-          <span class="glow-param-line"><span class="field-label">半径</span><span id="glowRadiusParamValue">20</span></span>
-          <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="120" step="1" value="20" />
-        </label>
-        <label class="field glow-slider-field">
-          <span class="glow-param-line"><span class="field-label">阈值</span><span id="glowThresholdParamValue">0.20</span></span>
-          <input id="glowThresholdInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="20" />
-        </label>
-        <label class="field glow-slider-field">
-          <span class="glow-param-line"><span class="field-label">曝光</span><span id="glowExposureParamValue">0</span></span>
-          <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
-        </label>
-      </div>
-
-      <div class="glow-control-grid glow-modal-actions">
-        <button id="btnGlowPreviewCancel" class="secondary-btn glow-cancel-btn" type="button">取消预览</button>
-        <button id="btnGlowPreviewApply" class="primary-btn glow-run-btn" type="button">应用辉光</button>
-      </div>
       <div id="glowHint" class="summary-strip">打开面板后会捕获当前图像，在插件内生成 CPU 辉光预览。</div>
     </section>
   </div>

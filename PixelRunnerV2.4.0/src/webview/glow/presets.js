@@ -21,6 +21,8 @@
       whiteProtect: 1,
       skinProtect: 1,
       darkProtect: 1,
+      knee: 0.18,
+      chromaBoost: 0,
       smallWeight: 0,
       mediumWeight: 0,
       largeWeight: 0,
@@ -33,6 +35,8 @@
       whiteProtect: 0.86,
       skinProtect: 0.78,
       darkProtect: 0.42,
+      knee: 0.24,
+      chromaBoost: 0.28,
       smallWeight: 0.42,
       mediumWeight: 0.88,
       largeWeight: 0.48,
@@ -45,6 +49,8 @@
       whiteProtect: 0.92,
       skinProtect: 0.86,
       darkProtect: 0.46,
+      knee: 0.28,
+      chromaBoost: 0.2,
       smallWeight: 0.32,
       mediumWeight: 0.94,
       largeWeight: 0.56,
@@ -57,6 +63,8 @@
       whiteProtect: 0.78,
       skinProtect: 0.74,
       darkProtect: 0.5,
+      knee: 0.32,
+      chromaBoost: 0.36,
       smallWeight: 0.3,
       mediumWeight: 0.9,
       largeWeight: 0.72,
@@ -88,11 +96,13 @@
       source: {
         thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
         thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
+        thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + radiusRatio * 0.04, 0.08, 0.34, 0.2),
         localRadius: Math.max(3, Math.round(4 + radiusRatio * 10)),
         contrastLow: 0.025,
         contrastHigh: clamp(0.095 - thresholdRatio * 0.035, 0.038, 0.11, 0.07),
         specularLow: 0.06,
         specularHigh: 0.28,
+        chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22, 0, 0.62, preset.chromaBoost),
         whiteProtect: preset.whiteProtect,
         skinProtect: preset.skinProtect,
         darkProtect: preset.darkProtect
@@ -107,13 +117,14 @@
         passes: radius > 72 ? 2 : 1
       },
       composite: {
-        intensity: (strength / 100) * 2.85,
+        intensity: (strength / 100) * 2.35,
         softAddMix: preset.softAddMix,
         warmth: preset.warmth,
-        saturation: clamp(1 + saturation / 100 * 0.38, 0.58, 1.42, 1),
+        saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
         highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
         shadowProtect: preset.darkProtect,
-        colorProtect: 0.28
+        colorProtect: 0.18,
+        shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58)
       }
     };
   }

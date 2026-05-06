@@ -351,10 +351,10 @@ var PixelRunnerHostBundle = (() => {
       glowRadiusWeight: 1,
       glowOpacityWeight: 1,
       highlightFuzzinessWeight: 1,
-      highlightLowerLimitBias: 0,
-      sourceSaturationBias: 0,
-      finalSaturationWeight: 1,
-      finalVibranceWeight: 1,
+      highlightLowerLimitBias: -8,
+      sourceSaturationBias: 14,
+      finalSaturationWeight: 1.1,
+      finalVibranceWeight: 1.08,
       isolationGammaBias: 0,
       glowGammaBias: 0,
       finalGammaBias: 0
@@ -367,11 +367,11 @@ var PixelRunnerHostBundle = (() => {
       haloRadiusWeight: 1.08,
       glowRadiusWeight: 1.16,
       glowOpacityWeight: 0.88,
-      highlightFuzzinessWeight: 1.12,
-      highlightLowerLimitBias: -10,
-      sourceSaturationBias: -6,
-      finalSaturationWeight: 0.82,
-      finalVibranceWeight: 0.74,
+      highlightFuzzinessWeight: 1.2,
+      highlightLowerLimitBias: -18,
+      sourceSaturationBias: 8,
+      finalSaturationWeight: 1.02,
+      finalVibranceWeight: 0.96,
       isolationGammaBias: 0.04,
       glowGammaBias: 0.08,
       finalGammaBias: 0.05
@@ -384,11 +384,11 @@ var PixelRunnerHostBundle = (() => {
       haloRadiusWeight: 1.16,
       glowRadiusWeight: 1.3,
       glowOpacityWeight: 1.12,
-      highlightFuzzinessWeight: 1.2,
-      highlightLowerLimitBias: -16,
-      sourceSaturationBias: 4,
-      finalSaturationWeight: 1.1,
-      finalVibranceWeight: 1.16,
+      highlightFuzzinessWeight: 1.28,
+      highlightLowerLimitBias: -24,
+      sourceSaturationBias: 18,
+      finalSaturationWeight: 1.2,
+      finalVibranceWeight: 1.24,
       isolationGammaBias: 0.05,
       glowGammaBias: 0.12,
       finalGammaBias: 0.08
@@ -459,12 +459,17 @@ var PixelRunnerHostBundle = (() => {
     const haloRadius = Math.max(coreRadius + 0.6, roundToTenth(radius * 0.34 * stylePreset.haloRadiusWeight * (1 + positiveBias * 0.12 - negativeBias * 0.05), coreRadius + 0.6));
     const midRadius = Math.max(haloRadius + 0.8, roundToTenth(radius * 0.72 * Math.max(1, stylePreset.glowRadiusWeight * 0.94) * glowExpansionFactor, haloRadius + 0.8));
     const bloomRadius = Math.max(midRadius + 1.2, roundToTenth(radius * 1.36 * stylePreset.glowRadiusWeight * glowExpansionFactor, midRadius + 1.2));
-    const highlightFuzziness = clampNumber(Math.round((10 + radius * 0.22 + fade * 0.18) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 6, 58, 18);
-    const channelOutputClamp = clampNumber(Math.round(18 + threshold * 0.28 + fade * 0.1 - brightnessBias * 0.22), 0, 120, 30);
-    const sourceSaturation = clampNumber(Math.round(-24 + saturation * 0.4 + stylePreset.sourceSaturationBias), -100, 50, -24);
-    const finalSaturation = clampNumber(Math.round(saturation * 0.85 * stylePreset.finalSaturationWeight), -100, 100, 0);
-    const finalVibrance = clampNumber(Math.round(saturation * 0.65 * stylePreset.finalVibranceWeight), -100, 100, 0);
-    const highlightLowerLimit = clampNumber(Math.round(208 + threshold * 0.42 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 168, 252, 220);
+    const highlightFuzziness = clampNumber(Math.round((18 + radius * 0.28 + fade * 0.22) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 12, 72, 24);
+    const channelOutputClamp = clampNumber(Math.round(8 + threshold * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
+    const sourceInputBlack = clampNumber(Math.round(42 + threshold * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
+    const sourceInputWhite = clampNumber(Math.round(248 - Math.max(0, brightnessBias) * 0.2), 220, 255, 248);
+    const sourceGamma = Number(clampNumber(0.68 + threshold / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
+    const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + threshold * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
+    const coreGammaBoost = Number(clampNumber(sourceGamma * 0.82, 0.42, 1.28, 0.76).toFixed(2));
+    const sourceSaturation = clampNumber(Math.round(8 + saturation * 0.38 + stylePreset.sourceSaturationBias), -40, 72, 16);
+    const finalSaturation = clampNumber(Math.round(10 + saturation * 0.78 * stylePreset.finalSaturationWeight), -60, 100, 10);
+    const finalVibrance = clampNumber(Math.round(8 + saturation * 0.6 * stylePreset.finalVibranceWeight), -40, 100, 8);
+    const highlightLowerLimit = clampNumber(Math.round(188 + threshold * 0.34 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 150, 244, 202);
     const glowRadiiBase = [0.22, 0.48, 0.82, 1.18, 1.62].map((factor, index) => {
       const minRadius = [0.8, 1.4, 2.1, 2.8, 3.8][index];
       return Math.max(minRadius, roundToTenth(radius * factor * stylePreset.glowRadiusWeight * glowExpansionFactor, minRadius));
@@ -507,6 +512,11 @@ var PixelRunnerHostBundle = (() => {
       highlightFuzziness,
       highlightLowerLimit,
       channelOutputClamp,
+      sourceInputBlack,
+      sourceInputWhite,
+      sourceGamma,
+      coreInputBlack,
+      coreGammaBoost,
       layerName: String(payload.layerName || `Glow ${Math.round(strength)}%`)
     };
   }
@@ -668,6 +678,26 @@ var PixelRunnerHostBundle = (() => {
       }]
     }], {});
   }
+  async function applyCompositeLevels(action, inputBlack, inputWhite, gamma = 1, outputBlack = 0, outputWhite = 255) {
+    await action.batchPlay([{
+      _obj: "levels",
+      presetKind: {
+        _enum: "presetKindType",
+        _value: "presetKindCustom"
+      },
+      adjustment: [{
+        _obj: "levelsAdjustment",
+        channel: {
+          _ref: "channel",
+          _enum: "channel",
+          _value: "composite"
+        },
+        input: [inputBlack, inputWhite],
+        gamma,
+        output: [outputBlack, outputWhite]
+      }]
+    }], {});
+  }
   async function setActiveLayerStyle(action, opacity, blendModeValue) {
     await action.batchPlay([{
       _obj: "set",
@@ -814,35 +844,10 @@ var PixelRunnerHostBundle = (() => {
       }
     }], {});
   }
-  async function clearSelection(action) {
-    await action.batchPlay([{
-      _obj: "set",
-      _target: [{ _ref: "channel", _property: "selection" }],
-      to: { _enum: "ordinal", _value: "none" }
-    }], {});
-  }
   async function selectChannel(action, channel) {
     await action.batchPlay([{
       _obj: "select",
       _target: [{ _ref: "channel", _enum: "channel", _value: channel }]
-    }], {});
-  }
-  async function selectHighlights(action, config) {
-    await action.batchPlay([{
-      _obj: "colorRange",
-      colors: {
-        _enum: "colors",
-        _value: "highlights"
-      },
-      highlightsFuzziness: config.highlightFuzziness,
-      highlightsLowerLimit: config.highlightLowerLimit,
-      invert: false,
-      colorModel: 0
-    }], {});
-  }
-  async function copySelectionToLayer(action) {
-    await action.batchPlay([{
-      _obj: "copyToLayer"
     }], {});
   }
   async function mergeVisibleLayers(action) {
@@ -893,7 +898,14 @@ var PixelRunnerHostBundle = (() => {
         app.activeDocument = fallbackDocument;
       }
       if (glowPreviewSession.previewLayerId > 0) {
-        await deleteLayerById(action, glowPreviewSession.previewLayerId);
+        try {
+          await selectLayerById(action, glowPreviewSession.previewLayerId);
+          if (getActiveLayerName(app) === GLOW_PREVIEW_LAYER_NAME) {
+            await deleteLayerById(action, glowPreviewSession.previewLayerId);
+          }
+        } catch (_) {
+          await deleteLayerByName(action, GLOW_PREVIEW_LAYER_NAME);
+        }
       } else {
         await deleteLayerByName(action, GLOW_PREVIEW_LAYER_NAME);
       }
@@ -1123,12 +1135,15 @@ var PixelRunnerHostBundle = (() => {
         workingConfig = createPreviewGlowConfig(workingConfig, getGlowPreviewProfile(config));
       }
       await tempOp("Build glow source mask", async () => {
-        await renameActiveLayer2(action, baseName);
-        await selectHighlights(action, workingConfig);
-        await copySelectionToLayer(action);
         await renameActiveLayer2(action, sourceName);
-        await clearSelection(action);
-        await deleteLayerByName(action, baseName);
+        await applyCompositeLevels(
+          action,
+          workingConfig.sourceInputBlack,
+          workingConfig.sourceInputWhite,
+          workingConfig.sourceGamma,
+          0,
+          255
+        );
       });
       if (workingConfig.sourceSaturation !== 0) {
         await tempOp("Adjust glow source saturation", () => applyHueSaturation(action, workingConfig.sourceSaturation));
@@ -1137,13 +1152,6 @@ var PixelRunnerHostBundle = (() => {
         await tempOp("Adjust glow source exposure", () => applyExposureIsolation(action, workingConfig.isolationExposure, workingConfig.isolationGamma));
       }
       await tempOp("Prepare glow detail layer", async () => {
-        await selectChannel(action, "red");
-        await applyLevelsOutput(action, 242);
-        await selectChannel(action, "grain");
-        await applyLevelsOutput(action, 242);
-        await selectChannel(action, "blue");
-        await applyLevelsOutput(action, 242);
-        await selectChannel(action, "RGB");
         await renameActiveLayer2(action, detailName);
         await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
       });
@@ -1151,6 +1159,7 @@ var PixelRunnerHostBundle = (() => {
         await selectLayerByName(action, detailName);
         await duplicateActiveLayer(action, coreName);
         await renameActiveLayer2(action, coreName);
+        await applyCompositeLevels(action, workingConfig.coreInputBlack, 255, workingConfig.coreGammaBoost, 0, 255);
         await applyGaussianBlur(action, workingConfig.coreRadius);
         await applyExposureIsolation(action, workingConfig.coreExposure, workingConfig.coreGamma);
         await setActiveLayerStyle(action, workingConfig.coreOpacity, "screen");
@@ -1168,6 +1177,9 @@ var PixelRunnerHostBundle = (() => {
           await selectLayerByName(action, detailName);
           await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
           await renameActiveLayer2(action, `${config.layerName} Glow ${index + 1}`);
+          if (index > 0) {
+            await applyCompositeLevels(action, Math.max(0, workingConfig.sourceInputBlack - 8), 255, Math.max(0.5, workingConfig.sourceGamma * 0.92), 0, 255);
+          }
           await applyGaussianBlur(action, workingConfig.glowRadii[index]);
           await applyExposureIsolation(action, workingConfig.glowExposure, workingConfig.glowGamma);
           await setActiveLayerStyle(action, workingConfig.glowOpacities[index], "screen");
@@ -1374,7 +1386,7 @@ var PixelRunnerHostBundle = (() => {
             resetGlowPreviewSessionState();
           }
           glowPreviewSession.documentId = Number(originalDocument.id) || 0;
-          glowPreviewSession.sourceLayerId = getActiveLayerId(app);
+          glowPreviewSession.sourceLayerId = isGeneratedGlowLayerName(getActiveLayerName(app)) ? await selectGlowSourceLayer(app, action) : getActiveLayerId(app);
         }
         if (actionName === "glowPreviewUpdate" || actionName === "glowPreviewStart") {
           if (Number(glowPreviewSession.documentId) && Number(glowPreviewSession.documentId) !== Number(originalDocument.id)) {
@@ -1434,6 +1446,9 @@ var PixelRunnerHostBundle = (() => {
               layerId: committedLayerId
             });
           }
+          sourceLayerId = await selectGlowSourceLayer(app, action);
+          await clearGlowPreviewLayer(app, action, originalDocument);
+          resetGlowPreviewSessionState();
         }
         if (actionName === "glow") {
           sourceLayerId = await selectGlowSourceLayer(app, action);

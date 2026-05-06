@@ -14,6 +14,11 @@
     ];
   }
 
+  function softShoulder(value, shoulder) {
+    const safeShoulder = clamp(shoulder, 0.1, 0.95);
+    return value / (1 + value * safeShoulder);
+  }
+
   function composeProtected(baseImageData, glowLayer, masks, params) {
     const { width, height, data } = baseImageData;
     const out = new ImageData(width, height);
@@ -33,9 +38,9 @@
       const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
       const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
       const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
-      const glowR = clamp(satR * params.composite.intensity * protectGain, 0, 1);
-      const glowG = clamp(satG * params.composite.intensity * protectGain, 0, 1);
-      const glowB = clamp(satB * params.composite.intensity * protectGain, 0, 1);
+      const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+      const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+      const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
 
       const screenR = 1 - (1 - baseR) * (1 - glowR);
       const screenG = 1 - (1 - baseG) * (1 - glowG);
@@ -44,7 +49,7 @@
       const softG = clamp(baseG + glowG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
       const softB = clamp(baseB + glowB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
       const mix = params.composite.softAddMix;
-      const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.78, 1);
+      const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.84, 1);
       const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
       const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
       const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);

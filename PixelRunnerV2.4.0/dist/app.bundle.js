@@ -268,7 +268,8 @@ var PixelRunnerWebviewBundle = (() => {
       CURRENT_APP_ID: "pixelrunner.current_app_id",
       WORKSPACE_MODE: "pixelrunner.workspaceMode",
       QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
-      SOUND_ENABLED: "pixelrunner.sound_enabled"
+      SOUND_ENABLED: "pixelrunner.sound_enabled",
+      THEME: "pixelrunner.theme.v1"
     };
     const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
     const DEFAULT_SETTINGS = {
@@ -278,6 +279,12 @@ var PixelRunnerWebviewBundle = (() => {
       maxConcurrentTasks: 3,
       aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID
     };
+    const DEFAULT_THEME = {
+      preset: "classic",
+      customImage: "",
+      customImageName: "",
+      glass: false
+    };
     const state = {
       apps: [],
       currentApp: null,
@@ -286,9 +293,9 @@ var PixelRunnerWebviewBundle = (() => {
       templates: [],
       appPickerKeyword: "",
       appManagerKeyword: "",
-      appManagerSort: "updated_desc",
+      appManagerSort: "manual",
       templateManagerKeyword: "",
-      templateManagerSort: "updated_desc",
+      templateManagerSort: "manual",
       settings: { ...DEFAULT_SETTINGS },
       settingsLoaded: false,
       accountSummary: {
@@ -336,8 +343,20 @@ var PixelRunnerWebviewBundle = (() => {
       sound: {
         enabled: true,
         playerReady: false
-      }
+      },
+      theme: { ...DEFAULT_THEME }
     };
+    function normalizeTheme(theme) {
+      const source = theme && typeof theme === "object" ? theme : {};
+      const preset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.preset || "")) ? String(source.preset) : DEFAULT_THEME.preset;
+      const customImage = String(source.customImage || "").trim();
+      return {
+        preset: customImage ? "custom" : preset,
+        customImage,
+        customImageName: String(source.customImageName || "").trim(),
+        glass: Boolean(source.glass || customImage)
+      };
+    }
     function normalizeSettings(settings) {
       const source = settings && typeof settings === "object" ? settings : {};
       const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
@@ -481,7 +500,9 @@ var PixelRunnerWebviewBundle = (() => {
       STORAGE_KEYS,
       DEFAULT_AI_OPTIMIZE_APP_ID,
       DEFAULT_SETTINGS,
+      DEFAULT_THEME,
       state,
+      normalizeTheme,
       normalizeSettings,
       normalizeAppInputs,
       resolveAppId,
@@ -518,6 +539,8 @@ var PixelRunnerWebviewBundle = (() => {
         whiteProtect: 1,
         skinProtect: 1,
         darkProtect: 1,
+        knee: 0.18,
+        chromaBoost: 0,
         smallWeight: 0,
         mediumWeight: 0,
         largeWeight: 0,
@@ -530,6 +553,8 @@ var PixelRunnerWebviewBundle = (() => {
         whiteProtect: 0.86,
         skinProtect: 0.78,
         darkProtect: 0.42,
+        knee: 0.24,
+        chromaBoost: 0.28,
         smallWeight: 0.42,
         mediumWeight: 0.88,
         largeWeight: 0.48,
@@ -542,6 +567,8 @@ var PixelRunnerWebviewBundle = (() => {
         whiteProtect: 0.92,
         skinProtect: 0.86,
         darkProtect: 0.46,
+        knee: 0.28,
+        chromaBoost: 0.2,
         smallWeight: 0.32,
         mediumWeight: 0.94,
         largeWeight: 0.56,
@@ -554,6 +581,8 @@ var PixelRunnerWebviewBundle = (() => {
         whiteProtect: 0.78,
         skinProtect: 0.74,
         darkProtect: 0.5,
+        knee: 0.32,
+        chromaBoost: 0.36,
         smallWeight: 0.3,
         mediumWeight: 0.9,
         largeWeight: 0.72,
@@ -583,11 +612,13 @@ var PixelRunnerWebviewBundle = (() => {
         source: {
           thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
           thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
+          thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + radiusRatio * 0.04, 0.08, 0.34, 0.2),
           localRadius: Math.max(3, Math.round(4 + radiusRatio * 10)),
           contrastLow: 0.025,
           contrastHigh: clamp(0.095 - thresholdRatio * 0.035, 0.038, 0.11, 0.07),
           specularLow: 0.06,
           specularHigh: 0.28,
+          chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22, 0, 0.62, preset.chromaBoost),
           whiteProtect: preset.whiteProtect,
           skinProtect: preset.skinProtect,
           darkProtect: preset.darkProtect
@@ -602,13 +633,14 @@ var PixelRunnerWebviewBundle = (() => {
           passes: radius > 72 ? 2 : 1
         },
         composite: {
-          intensity: strength / 100 * 2.85,
+          intensity: strength / 100 * 2.35,
           softAddMix: preset.softAddMix,
           warmth: preset.warmth,
-          saturation: clamp(1 + saturation / 100 * 0.38, 0.58, 1.42, 1),
+          saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
           highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
           shadowProtect: preset.darkProtect,
-          colorProtect: 0.28
+          colorProtect: 0.18,
+          shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58)
         }
       };
     }
@@ -627,6 +659,20 @@ var PixelRunnerWebviewBundle = (() => {
     function smoothstep(edge0, edge1, value) {
       const t = clamp((value - edge0) / Math.max(1e-4, edge1 - edge0), 0, 1);
       return t * t * (3 - 2 * t);
+    }
+    function softThresholdMask(value, threshold, knee) {
+      const safeKnee = Math.max(1e-4, knee);
+      const soft = clamp(value - threshold + safeKnee, 0, safeKnee * 2);
+      const curved = soft * soft / (safeKnee * 4);
+      return clamp(Math.max(curved, value - threshold) / Math.max(value, 1e-4), 0, 1);
+    }
+    function boostSaturation(r, g, b, amount) {
+      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      return [
+        clamp(luma + (r - luma) * (1 + amount), 0, 1),
+        clamp(luma + (g - luma) * (1 + amount), 0, 1),
+        clamp(luma + (b - luma) * (1 + amount), 0, 1)
+      ];
     }
     function createLayer(width, height) {
       return {
@@ -737,7 +783,8 @@ var PixelRunnerWebviewBundle = (() => {
         const contrast = Math.max(0, lum - localMean[pixel]);
         const specular = Math.max(0, maxChannelMap[pixel] - localMean[pixel]);
         const hsv = rgbToHsv(r, g, b);
-        const lumaScore = smoothstep(params.source.thresholdLow, params.source.thresholdHigh, lum);
+        const brightness = Math.max(lum * 0.82 + maxChannelMap[pixel] * 0.18, maxChannelMap[pixel] * 0.88);
+        const lumaScore = softThresholdMask(brightness, params.source.thresholdLow, params.source.thresholdKnee) * smoothstep(params.source.thresholdLow - params.source.thresholdKnee * 0.92, params.source.thresholdHigh, brightness);
         const contrastScore = smoothstep(params.source.contrastLow, params.source.contrastHigh, contrast);
         const specularScore = smoothstep(params.source.specularLow, params.source.specularHigh, specular);
         const highLightness = smoothstep(0.72, 0.94, lum);
@@ -752,10 +799,14 @@ var PixelRunnerWebviewBundle = (() => {
           0,
           1
         );
-        const reflectiveBoost = clamp(0.55 + contrastScore * 0.6 + specularScore * 0.48 + sat * 0.18, 0, 1.35);
-        const edgeSource = Math.max(contrastScore * 0.34, specularScore * 0.42) * smoothstep(0.48, 0.86, lum);
-        const mask = clamp(Math.max(lumaScore, edgeSource) * reflectiveBoost * (1 - protection * 0.76), 0, 1);
-        const colorGain = Math.pow(mask, 0.86);
+        const chromaSource = smoothstep(0.08, 0.46, sat) * smoothstep(0.44, 0.84, brightness);
+        const reflectiveBoost = clamp(0.5 + contrastScore * 0.46 + specularScore * 0.42 + chromaSource * 0.22, 0, 1.22);
+        const edgeSource = Math.max(contrastScore * 0.22, specularScore * 0.36) * smoothstep(0.44, 0.88, brightness);
+        const combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
+        const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.78), 0, 1);
+        const colorGain = Math.pow(mask, 0.78);
+        const chromaBoost = params.source.chromaBoost * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
+        const [sourceR, sourceG, sourceB] = boostSaturation(r, g, b, chromaBoost);
         localContrast[pixel] = contrast;
         lumaMask[pixel] = lumaScore;
         contrastMask[pixel] = Math.max(contrastScore, specularScore * 0.72);
@@ -764,9 +815,9 @@ var PixelRunnerWebviewBundle = (() => {
         darkProtect[pixel] = dark;
         protectMask[pixel] = protection;
         sourceMask[pixel] = mask;
-        sourceLayer.r[pixel] = r * colorGain;
-        sourceLayer.g[pixel] = g * colorGain;
-        sourceLayer.b[pixel] = b * colorGain;
+        sourceLayer.r[pixel] = sourceR * colorGain;
+        sourceLayer.g[pixel] = sourceG * colorGain;
+        sourceLayer.b[pixel] = sourceB * colorGain;
       }
       return {
         width,
@@ -820,14 +871,28 @@ var PixelRunnerWebviewBundle = (() => {
         for (let x = 0; x < nextWidth; x += 1) {
           const sx = x * 2;
           const sy = y * 2;
-          const a = sy * layer.width + sx;
-          const b = sy * layer.width + Math.min(layer.width - 1, sx + 1);
-          const c = Math.min(layer.height - 1, sy + 1) * layer.width + sx;
-          const d = Math.min(layer.height - 1, sy + 1) * layer.width + Math.min(layer.width - 1, sx + 1);
           const target = y * nextWidth + x;
-          out.r[target] = (layer.r[a] + layer.r[b] + layer.r[c] + layer.r[d]) * 0.25;
-          out.g[target] = (layer.g[a] + layer.g[b] + layer.g[c] + layer.g[d]) * 0.25;
-          out.b[target] = (layer.b[a] + layer.b[b] + layer.b[c] + layer.b[d]) * 0.25;
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          let weightTotal = 0;
+          for (let oy = -1; oy <= 2; oy += 1) {
+            const yy = Math.min(layer.height - 1, Math.max(0, sy + oy));
+            const wy = oy === 0 || oy === 1 ? 3 : 1;
+            for (let ox = -1; ox <= 2; ox += 1) {
+              const xx = Math.min(layer.width - 1, Math.max(0, sx + ox));
+              const wx = ox === 0 || ox === 1 ? 3 : 1;
+              const weight = wx * wy;
+              const source = yy * layer.width + xx;
+              r += layer.r[source] * weight;
+              g += layer.g[source] * weight;
+              b += layer.b[source] * weight;
+              weightTotal += weight;
+            }
+          }
+          out.r[target] = r / weightTotal;
+          out.g[target] = g / weightTotal;
+          out.b[target] = b / weightTotal;
         }
       }
       return out;
@@ -883,14 +948,27 @@ var PixelRunnerWebviewBundle = (() => {
       const xScale = source.width / target.width;
       const yScale = source.height / target.height;
       for (let y = 0; y < target.height; y += 1) {
-        const sy = Math.min(source.height - 1, Math.floor((y + 0.5) * yScale));
+        const sy = Math.min(source.height - 1, Math.max(0, (y + 0.5) * yScale - 0.5));
+        const y0 = Math.floor(sy);
+        const y1 = Math.min(source.height - 1, y0 + 1);
+        const ty = sy - y0;
         for (let x = 0; x < target.width; x += 1) {
-          const sx = Math.min(source.width - 1, Math.floor((x + 0.5) * xScale));
-          const sourceIndex = sy * source.width + sx;
+          const sx = Math.min(source.width - 1, Math.max(0, (x + 0.5) * xScale - 0.5));
+          const x0 = Math.floor(sx);
+          const x1 = Math.min(source.width - 1, x0 + 1);
+          const tx = sx - x0;
+          const a = y0 * source.width + x0;
+          const b = y0 * source.width + x1;
+          const c = y1 * source.width + x0;
+          const d = y1 * source.width + x1;
           const targetIndex = y * target.width + x;
-          target.r[targetIndex] += source.r[sourceIndex] * weight;
-          target.g[targetIndex] += source.g[sourceIndex] * weight;
-          target.b[targetIndex] += source.b[sourceIndex] * weight;
+          const wa = (1 - tx) * (1 - ty);
+          const wb = tx * (1 - ty);
+          const wc = (1 - tx) * ty;
+          const wd = tx * ty;
+          target.r[targetIndex] += (source.r[a] * wa + source.r[b] * wb + source.r[c] * wc + source.r[d] * wd) * weight;
+          target.g[targetIndex] += (source.g[a] * wa + source.g[b] * wb + source.g[c] * wc + source.g[d] * wd) * weight;
+          target.b[targetIndex] += (source.b[a] * wa + source.b[b] * wb + source.b[c] * wc + source.b[d] * wd) * weight;
         }
       }
     }
@@ -927,6 +1005,10 @@ var PixelRunnerWebviewBundle = (() => {
         luma + (b - luma) * saturation
       ];
     }
+    function softShoulder(value, shoulder) {
+      const safeShoulder = clamp(shoulder, 0.1, 0.95);
+      return value / (1 + value * safeShoulder);
+    }
     function composeProtected(baseImageData, glowLayer, masks, params) {
       const { width, height, data } = baseImageData;
       const out = new ImageData(width, height);
@@ -946,9 +1028,9 @@ var PixelRunnerWebviewBundle = (() => {
         const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
         const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
         const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
-        const glowR = clamp(satR * params.composite.intensity * protectGain, 0, 1);
-        const glowG = clamp(satG * params.composite.intensity * protectGain, 0, 1);
-        const glowB = clamp(satB * params.composite.intensity * protectGain, 0, 1);
+        const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const screenR = 1 - (1 - baseR) * (1 - glowR);
         const screenG = 1 - (1 - baseG) * (1 - glowG);
         const screenB = 1 - (1 - baseB) * (1 - glowB);
@@ -956,7 +1038,7 @@ var PixelRunnerWebviewBundle = (() => {
         const softG = clamp(baseG + glowG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
         const softB = clamp(baseB + glowB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
         const mix = params.composite.softAddMix;
-        const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.78, 1);
+        const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.84, 1);
         const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
         const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
         const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);
@@ -1452,11 +1534,10 @@ ${text}` : text;
       };
       const commitGlowCpuResult = async () => {
         const state = readGlowState();
-        await clearGlowPreviewLayer();
         const layerName = `Glow ${state.strength}%`;
         const commitStrength = state.style === "none" ? 0 : state.strength;
         const result = await runtime.callHost("photoshop.runToolAction", [{
-          action: "glow",
+          action: "glowPreviewCommit",
           style: state.style,
           strength: commitStrength,
           radius: state.radius,
@@ -4639,7 +4720,7 @@ ${extraRequirement || "无。"}`
         return { available: false, reason: "当前应用未检测到可写入的主提示词字段。" };
       }
       if (state.availableImages.length === 0) {
-        return { available: false, reason: "请先在当前应用里导入至少一张图片，然后再打开 AI优化。" };
+        return { available: true, reason: "请先在当前应用里导入至少一张图片，然后再开始 AI优化。" };
       }
       return { available: true, reason: "" };
     }
@@ -4827,7 +4908,10 @@ ${extraRequirement || "无。"}`
       state.coinsCharge = null;
       state.chargeDisplay = "";
       state.txtUrl = "";
-      if (String(state.promptValue || "").trim()) {
+      if (state.availableImages.length === 0) {
+        state.statusMessage = "当前还没有检测到图片。可以先编辑提示词，导入图片后再开始优化。";
+        state.statusType = "warn";
+      } else if (String(state.promptValue || "").trim()) {
         state.statusMessage = "点击“开始优化”后，这里会显示 AI 返回的优化提示词。";
         state.statusType = "info";
       } else {
@@ -5238,7 +5322,8 @@ ${text}` : text;
         const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`.toLowerCase();
         return marker.includes(keyword);
       });
-      const sortMode = String(state.appManagerSort || "updated_desc");
+      const sortMode = String(state.appManagerSort || "manual");
+      if (sortMode === "manual") return list;
       list.sort((a, b) => {
         if (sortMode === "name_asc") return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
         if (sortMode === "name_desc") return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
@@ -5246,6 +5331,25 @@ ${text}` : text;
         return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
       });
       return list;
+    }
+    async function reorderAppById(draggedId, targetId) {
+      const dragged = String(draggedId || "");
+      const target = String(targetId || "");
+      if (!dragged || !target || dragged === target) return false;
+      const apps = modules.state.state.apps.slice();
+      const fromIndex = apps.findIndex((item2) => String(item2.id) === dragged);
+      const toIndex = apps.findIndex((item2) => String(item2.id) === target);
+      if (fromIndex < 0 || toIndex < 0) return false;
+      const [item] = apps.splice(fromIndex, 1);
+      const nextIndex = apps.findIndex((entry) => String(entry.id) === target);
+      apps.splice(nextIndex < 0 ? toIndex : nextIndex, 0, item);
+      modules.state.state.appManagerSort = "manual";
+      const sortInput = modules.runtime.getById("appManagerSortInput");
+      if (sortInput) sortInput.value = "manual";
+      await saveAppsToStorage(apps);
+      modules.runtime.setSummaryStatus(modules.runtime.getById("savedAppsSummary"), "应用顺序已同步到本地设置。", "success");
+      modules.ui.logToWorkspace("应用卡片顺序已保存。", "success");
+      return true;
     }
     function renderAppPickerList() {
       const runtime = modules.runtime;
@@ -5263,7 +5367,7 @@ ${text}` : text;
       }
       listEl.innerHTML = quickEntryButton + visibleApps.map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
-        return `<button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
+        return `<button class="picker-item is-draggable ${isActive ? "active" : ""}" type="button" draggable="true" value="${runtime.escapeHtml(String(app.id || ""))}" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
       }).join("");
     }
     function renderSavedAppsList() {
@@ -5283,8 +5387,49 @@ ${text}` : text;
         const isEditing = String(modules.state.state.editingAppId || "") === String(app.id);
         const isCurrent = state.currentApp && String(state.currentApp.id) === String(app.id);
         const description = String(app.description || "").trim();
-        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
+        return `<article class="list-item saved-app-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
       }).join("");
+    }
+    function bindAppDragSorting(container) {
+      if (!container || container.dataset.appDragBound === "true") return;
+      container.dataset.appDragBound = "true";
+      let draggedId = "";
+      container.addEventListener("dragstart", (event) => {
+        if (event.target && event.target.closest(".compact-card-actions, input, textarea, select")) return;
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (!item || item.classList.contains("picker-item-special")) return;
+        draggedId = String(item.getAttribute("data-app-id") || item.getAttribute("value") || "");
+        item.classList.add("is-dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedId);
+        }
+      });
+      container.addEventListener("dragover", (event) => {
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (!draggedId || !item || item.classList.contains("picker-item-special")) return;
+        event.preventDefault();
+        item.classList.add("is-drag-over");
+      });
+      container.addEventListener("dragleave", (event) => {
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (item) item.classList.remove("is-drag-over");
+      });
+      container.addEventListener("drop", async (event) => {
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (!draggedId || !item || item.classList.contains("picker-item-special")) return;
+        event.preventDefault();
+        const targetId = String(item.getAttribute("data-app-id") || item.getAttribute("value") || "");
+        container.querySelectorAll(".is-drag-over").forEach((node) => node.classList.remove("is-drag-over"));
+        await reorderAppById(draggedId, targetId);
+        draggedId = "";
+      });
+      container.addEventListener("dragend", () => {
+        draggedId = "";
+        container.querySelectorAll(".is-dragging, .is-drag-over").forEach((node) => {
+          node.classList.remove("is-dragging", "is-drag-over");
+        });
+      });
     }
     async function setCurrentAppById(appId, options = {}) {
       const state = modules.state.state;
@@ -5354,6 +5499,8 @@ ${text}` : text;
       const closeButton = runtime.getById("appPickerModalClose");
       const searchInput = runtime.getById("appPickerSearchInput");
       const listEl = runtime.getById("appPickerList");
+      bindAppDragSorting(listEl);
+      bindAppDragSorting(runtime.getById("savedAppsList"));
       if (openButton) {
         openButton.addEventListener("click", () => {
           state.appPickerKeyword = "";
@@ -5578,6 +5725,7 @@ ${text}` : text;
       parseAppReference,
       saveEditedApp,
       deleteAppById,
+      reorderAppById,
       importAppsFromTextarea,
       exportAppsToTextarea,
       refreshCurrentWorkspaceApp,
@@ -5935,7 +6083,8 @@ ${text}` : text;
       const keyword = String(state.templateManagerKeyword || "").trim().toLowerCase();
       const list = !keyword ? [...state.templates] : state.templates.filter((item) => `${item.title || ""}
 ${item.content || ""}`.toLowerCase().includes(keyword));
-      const sortMode = String(state.templateManagerSort || "updated_desc");
+      const sortMode = String(state.templateManagerSort || "manual");
+      if (sortMode === "manual") return list;
       list.sort((a, b) => {
         if (sortMode === "title_asc") return String(a.title || "").localeCompare(String(b.title || ""), "zh-CN");
         if (sortMode === "title_desc") return String(b.title || "").localeCompare(String(a.title || ""), "zh-CN");
@@ -5943,6 +6092,25 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
         return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
       });
       return list;
+    }
+    async function reorderTemplateById(draggedId, targetId) {
+      const dragged = String(draggedId || "");
+      const target = String(targetId || "");
+      if (!dragged || !target || dragged === target) return false;
+      const templates = modules.state.state.templates.slice();
+      const fromIndex = templates.findIndex((item2) => String(item2.id) === dragged);
+      const toIndex = templates.findIndex((item2) => String(item2.id) === target);
+      if (fromIndex < 0 || toIndex < 0) return false;
+      const [item] = templates.splice(fromIndex, 1);
+      const nextIndex = templates.findIndex((entry) => String(entry.id) === target);
+      templates.splice(nextIndex < 0 ? toIndex : nextIndex, 0, item);
+      modules.state.state.templateManagerSort = "manual";
+      const sortInput = modules.runtime.getById("templateManagerSortInput");
+      if (sortInput) sortInput.value = "manual";
+      await saveTemplatesToStorage(templates);
+      modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), "提示词顺序已同步到本地设置。", "success");
+      modules.ui.logToWorkspace("提示词卡片顺序已保存。", "success");
+      return true;
     }
     function renderSavedTemplatesList() {
       const listEl = modules.runtime.getById("savedTemplatesList");
@@ -5961,7 +6129,7 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       }
       listEl.innerHTML = templates.map((item) => {
         const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
-        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
+        return `<article class="list-item saved-template-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
       }).join("");
     }
     function normalizePickerConfig(config = {}) {
@@ -6043,7 +6211,7 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       }
       listEl.innerHTML = visibleTemplates.map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
-        return `<button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
+        return `<button class="picker-item is-draggable ${isSelected ? "active" : ""}" type="button" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
       }).join("");
       syncTemplatePickerUi();
     }
@@ -6100,6 +6268,8 @@ ${incomingContent}` : incomingContent;
       const pickerApplyMode = runtime.getById("templatePickerApplyMode");
       const managerSearchInput = runtime.getById("templateManagerSearchInput");
       const managerSortInput = runtime.getById("templateManagerSortInput");
+      bindTemplateDragSorting(pickerList);
+      bindTemplateDragSorting(runtime.getById("savedTemplatesList"));
       [titleInput, contentInput].filter(Boolean).forEach((element) => {
         element.addEventListener("input", () => {
           updateTemplateLengthHint();
@@ -6117,8 +6287,9 @@ ${incomingContent}` : incomingContent;
         });
       }
       if (managerSortInput) {
+        managerSortInput.value = modules.state.state.templateManagerSort || "manual";
         managerSortInput.addEventListener("change", () => {
-          modules.state.state.templateManagerSort = managerSortInput.value || "updated_desc";
+          modules.state.state.templateManagerSort = managerSortInput.value || "manual";
           renderSavedTemplatesList();
         });
       }
@@ -6225,6 +6396,47 @@ ${incomingContent}` : incomingContent;
       fillTemplateEditor(null, { force: true });
       updateTemplateLengthHint();
     }
+    function bindTemplateDragSorting(container) {
+      if (!container || container.dataset.templateDragBound === "true") return;
+      container.dataset.templateDragBound = "true";
+      let draggedId = "";
+      container.addEventListener("dragstart", (event) => {
+        if (event.target && event.target.closest(".compact-card-actions, input, textarea, select")) return;
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (!item) return;
+        draggedId = String(item.getAttribute("data-template-id") || "");
+        item.classList.add("is-dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedId);
+        }
+      });
+      container.addEventListener("dragover", (event) => {
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (!draggedId || !item) return;
+        event.preventDefault();
+        item.classList.add("is-drag-over");
+      });
+      container.addEventListener("dragleave", (event) => {
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (item) item.classList.remove("is-drag-over");
+      });
+      container.addEventListener("drop", async (event) => {
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (!draggedId || !item) return;
+        event.preventDefault();
+        const targetId = String(item.getAttribute("data-template-id") || "");
+        container.querySelectorAll(".is-drag-over").forEach((node) => node.classList.remove("is-drag-over"));
+        await reorderTemplateById(draggedId, targetId);
+        draggedId = "";
+      });
+      container.addEventListener("dragend", () => {
+        draggedId = "";
+        container.querySelectorAll(".is-dragging, .is-drag-over").forEach((node) => {
+          node.classList.remove("is-dragging", "is-drag-over");
+        });
+      });
+    }
     modules.templates = {
       PROMPT_WARN_CHARS,
       getTextLength,
@@ -6236,6 +6448,7 @@ ${incomingContent}` : incomingContent;
       renderSavedTemplatesList,
       saveEditedTemplate,
       deleteTemplateById,
+      reorderTemplateById,
       importTemplatesFromTextarea,
       exportTemplatesToTextarea,
       importTemplatesFromJsonFile,
@@ -6355,6 +6568,92 @@ ${incomingContent}` : incomingContent;
         );
       }
     }
+    const THEME_PRESETS = {
+      classic: {
+        "--bg-top": "#111822",
+        "--bg-mid": "#18212d",
+        "--bg-bottom": "#0c1219",
+        "--accent": "#63d67b",
+        "--accent-strong": "#28c45b",
+        "--cta": "#a9def2"
+      },
+      aurora: {
+        "--bg-top": "#0b1a20",
+        "--bg-mid": "#14333b",
+        "--bg-bottom": "#081318",
+        "--accent": "#74d8c7",
+        "--accent-strong": "#35bfa8",
+        "--cta": "#f4d47d"
+      },
+      graphite: {
+        "--bg-top": "#12151a",
+        "--bg-mid": "#202832",
+        "--bg-bottom": "#0b0e13",
+        "--accent": "#9ab0c6",
+        "--accent-strong": "#7f99b4",
+        "--cta": "#d7e1ea"
+      },
+      rose: {
+        "--bg-top": "#1d1420",
+        "--bg-mid": "#302234",
+        "--bg-bottom": "#120d16",
+        "--accent": "#ff9bb4",
+        "--accent-strong": "#e87595",
+        "--cta": "#aee7dd"
+      },
+      studio: {
+        "--bg-top": "#17171a",
+        "--bg-mid": "#252823",
+        "--bg-bottom": "#101111",
+        "--accent": "#ffd56a",
+        "--accent-strong": "#e8b93b",
+        "--cta": "#8fd6ff"
+      }
+    };
+    function applyTheme(theme) {
+      const normalized = modules.state.normalizeTheme(theme);
+      const root = document.documentElement;
+      const preset = THEME_PRESETS[normalized.preset] || THEME_PRESETS.classic;
+      Object.entries(preset).forEach(([key, value]) => root.style.setProperty(key, value));
+      document.body.classList.toggle("has-custom-theme-image", Boolean(normalized.customImage));
+      document.body.classList.toggle("has-glass-theme", Boolean(normalized.glass));
+      if (normalized.customImage) {
+        root.style.setProperty("--theme-image", `url("${normalized.customImage.replace(/"/g, "%22")}")`);
+      } else {
+        root.style.removeProperty("--theme-image");
+      }
+      modules.state.state.theme = normalized;
+      const swatches = document.querySelectorAll("[data-theme-preset]");
+      swatches.forEach((button) => {
+        button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === normalized.preset);
+      });
+      const statusEl = modules.runtime.getById("themeStatusSummary");
+      if (statusEl) {
+        modules.runtime.setSummaryStatus(
+          statusEl,
+          normalized.customImage ? `自定义主题已启用：${normalized.customImageName || "背景照片"}。` : `已启用${normalized.preset === "classic" ? "经典" : "预设"}主题。`,
+          "success"
+        );
+      }
+    }
+    async function saveThemeSnapshot(theme) {
+      const normalized = modules.state.normalizeTheme(theme);
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THEME, JSON.stringify(normalized));
+      applyTheme(normalized);
+      return normalized;
+    }
+    async function loadThemeSnapshot() {
+      const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THEME);
+      return modules.state.normalizeTheme(modules.runtime.readJsonText(raw, modules.state.DEFAULT_THEME));
+    }
+    function readImageFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("读取主题照片失败，请换一张图片重试。"));
+        reader.readAsDataURL(file);
+      });
+    }
     function readSettingsForm() {
       return modules.state.normalizeSettings({
         apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
@@ -6419,9 +6718,11 @@ ${incomingContent}` : incomingContent;
         modules.state.state.hostRuntime = modules.runtime.isPluginRuntime() ? "uxp-host" : "browser-preview";
       }
       const snapshot = await loadSettingsSnapshot();
+      const theme = await loadThemeSnapshot();
       modules.state.state.settings = snapshot;
       modules.state.state.settingsLoaded = true;
       fillSettingsForm(snapshot);
+      applyTheme(theme);
       setApiKeyVisibility(false);
       renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
       renderSettingsDiagnostics("当前设置快照已读取完成。", {
@@ -6441,8 +6742,9 @@ ${incomingContent}` : incomingContent;
         });
       }
       if (sortInput) {
+        sortInput.value = modules.state.state.appManagerSort || "manual";
         sortInput.addEventListener("change", () => {
-          modules.state.state.appManagerSort = sortInput.value || "updated_desc";
+          modules.state.state.appManagerSort = sortInput.value || "manual";
           modules.apps.renderSavedAppsList();
         });
       }
@@ -6458,6 +6760,8 @@ ${incomingContent}` : incomingContent;
       const saveTemplateButton = runtime.getById("btnSaveTemplate");
       const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
       const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
+      const themeImageInput = runtime.getById("themeImageInput");
+      const clearThemeImageButton = runtime.getById("btnClearThemeImage");
       const fieldIds = [
         "settingsApiKeyInput",
         "settingsPollIntervalInput",
@@ -6466,6 +6770,52 @@ ${incomingContent}` : incomingContent;
         "settingsAiOptimizeAppIdInput"
       ];
       bindAppManagerControls();
+      document.querySelectorAll("[data-theme-preset]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const preset = String(button.getAttribute("data-theme-preset") || "classic");
+          try {
+            await saveThemeSnapshot({
+              ...modules.state.state.theme,
+              preset,
+              customImage: "",
+              customImageName: "",
+              glass: false
+            });
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题保存失败：${error.message}`, "error");
+          }
+        });
+      });
+      if (themeImageInput) {
+        themeImageInput.addEventListener("change", async () => {
+          const file = themeImageInput.files && themeImageInput.files[0];
+          if (!file) return;
+          try {
+            const dataUrl = await readImageFileAsDataUrl(file);
+            await saveThemeSnapshot({
+              preset: "custom",
+              customImage: dataUrl,
+              customImageName: String(file.name || "自定义照片"),
+              glass: true
+            });
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题照片应用失败：${error.message}`, "error");
+          } finally {
+            themeImageInput.value = "";
+          }
+        });
+      }
+      if (clearThemeImageButton) {
+        clearThemeImageButton.addEventListener("click", async () => {
+          await saveThemeSnapshot({
+            ...modules.state.state.theme,
+            preset: modules.state.state.theme.preset === "custom" ? "classic" : modules.state.state.theme.preset,
+            customImage: "",
+            customImageName: "",
+            glass: false
+          });
+        });
+      }
       fieldIds.forEach((id) => {
         const element = runtime.getById(id);
         if (!element) return;
@@ -6674,7 +7024,7 @@ ${incomingContent}` : incomingContent;
       }
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.4.2"
+        version: "2.4.3"
       });
     }).catch((error) => {
       modules.settings.renderSettingsStatus(`初始化失败：${error.message}`, "error");

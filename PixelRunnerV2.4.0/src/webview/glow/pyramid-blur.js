@@ -19,14 +19,28 @@
       for (let x = 0; x < nextWidth; x += 1) {
         const sx = x * 2;
         const sy = y * 2;
-        const a = sy * layer.width + sx;
-        const b = sy * layer.width + Math.min(layer.width - 1, sx + 1);
-        const c = Math.min(layer.height - 1, sy + 1) * layer.width + sx;
-        const d = Math.min(layer.height - 1, sy + 1) * layer.width + Math.min(layer.width - 1, sx + 1);
         const target = y * nextWidth + x;
-        out.r[target] = (layer.r[a] + layer.r[b] + layer.r[c] + layer.r[d]) * 0.25;
-        out.g[target] = (layer.g[a] + layer.g[b] + layer.g[c] + layer.g[d]) * 0.25;
-        out.b[target] = (layer.b[a] + layer.b[b] + layer.b[c] + layer.b[d]) * 0.25;
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let weightTotal = 0;
+        for (let oy = -1; oy <= 2; oy += 1) {
+          const yy = Math.min(layer.height - 1, Math.max(0, sy + oy));
+          const wy = oy === 0 || oy === 1 ? 3 : 1;
+          for (let ox = -1; ox <= 2; ox += 1) {
+            const xx = Math.min(layer.width - 1, Math.max(0, sx + ox));
+            const wx = ox === 0 || ox === 1 ? 3 : 1;
+            const weight = wx * wy;
+            const source = yy * layer.width + xx;
+            r += layer.r[source] * weight;
+            g += layer.g[source] * weight;
+            b += layer.b[source] * weight;
+            weightTotal += weight;
+          }
+        }
+        out.r[target] = r / weightTotal;
+        out.g[target] = g / weightTotal;
+        out.b[target] = b / weightTotal;
       }
     }
     return out;
@@ -86,14 +100,27 @@
     const xScale = source.width / target.width;
     const yScale = source.height / target.height;
     for (let y = 0; y < target.height; y += 1) {
-      const sy = Math.min(source.height - 1, Math.floor((y + 0.5) * yScale));
+      const sy = Math.min(source.height - 1, Math.max(0, (y + 0.5) * yScale - 0.5));
+      const y0 = Math.floor(sy);
+      const y1 = Math.min(source.height - 1, y0 + 1);
+      const ty = sy - y0;
       for (let x = 0; x < target.width; x += 1) {
-        const sx = Math.min(source.width - 1, Math.floor((x + 0.5) * xScale));
-        const sourceIndex = sy * source.width + sx;
+        const sx = Math.min(source.width - 1, Math.max(0, (x + 0.5) * xScale - 0.5));
+        const x0 = Math.floor(sx);
+        const x1 = Math.min(source.width - 1, x0 + 1);
+        const tx = sx - x0;
+        const a = y0 * source.width + x0;
+        const b = y0 * source.width + x1;
+        const c = y1 * source.width + x0;
+        const d = y1 * source.width + x1;
         const targetIndex = y * target.width + x;
-        target.r[targetIndex] += source.r[sourceIndex] * weight;
-        target.g[targetIndex] += source.g[sourceIndex] * weight;
-        target.b[targetIndex] += source.b[sourceIndex] * weight;
+        const wa = (1 - tx) * (1 - ty);
+        const wb = tx * (1 - ty);
+        const wc = (1 - tx) * ty;
+        const wd = tx * ty;
+        target.r[targetIndex] += (source.r[a] * wa + source.r[b] * wb + source.r[c] * wc + source.r[d] * wd) * weight;
+        target.g[targetIndex] += (source.g[a] * wa + source.g[b] * wb + source.g[c] * wc + source.g[d] * wd) * weight;
+        target.b[targetIndex] += (source.b[a] * wa + source.b[b] * wb + source.b[c] * wc + source.b[d] * wd) * weight;
       }
     }
   }

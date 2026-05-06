@@ -408,11 +408,10 @@
 
     const commitGlowCpuResult = async () => {
       const state = readGlowState();
-      await clearGlowPreviewLayer();
       const layerName = `Glow ${state.strength}%`;
       const commitStrength = state.style === "none" ? 0 : state.strength;
       const result = await runtime.callHost("photoshop.runToolAction", [{
-        action: "glow",
+        action: "glowPreviewCommit",
         style: state.style,
         strength: commitStrength,
         radius: state.radius,

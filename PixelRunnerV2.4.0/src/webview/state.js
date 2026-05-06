@@ -10,7 +10,8 @@
     CURRENT_APP_ID: "pixelrunner.current_app_id",
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
     QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
-    SOUND_ENABLED: "pixelrunner.sound_enabled"
+    SOUND_ENABLED: "pixelrunner.sound_enabled",
+    THEME: "pixelrunner.theme.v1"
   };
 
   const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
@@ -23,6 +24,13 @@
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID
   };
 
+  const DEFAULT_THEME = {
+    preset: "classic",
+    customImage: "",
+    customImageName: "",
+    glass: false
+  };
+
   const state = {
     apps: [],
     currentApp: null,
@@ -31,9 +39,9 @@
     templates: [],
     appPickerKeyword: "",
     appManagerKeyword: "",
-    appManagerSort: "updated_desc",
+    appManagerSort: "manual",
     templateManagerKeyword: "",
-    templateManagerSort: "updated_desc",
+    templateManagerSort: "manual",
     settings: { ...DEFAULT_SETTINGS },
     settingsLoaded: false,
     accountSummary: {
@@ -81,8 +89,23 @@
     sound: {
       enabled: true,
       playerReady: false
-    }
+    },
+    theme: { ...DEFAULT_THEME }
   };
+
+  function normalizeTheme(theme) {
+    const source = theme && typeof theme === "object" ? theme : {};
+    const preset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.preset || ""))
+      ? String(source.preset)
+      : DEFAULT_THEME.preset;
+    const customImage = String(source.customImage || "").trim();
+    return {
+      preset: customImage ? "custom" : preset,
+      customImage,
+      customImageName: String(source.customImageName || "").trim(),
+      glass: Boolean(source.glass || customImage)
+    };
+  }
 
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" ? settings : {};
@@ -261,7 +284,9 @@
     STORAGE_KEYS,
     DEFAULT_AI_OPTIMIZE_APP_ID,
     DEFAULT_SETTINGS,
+    DEFAULT_THEME,
     state,
+    normalizeTheme,
     normalizeSettings,
     normalizeAppInputs,
     resolveAppId,

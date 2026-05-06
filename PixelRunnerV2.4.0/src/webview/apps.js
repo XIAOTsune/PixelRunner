@@ -158,7 +158,8 @@
           return marker.includes(keyword);
         });
 
-    const sortMode = String(state.appManagerSort || "updated_desc");
+    const sortMode = String(state.appManagerSort || "manual");
+    if (sortMode === "manual") return list;
     list.sort((a, b) => {
       if (sortMode === "name_asc") return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
       if (sortMode === "name_desc") return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
@@ -166,6 +167,29 @@
       return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
     });
     return list;
+  }
+
+  async function reorderAppById(draggedId, targetId) {
+    const dragged = String(draggedId || "");
+    const target = String(targetId || "");
+    if (!dragged || !target || dragged === target) return false;
+
+    const apps = modules.state.state.apps.slice();
+    const fromIndex = apps.findIndex((item) => String(item.id) === dragged);
+    const toIndex = apps.findIndex((item) => String(item.id) === target);
+    if (fromIndex < 0 || toIndex < 0) return false;
+
+    const [item] = apps.splice(fromIndex, 1);
+    const nextIndex = apps.findIndex((entry) => String(entry.id) === target);
+    apps.splice(nextIndex < 0 ? toIndex : nextIndex, 0, item);
+
+    modules.state.state.appManagerSort = "manual";
+    const sortInput = modules.runtime.getById("appManagerSortInput");
+    if (sortInput) sortInput.value = "manual";
+    await saveAppsToStorage(apps);
+    modules.runtime.setSummaryStatus(modules.runtime.getById("savedAppsSummary"), "应用顺序已同步到本地设置。", "success");
+    modules.ui.logToWorkspace("应用卡片顺序已保存。", "success");
+    return true;
   }
 
   function renderAppPickerList() {
@@ -194,7 +218,7 @@
     listEl.innerHTML = quickEntryButton + visibleApps
       .map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
-        return `<button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
+        return `<button class="picker-item is-draggable ${isActive ? "active" : ""}" type="button" draggable="true" value="${runtime.escapeHtml(String(app.id || ""))}" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
       })
       .join("");
   }
@@ -223,9 +247,56 @@
         const isEditing = String(modules.state.state.editingAppId || "") === String(app.id);
         const isCurrent = state.currentApp && String(state.currentApp.id) === String(app.id);
         const description = String(app.description || "").trim();
-        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
+        return `<article class="list-item saved-app-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
       })
       .join("");
+  }
+
+  function bindAppDragSorting(container) {
+    if (!container || container.dataset.appDragBound === "true") return;
+    container.dataset.appDragBound = "true";
+    let draggedId = "";
+
+    container.addEventListener("dragstart", (event) => {
+      if (event.target && event.target.closest(".compact-card-actions, input, textarea, select")) return;
+      const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+      if (!item || item.classList.contains("picker-item-special")) return;
+      draggedId = String(item.getAttribute("data-app-id") || item.getAttribute("value") || "");
+      item.classList.add("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", draggedId);
+      }
+    });
+
+    container.addEventListener("dragover", (event) => {
+      const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+      if (!draggedId || !item || item.classList.contains("picker-item-special")) return;
+      event.preventDefault();
+      item.classList.add("is-drag-over");
+    });
+
+    container.addEventListener("dragleave", (event) => {
+      const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+      if (item) item.classList.remove("is-drag-over");
+    });
+
+    container.addEventListener("drop", async (event) => {
+      const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+      if (!draggedId || !item || item.classList.contains("picker-item-special")) return;
+      event.preventDefault();
+      const targetId = String(item.getAttribute("data-app-id") || item.getAttribute("value") || "");
+      container.querySelectorAll(".is-drag-over").forEach((node) => node.classList.remove("is-drag-over"));
+      await reorderAppById(draggedId, targetId);
+      draggedId = "";
+    });
+
+    container.addEventListener("dragend", () => {
+      draggedId = "";
+      container.querySelectorAll(".is-dragging, .is-drag-over").forEach((node) => {
+        node.classList.remove("is-dragging", "is-drag-over");
+      });
+    });
   }
 
   async function setCurrentAppById(appId, options = {}) {
@@ -308,6 +379,8 @@
     const closeButton = runtime.getById("appPickerModalClose");
     const searchInput = runtime.getById("appPickerSearchInput");
     const listEl = runtime.getById("appPickerList");
+    bindAppDragSorting(listEl);
+    bindAppDragSorting(runtime.getById("savedAppsList"));
 
     if (openButton) {
       openButton.addEventListener("click", () => {
@@ -572,6 +645,7 @@
     parseAppReference,
     saveEditedApp,
     deleteAppById,
+    reorderAppById,
     importAppsFromTextarea,
     exportAppsToTextarea,
     refreshCurrentWorkspaceApp,
