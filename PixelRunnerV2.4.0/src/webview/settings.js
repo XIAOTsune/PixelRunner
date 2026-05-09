@@ -130,68 +130,239 @@
       "--bg-top": "#111822",
       "--bg-mid": "#18212d",
       "--bg-bottom": "#0c1219",
+      "--panel": "#18222d",
+      "--panel-soft": "#1f2b37",
+      "--panel-strong": "#243342",
+      "--ink": "#304150",
+      "--surface-rgb": "31, 45, 59",
+      "--surface-soft-rgb": "35, 49, 62",
+      "--control-rgb": "68, 96, 121",
+      "--control-edge": "#35506a",
+      "--control-ink": "#203648",
+      "--surface-alpha": "0.96",
+      "--surface-soft-alpha": "0.9",
+      "--surface-glass-alpha": "0.62",
+      "--theme-image-overlay": "rgba(8, 12, 18, 0.48)",
       "--accent": "#63d67b",
       "--accent-strong": "#28c45b",
-      "--cta": "#a9def2"
+      "--accent-soft": "rgba(99, 214, 123, 0.16)",
+      "--accent-wash": "rgba(99, 214, 123, 0.09)",
+      "--cta": "#a9def2",
+      "--cta-strong": "#8ac6df"
     },
     aurora: {
       "--bg-top": "#0b1a20",
       "--bg-mid": "#14333b",
       "--bg-bottom": "#081318",
+      "--panel": "#12313a",
+      "--panel-soft": "#1a4550",
+      "--panel-strong": "#245966",
+      "--ink": "#2f6270",
+      "--surface-rgb": "22, 58, 68",
+      "--surface-soft-rgb": "27, 73, 84",
+      "--control-rgb": "42, 116, 126",
+      "--control-edge": "#2d7582",
+      "--control-ink": "#082b2c",
+      "--surface-alpha": "0.96",
+      "--surface-soft-alpha": "0.9",
+      "--surface-glass-alpha": "0.62",
+      "--theme-image-overlay": "rgba(4, 24, 28, 0.46)",
       "--accent": "#74d8c7",
       "--accent-strong": "#35bfa8",
-      "--cta": "#f4d47d"
+      "--accent-soft": "rgba(116, 216, 199, 0.18)",
+      "--accent-wash": "rgba(116, 216, 199, 0.1)",
+      "--cta": "#f4d47d",
+      "--cta-strong": "#dbb95f"
     },
     graphite: {
       "--bg-top": "#12151a",
       "--bg-mid": "#202832",
       "--bg-bottom": "#0b0e13",
+      "--panel": "#202832",
+      "--panel-soft": "#2b3540",
+      "--panel-strong": "#354250",
+      "--ink": "#4b5c6d",
+      "--surface-rgb": "35, 43, 52",
+      "--surface-soft-rgb": "45, 56, 68",
+      "--control-rgb": "77, 92, 108",
+      "--control-edge": "#56687a",
+      "--control-ink": "#172331",
+      "--surface-alpha": "0.96",
+      "--surface-soft-alpha": "0.9",
+      "--surface-glass-alpha": "0.62",
+      "--theme-image-overlay": "rgba(8, 11, 15, 0.48)",
       "--accent": "#9ab0c6",
       "--accent-strong": "#7f99b4",
-      "--cta": "#d7e1ea"
+      "--accent-soft": "rgba(154, 176, 198, 0.2)",
+      "--accent-wash": "rgba(154, 176, 198, 0.11)",
+      "--cta": "#d7e1ea",
+      "--cta-strong": "#b7c7d5"
     },
     rose: {
       "--bg-top": "#1d1420",
       "--bg-mid": "#302234",
       "--bg-bottom": "#120d16",
+      "--panel": "#2b1f30",
+      "--panel-soft": "#3b2b41",
+      "--panel-strong": "#513b58",
+      "--ink": "#65496e",
+      "--surface-rgb": "50, 36, 56",
+      "--surface-soft-rgb": "66, 48, 73",
+      "--control-rgb": "114, 76, 106",
+      "--control-edge": "#7f5576",
+      "--control-ink": "#371827",
+      "--surface-alpha": "0.96",
+      "--surface-soft-alpha": "0.9",
+      "--surface-glass-alpha": "0.62",
+      "--theme-image-overlay": "rgba(27, 10, 22, 0.46)",
       "--accent": "#ff9bb4",
       "--accent-strong": "#e87595",
-      "--cta": "#aee7dd"
+      "--accent-soft": "rgba(255, 155, 180, 0.18)",
+      "--accent-wash": "rgba(255, 155, 180, 0.1)",
+      "--cta": "#aee7dd",
+      "--cta-strong": "#7dd3c4"
     },
     studio: {
       "--bg-top": "#17171a",
       "--bg-mid": "#252823",
       "--bg-bottom": "#101111",
+      "--panel": "#252823",
+      "--panel-soft": "#33362e",
+      "--panel-strong": "#424638",
+      "--ink": "#585d4a",
+      "--surface-rgb": "42, 45, 39",
+      "--surface-soft-rgb": "58, 61, 51",
+      "--control-rgb": "91, 99, 71",
+      "--control-edge": "#69724d",
+      "--control-ink": "#302a10",
+      "--surface-alpha": "0.96",
+      "--surface-soft-alpha": "0.9",
+      "--surface-glass-alpha": "0.62",
+      "--theme-image-overlay": "rgba(16, 16, 12, 0.46)",
       "--accent": "#ffd56a",
       "--accent-strong": "#e8b93b",
-      "--cta": "#8fd6ff"
+      "--accent-soft": "rgba(255, 213, 106, 0.18)",
+      "--accent-wash": "rgba(255, 213, 106, 0.1)",
+      "--cta": "#8fd6ff",
+      "--cta-strong": "#65bce9"
     }
   };
+
+  const CUSTOM_THEME_SKIN_SELECTORS = [
+    ".view-nav",
+    ".panel-header-strip",
+    ".overlay-card",
+    ".workspace-app-card",
+    ".workspace-input-card",
+    ".workspace-run-card",
+    ".log-card",
+    ".selection-meta",
+    ".diagnostic-box",
+    ".list-shell",
+    ".picker-list",
+    ".input-zone",
+    ".field-input",
+    ".summary-strip",
+    ".picker-item",
+    ".list-item",
+    ".tool-item"
+  ];
+
+  const CUSTOM_THEME_DEEP_SELECTORS = [
+    ".workspace-app-card",
+    ".workspace-input-card",
+    ".workspace-run-card",
+    ".log-card",
+    ".overlay-card"
+  ];
+
+  const CUSTOM_THEME_LIGHT_SELECTORS = [
+    ".input-zone",
+    ".field-input",
+    ".workspace-app-meta",
+    ".image-capture-stage",
+    ".image-capture-preview"
+  ];
+
+  function makeThemeImageValue(dataUrl) {
+    const value = String(dataUrl || "").trim();
+    if (!value) return "";
+    return `url(${JSON.stringify(value)})`;
+  }
+
+  function clearInlineThemeImages() {
+    document.body.style.removeProperty("background-image");
+    document.body.style.removeProperty("background-size");
+    document.body.style.removeProperty("background-position");
+    document.body.removeAttribute("data-custom-theme-image-ready");
+    const elements = document.querySelectorAll(
+      [...CUSTOM_THEME_SKIN_SELECTORS, ...CUSTOM_THEME_DEEP_SELECTORS, ...CUSTOM_THEME_LIGHT_SELECTORS].join(",")
+    );
+    elements.forEach((element) => {
+      element.style.removeProperty("background-image");
+      element.style.removeProperty("background-size");
+      element.style.removeProperty("background-position");
+      element.style.removeProperty("background-blend-mode");
+    });
+  }
+
+  function applyInlineThemeImages(dataUrl) {
+    const imageValue = makeThemeImageValue(dataUrl);
+    clearInlineThemeImages();
+    if (!imageValue) return false;
+
+    document.body.style.backgroundImage = [
+      "linear-gradient(180deg, rgba(9, 13, 18, 0.04), rgba(9, 13, 18, 0.1))",
+      imageValue,
+      "linear-gradient(180deg, var(--bg-top), var(--bg-bottom))"
+    ].join(", ");
+    document.body.style.backgroundSize = "cover";
+    document.body.style.backgroundPosition = "center";
+    document.body.dataset.customThemeImageReady = "true";
+
+    return true;
+  }
+
+  function refreshThemeSkin() {
+    const theme = modules.state && modules.state.state ? modules.state.state.theme : null;
+    if (!theme || !theme.customImage) {
+      clearInlineThemeImages();
+      return false;
+    }
+    return applyInlineThemeImages(theme.customImage);
+  }
 
   function applyTheme(theme) {
     const normalized = modules.state.normalizeTheme(theme);
     const root = document.documentElement;
-    const preset = THEME_PRESETS[normalized.preset] || THEME_PRESETS.classic;
+    const presetName = normalized.preset === "custom" ? normalized.basePreset : normalized.preset;
+    const preset = THEME_PRESETS[presetName] || THEME_PRESETS.classic;
     Object.entries(preset).forEach(([key, value]) => root.style.setProperty(key, value));
     document.body.classList.toggle("has-custom-theme-image", Boolean(normalized.customImage));
     document.body.classList.toggle("has-glass-theme", Boolean(normalized.glass));
     if (normalized.customImage) {
-      root.style.setProperty("--theme-image", `url("${normalized.customImage.replace(/"/g, "%22")}")`);
+      const imageValue = makeThemeImageValue(normalized.customImage);
+      root.style.setProperty("--theme-image", imageValue);
+      root.style.setProperty("--surface-alpha", "0.24");
+      root.style.setProperty("--surface-soft-alpha", "0.18");
+      root.style.setProperty("--surface-glass-alpha", "0.14");
+      applyInlineThemeImages(normalized.customImage);
     } else {
       root.style.removeProperty("--theme-image");
+      clearInlineThemeImages();
     }
     modules.state.state.theme = normalized;
 
     const swatches = document.querySelectorAll("[data-theme-preset]");
     swatches.forEach((button) => {
-      button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === normalized.preset);
+      button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === presetName);
     });
     const statusEl = modules.runtime.getById("themeStatusSummary");
     if (statusEl) {
       modules.runtime.setSummaryStatus(
         statusEl,
         normalized.customImage
-          ? `自定义主题已启用：${normalized.customImageName || "背景照片"}。`
+          ? `自定义主题已启用：${normalized.customImageName || "背景照片"}，背景已写入界面皮肤。`
           : `已启用${normalized.preset === "classic" ? "经典" : "预设"}主题。`,
         "success"
       );
@@ -216,6 +387,52 @@
       reader.onload = () => resolve(String(reader.result || ""));
       reader.onerror = () => reject(new Error("读取主题照片失败，请换一张图片重试。"));
       reader.readAsDataURL(file);
+    });
+  }
+
+  function compressThemeImageDataUrl(dataUrl, options = {}) {
+    const source = String(dataUrl || "").trim();
+    if (!source) return Promise.resolve("");
+    const maxWidth = Math.max(640, Number(options.maxWidth) || 1600);
+    const quality = Math.max(0.55, Math.min(0.92, Number(options.quality) || 0.82));
+
+    return new Promise((resolve) => {
+      if (typeof Image === "undefined" || typeof document === "undefined") {
+        resolve(source);
+        return;
+      }
+
+      const image = new Image();
+      image.onload = () => {
+        const width = Number(image.naturalWidth || image.width || 0);
+        const height = Number(image.naturalHeight || image.height || 0);
+        if (!width || !height) {
+          resolve(source);
+          return;
+        }
+
+        const scale = Math.min(1, maxWidth / width);
+        const targetWidth = Math.max(1, Math.round(width * scale));
+        const targetHeight = Math.max(1, Math.round(height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          resolve(source);
+          return;
+        }
+
+        context.drawImage(image, 0, 0, targetWidth, targetHeight);
+        try {
+          const compressed = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressed && compressed.length < source.length ? compressed : source);
+        } catch (_) {
+          resolve(source);
+        }
+      };
+      image.onerror = () => resolve(source);
+      image.src = source;
     });
   }
 
@@ -352,6 +569,7 @@
           await saveThemeSnapshot({
             ...modules.state.state.theme,
             preset,
+            basePreset: preset,
             customImage: "",
             customImageName: "",
             glass: false
@@ -368,12 +586,23 @@
         if (!file) return;
         try {
           const dataUrl = await readImageFileAsDataUrl(file);
+          const skinDataUrl = await compressThemeImageDataUrl(dataUrl);
           await saveThemeSnapshot({
+            ...modules.state.state.theme,
             preset: "custom",
-            customImage: dataUrl,
+            basePreset:
+              modules.state.state.theme.preset === "custom"
+                ? modules.state.state.theme.basePreset || "classic"
+                : modules.state.state.theme.preset || "classic",
+            customImage: skinDataUrl,
             customImageName: String(file.name || "自定义照片"),
             glass: true
           });
+          runtime.setSummaryStatus(
+            runtime.getById("themeStatusSummary"),
+            `自定义主题已启用：${file.name || "背景照片"}，皮肤图片约 ${Math.ceil(skinDataUrl.length / 1024)} KB。`,
+            "success"
+          );
         } catch (error) {
           runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题照片应用失败：${error.message}`, "error");
         } finally {
@@ -386,7 +615,11 @@
       clearThemeImageButton.addEventListener("click", async () => {
         await saveThemeSnapshot({
           ...modules.state.state.theme,
-          preset: modules.state.state.theme.preset === "custom" ? "classic" : modules.state.state.theme.preset,
+          preset:
+            modules.state.state.theme.preset === "custom"
+              ? modules.state.state.theme.basePreset || "classic"
+              : modules.state.state.theme.preset,
+          basePreset: modules.state.state.theme.basePreset || "classic",
           customImage: "",
           customImageName: "",
           glass: false
@@ -580,6 +813,7 @@
     refreshAccountSummary,
     loadParseDebug,
     initializeSettings,
+    refreshThemeSkin,
     bindSettingsActions
   };
 })(window);

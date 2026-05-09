@@ -26,6 +26,7 @@
 
   const DEFAULT_THEME = {
     preset: "classic",
+    basePreset: "classic",
     customImage: "",
     customImageName: "",
     glass: false
@@ -99,8 +100,12 @@
       ? String(source.preset)
       : DEFAULT_THEME.preset;
     const customImage = String(source.customImage || "").trim();
+    const basePreset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.basePreset || ""))
+      ? String(source.basePreset)
+      : preset;
     return {
       preset: customImage ? "custom" : preset,
+      basePreset: customImage ? basePreset : preset,
       customImage,
       customImageName: String(source.customImageName || "").trim(),
       glass: Boolean(source.glass || customImage)
