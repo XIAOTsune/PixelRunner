@@ -435,7 +435,8 @@
       if (glowPreviewMeta) {
         const state = readGlowState();
         const timings = glowResult.timings || {};
-        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+        const blurBackend = timings.blurBackend ? ` · ${timings.blurBackend}` : "";
+        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height}${blurBackend} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
       }
     };
 
@@ -460,9 +461,10 @@
       }
       updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
       const timings = glowResult.timings || {};
+      const blurBackend = timings.blurBackend ? `（${timings.blurBackend}）` : "";
       return {
         ok: true,
-        message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+        message: `Glow Lab 已更新${blurBackend}：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
         layerName: GLOW_PREVIEW_LAYER_NAME,
         elapsedMs: timings.totalMs || 0
       };
@@ -477,7 +479,7 @@
       }
       const glowResult = await modules.glowPreviewEngine.createPreview(
         String(glowCpuSourceAsset.dataUrl || "").trim(),
-        { ...state, strength: commitStrength },
+        { ...state, strength: commitStrength, useGpu: false },
         { includeDebug: false }
       );
       const documentInfo = glowCpuSourceAsset.document || {};

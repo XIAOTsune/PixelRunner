@@ -3,6 +3,8 @@ import "./webview/state.js";
 import "./webview/glow/presets.js";
 import "./webview/glow/source-mask.js";
 import "./webview/glow/pyramid-blur.js";
+import "./webview/glow/gpu/capabilities.js";
+import "./webview/glow/gpu/webgl-pyramid-blur.js";
 import "./webview/glow/compositor.js";
 import "./webview/glow/preview-engine.js";
 import "./webview/glow-cpu.js";

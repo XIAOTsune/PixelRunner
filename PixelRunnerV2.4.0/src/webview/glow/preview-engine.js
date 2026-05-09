@@ -51,7 +51,26 @@
     const sourceMs = performance.now() - sourceStartedAt;
 
     const blurStartedAt = performance.now();
-    const blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+    let blurResult;
+    let blurBackend = "cpu";
+    try {
+      if (
+        config.useGpu !== false &&
+        modules.glowWebglPyramidBlur &&
+        modules.glowGpuCapabilities &&
+        modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+      ) {
+        blurResult = modules.glowWebglPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+        blurBackend = blurResult.backend || "webgl2";
+      }
+    } catch (error) {
+      console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
+      blurResult = null;
+      blurBackend = "cpu-fallback";
+    }
+    if (!blurResult) {
+      blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+    }
     const blurMs = performance.now() - blurStartedAt;
 
     const compositeStartedAt = performance.now();
@@ -91,7 +110,8 @@
         sourceMs: Math.round(sourceMs),
         blurMs: Math.round(blurMs),
         compositeMs: Math.round(compositeMs),
-        totalMs: Math.round(performance.now() - startedAt)
+        totalMs: Math.round(performance.now() - startedAt),
+        blurBackend
       },
       params
     };
