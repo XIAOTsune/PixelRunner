@@ -677,7 +677,14 @@
         <div id="glowInlinePreview" class="glow-inline-preview" hidden>
           <div class="glow-lab-grid">
             <figure class="glow-lab-tile glow-lab-tile-wide">
-              <img id="glowPreviewResultImage" class="glow-lab-image" alt="辉光测试台结果图" />
+              <div id="glowPreviewViewport" class="glow-preview-viewport">
+                <img id="glowPreviewResultImage" class="glow-lab-image" alt="辉光测试台结果图" />
+                <div class="glow-preview-tools" aria-label="预览缩放控制">
+                  <button class="mini-btn glow-preview-tool-btn" type="button" data-glow-zoom="out" title="缩小预览">-</button>
+                  <button class="mini-btn glow-preview-tool-btn" type="button" data-glow-zoom="reset" title="重置预览">1:1</button>
+                  <button class="mini-btn glow-preview-tool-btn" type="button" data-glow-zoom="in" title="放大预览">+</button>
+                </div>
+              </div>
               <figcaption>预览结果</figcaption>
             </figure>
           </div>
