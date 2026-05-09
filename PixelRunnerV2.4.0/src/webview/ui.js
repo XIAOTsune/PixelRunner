@@ -380,7 +380,7 @@
     const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(320);
+        glowCpuSourceAsset = await captureGlowCpuSource(768);
       }
       const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
       const jobId = glowPreviewJobId + 1;

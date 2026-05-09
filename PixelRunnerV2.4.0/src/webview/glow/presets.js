@@ -108,13 +108,20 @@
         darkProtect: preset.darkProtect
       },
       blur: {
-        smallRadius: Math.max(1, Math.round(1.5 + radiusRatio * 4)),
-        mediumRadius: Math.max(2, Math.round(5 + radiusRatio * 14)),
-        largeRadius: Math.max(3, Math.round(7 + radiusRatio * 24)),
+        mipCount: Math.max(2, Math.min(6, Math.round(2.7 + radiusRatio * 3.2))),
+        mipWeights: [
+          preset.smallWeight * 0.72,
+          preset.mediumWeight * 0.94,
+          preset.largeWeight * (0.76 + radiusRatio * preset.scatter * 0.42),
+          preset.largeWeight * (0.52 + radiusRatio * preset.scatter * 0.36),
+          preset.largeWeight * (0.34 + radiusRatio * preset.scatter * 0.26),
+          preset.largeWeight * (0.2 + radiusRatio * preset.scatter * 0.18)
+        ],
+        pyramidWeight: clamp(0.72 + radiusRatio * 0.52 + preset.scatter * 0.1, 0.72, 1.52, 1),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
         largeWeight: preset.largeWeight * (0.7 + radiusRatio * preset.scatter),
-        passes: radius > 72 ? 2 : 1
+        passes: 1
       },
       composite: {
         intensity: (strength / 100) * 2.35,
