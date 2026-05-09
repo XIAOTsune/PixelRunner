@@ -19,10 +19,40 @@
     return value / (1 + value * safeShoulder);
   }
 
+  function sampleChannelNearest(layer, x, y, channel) {
+    const sx = Math.min(layer.width - 1, Math.max(0, Math.round(x)));
+    const sy = Math.min(layer.height - 1, Math.max(0, Math.round(y)));
+    return channel[sy * layer.width + sx];
+  }
+
+  function getChromaticOffset(params) {
+    return Math.max(0, Math.min(10, (Number(params.composite.chromatic) || 0) * Math.max(1, Number(params.radius) || 1) * 0.07));
+  }
+
+  function applyGlowColorShift(r, g, b, shift) {
+    const amount = clamp(Number(shift) || 0, -1, 1);
+    if (amount >= 0) {
+      return [
+        r * (1 + amount * 0.34),
+        g * (1 + amount * 0.1),
+        b * (1 - amount * 0.24)
+      ];
+    }
+    const cool = -amount;
+    return [
+      r * (1 - cool * 0.18),
+      g * (1 + cool * 0.04),
+      b * (1 + cool * 0.38)
+    ];
+  }
+
   function composeProtected(baseImageData, glowLayer, masks, params) {
     const { width, height, data } = baseImageData;
     const out = new ImageData(width, height);
+    const chromaticOffset = getChromaticOffset(params);
     for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
       const baseR = data[index] / 255;
       const baseG = data[index + 1] / 255;
       const baseB = data[index + 2] / 255;
@@ -34,9 +64,13 @@
       const shadowProtect = darkProtect * params.composite.shadowProtect;
       const sourceAnchor = 0.62 + source * 0.38;
       const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
-      const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
-      const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
-      const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+      const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
+      const layerG = glowLayer.g[pixel];
+      const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
+      let warmedR = layerR * (1 + params.composite.warmth);
+      let warmedG = layerG * (1 + params.composite.warmth * 0.35);
+      let warmedB = layerB * (1 - params.composite.warmth * 0.28);
+      [warmedR, warmedG, warmedB] = applyGlowColorShift(warmedR, warmedG, warmedB, params.composite.colorShift);
       const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
       const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
@@ -65,7 +99,10 @@
   function renderGlowLayer(glowLayer, masks, params) {
     const out = new ImageData(glowLayer.width, glowLayer.height);
     const data = out.data;
+    const chromaticOffset = getChromaticOffset(params);
     for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+      const x = pixel % glowLayer.width;
+      const y = Math.floor(pixel / glowLayer.width);
       const source = masks.sourceMask[pixel];
       const protect = masks.protectMask[pixel];
       const darkProtect = masks.darkProtect[pixel];
@@ -73,9 +110,13 @@
       const shadowProtect = darkProtect * params.composite.shadowProtect;
       const sourceAnchor = 0.62 + source * 0.38;
       const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
-      const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
-      const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
-      const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+      const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
+      const layerG = glowLayer.g[pixel];
+      const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
+      let warmedR = layerR * (1 + params.composite.warmth);
+      let warmedG = layerG * (1 + params.composite.warmth * 0.35);
+      let warmedB = layerB * (1 - params.composite.warmth * 0.28);
+      [warmedR, warmedG, warmedB] = applyGlowColorShift(warmedR, warmedG, warmedB, params.composite.colorShift);
       const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
       const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
