@@ -17,8 +17,12 @@
     });
   }
 
-  function getImageDataFromImage(image) {
-    const canvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
+  function getImageDataFromImage(image, maxDimension = 0) {
+    const naturalWidth = image.naturalWidth || image.width;
+    const naturalHeight = image.naturalHeight || image.height;
+    const limit = Math.max(0, Number(maxDimension) || 0);
+    const scale = limit > 0 ? Math.min(1, limit / Math.max(naturalWidth, naturalHeight)) : 1;
+    const canvas = createCanvas(Math.round(naturalWidth * scale), Math.round(naturalHeight * scale));
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab");
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -39,16 +43,23 @@
 
   let sourceImageCache = {
     sourceDataUrl: "",
-    source: null
+    image: null,
+    sources: new Map()
   };
 
-  async function getSourceFromDataUrl(sourceDataUrl) {
-    if (sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.source) {
-      return sourceImageCache.source;
+  async function getSourceFromDataUrl(sourceDataUrl, maxDimension = 0) {
+    const dimensionKey = String(Math.max(0, Math.round(Number(maxDimension) || 0)));
+    if (sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.sources.has(dimensionKey)) {
+      return sourceImageCache.sources.get(dimensionKey);
     }
-    const image = await loadImage(sourceDataUrl);
-    const source = getImageDataFromImage(image);
-    sourceImageCache = { sourceDataUrl, source };
+    const image = sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.image
+      ? sourceImageCache.image
+      : await loadImage(sourceDataUrl);
+    if (sourceImageCache.sourceDataUrl !== sourceDataUrl) {
+      sourceImageCache = { sourceDataUrl, image, sources: new Map() };
+    }
+    const source = getImageDataFromImage(image, maxDimension);
+    sourceImageCache.sources.set(dimensionKey, source);
     return source;
   }
 
@@ -113,7 +124,7 @@
     const jobId = Number(options.jobId) || 0;
     const startedAt = performance.now();
     const includeGlowLayer = options.includeGlowLayer !== false;
-    const source = await getSourceFromDataUrl(sourceDataUrl);
+    const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
     const params = modules.glowPresets.normalizeGlowParams(config);
     const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
     if (previewCache.sourceDataUrl !== sourceDataUrl) {
@@ -281,7 +292,7 @@
       };
     },
     clearCache() {
-      sourceImageCache = { sourceDataUrl: "", source: null };
+      sourceImageCache = { sourceDataUrl: "", image: null, sources: new Map() };
       resetPreviewCache("");
     }
   };

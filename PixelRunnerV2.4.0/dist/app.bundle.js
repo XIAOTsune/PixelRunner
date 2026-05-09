@@ -2300,8 +2300,12 @@ var PixelRunnerWebviewBundle = (() => {
         image.src = src;
       });
     }
-    function getImageDataFromImage(image) {
-      const canvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
+    function getImageDataFromImage(image, maxDimension = 0) {
+      const naturalWidth = image.naturalWidth || image.width;
+      const naturalHeight = image.naturalHeight || image.height;
+      const limit = Math.max(0, Number(maxDimension) || 0);
+      const scale = limit > 0 ? Math.min(1, limit / Math.max(naturalWidth, naturalHeight)) : 1;
+      const canvas = createCanvas(Math.round(naturalWidth * scale), Math.round(naturalHeight * scale));
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab");
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -2320,15 +2324,20 @@ var PixelRunnerWebviewBundle = (() => {
     }
     let sourceImageCache = {
       sourceDataUrl: "",
-      source: null
+      image: null,
+      sources: /* @__PURE__ */ new Map()
     };
-    async function getSourceFromDataUrl(sourceDataUrl) {
-      if (sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.source) {
-        return sourceImageCache.source;
+    async function getSourceFromDataUrl(sourceDataUrl, maxDimension = 0) {
+      const dimensionKey = String(Math.max(0, Math.round(Number(maxDimension) || 0)));
+      if (sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.sources.has(dimensionKey)) {
+        return sourceImageCache.sources.get(dimensionKey);
       }
-      const image = await loadImage(sourceDataUrl);
-      const source = getImageDataFromImage(image);
-      sourceImageCache = { sourceDataUrl, source };
+      const image = sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.image ? sourceImageCache.image : await loadImage(sourceDataUrl);
+      if (sourceImageCache.sourceDataUrl !== sourceDataUrl) {
+        sourceImageCache = { sourceDataUrl, image, sources: /* @__PURE__ */ new Map() };
+      }
+      const source = getImageDataFromImage(image, maxDimension);
+      sourceImageCache.sources.set(dimensionKey, source);
       return source;
     }
     function getSourceCacheKey(params, width, height) {
@@ -2388,7 +2397,7 @@ var PixelRunnerWebviewBundle = (() => {
       const jobId = Number(options.jobId) || 0;
       const startedAt = performance.now();
       const includeGlowLayer = options.includeGlowLayer !== false;
-      const source = await getSourceFromDataUrl(sourceDataUrl);
+      const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
       const params = modules.glowPresets.normalizeGlowParams(config);
       const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
       if (previewCache.sourceDataUrl !== sourceDataUrl) {
@@ -2533,7 +2542,7 @@ var PixelRunnerWebviewBundle = (() => {
         };
       },
       clearCache() {
-        sourceImageCache = { sourceDataUrl: "", source: null };
+        sourceImageCache = { sourceDataUrl: "", image: null, sources: /* @__PURE__ */ new Map() };
         resetPreviewCache("");
       }
     };
@@ -2800,12 +2809,17 @@ ${text}` : text;
       const glowPreviewDarkProtectImage = runtime.getById("glowPreviewDarkProtectImage");
       const glowPreviewMeta = runtime.getById("glowPreviewMeta");
       let glowPreviewTimer = 0;
+      let glowRefinePreviewTimer = 0;
       let glowPreviewInFlight = false;
       let glowPreviewNeedsReplay = false;
       let glowPreviewOpen = false;
       let glowLastPreviewSignature = "";
+      let glowLastPreviewQuality = "";
+      let glowPreviewQuality = "full";
       let glowCpuSourceAsset = null;
       let glowPreviewJobId = 0;
+      const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
+      const GLOW_FULL_PROCESS_DIMENSION = 3e3;
       const glowPreviewView = {
         scale: 1,
         x: 0,
@@ -2960,7 +2974,8 @@ ${text}` : text;
           const sourceBackend = timings.sourceBackend ? ` ${timings.sourceBackend}` : "";
           const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
           const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
-          glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+          const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
+          glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
         }
       };
       const callGlowCpuPreviewAction = async (action) => {
@@ -2971,11 +2986,13 @@ ${text}` : text;
         const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
         const jobId = glowPreviewJobId + 1;
         glowPreviewJobId = jobId;
+        const isInteractive = glowPreviewQuality === "interactive";
         const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
           jobId,
           includeDebug: false,
           includeGlowLayer: false,
-          previewQuality: 0.82
+          previewQuality: isInteractive ? 0.76 : 0.82,
+          processMaxDimension: isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
         });
         if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
           return {
@@ -2989,9 +3006,10 @@ ${text}` : text;
         const sourceBackend = timings.sourceBackend || "cpu";
         const blurBackend = timings.blurBackend || "cpu";
         const compositeBackend = timings.compositeBackend || "cpu";
+        const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
         return {
           ok: true,
-          message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${compositeBackend} ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+          message: `Glow Lab 已更新（${qualityLabel}）：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${compositeBackend} ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
           layerName: GLOW_PREVIEW_LAYER_NAME,
           elapsedMs: timings.totalMs || 0
         };
@@ -3036,6 +3054,7 @@ ${text}` : text;
         const state = readGlowState();
         return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias].join("|");
       };
+      const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
       const getGlowPreviewDelay = () => {
         const state = readGlowState();
         const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function" ? modules.glowPreviewEngine.getCacheInfo() : null;
@@ -3055,7 +3074,8 @@ ${text}` : text;
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         const nextSignature = getGlowStateSignature();
-        if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && !glowPreviewNeedsReplay) {
+        const nextPreviewSignature = getGlowPreviewSignature();
+        if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && nextPreviewSignature === glowLastPreviewQuality && !glowPreviewNeedsReplay) {
           return;
         }
         if (glowPreviewInFlight) {
@@ -3073,6 +3093,7 @@ ${text}` : text;
           if (result && result.stale) return;
           const message = result && result.message ? result.message : "辉光预览已更新。";
           glowLastPreviewSignature = nextSignature;
+          glowLastPreviewQuality = nextPreviewSignature;
           setGlowPreviewBadge("Glow Lab", "success");
           setGlowStatus(message, "success");
         } catch (error) {
@@ -3088,15 +3109,28 @@ ${text}` : text;
           void runGlowPreviewUpdate("glowPreviewUpdate");
         }
       };
-      const scheduleGlowPreviewUpdate = () => {
+      const scheduleGlowPreviewUpdate = (quality = "interactive") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
+        }
+        glowPreviewQuality = quality;
         glowPreviewJobId += 1;
         const delay = getGlowPreviewDelay();
         glowPreviewTimer = window.setTimeout(() => {
           glowPreviewTimer = 0;
           void runGlowPreviewUpdate("glowPreviewUpdate");
         }, delay);
+        if (quality === "interactive") {
+          glowRefinePreviewTimer = window.setTimeout(() => {
+            glowRefinePreviewTimer = 0;
+            glowPreviewQuality = "full";
+            glowPreviewJobId += 1;
+            void runGlowPreviewUpdate("glowPreviewUpdate");
+          }, Math.max(760, delay + 420));
+        }
       };
       const flushGlowPreviewUpdate = async () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
@@ -3104,6 +3138,11 @@ ${text}` : text;
           clearTimeout(glowPreviewTimer);
           glowPreviewTimer = 0;
         }
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
+        }
+        glowPreviewQuality = "full";
         if (glowPreviewInFlight) {
           glowPreviewNeedsReplay = true;
         }
@@ -3120,6 +3159,8 @@ ${text}` : text;
       const openGlowModal = async () => {
         glowPreviewOpen = true;
         glowLastPreviewSignature = "";
+        glowLastPreviewQuality = "";
+        glowPreviewQuality = "full";
         glowPreviewJobId += 1;
         if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
           modules.glowPreviewEngine.clearCache();
@@ -3149,6 +3190,10 @@ ${text}` : text;
         if (glowPreviewTimer) {
           clearTimeout(glowPreviewTimer);
           glowPreviewTimer = 0;
+        }
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
         }
         if (discardPreview) {
           setQuickGlowStatus("已取消插件内辉光预览，未写回 Photoshop。", "info");
@@ -3218,11 +3263,11 @@ ${text}` : text;
       [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate();
+          scheduleGlowPreviewUpdate("interactive");
         });
         input.addEventListener("change", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate();
+          scheduleGlowPreviewUpdate("full");
         });
       });
       if (glowOpenButton) {
