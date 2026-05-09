@@ -4,6 +4,7 @@
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
+  const RUNNINGHUB_CALL_RECORD_URL = "https://www.runninghub.cn/call-api/call-record";
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -495,6 +496,12 @@
     return Boolean(task && typeof task === "object" && isTaskTerminalStatus(task.status));
   }
 
+  function canOpenRunningHubCallRecord(task) {
+    if (!task || typeof task !== "object") return false;
+    const normalized = String(task.status || "").trim().toLowerCase();
+    return ["failed", "error", "timeout"].includes(normalized);
+  }
+
   function getActiveRunningTasks() {
     return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status));
   }
@@ -750,6 +757,8 @@
             : "";
         const canCancel = isTaskCancellable(task);
         const canDelete = isTaskDeletable(task);
+        const canOpenCallRecord = canOpenRunningHubCallRecord(task);
+        const actionTaskId = modules.runtime.escapeHtml(String(task.taskId || "").trim());
         return `
           <div class="running-task-item">
             <div class="running-task-main">
@@ -758,10 +767,15 @@
                 <div class="running-task-topline-actions">
                   <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
                   ${
+                    canOpenCallRecord
+                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-runninghub-call-record" data-task-id="${actionTaskId}" title="打开 RunningHub 调用记录">详情</button>`
+                      : ""
+                  }
+                  ${
                     canCancel
-                      ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="cancel-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">取消</button>`
+                      ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="cancel-running-task" data-task-id="${actionTaskId}">取消</button>`
                       : canDelete
-                        ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="delete-running-task" data-task-id="${modules.runtime.escapeHtml(String(task.taskId || "").trim())}">删除</button>`
+                        ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="delete-running-task" data-task-id="${actionTaskId}">删除</button>`
                         : ""
                   }
                 </div>
@@ -2335,6 +2349,29 @@
         if (!taskId) return;
         deleteRunningTask(taskId);
         modules.ui.logToWorkspace(`已删除任务卡片：${taskId}`, "info");
+        return;
+      }
+
+      if (action === "open-runninghub-call-record") {
+        const taskId = String(target.getAttribute("data-task-id") || "").trim();
+        target.disabled = true;
+        try {
+          if (!modules.runtime.isPluginRuntime()) {
+            global.open(RUNNINGHUB_CALL_RECORD_URL, "_blank", "noopener");
+          } else {
+            const result = await modules.runtime.callHost(
+              "shell.openExternal",
+              [RUNNINGHUB_CALL_RECORD_URL, "将使用系统默认浏览器打开 RunningHub 调用记录页面。"],
+              { timeoutMs: 15000 }
+            );
+            if (!result || !result.ok) throw new Error("系统未确认打开成功");
+          }
+          modules.ui.logToWorkspace(`已打开 RunningHub 调用记录${taskId ? `：${taskId}` : ""}`, "info");
+        } catch (error) {
+          modules.ui.logToWorkspace(`打开调用记录失败：${error.message || error}`, "error");
+        } finally {
+          target.disabled = false;
+        }
       }
     });
   }

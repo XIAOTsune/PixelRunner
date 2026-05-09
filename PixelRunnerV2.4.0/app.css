@@ -1239,6 +1239,18 @@ button {
   font-size: 11px;
 }
 
+.running-task-detail-btn {
+  --btn-edge: var(--control-edge);
+  --btn-shadow: var(--control-edge);
+  background: rgba(var(--surface-soft-rgb), 0.86);
+  color: var(--text);
+}
+
+.running-task-detail-btn:hover {
+  border-color: var(--cta-strong);
+  color: var(--text-strong);
+}
+
 .running-task-empty {
   padding: 10px 12px;
   border-radius: 14px;
