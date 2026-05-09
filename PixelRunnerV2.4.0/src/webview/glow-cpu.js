@@ -9,6 +9,7 @@
     return {
       dataUrl: result.previewDataUrl,
       previewDataUrl: result.previewDataUrl,
+      glowLayerDataUrl: result.glowLayerDataUrl,
       baseDataUrl: result.baseDataUrl,
       sourceMaskDataUrl: result.sourceMaskDataUrl,
       protectMaskDataUrl: result.protectMaskDataUrl,

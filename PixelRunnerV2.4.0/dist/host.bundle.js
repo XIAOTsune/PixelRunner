@@ -28,6 +28,27 @@ var PixelRunnerHostBundle = (() => {
     }
     return response.arrayBuffer();
   }
+  function normalizeBase64Text(base64) {
+    return String(base64 || "").trim().replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
+  }
+  function parseDataUrl(dataUrl) {
+    const match = String(dataUrl || "").trim().match(/^data:([^;,]+)?;base64,(.+)$/i);
+    if (!match) return null;
+    return {
+      mimeType: String(match[1] || "application/octet-stream"),
+      base64: String(match[2] || "")
+    };
+  }
+  function base64ToArrayBuffer(base64) {
+    const normalized = normalizeBase64Text(base64);
+    if (!normalized) throw new Error("Base64 payload is empty");
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes.buffer;
+  }
 
   // src/host/photoshop/document.js
   function toNumberValue(value) {
@@ -2493,13 +2514,24 @@ var PixelRunnerHostBundle = (() => {
   async function placeImageFromUrl(payload) {
     const options = payload && typeof payload === "object" ? payload : {};
     const url = String(options.url || "").trim();
-    if (!url) throw new Error("Result URL is missing");
+    const dataUrl = String(options.dataUrl || "").trim();
+    const base64 = String(options.base64 || "").trim();
+    if (!url && !dataUrl && !base64) throw new Error("Result image is missing");
     const { photoshop, storage } = await ensureDeps();
     const app = photoshop.app;
     const core = photoshop.core;
     const action = photoshop.action;
     if (!app || !app.activeDocument) throw new Error("No active Photoshop document");
-    const buffer = await fetchBinary(url);
+    let buffer = null;
+    if (dataUrl) {
+      const parsed = parseDataUrl(dataUrl);
+      if (!parsed || !parsed.base64) throw new Error("Result dataUrl is not a valid base64 image");
+      buffer = base64ToArrayBuffer(parsed.base64);
+    } else if (base64) {
+      buffer = base64ToArrayBuffer(base64);
+    } else {
+      buffer = await fetchBinary(url);
+    }
     const pngInfo = await parsePngInfo(buffer);
     const preserveCanvasBounds = options.preserveCanvasBounds === true;
     const anchorTransparentCanvas = options.anchorTransparentCanvas === true;
@@ -3503,7 +3535,7 @@ var PixelRunnerHostBundle = (() => {
     if (!text || text.length < 16 || text.length % 4 !== 0) return false;
     return /^[A-Za-z0-9+/]+={0,2}$/.test(text);
   }
-  function normalizeBase64Text(value) {
+  function normalizeBase64Text2(value) {
     const text = String(value || "").trim().replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
     if (!text) return "";
     const padding = text.length % 4;
@@ -3567,7 +3599,7 @@ var PixelRunnerHostBundle = (() => {
     const fieldMarker = String(input.fieldName || "").trim().toLowerCase();
     return typeMarker.includes("image") || typeMarker.includes("img") || typeMarker.includes("file") || fieldMarker === "image";
   }
-  function parseDataUrl(value) {
+  function parseDataUrl2(value) {
     const text = String(value || "").trim();
     const match = text.match(/^data:([^;,]+)?;base64,(.+)$/i);
     if (!match) return null;
@@ -3576,8 +3608,8 @@ var PixelRunnerHostBundle = (() => {
       base64: String(match[2] || "").trim()
     };
   }
-  function base64ToArrayBuffer(base64) {
-    const normalized = normalizeBase64Text(base64);
+  function base64ToArrayBuffer2(base64) {
+    const normalized = normalizeBase64Text2(base64);
     if (!normalized || !isProbablyBase64String(normalized)) {
       throw new Error("Image input is not valid base64");
     }
@@ -3595,11 +3627,11 @@ var PixelRunnerHostBundle = (() => {
     }
     if (imageValue && typeof imageValue === "object") {
       if (typeof imageValue.dataUrl === "string" && imageValue.dataUrl.trim()) {
-        const parsed = parseDataUrl(imageValue.dataUrl);
-        if (parsed && parsed.base64) return base64ToArrayBuffer(parsed.base64);
+        const parsed = parseDataUrl2(imageValue.dataUrl);
+        if (parsed && parsed.base64) return base64ToArrayBuffer2(parsed.base64);
       }
       if (typeof imageValue.base64 === "string" && imageValue.base64.trim()) {
-        return base64ToArrayBuffer(imageValue.base64);
+        return base64ToArrayBuffer2(imageValue.base64);
       }
       if (imageValue.arrayBuffer instanceof ArrayBuffer) return imageValue.arrayBuffer;
       if (ArrayBuffer.isView(imageValue.arrayBuffer)) {
@@ -3610,10 +3642,10 @@ var PixelRunnerHostBundle = (() => {
       }
     }
     if (typeof imageValue === "string" && imageValue.trim()) {
-      const parsed = parseDataUrl(imageValue);
-      if (parsed && parsed.base64) return base64ToArrayBuffer(parsed.base64);
-      if (isProbablyBase64String(normalizeBase64Text(imageValue))) {
-        return base64ToArrayBuffer(imageValue);
+      const parsed = parseDataUrl2(imageValue);
+      if (parsed && parsed.base64) return base64ToArrayBuffer2(parsed.base64);
+      if (isProbablyBase64String(normalizeBase64Text2(imageValue))) {
+        return base64ToArrayBuffer2(imageValue);
       }
     }
     throw new Error("Image input is invalid");
@@ -4596,8 +4628,10 @@ ${extraRequirement}`);
   async function placeResultIntoPhotoshop(args = []) {
     const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
     const url = String(payload.url || "").trim();
-    if (!url) {
-      throw new Error("Result URL is missing");
+    const dataUrl = String(payload.dataUrl || "").trim();
+    const base64 = String(payload.base64 || "").trim();
+    if (!url && !dataUrl && !base64) {
+      throw new Error("Result image is missing");
     }
     const photoshopService = getPhotoshopService();
     if (typeof photoshopService.placeImageFromUrl !== "function") {

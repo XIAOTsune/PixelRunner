@@ -1100,8 +1100,35 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return out;
     }
+    function renderGlowLayer(glowLayer, masks, params) {
+      const out = new ImageData(glowLayer.width, glowLayer.height);
+      const data = out.data;
+      for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+        const source = masks.sourceMask[pixel];
+        const protect = masks.protectMask[pixel];
+        const darkProtect = masks.darkProtect[pixel];
+        const highlightProtect = protect * params.composite.highlightProtect * 0.82;
+        const shadowProtect = darkProtect * params.composite.shadowProtect;
+        const sourceAnchor = 0.62 + source * 0.38;
+        const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+        const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
+        const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
+        const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+        const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
+        const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const alpha = clamp(Math.max(glowR, glowG, glowB), 0, 1);
+        data[index] = Math.round(clamp(glowR, 0, 1) * 255);
+        data[index + 1] = Math.round(clamp(glowG, 0, 1) * 255);
+        data[index + 2] = Math.round(clamp(glowB, 0, 1) * 255);
+        data[index + 3] = Math.round(alpha * 255);
+      }
+      return out;
+    }
     modules.glowCompositor = {
-      composeProtected
+      composeProtected,
+      renderGlowLayer
     };
   })(window);
 
@@ -1161,6 +1188,11 @@ var PixelRunnerWebviewBundle = (() => {
         sourceResult.masks,
         params
       );
+      const glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
       const compositeMs = performance.now() - compositeStartedAt;
       return {
         ok: true,
@@ -1169,6 +1201,7 @@ var PixelRunnerWebviewBundle = (() => {
         height: source.height,
         baseDataUrl: sourceDataUrl,
         previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
+        glowLayerDataUrl: imageDataToDataUrl(glowLayerImageData, "image/png", 0.92),
         sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
         protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
         debugDataUrls: sourceResult.debugImages ? {
@@ -1203,6 +1236,7 @@ var PixelRunnerWebviewBundle = (() => {
       return {
         dataUrl: result.previewDataUrl,
         previewDataUrl: result.previewDataUrl,
+        glowLayerDataUrl: result.glowLayerDataUrl,
         baseDataUrl: result.baseDataUrl,
         sourceMaskDataUrl: result.sourceMaskDataUrl,
         protectMaskDataUrl: result.protectMaskDataUrl,
@@ -1558,7 +1592,7 @@ ${text}` : text;
       const callGlowCpuPreviewAction = async (action) => {
         const state = readGlowState();
         if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-          glowCpuSourceAsset = await captureGlowCpuSource(768);
+          glowCpuSourceAsset = await captureGlowCpuSource(1280);
         }
         const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
         const jobId = glowPreviewJobId + 1;
@@ -1587,20 +1621,35 @@ ${text}` : text;
         const state = readGlowState();
         const layerName = `Glow ${state.strength}%`;
         const commitStrength = state.style === "none" ? 0 : state.strength;
-        const result = await runtime.callHost("photoshop.runToolAction", [{
-          action: "glowPreviewCommit",
-          style: state.style,
-          strength: commitStrength,
-          radius: state.radius,
-          threshold: state.threshold,
-          saturation: state.saturation,
-          brightnessBias: state.brightnessBias,
+        if (!glowCpuSourceAsset) {
+          glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        }
+        const glowResult = await modules.glowPreviewEngine.createPreview(
+          String(glowCpuSourceAsset.dataUrl || "").trim(),
+          { ...state, strength: commitStrength },
+          { includeDebug: false }
+        );
+        const documentInfo = glowCpuSourceAsset.document || {};
+        const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
+          dataUrl: glowResult.glowLayerDataUrl,
+          targetDocumentId: glowCpuSourceAsset.documentId,
+          targetBounds: {
+            left: 0,
+            top: 0,
+            right: Number(documentInfo.width) || Number(glowCpuSourceAsset.originalWidth) || Number(glowResult.width) || 1,
+            bottom: Number(documentInfo.height) || Number(glowCpuSourceAsset.originalHeight) || Number(glowResult.height) || 1
+          },
+          fitMode: "stretch",
+          preserveCanvasBounds: true,
+          applyMask: false,
+          opacity: 100,
+          blendMode: "linearDodge",
           layerName
         }], { timeoutMs: 12e4 });
         glowCpuSourceAsset = null;
         return {
           ok: true,
-          message: result && result.message ? result.message : `已按 Photoshop 原生管线生成 ${layerName}。`,
+          message: result && result.message ? result.message : `已按预览一致算法生成 ${layerName}。`,
           layerName: result && result.layerName ? result.layerName : layerName
         };
       };

@@ -43,8 +43,10 @@ export async function runPhotoshopToolAction(args = []) {
 export async function placeResultIntoPhotoshop(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const url = String(payload.url || "").trim();
-  if (!url) {
-    throw new Error("Result URL is missing");
+  const dataUrl = String(payload.dataUrl || "").trim();
+  const base64 = String(payload.base64 || "").trim();
+  if (!url && !dataUrl && !base64) {
+    throw new Error("Result image is missing");
   }
 
   const photoshopService = getPhotoshopService();

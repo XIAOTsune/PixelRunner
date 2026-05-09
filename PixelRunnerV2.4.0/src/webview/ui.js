@@ -380,7 +380,7 @@
     const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(768);
+        glowCpuSourceAsset = await captureGlowCpuSource(1280);
       }
       const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
       const jobId = glowPreviewJobId + 1;
@@ -410,20 +410,35 @@
       const state = readGlowState();
       const layerName = `Glow ${state.strength}%`;
       const commitStrength = state.style === "none" ? 0 : state.strength;
-      const result = await runtime.callHost("photoshop.runToolAction", [{
-        action: "glowPreviewCommit",
-        style: state.style,
-        strength: commitStrength,
-        radius: state.radius,
-        threshold: state.threshold,
-        saturation: state.saturation,
-        brightnessBias: state.brightnessBias,
+      if (!glowCpuSourceAsset) {
+        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+      }
+      const glowResult = await modules.glowPreviewEngine.createPreview(
+        String(glowCpuSourceAsset.dataUrl || "").trim(),
+        { ...state, strength: commitStrength },
+        { includeDebug: false }
+      );
+      const documentInfo = glowCpuSourceAsset.document || {};
+      const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
+        dataUrl: glowResult.glowLayerDataUrl,
+        targetDocumentId: glowCpuSourceAsset.documentId,
+        targetBounds: {
+          left: 0,
+          top: 0,
+          right: Number(documentInfo.width) || Number(glowCpuSourceAsset.originalWidth) || Number(glowResult.width) || 1,
+          bottom: Number(documentInfo.height) || Number(glowCpuSourceAsset.originalHeight) || Number(glowResult.height) || 1
+        },
+        fitMode: "stretch",
+        preserveCanvasBounds: true,
+        applyMask: false,
+        opacity: 100,
+        blendMode: "linearDodge",
         layerName
       }], { timeoutMs: 120000 });
       glowCpuSourceAsset = null;
       return {
         ok: true,
-        message: result && result.message ? result.message : `已按 Photoshop 原生管线生成 ${layerName}。`,
+        message: result && result.message ? result.message : `已按预览一致算法生成 ${layerName}。`,
         layerName: result && result.layerName ? result.layerName : layerName
       };
     };
