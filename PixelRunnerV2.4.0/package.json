@@ -1,6 +1,6 @@
 {
   "name": "pixelrunner-uxp",
-  "version": "2.4.3-test",
+  "version": "2.4.5",
   "private": true,
   "type": "module",
   "scripts": {

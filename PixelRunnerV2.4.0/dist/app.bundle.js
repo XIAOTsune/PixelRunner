@@ -2761,7 +2761,7 @@ var PixelRunnerWebviewBundle = (() => {
       tutorial: "./pages/runninghub-guide.html"
     };
     const GLOW_DEFAULTS = {
-      style: "darkSoft",
+      style: "shine",
       strength: 40,
       radius: 20,
       threshold: 20,
