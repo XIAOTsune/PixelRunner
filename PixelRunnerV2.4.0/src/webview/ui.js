@@ -284,7 +284,7 @@
     const readGlowState = () => ({
       style: readGlowStyle(),
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
+      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
       threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
       saturation: 0,
       brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
@@ -387,7 +387,7 @@
       glowPreviewJobId = jobId;
       const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
         jobId,
-        includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+        includeDebug: false
       });
       if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
         return {

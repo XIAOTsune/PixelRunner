@@ -1435,7 +1435,8 @@ button {
 }
 
 .glow-modal-card {
-  width: min(94vw, 980px);
+  width: min(96vw, 1440px);
+  min-height: min(86vh, 920px);
 }
 
 .glow-modal-hero {
@@ -1462,9 +1463,10 @@ button {
 
 .glow-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
-  gap: 10px;
+  grid-template-columns: minmax(520px, 1fr) minmax(300px, 340px);
+  gap: 14px;
   align-items: start;
+  min-height: 0;
 }
 
 .glow-inline-preview {
@@ -1477,6 +1479,8 @@ button {
   background:
     linear-gradient(135deg, rgba(9, 14, 21, 0.72), rgba(30, 44, 57, 0.88)),
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 8px, transparent 8px 16px);
+  min-width: 0;
+  min-height: min(68vh, 720px);
 }
 
 .glow-lab-grid {
@@ -1505,15 +1509,15 @@ button {
 }
 
 .glow-lab-tile-wide {
-  min-height: clamp(300px, 58vh, 560px);
+  min-height: clamp(420px, 68vh, 760px);
 }
 
 .glow-lab-image {
   display: block;
   width: 100%;
   flex: 1 1 auto;
-  min-height: 84px;
-  max-height: min(58vh, 560px);
+  min-height: 360px;
+  max-height: min(68vh, 760px);
   object-fit: contain;
   background: rgba(0, 0, 0, 0.28);
 }
@@ -1587,6 +1591,9 @@ button {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  max-height: calc(100vh - 128px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .glow-param-line {
@@ -1677,9 +1684,10 @@ button {
   min-height: 38px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .glow-modal-card {
-    width: calc(100vw - 20px);
+    width: min(96vw, 860px);
+    min-height: auto;
   }
 
   .glow-workbench {
@@ -1688,10 +1696,35 @@ button {
 
   .glow-controls-panel {
     position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .glow-lab-tile-wide {
+    min-height: clamp(260px, 52vh, 520px);
+  }
+
+  .glow-inline-preview {
+    min-height: 0;
+  }
+
+  .glow-lab-image {
+    min-height: 220px;
+    max-height: min(52vh, 420px);
+  }
+}
+
+@media (max-width: 760px) {
+  .glow-modal-card {
+    width: calc(100vw - 20px);
   }
 
   .glow-lab-tile-wide {
     min-height: 230px;
+  }
+
+  .glow-lab-image {
+    min-height: 180px;
   }
 
   .glow-debug-grid {

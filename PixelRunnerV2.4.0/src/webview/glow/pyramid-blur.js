@@ -155,11 +155,11 @@
   }
 
   function buildMultiScaleGlow(sourceLayer, params) {
-    const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 120 || 0));
-    const mipCount = Math.max(2, Math.min(6, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 3))));
+    const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
+    const mipCount = Math.max(2, Math.min(7, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 4))));
     const weights = Array.isArray(params.blur.mipWeights) && params.blur.mipWeights.length
       ? params.blur.mipWeights
-      : [0.52, 0.86, 0.72, 0.46, 0.28, 0.16];
+      : [0.52, 0.86, 0.72, 0.46, 0.28, 0.16, 0.1];
     const levels = [];
     let current = sourceLayer;
 

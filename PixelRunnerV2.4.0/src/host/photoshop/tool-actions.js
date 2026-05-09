@@ -110,8 +110,9 @@ function getGlowConfig(payload = {}) {
   const style = normalizeGlowStyle(payload.style);
   const stylePreset = GLOW_STYLE_PRESETS[style];
   const strength = clampNumber(payload.strength, 0, 100, 47);
-  const radius = clampNumber(payload.radius, 1, 120, 81);
+  const radius = clampNumber(payload.radius, 1, 240, 81);
   const threshold = clampNumber(payload.threshold, 0, 100, 81);
+  const thresholdGate = 100 - threshold;
   const fade = getStyleFade(style);
   const saturation = clampNumber(payload.saturation, -100, 100, 81);
   const brightnessBias = clampNumber(payload.brightnessBias, -50, 50, 0);
@@ -132,16 +133,16 @@ function getGlowConfig(payload = {}) {
   const midRadius = Math.max(haloRadius + 0.8, roundToTenth(radius * 0.72 * Math.max(1, stylePreset.glowRadiusWeight * 0.94) * glowExpansionFactor, haloRadius + 0.8));
   const bloomRadius = Math.max(midRadius + 1.2, roundToTenth(radius * 1.36 * stylePreset.glowRadiusWeight * glowExpansionFactor, midRadius + 1.2));
   const highlightFuzziness = clampNumber(Math.round((18 + radius * 0.28 + fade * 0.22) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 12, 72, 24);
-  const channelOutputClamp = clampNumber(Math.round(8 + threshold * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
-  const sourceInputBlack = clampNumber(Math.round(42 + threshold * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
+  const channelOutputClamp = clampNumber(Math.round(8 + thresholdGate * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
+  const sourceInputBlack = clampNumber(Math.round(42 + thresholdGate * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
   const sourceInputWhite = clampNumber(Math.round(248 - Math.max(0, brightnessBias) * 0.2), 220, 255, 248);
-  const sourceGamma = Number(clampNumber(0.68 + threshold / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
-  const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + threshold * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
+  const sourceGamma = Number(clampNumber(0.68 + thresholdGate / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
+  const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + thresholdGate * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
   const coreGammaBoost = Number(clampNumber(sourceGamma * 0.82, 0.42, 1.28, 0.76).toFixed(2));
   const sourceSaturation = clampNumber(Math.round(8 + saturation * 0.38 + stylePreset.sourceSaturationBias), -40, 72, 16);
   const finalSaturation = clampNumber(Math.round(10 + saturation * 0.78 * stylePreset.finalSaturationWeight), -60, 100, 10);
   const finalVibrance = clampNumber(Math.round(8 + saturation * 0.6 * stylePreset.finalVibranceWeight), -40, 100, 8);
-  const highlightLowerLimit = clampNumber(Math.round(188 + threshold * 0.34 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 150, 244, 202);
+  const highlightLowerLimit = clampNumber(Math.round(188 + thresholdGate * 0.34 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 150, 244, 202);
   const glowRadiiBase = [0.22, 0.48, 0.82, 1.18, 1.62].map((factor, index) => {
     const minRadius = [0.8, 1.4, 2.1, 2.8, 3.8][index];
     return Math.max(minRadius, roundToTenth(radius * factor * stylePreset.glowRadiusWeight * glowExpansionFactor, minRadius));
@@ -153,8 +154,8 @@ function getGlowConfig(payload = {}) {
     Math.min(44, Math.max(9, Math.round(bloomOpacityBase * (0.5 * fadeRatio)))),
     Math.min(34, Math.max(6, Math.round(bloomOpacityBase * (0.34 * fadeRatio))))
   ].map((opacity, index) => clampNumber(Math.round(opacity * stylePreset.glowOpacityWeight * glowOpacityFactor), index === 0 ? 18 : 6, 84, opacity));
-  const mipCount = clampNumber(Math.round(3 + radius / 120 * 3), 3, 6, 5);
-  const mipScales = [50, 25, 12.5, 6.25, 3.125, 1.5625].slice(0, mipCount);
+  const mipCount = clampNumber(Math.round(3 + Math.min(1, radius / 120) * 3 + Math.max(0, (radius - 120) / 120)), 3, 7, 5);
+  const mipScales = [50, 25, 12.5, 6.25, 3.125, 1.5625, 0.78125].slice(0, mipCount);
   const mipOpacityBase = [
     Math.round(bloomOpacityBase * 0.76),
     Math.round(bloomOpacityBase * 0.92),

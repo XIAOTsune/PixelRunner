@@ -598,12 +598,14 @@ var PixelRunnerWebviewBundle = (() => {
       const style = normalizeStyle(config.style);
       const preset = STYLE_PRESETS[style];
       const strength = style === "none" ? 0 : clamp(config.strength, 0, 100, 47);
-      const radius = clamp(config.radius, 1, 120, 81);
+      const radius = clamp(config.radius, 1, 240, 81);
       const threshold = clamp(config.threshold, 0, 100, 81);
       const saturation = clamp(config.saturation, -100, 100, 81);
       const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
-      const radiusRatio = radius / 120;
-      const thresholdRatio = threshold / 100;
+      const radiusRatio = radius / 240;
+      const legacyRadiusRatio = Math.min(1, radius / 120);
+      const wideRadiusRatio = Math.max(0, (radius - 120) / 120);
+      const thresholdRatio = 1 - threshold / 100;
       const brightnessLift = brightnessBias / 50;
       return {
         style,
@@ -615,8 +617,8 @@ var PixelRunnerWebviewBundle = (() => {
         source: {
           thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
           thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
-          thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + radiusRatio * 0.04, 0.08, 0.34, 0.2),
-          localRadius: Math.max(3, Math.round(4 + radiusRatio * 10)),
+          thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + legacyRadiusRatio * 0.04, 0.08, 0.34, 0.2),
+          localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
           contrastLow: 0.025,
           contrastHigh: clamp(0.095 - thresholdRatio * 0.035, 0.038, 0.11, 0.07),
           specularLow: 0.06,
@@ -627,19 +629,20 @@ var PixelRunnerWebviewBundle = (() => {
           darkProtect: preset.darkProtect
         },
         blur: {
-          mipCount: Math.max(2, Math.min(6, Math.round(2.7 + radiusRatio * 3.2))),
+          mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.2 + wideRadiusRatio))),
           mipWeights: [
             preset.smallWeight * 0.72,
             preset.mediumWeight * 0.94,
-            preset.largeWeight * (0.76 + radiusRatio * preset.scatter * 0.42),
-            preset.largeWeight * (0.52 + radiusRatio * preset.scatter * 0.36),
-            preset.largeWeight * (0.34 + radiusRatio * preset.scatter * 0.26),
-            preset.largeWeight * (0.2 + radiusRatio * preset.scatter * 0.18)
+            preset.largeWeight * (0.76 + legacyRadiusRatio * preset.scatter * 0.42),
+            preset.largeWeight * (0.52 + legacyRadiusRatio * preset.scatter * 0.36 + wideRadiusRatio * 0.22),
+            preset.largeWeight * (0.34 + legacyRadiusRatio * preset.scatter * 0.26 + wideRadiusRatio * 0.34),
+            preset.largeWeight * (0.2 + legacyRadiusRatio * preset.scatter * 0.18 + wideRadiusRatio * 0.4),
+            preset.largeWeight * (0.12 + wideRadiusRatio * 0.34)
           ],
-          pyramidWeight: clamp(0.72 + radiusRatio * 0.52 + preset.scatter * 0.1, 0.72, 1.52, 1),
+          pyramidWeight: clamp(0.72 + legacyRadiusRatio * 0.52 + wideRadiusRatio * 0.42 + preset.scatter * 0.1, 0.72, 1.9, 1),
           smallWeight: preset.smallWeight,
           mediumWeight: preset.mediumWeight,
-          largeWeight: preset.largeWeight * (0.7 + radiusRatio * preset.scatter),
+          largeWeight: preset.largeWeight * (0.7 + legacyRadiusRatio * preset.scatter + wideRadiusRatio * 0.42),
           passes: 1
         },
         composite: {
@@ -1011,9 +1014,9 @@ var PixelRunnerWebviewBundle = (() => {
       }
     }
     function buildMultiScaleGlow(sourceLayer, params) {
-      const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 120 || 0));
-      const mipCount = Math.max(2, Math.min(6, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 3))));
-      const weights = Array.isArray(params.blur.mipWeights) && params.blur.mipWeights.length ? params.blur.mipWeights : [0.52, 0.86, 0.72, 0.46, 0.28, 0.16];
+      const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
+      const mipCount = Math.max(2, Math.min(7, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 4))));
+      const weights = Array.isArray(params.blur.mipWeights) && params.blur.mipWeights.length ? params.blur.mipWeights : [0.52, 0.86, 0.72, 0.46, 0.28, 0.16, 0.1];
       const levels = [];
       let current = sourceLayer;
       for (let index = 0; index < mipCount; index += 1) {
@@ -1505,7 +1508,7 @@ ${text}` : text;
       const readGlowState = () => ({
         style: readGlowStyle(),
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-        radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
+        radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
         saturation: 0,
         brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
@@ -1599,7 +1602,7 @@ ${text}` : text;
         glowPreviewJobId = jobId;
         const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
           jobId,
-          includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+          includeDebug: false
         });
         if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
           return {
