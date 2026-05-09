@@ -6,8 +6,9 @@
   "scripts": {
     "build": "node ./scripts/build.mjs",
     "build:watch": "node ./scripts/build.mjs --watch",
-    "package:test": "node ./scripts/package-test.mjs",
-    "package:release": "node ./scripts/package-test.mjs --release"
+    "check:dist": "node ./scripts/check-dist-sync.mjs",
+    "package:test": "npm run check:dist && node ./scripts/package-test.mjs",
+    "package:release": "npm run check:dist && node ./scripts/package-test.mjs --release"
   },
   "devDependencies": {
     "esbuild": "^0.25.3"
