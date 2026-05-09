@@ -13,7 +13,9 @@
     threshold: 20,
     saturation: 0,
     brightnessBias: 0,
-    colorShift: 0,
+    colorEnabled: false,
+    colorAmount: 0,
+    colorHex: "#ffd27a",
     chromatic: 0
   };
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
@@ -233,7 +235,10 @@
     const glowRadiusInput = runtime.getById("glowRadiusInput");
     const glowThresholdInput = runtime.getById("glowThresholdInput");
     const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
-    const glowColorShiftInput = runtime.getById("glowColorShiftInput");
+    const glowColorEnabledInput = runtime.getById("glowColorEnabledInput");
+    const glowColorAmountInput = runtime.getById("glowColorAmountInput");
+    const glowColorPickerInput = runtime.getById("glowColorPickerInput");
+    const glowChromaticEnabledInput = runtime.getById("glowChromaticEnabledInput");
     const glowChromaticInput = runtime.getById("glowChromaticInput");
     const glowStrengthValue = runtime.getById("glowStrengthValue");
     const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
@@ -303,6 +308,11 @@
 
     const getGlowStyleLabel = (style) => GLOW_STYLE_LABELS[String(style || "").trim().toLowerCase()] || GLOW_STYLE_LABELS[GLOW_DEFAULTS.style];
 
+    const readGlowColorHex = () => {
+      const value = String((glowColorPickerInput && glowColorPickerInput.value) || GLOW_DEFAULTS.colorHex).trim();
+      return /^#[0-9a-fA-F]{6}$/.test(value) ? value : GLOW_DEFAULTS.colorHex;
+    };
+
     const readGlowState = () => ({
       style: readGlowStyle(),
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
@@ -310,7 +320,10 @@
       threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
       saturation: 0,
       brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50),
-      colorShift: readGlowSlider(glowColorShiftInput, GLOW_DEFAULTS.colorShift, -100, 100),
+      colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
+      colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
+      colorHex: readGlowColorHex(),
+      chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
       chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100)
     });
 
@@ -344,8 +357,11 @@
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
       if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
       if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
-      if (glowColorParamValue) glowColorParamValue.textContent = String(state.colorShift);
-      if (glowChromaticParamValue) glowChromaticParamValue.textContent = String(state.chromatic);
+      if (glowColorParamValue) glowColorParamValue.textContent = state.colorEnabled ? `${state.colorAmount}%` : "关";
+      if (glowChromaticParamValue) glowChromaticParamValue.textContent = state.chromaticEnabled ? String(state.chromatic) : "关";
+      if (glowColorAmountInput) glowColorAmountInput.disabled = !state.colorEnabled;
+      if (glowColorPickerInput) glowColorPickerInput.disabled = !state.colorEnabled;
+      if (glowChromaticInput) glowChromaticInput.disabled = !state.chromaticEnabled;
     };
 
     const clampGlowPreviewView = () => {
@@ -456,7 +472,7 @@
         const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
         const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
         const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
-        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorShift} / 色散 ${state.chromatic}`;
+        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
       }
     };
 
@@ -536,7 +552,16 @@
 
     const getGlowStateSignature = () => {
       const state = readGlowState();
-      return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias, state.colorShift, state.chromatic].join("|");
+      return [
+        state.style,
+        state.strength,
+        state.radius,
+        state.threshold,
+        state.brightnessBias,
+        state.colorEnabled ? state.colorHex : "color-off",
+        state.colorEnabled ? state.colorAmount : 0,
+        state.chromaticEnabled ? state.chromatic : 0
+      ].join("|");
     };
 
     const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
@@ -768,7 +793,7 @@
       });
     });
 
-    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorShiftInput, glowChromaticInput]
+    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorEnabledInput, glowColorAmountInput, glowColorPickerInput, glowChromaticEnabledInput, glowChromaticInput]
       .filter(Boolean)
       .forEach((input) => {
         input.addEventListener("input", () => {

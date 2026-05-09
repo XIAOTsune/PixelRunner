@@ -24,7 +24,10 @@
     uniform float uColorProtect;
     uniform float uShoulder;
     uniform float uColorShift;
+    uniform vec3 uColorTint;
+    uniform float uColorAmount;
     uniform float uChromaticOffset;
+    uniform float uChromaticAmount;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -52,7 +55,14 @@
       return color * vec3(1.0 - cool * 0.18, 1.0 + cool * 0.04, 1.0 + cool * 0.38);
     }
 
-    vec3 computeGlow(vec3 glowLayer, vec4 masks) {
+    vec3 applyGlowTint(vec3 color) {
+      float amount = clamp(uColorAmount, 0.0, 1.0);
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      vec3 tinted = luma * uColorTint * 1.32;
+      return mix(color, tinted, amount);
+    }
+
+    vec3 computeGlow(vec3 glowLayer, vec3 fringe, vec4 masks) {
       float baseLuma = masks.r;
       float protect = masks.g;
       float darkProtect = masks.b;
@@ -67,6 +77,8 @@
         glowLayer.b * (1.0 - uWarmth * 0.28)
       );
       warmed = applyGlowColorShift(warmed);
+      warmed = applyGlowTint(warmed);
+      warmed += fringe;
       vec3 saturated = applySaturation(warmed, uSaturation);
       return clamp(vec3(
         softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
@@ -84,7 +96,14 @@
         texture(uGlow, vUv).g,
         texture(uGlow, vUv - chroma).b
       );
-      vec3 glow = computeGlow(glowLayer, texture(uMasks, vUv));
+      vec3 centerGlow = texture(uGlow, vUv).rgb;
+      float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
+      vec3 fringe = vec3(
+        max(0.0, glowLayer.r - centerMax * 0.72) * uChromaticAmount * 1.9,
+        0.0,
+        max(0.0, glowLayer.b - centerMax * 0.72) * uChromaticAmount * 1.9
+      );
+      vec3 glow = computeGlow(glowLayer, fringe, texture(uMasks, vUv));
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
       vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * (0.58 + protect * 0.34)), 0.0, 1.0);
       float maxGlow = max(max(glow.r, glow.g), glow.b);
@@ -105,7 +124,10 @@
     uniform float uShadowProtect;
     uniform float uShoulder;
     uniform float uColorShift;
+    uniform vec3 uColorTint;
+    uniform float uColorAmount;
     uniform float uChromaticOffset;
+    uniform float uChromaticAmount;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -133,12 +155,26 @@
       return color * vec3(1.0 - cool * 0.18, 1.0 + cool * 0.04, 1.0 + cool * 0.38);
     }
 
+    vec3 applyGlowTint(vec3 color) {
+      float amount = clamp(uColorAmount, 0.0, 1.0);
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      vec3 tinted = luma * uColorTint * 1.32;
+      return mix(color, tinted, amount);
+    }
+
     void main() {
       vec2 chroma = vec2(uChromaticOffset, 0.0) * uTexel;
       vec3 glowLayer = vec3(
         texture(uGlow, vUv + chroma).r,
         texture(uGlow, vUv).g,
         texture(uGlow, vUv - chroma).b
+      );
+      vec3 centerGlow = texture(uGlow, vUv).rgb;
+      float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
+      vec3 fringe = vec3(
+        max(0.0, glowLayer.r - centerMax * 0.72) * uChromaticAmount * 1.9,
+        0.0,
+        max(0.0, glowLayer.b - centerMax * 0.72) * uChromaticAmount * 1.9
       );
       vec4 masks = texture(uMasks, vUv);
       float source = masks.a;
@@ -154,6 +190,8 @@
         glowLayer.b * (1.0 - uWarmth * 0.28)
       );
       warmed = applyGlowColorShift(warmed);
+      warmed = applyGlowTint(warmed);
+      warmed += fringe;
       vec3 saturated = applySaturation(warmed, uSaturation);
       vec3 glow = clamp(vec3(
         softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
@@ -292,7 +330,11 @@
       gl.uniform1f(gl.getUniformLocation(program, "uColorProtect"), composite.colorProtect);
       gl.uniform1f(gl.getUniformLocation(program, "uShoulder"), composite.shoulder);
       gl.uniform1f(gl.getUniformLocation(program, "uColorShift"), composite.colorShift);
-      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(10, Math.max(0, composite.chromatic * Math.max(1, Number(params.radius) || 1) * 0.07)));
+      const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
+      gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
+      gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
+      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(24, Math.max(0, composite.chromatic * (4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.35))));
+      gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 
@@ -306,7 +348,11 @@
       gl.uniform1f(gl.getUniformLocation(program, "uShadowProtect"), composite.shadowProtect);
       gl.uniform1f(gl.getUniformLocation(program, "uShoulder"), composite.shoulder);
       gl.uniform1f(gl.getUniformLocation(program, "uColorShift"), composite.colorShift);
-      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(10, Math.max(0, composite.chromatic * Math.max(1, Number(params.radius) || 1) * 0.07)));
+      const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
+      gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
+      gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
+      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(24, Math.max(0, composite.chromatic * (4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.35))));
+      gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 

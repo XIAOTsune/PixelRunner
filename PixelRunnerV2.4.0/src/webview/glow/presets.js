@@ -15,6 +15,15 @@
     return "darkSoft";
   }
 
+  function hexToRgb01(hex, fallback = "#ffd27a") {
+    const value = /^#[0-9a-fA-F]{6}$/.test(String(hex || "")) ? String(hex) : fallback;
+    return [
+      parseInt(value.slice(1, 3), 16) / 255,
+      parseInt(value.slice(3, 5), 16) / 255,
+      parseInt(value.slice(5, 7), 16) / 255
+    ];
+  }
+
   const STYLE_PRESETS = {
     none: {
       thresholdBias: 0,
@@ -83,7 +92,10 @@
     const saturation = clamp(config.saturation, -100, 100, 81);
     const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
     const colorShift = clamp(config.colorShift, -100, 100, 0);
-    const chromatic = clamp(config.chromatic, 0, 100, 0);
+    const colorEnabled = !!config.colorEnabled;
+    const colorAmount = colorEnabled ? clamp(config.colorAmount, 0, 100, 0) : 0;
+    const colorTint = hexToRgb01(config.colorHex);
+    const chromatic = config.chromaticEnabled === false ? 0 : clamp(config.chromatic, 0, 100, 0);
     const radiusRatio = radius / 240;
     const legacyRadiusRatio = Math.min(1, radius / 120);
     const wideRadiusRatio = Math.max(0, (radius - 120) / 120);
@@ -98,6 +110,9 @@
       saturation,
       brightnessBias,
       colorShift,
+      colorEnabled,
+      colorAmount,
+      colorTint,
       chromatic,
       source: {
         thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
@@ -140,6 +155,8 @@
         colorProtect: 0.18,
         shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58),
         colorShift: colorShift / 100,
+        colorTint,
+        colorAmount: colorAmount / 100,
         chromatic: chromatic / 100
       }
     };

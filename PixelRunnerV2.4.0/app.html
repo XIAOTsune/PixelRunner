@@ -718,12 +718,25 @@
               <span class="glow-param-line"><span class="field-label">曝光</span><span id="glowExposureParamValue">0</span></span>
               <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
             </label>
-            <label class="field glow-slider-field">
-              <span class="glow-param-line"><span class="field-label">高光颜色</span><span id="glowColorParamValue">0</span></span>
-              <input id="glowColorShiftInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="0" />
+            <label class="field glow-slider-field glow-color-field">
+              <span class="glow-param-line">
+                <span class="field-label">高光颜色</span>
+                <span class="glow-inline-control">
+                  <input id="glowColorEnabledInput" type="checkbox" />
+                  <input id="glowColorPickerInput" class="glow-color-picker" type="color" value="#ffd27a" />
+                  <span id="glowColorParamValue">0</span>
+                </span>
+              </span>
+              <input id="glowColorAmountInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="0" />
             </label>
             <label class="field glow-slider-field">
-              <span class="glow-param-line"><span class="field-label">色散</span><span id="glowChromaticParamValue">0</span></span>
+              <span class="glow-param-line">
+                <span class="field-label">色散</span>
+                <span class="glow-inline-control">
+                  <input id="glowChromaticEnabledInput" type="checkbox" />
+                  <span id="glowChromaticParamValue">0</span>
+                </span>
+              </span>
               <input id="glowChromaticInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="0" />
             </label>
           </div>
