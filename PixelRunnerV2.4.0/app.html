@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.4.3-test</span>
+              <span class="version-text">v2.4.5</span>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.3-test 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.5 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -127,7 +127,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.4.3-test</span>
+            <span class="version-text">v2.4.5</span>
           </div>
         </div>
 
@@ -240,7 +240,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.4.3-test</span>
+          <span class="version-text">v2.4.5</span>
           </div>
         </div>
 
@@ -697,9 +697,9 @@
               <span class="glow-param-line"><span class="field-label">风格</span></span>
               <select id="glowStyleInput" class="field-input">
                 <option value="none">无</option>
-                <option value="darkSoft" selected>黑柔</option>
+                <option value="darkSoft">黑柔</option>
                 <option value="whiteSoft">白柔</option>
-                <option value="shine">辉光</option>
+                <option value="shine" selected>辉光</option>
               </select>
             </label>
             <label class="field glow-slider-field">
@@ -717,6 +717,27 @@
             <label class="field glow-slider-field">
               <span class="glow-param-line"><span class="field-label">曝光</span><span id="glowExposureParamValue">0</span></span>
               <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
+            </label>
+            <label class="field glow-slider-field glow-color-field">
+              <span class="glow-param-line">
+                <span class="field-label">高光颜色</span>
+                <span class="glow-inline-control">
+                  <input id="glowColorEnabledInput" type="checkbox" />
+                  <input id="glowColorPickerInput" class="glow-color-picker" type="color" value="#ffd27a" />
+                  <span id="glowColorParamValue">0</span>
+                </span>
+              </span>
+              <input id="glowColorAmountInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="0" />
+            </label>
+            <label class="field glow-slider-field">
+              <span class="glow-param-line">
+                <span class="field-label">色散</span>
+                <span class="glow-inline-control">
+                  <input id="glowChromaticEnabledInput" type="checkbox" />
+                  <span id="glowChromaticParamValue">0</span>
+                </span>
+              </span>
+              <input id="glowChromaticInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="0" />
             </label>
           </div>
 

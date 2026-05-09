@@ -1698,6 +1698,31 @@ button {
   border-radius: 999px;
 }
 
+.glow-inline-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.glow-inline-control input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #75d8c7;
+}
+
+.glow-color-picker {
+  width: 28px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 1px solid rgba(168, 190, 208, 0.48);
+  border-radius: 5px;
+  background: transparent;
+}
+
 .glow-advanced-panel {
   padding: 0;
   overflow: hidden;

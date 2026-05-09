@@ -17,15 +17,6 @@
     return clamp(Math.max(curved, value - threshold) / Math.max(value, 0.0001), 0, 1);
   }
 
-  function boostSaturation(r, g, b, amount) {
-    const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
-    return [
-      clamp(luma + (r - luma) * (1 + amount), 0, 1),
-      clamp(luma + (g - luma) * (1 + amount), 0, 1),
-      clamp(luma + (b - luma) * (1 + amount), 0, 1)
-    ];
-  }
-
   function createLayer(width, height) {
     return {
       width,
@@ -39,16 +30,19 @@
   function blurFloatHorizontal(src, width, height, radius) {
     const out = new Float32Array(src.length);
     const size = radius * 2 + 1;
+    const rightEdgeOffset = width - 1;
     for (let y = 0; y < height; y += 1) {
       const row = y * width;
       let sum = 0;
-      for (let x = -radius; x <= radius; x += 1) {
-        sum += src[row + clamp(x, 0, width - 1)];
+      for (let offset = -radius; offset <= radius; offset += 1) {
+        const x = offset < 0 ? 0 : (offset < width ? offset : rightEdgeOffset);
+        sum += src[row + x];
       }
       for (let x = 0; x < width; x += 1) {
         out[row + x] = sum / size;
-        const removeX = clamp(x - radius, 0, width - 1);
-        const addX = clamp(x + radius + 1, 0, width - 1);
+        const removeX = x > radius ? x - radius : 0;
+        const addCandidate = x + radius + 1;
+        const addX = addCandidate < width ? addCandidate : rightEdgeOffset;
         sum += src[row + addX] - src[row + removeX];
       }
     }
@@ -62,32 +56,26 @@
     const size = r * 2 + 1;
     for (let x = 0; x < width; x += 1) {
       let sum = 0;
-      for (let y = -r; y <= r; y += 1) {
-        sum += horizontal[clamp(y, 0, height - 1) * width + x];
+      for (let offset = -r; offset <= r; offset += 1) {
+        const y = offset < 0 ? 0 : (offset < height ? offset : height - 1);
+        sum += horizontal[y * width + x];
       }
       for (let y = 0; y < height; y += 1) {
         out[y * width + x] = sum / size;
-        const removeY = clamp(y - r, 0, height - 1);
-        const addY = clamp(y + r + 1, 0, height - 1);
+        const removeY = y > r ? y - r : 0;
+        const addCandidate = y + r + 1;
+        const addY = addCandidate < height ? addCandidate : height - 1;
         sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
       }
     }
     return out;
   }
 
-  function rgbToHsv(r, g, b) {
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
+  function isSkinHueFast(r, g, b, max, min) {
     const delta = max - min;
-    let h = 0;
-    if (delta > 0.0001) {
-      if (max === r) h = ((g - b) / delta) % 6;
-      else if (max === g) h = (b - r) / delta + 2;
-      else h = (r - g) / delta + 4;
-      h *= 60;
-      if (h < 0) h += 360;
-    }
-    return { h, s: max === 0 ? 0 : delta / max, v: max };
+    if (delta <= 0.0001 || max !== r) return false;
+    const hue = ((g - b) / delta) * 60;
+    return hue >= 5 && hue <= 52;
   }
 
   function createMaskImageData(mask, width, height, tint = null) {
@@ -110,16 +98,18 @@
     const total = width * height;
     const luma = new Float32Array(total);
     const maxChannelMap = new Float32Array(total);
+    const minChannelMap = new Float32Array(total);
     const saturationMap = new Float32Array(total);
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-      const r = data[index] / 255;
-      const g = data[index + 1] / 255;
-      const b = data[index + 2] / 255;
-      const maxChannel = Math.max(r, g, b);
-      const minChannel = Math.min(r, g, b);
+      const r = data[index] * (1 / 255);
+      const g = data[index + 1] * (1 / 255);
+      const b = data[index + 2] * (1 / 255);
+      const maxChannel = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      const minChannel = r < g ? (r < b ? r : b) : (g < b ? g : b);
       luma[pixel] = r * 0.2126 + g * 0.7152 + b * 0.0722;
       maxChannelMap[pixel] = maxChannel;
+      minChannelMap[pixel] = minChannel;
       saturationMap[pixel] = maxChannel <= 0 ? 0 : (maxChannel - minChannel) / maxChannel;
     }
 
@@ -133,28 +123,37 @@
     const protectMask = new Float32Array(total);
     const sourceMask = new Float32Array(total);
     const sourceLayer = createLayer(width, height);
+    const sourceParams = params.source;
+    const inv255 = 1 / 255;
+    const thresholdLow = sourceParams.thresholdLow;
+    const thresholdHigh = sourceParams.thresholdHigh;
+    const thresholdKnee = sourceParams.thresholdKnee;
+    const whiteProtect = sourceParams.whiteProtect;
+    const skinProtect = sourceParams.skinProtect;
+    const darkProtectAmount = sourceParams.darkProtect;
+    const chromaBoostAmount = sourceParams.chromaBoost;
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-      const r = data[index] / 255;
-      const g = data[index + 1] / 255;
-      const b = data[index + 2] / 255;
+      const r = data[index] * inv255;
+      const g = data[index + 1] * inv255;
+      const b = data[index + 2] * inv255;
       const lum = luma[pixel];
       const sat = saturationMap[pixel];
+      const maxChannel = maxChannelMap[pixel];
       const contrast = Math.max(0, lum - localMean[pixel]);
-      const specular = Math.max(0, maxChannelMap[pixel] - localMean[pixel]);
-      const hsv = rgbToHsv(r, g, b);
-      const brightness = Math.max(lum * 0.82 + maxChannelMap[pixel] * 0.18, maxChannelMap[pixel] * 0.88);
+      const specular = Math.max(0, maxChannel - localMean[pixel]);
+      const brightness = Math.max(lum * 0.82 + maxChannel * 0.18, maxChannel * 0.88);
 
       const lumaScore =
-        softThresholdMask(brightness, params.source.thresholdLow, params.source.thresholdKnee) *
-        smoothstep(params.source.thresholdLow - params.source.thresholdKnee * 0.92, params.source.thresholdHigh, brightness);
-      const contrastScore = smoothstep(params.source.contrastLow, params.source.contrastHigh, contrast);
-      const specularScore = smoothstep(params.source.specularLow, params.source.specularHigh, specular);
+        softThresholdMask(brightness, thresholdLow, thresholdKnee) *
+        smoothstep(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
+      const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
+      const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
       const highLightness = smoothstep(0.72, 0.94, lum);
       const lowContrast = 1 - smoothstep(0.012, 0.075, contrast);
       const lowSat = 1 - smoothstep(0.12, 0.36, sat);
       const whiteFlat = highLightness * lowContrast * lowSat;
-      const skinHue = hsv.h >= 5 && hsv.h <= 52 ? 1 : 0;
+      const skinHue = isSkinHueFast(r, g, b, maxChannel, minChannelMap[pixel]) ? 1 : 0;
       const skinColor =
         skinHue *
         smoothstep(0.16, 0.36, sat) *
@@ -163,9 +162,9 @@
         (1 - smoothstep(0.9, 1.0, lum));
       const dark = 1 - smoothstep(0.08, 0.28, lum);
       const protection = clamp(
-        whiteFlat * params.source.whiteProtect +
-          skinColor * params.source.skinProtect +
-          dark * params.source.darkProtect,
+        whiteFlat * whiteProtect +
+          skinColor * skinProtect +
+          dark * darkProtectAmount,
         0,
         1
       );
@@ -175,8 +174,11 @@
       const combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
       const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.78), 0, 1);
       const colorGain = Math.pow(mask, 0.78);
-      const chromaBoost = params.source.chromaBoost * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-      const [sourceR, sourceG, sourceB] = boostSaturation(r, g, b, chromaBoost);
+      const chromaBoost = chromaBoostAmount * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
+      const saturationGain = 1 + chromaBoost;
+      const sourceR = clamp(lum + (r - lum) * saturationGain, 0, 1);
+      const sourceG = clamp(lum + (g - lum) * saturationGain, 0, 1);
+      const sourceB = clamp(lum + (b - lum) * saturationGain, 0, 1);
 
       localContrast[pixel] = contrast;
       lumaMask[pixel] = lumaScore;

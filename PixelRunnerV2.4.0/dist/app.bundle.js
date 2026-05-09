@@ -536,6 +536,14 @@ var PixelRunnerWebviewBundle = (() => {
       if (key === "shine" || key === "dreamy") return "shine";
       return "darkSoft";
     }
+    function hexToRgb01(hex, fallback = "#ffd27a") {
+      const value = /^#[0-9a-fA-F]{6}$/.test(String(hex || "")) ? String(hex) : fallback;
+      return [
+        parseInt(value.slice(1, 3), 16) / 255,
+        parseInt(value.slice(3, 5), 16) / 255,
+        parseInt(value.slice(5, 7), 16) / 255
+      ];
+    }
     const STYLE_PRESETS = {
       none: {
         thresholdBias: 0,
@@ -602,6 +610,11 @@ var PixelRunnerWebviewBundle = (() => {
       const threshold = clamp(config.threshold, 0, 100, 81);
       const saturation = clamp(config.saturation, -100, 100, 81);
       const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
+      const colorShift = clamp(config.colorShift, -100, 100, 0);
+      const colorEnabled = !!config.colorEnabled;
+      const colorAmount = colorEnabled ? clamp(config.colorAmount, 0, 100, 0) : 0;
+      const colorTint = hexToRgb01(config.colorHex);
+      const chromatic = config.chromaticEnabled === false ? 0 : clamp(config.chromatic, 0, 100, 0);
       const radiusRatio = radius / 240;
       const legacyRadiusRatio = Math.min(1, radius / 120);
       const wideRadiusRatio = Math.max(0, (radius - 120) / 120);
@@ -614,6 +627,11 @@ var PixelRunnerWebviewBundle = (() => {
         threshold,
         saturation,
         brightnessBias,
+        colorShift,
+        colorEnabled,
+        colorAmount,
+        colorTint,
+        chromatic,
         source: {
           thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
           thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
@@ -653,7 +671,11 @@ var PixelRunnerWebviewBundle = (() => {
           highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
           shadowProtect: preset.darkProtect,
           colorProtect: 0.18,
-          shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58)
+          shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58),
+          colorShift: colorShift / 100,
+          colorTint,
+          colorAmount: colorAmount / 100,
+          chromatic: chromatic / 100
         }
       };
     }
@@ -679,14 +701,6 @@ var PixelRunnerWebviewBundle = (() => {
       const curved = soft * soft / (safeKnee * 4);
       return clamp(Math.max(curved, value - threshold) / Math.max(value, 1e-4), 0, 1);
     }
-    function boostSaturation(r, g, b, amount) {
-      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
-      return [
-        clamp(luma + (r - luma) * (1 + amount), 0, 1),
-        clamp(luma + (g - luma) * (1 + amount), 0, 1),
-        clamp(luma + (b - luma) * (1 + amount), 0, 1)
-      ];
-    }
     function createLayer(width, height) {
       return {
         width,
@@ -699,16 +713,19 @@ var PixelRunnerWebviewBundle = (() => {
     function blurFloatHorizontal(src, width, height, radius) {
       const out = new Float32Array(src.length);
       const size = radius * 2 + 1;
+      const rightEdgeOffset = width - 1;
       for (let y = 0; y < height; y += 1) {
         const row = y * width;
         let sum = 0;
-        for (let x = -radius; x <= radius; x += 1) {
-          sum += src[row + clamp(x, 0, width - 1)];
+        for (let offset = -radius; offset <= radius; offset += 1) {
+          const x = offset < 0 ? 0 : offset < width ? offset : rightEdgeOffset;
+          sum += src[row + x];
         }
         for (let x = 0; x < width; x += 1) {
           out[row + x] = sum / size;
-          const removeX = clamp(x - radius, 0, width - 1);
-          const addX = clamp(x + radius + 1, 0, width - 1);
+          const removeX = x > radius ? x - radius : 0;
+          const addCandidate = x + radius + 1;
+          const addX = addCandidate < width ? addCandidate : rightEdgeOffset;
           sum += src[row + addX] - src[row + removeX];
         }
       }
@@ -721,31 +738,25 @@ var PixelRunnerWebviewBundle = (() => {
       const size = r * 2 + 1;
       for (let x = 0; x < width; x += 1) {
         let sum = 0;
-        for (let y = -r; y <= r; y += 1) {
-          sum += horizontal[clamp(y, 0, height - 1) * width + x];
+        for (let offset = -r; offset <= r; offset += 1) {
+          const y = offset < 0 ? 0 : offset < height ? offset : height - 1;
+          sum += horizontal[y * width + x];
         }
         for (let y = 0; y < height; y += 1) {
           out[y * width + x] = sum / size;
-          const removeY = clamp(y - r, 0, height - 1);
-          const addY = clamp(y + r + 1, 0, height - 1);
+          const removeY = y > r ? y - r : 0;
+          const addCandidate = y + r + 1;
+          const addY = addCandidate < height ? addCandidate : height - 1;
           sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
         }
       }
       return out;
     }
-    function rgbToHsv(r, g, b) {
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
+    function isSkinHueFast(r, g, b, max, min) {
       const delta = max - min;
-      let h = 0;
-      if (delta > 1e-4) {
-        if (max === r) h = (g - b) / delta % 6;
-        else if (max === g) h = (b - r) / delta + 2;
-        else h = (r - g) / delta + 4;
-        h *= 60;
-        if (h < 0) h += 360;
-      }
-      return { h, s: max === 0 ? 0 : delta / max, v: max };
+      if (delta <= 1e-4 || max !== r) return false;
+      const hue = (g - b) / delta * 60;
+      return hue >= 5 && hue <= 52;
     }
     function createMaskImageData(mask, width, height, tint = null) {
       const out = new ImageData(width, height);
@@ -766,15 +777,17 @@ var PixelRunnerWebviewBundle = (() => {
       const total = width * height;
       const luma = new Float32Array(total);
       const maxChannelMap = new Float32Array(total);
+      const minChannelMap = new Float32Array(total);
       const saturationMap = new Float32Array(total);
       for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-        const r = data[index] / 255;
-        const g = data[index + 1] / 255;
-        const b = data[index + 2] / 255;
-        const maxChannel = Math.max(r, g, b);
-        const minChannel = Math.min(r, g, b);
+        const r = data[index] * (1 / 255);
+        const g = data[index + 1] * (1 / 255);
+        const b = data[index + 2] * (1 / 255);
+        const maxChannel = r > g ? r > b ? r : b : g > b ? g : b;
+        const minChannel = r < g ? r < b ? r : b : g < b ? g : b;
         luma[pixel] = r * 0.2126 + g * 0.7152 + b * 0.0722;
         maxChannelMap[pixel] = maxChannel;
+        minChannelMap[pixel] = minChannel;
         saturationMap[pixel] = maxChannel <= 0 ? 0 : (maxChannel - minChannel) / maxChannel;
       }
       const localMean = blurFloat(luma, width, height, params.source.localRadius);
@@ -787,28 +800,37 @@ var PixelRunnerWebviewBundle = (() => {
       const protectMask = new Float32Array(total);
       const sourceMask = new Float32Array(total);
       const sourceLayer = createLayer(width, height);
+      const sourceParams = params.source;
+      const inv255 = 1 / 255;
+      const thresholdLow = sourceParams.thresholdLow;
+      const thresholdHigh = sourceParams.thresholdHigh;
+      const thresholdKnee = sourceParams.thresholdKnee;
+      const whiteProtect = sourceParams.whiteProtect;
+      const skinProtect = sourceParams.skinProtect;
+      const darkProtectAmount = sourceParams.darkProtect;
+      const chromaBoostAmount = sourceParams.chromaBoost;
       for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-        const r = data[index] / 255;
-        const g = data[index + 1] / 255;
-        const b = data[index + 2] / 255;
+        const r = data[index] * inv255;
+        const g = data[index + 1] * inv255;
+        const b = data[index + 2] * inv255;
         const lum = luma[pixel];
         const sat = saturationMap[pixel];
+        const maxChannel = maxChannelMap[pixel];
         const contrast = Math.max(0, lum - localMean[pixel]);
-        const specular = Math.max(0, maxChannelMap[pixel] - localMean[pixel]);
-        const hsv = rgbToHsv(r, g, b);
-        const brightness = Math.max(lum * 0.82 + maxChannelMap[pixel] * 0.18, maxChannelMap[pixel] * 0.88);
-        const lumaScore = softThresholdMask(brightness, params.source.thresholdLow, params.source.thresholdKnee) * smoothstep(params.source.thresholdLow - params.source.thresholdKnee * 0.92, params.source.thresholdHigh, brightness);
-        const contrastScore = smoothstep(params.source.contrastLow, params.source.contrastHigh, contrast);
-        const specularScore = smoothstep(params.source.specularLow, params.source.specularHigh, specular);
+        const specular = Math.max(0, maxChannel - localMean[pixel]);
+        const brightness = Math.max(lum * 0.82 + maxChannel * 0.18, maxChannel * 0.88);
+        const lumaScore = softThresholdMask(brightness, thresholdLow, thresholdKnee) * smoothstep(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
+        const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
+        const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
         const highLightness = smoothstep(0.72, 0.94, lum);
         const lowContrast = 1 - smoothstep(0.012, 0.075, contrast);
         const lowSat = 1 - smoothstep(0.12, 0.36, sat);
         const whiteFlat = highLightness * lowContrast * lowSat;
-        const skinHue = hsv.h >= 5 && hsv.h <= 52 ? 1 : 0;
+        const skinHue = isSkinHueFast(r, g, b, maxChannel, minChannelMap[pixel]) ? 1 : 0;
         const skinColor = skinHue * smoothstep(0.16, 0.36, sat) * (1 - smoothstep(0.78, 0.96, sat)) * smoothstep(0.38, 0.74, lum) * (1 - smoothstep(0.9, 1, lum));
         const dark = 1 - smoothstep(0.08, 0.28, lum);
         const protection = clamp(
-          whiteFlat * params.source.whiteProtect + skinColor * params.source.skinProtect + dark * params.source.darkProtect,
+          whiteFlat * whiteProtect + skinColor * skinProtect + dark * darkProtectAmount,
           0,
           1
         );
@@ -818,8 +840,11 @@ var PixelRunnerWebviewBundle = (() => {
         const combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
         const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.78), 0, 1);
         const colorGain = Math.pow(mask, 0.78);
-        const chromaBoost = params.source.chromaBoost * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-        const [sourceR, sourceG, sourceB] = boostSaturation(r, g, b, chromaBoost);
+        const chromaBoost = chromaBoostAmount * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
+        const saturationGain = 1 + chromaBoost;
+        const sourceR = clamp(lum + (r - lum) * saturationGain, 0, 1);
+        const sourceG = clamp(lum + (g - lum) * saturationGain, 0, 1);
+        const sourceB = clamp(lum + (b - lum) * saturationGain, 0, 1);
         localContrast[pixel] = contrast;
         lumaMask[pixel] = lumaScore;
         contrastMask[pixel] = Math.max(contrastScore, specularScore * 0.72);
@@ -1105,6 +1130,407 @@ var PixelRunnerWebviewBundle = (() => {
       getReport,
       canUseWebgl2,
       getWebgl2Context
+    };
+  })(window);
+
+  // src/webview/glow/gpu/webgl-source-mask.js
+  (function initGlowWebglSourceMaskModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const VERTEX_SHADER = `#version 300 es
+    in vec2 aPosition;
+    out vec2 vUv;
+    void main() {
+      vUv = aPosition * 0.5 + 0.5;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  `;
+    const METRICS_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uImage;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      vec3 c = texture(uImage, vUv).rgb;
+      float maxChannel = max(max(c.r, c.g), c.b);
+      float minChannel = min(min(c.r, c.g), c.b);
+      float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      float sat = maxChannel <= 0.0 ? 0.0 : (maxChannel - minChannel) / maxChannel;
+      outColor = vec4(luma, maxChannel, minChannel, sat);
+    }
+  `;
+    const BLUR_H_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uMetrics;
+    uniform vec2 uTexel;
+    uniform int uRadius;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      float sum = 0.0;
+      for (int i = -24; i <= 24; i++) {
+        if (abs(i) <= uRadius) {
+          sum += texture(uMetrics, vUv + vec2(float(i), 0.0) * uTexel).r;
+        }
+      }
+      float size = float(uRadius * 2 + 1);
+      outColor = vec4(sum / max(size, 1.0), 0.0, 0.0, 1.0);
+    }
+  `;
+    const BLUR_V_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uHorizontal;
+    uniform vec2 uTexel;
+    uniform int uRadius;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      float sum = 0.0;
+      for (int i = -24; i <= 24; i++) {
+        if (abs(i) <= uRadius) {
+          sum += texture(uHorizontal, vUv + vec2(0.0, float(i)) * uTexel).r;
+        }
+      }
+      float size = float(uRadius * 2 + 1);
+      outColor = vec4(sum / max(size, 1.0), 0.0, 0.0, 1.0);
+    }
+  `;
+    const SOURCE_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uImage;
+    uniform sampler2D uMetrics;
+    uniform sampler2D uLocalMean;
+    uniform float uThresholdLow;
+    uniform float uThresholdHigh;
+    uniform float uThresholdKnee;
+    uniform float uContrastLow;
+    uniform float uContrastHigh;
+    uniform float uSpecularLow;
+    uniform float uSpecularHigh;
+    uniform float uWhiteProtect;
+    uniform float uSkinProtect;
+    uniform float uDarkProtect;
+    uniform float uChromaBoost;
+    in vec2 vUv;
+    layout(location = 0) out vec4 outSource;
+    layout(location = 1) out vec4 outMasks;
+
+    float saturate(float v) {
+      return clamp(v, 0.0, 1.0);
+    }
+
+    float smooth01(float edge0, float edge1, float value) {
+      float t = saturate((value - edge0) / max(0.0001, edge1 - edge0));
+      return t * t * (3.0 - 2.0 * t);
+    }
+
+    float softThresholdMask(float value, float threshold, float knee) {
+      float safeKnee = max(0.0001, knee);
+      float soft = clamp(value - threshold + safeKnee, 0.0, safeKnee * 2.0);
+      float curved = (soft * soft) / (safeKnee * 4.0);
+      return saturate(max(curved, value - threshold) / max(value, 0.0001));
+    }
+
+    float isSkinHueFast(vec3 c, float maxChannel, float minChannel) {
+      float delta = maxChannel - minChannel;
+      if (delta <= 0.0001 || maxChannel != c.r) return 0.0;
+      float hue = ((c.g - c.b) / delta) * 60.0;
+      return (hue >= 5.0 && hue <= 52.0) ? 1.0 : 0.0;
+    }
+
+    void main() {
+      vec3 c = texture(uImage, vUv).rgb;
+      vec4 metrics = texture(uMetrics, vUv);
+      float lum = metrics.r;
+      float maxChannel = metrics.g;
+      float minChannel = metrics.b;
+      float sat = metrics.a;
+      float localMean = texture(uLocalMean, vUv).r;
+      float contrast = max(0.0, lum - localMean);
+      float specular = max(0.0, maxChannel - localMean);
+      float brightness = max(lum * 0.82 + maxChannel * 0.18, maxChannel * 0.88);
+
+      float lumaScore =
+        softThresholdMask(brightness, uThresholdLow, uThresholdKnee) *
+        smooth01(uThresholdLow - uThresholdKnee * 0.92, uThresholdHigh, brightness);
+      float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
+      float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
+      float highLightness = smooth01(0.72, 0.94, lum);
+      float lowContrast = 1.0 - smooth01(0.012, 0.075, contrast);
+      float lowSat = 1.0 - smooth01(0.12, 0.36, sat);
+      float whiteFlat = highLightness * lowContrast * lowSat;
+      float skinHue = isSkinHueFast(c, maxChannel, minChannel);
+      float skinColor =
+        skinHue *
+        smooth01(0.16, 0.36, sat) *
+        (1.0 - smooth01(0.78, 0.96, sat)) *
+        smooth01(0.38, 0.74, lum) *
+        (1.0 - smooth01(0.9, 1.0, lum));
+      float dark = 1.0 - smooth01(0.08, 0.28, lum);
+      float protection = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect + dark * uDarkProtect);
+      float chromaSource = smooth01(0.08, 0.46, sat) * smooth01(0.44, 0.84, brightness);
+      float reflectiveBoost = clamp(0.5 + contrastScore * 0.46 + specularScore * 0.42 + chromaSource * 0.22, 0.0, 1.22);
+      float edgeSource = max(contrastScore * 0.22, specularScore * 0.36) * smooth01(0.44, 0.88, brightness);
+      float combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
+      float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.78));
+      float colorGain = pow(mask, 0.78);
+      float chromaBoost = uChromaBoost * smooth01(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
+      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0) * colorGain;
+      outSource = vec4(sourceColor, 1.0);
+      outMasks = vec4(lum, protection, dark, mask);
+    }
+  `;
+    const FULLSCREEN_TRIANGLE = new Float32Array([
+      -1,
+      -1,
+      3,
+      -1,
+      -1,
+      3
+    ]);
+    function createLayer(width, height) {
+      return {
+        width,
+        height,
+        r: new Float32Array(width * height),
+        g: new Float32Array(width * height),
+        b: new Float32Array(width * height)
+      };
+    }
+    function compileShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader) || "Unknown shader compile error";
+        gl.deleteShader(shader);
+        throw new Error(message);
+      }
+      return shader;
+    }
+    function createProgram(gl, fragmentSource) {
+      const vertex = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+      const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+      const program = gl.createProgram();
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      gl.deleteShader(vertex);
+      gl.deleteShader(fragment);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const message = gl.getProgramInfoLog(program) || "Unknown program link error";
+        gl.deleteProgram(program);
+        throw new Error(message);
+      }
+      return program;
+    }
+    function createTexture(gl, width, height, data = null) {
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      return texture;
+    }
+    function createTarget(gl, width, height, attachmentCount = 1) {
+      const framebuffer = gl.createFramebuffer();
+      const textures = [];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      for (let index = 0; index < attachmentCount; index += 1) {
+        const texture = createTexture(gl, width, height);
+        textures.push(texture);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + index, gl.TEXTURE_2D, texture, 0);
+      }
+      gl.drawBuffers(textures.map((_, index) => gl.COLOR_ATTACHMENT0 + index));
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error("WebGL2 source mask framebuffer is incomplete");
+      }
+      return { width, height, framebuffer, textures };
+    }
+    function imageDataToRgba8(imageData) {
+      return new Uint8Array(imageData.data.buffer.slice(0));
+    }
+    class WebglSourceMaskBackend {
+      constructor() {
+        this.canvas = document.createElement("canvas");
+        this.gl = modules.glowGpuCapabilities.getWebgl2Context(this.canvas);
+        if (!this.gl) throw new Error("WebGL2 is unavailable");
+        this.programs = {
+          metrics: createProgram(this.gl, METRICS_SHADER),
+          blurH: createProgram(this.gl, BLUR_H_SHADER),
+          blurV: createProgram(this.gl, BLUR_V_SHADER),
+          source: createProgram(this.gl, SOURCE_SHADER)
+        };
+        this.vertexBuffer = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
+      }
+      bindProgram(program) {
+        const gl = this.gl;
+        gl.useProgram(program);
+        const positionLocation = gl.getAttribLocation(program, "aPosition");
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+      }
+      bindTexture(program, name, texture, unit) {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(gl.getUniformLocation(program, name), unit);
+      }
+      renderTo(target, program) {
+        const gl = this.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+        gl.viewport(0, 0, target.width, target.height);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      renderSingleTexture(program, sourceTexture, sourceUniform, width, height, configure = null) {
+        const gl = this.gl;
+        const target = createTarget(gl, width, height);
+        this.bindProgram(program);
+        this.bindTexture(program, sourceUniform, sourceTexture, 0);
+        if (configure) configure(program);
+        this.renderTo(target, program);
+        return target;
+      }
+      buildSourceMask(imageData, params) {
+        const gl = this.gl;
+        const { width, height } = imageData;
+        const sourceParams = params.source;
+        const radius = Math.max(1, Math.min(24, Math.floor(sourceParams.localRadius)));
+        this.canvas.width = width;
+        this.canvas.height = height;
+        gl.disable(gl.BLEND);
+        gl.disable(gl.DEPTH_TEST);
+        gl.disable(gl.SCISSOR_TEST);
+        const imageTexture = createTexture(gl, width, height, imageDataToRgba8(imageData));
+        const targets = [];
+        try {
+          const metricsTarget = this.renderSingleTexture(this.programs.metrics, imageTexture, "uImage", width, height);
+          targets.push(metricsTarget);
+          const horizontalTarget = this.renderSingleTexture(
+            this.programs.blurH,
+            metricsTarget.textures[0],
+            "uMetrics",
+            width,
+            height,
+            (program2) => {
+              gl.uniform2f(gl.getUniformLocation(program2, "uTexel"), 1 / width, 1 / height);
+              gl.uniform1i(gl.getUniformLocation(program2, "uRadius"), radius);
+            }
+          );
+          targets.push(horizontalTarget);
+          const localMeanTarget = this.renderSingleTexture(
+            this.programs.blurV,
+            horizontalTarget.textures[0],
+            "uHorizontal",
+            width,
+            height,
+            (program2) => {
+              gl.uniform2f(gl.getUniformLocation(program2, "uTexel"), 1 / width, 1 / height);
+              gl.uniform1i(gl.getUniformLocation(program2, "uRadius"), radius);
+            }
+          );
+          targets.push(localMeanTarget);
+          const sourceTarget = createTarget(gl, width, height, 2);
+          targets.push(sourceTarget);
+          const program = this.programs.source;
+          this.bindProgram(program);
+          this.bindTexture(program, "uImage", imageTexture, 0);
+          this.bindTexture(program, "uMetrics", metricsTarget.textures[0], 1);
+          this.bindTexture(program, "uLocalMean", localMeanTarget.textures[0], 2);
+          gl.uniform1f(gl.getUniformLocation(program, "uThresholdLow"), sourceParams.thresholdLow);
+          gl.uniform1f(gl.getUniformLocation(program, "uThresholdHigh"), sourceParams.thresholdHigh);
+          gl.uniform1f(gl.getUniformLocation(program, "uThresholdKnee"), sourceParams.thresholdKnee);
+          gl.uniform1f(gl.getUniformLocation(program, "uContrastLow"), sourceParams.contrastLow);
+          gl.uniform1f(gl.getUniformLocation(program, "uContrastHigh"), sourceParams.contrastHigh);
+          gl.uniform1f(gl.getUniformLocation(program, "uSpecularLow"), sourceParams.specularLow);
+          gl.uniform1f(gl.getUniformLocation(program, "uSpecularHigh"), sourceParams.specularHigh);
+          gl.uniform1f(gl.getUniformLocation(program, "uWhiteProtect"), sourceParams.whiteProtect);
+          gl.uniform1f(gl.getUniformLocation(program, "uSkinProtect"), sourceParams.skinProtect);
+          gl.uniform1f(gl.getUniformLocation(program, "uDarkProtect"), sourceParams.darkProtect);
+          gl.uniform1f(gl.getUniformLocation(program, "uChromaBoost"), sourceParams.chromaBoost);
+          this.renderTo(sourceTarget, program);
+          const sourcePixels = new Uint8Array(width * height * 4);
+          const maskPixels = new Uint8Array(width * height * 4);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, sourceTarget.framebuffer);
+          gl.readBuffer(gl.COLOR_ATTACHMENT0);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, sourcePixels);
+          gl.readBuffer(gl.COLOR_ATTACHMENT1);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, maskPixels);
+          const total = width * height;
+          const sourceLayer = createLayer(width, height);
+          const luma = new Float32Array(total);
+          const localContrast = new Float32Array(total);
+          const lumaMask = new Float32Array(total);
+          const contrastMask = new Float32Array(total);
+          const whiteFlatMask = new Float32Array(total);
+          const skinLikeMask = new Float32Array(total);
+          const darkProtect = new Float32Array(total);
+          const protectMask = new Float32Array(total);
+          const sourceMask = new Float32Array(total);
+          for (let pixel = 0, index = 0; pixel < total; pixel += 1, index += 4) {
+            sourceLayer.r[pixel] = sourcePixels[index] / 255;
+            sourceLayer.g[pixel] = sourcePixels[index + 1] / 255;
+            sourceLayer.b[pixel] = sourcePixels[index + 2] / 255;
+            luma[pixel] = maskPixels[index] / 255;
+            protectMask[pixel] = maskPixels[index + 1] / 255;
+            darkProtect[pixel] = maskPixels[index + 2] / 255;
+            sourceMask[pixel] = maskPixels[index + 3] / 255;
+          }
+          return {
+            width,
+            height,
+            sourceLayer,
+            masks: {
+              luma,
+              localContrast,
+              lumaMask,
+              contrastMask,
+              whiteFlatMask,
+              skinLikeMask,
+              darkProtect,
+              protectMask,
+              sourceMask
+            },
+            debugImages: null,
+            backend: "webgl2"
+          };
+        } finally {
+          gl.deleteTexture(imageTexture);
+          for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+            const target = targets[targetIndex];
+            for (let textureIndex = 0; textureIndex < target.textures.length; textureIndex += 1) {
+              gl.deleteTexture(target.textures[textureIndex]);
+            }
+            gl.deleteFramebuffer(target.framebuffer);
+          }
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+        }
+      }
+    }
+    let backend = null;
+    function getBackend() {
+      if (!modules.glowGpuCapabilities || !modules.glowGpuCapabilities.canUseWebgl2()) {
+        throw new Error("WebGL2 source mask backend is unavailable");
+      }
+      if (!backend) backend = new WebglSourceMaskBackend();
+      return backend;
+    }
+    function buildSourceMask(imageData, params) {
+      if (!imageData || !imageData.width || !imageData.height) {
+        throw new Error("Glow source image is invalid");
+      }
+      if (!modules.glowGpuCapabilities.canUseWebgl2(imageData.width, imageData.height)) {
+        throw new Error("Image exceeds WebGL2 texture limits");
+      }
+      return getBackend().buildSourceMask(imageData, params);
+    }
+    modules.glowWebglSourceMask = {
+      buildSourceMask
     };
   })(window);
 
@@ -1452,6 +1878,432 @@ var PixelRunnerWebviewBundle = (() => {
     };
   })(window);
 
+  // src/webview/glow/gpu/webgl-compositor.js
+  (function initGlowWebglCompositorModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const VERTEX_SHADER = `#version 300 es
+    in vec2 aPosition;
+    out vec2 vUv;
+    void main() {
+      vUv = aPosition * 0.5 + 0.5;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  `;
+    const COMPOSITE_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uBase;
+    uniform sampler2D uGlow;
+    uniform sampler2D uMasks;
+    uniform float uIntensity;
+    uniform float uSoftAddMix;
+    uniform float uWarmth;
+    uniform float uSaturation;
+    uniform float uHighlightProtect;
+    uniform float uShadowProtect;
+    uniform float uColorProtect;
+    uniform float uShoulder;
+    uniform float uColorShift;
+    uniform vec3 uColorTint;
+    uniform float uColorAmount;
+    uniform float uChromaticOffset;
+    uniform float uChromaticAmount;
+    uniform vec2 uTexel;
+    in vec2 vUv;
+    out vec4 outColor;
+
+    float saturate(float value) {
+      return clamp(value, 0.0, 1.0);
+    }
+
+    float softShoulder(float value, float shoulder) {
+      float safeShoulder = clamp(shoulder, 0.1, 0.95);
+      return value / (1.0 + value * safeShoulder);
+    }
+
+    vec3 applySaturation(vec3 color, float saturation) {
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      return vec3(luma) + (color - vec3(luma)) * saturation;
+    }
+
+    vec3 applyGlowColorShift(vec3 color) {
+      float amount = clamp(uColorShift, -1.0, 1.0);
+      if (amount >= 0.0) {
+        return color * vec3(1.0 + amount * 0.34, 1.0 + amount * 0.1, 1.0 - amount * 0.24);
+      }
+      float cool = -amount;
+      return color * vec3(1.0 - cool * 0.18, 1.0 + cool * 0.04, 1.0 + cool * 0.38);
+    }
+
+    vec3 applyGlowTint(vec3 color) {
+      float amount = clamp(uColorAmount, 0.0, 1.0);
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      vec3 tinted = luma * uColorTint * 1.32;
+      return mix(color, tinted, amount);
+    }
+
+    vec3 computeGlow(vec3 glowLayer, vec3 fringe, vec4 masks) {
+      float baseLuma = masks.r;
+      float protect = masks.g;
+      float darkProtect = masks.b;
+      float source = masks.a;
+      float highlightProtect = protect * uHighlightProtect * (0.45 + baseLuma * 0.72);
+      float shadowProtect = darkProtect * uShadowProtect;
+      float sourceAnchor = 0.62 + source * 0.38;
+      float protectGain = saturate((1.0 - highlightProtect * 0.72) * (1.0 - shadowProtect * 0.82) * sourceAnchor);
+      vec3 warmed = vec3(
+        glowLayer.r * (1.0 + uWarmth),
+        glowLayer.g * (1.0 + uWarmth * 0.35),
+        glowLayer.b * (1.0 - uWarmth * 0.28)
+      );
+      warmed = applyGlowColorShift(warmed);
+      warmed = applyGlowTint(warmed);
+      warmed += fringe;
+      vec3 saturated = applySaturation(warmed, uSaturation);
+      return clamp(vec3(
+        softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
+        softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
+        softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
+      ), 0.0, 1.0);
+    }
+
+    void main() {
+      vec4 base = texture(uBase, vUv);
+      float protect = texture(uMasks, vUv).g;
+      vec2 chroma = vec2(uChromaticOffset, 0.0) * uTexel;
+      vec3 glowLayer = vec3(
+        texture(uGlow, vUv + chroma).r,
+        texture(uGlow, vUv).g,
+        texture(uGlow, vUv - chroma).b
+      );
+      vec3 centerGlow = texture(uGlow, vUv).rgb;
+      float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
+      vec3 fringe = vec3(
+        max(0.0, glowLayer.r - centerMax * 0.72) * uChromaticAmount * 1.9,
+        0.0,
+        max(0.0, glowLayer.b - centerMax * 0.72) * uChromaticAmount * 1.9
+      );
+      vec3 glow = computeGlow(glowLayer, fringe, texture(uMasks, vUv));
+      vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
+      vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * (0.58 + protect * 0.34)), 0.0, 1.0);
+      float maxGlow = max(max(glow.r, glow.g), glow.b);
+      float colorProtect = clamp(1.0 - maxGlow * uColorProtect, 0.84, 1.0);
+      vec3 result = mix(screen, soft, uSoftAddMix) * colorProtect + base.rgb * (1.0 - colorProtect);
+      outColor = vec4(clamp(result, 0.0, 1.0), base.a);
+    }
+  `;
+    const GLOW_LAYER_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uGlow;
+    uniform sampler2D uMasks;
+    uniform float uIntensity;
+    uniform float uWarmth;
+    uniform float uSaturation;
+    uniform float uHighlightProtect;
+    uniform float uShadowProtect;
+    uniform float uShoulder;
+    uniform float uColorShift;
+    uniform vec3 uColorTint;
+    uniform float uColorAmount;
+    uniform float uChromaticOffset;
+    uniform float uChromaticAmount;
+    uniform vec2 uTexel;
+    in vec2 vUv;
+    out vec4 outColor;
+
+    float saturate(float value) {
+      return clamp(value, 0.0, 1.0);
+    }
+
+    float softShoulder(float value, float shoulder) {
+      float safeShoulder = clamp(shoulder, 0.1, 0.95);
+      return value / (1.0 + value * safeShoulder);
+    }
+
+    vec3 applySaturation(vec3 color, float saturation) {
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      return vec3(luma) + (color - vec3(luma)) * saturation;
+    }
+
+    vec3 applyGlowColorShift(vec3 color) {
+      float amount = clamp(uColorShift, -1.0, 1.0);
+      if (amount >= 0.0) {
+        return color * vec3(1.0 + amount * 0.34, 1.0 + amount * 0.1, 1.0 - amount * 0.24);
+      }
+      float cool = -amount;
+      return color * vec3(1.0 - cool * 0.18, 1.0 + cool * 0.04, 1.0 + cool * 0.38);
+    }
+
+    vec3 applyGlowTint(vec3 color) {
+      float amount = clamp(uColorAmount, 0.0, 1.0);
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      vec3 tinted = luma * uColorTint * 1.32;
+      return mix(color, tinted, amount);
+    }
+
+    void main() {
+      vec2 chroma = vec2(uChromaticOffset, 0.0) * uTexel;
+      vec3 glowLayer = vec3(
+        texture(uGlow, vUv + chroma).r,
+        texture(uGlow, vUv).g,
+        texture(uGlow, vUv - chroma).b
+      );
+      vec3 centerGlow = texture(uGlow, vUv).rgb;
+      float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
+      vec3 fringe = vec3(
+        max(0.0, glowLayer.r - centerMax * 0.72) * uChromaticAmount * 1.9,
+        0.0,
+        max(0.0, glowLayer.b - centerMax * 0.72) * uChromaticAmount * 1.9
+      );
+      vec4 masks = texture(uMasks, vUv);
+      float source = masks.a;
+      float protect = masks.g;
+      float darkProtect = masks.b;
+      float highlightProtect = protect * uHighlightProtect * 0.82;
+      float shadowProtect = darkProtect * uShadowProtect;
+      float sourceAnchor = 0.62 + source * 0.38;
+      float protectGain = saturate((1.0 - highlightProtect * 0.72) * (1.0 - shadowProtect * 0.82) * sourceAnchor);
+      vec3 warmed = vec3(
+        glowLayer.r * (1.0 + uWarmth),
+        glowLayer.g * (1.0 + uWarmth * 0.35),
+        glowLayer.b * (1.0 - uWarmth * 0.28)
+      );
+      warmed = applyGlowColorShift(warmed);
+      warmed = applyGlowTint(warmed);
+      warmed += fringe;
+      vec3 saturated = applySaturation(warmed, uSaturation);
+      vec3 glow = clamp(vec3(
+        softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
+        softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
+        softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
+      ), 0.0, 1.0);
+      float alpha = max(max(glow.r, glow.g), glow.b);
+      outColor = vec4(glow, alpha);
+    }
+  `;
+    const FULLSCREEN_TRIANGLE = new Float32Array([
+      -1,
+      -1,
+      3,
+      -1,
+      -1,
+      3
+    ]);
+    function compileShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader) || "Unknown shader compile error";
+        gl.deleteShader(shader);
+        throw new Error(message);
+      }
+      return shader;
+    }
+    function createProgram(gl, fragmentSource) {
+      const vertex = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+      const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+      const program = gl.createProgram();
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      gl.deleteShader(vertex);
+      gl.deleteShader(fragment);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const message = gl.getProgramInfoLog(program) || "Unknown program link error";
+        gl.deleteProgram(program);
+        throw new Error(message);
+      }
+      return program;
+    }
+    function createTexture(gl, width, height, data = null) {
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      return texture;
+    }
+    function createTarget(gl, width, height) {
+      const texture = createTexture(gl, width, height);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error("WebGL2 compositor framebuffer is incomplete");
+      }
+      return { width, height, texture, framebuffer };
+    }
+    function imageDataToRgba8(imageData) {
+      return new Uint8Array(imageData.data.buffer.slice(0));
+    }
+    function layerToRgba8(layer) {
+      const count = layer.width * layer.height;
+      const data = new Uint8Array(count * 4);
+      for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+        data[index] = Math.round(Math.min(1, Math.max(0, layer.r[pixel])) * 255);
+        data[index + 1] = Math.round(Math.min(1, Math.max(0, layer.g[pixel])) * 255);
+        data[index + 2] = Math.round(Math.min(1, Math.max(0, layer.b[pixel])) * 255);
+        data[index + 3] = 255;
+      }
+      return data;
+    }
+    function masksToRgba8(masks, width, height) {
+      const count = width * height;
+      const data = new Uint8Array(count * 4);
+      for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+        data[index] = Math.round(Math.min(1, Math.max(0, masks.luma[pixel] || 0)) * 255);
+        data[index + 1] = Math.round(Math.min(1, Math.max(0, masks.protectMask[pixel] || 0)) * 255);
+        data[index + 2] = Math.round(Math.min(1, Math.max(0, masks.darkProtect[pixel] || 0)) * 255);
+        data[index + 3] = Math.round(Math.min(1, Math.max(0, masks.sourceMask[pixel] || 0)) * 255);
+      }
+      return data;
+    }
+    class WebglCompositorBackend {
+      constructor() {
+        this.canvas = document.createElement("canvas");
+        this.gl = modules.glowGpuCapabilities.getWebgl2Context(this.canvas);
+        if (!this.gl) throw new Error("WebGL2 is unavailable");
+        this.programs = {
+          composite: createProgram(this.gl, COMPOSITE_SHADER),
+          glowLayer: createProgram(this.gl, GLOW_LAYER_SHADER)
+        };
+        this.vertexBuffer = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
+      }
+      bindProgram(program) {
+        const gl = this.gl;
+        gl.useProgram(program);
+        const positionLocation = gl.getAttribLocation(program, "aPosition");
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        gl.enableVertexAttribArray(positionLocation);
+        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+      }
+      bindTexture(program, name, texture, unit) {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(gl.getUniformLocation(program, name), unit);
+      }
+      setCompositeUniforms(program, params) {
+        const gl = this.gl;
+        const composite = params.composite;
+        gl.uniform1f(gl.getUniformLocation(program, "uIntensity"), composite.intensity);
+        gl.uniform1f(gl.getUniformLocation(program, "uSoftAddMix"), composite.softAddMix);
+        gl.uniform1f(gl.getUniformLocation(program, "uWarmth"), composite.warmth);
+        gl.uniform1f(gl.getUniformLocation(program, "uSaturation"), composite.saturation);
+        gl.uniform1f(gl.getUniformLocation(program, "uHighlightProtect"), composite.highlightProtect);
+        gl.uniform1f(gl.getUniformLocation(program, "uShadowProtect"), composite.shadowProtect);
+        gl.uniform1f(gl.getUniformLocation(program, "uColorProtect"), composite.colorProtect);
+        gl.uniform1f(gl.getUniformLocation(program, "uShoulder"), composite.shoulder);
+        gl.uniform1f(gl.getUniformLocation(program, "uColorShift"), composite.colorShift);
+        const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
+        gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
+        gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
+        gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(24, Math.max(0, composite.chromatic * (4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.35))));
+        gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
+        gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
+      }
+      setGlowLayerUniforms(program, params) {
+        const gl = this.gl;
+        const composite = params.composite;
+        gl.uniform1f(gl.getUniformLocation(program, "uIntensity"), composite.intensity);
+        gl.uniform1f(gl.getUniformLocation(program, "uWarmth"), composite.warmth);
+        gl.uniform1f(gl.getUniformLocation(program, "uSaturation"), composite.saturation);
+        gl.uniform1f(gl.getUniformLocation(program, "uHighlightProtect"), composite.highlightProtect);
+        gl.uniform1f(gl.getUniformLocation(program, "uShadowProtect"), composite.shadowProtect);
+        gl.uniform1f(gl.getUniformLocation(program, "uShoulder"), composite.shoulder);
+        gl.uniform1f(gl.getUniformLocation(program, "uColorShift"), composite.colorShift);
+        const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
+        gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
+        gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
+        gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(24, Math.max(0, composite.chromatic * (4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.35))));
+        gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
+        gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
+      }
+      render(program, target) {
+        const gl = this.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+        gl.viewport(0, 0, target.width, target.height);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+      readTarget(target) {
+        const gl = this.gl;
+        const pixels = new Uint8ClampedArray(target.width * target.height * 4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+        gl.readPixels(0, 0, target.width, target.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        return new ImageData(pixels, target.width, target.height);
+      }
+      compose(baseImageData, glowLayer, masks, params, options = {}) {
+        const gl = this.gl;
+        const { width, height } = baseImageData;
+        const includeGlowLayer = options.includeGlowLayer !== false;
+        this.canvas.width = width;
+        this.canvas.height = height;
+        gl.disable(gl.BLEND);
+        gl.disable(gl.DEPTH_TEST);
+        gl.disable(gl.SCISSOR_TEST);
+        const baseTexture = createTexture(gl, width, height, imageDataToRgba8(baseImageData));
+        const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
+        const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
+        const previewTarget = createTarget(gl, width, height);
+        const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;
+        try {
+          let program = this.programs.composite;
+          this.bindProgram(program);
+          this.bindTexture(program, "uBase", baseTexture, 0);
+          this.bindTexture(program, "uGlow", glowTexture, 1);
+          this.bindTexture(program, "uMasks", masksTexture, 2);
+          this.setCompositeUniforms(program, params);
+          this.render(program, previewTarget);
+          if (glowLayerTarget) {
+            program = this.programs.glowLayer;
+            this.bindProgram(program);
+            this.bindTexture(program, "uGlow", glowTexture, 0);
+            this.bindTexture(program, "uMasks", masksTexture, 1);
+            this.setGlowLayerUniforms(program, params);
+            this.render(program, glowLayerTarget);
+          }
+          return {
+            previewImageData: this.readTarget(previewTarget),
+            glowLayerImageData: glowLayerTarget ? this.readTarget(glowLayerTarget) : null,
+            backend: "webgl2"
+          };
+        } finally {
+          [baseTexture, glowTexture, masksTexture, previewTarget.texture, glowLayerTarget && glowLayerTarget.texture].filter(Boolean).forEach((texture) => {
+            gl.deleteTexture(texture);
+          });
+          gl.deleteFramebuffer(previewTarget.framebuffer);
+          if (glowLayerTarget) gl.deleteFramebuffer(glowLayerTarget.framebuffer);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+        }
+      }
+    }
+    let backend = null;
+    function getBackend() {
+      if (!modules.glowGpuCapabilities || !modules.glowGpuCapabilities.canUseWebgl2()) {
+        throw new Error("WebGL2 compositor backend is unavailable");
+      }
+      if (!backend) backend = new WebglCompositorBackend();
+      return backend;
+    }
+    function compose(baseImageData, glowLayer, masks, params, options = {}) {
+      if (!baseImageData || !baseImageData.width || !baseImageData.height) {
+        throw new Error("Glow base image is invalid");
+      }
+      if (!modules.glowGpuCapabilities.canUseWebgl2(baseImageData.width, baseImageData.height)) {
+        throw new Error("Image exceeds WebGL2 texture limits");
+      }
+      return getBackend().compose(baseImageData, glowLayer, masks, params, options);
+    }
+    modules.glowWebglCompositor = {
+      compose
+    };
+  })(window);
+
   // src/webview/glow/compositor.js
   (function initGlowCompositorModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
@@ -1470,10 +2322,51 @@ var PixelRunnerWebviewBundle = (() => {
       const safeShoulder = clamp(shoulder, 0.1, 0.95);
       return value / (1 + value * safeShoulder);
     }
+    function sampleChannelNearest(layer, x, y, channel) {
+      const sx = Math.min(layer.width - 1, Math.max(0, Math.round(x)));
+      const sy = Math.min(layer.height - 1, Math.max(0, Math.round(y)));
+      return channel[sy * layer.width + sx];
+    }
+    function getChromaticOffset(params) {
+      return Math.max(0, Math.min(24, (Number(params.composite.chromatic) || 0) * (4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.35)));
+    }
+    function applyGlowColorShift(r, g, b, shift) {
+      const amount = clamp(Number(shift) || 0, -1, 1);
+      if (amount >= 0) {
+        return [
+          r * (1 + amount * 0.34),
+          g * (1 + amount * 0.1),
+          b * (1 - amount * 0.24)
+        ];
+      }
+      const cool = -amount;
+      return [
+        r * (1 - cool * 0.18),
+        g * (1 + cool * 0.04),
+        b * (1 + cool * 0.38)
+      ];
+    }
+    function applyGlowTint(r, g, b, params) {
+      const amount = clamp(Number(params.composite.colorAmount) || 0, 0, 1);
+      if (amount <= 1e-4) return [r, g, b];
+      const tint = Array.isArray(params.composite.colorTint) ? params.composite.colorTint : [1, 0.82, 0.48];
+      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      const tintR = luma * (tint[0] || 1) * 1.32;
+      const tintG = luma * (tint[1] || 1) * 1.32;
+      const tintB = luma * (tint[2] || 1) * 1.32;
+      return [
+        r * (1 - amount) + tintR * amount,
+        g * (1 - amount) + tintG * amount,
+        b * (1 - amount) + tintB * amount
+      ];
+    }
     function composeProtected(baseImageData, glowLayer, masks, params) {
       const { width, height, data } = baseImageData;
       const out = new ImageData(width, height);
+      const chromaticOffset = getChromaticOffset(params);
       for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+        const x = pixel % width;
+        const y = Math.floor(pixel / width);
         const baseR = data[index] / 255;
         const baseG = data[index + 1] / 255;
         const baseB = data[index + 2] / 255;
@@ -1485,9 +2378,19 @@ var PixelRunnerWebviewBundle = (() => {
         const shadowProtect = darkProtect * params.composite.shadowProtect;
         const sourceAnchor = 0.62 + source * 0.38;
         const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
-        const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
-        const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
-        const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+        const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
+        const layerG = glowLayer.g[pixel];
+        const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
+        const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
+        const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
+        const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
+        let warmedR = layerR * (1 + params.composite.warmth);
+        let warmedG = layerG * (1 + params.composite.warmth * 0.35);
+        let warmedB = layerB * (1 - params.composite.warmth * 0.28);
+        [warmedR, warmedG, warmedB] = applyGlowColorShift(warmedR, warmedG, warmedB, params.composite.colorShift);
+        [warmedR, warmedG, warmedB] = applyGlowTint(warmedR, warmedG, warmedB, params);
+        warmedR += redEdge;
+        warmedB += blueEdge;
         const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
         const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
@@ -1513,7 +2416,10 @@ var PixelRunnerWebviewBundle = (() => {
     function renderGlowLayer(glowLayer, masks, params) {
       const out = new ImageData(glowLayer.width, glowLayer.height);
       const data = out.data;
+      const chromaticOffset = getChromaticOffset(params);
       for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+        const x = pixel % glowLayer.width;
+        const y = Math.floor(pixel / glowLayer.width);
         const source = masks.sourceMask[pixel];
         const protect = masks.protectMask[pixel];
         const darkProtect = masks.darkProtect[pixel];
@@ -1521,9 +2427,19 @@ var PixelRunnerWebviewBundle = (() => {
         const shadowProtect = darkProtect * params.composite.shadowProtect;
         const sourceAnchor = 0.62 + source * 0.38;
         const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
-        const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
-        const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
-        const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+        const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
+        const layerG = glowLayer.g[pixel];
+        const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
+        const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
+        const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
+        const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
+        let warmedR = layerR * (1 + params.composite.warmth);
+        let warmedG = layerG * (1 + params.composite.warmth * 0.35);
+        let warmedB = layerB * (1 - params.composite.warmth * 0.28);
+        [warmedR, warmedG, warmedB] = applyGlowColorShift(warmedR, warmedG, warmedB, params.composite.colorShift);
+        [warmedR, warmedG, warmedB] = applyGlowTint(warmedR, warmedG, warmedB, params);
+        warmedR += redEdge;
+        warmedB += blueEdge;
         const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
         const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
@@ -1559,8 +2475,12 @@ var PixelRunnerWebviewBundle = (() => {
         image.src = src;
       });
     }
-    function getImageDataFromImage(image) {
-      const canvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
+    function getImageDataFromImage(image, maxDimension = 0) {
+      const naturalWidth = image.naturalWidth || image.width;
+      const naturalHeight = image.naturalHeight || image.height;
+      const limit = Math.max(0, Number(maxDimension) || 0);
+      const scale = limit > 0 ? Math.min(1, limit / Math.max(naturalWidth, naturalHeight)) : 1;
+      const canvas = createCanvas(Math.round(naturalWidth * scale), Math.round(naturalHeight * scale));
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab");
       ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
@@ -1577,46 +2497,184 @@ var PixelRunnerWebviewBundle = (() => {
       ctx.putImageData(imageData, 0, 0);
       return canvas.toDataURL(type, quality);
     }
+    let sourceImageCache = {
+      sourceDataUrl: "",
+      image: null,
+      sources: /* @__PURE__ */ new Map()
+    };
+    async function getSourceFromDataUrl(sourceDataUrl, maxDimension = 0) {
+      const dimensionKey = String(Math.max(0, Math.round(Number(maxDimension) || 0)));
+      if (sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.sources.has(dimensionKey)) {
+        return sourceImageCache.sources.get(dimensionKey);
+      }
+      const image = sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.image ? sourceImageCache.image : await loadImage(sourceDataUrl);
+      if (sourceImageCache.sourceDataUrl !== sourceDataUrl) {
+        sourceImageCache = { sourceDataUrl, image, sources: /* @__PURE__ */ new Map() };
+      }
+      const source = getImageDataFromImage(image, maxDimension);
+      sourceImageCache.sources.set(dimensionKey, source);
+      return source;
+    }
+    function getSourceCacheKey(params, width, height) {
+      const source = params.source;
+      return [
+        width,
+        height,
+        params.style,
+        params.threshold,
+        params.brightnessBias,
+        source.thresholdLow,
+        source.thresholdHigh,
+        source.thresholdKnee,
+        source.localRadius,
+        source.contrastLow,
+        source.contrastHigh,
+        source.specularLow,
+        source.specularHigh,
+        source.chromaBoost,
+        source.whiteProtect,
+        source.skinProtect,
+        source.darkProtect
+      ].join("|");
+    }
+    function getBlurCacheKey(params, sourceKey) {
+      const blur = params.blur;
+      return [
+        sourceKey,
+        params.radius,
+        blur.mipCount,
+        blur.pyramidWeight,
+        ...Array.isArray(blur.mipWeights) ? blur.mipWeights : []
+      ].join("|");
+    }
+    let previewCache = {
+      sourceDataUrl: "",
+      sourceKey: "",
+      blurKey: "",
+      sourceResult: null,
+      blurResult: null,
+      sourceBackend: "cpu",
+      blurBackend: "cpu"
+    };
+    function resetPreviewCache(sourceDataUrl) {
+      previewCache = {
+        sourceDataUrl,
+        sourceKey: "",
+        blurKey: "",
+        sourceResult: null,
+        blurResult: null,
+        sourceBackend: "cpu",
+        blurBackend: "cpu"
+      };
+    }
     async function createPreview(sourceDataUrl, config = {}, options = {}) {
       if (!sourceDataUrl) throw new Error("Glow source image is missing");
       const jobId = Number(options.jobId) || 0;
       const startedAt = performance.now();
-      const image = await loadImage(sourceDataUrl);
-      const source = getImageDataFromImage(image);
+      const includeGlowLayer = options.includeGlowLayer !== false;
+      const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
       const params = modules.glowPresets.normalizeGlowParams(config);
-      const sourceStartedAt = performance.now();
+      const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
+      if (previewCache.sourceDataUrl !== sourceDataUrl) {
+        resetPreviewCache(sourceDataUrl);
+      }
       const includeDebug = options.includeDebug !== false;
-      const sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+      const sourceKey = getSourceCacheKey(params, source.width, source.height);
+      const sourceStartedAt = performance.now();
+      let sourceResult;
+      let sourceBackend = "cpu";
+      if (allowCache && previewCache.sourceKey === sourceKey && previewCache.sourceResult) {
+        sourceResult = previewCache.sourceResult;
+        sourceBackend = `${previewCache.sourceBackend}-cached`;
+      } else {
+        try {
+          if (!includeDebug && config.useGpu !== false && modules.glowWebglSourceMask && modules.glowGpuCapabilities && modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)) {
+            sourceResult = modules.glowWebglSourceMask.buildSourceMask(source.imageData, params);
+            sourceBackend = sourceResult.backend || "webgl2";
+          }
+        } catch (error) {
+          console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
+          sourceResult = null;
+          sourceBackend = "cpu-fallback";
+        }
+        if (!sourceResult) {
+          sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+        }
+        if (allowCache) {
+          previewCache.sourceKey = sourceKey;
+          previewCache.sourceResult = sourceResult;
+          previewCache.sourceBackend = sourceBackend;
+          previewCache.blurKey = "";
+          previewCache.blurResult = null;
+        }
+      }
       const sourceMs = performance.now() - sourceStartedAt;
+      const blurKey = getBlurCacheKey(params, sourceKey);
       const blurStartedAt = performance.now();
       let blurResult;
       let blurBackend = "cpu";
-      try {
-        if (config.useGpu !== false && modules.glowWebglPyramidBlur && modules.glowGpuCapabilities && modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)) {
-          blurResult = modules.glowWebglPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
-          blurBackend = blurResult.backend || "webgl2";
+      if (allowCache && previewCache.blurKey === blurKey && previewCache.blurResult) {
+        blurResult = previewCache.blurResult;
+        blurBackend = `${previewCache.blurBackend}-cached`;
+      } else {
+        try {
+          if (config.useGpu !== false && modules.glowWebglPyramidBlur && modules.glowGpuCapabilities && modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)) {
+            blurResult = modules.glowWebglPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+            blurBackend = blurResult.backend || "webgl2";
+          }
+        } catch (error) {
+          console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
+          blurResult = null;
+          blurBackend = "cpu-fallback";
         }
-      } catch (error) {
-        console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
-        blurResult = null;
-        blurBackend = "cpu-fallback";
-      }
-      if (!blurResult) {
-        blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+        if (!blurResult) {
+          blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+        }
+        if (allowCache) {
+          previewCache.blurKey = blurKey;
+          previewCache.blurResult = blurResult;
+          previewCache.blurBackend = blurBackend;
+        }
       }
       const blurMs = performance.now() - blurStartedAt;
       const compositeStartedAt = performance.now();
-      const previewImageData = modules.glowCompositor.composeProtected(
-        source.imageData,
-        blurResult.glowLayer,
-        sourceResult.masks,
-        params
-      );
-      const glowLayerImageData = modules.glowCompositor.renderGlowLayer(
-        blurResult.glowLayer,
-        sourceResult.masks,
-        params
-      );
+      let previewImageData;
+      let glowLayerImageData;
+      let compositeBackend = "cpu";
+      try {
+        if (config.useGpu !== false && modules.glowWebglCompositor && modules.glowGpuCapabilities && modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)) {
+          const compositeResult = modules.glowWebglCompositor.compose(
+            source.imageData,
+            blurResult.glowLayer,
+            sourceResult.masks,
+            params,
+            { includeGlowLayer }
+          );
+          previewImageData = compositeResult.previewImageData;
+          glowLayerImageData = compositeResult.glowLayerImageData;
+          compositeBackend = compositeResult.backend || "webgl2";
+        }
+      } catch (error) {
+        console.warn("[PixelRunner] WebGL2 glow compositor failed, falling back to CPU:", error);
+        previewImageData = null;
+        glowLayerImageData = null;
+        compositeBackend = "cpu-fallback";
+      }
+      if (!previewImageData || includeGlowLayer && !glowLayerImageData) {
+        previewImageData = modules.glowCompositor.composeProtected(
+          source.imageData,
+          blurResult.glowLayer,
+          sourceResult.masks,
+          params
+        );
+        if (includeGlowLayer) {
+          glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+            blurResult.glowLayer,
+            sourceResult.masks,
+            params
+          );
+        }
+      }
       const compositeMs = performance.now() - compositeStartedAt;
       return {
         ok: true,
@@ -1624,8 +2682,8 @@ var PixelRunnerWebviewBundle = (() => {
         width: source.width,
         height: source.height,
         baseDataUrl: sourceDataUrl,
-        previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
-        glowLayerDataUrl: imageDataToDataUrl(glowLayerImageData, "image/png", 0.92),
+        previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", Number(options.previewQuality) || 0.9),
+        glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
         sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
         protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
         debugDataUrls: sourceResult.debugImages ? {
@@ -1640,13 +2698,28 @@ var PixelRunnerWebviewBundle = (() => {
           blurMs: Math.round(blurMs),
           compositeMs: Math.round(compositeMs),
           totalMs: Math.round(performance.now() - startedAt),
-          blurBackend
+          sourceBackend,
+          blurBackend,
+          compositeBackend
         },
         params
       };
     }
     modules.glowPreviewEngine = {
-      createPreview
+      createPreview,
+      getCacheInfo() {
+        return {
+          hasSourceImage: !!sourceImageCache.source,
+          hasSourceResult: !!previewCache.sourceResult,
+          hasBlurResult: !!previewCache.blurResult,
+          sourceBackend: previewCache.sourceBackend,
+          blurBackend: previewCache.blurBackend
+        };
+      },
+      clearCache() {
+        sourceImageCache = { sourceDataUrl: "", image: null, sources: /* @__PURE__ */ new Map() };
+        resetPreviewCache("");
+      }
     };
   })(window);
 
@@ -1688,12 +2761,16 @@ var PixelRunnerWebviewBundle = (() => {
       tutorial: "./pages/runninghub-guide.html"
     };
     const GLOW_DEFAULTS = {
-      style: "darkSoft",
+      style: "shine",
       strength: 40,
       radius: 20,
       threshold: 20,
       saturation: 0,
-      brightnessBias: 0
+      brightnessBias: 0,
+      colorEnabled: false,
+      colorAmount: 0,
+      colorHex: "#ffd27a",
+      chromatic: 0
     };
     const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
     const GLOW_STYLE_LABELS = {
@@ -1882,11 +2959,18 @@ ${text}` : text;
       const glowRadiusInput = runtime.getById("glowRadiusInput");
       const glowThresholdInput = runtime.getById("glowThresholdInput");
       const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
+      const glowColorEnabledInput = runtime.getById("glowColorEnabledInput");
+      const glowColorAmountInput = runtime.getById("glowColorAmountInput");
+      const glowColorPickerInput = runtime.getById("glowColorPickerInput");
+      const glowChromaticEnabledInput = runtime.getById("glowChromaticEnabledInput");
+      const glowChromaticInput = runtime.getById("glowChromaticInput");
       const glowStrengthValue = runtime.getById("glowStrengthValue");
       const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
       const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
       const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
       const glowExposureParamValue = runtime.getById("glowExposureParamValue");
+      const glowColorParamValue = runtime.getById("glowColorParamValue");
+      const glowChromaticParamValue = runtime.getById("glowChromaticParamValue");
       const glowStyleBadge = runtime.getById("glowStyleBadge");
       const glowRadiusValue = runtime.getById("glowRadiusValue");
       const glowThresholdValue = runtime.getById("glowThresholdValue");
@@ -1911,12 +2995,17 @@ ${text}` : text;
       const glowPreviewDarkProtectImage = runtime.getById("glowPreviewDarkProtectImage");
       const glowPreviewMeta = runtime.getById("glowPreviewMeta");
       let glowPreviewTimer = 0;
+      let glowRefinePreviewTimer = 0;
       let glowPreviewInFlight = false;
       let glowPreviewNeedsReplay = false;
       let glowPreviewOpen = false;
       let glowLastPreviewSignature = "";
+      let glowLastPreviewQuality = "";
+      let glowPreviewQuality = "full";
       let glowCpuSourceAsset = null;
       let glowPreviewJobId = 0;
+      const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
+      const GLOW_FULL_PROCESS_DIMENSION = 3e3;
       const glowPreviewView = {
         scale: 1,
         x: 0,
@@ -1938,13 +3027,22 @@ ${text}` : text;
         return GLOW_STYLE_LABELS[nextStyle] ? nextStyle : GLOW_DEFAULTS.style;
       };
       const getGlowStyleLabel = (style) => GLOW_STYLE_LABELS[String(style || "").trim().toLowerCase()] || GLOW_STYLE_LABELS[GLOW_DEFAULTS.style];
+      const readGlowColorHex = () => {
+        const value = String(glowColorPickerInput && glowColorPickerInput.value || GLOW_DEFAULTS.colorHex).trim();
+        return /^#[0-9a-fA-F]{6}$/.test(value) ? value : GLOW_DEFAULTS.colorHex;
+      };
       const readGlowState = () => ({
         style: readGlowStyle(),
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
         radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
         saturation: 0,
-        brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
+        brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50),
+        colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
+        colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
+        colorHex: readGlowColorHex(),
+        chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
+        chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100)
       });
       const setGlowButtonsDisabled = (disabled) => {
         [glowOpenButton, glowApplyButton, glowCancelButton, glowModalClose].filter(Boolean).forEach((button) => {
@@ -1972,6 +3070,11 @@ ${text}` : text;
         if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
         if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
         if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
+        if (glowColorParamValue) glowColorParamValue.textContent = state.colorEnabled ? `${state.colorAmount}%` : "关";
+        if (glowChromaticParamValue) glowChromaticParamValue.textContent = state.chromaticEnabled ? String(state.chromatic) : "关";
+        if (glowColorAmountInput) glowColorAmountInput.disabled = !state.colorEnabled;
+        if (glowColorPickerInput) glowColorPickerInput.disabled = !state.colorEnabled;
+        if (glowChromaticInput) glowChromaticInput.disabled = !state.chromaticEnabled;
       };
       const clampGlowPreviewView = () => {
         const scale = Math.max(1, Math.min(6, Number(glowPreviewView.scale) || 1));
@@ -2016,13 +3119,14 @@ ${text}` : text;
         glowPreviewView.scale = scale;
         applyGlowPreviewTransform();
       };
-      const captureGlowCpuSource = async (maxDimension) => {
+      const GLOW_PREVIEW_MAX_DIMENSION = 3e3;
+      const captureGlowCpuSource = async (maxDimension = GLOW_PREVIEW_MAX_DIMENSION) => {
         const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
           maxDimension,
           quality: 92,
-          uploadTargetBytes: 9e6,
-          uploadHardLimitBytes: 1e7
-        }], { timeoutMs: 45e3 });
+          uploadTargetBytes: 18e6,
+          uploadHardLimitBytes: 24e6
+        }], { timeoutMs: 6e4 });
         if (!captured || !String(captured.dataUrl || "").trim()) {
           throw new Error("未能捕获当前 Photoshop 图像用于 CPU 辉光。");
         }
@@ -2067,21 +3171,28 @@ ${text}` : text;
         if (glowPreviewMeta) {
           const state = readGlowState();
           const timings = glowResult.timings || {};
-          const blurBackend = timings.blurBackend ? ` · ${timings.blurBackend}` : "";
-          glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height}${blurBackend} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+          const sourceBackend = timings.sourceBackend ? ` ${timings.sourceBackend}` : "";
+          const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
+          const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
+          const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
+          glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
         }
       };
       const callGlowCpuPreviewAction = async (action) => {
         const state = readGlowState();
         if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-          glowCpuSourceAsset = await captureGlowCpuSource(1280);
+          glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
         }
         const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
         const jobId = glowPreviewJobId + 1;
         glowPreviewJobId = jobId;
+        const isInteractive = glowPreviewQuality === "interactive";
         const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
           jobId,
-          includeDebug: false
+          includeDebug: false,
+          includeGlowLayer: false,
+          previewQuality: isInteractive ? 0.76 : 0.82,
+          processMaxDimension: isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
         });
         if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
           return {
@@ -2092,10 +3203,13 @@ ${text}` : text;
         }
         updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
         const timings = glowResult.timings || {};
-        const blurBackend = timings.blurBackend ? `（${timings.blurBackend}）` : "";
+        const sourceBackend = timings.sourceBackend || "cpu";
+        const blurBackend = timings.blurBackend || "cpu";
+        const compositeBackend = timings.compositeBackend || "cpu";
+        const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
         return {
           ok: true,
-          message: `Glow Lab 已更新${blurBackend}：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+          message: `Glow Lab 已更新（${qualityLabel}）：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${compositeBackend} ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
           layerName: GLOW_PREVIEW_LAYER_NAME,
           elapsedMs: timings.totalMs || 0
         };
@@ -2105,7 +3219,7 @@ ${text}` : text;
         const layerName = `Glow ${state.strength}%`;
         const commitStrength = state.style === "none" ? 0 : state.strength;
         if (!glowCpuSourceAsset) {
-          glowCpuSourceAsset = await captureGlowCpuSource(1280);
+          glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
         }
         const glowResult = await modules.glowPreviewEngine.createPreview(
           String(glowCpuSourceAsset.dataUrl || "").trim(),
@@ -2138,10 +3252,27 @@ ${text}` : text;
       };
       const getGlowStateSignature = () => {
         const state = readGlowState();
-        return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias].join("|");
+        return [
+          state.style,
+          state.strength,
+          state.radius,
+          state.threshold,
+          state.brightnessBias,
+          state.colorEnabled ? state.colorHex : "color-off",
+          state.colorEnabled ? state.colorAmount : 0,
+          state.chromaticEnabled ? state.chromatic : 0
+        ].join("|");
       };
+      const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
       const getGlowPreviewDelay = () => {
         const state = readGlowState();
+        const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function" ? modules.glowPreviewEngine.getCacheInfo() : null;
+        if (cacheInfo && cacheInfo.hasBlurResult) {
+          return state.strength >= 76 ? 160 : 120;
+        }
+        if (cacheInfo && cacheInfo.hasSourceResult) {
+          return state.radius >= 92 ? 210 : 170;
+        }
         let delay = 220;
         if (state.radius >= 72) delay = 280;
         if (state.radius >= 92 || state.strength >= 76) delay = 340;
@@ -2152,7 +3283,8 @@ ${text}` : text;
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         const nextSignature = getGlowStateSignature();
-        if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && !glowPreviewNeedsReplay) {
+        const nextPreviewSignature = getGlowPreviewSignature();
+        if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && nextPreviewSignature === glowLastPreviewQuality && !glowPreviewNeedsReplay) {
           return;
         }
         if (glowPreviewInFlight) {
@@ -2170,6 +3302,7 @@ ${text}` : text;
           if (result && result.stale) return;
           const message = result && result.message ? result.message : "辉光预览已更新。";
           glowLastPreviewSignature = nextSignature;
+          glowLastPreviewQuality = nextPreviewSignature;
           setGlowPreviewBadge("Glow Lab", "success");
           setGlowStatus(message, "success");
         } catch (error) {
@@ -2185,15 +3318,28 @@ ${text}` : text;
           void runGlowPreviewUpdate("glowPreviewUpdate");
         }
       };
-      const scheduleGlowPreviewUpdate = () => {
+      const scheduleGlowPreviewUpdate = (quality = "interactive") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
+        }
+        glowPreviewQuality = quality;
         glowPreviewJobId += 1;
         const delay = getGlowPreviewDelay();
         glowPreviewTimer = window.setTimeout(() => {
           glowPreviewTimer = 0;
           void runGlowPreviewUpdate("glowPreviewUpdate");
         }, delay);
+        if (quality === "interactive") {
+          glowRefinePreviewTimer = window.setTimeout(() => {
+            glowRefinePreviewTimer = 0;
+            glowPreviewQuality = "full";
+            glowPreviewJobId += 1;
+            void runGlowPreviewUpdate("glowPreviewUpdate");
+          }, Math.max(760, delay + 420));
+        }
       };
       const flushGlowPreviewUpdate = async () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
@@ -2201,6 +3347,11 @@ ${text}` : text;
           clearTimeout(glowPreviewTimer);
           glowPreviewTimer = 0;
         }
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
+        }
+        glowPreviewQuality = "full";
         if (glowPreviewInFlight) {
           glowPreviewNeedsReplay = true;
         }
@@ -2217,7 +3368,12 @@ ${text}` : text;
       const openGlowModal = async () => {
         glowPreviewOpen = true;
         glowLastPreviewSignature = "";
+        glowLastPreviewQuality = "";
+        glowPreviewQuality = "full";
         glowPreviewJobId += 1;
+        if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
+          modules.glowPreviewEngine.clearCache();
+        }
         modules.workspace.setModalOpen("glowModal", true);
         updateGlowLabels();
         if (!runtime.isPluginRuntime()) {
@@ -2243,6 +3399,10 @@ ${text}` : text;
         if (glowPreviewTimer) {
           clearTimeout(glowPreviewTimer);
           glowPreviewTimer = 0;
+        }
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
         }
         if (discardPreview) {
           setQuickGlowStatus("已取消插件内辉光预览，未写回 Photoshop。", "info");
@@ -2309,14 +3469,14 @@ ${text}` : text;
           zoomGlowPreview(glowPreviewView.scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
         });
       });
-      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
+      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorEnabledInput, glowColorAmountInput, glowColorPickerInput, glowChromaticEnabledInput, glowChromaticInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate();
+          scheduleGlowPreviewUpdate("interactive");
         });
         input.addEventListener("change", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate();
+          scheduleGlowPreviewUpdate("full");
         });
       });
       if (glowOpenButton) {

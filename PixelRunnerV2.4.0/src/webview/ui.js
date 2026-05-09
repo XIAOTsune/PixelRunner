@@ -7,12 +7,16 @@
     tutorial: "./pages/runninghub-guide.html"
   };
   const GLOW_DEFAULTS = {
-    style: "darkSoft",
+    style: "shine",
     strength: 40,
     radius: 20,
     threshold: 20,
     saturation: 0,
-    brightnessBias: 0
+    brightnessBias: 0,
+    colorEnabled: false,
+    colorAmount: 0,
+    colorHex: "#ffd27a",
+    chromatic: 0
   };
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
   const GLOW_STYLE_LABELS = {
@@ -231,11 +235,18 @@
     const glowRadiusInput = runtime.getById("glowRadiusInput");
     const glowThresholdInput = runtime.getById("glowThresholdInput");
     const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
+    const glowColorEnabledInput = runtime.getById("glowColorEnabledInput");
+    const glowColorAmountInput = runtime.getById("glowColorAmountInput");
+    const glowColorPickerInput = runtime.getById("glowColorPickerInput");
+    const glowChromaticEnabledInput = runtime.getById("glowChromaticEnabledInput");
+    const glowChromaticInput = runtime.getById("glowChromaticInput");
     const glowStrengthValue = runtime.getById("glowStrengthValue");
     const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
     const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
     const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
     const glowExposureParamValue = runtime.getById("glowExposureParamValue");
+    const glowColorParamValue = runtime.getById("glowColorParamValue");
+    const glowChromaticParamValue = runtime.getById("glowChromaticParamValue");
     const glowStyleBadge = runtime.getById("glowStyleBadge");
     const glowRadiusValue = runtime.getById("glowRadiusValue");
     const glowThresholdValue = runtime.getById("glowThresholdValue");
@@ -261,12 +272,17 @@
     const glowPreviewMeta = runtime.getById("glowPreviewMeta");
 
     let glowPreviewTimer = 0;
+    let glowRefinePreviewTimer = 0;
     let glowPreviewInFlight = false;
     let glowPreviewNeedsReplay = false;
     let glowPreviewOpen = false;
     let glowLastPreviewSignature = "";
+    let glowLastPreviewQuality = "";
+    let glowPreviewQuality = "full";
     let glowCpuSourceAsset = null;
     let glowPreviewJobId = 0;
+    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
+    const GLOW_FULL_PROCESS_DIMENSION = 3000;
     const glowPreviewView = {
       scale: 1,
       x: 0,
@@ -292,13 +308,23 @@
 
     const getGlowStyleLabel = (style) => GLOW_STYLE_LABELS[String(style || "").trim().toLowerCase()] || GLOW_STYLE_LABELS[GLOW_DEFAULTS.style];
 
+    const readGlowColorHex = () => {
+      const value = String((glowColorPickerInput && glowColorPickerInput.value) || GLOW_DEFAULTS.colorHex).trim();
+      return /^#[0-9a-fA-F]{6}$/.test(value) ? value : GLOW_DEFAULTS.colorHex;
+    };
+
     const readGlowState = () => ({
       style: readGlowStyle(),
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
       radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
       threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
       saturation: 0,
-      brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
+      brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50),
+      colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
+      colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
+      colorHex: readGlowColorHex(),
+      chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
+      chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100)
     });
 
     const setGlowButtonsDisabled = (disabled) => {
@@ -331,6 +357,11 @@
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
       if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
       if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
+      if (glowColorParamValue) glowColorParamValue.textContent = state.colorEnabled ? `${state.colorAmount}%` : "关";
+      if (glowChromaticParamValue) glowChromaticParamValue.textContent = state.chromaticEnabled ? String(state.chromatic) : "关";
+      if (glowColorAmountInput) glowColorAmountInput.disabled = !state.colorEnabled;
+      if (glowColorPickerInput) glowColorPickerInput.disabled = !state.colorEnabled;
+      if (glowChromaticInput) glowChromaticInput.disabled = !state.chromaticEnabled;
     };
 
     const clampGlowPreviewView = () => {
@@ -382,13 +413,15 @@
       applyGlowPreviewTransform();
     };
 
-    const captureGlowCpuSource = async (maxDimension) => {
+    const GLOW_PREVIEW_MAX_DIMENSION = 3000;
+
+    const captureGlowCpuSource = async (maxDimension = GLOW_PREVIEW_MAX_DIMENSION) => {
       const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
         maxDimension,
         quality: 92,
-        uploadTargetBytes: 9_000_000,
-        uploadHardLimitBytes: 10_000_000
-      }], { timeoutMs: 45000 });
+        uploadTargetBytes: 18_000_000,
+        uploadHardLimitBytes: 24_000_000
+      }], { timeoutMs: 60000 });
       if (!captured || !String(captured.dataUrl || "").trim()) {
         throw new Error("未能捕获当前 Photoshop 图像用于 CPU 辉光。");
       }
@@ -435,22 +468,29 @@
       if (glowPreviewMeta) {
         const state = readGlowState();
         const timings = glowResult.timings || {};
-        const blurBackend = timings.blurBackend ? ` · ${timings.blurBackend}` : "";
-        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height}${blurBackend} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+        const sourceBackend = timings.sourceBackend ? ` ${timings.sourceBackend}` : "";
+        const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
+        const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
+        const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
+        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
       }
     };
 
     const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
       }
       const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
       const jobId = glowPreviewJobId + 1;
       glowPreviewJobId = jobId;
+      const isInteractive = glowPreviewQuality === "interactive";
       const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
         jobId,
-        includeDebug: false
+        includeDebug: false,
+        includeGlowLayer: false,
+        previewQuality: isInteractive ? 0.76 : 0.82,
+        processMaxDimension: isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
       });
       if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
         return {
@@ -461,10 +501,13 @@
       }
       updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
       const timings = glowResult.timings || {};
-      const blurBackend = timings.blurBackend ? `（${timings.blurBackend}）` : "";
+      const sourceBackend = timings.sourceBackend || "cpu";
+      const blurBackend = timings.blurBackend || "cpu";
+      const compositeBackend = timings.compositeBackend || "cpu";
+      const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
       return {
         ok: true,
-        message: `Glow Lab 已更新${blurBackend}：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+        message: `Glow Lab 已更新（${qualityLabel}）：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${compositeBackend} ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
         layerName: GLOW_PREVIEW_LAYER_NAME,
         elapsedMs: timings.totalMs || 0
       };
@@ -475,7 +518,7 @@
       const layerName = `Glow ${state.strength}%`;
       const commitStrength = state.style === "none" ? 0 : state.strength;
       if (!glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
       }
       const glowResult = await modules.glowPreviewEngine.createPreview(
         String(glowCpuSourceAsset.dataUrl || "").trim(),
@@ -509,11 +552,31 @@
 
     const getGlowStateSignature = () => {
       const state = readGlowState();
-      return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias].join("|");
+      return [
+        state.style,
+        state.strength,
+        state.radius,
+        state.threshold,
+        state.brightnessBias,
+        state.colorEnabled ? state.colorHex : "color-off",
+        state.colorEnabled ? state.colorAmount : 0,
+        state.chromaticEnabled ? state.chromatic : 0
+      ].join("|");
     };
+
+    const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
 
     const getGlowPreviewDelay = () => {
       const state = readGlowState();
+      const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function"
+        ? modules.glowPreviewEngine.getCacheInfo()
+        : null;
+      if (cacheInfo && cacheInfo.hasBlurResult) {
+        return state.strength >= 76 ? 160 : 120;
+      }
+      if (cacheInfo && cacheInfo.hasSourceResult) {
+        return state.radius >= 92 ? 210 : 170;
+      }
       let delay = 220;
       if (state.radius >= 72) delay = 280;
       if (state.radius >= 92 || state.strength >= 76) delay = 340;
@@ -525,7 +588,8 @@
     const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
       if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
       const nextSignature = getGlowStateSignature();
-      if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && !glowPreviewNeedsReplay) {
+      const nextPreviewSignature = getGlowPreviewSignature();
+      if (action === "glowPreviewUpdate" && nextSignature === glowLastPreviewSignature && nextPreviewSignature === glowLastPreviewQuality && !glowPreviewNeedsReplay) {
         return;
       }
       if (glowPreviewInFlight) {
@@ -545,6 +609,7 @@
         if (result && result.stale) return;
         const message = result && result.message ? result.message : "辉光预览已更新。";
         glowLastPreviewSignature = nextSignature;
+        glowLastPreviewQuality = nextPreviewSignature;
         setGlowPreviewBadge("Glow Lab", "success");
         setGlowStatus(message, "success");
       } catch (error) {
@@ -562,15 +627,28 @@
       }
     };
 
-    const scheduleGlowPreviewUpdate = () => {
+    const scheduleGlowPreviewUpdate = (quality = "interactive") => {
       if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
       if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+      if (glowRefinePreviewTimer) {
+        clearTimeout(glowRefinePreviewTimer);
+        glowRefinePreviewTimer = 0;
+      }
+      glowPreviewQuality = quality;
       glowPreviewJobId += 1;
       const delay = getGlowPreviewDelay();
       glowPreviewTimer = window.setTimeout(() => {
         glowPreviewTimer = 0;
         void runGlowPreviewUpdate("glowPreviewUpdate");
       }, delay);
+      if (quality === "interactive") {
+        glowRefinePreviewTimer = window.setTimeout(() => {
+          glowRefinePreviewTimer = 0;
+          glowPreviewQuality = "full";
+          glowPreviewJobId += 1;
+          void runGlowPreviewUpdate("glowPreviewUpdate");
+        }, Math.max(760, delay + 420));
+      }
     };
 
     const flushGlowPreviewUpdate = async () => {
@@ -579,6 +657,11 @@
         clearTimeout(glowPreviewTimer);
         glowPreviewTimer = 0;
       }
+      if (glowRefinePreviewTimer) {
+        clearTimeout(glowRefinePreviewTimer);
+        glowRefinePreviewTimer = 0;
+      }
+      glowPreviewQuality = "full";
       if (glowPreviewInFlight) {
         glowPreviewNeedsReplay = true;
       }
@@ -596,7 +679,12 @@
     const openGlowModal = async () => {
       glowPreviewOpen = true;
       glowLastPreviewSignature = "";
+      glowLastPreviewQuality = "";
+      glowPreviewQuality = "full";
       glowPreviewJobId += 1;
+      if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
+        modules.glowPreviewEngine.clearCache();
+      }
       modules.workspace.setModalOpen("glowModal", true);
       updateGlowLabels();
 
@@ -625,6 +713,10 @@
       if (glowPreviewTimer) {
         clearTimeout(glowPreviewTimer);
         glowPreviewTimer = 0;
+      }
+      if (glowRefinePreviewTimer) {
+        clearTimeout(glowRefinePreviewTimer);
+        glowRefinePreviewTimer = 0;
       }
 
       if (discardPreview) {
@@ -701,16 +793,16 @@
       });
     });
 
-    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput]
+    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorEnabledInput, glowColorAmountInput, glowColorPickerInput, glowChromaticEnabledInput, glowChromaticInput]
       .filter(Boolean)
       .forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate();
+          scheduleGlowPreviewUpdate("interactive");
         });
         input.addEventListener("change", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate();
+          scheduleGlowPreviewUpdate("full");
         });
       });
 
