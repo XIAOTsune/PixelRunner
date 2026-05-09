@@ -382,13 +382,15 @@
       applyGlowPreviewTransform();
     };
 
-    const captureGlowCpuSource = async (maxDimension) => {
+    const GLOW_PREVIEW_MAX_DIMENSION = 3000;
+
+    const captureGlowCpuSource = async (maxDimension = GLOW_PREVIEW_MAX_DIMENSION) => {
       const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
         maxDimension,
         quality: 92,
-        uploadTargetBytes: 9_000_000,
-        uploadHardLimitBytes: 10_000_000
-      }], { timeoutMs: 45000 });
+        uploadTargetBytes: 18_000_000,
+        uploadHardLimitBytes: 24_000_000
+      }], { timeoutMs: 60000 });
       if (!captured || !String(captured.dataUrl || "").trim()) {
         throw new Error("未能捕获当前 Photoshop 图像用于 CPU 辉光。");
       }
@@ -435,15 +437,16 @@
       if (glowPreviewMeta) {
         const state = readGlowState();
         const timings = glowResult.timings || {};
-        const blurBackend = timings.blurBackend ? ` · ${timings.blurBackend}` : "";
-        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height}${blurBackend} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+        const sourceBackend = timings.sourceBackend ? ` ${timings.sourceBackend}` : "";
+        const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
+        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
       }
     };
 
     const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
       }
       const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
       const jobId = glowPreviewJobId + 1;
@@ -461,10 +464,11 @@
       }
       updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
       const timings = glowResult.timings || {};
-      const blurBackend = timings.blurBackend ? `（${timings.blurBackend}）` : "";
+      const sourceBackend = timings.sourceBackend || "cpu";
+      const blurBackend = timings.blurBackend || "cpu";
       return {
         ok: true,
-        message: `Glow Lab 已更新${blurBackend}：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+        message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
         layerName: GLOW_PREVIEW_LAYER_NAME,
         elapsedMs: timings.totalMs || 0
       };
@@ -475,7 +479,7 @@
       const layerName = `Glow ${state.strength}%`;
       const commitStrength = state.style === "none" ? 0 : state.strength;
       if (!glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
       }
       const glowResult = await modules.glowPreviewEngine.createPreview(
         String(glowCpuSourceAsset.dataUrl || "").trim(),

@@ -45,9 +45,29 @@
     const source = getImageDataFromImage(image);
     const params = modules.glowPresets.normalizeGlowParams(config);
 
-    const sourceStartedAt = performance.now();
     const includeDebug = options.includeDebug !== false;
-    const sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+    const sourceStartedAt = performance.now();
+    let sourceResult;
+    let sourceBackend = "cpu";
+    try {
+      if (
+        !includeDebug &&
+        config.useGpu !== false &&
+        modules.glowWebglSourceMask &&
+        modules.glowGpuCapabilities &&
+        modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+      ) {
+        sourceResult = modules.glowWebglSourceMask.buildSourceMask(source.imageData, params);
+        sourceBackend = sourceResult.backend || "webgl2";
+      }
+    } catch (error) {
+      console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
+      sourceResult = null;
+      sourceBackend = "cpu-fallback";
+    }
+    if (!sourceResult) {
+      sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+    }
     const sourceMs = performance.now() - sourceStartedAt;
 
     const blurStartedAt = performance.now();
@@ -111,6 +131,7 @@
         blurMs: Math.round(blurMs),
         compositeMs: Math.round(compositeMs),
         totalMs: Math.round(performance.now() - startedAt),
+        sourceBackend,
         blurBackend
       },
       params
