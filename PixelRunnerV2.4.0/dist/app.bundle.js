@@ -1499,7 +1499,7 @@ ${text}` : text;
         scale: 1,
         x: 0,
         y: 0,
-        pointerId: null,
+        isPanning: false,
         startX: 0,
         startY: 0,
         startPanX: 0,
@@ -1554,14 +1554,18 @@ ${text}` : text;
       const clampGlowPreviewView = () => {
         const scale = Math.max(1, Math.min(6, Number(glowPreviewView.scale) || 1));
         glowPreviewView.scale = scale;
-        if (scale <= 1.001) {
-          glowPreviewView.x = 0;
-          glowPreviewView.y = 0;
-          return;
-        }
         const viewportRect = glowPreviewViewport && glowPreviewViewport.getBoundingClientRect ? glowPreviewViewport.getBoundingClientRect() : { width: 0, height: 0 };
-        const maxX = Math.max(0, (Number(viewportRect.width) || 0) * (scale - 1) / 2);
-        const maxY = Math.max(0, (Number(viewportRect.height) || 0) * (scale - 1) / 2);
+        const viewportWidth = Number(viewportRect.width) || 0;
+        const viewportHeight = Number(viewportRect.height) || 0;
+        const naturalWidth = Number(glowPreviewResultImage && glowPreviewResultImage.naturalWidth) || viewportWidth || 1;
+        const naturalHeight = Number(glowPreviewResultImage && glowPreviewResultImage.naturalHeight) || viewportHeight || 1;
+        const fitScale = Math.min(viewportWidth / naturalWidth || 1, viewportHeight / naturalHeight || 1);
+        const renderedWidth = naturalWidth * fitScale * scale;
+        const renderedHeight = naturalHeight * fitScale * scale;
+        const keepVisibleX = Math.min(viewportWidth * 0.42, Math.max(80, viewportWidth * 0.18));
+        const keepVisibleY = Math.min(viewportHeight * 0.42, Math.max(80, viewportHeight * 0.18));
+        const maxX = Math.max(0, (renderedWidth + viewportWidth) / 2 - keepVisibleX);
+        const maxY = Math.max(0, (renderedHeight + viewportHeight) / 2 - keepVisibleY);
         glowPreviewView.x = Math.max(-maxX, Math.min(maxX, Number(glowPreviewView.x) || 0));
         glowPreviewView.y = Math.max(-maxY, Math.min(maxY, Number(glowPreviewView.y) || 0));
       };
@@ -1580,12 +1584,13 @@ ${text}` : text;
         if (!glowPreviewViewport) return;
         const previousScale = Math.max(1, Number(glowPreviewView.scale) || 1);
         const scale = Math.max(1, Math.min(6, Number(nextScale) || 1));
-        if (Math.abs(scale - previousScale) < 1e-3) return;
         const rect = glowPreviewViewport.getBoundingClientRect();
         const localX = Number(anchorX) - rect.left - rect.width / 2;
         const localY = Number(anchorY) - rect.top - rect.height / 2;
-        glowPreviewView.x = (glowPreviewView.x - localX) * (scale / previousScale) + localX;
-        glowPreviewView.y = (glowPreviewView.y - localY) * (scale / previousScale) + localY;
+        if (Math.abs(scale - previousScale) >= 1e-3) {
+          glowPreviewView.x = (glowPreviewView.x - localX) * (scale / previousScale) + localX;
+          glowPreviewView.y = (glowPreviewView.y - localY) * (scale / previousScale) + localY;
+        }
         glowPreviewView.scale = scale;
         applyGlowPreviewTransform();
       };
@@ -1830,35 +1835,38 @@ ${text}` : text;
         }, { passive: false });
         glowPreviewViewport.addEventListener("pointerdown", (event) => {
           if (event.button != null && event.button !== 0) return;
-          glowPreviewView.pointerId = event.pointerId;
+          event.preventDefault();
+          glowPreviewView.isPanning = true;
           glowPreviewView.startX = event.clientX;
           glowPreviewView.startY = event.clientY;
           glowPreviewView.startPanX = glowPreviewView.x;
           glowPreviewView.startPanY = glowPreviewView.y;
           glowPreviewViewport.classList.add("is-panning");
-          try {
-            glowPreviewViewport.setPointerCapture(event.pointerId);
-          } catch (_) {
-          }
         });
-        glowPreviewViewport.addEventListener("pointermove", (event) => {
-          if (glowPreviewView.pointerId !== event.pointerId) return;
+        const movePan = (event) => {
+          if (!glowPreviewView.isPanning) return;
+          event.preventDefault();
           glowPreviewView.x = glowPreviewView.startPanX + event.clientX - glowPreviewView.startX;
           glowPreviewView.y = glowPreviewView.startPanY + event.clientY - glowPreviewView.startY;
           applyGlowPreviewTransform();
-        });
-        const endPan = (event) => {
-          if (glowPreviewView.pointerId !== event.pointerId) return;
-          glowPreviewView.pointerId = null;
-          glowPreviewViewport.classList.remove("is-panning");
-          try {
-            glowPreviewViewport.releasePointerCapture(event.pointerId);
-          } catch (_) {
-          }
         };
-        glowPreviewViewport.addEventListener("pointerup", endPan);
-        glowPreviewViewport.addEventListener("pointercancel", endPan);
+        const endPan = (event) => {
+          if (!glowPreviewView.isPanning) return;
+          event.preventDefault();
+          glowPreviewView.isPanning = false;
+          glowPreviewViewport.classList.remove("is-panning");
+        };
+        window.addEventListener("pointermove", movePan, { passive: false });
+        window.addEventListener("pointerup", endPan, { passive: false });
+        window.addEventListener("pointercancel", endPan, { passive: false });
+        window.addEventListener("blur", () => {
+          glowPreviewView.isPanning = false;
+          glowPreviewViewport.classList.remove("is-panning");
+        });
         glowPreviewViewport.addEventListener("dblclick", resetGlowPreviewTransform);
+      }
+      if (glowPreviewResultImage) {
+        glowPreviewResultImage.addEventListener("load", applyGlowPreviewTransform);
       }
       document.querySelectorAll("[data-glow-zoom]").forEach((button) => {
         button.addEventListener("pointerdown", (event) => {

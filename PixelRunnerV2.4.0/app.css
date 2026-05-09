@@ -1544,28 +1544,32 @@ button {
 
 .glow-preview-tools {
   position: absolute;
-  right: 8px;
-  top: 8px;
+  right: 10px;
+  top: 10px;
   z-index: 2;
   display: flex;
   gap: 6px;
-  padding: 4px;
+  padding: 5px;
   border-radius: 999px;
-  border: 1px solid rgba(134, 164, 188, 0.38);
-  background: rgba(9, 16, 24, 0.68);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(157, 194, 221, 0.62);
+  background: rgba(8, 15, 23, 0.86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .glow-preview-tool-btn {
-  width: 32px;
-  min-width: 32px;
-  height: 28px;
-  min-height: 28px;
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 14px;
+  font-weight: 800;
   line-height: 1;
+  color: rgba(238, 247, 255, 0.96);
+  background: rgba(70, 105, 135, 0.9);
 }
 
 .glow-lab-tile figcaption {
