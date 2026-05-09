@@ -807,6 +807,25 @@ async function applyLayerMaskFromSelection(action) {
   }], {});
 }
 
+async function setActiveLayerStyle(action, options = {}) {
+  const opacity = Number(options.opacity);
+  const blendMode = String(options.blendMode || "").trim();
+  const descriptor = {
+    _obj: "set",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: { _obj: "layer" }
+  };
+
+  if (Number.isFinite(opacity)) {
+    descriptor.to.opacity = { _unit: "percentUnit", _value: Math.min(100, Math.max(0, opacity)) };
+  }
+  if (blendMode) {
+    descriptor.to.mode = { _enum: "blendMode", _value: blendMode };
+  }
+  if (!descriptor.to.opacity && !descriptor.to.mode) return;
+  await action.batchPlay([descriptor], {});
+}
+
 async function alignPlacedLayerToBounds(doc, action, targetBounds, options = {}) {
   const layer = doc && doc.activeLayers && doc.activeLayers[0];
   const transformBounds = options.preferTransformBounds ? await getActivePlacedLayerTransformBounds(action) : null;
@@ -1046,8 +1065,21 @@ export async function placeImageFromUrl(payload) {
 
   const buffer = await fetchBinary(url);
   const pngInfo = await parsePngInfo(buffer);
+  const preserveCanvasBounds = options.preserveCanvasBounds === true;
+  const anchorTransparentCanvas = options.anchorTransparentCanvas === true;
+  const pngAlphaBounds = pngInfo && pngInfo.alphaBounds ? pngInfo.alphaBounds : null;
+  const pngAlphaUsesPartialCanvas = Boolean(
+    pngInfo &&
+    pngAlphaBounds &&
+    !dimensionsNearlyMatch(
+      Number(pngAlphaBounds.width),
+      Number(pngAlphaBounds.height),
+      Number(pngInfo.width),
+      Number(pngInfo.height)
+    )
+  );
   let placementBuffer = buffer;
-  if (pngInfo && pngInfo.hasTransparency) {
+  if (pngInfo && pngInfo.hasTransparency && pngAlphaUsesPartialCanvas && (!preserveCanvasBounds || anchorTransparentCanvas)) {
     try {
       const anchoredBuffer = await buildBoundsAnchoredPng(buffer, pngInfo._meta);
       if (anchoredBuffer instanceof ArrayBuffer && anchoredBuffer.byteLength > 0) {
@@ -1100,7 +1132,15 @@ export async function placeImageFromUrl(payload) {
     }
     const isFullBoundsTarget = isFullDocumentBounds(effectiveTargetBounds, targetDocInfo);
     const applyMask = options.applyMask !== false && !isFullBoundsTarget;
-    if (isTransparentPngResult && pngInfo && pngInfo.boundsAnchored) {
+    if (preserveCanvasBounds) {
+      placementMode = normalizedMode === "stretch"
+        ? "stretch"
+        : normalizedMode === "cover"
+          ? "cover"
+          : normalizedMode === "original" || normalizedMode === "pixel-perfect"
+            ? "original"
+            : "contain";
+    } else if (isTransparentPngResult && pngInfo && pngInfo.boundsAnchored && pngAlphaUsesPartialCanvas) {
       placementMode = "original";
     } else if (isTransparentPngResult && pngInfo && pngInfo.alphaBounds) {
       placementMode = "transparent-png-canvas";
@@ -1123,9 +1163,13 @@ export async function placeImageFromUrl(payload) {
         mode: placementMode,
         imageSize: pngInfo,
         applyMask,
-        preferTransformBounds: isTransparentPngResult
+        preferTransformBounds: isTransparentPngResult && !preserveCanvasBounds
       });
     }
+    await setActiveLayerStyle(action, {
+      opacity: options.opacity,
+      blendMode: options.blendMode
+    });
   }, { commandName: "Place PixelRunner Result" });
 
   const layerName = await renameActiveLayer(options.layerName);

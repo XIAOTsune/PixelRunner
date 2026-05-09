@@ -995,6 +995,9 @@
     }
 
     updateRunButtonState();
+    if (modules.settings && typeof modules.settings.refreshThemeSkin === "function") {
+      modules.settings.refreshThemeSkin();
+    }
   }
 
   function cloneWorkspaceFormValue(value) {

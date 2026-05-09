@@ -402,7 +402,8 @@
       ? [...state.templates]
       : state.templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
 
-    const sortMode = String(state.templateManagerSort || "updated_desc");
+    const sortMode = String(state.templateManagerSort || "manual");
+    if (sortMode === "manual") return list;
     list.sort((a, b) => {
       if (sortMode === "title_asc") return String(a.title || "").localeCompare(String(b.title || ""), "zh-CN");
       if (sortMode === "title_desc") return String(b.title || "").localeCompare(String(a.title || ""), "zh-CN");
@@ -410,6 +411,29 @@
       return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
     });
     return list;
+  }
+
+  async function reorderTemplateById(draggedId, targetId) {
+    const dragged = String(draggedId || "");
+    const target = String(targetId || "");
+    if (!dragged || !target || dragged === target) return false;
+
+    const templates = modules.state.state.templates.slice();
+    const fromIndex = templates.findIndex((item) => String(item.id) === dragged);
+    const toIndex = templates.findIndex((item) => String(item.id) === target);
+    if (fromIndex < 0 || toIndex < 0) return false;
+
+    const [item] = templates.splice(fromIndex, 1);
+    const nextIndex = templates.findIndex((entry) => String(entry.id) === target);
+    templates.splice(nextIndex < 0 ? toIndex : nextIndex, 0, item);
+
+    modules.state.state.templateManagerSort = "manual";
+    const sortInput = modules.runtime.getById("templateManagerSortInput");
+    if (sortInput) sortInput.value = "manual";
+    await saveTemplatesToStorage(templates);
+    modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), "提示词顺序已同步到本地设置。", "success");
+    modules.ui.logToWorkspace("提示词卡片顺序已保存。", "success");
+    return true;
   }
 
   function renderSavedTemplatesList() {
@@ -436,7 +460,7 @@
     listEl.innerHTML = templates
       .map((item) => {
         const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
-        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
+        return `<article class="list-item saved-template-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
       })
       .join("");
   }
@@ -535,7 +559,7 @@
     listEl.innerHTML = visibleTemplates
       .map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
-        return `<button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
+        return `<button class="picker-item is-draggable ${isSelected ? "active" : ""}" type="button" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
       })
       .join("");
 
@@ -603,6 +627,8 @@
     const pickerApplyMode = runtime.getById("templatePickerApplyMode");
     const managerSearchInput = runtime.getById("templateManagerSearchInput");
     const managerSortInput = runtime.getById("templateManagerSortInput");
+    bindTemplateDragSorting(pickerList);
+    bindTemplateDragSorting(runtime.getById("savedTemplatesList"));
 
     [titleInput, contentInput].filter(Boolean).forEach((element) => {
       element.addEventListener("input", () => {
@@ -625,8 +651,9 @@
     }
 
     if (managerSortInput) {
+      managerSortInput.value = modules.state.state.templateManagerSort || "manual";
       managerSortInput.addEventListener("change", () => {
-        modules.state.state.templateManagerSort = managerSortInput.value || "updated_desc";
+        modules.state.state.templateManagerSort = managerSortInput.value || "manual";
         renderSavedTemplatesList();
       });
     }
@@ -746,6 +773,53 @@
     updateTemplateLengthHint();
   }
 
+  function bindTemplateDragSorting(container) {
+    if (!container || container.dataset.templateDragBound === "true") return;
+    container.dataset.templateDragBound = "true";
+    let draggedId = "";
+
+    container.addEventListener("dragstart", (event) => {
+      if (event.target && event.target.closest(".compact-card-actions, input, textarea, select")) return;
+      const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+      if (!item) return;
+      draggedId = String(item.getAttribute("data-template-id") || "");
+      item.classList.add("is-dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", draggedId);
+      }
+    });
+
+    container.addEventListener("dragover", (event) => {
+      const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+      if (!draggedId || !item) return;
+      event.preventDefault();
+      item.classList.add("is-drag-over");
+    });
+
+    container.addEventListener("dragleave", (event) => {
+      const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+      if (item) item.classList.remove("is-drag-over");
+    });
+
+    container.addEventListener("drop", async (event) => {
+      const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+      if (!draggedId || !item) return;
+      event.preventDefault();
+      const targetId = String(item.getAttribute("data-template-id") || "");
+      container.querySelectorAll(".is-drag-over").forEach((node) => node.classList.remove("is-drag-over"));
+      await reorderTemplateById(draggedId, targetId);
+      draggedId = "";
+    });
+
+    container.addEventListener("dragend", () => {
+      draggedId = "";
+      container.querySelectorAll(".is-dragging, .is-drag-over").forEach((node) => {
+        node.classList.remove("is-dragging", "is-drag-over");
+      });
+    });
+  }
+
   modules.templates = {
     PROMPT_WARN_CHARS,
     getTextLength,
@@ -757,6 +831,7 @@
     renderSavedTemplatesList,
     saveEditedTemplate,
     deleteTemplateById,
+    reorderTemplateById,
     importTemplatesFromTextarea,
     exportTemplatesToTextarea,
     importTemplatesFromJsonFile,

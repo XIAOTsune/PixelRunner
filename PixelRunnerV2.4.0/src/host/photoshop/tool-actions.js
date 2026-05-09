@@ -17,10 +17,10 @@ const GLOW_STYLE_PRESETS = {
     glowRadiusWeight: 1,
     glowOpacityWeight: 1,
     highlightFuzzinessWeight: 1,
-    highlightLowerLimitBias: 0,
-    sourceSaturationBias: 0,
-    finalSaturationWeight: 1,
-    finalVibranceWeight: 1,
+    highlightLowerLimitBias: -8,
+    sourceSaturationBias: 14,
+    finalSaturationWeight: 1.1,
+    finalVibranceWeight: 1.08,
     isolationGammaBias: 0,
     glowGammaBias: 0,
     finalGammaBias: 0
@@ -33,11 +33,11 @@ const GLOW_STYLE_PRESETS = {
     haloRadiusWeight: 1.08,
     glowRadiusWeight: 1.16,
     glowOpacityWeight: 0.88,
-    highlightFuzzinessWeight: 1.12,
-    highlightLowerLimitBias: -10,
-    sourceSaturationBias: -6,
-    finalSaturationWeight: 0.82,
-    finalVibranceWeight: 0.74,
+    highlightFuzzinessWeight: 1.2,
+    highlightLowerLimitBias: -18,
+    sourceSaturationBias: 8,
+    finalSaturationWeight: 1.02,
+    finalVibranceWeight: 0.96,
     isolationGammaBias: 0.04,
     glowGammaBias: 0.08,
     finalGammaBias: 0.05
@@ -50,11 +50,11 @@ const GLOW_STYLE_PRESETS = {
     haloRadiusWeight: 1.16,
     glowRadiusWeight: 1.3,
     glowOpacityWeight: 1.12,
-    highlightFuzzinessWeight: 1.2,
-    highlightLowerLimitBias: -16,
-    sourceSaturationBias: 4,
-    finalSaturationWeight: 1.1,
-    finalVibranceWeight: 1.16,
+    highlightFuzzinessWeight: 1.28,
+    highlightLowerLimitBias: -24,
+    sourceSaturationBias: 18,
+    finalSaturationWeight: 1.2,
+    finalVibranceWeight: 1.24,
     isolationGammaBias: 0.05,
     glowGammaBias: 0.12,
     finalGammaBias: 0.08
@@ -88,6 +88,9 @@ function roundToTenth(value, min = 0.1) {
 
 function normalizeGlowStyle(style) {
   const key = String(style || "").trim().toLowerCase();
+  if (key === "none" || key === "darksoft") return "natural";
+  if (key === "whitesoft") return "soft";
+  if (key === "shine") return "dreamy";
   if (key && Object.prototype.hasOwnProperty.call(GLOW_STYLE_PRESETS, key)) return key;
   return "natural";
 }
@@ -128,12 +131,17 @@ function getGlowConfig(payload = {}) {
   const haloRadius = Math.max(coreRadius + 0.6, roundToTenth(radius * 0.34 * stylePreset.haloRadiusWeight * (1 + positiveBias * 0.12 - negativeBias * 0.05), coreRadius + 0.6));
   const midRadius = Math.max(haloRadius + 0.8, roundToTenth(radius * 0.72 * Math.max(1, stylePreset.glowRadiusWeight * 0.94) * glowExpansionFactor, haloRadius + 0.8));
   const bloomRadius = Math.max(midRadius + 1.2, roundToTenth(radius * 1.36 * stylePreset.glowRadiusWeight * glowExpansionFactor, midRadius + 1.2));
-  const highlightFuzziness = clampNumber(Math.round((10 + radius * 0.22 + fade * 0.18) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 6, 58, 18);
-  const channelOutputClamp = clampNumber(Math.round(18 + threshold * 0.28 + fade * 0.1 - brightnessBias * 0.22), 0, 120, 30);
-  const sourceSaturation = clampNumber(Math.round(-24 + saturation * 0.4 + stylePreset.sourceSaturationBias), -100, 50, -24);
-  const finalSaturation = clampNumber(Math.round(saturation * 0.85 * stylePreset.finalSaturationWeight), -100, 100, 0);
-  const finalVibrance = clampNumber(Math.round(saturation * 0.65 * stylePreset.finalVibranceWeight), -100, 100, 0);
-  const highlightLowerLimit = clampNumber(Math.round(208 + threshold * 0.42 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 168, 252, 220);
+  const highlightFuzziness = clampNumber(Math.round((18 + radius * 0.28 + fade * 0.22) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 12, 72, 24);
+  const channelOutputClamp = clampNumber(Math.round(8 + threshold * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
+  const sourceInputBlack = clampNumber(Math.round(42 + threshold * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
+  const sourceInputWhite = clampNumber(Math.round(248 - Math.max(0, brightnessBias) * 0.2), 220, 255, 248);
+  const sourceGamma = Number(clampNumber(0.68 + threshold / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
+  const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + threshold * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
+  const coreGammaBoost = Number(clampNumber(sourceGamma * 0.82, 0.42, 1.28, 0.76).toFixed(2));
+  const sourceSaturation = clampNumber(Math.round(8 + saturation * 0.38 + stylePreset.sourceSaturationBias), -40, 72, 16);
+  const finalSaturation = clampNumber(Math.round(10 + saturation * 0.78 * stylePreset.finalSaturationWeight), -60, 100, 10);
+  const finalVibrance = clampNumber(Math.round(8 + saturation * 0.6 * stylePreset.finalVibranceWeight), -40, 100, 8);
+  const highlightLowerLimit = clampNumber(Math.round(188 + threshold * 0.34 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 150, 244, 202);
   const glowRadiiBase = [0.22, 0.48, 0.82, 1.18, 1.62].map((factor, index) => {
     const minRadius = [0.8, 1.4, 2.1, 2.8, 3.8][index];
     return Math.max(minRadius, roundToTenth(radius * factor * stylePreset.glowRadiusWeight * glowExpansionFactor, minRadius));
@@ -176,6 +184,11 @@ function getGlowConfig(payload = {}) {
     highlightFuzziness,
     highlightLowerLimit,
     channelOutputClamp,
+    sourceInputBlack,
+    sourceInputWhite,
+    sourceGamma,
+    coreInputBlack,
+    coreGammaBoost,
     layerName: String(payload.layerName || `Glow ${Math.round(strength)}%`)
   };
 }
@@ -200,6 +213,51 @@ function getDocumentPixelSize(doc) {
   const width = Math.max(1, Number(doc && doc.width && (doc.width._value ?? doc.width.value ?? doc.width)) || 1);
   const height = Math.max(1, Number(doc && doc.height && (doc.height._value ?? doc.height.value ?? doc.height)) || 1);
   return { width, height };
+}
+
+function getDocumentResolutionValue(doc) {
+  const raw = doc && doc.resolution;
+  const parsed = Number(raw && (raw._value ?? raw.value ?? raw));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 72;
+}
+
+async function createTransparentTempDocument(app, action, name, size, resolution) {
+  const width = Math.max(1, Math.floor(Number(size && size.width) || 1));
+  const height = Math.max(1, Math.floor(Number(size && size.height) || 1));
+  const safeResolution = Math.max(1, Number(resolution) || 72);
+
+  if (app && app.documents && typeof app.documents.add === "function") {
+    try {
+      const doc = await app.documents.add({
+        width,
+        height,
+        resolution: safeResolution,
+        name,
+        mode: "RGBColorMode",
+        fill: "transparent"
+      });
+      if (doc) return doc;
+    } catch (_) {}
+  }
+
+  await action.batchPlay([{
+    _obj: "make",
+    new: { _class: "document" },
+    using: {
+      _obj: "document",
+      name,
+      mode: { _class: "RGBColorMode" },
+      width: { _unit: "pixelsUnit", _value: width },
+      height: { _unit: "pixelsUnit", _value: height },
+      resolution: { _unit: "densityUnit", _value: safeResolution },
+      pixelScaleFactor: 1,
+      fill: { _enum: "fill", _value: "transparent" }
+    }
+  }], {});
+
+  const doc = app && app.activeDocument ? app.activeDocument : null;
+  if (!doc) throw new Error("无法创建辉光临时文档。");
+  return doc;
 }
 
 async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
@@ -311,6 +369,44 @@ async function applyLevelsOutput(action, outputMax) {
   }], {});
 }
 
+async function applyCompositeLevels(action, inputBlack, inputWhite, gamma = 1, outputBlack = 0, outputWhite = 255) {
+  await action.batchPlay([{
+    _obj: "levels",
+    presetKind: {
+      _enum: "presetKindType",
+      _value: "presetKindCustom"
+    },
+    adjustment: [{
+      _obj: "levelsAdjustment",
+      channel: {
+        _ref: "channel",
+        _enum: "channel",
+        _value: "composite"
+      },
+      input: [inputBlack, inputWhite],
+      gamma,
+      output: [outputBlack, outputWhite]
+    }]
+  }], {});
+}
+
+async function applyBlackAndWhite(action) {
+  await action.batchPlay([{
+    _obj: "blackAndWhite",
+    presetKind: {
+      _enum: "presetKindType",
+      _value: "presetKindDefault"
+    },
+    red: 40,
+    yellow: 60,
+    grain: 40,
+    cyan: 60,
+    blue: 20,
+    magenta: 80,
+    useTint: false
+  }], {});
+}
+
 async function setActiveLayerStyle(action, opacity, blendModeValue) {
   await action.batchPlay([{
     _obj: "set",
@@ -362,6 +458,58 @@ async function selectLayerById(action, layerId) {
     _target: [{ _ref: "layer", _id: layerId }],
     makeVisible: false
   }], {});
+}
+
+async function activateDocumentByRef(app, action, docRef) {
+  const documentId = Number(docRef && docRef.id);
+  if (documentId > 0) {
+    return activateDocument(app, action, documentId);
+  }
+  if (docRef) {
+    try {
+      app.activeDocument = docRef;
+    } catch (_) {}
+  }
+  return app && app.activeDocument ? app.activeDocument : null;
+}
+
+function getDocumentRefId(docRef) {
+  const documentId = Number(docRef && docRef.id);
+  return Number.isFinite(documentId) && documentId > 0 ? documentId : 0;
+}
+
+function getActiveDocumentId(app) {
+  return getDocumentRefId(app && app.activeDocument);
+}
+
+function getDocumentRefName(docRef) {
+  return String((docRef && (docRef.title || docRef.name)) || "Untitled");
+}
+
+async function ensureActiveDocumentRef(app, action, docRef, label) {
+  const expectedId = getDocumentRefId(docRef);
+  if (!(expectedId > 0)) {
+    throw new Error(`${label}: target document is unavailable.`);
+  }
+
+  await activateDocumentByRef(app, action, docRef);
+  const activeId = getActiveDocumentId(app);
+  if (activeId !== expectedId) {
+    throw new Error(`${label}: Photoshop active document drifted from "${getDocumentRefName(docRef)}" (#${expectedId}) to #${activeId || "none"}.`);
+  }
+
+  return app && app.activeDocument ? app.activeDocument : null;
+}
+
+async function runOnDocument(app, action, docRef, label, operation) {
+  const expectedId = getDocumentRefId(docRef);
+  await ensureActiveDocumentRef(app, action, docRef, label);
+  const result = await operation();
+  const activeId = getActiveDocumentId(app);
+  if (activeId !== expectedId) {
+    throw new Error(`${label}: Photoshop active document changed unexpectedly after the operation.`);
+  }
+  return result;
 }
 
 async function deleteActiveLayer(action) {
@@ -484,6 +632,32 @@ function getActiveLayerId(app) {
   return Number.isFinite(layerId) && layerId > 0 ? layerId : 0;
 }
 
+function getActiveLayerName(app) {
+  const activeLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+  return String((activeLayer && activeLayer.name) || "").trim();
+}
+
+function isGeneratedGlowLayerName(layerName) {
+  const name = String(layerName || "").trim().toLowerCase();
+  return name === "pixelrunner glow preview" || /^glow(\s|$)/.test(name);
+}
+
+async function selectGlowSourceLayer(app, action) {
+  let guard = 0;
+  while (isGeneratedGlowLayerName(getActiveLayerName(app)) && guard < 30) {
+    try {
+      await selectRelativeLayer(action, "backwardEnum");
+    } catch (_) {
+      break;
+    }
+    guard += 1;
+  }
+  if (isGeneratedGlowLayerName(getActiveLayerName(app))) {
+    throw new Error("当前选中的是辉光结果层，未找到可用的源图层。请先选中原图层再应用辉光。");
+  }
+  return getActiveLayerId(app);
+}
+
 function resetGlowPreviewSessionState() {
   glowPreviewSession.documentId = 0;
   glowPreviewSession.previewLayerId = 0;
@@ -502,7 +676,14 @@ async function clearGlowPreviewLayer(app, action, fallbackDocument = null) {
     }
 
     if (glowPreviewSession.previewLayerId > 0) {
-      await deleteLayerById(action, glowPreviewSession.previewLayerId);
+      try {
+        await selectLayerById(action, glowPreviewSession.previewLayerId);
+        if (getActiveLayerName(app) === GLOW_PREVIEW_LAYER_NAME) {
+          await deleteLayerById(action, glowPreviewSession.previewLayerId);
+        }
+      } catch (_) {
+        await deleteLayerByName(action, GLOW_PREVIEW_LAYER_NAME);
+      }
     } else {
       await deleteLayerByName(action, GLOW_PREVIEW_LAYER_NAME);
     }
@@ -704,70 +885,124 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
   const haloName = `${config.layerName} Halo`;
   const previewMaxEdge = Math.max(0, Math.floor(Number(options.previewMaxEdge) || 0));
   const sourceSize = getDocumentPixelSize(document);
+  const sourceResolution = getDocumentResolutionValue(document);
+  const sourceLayerId = Number(options.sourceLayerId) || 0;
   let tempDoc = null;
   let importedLayer = null;
 
   try {
-    tempDoc = await document.duplicate(`${config.layerName} Temp`, true);
-    app.activeDocument = tempDoc;
+    const originalOp = (label, operation) => runOnDocument(app, action, originalDocument, label, operation);
+    let sourceLayer = null;
 
-    await normalizeWorkingDocumentBitDepth(action, tempDoc);
+    await originalOp("Prepare glow source layer", async () => {
+    if (sourceLayerId > 0) {
+      await selectLayerById(action, sourceLayerId);
+    }
+    sourceLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    if (!sourceLayer || isGeneratedGlowLayerName(sourceLayer.name)) {
+      throw new Error("Glow source layer is unavailable. Select a non-Glow source layer before applying glow.");
+    }
+    });
+    tempDoc = await createTransparentTempDocument(
+      app,
+      action,
+      `${config.layerName} Temp`,
+      sourceSize,
+      sourceResolution
+    );
+    const tempOp = (label, operation) => runOnDocument(app, action, tempDoc, label, operation);
+    await ensureActiveDocumentRef(app, action, originalDocument, "Copy glow source layer to temp document");
+    const duplicatedSourceLayer = await (async () => {
+      if (sourceLayerId > 0) {
+        await selectLayerById(action, sourceLayerId);
+      }
+      sourceLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      if (!sourceLayer || isGeneratedGlowLayerName(sourceLayer.name)) {
+        throw new Error("Glow source layer is unavailable. Select a non-Glow source layer before applying glow.");
+      }
+      return sourceLayer.duplicate(tempDoc);
+    })();
+    const duplicatedSourceLayerId = Number(duplicatedSourceLayer && duplicatedSourceLayer.id) || 0;
+    await tempOp("Select duplicated glow source layer", async () => {
+      if (duplicatedSourceLayerId > 0) {
+        await selectLayerById(action, duplicatedSourceLayerId);
+      }
+      const activeTempLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      if (!activeTempLayer || isGeneratedGlowLayerName(activeTempLayer.name)) {
+        throw new Error("Glow source layer was not copied into the temporary document.");
+      }
+    });
+
+    await tempOp("Normalize glow temp document bit depth", () => normalizeWorkingDocumentBitDepth(action, tempDoc));
     const resizeInfo = previewMaxEdge > 0
-      ? await resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge)
+      ? await tempOp("Resize glow temp document", () => resizeDocumentToLongEdge(action, tempDoc, previewMaxEdge))
       : { scale: 1, width: sourceSize.width, height: sourceSize.height };
     let workingConfig = createScaledGlowConfig(config, Number(resizeInfo.scale) || 1);
     if (previewMaxEdge > 0) {
       workingConfig = createPreviewGlowConfig(workingConfig, getGlowPreviewProfile(config));
     }
-    await renameActiveLayer(action, baseName);
-    await selectHighlights(action, workingConfig);
-    await copySelectionToLayer(action);
-    await renameActiveLayer(action, sourceName);
-    await clearSelection(action);
-    await deleteLayerByName(action, baseName);
+    await tempOp("Build glow source mask", async () => {
+      await renameActiveLayer(action, sourceName);
+      await applyCompositeLevels(
+        action,
+        workingConfig.sourceInputBlack,
+        workingConfig.sourceInputWhite,
+        workingConfig.sourceGamma,
+        0,
+        255
+      );
+    });
 
     if (workingConfig.sourceSaturation !== 0) {
-      await applyHueSaturation(action, workingConfig.sourceSaturation);
+      await tempOp("Adjust glow source saturation", () => applyHueSaturation(action, workingConfig.sourceSaturation));
     }
     if (Math.abs(workingConfig.isolationExposure) > 0.01 || Math.abs(workingConfig.isolationGamma - 1) > 0.01) {
-      await applyExposureIsolation(action, workingConfig.isolationExposure, workingConfig.isolationGamma);
+      await tempOp("Adjust glow source exposure", () => applyExposureIsolation(action, workingConfig.isolationExposure, workingConfig.isolationGamma));
     }
-    await selectChannel(action, "red");
-    await applyLevelsOutput(action, 242);
-    await selectChannel(action, "grain");
-    await applyLevelsOutput(action, 242);
-    await selectChannel(action, "blue");
-    await applyLevelsOutput(action, 242);
-    await selectChannel(action, "RGB");
-    await renameActiveLayer(action, detailName);
-    await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
+    await tempOp("Prepare glow detail layer", async () => {
+      await renameActiveLayer(action, detailName);
+      await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
+    });
 
+    await tempOp("Build glow core layer", async () => {
     await selectLayerByName(action, detailName);
     await duplicateActiveLayer(action, coreName);
     await renameActiveLayer(action, coreName);
+    await applyCompositeLevels(action, workingConfig.coreInputBlack, 255, workingConfig.coreGammaBoost, 0, 255);
     await applyGaussianBlur(action, workingConfig.coreRadius);
     await applyExposureIsolation(action, workingConfig.coreExposure, workingConfig.coreGamma);
     await setActiveLayerStyle(action, workingConfig.coreOpacity, "screen");
+    });
 
+    await tempOp("Build glow halo layer", async () => {
     await selectLayerByName(action, detailName);
     await duplicateActiveLayer(action, haloName);
     await renameActiveLayer(action, haloName);
     await applyGaussianBlur(action, workingConfig.haloRadius);
     await applyExposureIsolation(action, workingConfig.glowExposure, Number((workingConfig.glowGamma - 0.04).toFixed(2)));
     await setActiveLayerStyle(action, workingConfig.haloOpacity, "screen");
+    });
 
     for (let index = 0; index < workingConfig.glowRadii.length; index += 1) {
+      await tempOp(`Build glow bloom layer ${index + 1}`, async () => {
       await selectLayerByName(action, detailName);
       await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
       await renameActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
+      if (index > 0) {
+        await applyCompositeLevels(action, Math.max(0, workingConfig.sourceInputBlack - 8), 255, Math.max(0.5, workingConfig.sourceGamma * 0.92), 0, 255);
+      }
       await applyGaussianBlur(action, workingConfig.glowRadii[index]);
       await applyExposureIsolation(action, workingConfig.glowExposure, workingConfig.glowGamma);
       await setActiveLayerStyle(action, workingConfig.glowOpacities[index], "screen");
+      });
     }
 
+    await tempOp("Merge glow temp layers", async () => {
     await mergeVisibleLayers(action);
     await renameActiveLayer(action, config.layerName);
+    });
 
+    await tempOp("Finalize glow temp layer tone", async () => {
     await applyExposureIsolation(action, 0, workingConfig.finalGamma);
     const outputMax = Math.max(96, 255 - workingConfig.channelOutputClamp);
     await selectChannel(action, "red");
@@ -777,30 +1012,34 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     await selectChannel(action, "blue");
     await applyLevelsOutput(action, outputMax);
     await selectChannel(action, "RGB");
+    });
     if (workingConfig.finalVibrance !== 0 || workingConfig.finalSaturation !== 0) {
-      await applyVibrance(action, workingConfig.finalVibrance, workingConfig.finalSaturation);
+      await tempOp("Finalize glow temp layer color", () => applyVibrance(action, workingConfig.finalVibrance, workingConfig.finalSaturation));
     }
-    await setActiveLayerStyle(action, 100, "screen");
+    await tempOp("Finalize glow temp layer style", () => setActiveLayerStyle(action, 100, "screen"));
 
     const tempResultLayer = tempDoc && tempDoc.activeLayers && tempDoc.activeLayers[0];
     if (!tempResultLayer) {
       throw new Error("Glow result layer was not created.");
     }
 
+    await ensureActiveDocumentRef(app, action, tempDoc, "Copy glow result layer back");
     importedLayer = await tempResultLayer.duplicate(originalDocument);
-    app.activeDocument = originalDocument;
+    await ensureActiveDocumentRef(app, action, originalDocument, "Select imported glow result layer");
     const importedLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
-    if (importedLayerId > 0) {
-      await selectLayerById(action, importedLayerId);
-    }
-    await renameActiveLayer(action, config.layerName);
-    await setActiveLayerStyle(action, 100, "screen");
-    if (previewMaxEdge > 0) {
-      await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
-    }
+    await originalOp("Finalize imported glow result layer", async () => {
+      if (importedLayerId > 0) {
+        await selectLayerById(action, importedLayerId);
+      }
+      await renameActiveLayer(action, config.layerName);
+      await setActiveLayerStyle(action, 100, "screen");
+      if (previewMaxEdge > 0) {
+        await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
+      }
+    });
   } finally {
     try {
-      app.activeDocument = originalDocument;
+      await activateDocumentByRef(app, action, originalDocument);
     } catch (_) {}
     if (tempDoc) {
       try {
@@ -961,6 +1200,7 @@ async function runModalToolAction(actionName, payload, app, document, action, co
       const config = getGlowConfig(payload);
       const originalDocument = document;
       let importedLayer = null;
+      let sourceLayerId = 0;
 
       if (actionName === "glowPreviewCancel") {
         await clearGlowPreviewLayer(app, action, originalDocument);
@@ -974,7 +1214,9 @@ async function runModalToolAction(actionName, payload, app, document, action, co
           resetGlowPreviewSessionState();
         }
         glowPreviewSession.documentId = Number(originalDocument.id) || 0;
-        glowPreviewSession.sourceLayerId = getActiveLayerId(app);
+        glowPreviewSession.sourceLayerId = isGeneratedGlowLayerName(getActiveLayerName(app))
+          ? await selectGlowSourceLayer(app, action)
+          : getActiveLayerId(app);
       }
 
       if (actionName === "glowPreviewUpdate" || actionName === "glowPreviewStart") {
@@ -988,7 +1230,10 @@ async function runModalToolAction(actionName, payload, app, document, action, co
           originalDocument,
           action,
           constants.SaveOptions || {},
-          { previewMaxEdge: getGlowPreviewMaxEdge(config) }
+          {
+            previewMaxEdge: getGlowPreviewMaxEdge(config),
+            sourceLayerId: glowPreviewSession.sourceLayerId
+          }
         );
         glowPreviewSession.documentId = Number(originalDocument.id) || 0;
         glowPreviewSession.previewLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
@@ -1015,7 +1260,10 @@ async function runModalToolAction(actionName, payload, app, document, action, co
             originalDocument,
             action,
             constants.SaveOptions || {},
-            { previewMaxEdge: 0 }
+            {
+              previewMaxEdge: 0,
+              sourceLayerId
+            }
           );
           const committedLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
           return buildToolCommandResponse(actionName, app, `已按全分辨率生成 ${config.layerName}。`, {
@@ -1029,9 +1277,13 @@ async function runModalToolAction(actionName, payload, app, document, action, co
             layerId: committedLayerId
           });
         }
+        sourceLayerId = await selectGlowSourceLayer(app, action);
+        await clearGlowPreviewLayer(app, action, originalDocument);
+        resetGlowPreviewSessionState();
       }
 
       if (actionName === "glow") {
+        sourceLayerId = await selectGlowSourceLayer(app, action);
         await clearGlowPreviewLayer(app, action, originalDocument);
         resetGlowPreviewSessionState();
       }
@@ -1042,12 +1294,22 @@ async function runModalToolAction(actionName, payload, app, document, action, co
         originalDocument,
         action,
         constants.SaveOptions || {},
-        { previewMaxEdge: 0 }
+        {
+          previewMaxEdge: 0,
+          sourceLayerId
+        }
       );
 
       const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      const resultLayerName = String((importedLayer && importedLayer.name) || (activeLayer && activeLayer.name) || config.layerName);
+      const resultLayerId = Number((importedLayer && importedLayer.id) || (activeLayer && activeLayer.id) || 0) || 0;
+      if (actionName === "glow" && sourceLayerId > 0) {
+        try {
+          await selectLayerById(action, sourceLayerId);
+        } catch (_) {}
+      }
       return buildToolCommandResponse(actionName, app, `Created rebuilt glow layer from isolated highlight source: strength ${config.strength}%, radius ${config.radius}, threshold ${config.threshold}%.`, {
-        layerName: String((importedLayer && importedLayer.name) || (activeLayer && activeLayer.name) || config.layerName),
+        layerName: resultLayerName,
         style: config.style,
         strength: config.strength,
         radius: config.radius,
@@ -1058,7 +1320,8 @@ async function runModalToolAction(actionName, payload, app, document, action, co
         bloomRadius: config.bloomRadius,
         coreOpacity: config.glowOpacities[0],
         bloomOpacity: config.glowOpacities[config.glowOpacities.length - 1],
-        layerId: Number((importedLayer && importedLayer.id) || (activeLayer && activeLayer.id) || 0) || 0
+        layerId: resultLayerId,
+        sourceLayerId
       });
     }
     default:

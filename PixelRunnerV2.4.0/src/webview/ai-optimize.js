@@ -577,7 +577,7 @@
       return { available: false, reason: "当前应用未检测到可写入的主提示词字段。" };
     }
     if (state.availableImages.length === 0) {
-      return { available: false, reason: "请先在当前应用里导入至少一张图片，然后再打开 AI优化。" };
+      return { available: true, reason: "请先在当前应用里导入至少一张图片，然后再开始 AI优化。" };
     }
     return { available: true, reason: "" };
   }
@@ -794,7 +794,10 @@
     state.coinsCharge = null;
     state.chargeDisplay = "";
     state.txtUrl = "";
-    if (String(state.promptValue || "").trim()) {
+    if (state.availableImages.length === 0) {
+      state.statusMessage = "当前还没有检测到图片。可以先编辑提示词，导入图片后再开始优化。";
+      state.statusType = "warn";
+    } else if (String(state.promptValue || "").trim()) {
       state.statusMessage = "点击“开始优化”后，这里会显示 AI 返回的优化提示词。";
       state.statusType = "info";
     } else {

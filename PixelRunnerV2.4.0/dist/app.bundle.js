@@ -268,7 +268,8 @@ var PixelRunnerWebviewBundle = (() => {
       CURRENT_APP_ID: "pixelrunner.current_app_id",
       WORKSPACE_MODE: "pixelrunner.workspaceMode",
       QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
-      SOUND_ENABLED: "pixelrunner.sound_enabled"
+      SOUND_ENABLED: "pixelrunner.sound_enabled",
+      THEME: "pixelrunner.theme.v1"
     };
     const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
     const DEFAULT_SETTINGS = {
@@ -278,6 +279,13 @@ var PixelRunnerWebviewBundle = (() => {
       maxConcurrentTasks: 3,
       aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID
     };
+    const DEFAULT_THEME = {
+      preset: "classic",
+      basePreset: "classic",
+      customImage: "",
+      customImageName: "",
+      glass: false
+    };
     const state = {
       apps: [],
       currentApp: null,
@@ -286,9 +294,9 @@ var PixelRunnerWebviewBundle = (() => {
       templates: [],
       appPickerKeyword: "",
       appManagerKeyword: "",
-      appManagerSort: "updated_desc",
+      appManagerSort: "manual",
       templateManagerKeyword: "",
-      templateManagerSort: "updated_desc",
+      templateManagerSort: "manual",
       settings: { ...DEFAULT_SETTINGS },
       settingsLoaded: false,
       accountSummary: {
@@ -336,8 +344,22 @@ var PixelRunnerWebviewBundle = (() => {
       sound: {
         enabled: true,
         playerReady: false
-      }
+      },
+      theme: { ...DEFAULT_THEME }
     };
+    function normalizeTheme(theme) {
+      const source = theme && typeof theme === "object" ? theme : {};
+      const preset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.preset || "")) ? String(source.preset) : DEFAULT_THEME.preset;
+      const customImage = String(source.customImage || "").trim();
+      const basePreset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.basePreset || "")) ? String(source.basePreset) : preset;
+      return {
+        preset: customImage ? "custom" : preset,
+        basePreset: customImage ? basePreset : preset,
+        customImage,
+        customImageName: String(source.customImageName || "").trim(),
+        glass: Boolean(source.glass || customImage)
+      };
+    }
     function normalizeSettings(settings) {
       const source = settings && typeof settings === "object" ? settings : {};
       const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
@@ -481,7 +503,9 @@ var PixelRunnerWebviewBundle = (() => {
       STORAGE_KEYS,
       DEFAULT_AI_OPTIMIZE_APP_ID,
       DEFAULT_SETTINGS,
+      DEFAULT_THEME,
       state,
+      normalizeTheme,
       normalizeSettings,
       normalizeAppInputs,
       resolveAppId,
@@ -497,6 +521,656 @@ var PixelRunnerWebviewBundle = (() => {
     };
   })(window);
 
+  // src/webview/glow/presets.js
+  (function initGlowPresetsModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function clamp(value, min, max, fallback = min) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return fallback;
+      return Math.min(max, Math.max(min, parsed));
+    }
+    function normalizeStyle(style) {
+      const key = String(style || "").trim().toLowerCase();
+      if (key === "none") return "none";
+      if (key === "whitesoft" || key === "soft") return "whiteSoft";
+      if (key === "shine" || key === "dreamy") return "shine";
+      return "darkSoft";
+    }
+    const STYLE_PRESETS = {
+      none: {
+        thresholdBias: 0,
+        whiteProtect: 1,
+        skinProtect: 1,
+        darkProtect: 1,
+        knee: 0.18,
+        chromaBoost: 0,
+        smallWeight: 0,
+        mediumWeight: 0,
+        largeWeight: 0,
+        softAddMix: 0,
+        warmth: 0,
+        scatter: 0
+      },
+      darkSoft: {
+        thresholdBias: 0.02,
+        whiteProtect: 0.86,
+        skinProtect: 0.78,
+        darkProtect: 0.42,
+        knee: 0.24,
+        chromaBoost: 0.28,
+        smallWeight: 0.42,
+        mediumWeight: 0.88,
+        largeWeight: 0.48,
+        softAddMix: 0.42,
+        warmth: 0.035,
+        scatter: 0.88
+      },
+      whiteSoft: {
+        thresholdBias: -0.02,
+        whiteProtect: 0.92,
+        skinProtect: 0.86,
+        darkProtect: 0.46,
+        knee: 0.28,
+        chromaBoost: 0.2,
+        smallWeight: 0.32,
+        mediumWeight: 0.94,
+        largeWeight: 0.56,
+        softAddMix: 0.52,
+        warmth: 0.025,
+        scatter: 1
+      },
+      shine: {
+        thresholdBias: -0.06,
+        whiteProtect: 0.78,
+        skinProtect: 0.74,
+        darkProtect: 0.5,
+        knee: 0.32,
+        chromaBoost: 0.36,
+        smallWeight: 0.3,
+        mediumWeight: 0.9,
+        largeWeight: 0.72,
+        softAddMix: 0.64,
+        warmth: 0.06,
+        scatter: 1.18
+      }
+    };
+    function normalizeGlowParams(config = {}) {
+      const style = normalizeStyle(config.style);
+      const preset = STYLE_PRESETS[style];
+      const strength = style === "none" ? 0 : clamp(config.strength, 0, 100, 47);
+      const radius = clamp(config.radius, 1, 120, 81);
+      const threshold = clamp(config.threshold, 0, 100, 81);
+      const saturation = clamp(config.saturation, -100, 100, 81);
+      const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
+      const radiusRatio = radius / 120;
+      const thresholdRatio = threshold / 100;
+      const brightnessLift = brightnessBias / 50;
+      return {
+        style,
+        strength,
+        radius,
+        threshold,
+        saturation,
+        brightnessBias,
+        source: {
+          thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
+          thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
+          thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + radiusRatio * 0.04, 0.08, 0.34, 0.2),
+          localRadius: Math.max(3, Math.round(4 + radiusRatio * 10)),
+          contrastLow: 0.025,
+          contrastHigh: clamp(0.095 - thresholdRatio * 0.035, 0.038, 0.11, 0.07),
+          specularLow: 0.06,
+          specularHigh: 0.28,
+          chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22, 0, 0.62, preset.chromaBoost),
+          whiteProtect: preset.whiteProtect,
+          skinProtect: preset.skinProtect,
+          darkProtect: preset.darkProtect
+        },
+        blur: {
+          smallRadius: Math.max(1, Math.round(1.5 + radiusRatio * 4)),
+          mediumRadius: Math.max(2, Math.round(5 + radiusRatio * 14)),
+          largeRadius: Math.max(3, Math.round(7 + radiusRatio * 24)),
+          smallWeight: preset.smallWeight,
+          mediumWeight: preset.mediumWeight,
+          largeWeight: preset.largeWeight * (0.7 + radiusRatio * preset.scatter),
+          passes: radius > 72 ? 2 : 1
+        },
+        composite: {
+          intensity: strength / 100 * 2.35,
+          softAddMix: preset.softAddMix,
+          warmth: preset.warmth,
+          saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
+          highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
+          shadowProtect: preset.darkProtect,
+          colorProtect: 0.18,
+          shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58)
+        }
+      };
+    }
+    modules.glowPresets = {
+      clamp,
+      normalizeGlowParams
+    };
+  })(window);
+
+  // src/webview/glow/source-mask.js
+  (function initGlowSourceMaskModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+    function smoothstep(edge0, edge1, value) {
+      const t = clamp((value - edge0) / Math.max(1e-4, edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+    function softThresholdMask(value, threshold, knee) {
+      const safeKnee = Math.max(1e-4, knee);
+      const soft = clamp(value - threshold + safeKnee, 0, safeKnee * 2);
+      const curved = soft * soft / (safeKnee * 4);
+      return clamp(Math.max(curved, value - threshold) / Math.max(value, 1e-4), 0, 1);
+    }
+    function boostSaturation(r, g, b, amount) {
+      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      return [
+        clamp(luma + (r - luma) * (1 + amount), 0, 1),
+        clamp(luma + (g - luma) * (1 + amount), 0, 1),
+        clamp(luma + (b - luma) * (1 + amount), 0, 1)
+      ];
+    }
+    function createLayer(width, height) {
+      return {
+        width,
+        height,
+        r: new Float32Array(width * height),
+        g: new Float32Array(width * height),
+        b: new Float32Array(width * height)
+      };
+    }
+    function blurFloatHorizontal(src, width, height, radius) {
+      const out = new Float32Array(src.length);
+      const size = radius * 2 + 1;
+      for (let y = 0; y < height; y += 1) {
+        const row = y * width;
+        let sum = 0;
+        for (let x = -radius; x <= radius; x += 1) {
+          sum += src[row + clamp(x, 0, width - 1)];
+        }
+        for (let x = 0; x < width; x += 1) {
+          out[row + x] = sum / size;
+          const removeX = clamp(x - radius, 0, width - 1);
+          const addX = clamp(x + radius + 1, 0, width - 1);
+          sum += src[row + addX] - src[row + removeX];
+        }
+      }
+      return out;
+    }
+    function blurFloat(src, width, height, radius) {
+      const r = Math.max(1, Math.floor(radius));
+      const horizontal = blurFloatHorizontal(src, width, height, r);
+      const out = new Float32Array(src.length);
+      const size = r * 2 + 1;
+      for (let x = 0; x < width; x += 1) {
+        let sum = 0;
+        for (let y = -r; y <= r; y += 1) {
+          sum += horizontal[clamp(y, 0, height - 1) * width + x];
+        }
+        for (let y = 0; y < height; y += 1) {
+          out[y * width + x] = sum / size;
+          const removeY = clamp(y - r, 0, height - 1);
+          const addY = clamp(y + r + 1, 0, height - 1);
+          sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
+        }
+      }
+      return out;
+    }
+    function rgbToHsv(r, g, b) {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      let h = 0;
+      if (delta > 1e-4) {
+        if (max === r) h = (g - b) / delta % 6;
+        else if (max === g) h = (b - r) / delta + 2;
+        else h = (r - g) / delta + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+      }
+      return { h, s: max === 0 ? 0 : delta / max, v: max };
+    }
+    function createMaskImageData(mask, width, height, tint = null) {
+      const out = new ImageData(width, height);
+      const tr = tint ? tint[0] : 255;
+      const tg = tint ? tint[1] : 255;
+      const tb = tint ? tint[2] : 255;
+      for (let pixel = 0, index = 0; pixel < mask.length; pixel += 1, index += 4) {
+        const value = clamp(mask[pixel], 0, 1);
+        out.data[index] = Math.round(tr * value);
+        out.data[index + 1] = Math.round(tg * value);
+        out.data[index + 2] = Math.round(tb * value);
+        out.data[index + 3] = 255;
+      }
+      return out;
+    }
+    function buildSourceMask(imageData, params, options = {}) {
+      const { width, height, data } = imageData;
+      const total = width * height;
+      const luma = new Float32Array(total);
+      const maxChannelMap = new Float32Array(total);
+      const saturationMap = new Float32Array(total);
+      for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
+        const r = data[index] / 255;
+        const g = data[index + 1] / 255;
+        const b = data[index + 2] / 255;
+        const maxChannel = Math.max(r, g, b);
+        const minChannel = Math.min(r, g, b);
+        luma[pixel] = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        maxChannelMap[pixel] = maxChannel;
+        saturationMap[pixel] = maxChannel <= 0 ? 0 : (maxChannel - minChannel) / maxChannel;
+      }
+      const localMean = blurFloat(luma, width, height, params.source.localRadius);
+      const localContrast = new Float32Array(total);
+      const lumaMask = new Float32Array(total);
+      const contrastMask = new Float32Array(total);
+      const whiteFlatMask = new Float32Array(total);
+      const skinLikeMask = new Float32Array(total);
+      const darkProtect = new Float32Array(total);
+      const protectMask = new Float32Array(total);
+      const sourceMask = new Float32Array(total);
+      const sourceLayer = createLayer(width, height);
+      for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
+        const r = data[index] / 255;
+        const g = data[index + 1] / 255;
+        const b = data[index + 2] / 255;
+        const lum = luma[pixel];
+        const sat = saturationMap[pixel];
+        const contrast = Math.max(0, lum - localMean[pixel]);
+        const specular = Math.max(0, maxChannelMap[pixel] - localMean[pixel]);
+        const hsv = rgbToHsv(r, g, b);
+        const brightness = Math.max(lum * 0.82 + maxChannelMap[pixel] * 0.18, maxChannelMap[pixel] * 0.88);
+        const lumaScore = softThresholdMask(brightness, params.source.thresholdLow, params.source.thresholdKnee) * smoothstep(params.source.thresholdLow - params.source.thresholdKnee * 0.92, params.source.thresholdHigh, brightness);
+        const contrastScore = smoothstep(params.source.contrastLow, params.source.contrastHigh, contrast);
+        const specularScore = smoothstep(params.source.specularLow, params.source.specularHigh, specular);
+        const highLightness = smoothstep(0.72, 0.94, lum);
+        const lowContrast = 1 - smoothstep(0.012, 0.075, contrast);
+        const lowSat = 1 - smoothstep(0.12, 0.36, sat);
+        const whiteFlat = highLightness * lowContrast * lowSat;
+        const skinHue = hsv.h >= 5 && hsv.h <= 52 ? 1 : 0;
+        const skinColor = skinHue * smoothstep(0.16, 0.36, sat) * (1 - smoothstep(0.78, 0.96, sat)) * smoothstep(0.38, 0.74, lum) * (1 - smoothstep(0.9, 1, lum));
+        const dark = 1 - smoothstep(0.08, 0.28, lum);
+        const protection = clamp(
+          whiteFlat * params.source.whiteProtect + skinColor * params.source.skinProtect + dark * params.source.darkProtect,
+          0,
+          1
+        );
+        const chromaSource = smoothstep(0.08, 0.46, sat) * smoothstep(0.44, 0.84, brightness);
+        const reflectiveBoost = clamp(0.5 + contrastScore * 0.46 + specularScore * 0.42 + chromaSource * 0.22, 0, 1.22);
+        const edgeSource = Math.max(contrastScore * 0.22, specularScore * 0.36) * smoothstep(0.44, 0.88, brightness);
+        const combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
+        const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.78), 0, 1);
+        const colorGain = Math.pow(mask, 0.78);
+        const chromaBoost = params.source.chromaBoost * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
+        const [sourceR, sourceG, sourceB] = boostSaturation(r, g, b, chromaBoost);
+        localContrast[pixel] = contrast;
+        lumaMask[pixel] = lumaScore;
+        contrastMask[pixel] = Math.max(contrastScore, specularScore * 0.72);
+        whiteFlatMask[pixel] = whiteFlat;
+        skinLikeMask[pixel] = skinColor;
+        darkProtect[pixel] = dark;
+        protectMask[pixel] = protection;
+        sourceMask[pixel] = mask;
+        sourceLayer.r[pixel] = sourceR * colorGain;
+        sourceLayer.g[pixel] = sourceG * colorGain;
+        sourceLayer.b[pixel] = sourceB * colorGain;
+      }
+      return {
+        width,
+        height,
+        sourceLayer,
+        masks: {
+          luma,
+          localContrast,
+          lumaMask,
+          contrastMask,
+          whiteFlatMask,
+          skinLikeMask,
+          darkProtect,
+          protectMask,
+          sourceMask
+        },
+        debugImages: options.includeDebug === false ? null : {
+          luma: createMaskImageData(lumaMask, width, height),
+          contrast: createMaskImageData(contrastMask, width, height),
+          whiteFlat: createMaskImageData(whiteFlatMask, width, height),
+          skinLike: createMaskImageData(skinLikeMask, width, height, [255, 188, 126]),
+          darkProtect: createMaskImageData(darkProtect, width, height, [120, 172, 255]),
+          sourceMask: createMaskImageData(sourceMask, width, height, [255, 244, 190]),
+          protectMask: createMaskImageData(protectMask, width, height, [142, 207, 255])
+        }
+      };
+    }
+    modules.glowSourceMask = {
+      buildSourceMask,
+      createMaskImageData
+    };
+  })(window);
+
+  // src/webview/glow/pyramid-blur.js
+  (function initGlowPyramidBlurModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function createLayer(width, height) {
+      return {
+        width,
+        height,
+        r: new Float32Array(width * height),
+        g: new Float32Array(width * height),
+        b: new Float32Array(width * height)
+      };
+    }
+    function downsampleLayer(layer) {
+      const nextWidth = Math.max(1, Math.floor(layer.width / 2));
+      const nextHeight = Math.max(1, Math.floor(layer.height / 2));
+      const out = createLayer(nextWidth, nextHeight);
+      for (let y = 0; y < nextHeight; y += 1) {
+        for (let x = 0; x < nextWidth; x += 1) {
+          const sx = x * 2;
+          const sy = y * 2;
+          const target = y * nextWidth + x;
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          let weightTotal = 0;
+          for (let oy = -1; oy <= 2; oy += 1) {
+            const yy = Math.min(layer.height - 1, Math.max(0, sy + oy));
+            const wy = oy === 0 || oy === 1 ? 3 : 1;
+            for (let ox = -1; ox <= 2; ox += 1) {
+              const xx = Math.min(layer.width - 1, Math.max(0, sx + ox));
+              const wx = ox === 0 || ox === 1 ? 3 : 1;
+              const weight = wx * wy;
+              const source = yy * layer.width + xx;
+              r += layer.r[source] * weight;
+              g += layer.g[source] * weight;
+              b += layer.b[source] * weight;
+              weightTotal += weight;
+            }
+          }
+          out.r[target] = r / weightTotal;
+          out.g[target] = g / weightTotal;
+          out.b[target] = b / weightTotal;
+        }
+      }
+      return out;
+    }
+    function blurChannelHorizontal(src, width, height, radius) {
+      const out = new Float32Array(src.length);
+      const size = radius * 2 + 1;
+      for (let y = 0; y < height; y += 1) {
+        const row = y * width;
+        let sum = 0;
+        for (let x = -radius; x <= radius; x += 1) {
+          sum += src[row + Math.min(width - 1, Math.max(0, x))];
+        }
+        for (let x = 0; x < width; x += 1) {
+          out[row + x] = sum / size;
+          const removeX = Math.max(0, x - radius);
+          const addX = Math.min(width - 1, x + radius + 1);
+          sum += src[row + addX] - src[row + removeX];
+        }
+      }
+      return out;
+    }
+    function blurChannelVertical(src, width, height, radius) {
+      const out = new Float32Array(src.length);
+      const size = radius * 2 + 1;
+      for (let x = 0; x < width; x += 1) {
+        let sum = 0;
+        for (let y = -radius; y <= radius; y += 1) {
+          sum += src[Math.min(height - 1, Math.max(0, y)) * width + x];
+        }
+        for (let y = 0; y < height; y += 1) {
+          out[y * width + x] = sum / size;
+          const removeY = Math.max(0, y - radius);
+          const addY = Math.min(height - 1, y + radius + 1);
+          sum += src[addY * width + x] - src[removeY * width + x];
+        }
+      }
+      return out;
+    }
+    function boxBlurLayer(layer, radius, passes = 1) {
+      const blurRadius = Math.max(1, Math.floor(radius));
+      let r = layer.r;
+      let g = layer.g;
+      let b = layer.b;
+      for (let pass = 0; pass < passes; pass += 1) {
+        r = blurChannelVertical(blurChannelHorizontal(r, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
+        g = blurChannelVertical(blurChannelHorizontal(g, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
+        b = blurChannelVertical(blurChannelHorizontal(b, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
+      }
+      return { width: layer.width, height: layer.height, r, g, b };
+    }
+    function addUpsampled(target, source, weight) {
+      const xScale = source.width / target.width;
+      const yScale = source.height / target.height;
+      for (let y = 0; y < target.height; y += 1) {
+        const sy = Math.min(source.height - 1, Math.max(0, (y + 0.5) * yScale - 0.5));
+        const y0 = Math.floor(sy);
+        const y1 = Math.min(source.height - 1, y0 + 1);
+        const ty = sy - y0;
+        for (let x = 0; x < target.width; x += 1) {
+          const sx = Math.min(source.width - 1, Math.max(0, (x + 0.5) * xScale - 0.5));
+          const x0 = Math.floor(sx);
+          const x1 = Math.min(source.width - 1, x0 + 1);
+          const tx = sx - x0;
+          const a = y0 * source.width + x0;
+          const b = y0 * source.width + x1;
+          const c = y1 * source.width + x0;
+          const d = y1 * source.width + x1;
+          const targetIndex = y * target.width + x;
+          const wa = (1 - tx) * (1 - ty);
+          const wb = tx * (1 - ty);
+          const wc = (1 - tx) * ty;
+          const wd = tx * ty;
+          target.r[targetIndex] += (source.r[a] * wa + source.r[b] * wb + source.r[c] * wc + source.r[d] * wd) * weight;
+          target.g[targetIndex] += (source.g[a] * wa + source.g[b] * wb + source.g[c] * wc + source.g[d] * wd) * weight;
+          target.b[targetIndex] += (source.b[a] * wa + source.b[b] * wb + source.b[c] * wc + source.b[d] * wd) * weight;
+        }
+      }
+    }
+    function buildMultiScaleGlow(sourceLayer, params) {
+      const level1 = downsampleLayer(sourceLayer);
+      const level2 = downsampleLayer(level1);
+      const level3 = downsampleLayer(level2);
+      const small = boxBlurLayer(sourceLayer, params.blur.smallRadius, 1);
+      const medium = boxBlurLayer(level1, params.blur.mediumRadius, params.blur.passes);
+      const large = boxBlurLayer(level2.width > 1 && level2.height > 1 ? level2 : level3, params.blur.largeRadius, 2);
+      const out = createLayer(sourceLayer.width, sourceLayer.height);
+      addUpsampled(out, small, params.blur.smallWeight);
+      addUpsampled(out, medium, params.blur.mediumWeight);
+      addUpsampled(out, large, params.blur.largeWeight);
+      return { glowLayer: out, levels: { small, medium, large } };
+    }
+    modules.glowPyramidBlur = {
+      createLayer,
+      buildMultiScaleGlow
+    };
+  })(window);
+
+  // src/webview/glow/compositor.js
+  (function initGlowCompositorModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value));
+    }
+    function applySaturation(r, g, b, saturation) {
+      const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
+      return [
+        luma + (r - luma) * saturation,
+        luma + (g - luma) * saturation,
+        luma + (b - luma) * saturation
+      ];
+    }
+    function softShoulder(value, shoulder) {
+      const safeShoulder = clamp(shoulder, 0.1, 0.95);
+      return value / (1 + value * safeShoulder);
+    }
+    function composeProtected(baseImageData, glowLayer, masks, params) {
+      const { width, height, data } = baseImageData;
+      const out = new ImageData(width, height);
+      for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+        const baseR = data[index] / 255;
+        const baseG = data[index + 1] / 255;
+        const baseB = data[index + 2] / 255;
+        const baseLuma = masks.luma[pixel];
+        const source = masks.sourceMask[pixel];
+        const protect = masks.protectMask[pixel];
+        const darkProtect = masks.darkProtect[pixel];
+        const highlightProtect = protect * params.composite.highlightProtect * (0.45 + baseLuma * 0.72);
+        const shadowProtect = darkProtect * params.composite.shadowProtect;
+        const sourceAnchor = 0.62 + source * 0.38;
+        const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+        const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
+        const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
+        const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+        const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
+        const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const screenR = 1 - (1 - baseR) * (1 - glowR);
+        const screenG = 1 - (1 - baseG) * (1 - glowG);
+        const screenB = 1 - (1 - baseB) * (1 - glowB);
+        const softR = clamp(baseR + glowR * (1 - baseR * (0.58 + protect * 0.34)), 0, 1);
+        const softG = clamp(baseG + glowG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
+        const softB = clamp(baseB + glowB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
+        const mix = params.composite.softAddMix;
+        const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.84, 1);
+        const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
+        const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
+        const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);
+        out.data[index] = Math.round(clamp(resultR, 0, 1) * 255);
+        out.data[index + 1] = Math.round(clamp(resultG, 0, 1) * 255);
+        out.data[index + 2] = Math.round(clamp(resultB, 0, 1) * 255);
+        out.data[index + 3] = data[index + 3];
+      }
+      return out;
+    }
+    modules.glowCompositor = {
+      composeProtected
+    };
+  })(window);
+
+  // src/webview/glow/preview-engine.js
+  (function initGlowPreviewEngineModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    function createCanvas(width, height) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(width));
+      canvas.height = Math.max(1, Math.floor(height));
+      return canvas;
+    }
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Failed to load glow source image"));
+        image.src = src;
+      });
+    }
+    function getImageDataFromImage(image) {
+      const canvas = createCanvas(image.naturalWidth || image.width, image.naturalHeight || image.height);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab");
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        imageData: ctx.getImageData(0, 0, canvas.width, canvas.height)
+      };
+    }
+    function imageDataToDataUrl(imageData, type = "image/png", quality = 0.9) {
+      const canvas = createCanvas(imageData.width, imageData.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D is unavailable for Glow Lab output");
+      ctx.putImageData(imageData, 0, 0);
+      return canvas.toDataURL(type, quality);
+    }
+    async function createPreview(sourceDataUrl, config = {}, options = {}) {
+      if (!sourceDataUrl) throw new Error("Glow source image is missing");
+      const jobId = Number(options.jobId) || 0;
+      const startedAt = performance.now();
+      const image = await loadImage(sourceDataUrl);
+      const source = getImageDataFromImage(image);
+      const params = modules.glowPresets.normalizeGlowParams(config);
+      const sourceStartedAt = performance.now();
+      const includeDebug = options.includeDebug !== false;
+      const sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+      const sourceMs = performance.now() - sourceStartedAt;
+      const blurStartedAt = performance.now();
+      const blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+      const blurMs = performance.now() - blurStartedAt;
+      const compositeStartedAt = performance.now();
+      const previewImageData = modules.glowCompositor.composeProtected(
+        source.imageData,
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
+      const compositeMs = performance.now() - compositeStartedAt;
+      return {
+        ok: true,
+        jobId,
+        width: source.width,
+        height: source.height,
+        baseDataUrl: sourceDataUrl,
+        previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
+        sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
+        protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
+        debugDataUrls: sourceResult.debugImages ? {
+          luma: imageDataToDataUrl(sourceResult.debugImages.luma),
+          contrast: imageDataToDataUrl(sourceResult.debugImages.contrast),
+          whiteFlat: imageDataToDataUrl(sourceResult.debugImages.whiteFlat),
+          skinLike: imageDataToDataUrl(sourceResult.debugImages.skinLike),
+          darkProtect: imageDataToDataUrl(sourceResult.debugImages.darkProtect)
+        } : {},
+        timings: {
+          sourceMs: Math.round(sourceMs),
+          blurMs: Math.round(blurMs),
+          compositeMs: Math.round(compositeMs),
+          totalMs: Math.round(performance.now() - startedAt)
+        },
+        params
+      };
+    }
+    modules.glowPreviewEngine = {
+      createPreview
+    };
+  })(window);
+
+  // src/webview/glow-cpu.js
+  (function initGlowCpuCompatModule(global) {
+    const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    async function createGlowPng(sourceDataUrl, config = {}) {
+      if (!modules.glowPreviewEngine || typeof modules.glowPreviewEngine.createPreview !== "function") {
+        throw new Error("Glow preview engine is unavailable");
+      }
+      const result = await modules.glowPreviewEngine.createPreview(sourceDataUrl, config);
+      return {
+        dataUrl: result.previewDataUrl,
+        previewDataUrl: result.previewDataUrl,
+        baseDataUrl: result.baseDataUrl,
+        sourceMaskDataUrl: result.sourceMaskDataUrl,
+        protectMaskDataUrl: result.protectMaskDataUrl,
+        debugDataUrls: result.debugDataUrls,
+        timings: result.timings,
+        width: result.width,
+        height: result.height,
+        elapsedMs: result.timings ? result.timings.totalMs : 0,
+        layerMode: "webview-preview-only"
+      };
+    }
+    modules.glowCpu = {
+      createGlowPng
+    };
+  })(window);
+
   // src/webview/ui.js
   (function initUiModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
@@ -507,17 +1181,24 @@ var PixelRunnerWebviewBundle = (() => {
       tutorial: "./pages/runninghub-guide.html"
     };
     const GLOW_DEFAULTS = {
-      style: "natural",
-      strength: 47,
-      radius: 81,
-      threshold: 81,
-      saturation: 81,
+      style: "darkSoft",
+      strength: 40,
+      radius: 20,
+      threshold: 20,
+      saturation: 0,
       brightnessBias: 0
     };
+    const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
     const GLOW_STYLE_LABELS = {
-      natural: "自然",
-      soft: "柔和",
-      dreamy: "梦幻"
+      none: "无",
+      darksoft: "黑柔",
+      darkSoft: "黑柔",
+      whitesoft: "白柔",
+      whiteSoft: "白柔",
+      shine: "辉光",
+      natural: "黑柔",
+      soft: "白柔",
+      dreamy: "辉光"
     };
     function logToWorkspace(message, type = "info") {
       const runtime = modules.runtime;
@@ -693,9 +1374,12 @@ ${text}` : text;
       const glowStrengthInput = runtime.getById("glowStrengthInput");
       const glowRadiusInput = runtime.getById("glowRadiusInput");
       const glowThresholdInput = runtime.getById("glowThresholdInput");
-      const glowSaturationInput = runtime.getById("glowSaturationInput");
       const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
       const glowStrengthValue = runtime.getById("glowStrengthValue");
+      const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
+      const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
+      const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
+      const glowExposureParamValue = runtime.getById("glowExposureParamValue");
       const glowStyleBadge = runtime.getById("glowStyleBadge");
       const glowRadiusValue = runtime.getById("glowRadiusValue");
       const glowThresholdValue = runtime.getById("glowThresholdValue");
@@ -706,11 +1390,25 @@ ${text}` : text;
       const glowApplyButton = runtime.getById("btnGlowPreviewApply");
       const glowCancelButton = runtime.getById("btnGlowPreviewCancel");
       const glowModalClose = runtime.getById("glowModalClose");
+      const glowInlinePreview = runtime.getById("glowInlinePreview");
+      const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
+      const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
+      const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
+      const glowPreviewProtectMaskImage = runtime.getById("glowPreviewProtectMaskImage");
+      const glowDebugPanel = document.querySelector(".glow-debug-panel");
+      const glowPreviewLumaImage = runtime.getById("glowPreviewLumaImage");
+      const glowPreviewContrastImage = runtime.getById("glowPreviewContrastImage");
+      const glowPreviewWhiteFlatImage = runtime.getById("glowPreviewWhiteFlatImage");
+      const glowPreviewSkinLikeImage = runtime.getById("glowPreviewSkinLikeImage");
+      const glowPreviewDarkProtectImage = runtime.getById("glowPreviewDarkProtectImage");
+      const glowPreviewMeta = runtime.getById("glowPreviewMeta");
       let glowPreviewTimer = 0;
       let glowPreviewInFlight = false;
       let glowPreviewNeedsReplay = false;
       let glowPreviewOpen = false;
       let glowLastPreviewSignature = "";
+      let glowCpuSourceAsset = null;
+      let glowPreviewJobId = 0;
       const readGlowSlider = (input, fallback, min, max) => {
         if (!input) return fallback;
         const parsed = Number(input.value);
@@ -718,7 +1416,7 @@ ${text}` : text;
         return Math.max(min, Math.min(max, Math.round(parsed)));
       };
       const readGlowStyle = () => {
-        const nextStyle = String(glowStyleInput && glowStyleInput.value || GLOW_DEFAULTS.style).trim().toLowerCase();
+        const nextStyle = String(glowStyleInput && glowStyleInput.value || GLOW_DEFAULTS.style).trim();
         return GLOW_STYLE_LABELS[nextStyle] ? nextStyle : GLOW_DEFAULTS.style;
       };
       const getGlowStyleLabel = (style) => GLOW_STYLE_LABELS[String(style || "").trim().toLowerCase()] || GLOW_STYLE_LABELS[GLOW_DEFAULTS.style];
@@ -727,7 +1425,7 @@ ${text}` : text;
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
         radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
-        saturation: readGlowSlider(glowSaturationInput, GLOW_DEFAULTS.saturation, -100, 100),
+        saturation: 0,
         brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
       });
       const setGlowButtonsDisabled = (disabled) => {
@@ -751,23 +1449,116 @@ ${text}` : text;
         if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
         if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
         if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
-        if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${state.threshold}%`;
+        if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
+        if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
+        if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
+        if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
+        if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
       };
-      const callGlowHostAction = async (action) => {
+      const captureGlowCpuSource = async (maxDimension) => {
+        const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
+          maxDimension,
+          quality: 92,
+          uploadTargetBytes: 9e6,
+          uploadHardLimitBytes: 1e7
+        }], { timeoutMs: 45e3 });
+        if (!captured || !String(captured.dataUrl || "").trim()) {
+          throw new Error("未能捕获当前 Photoshop 图像用于 CPU 辉光。");
+        }
+        return captured;
+      };
+      const clearGlowPreviewLayer = async () => {
+        try {
+          await runtime.callHost("photoshop.runToolAction", [{ action: "glowPreviewCancel" }], { timeoutMs: 3e4 });
+        } catch (_) {
+        }
+      };
+      const clearInlineGlowPreview = () => {
+        if (glowInlinePreview) glowInlinePreview.hidden = true;
+        [
+          glowPreviewBaseImage,
+          glowPreviewResultImage,
+          glowPreviewSourceMaskImage,
+          glowPreviewProtectMaskImage,
+          glowPreviewLumaImage,
+          glowPreviewContrastImage,
+          glowPreviewWhiteFlatImage,
+          glowPreviewSkinLikeImage,
+          glowPreviewDarkProtectImage
+        ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+        if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
+      };
+      const updateInlineGlowPreview = (asset, glowResult) => {
+        if (!asset || !glowResult) return;
+        const sourceDataUrl = String(asset.dataUrl || "").trim();
+        if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
+        if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+        if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
+        if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
+        if (glowPreviewLumaImage) glowPreviewLumaImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.luma || "").trim();
+        if (glowPreviewContrastImage) glowPreviewContrastImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.contrast || "").trim();
+        if (glowPreviewWhiteFlatImage) glowPreviewWhiteFlatImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.whiteFlat || "").trim();
+        if (glowPreviewSkinLikeImage) glowPreviewSkinLikeImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.skinLike || "").trim();
+        if (glowPreviewDarkProtectImage) glowPreviewDarkProtectImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.darkProtect || "").trim();
+        if (glowInlinePreview) glowInlinePreview.hidden = false;
+        if (glowPreviewMeta) {
+          const state = readGlowState();
+          const timings = glowResult.timings || {};
+          glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+        }
+      };
+      const callGlowCpuPreviewAction = async (action) => {
         const state = readGlowState();
-        return runtime.callHost("photoshop.runToolAction", [{
-          action,
+        if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
+          glowCpuSourceAsset = await captureGlowCpuSource(320);
+        }
+        const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
+        const jobId = glowPreviewJobId + 1;
+        glowPreviewJobId = jobId;
+        const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+          jobId,
+          includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+        });
+        if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
+          return {
+            ok: false,
+            stale: true,
+            message: "已丢弃过期辉光预览结果。"
+          };
+        }
+        updateInlineGlowPreview(glowCpuSourceAsset, glowResult);
+        const timings = glowResult.timings || {};
+        return {
+          ok: true,
+          message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${timings.sourceMs || 0}ms / blur ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+          layerName: GLOW_PREVIEW_LAYER_NAME,
+          elapsedMs: timings.totalMs || 0
+        };
+      };
+      const commitGlowCpuResult = async () => {
+        const state = readGlowState();
+        const layerName = `Glow ${state.strength}%`;
+        const commitStrength = state.style === "none" ? 0 : state.strength;
+        const result = await runtime.callHost("photoshop.runToolAction", [{
+          action: "glowPreviewCommit",
           style: state.style,
-          strength: state.strength,
+          strength: commitStrength,
           radius: state.radius,
           threshold: state.threshold,
           saturation: state.saturation,
-          brightnessBias: state.brightnessBias
-        }], { timeoutMs: 6e4 });
+          brightnessBias: state.brightnessBias,
+          layerName
+        }], { timeoutMs: 12e4 });
+        glowCpuSourceAsset = null;
+        return {
+          ok: true,
+          message: result && result.message ? result.message : `已按 Photoshop 原生管线生成 ${layerName}。`,
+          layerName: result && result.layerName ? result.layerName : layerName
+        };
       };
       const getGlowStateSignature = () => {
         const state = readGlowState();
-        return [state.style, state.strength, state.radius, state.threshold, state.saturation, state.brightnessBias].join("|");
+        return [state.style, state.strength, state.radius, state.threshold, state.brightnessBias].join("|");
       };
       const getGlowPreviewDelay = () => {
         const state = readGlowState();
@@ -775,7 +1566,7 @@ ${text}` : text;
         if (state.radius >= 72) delay = 280;
         if (state.radius >= 92 || state.strength >= 76) delay = 340;
         if (state.brightnessBias >= 32) delay += 20;
-        if (state.style === "dreamy") delay += 20;
+        if (state.style === "shine") delay += 20;
         return delay;
       };
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
@@ -786,6 +1577,7 @@ ${text}` : text;
         }
         if (glowPreviewInFlight) {
           glowPreviewNeedsReplay = true;
+          glowPreviewJobId += 1;
           return;
         }
         glowPreviewInFlight = true;
@@ -794,10 +1586,11 @@ ${text}` : text;
         setGlowPreviewBadge("正在预览", "pending");
         setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
         try {
-          const result = await callGlowHostAction(action);
+          const result = await callGlowCpuPreviewAction(action);
+          if (result && result.stale) return;
           const message = result && result.message ? result.message : "辉光预览已更新。";
           glowLastPreviewSignature = nextSignature;
-          setGlowPreviewBadge("预览中", "success");
+          setGlowPreviewBadge("Glow Lab", "success");
           setGlowStatus(message, "success");
         } catch (error) {
           const message = `辉光预览失败：${error.message}`;
@@ -815,6 +1608,7 @@ ${text}` : text;
       const scheduleGlowPreviewUpdate = () => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
         if (glowPreviewTimer) clearTimeout(glowPreviewTimer);
+        glowPreviewJobId += 1;
         const delay = getGlowPreviewDelay();
         glowPreviewTimer = window.setTimeout(() => {
           glowPreviewTimer = 0;
@@ -843,6 +1637,7 @@ ${text}` : text;
       const openGlowModal = async () => {
         glowPreviewOpen = true;
         glowLastPreviewSignature = "";
+        glowPreviewJobId += 1;
         modules.workspace.setModalOpen("glowModal", true);
         updateGlowLabels();
         if (!runtime.isPluginRuntime()) {
@@ -862,27 +1657,20 @@ ${text}` : text;
       const closeGlowModal = async (discardPreview = true) => {
         glowPreviewOpen = false;
         glowLastPreviewSignature = "";
+        glowCpuSourceAsset = null;
+        glowPreviewJobId += 1;
+        clearInlineGlowPreview();
         if (glowPreviewTimer) {
           clearTimeout(glowPreviewTimer);
           glowPreviewTimer = 0;
         }
-        if (discardPreview && runtime.isPluginRuntime()) {
-          setGlowButtonsDisabled(true);
-          try {
-            await runtime.callHost("photoshop.runToolAction", [{ action: "glowPreviewCancel" }], { timeoutMs: 3e4 });
-            setQuickGlowStatus("已取消辉光预览并清理临时预览层。", "info");
-          } catch (error) {
-            const message = `取消辉光预览失败：${error.message}`;
-            setQuickGlowStatus(message, "error");
-            logToWorkspace(message, "error");
-          } finally {
-            setGlowButtonsDisabled(false);
-          }
+        if (discardPreview) {
+          setQuickGlowStatus("已取消插件内辉光预览，未写回 Photoshop。", "info");
         }
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
-      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowSaturationInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
+      [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
           scheduleGlowPreviewUpdate();
@@ -908,7 +1696,7 @@ ${text}` : text;
           setGlowButtonsDisabled(true);
           try {
             await flushGlowPreviewUpdate();
-            const result = await callGlowHostAction("glowPreviewCommit");
+            const result = await commitGlowCpuResult();
             const successMessage = result && result.message ? result.message : `已生成 Glow ${state.strength}%`;
             logToWorkspace(successMessage, "success");
             setGlowStatus(successMessage, "success");
@@ -932,6 +1720,14 @@ ${text}` : text;
       if (glowModalClose) {
         glowModalClose.addEventListener("click", () => {
           void closeGlowModal(true);
+        });
+      }
+      if (glowDebugPanel) {
+        glowDebugPanel.addEventListener("toggle", () => {
+          if (glowDebugPanel.open) {
+            glowLastPreviewSignature = "";
+            scheduleGlowPreviewUpdate();
+          }
         });
       }
       document.addEventListener("click", (event) => {
@@ -2218,6 +3014,9 @@ ${text}` : text;
         }
       }
       updateRunButtonState();
+      if (modules.settings && typeof modules.settings.refreshThemeSkin === "function") {
+        modules.settings.refreshThemeSkin();
+      }
     }
     function cloneWorkspaceFormValue(value) {
       if (value == null) return value;
@@ -3927,7 +4726,7 @@ ${extraRequirement || "无。"}`
         return { available: false, reason: "当前应用未检测到可写入的主提示词字段。" };
       }
       if (state.availableImages.length === 0) {
-        return { available: false, reason: "请先在当前应用里导入至少一张图片，然后再打开 AI优化。" };
+        return { available: true, reason: "请先在当前应用里导入至少一张图片，然后再开始 AI优化。" };
       }
       return { available: true, reason: "" };
     }
@@ -4115,7 +4914,10 @@ ${extraRequirement || "无。"}`
       state.coinsCharge = null;
       state.chargeDisplay = "";
       state.txtUrl = "";
-      if (String(state.promptValue || "").trim()) {
+      if (state.availableImages.length === 0) {
+        state.statusMessage = "当前还没有检测到图片。可以先编辑提示词，导入图片后再开始优化。";
+        state.statusType = "warn";
+      } else if (String(state.promptValue || "").trim()) {
         state.statusMessage = "点击“开始优化”后，这里会显示 AI 返回的优化提示词。";
         state.statusType = "info";
       } else {
@@ -4526,7 +5328,8 @@ ${text}` : text;
         const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`.toLowerCase();
         return marker.includes(keyword);
       });
-      const sortMode = String(state.appManagerSort || "updated_desc");
+      const sortMode = String(state.appManagerSort || "manual");
+      if (sortMode === "manual") return list;
       list.sort((a, b) => {
         if (sortMode === "name_asc") return modules.state.getAppDisplayName(a).localeCompare(modules.state.getAppDisplayName(b), "zh-CN");
         if (sortMode === "name_desc") return modules.state.getAppDisplayName(b).localeCompare(modules.state.getAppDisplayName(a), "zh-CN");
@@ -4534,6 +5337,25 @@ ${text}` : text;
         return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
       });
       return list;
+    }
+    async function reorderAppById(draggedId, targetId) {
+      const dragged = String(draggedId || "");
+      const target = String(targetId || "");
+      if (!dragged || !target || dragged === target) return false;
+      const apps = modules.state.state.apps.slice();
+      const fromIndex = apps.findIndex((item2) => String(item2.id) === dragged);
+      const toIndex = apps.findIndex((item2) => String(item2.id) === target);
+      if (fromIndex < 0 || toIndex < 0) return false;
+      const [item] = apps.splice(fromIndex, 1);
+      const nextIndex = apps.findIndex((entry) => String(entry.id) === target);
+      apps.splice(nextIndex < 0 ? toIndex : nextIndex, 0, item);
+      modules.state.state.appManagerSort = "manual";
+      const sortInput = modules.runtime.getById("appManagerSortInput");
+      if (sortInput) sortInput.value = "manual";
+      await saveAppsToStorage(apps);
+      modules.runtime.setSummaryStatus(modules.runtime.getById("savedAppsSummary"), "应用顺序已同步到本地设置。", "success");
+      modules.ui.logToWorkspace("应用卡片顺序已保存。", "success");
+      return true;
     }
     function renderAppPickerList() {
       const runtime = modules.runtime;
@@ -4551,7 +5373,7 @@ ${text}` : text;
       }
       listEl.innerHTML = quickEntryButton + visibleApps.map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
-        return `<button class="picker-item ${isActive ? "active" : ""}" type="button" value="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
+        return `<button class="picker-item is-draggable ${isActive ? "active" : ""}" type="button" draggable="true" value="${runtime.escapeHtml(String(app.id || ""))}" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
       }).join("");
     }
     function renderSavedAppsList() {
@@ -4571,8 +5393,49 @@ ${text}` : text;
         const isEditing = String(modules.state.state.editingAppId || "") === String(app.id);
         const isCurrent = state.currentApp && String(state.currentApp.id) === String(app.id);
         const description = String(app.description || "").trim();
-        return `<article class="list-item saved-app-item compact-card ${isEditing ? "is-editing" : ""}" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
+        return `<article class="list-item saved-app-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-app-id="${runtime.escapeHtml(String(app.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-app-main compact-card-main"><div class="compact-card-topline"><strong>${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-app" data-app-id="${runtime.escapeHtml(String(app.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-app" data-app-id="${runtime.escapeHtml(String(app.id))}">删除</button></div></div><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}${isCurrent ? " · 当前使用" : ""}${isEditing ? " · 正在编辑" : ""}</span>${description ? `<span>${runtime.escapeHtml(description)}</span>` : ""}</div></article>`;
       }).join("");
+    }
+    function bindAppDragSorting(container) {
+      if (!container || container.dataset.appDragBound === "true") return;
+      container.dataset.appDragBound = "true";
+      let draggedId = "";
+      container.addEventListener("dragstart", (event) => {
+        if (event.target && event.target.closest(".compact-card-actions, input, textarea, select")) return;
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (!item || item.classList.contains("picker-item-special")) return;
+        draggedId = String(item.getAttribute("data-app-id") || item.getAttribute("value") || "");
+        item.classList.add("is-dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedId);
+        }
+      });
+      container.addEventListener("dragover", (event) => {
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (!draggedId || !item || item.classList.contains("picker-item-special")) return;
+        event.preventDefault();
+        item.classList.add("is-drag-over");
+      });
+      container.addEventListener("dragleave", (event) => {
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (item) item.classList.remove("is-drag-over");
+      });
+      container.addEventListener("drop", async (event) => {
+        const item = event.target && event.target.closest("[data-app-id][draggable='true']");
+        if (!draggedId || !item || item.classList.contains("picker-item-special")) return;
+        event.preventDefault();
+        const targetId = String(item.getAttribute("data-app-id") || item.getAttribute("value") || "");
+        container.querySelectorAll(".is-drag-over").forEach((node) => node.classList.remove("is-drag-over"));
+        await reorderAppById(draggedId, targetId);
+        draggedId = "";
+      });
+      container.addEventListener("dragend", () => {
+        draggedId = "";
+        container.querySelectorAll(".is-dragging, .is-drag-over").forEach((node) => {
+          node.classList.remove("is-dragging", "is-drag-over");
+        });
+      });
     }
     async function setCurrentAppById(appId, options = {}) {
       const state = modules.state.state;
@@ -4642,6 +5505,8 @@ ${text}` : text;
       const closeButton = runtime.getById("appPickerModalClose");
       const searchInput = runtime.getById("appPickerSearchInput");
       const listEl = runtime.getById("appPickerList");
+      bindAppDragSorting(listEl);
+      bindAppDragSorting(runtime.getById("savedAppsList"));
       if (openButton) {
         openButton.addEventListener("click", () => {
           state.appPickerKeyword = "";
@@ -4866,6 +5731,7 @@ ${text}` : text;
       parseAppReference,
       saveEditedApp,
       deleteAppById,
+      reorderAppById,
       importAppsFromTextarea,
       exportAppsToTextarea,
       refreshCurrentWorkspaceApp,
@@ -5223,7 +6089,8 @@ ${text}` : text;
       const keyword = String(state.templateManagerKeyword || "").trim().toLowerCase();
       const list = !keyword ? [...state.templates] : state.templates.filter((item) => `${item.title || ""}
 ${item.content || ""}`.toLowerCase().includes(keyword));
-      const sortMode = String(state.templateManagerSort || "updated_desc");
+      const sortMode = String(state.templateManagerSort || "manual");
+      if (sortMode === "manual") return list;
       list.sort((a, b) => {
         if (sortMode === "title_asc") return String(a.title || "").localeCompare(String(b.title || ""), "zh-CN");
         if (sortMode === "title_desc") return String(b.title || "").localeCompare(String(a.title || ""), "zh-CN");
@@ -5231,6 +6098,25 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
         return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
       });
       return list;
+    }
+    async function reorderTemplateById(draggedId, targetId) {
+      const dragged = String(draggedId || "");
+      const target = String(targetId || "");
+      if (!dragged || !target || dragged === target) return false;
+      const templates = modules.state.state.templates.slice();
+      const fromIndex = templates.findIndex((item2) => String(item2.id) === dragged);
+      const toIndex = templates.findIndex((item2) => String(item2.id) === target);
+      if (fromIndex < 0 || toIndex < 0) return false;
+      const [item] = templates.splice(fromIndex, 1);
+      const nextIndex = templates.findIndex((entry) => String(entry.id) === target);
+      templates.splice(nextIndex < 0 ? toIndex : nextIndex, 0, item);
+      modules.state.state.templateManagerSort = "manual";
+      const sortInput = modules.runtime.getById("templateManagerSortInput");
+      if (sortInput) sortInput.value = "manual";
+      await saveTemplatesToStorage(templates);
+      modules.runtime.setSummaryStatus(modules.runtime.getById("savedTemplatesSummary"), "提示词顺序已同步到本地设置。", "success");
+      modules.ui.logToWorkspace("提示词卡片顺序已保存。", "success");
+      return true;
     }
     function renderSavedTemplatesList() {
       const listEl = modules.runtime.getById("savedTemplatesList");
@@ -5249,7 +6135,7 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       }
       listEl.innerHTML = templates.map((item) => {
         const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
-        return `<article class="list-item saved-template-item compact-card ${isEditing ? "is-editing" : ""}" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
+        return `<article class="list-item saved-template-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
       }).join("");
     }
     function normalizePickerConfig(config = {}) {
@@ -5331,7 +6217,7 @@ ${item.content || ""}`.toLowerCase().includes(keyword));
       }
       listEl.innerHTML = visibleTemplates.map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
-        return `<button class="picker-item ${isSelected ? "active" : ""}" type="button" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
+        return `<button class="picker-item is-draggable ${isSelected ? "active" : ""}" type="button" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 30))}</span></span></button>`;
       }).join("");
       syncTemplatePickerUi();
     }
@@ -5388,6 +6274,8 @@ ${incomingContent}` : incomingContent;
       const pickerApplyMode = runtime.getById("templatePickerApplyMode");
       const managerSearchInput = runtime.getById("templateManagerSearchInput");
       const managerSortInput = runtime.getById("templateManagerSortInput");
+      bindTemplateDragSorting(pickerList);
+      bindTemplateDragSorting(runtime.getById("savedTemplatesList"));
       [titleInput, contentInput].filter(Boolean).forEach((element) => {
         element.addEventListener("input", () => {
           updateTemplateLengthHint();
@@ -5405,8 +6293,9 @@ ${incomingContent}` : incomingContent;
         });
       }
       if (managerSortInput) {
+        managerSortInput.value = modules.state.state.templateManagerSort || "manual";
         managerSortInput.addEventListener("change", () => {
-          modules.state.state.templateManagerSort = managerSortInput.value || "updated_desc";
+          modules.state.state.templateManagerSort = managerSortInput.value || "manual";
           renderSavedTemplatesList();
         });
       }
@@ -5513,6 +6402,47 @@ ${incomingContent}` : incomingContent;
       fillTemplateEditor(null, { force: true });
       updateTemplateLengthHint();
     }
+    function bindTemplateDragSorting(container) {
+      if (!container || container.dataset.templateDragBound === "true") return;
+      container.dataset.templateDragBound = "true";
+      let draggedId = "";
+      container.addEventListener("dragstart", (event) => {
+        if (event.target && event.target.closest(".compact-card-actions, input, textarea, select")) return;
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (!item) return;
+        draggedId = String(item.getAttribute("data-template-id") || "");
+        item.classList.add("is-dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedId);
+        }
+      });
+      container.addEventListener("dragover", (event) => {
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (!draggedId || !item) return;
+        event.preventDefault();
+        item.classList.add("is-drag-over");
+      });
+      container.addEventListener("dragleave", (event) => {
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (item) item.classList.remove("is-drag-over");
+      });
+      container.addEventListener("drop", async (event) => {
+        const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+        if (!draggedId || !item) return;
+        event.preventDefault();
+        const targetId = String(item.getAttribute("data-template-id") || "");
+        container.querySelectorAll(".is-drag-over").forEach((node) => node.classList.remove("is-drag-over"));
+        await reorderTemplateById(draggedId, targetId);
+        draggedId = "";
+      });
+      container.addEventListener("dragend", () => {
+        draggedId = "";
+        container.querySelectorAll(".is-dragging, .is-drag-over").forEach((node) => {
+          node.classList.remove("is-dragging", "is-drag-over");
+        });
+      });
+    }
     modules.templates = {
       PROMPT_WARN_CHARS,
       getTextLength,
@@ -5524,6 +6454,7 @@ ${incomingContent}` : incomingContent;
       renderSavedTemplatesList,
       saveEditedTemplate,
       deleteTemplateById,
+      reorderTemplateById,
       importTemplatesFromTextarea,
       exportTemplatesToTextarea,
       importTemplatesFromJsonFile,
@@ -5643,6 +6574,295 @@ ${incomingContent}` : incomingContent;
         );
       }
     }
+    const THEME_PRESETS = {
+      classic: {
+        "--bg-top": "#111822",
+        "--bg-mid": "#18212d",
+        "--bg-bottom": "#0c1219",
+        "--panel": "#18222d",
+        "--panel-soft": "#1f2b37",
+        "--panel-strong": "#243342",
+        "--ink": "#304150",
+        "--surface-rgb": "31, 45, 59",
+        "--surface-soft-rgb": "35, 49, 62",
+        "--control-rgb": "68, 96, 121",
+        "--control-edge": "#35506a",
+        "--control-ink": "#203648",
+        "--surface-alpha": "0.96",
+        "--surface-soft-alpha": "0.9",
+        "--surface-glass-alpha": "0.62",
+        "--theme-image-overlay": "rgba(8, 12, 18, 0.48)",
+        "--accent": "#63d67b",
+        "--accent-strong": "#28c45b",
+        "--accent-soft": "rgba(99, 214, 123, 0.16)",
+        "--accent-wash": "rgba(99, 214, 123, 0.09)",
+        "--cta": "#a9def2",
+        "--cta-strong": "#8ac6df"
+      },
+      aurora: {
+        "--bg-top": "#0b1a20",
+        "--bg-mid": "#14333b",
+        "--bg-bottom": "#081318",
+        "--panel": "#12313a",
+        "--panel-soft": "#1a4550",
+        "--panel-strong": "#245966",
+        "--ink": "#2f6270",
+        "--surface-rgb": "22, 58, 68",
+        "--surface-soft-rgb": "27, 73, 84",
+        "--control-rgb": "42, 116, 126",
+        "--control-edge": "#2d7582",
+        "--control-ink": "#082b2c",
+        "--surface-alpha": "0.96",
+        "--surface-soft-alpha": "0.9",
+        "--surface-glass-alpha": "0.62",
+        "--theme-image-overlay": "rgba(4, 24, 28, 0.46)",
+        "--accent": "#74d8c7",
+        "--accent-strong": "#35bfa8",
+        "--accent-soft": "rgba(116, 216, 199, 0.18)",
+        "--accent-wash": "rgba(116, 216, 199, 0.1)",
+        "--cta": "#f4d47d",
+        "--cta-strong": "#dbb95f"
+      },
+      graphite: {
+        "--bg-top": "#12151a",
+        "--bg-mid": "#202832",
+        "--bg-bottom": "#0b0e13",
+        "--panel": "#202832",
+        "--panel-soft": "#2b3540",
+        "--panel-strong": "#354250",
+        "--ink": "#4b5c6d",
+        "--surface-rgb": "35, 43, 52",
+        "--surface-soft-rgb": "45, 56, 68",
+        "--control-rgb": "77, 92, 108",
+        "--control-edge": "#56687a",
+        "--control-ink": "#172331",
+        "--surface-alpha": "0.96",
+        "--surface-soft-alpha": "0.9",
+        "--surface-glass-alpha": "0.62",
+        "--theme-image-overlay": "rgba(8, 11, 15, 0.48)",
+        "--accent": "#9ab0c6",
+        "--accent-strong": "#7f99b4",
+        "--accent-soft": "rgba(154, 176, 198, 0.2)",
+        "--accent-wash": "rgba(154, 176, 198, 0.11)",
+        "--cta": "#d7e1ea",
+        "--cta-strong": "#b7c7d5"
+      },
+      rose: {
+        "--bg-top": "#1d1420",
+        "--bg-mid": "#302234",
+        "--bg-bottom": "#120d16",
+        "--panel": "#2b1f30",
+        "--panel-soft": "#3b2b41",
+        "--panel-strong": "#513b58",
+        "--ink": "#65496e",
+        "--surface-rgb": "50, 36, 56",
+        "--surface-soft-rgb": "66, 48, 73",
+        "--control-rgb": "114, 76, 106",
+        "--control-edge": "#7f5576",
+        "--control-ink": "#371827",
+        "--surface-alpha": "0.96",
+        "--surface-soft-alpha": "0.9",
+        "--surface-glass-alpha": "0.62",
+        "--theme-image-overlay": "rgba(27, 10, 22, 0.46)",
+        "--accent": "#ff9bb4",
+        "--accent-strong": "#e87595",
+        "--accent-soft": "rgba(255, 155, 180, 0.18)",
+        "--accent-wash": "rgba(255, 155, 180, 0.1)",
+        "--cta": "#aee7dd",
+        "--cta-strong": "#7dd3c4"
+      },
+      studio: {
+        "--bg-top": "#17171a",
+        "--bg-mid": "#252823",
+        "--bg-bottom": "#101111",
+        "--panel": "#252823",
+        "--panel-soft": "#33362e",
+        "--panel-strong": "#424638",
+        "--ink": "#585d4a",
+        "--surface-rgb": "42, 45, 39",
+        "--surface-soft-rgb": "58, 61, 51",
+        "--control-rgb": "91, 99, 71",
+        "--control-edge": "#69724d",
+        "--control-ink": "#302a10",
+        "--surface-alpha": "0.96",
+        "--surface-soft-alpha": "0.9",
+        "--surface-glass-alpha": "0.62",
+        "--theme-image-overlay": "rgba(16, 16, 12, 0.46)",
+        "--accent": "#ffd56a",
+        "--accent-strong": "#e8b93b",
+        "--accent-soft": "rgba(255, 213, 106, 0.18)",
+        "--accent-wash": "rgba(255, 213, 106, 0.1)",
+        "--cta": "#8fd6ff",
+        "--cta-strong": "#65bce9"
+      }
+    };
+    const CUSTOM_THEME_SKIN_SELECTORS = [
+      ".view-nav",
+      ".panel-header-strip",
+      ".overlay-card",
+      ".workspace-app-card",
+      ".workspace-input-card",
+      ".workspace-run-card",
+      ".log-card",
+      ".selection-meta",
+      ".diagnostic-box",
+      ".list-shell",
+      ".picker-list",
+      ".input-zone",
+      ".field-input",
+      ".summary-strip",
+      ".picker-item",
+      ".list-item",
+      ".tool-item"
+    ];
+    const CUSTOM_THEME_DEEP_SELECTORS = [
+      ".workspace-app-card",
+      ".workspace-input-card",
+      ".workspace-run-card",
+      ".log-card",
+      ".overlay-card"
+    ];
+    const CUSTOM_THEME_LIGHT_SELECTORS = [
+      ".input-zone",
+      ".field-input",
+      ".workspace-app-meta",
+      ".image-capture-stage",
+      ".image-capture-preview"
+    ];
+    function makeThemeImageValue(dataUrl) {
+      const value = String(dataUrl || "").trim();
+      if (!value) return "";
+      return `url(${JSON.stringify(value)})`;
+    }
+    function clearInlineThemeImages() {
+      document.body.style.removeProperty("background-image");
+      document.body.style.removeProperty("background-size");
+      document.body.style.removeProperty("background-position");
+      document.body.removeAttribute("data-custom-theme-image-ready");
+      const elements = document.querySelectorAll(
+        [...CUSTOM_THEME_SKIN_SELECTORS, ...CUSTOM_THEME_DEEP_SELECTORS, ...CUSTOM_THEME_LIGHT_SELECTORS].join(",")
+      );
+      elements.forEach((element) => {
+        element.style.removeProperty("background-image");
+        element.style.removeProperty("background-size");
+        element.style.removeProperty("background-position");
+        element.style.removeProperty("background-blend-mode");
+      });
+    }
+    function applyInlineThemeImages(dataUrl) {
+      const imageValue = makeThemeImageValue(dataUrl);
+      clearInlineThemeImages();
+      if (!imageValue) return false;
+      document.body.style.backgroundImage = [
+        "linear-gradient(180deg, rgba(9, 13, 18, 0.04), rgba(9, 13, 18, 0.1))",
+        imageValue,
+        "linear-gradient(180deg, var(--bg-top), var(--bg-bottom))"
+      ].join(", ");
+      document.body.style.backgroundSize = "cover";
+      document.body.style.backgroundPosition = "center";
+      document.body.dataset.customThemeImageReady = "true";
+      return true;
+    }
+    function refreshThemeSkin() {
+      const theme = modules.state && modules.state.state ? modules.state.state.theme : null;
+      if (!theme || !theme.customImage) {
+        clearInlineThemeImages();
+        return false;
+      }
+      return applyInlineThemeImages(theme.customImage);
+    }
+    function applyTheme(theme) {
+      const normalized = modules.state.normalizeTheme(theme);
+      const root = document.documentElement;
+      const presetName = normalized.preset === "custom" ? normalized.basePreset : normalized.preset;
+      const preset = THEME_PRESETS[presetName] || THEME_PRESETS.classic;
+      Object.entries(preset).forEach(([key, value]) => root.style.setProperty(key, value));
+      document.body.classList.toggle("has-custom-theme-image", Boolean(normalized.customImage));
+      document.body.classList.toggle("has-glass-theme", Boolean(normalized.glass));
+      if (normalized.customImage) {
+        const imageValue = makeThemeImageValue(normalized.customImage);
+        root.style.setProperty("--theme-image", imageValue);
+        root.style.setProperty("--surface-alpha", "0.24");
+        root.style.setProperty("--surface-soft-alpha", "0.18");
+        root.style.setProperty("--surface-glass-alpha", "0.14");
+        applyInlineThemeImages(normalized.customImage);
+      } else {
+        root.style.removeProperty("--theme-image");
+        clearInlineThemeImages();
+      }
+      modules.state.state.theme = normalized;
+      const swatches = document.querySelectorAll("[data-theme-preset]");
+      swatches.forEach((button) => {
+        button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === presetName);
+      });
+      const statusEl = modules.runtime.getById("themeStatusSummary");
+      if (statusEl) {
+        modules.runtime.setSummaryStatus(
+          statusEl,
+          normalized.customImage ? `自定义主题已启用：${normalized.customImageName || "背景照片"}，背景已写入界面皮肤。` : `已启用${normalized.preset === "classic" ? "经典" : "预设"}主题。`,
+          "success"
+        );
+      }
+    }
+    async function saveThemeSnapshot(theme) {
+      const normalized = modules.state.normalizeTheme(theme);
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THEME, JSON.stringify(normalized));
+      applyTheme(normalized);
+      return normalized;
+    }
+    async function loadThemeSnapshot() {
+      const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THEME);
+      return modules.state.normalizeTheme(modules.runtime.readJsonText(raw, modules.state.DEFAULT_THEME));
+    }
+    function readImageFileAsDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("读取主题照片失败，请换一张图片重试。"));
+        reader.readAsDataURL(file);
+      });
+    }
+    function compressThemeImageDataUrl(dataUrl, options = {}) {
+      const source = String(dataUrl || "").trim();
+      if (!source) return Promise.resolve("");
+      const maxWidth = Math.max(640, Number(options.maxWidth) || 1600);
+      const quality = Math.max(0.55, Math.min(0.92, Number(options.quality) || 0.82));
+      return new Promise((resolve) => {
+        if (typeof Image === "undefined" || typeof document === "undefined") {
+          resolve(source);
+          return;
+        }
+        const image = new Image();
+        image.onload = () => {
+          const width = Number(image.naturalWidth || image.width || 0);
+          const height = Number(image.naturalHeight || image.height || 0);
+          if (!width || !height) {
+            resolve(source);
+            return;
+          }
+          const scale = Math.min(1, maxWidth / width);
+          const targetWidth = Math.max(1, Math.round(width * scale));
+          const targetHeight = Math.max(1, Math.round(height * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+          const context = canvas.getContext("2d");
+          if (!context) {
+            resolve(source);
+            return;
+          }
+          context.drawImage(image, 0, 0, targetWidth, targetHeight);
+          try {
+            const compressed = canvas.toDataURL("image/jpeg", quality);
+            resolve(compressed && compressed.length < source.length ? compressed : source);
+          } catch (_) {
+            resolve(source);
+          }
+        };
+        image.onerror = () => resolve(source);
+        image.src = source;
+      });
+    }
     function readSettingsForm() {
       return modules.state.normalizeSettings({
         apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
@@ -5707,9 +6927,11 @@ ${incomingContent}` : incomingContent;
         modules.state.state.hostRuntime = modules.runtime.isPluginRuntime() ? "uxp-host" : "browser-preview";
       }
       const snapshot = await loadSettingsSnapshot();
+      const theme = await loadThemeSnapshot();
       modules.state.state.settings = snapshot;
       modules.state.state.settingsLoaded = true;
       fillSettingsForm(snapshot);
+      applyTheme(theme);
       setApiKeyVisibility(false);
       renderSettingsStatus("设置已加载，可以直接修改并保存。", "success");
       renderSettingsDiagnostics("当前设置快照已读取完成。", {
@@ -5729,8 +6951,9 @@ ${incomingContent}` : incomingContent;
         });
       }
       if (sortInput) {
+        sortInput.value = modules.state.state.appManagerSort || "manual";
         sortInput.addEventListener("change", () => {
-          modules.state.state.appManagerSort = sortInput.value || "updated_desc";
+          modules.state.state.appManagerSort = sortInput.value || "manual";
           modules.apps.renderSavedAppsList();
         });
       }
@@ -5746,6 +6969,8 @@ ${incomingContent}` : incomingContent;
       const saveTemplateButton = runtime.getById("btnSaveTemplate");
       const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
       const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
+      const themeImageInput = runtime.getById("themeImageInput");
+      const clearThemeImageButton = runtime.getById("btnClearThemeImage");
       const fieldIds = [
         "settingsApiKeyInput",
         "settingsPollIntervalInput",
@@ -5754,6 +6979,62 @@ ${incomingContent}` : incomingContent;
         "settingsAiOptimizeAppIdInput"
       ];
       bindAppManagerControls();
+      document.querySelectorAll("[data-theme-preset]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const preset = String(button.getAttribute("data-theme-preset") || "classic");
+          try {
+            await saveThemeSnapshot({
+              ...modules.state.state.theme,
+              preset,
+              basePreset: preset,
+              customImage: "",
+              customImageName: "",
+              glass: false
+            });
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题保存失败：${error.message}`, "error");
+          }
+        });
+      });
+      if (themeImageInput) {
+        themeImageInput.addEventListener("change", async () => {
+          const file = themeImageInput.files && themeImageInput.files[0];
+          if (!file) return;
+          try {
+            const dataUrl = await readImageFileAsDataUrl(file);
+            const skinDataUrl = await compressThemeImageDataUrl(dataUrl);
+            await saveThemeSnapshot({
+              ...modules.state.state.theme,
+              preset: "custom",
+              basePreset: modules.state.state.theme.preset === "custom" ? modules.state.state.theme.basePreset || "classic" : modules.state.state.theme.preset || "classic",
+              customImage: skinDataUrl,
+              customImageName: String(file.name || "自定义照片"),
+              glass: true
+            });
+            runtime.setSummaryStatus(
+              runtime.getById("themeStatusSummary"),
+              `自定义主题已启用：${file.name || "背景照片"}，皮肤图片约 ${Math.ceil(skinDataUrl.length / 1024)} KB。`,
+              "success"
+            );
+          } catch (error) {
+            runtime.setSummaryStatus(runtime.getById("themeStatusSummary"), `主题照片应用失败：${error.message}`, "error");
+          } finally {
+            themeImageInput.value = "";
+          }
+        });
+      }
+      if (clearThemeImageButton) {
+        clearThemeImageButton.addEventListener("click", async () => {
+          await saveThemeSnapshot({
+            ...modules.state.state.theme,
+            preset: modules.state.state.theme.preset === "custom" ? modules.state.state.theme.basePreset || "classic" : modules.state.state.theme.preset,
+            basePreset: modules.state.state.theme.basePreset || "classic",
+            customImage: "",
+            customImageName: "",
+            glass: false
+          });
+        });
+      }
       fieldIds.forEach((id) => {
         const element = runtime.getById(id);
         if (!element) return;
@@ -5921,6 +7202,7 @@ ${incomingContent}` : incomingContent;
       refreshAccountSummary,
       loadParseDebug,
       initializeSettings,
+      refreshThemeSkin,
       bindSettingsActions
     };
   })(window);
@@ -5962,7 +7244,7 @@ ${incomingContent}` : incomingContent;
       }
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.4.2"
+        version: "2.4.3"
       });
     }).catch((error) => {
       modules.settings.renderSettingsStatus(`初始化失败：${error.message}`, "error");
