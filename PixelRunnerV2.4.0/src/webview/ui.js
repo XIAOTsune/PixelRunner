@@ -454,7 +454,9 @@
       glowPreviewJobId = jobId;
       const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
         jobId,
-        includeDebug: false
+        includeDebug: false,
+        includeGlowLayer: false,
+        previewQuality: 0.82
       });
       if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
         return {
@@ -520,6 +522,15 @@
 
     const getGlowPreviewDelay = () => {
       const state = readGlowState();
+      const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function"
+        ? modules.glowPreviewEngine.getCacheInfo()
+        : null;
+      if (cacheInfo && cacheInfo.hasBlurResult) {
+        return state.strength >= 76 ? 160 : 120;
+      }
+      if (cacheInfo && cacheInfo.hasSourceResult) {
+        return state.radius >= 92 ? 210 : 170;
+      }
       let delay = 220;
       if (state.radius >= 72) delay = 280;
       if (state.radius >= 92 || state.strength >= 76) delay = 340;
@@ -603,6 +614,9 @@
       glowPreviewOpen = true;
       glowLastPreviewSignature = "";
       glowPreviewJobId += 1;
+      if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
+        modules.glowPreviewEngine.clearCache();
+      }
       modules.workspace.setModalOpen("glowModal", true);
       updateGlowLabels();
 

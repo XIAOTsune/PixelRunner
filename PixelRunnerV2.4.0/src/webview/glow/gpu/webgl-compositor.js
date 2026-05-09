@@ -282,9 +282,10 @@
       return new ImageData(pixels, target.width, target.height);
     }
 
-    compose(baseImageData, glowLayer, masks, params) {
+    compose(baseImageData, glowLayer, masks, params, options = {}) {
       const gl = this.gl;
       const { width, height } = baseImageData;
+      const includeGlowLayer = options.includeGlowLayer !== false;
       this.canvas.width = width;
       this.canvas.height = height;
       gl.disable(gl.BLEND);
@@ -295,7 +296,7 @@
       const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
       const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
       const previewTarget = createTarget(gl, width, height);
-      const glowLayerTarget = createTarget(gl, width, height);
+      const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;
 
       try {
         let program = this.programs.composite;
@@ -306,24 +307,26 @@
         this.setCompositeUniforms(program, params);
         this.render(program, previewTarget);
 
-        program = this.programs.glowLayer;
-        this.bindProgram(program);
-        this.bindTexture(program, "uGlow", glowTexture, 0);
-        this.bindTexture(program, "uMasks", masksTexture, 1);
-        this.setGlowLayerUniforms(program, params);
-        this.render(program, glowLayerTarget);
+        if (glowLayerTarget) {
+          program = this.programs.glowLayer;
+          this.bindProgram(program);
+          this.bindTexture(program, "uGlow", glowTexture, 0);
+          this.bindTexture(program, "uMasks", masksTexture, 1);
+          this.setGlowLayerUniforms(program, params);
+          this.render(program, glowLayerTarget);
+        }
 
         return {
           previewImageData: this.readTarget(previewTarget),
-          glowLayerImageData: this.readTarget(glowLayerTarget),
+          glowLayerImageData: glowLayerTarget ? this.readTarget(glowLayerTarget) : null,
           backend: "webgl2"
         };
       } finally {
-        [baseTexture, glowTexture, masksTexture, previewTarget.texture, glowLayerTarget.texture].forEach((texture) => {
+        [baseTexture, glowTexture, masksTexture, previewTarget.texture, glowLayerTarget && glowLayerTarget.texture].filter(Boolean).forEach((texture) => {
           gl.deleteTexture(texture);
         });
         gl.deleteFramebuffer(previewTarget.framebuffer);
-        gl.deleteFramebuffer(glowLayerTarget.framebuffer);
+        if (glowLayerTarget) gl.deleteFramebuffer(glowLayerTarget.framebuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.bindTexture(gl.TEXTURE_2D, null);
       }
@@ -340,14 +343,14 @@
     return backend;
   }
 
-  function compose(baseImageData, glowLayer, masks, params) {
+  function compose(baseImageData, glowLayer, masks, params, options = {}) {
     if (!baseImageData || !baseImageData.width || !baseImageData.height) {
       throw new Error("Glow base image is invalid");
     }
     if (!modules.glowGpuCapabilities.canUseWebgl2(baseImageData.width, baseImageData.height)) {
       throw new Error("Image exceeds WebGL2 texture limits");
     }
-    return getBackend().compose(baseImageData, glowLayer, masks, params);
+    return getBackend().compose(baseImageData, glowLayer, masks, params, options);
   }
 
   modules.glowWebglCompositor = {

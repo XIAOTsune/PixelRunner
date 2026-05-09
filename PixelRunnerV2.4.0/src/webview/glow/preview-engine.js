@@ -37,59 +37,158 @@
     return canvas.toDataURL(type, quality);
   }
 
+  let sourceImageCache = {
+    sourceDataUrl: "",
+    source: null
+  };
+
+  async function getSourceFromDataUrl(sourceDataUrl) {
+    if (sourceImageCache.sourceDataUrl === sourceDataUrl && sourceImageCache.source) {
+      return sourceImageCache.source;
+    }
+    const image = await loadImage(sourceDataUrl);
+    const source = getImageDataFromImage(image);
+    sourceImageCache = { sourceDataUrl, source };
+    return source;
+  }
+
+  function getSourceCacheKey(params, width, height) {
+    const source = params.source;
+    return [
+      width,
+      height,
+      params.style,
+      params.threshold,
+      params.brightnessBias,
+      source.thresholdLow,
+      source.thresholdHigh,
+      source.thresholdKnee,
+      source.localRadius,
+      source.contrastLow,
+      source.contrastHigh,
+      source.specularLow,
+      source.specularHigh,
+      source.chromaBoost,
+      source.whiteProtect,
+      source.skinProtect,
+      source.darkProtect
+    ].join("|");
+  }
+
+  function getBlurCacheKey(params, sourceKey) {
+    const blur = params.blur;
+    return [
+      sourceKey,
+      params.radius,
+      blur.mipCount,
+      blur.pyramidWeight,
+      ...(Array.isArray(blur.mipWeights) ? blur.mipWeights : [])
+    ].join("|");
+  }
+
+  let previewCache = {
+    sourceDataUrl: "",
+    sourceKey: "",
+    blurKey: "",
+    sourceResult: null,
+    blurResult: null,
+    sourceBackend: "cpu",
+    blurBackend: "cpu"
+  };
+
+  function resetPreviewCache(sourceDataUrl) {
+    previewCache = {
+      sourceDataUrl,
+      sourceKey: "",
+      blurKey: "",
+      sourceResult: null,
+      blurResult: null,
+      sourceBackend: "cpu",
+      blurBackend: "cpu"
+    };
+  }
+
   async function createPreview(sourceDataUrl, config = {}, options = {}) {
     if (!sourceDataUrl) throw new Error("Glow source image is missing");
     const jobId = Number(options.jobId) || 0;
     const startedAt = performance.now();
-    const image = await loadImage(sourceDataUrl);
-    const source = getImageDataFromImage(image);
+    const includeGlowLayer = options.includeGlowLayer !== false;
+    const source = await getSourceFromDataUrl(sourceDataUrl);
     const params = modules.glowPresets.normalizeGlowParams(config);
+    const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
+    if (previewCache.sourceDataUrl !== sourceDataUrl) {
+      resetPreviewCache(sourceDataUrl);
+    }
 
     const includeDebug = options.includeDebug !== false;
+    const sourceKey = getSourceCacheKey(params, source.width, source.height);
     const sourceStartedAt = performance.now();
     let sourceResult;
     let sourceBackend = "cpu";
-    try {
-      if (
-        !includeDebug &&
-        config.useGpu !== false &&
-        modules.glowWebglSourceMask &&
-        modules.glowGpuCapabilities &&
-        modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
-      ) {
-        sourceResult = modules.glowWebglSourceMask.buildSourceMask(source.imageData, params);
-        sourceBackend = sourceResult.backend || "webgl2";
+    if (allowCache && previewCache.sourceKey === sourceKey && previewCache.sourceResult) {
+      sourceResult = previewCache.sourceResult;
+      sourceBackend = `${previewCache.sourceBackend}-cached`;
+    } else {
+      try {
+        if (
+          !includeDebug &&
+          config.useGpu !== false &&
+          modules.glowWebglSourceMask &&
+          modules.glowGpuCapabilities &&
+          modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+        ) {
+          sourceResult = modules.glowWebglSourceMask.buildSourceMask(source.imageData, params);
+          sourceBackend = sourceResult.backend || "webgl2";
+        }
+      } catch (error) {
+        console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
+        sourceResult = null;
+        sourceBackend = "cpu-fallback";
       }
-    } catch (error) {
-      console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
-      sourceResult = null;
-      sourceBackend = "cpu-fallback";
-    }
-    if (!sourceResult) {
-      sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+      if (!sourceResult) {
+        sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
+      }
+      if (allowCache) {
+        previewCache.sourceKey = sourceKey;
+        previewCache.sourceResult = sourceResult;
+        previewCache.sourceBackend = sourceBackend;
+        previewCache.blurKey = "";
+        previewCache.blurResult = null;
+      }
     }
     const sourceMs = performance.now() - sourceStartedAt;
 
+    const blurKey = getBlurCacheKey(params, sourceKey);
     const blurStartedAt = performance.now();
     let blurResult;
     let blurBackend = "cpu";
-    try {
-      if (
-        config.useGpu !== false &&
-        modules.glowWebglPyramidBlur &&
-        modules.glowGpuCapabilities &&
-        modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
-      ) {
-        blurResult = modules.glowWebglPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
-        blurBackend = blurResult.backend || "webgl2";
+    if (allowCache && previewCache.blurKey === blurKey && previewCache.blurResult) {
+      blurResult = previewCache.blurResult;
+      blurBackend = `${previewCache.blurBackend}-cached`;
+    } else {
+      try {
+        if (
+          config.useGpu !== false &&
+          modules.glowWebglPyramidBlur &&
+          modules.glowGpuCapabilities &&
+          modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+        ) {
+          blurResult = modules.glowWebglPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+          blurBackend = blurResult.backend || "webgl2";
+        }
+      } catch (error) {
+        console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
+        blurResult = null;
+        blurBackend = "cpu-fallback";
       }
-    } catch (error) {
-      console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
-      blurResult = null;
-      blurBackend = "cpu-fallback";
-    }
-    if (!blurResult) {
-      blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+      if (!blurResult) {
+        blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+      }
+      if (allowCache) {
+        previewCache.blurKey = blurKey;
+        previewCache.blurResult = blurResult;
+        previewCache.blurBackend = blurBackend;
+      }
     }
     const blurMs = performance.now() - blurStartedAt;
 
@@ -108,7 +207,8 @@
           source.imageData,
           blurResult.glowLayer,
           sourceResult.masks,
-          params
+          params,
+          { includeGlowLayer }
         );
         previewImageData = compositeResult.previewImageData;
         glowLayerImageData = compositeResult.glowLayerImageData;
@@ -120,18 +220,20 @@
       glowLayerImageData = null;
       compositeBackend = "cpu-fallback";
     }
-    if (!previewImageData || !glowLayerImageData) {
+    if (!previewImageData || (includeGlowLayer && !glowLayerImageData)) {
       previewImageData = modules.glowCompositor.composeProtected(
         source.imageData,
         blurResult.glowLayer,
         sourceResult.masks,
         params
       );
-      glowLayerImageData = modules.glowCompositor.renderGlowLayer(
-        blurResult.glowLayer,
-        sourceResult.masks,
-        params
-      );
+      if (includeGlowLayer) {
+        glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+          blurResult.glowLayer,
+          sourceResult.masks,
+          params
+        );
+      }
     }
     const compositeMs = performance.now() - compositeStartedAt;
 
@@ -141,8 +243,8 @@
       width: source.width,
       height: source.height,
       baseDataUrl: sourceDataUrl,
-      previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
-      glowLayerDataUrl: imageDataToDataUrl(glowLayerImageData, "image/png", 0.92),
+      previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", Number(options.previewQuality) || 0.9),
+      glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
       sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
       protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
       debugDataUrls: sourceResult.debugImages
@@ -168,6 +270,19 @@
   }
 
   modules.glowPreviewEngine = {
-    createPreview
+    createPreview,
+    getCacheInfo() {
+      return {
+        hasSourceImage: !!sourceImageCache.source,
+        hasSourceResult: !!previewCache.sourceResult,
+        hasBlurResult: !!previewCache.blurResult,
+        sourceBackend: previewCache.sourceBackend,
+        blurBackend: previewCache.blurBackend
+      };
+    },
+    clearCache() {
+      sourceImageCache = { sourceDataUrl: "", source: null };
+      resetPreviewCache("");
+    }
   };
 })(window);
