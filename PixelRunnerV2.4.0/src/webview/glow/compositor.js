@@ -62,7 +62,35 @@
     return out;
   }
 
+  function renderGlowLayer(glowLayer, masks, params) {
+    const out = new ImageData(glowLayer.width, glowLayer.height);
+    const data = out.data;
+    for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+      const source = masks.sourceMask[pixel];
+      const protect = masks.protectMask[pixel];
+      const darkProtect = masks.darkProtect[pixel];
+      const highlightProtect = protect * params.composite.highlightProtect * 0.82;
+      const shadowProtect = darkProtect * params.composite.shadowProtect;
+      const sourceAnchor = 0.62 + source * 0.38;
+      const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+      const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
+      const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
+      const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+      const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
+      const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+      const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+      const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+      const alpha = clamp(Math.max(glowR, glowG, glowB), 0, 1);
+      data[index] = Math.round(clamp(glowR, 0, 1) * 255);
+      data[index + 1] = Math.round(clamp(glowG, 0, 1) * 255);
+      data[index + 2] = Math.round(clamp(glowB, 0, 1) * 255);
+      data[index + 3] = Math.round(alpha * 255);
+    }
+    return out;
+  }
+
   modules.glowCompositor = {
-    composeProtected
+    composeProtected,
+    renderGlowLayer
   };
 })(window);

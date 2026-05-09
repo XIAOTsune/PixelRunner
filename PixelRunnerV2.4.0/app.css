@@ -1434,8 +1434,9 @@ button {
   min-height: 40px;
 }
 
-.glow-modal-card {
-  width: min(94vw, 980px);
+.overlay-card.glow-modal-card {
+  width: min(96vw, 1440px);
+  min-height: min(86vh, 920px);
 }
 
 .glow-modal-hero {
@@ -1462,9 +1463,10 @@ button {
 
 .glow-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
-  gap: 10px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  gap: 14px;
+  align-items: stretch;
+  min-height: 0;
 }
 
 .glow-inline-preview {
@@ -1477,6 +1479,9 @@ button {
   background:
     linear-gradient(135deg, rgba(9, 14, 21, 0.72), rgba(30, 44, 57, 0.88)),
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 8px, transparent 8px 16px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .glow-lab-grid {
@@ -1496,7 +1501,7 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 112px;
+  min-height: 0;
   margin: 0;
   overflow: hidden;
   border-radius: 8px;
@@ -1505,17 +1510,66 @@ button {
 }
 
 .glow-lab-tile-wide {
-  min-height: clamp(300px, 58vh, 560px);
+  height: clamp(420px, 68vh, 760px);
+  aspect-ratio: 16 / 10;
+}
+
+.glow-preview-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.28);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.glow-preview-viewport.is-panning {
+  cursor: grabbing;
 }
 
 .glow-lab-image {
   display: block;
   width: 100%;
-  flex: 1 1 auto;
-  min-height: 84px;
-  max-height: min(58vh, 560px);
+  height: 100%;
+  min-height: 0;
+  max-height: none;
   object-fit: contain;
-  background: rgba(0, 0, 0, 0.28);
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.glow-preview-tools {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(157, 194, 221, 0.62);
+  background: rgba(8, 15, 23, 0.86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.glow-preview-tool-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(238, 247, 255, 0.96);
+  background: rgba(70, 105, 135, 0.9);
 }
 
 .glow-lab-tile figcaption {
@@ -1529,6 +1583,10 @@ button {
 }
 
 .glow-preview-meta {
+  min-height: 26px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: rgba(10, 18, 27, 0.48);
   font-size: 10px;
   line-height: 1.5;
   color: rgba(207, 221, 233, 0.72);
@@ -1575,9 +1633,9 @@ button {
 }
 
 .glow-slider-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .glow-controls-panel {
@@ -1587,6 +1645,12 @@ button {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  max-height: calc(100vh - 128px);
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(98, 128, 152, 0.38);
+  background: rgba(14, 24, 34, 0.58);
 }
 
 .glow-param-line {
@@ -1600,7 +1664,7 @@ button {
 .glow-control-grid {
   display: flex;
   align-items: stretch;
-  gap: 10px;
+  gap: 8px;
 }
 
 .glow-modal-actions .secondary-btn,
@@ -1610,6 +1674,10 @@ button {
 
 .glow-slider-field {
   flex: 1 1 auto;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(16, 27, 38, 0.52);
 }
 
 .glow-field-hint {
@@ -1621,11 +1689,11 @@ button {
 }
 
 .glow-style-field .field-input {
-  min-height: 36px;
+  min-height: 32px;
 }
 
 .glow-strength-slider {
-  min-height: 30px;
+  min-height: 24px;
   padding: 0;
   border-radius: 999px;
 }
@@ -1677,9 +1745,16 @@ button {
   min-height: 38px;
 }
 
-@media (max-width: 760px) {
-  .glow-modal-card {
-    width: calc(100vw - 20px);
+@media (min-width: 821px) {
+  .glow-style-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 820px) {
+  .overlay-card.glow-modal-card {
+    width: min(96vw, 860px);
+    min-height: auto;
   }
 
   .glow-workbench {
@@ -1688,15 +1763,41 @@ button {
 
   .glow-controls-panel {
     position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .glow-slider-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .glow-lab-tile-wide {
-    min-height: 230px;
+    height: clamp(260px, 52vh, 520px);
+    aspect-ratio: 16 / 10;
   }
 
-  .glow-debug-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .glow-inline-preview {
+    min-height: 0;
   }
+
+  .glow-lab-image {
+    max-height: min(52vh, 420px);
+  }
+}
+
+@media (max-width: 760px) {
+  .overlay-card.glow-modal-card {
+    width: calc(100vw - 20px);
+  }
+
+  .glow-lab-tile-wide {
+    height: 230px;
+  }
+
+  .glow-slider-stack {
+    grid-template-columns: 1fr;
+  }
+
 }
 
 #viewTools .tool-list {

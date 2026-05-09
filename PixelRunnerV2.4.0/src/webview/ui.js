@@ -247,6 +247,7 @@
     const glowCancelButton = runtime.getById("btnGlowPreviewCancel");
     const glowModalClose = runtime.getById("glowModalClose");
     const glowInlinePreview = runtime.getById("glowInlinePreview");
+    const glowPreviewViewport = runtime.getById("glowPreviewViewport");
     const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
     const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
     const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
@@ -266,6 +267,16 @@
     let glowLastPreviewSignature = "";
     let glowCpuSourceAsset = null;
     let glowPreviewJobId = 0;
+    const glowPreviewView = {
+      scale: 1,
+      x: 0,
+      y: 0,
+      isPanning: false,
+      startX: 0,
+      startY: 0,
+      startPanX: 0,
+      startPanY: 0
+    };
 
     const readGlowSlider = (input, fallback, min, max) => {
       if (!input) return fallback;
@@ -284,7 +295,7 @@
     const readGlowState = () => ({
       style: readGlowStyle(),
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
+      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
       threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
       saturation: 0,
       brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
@@ -322,6 +333,55 @@
       if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
     };
 
+    const clampGlowPreviewView = () => {
+      const scale = Math.max(1, Math.min(6, Number(glowPreviewView.scale) || 1));
+      glowPreviewView.scale = scale;
+      const viewportRect = glowPreviewViewport && glowPreviewViewport.getBoundingClientRect
+        ? glowPreviewViewport.getBoundingClientRect()
+        : { width: 0, height: 0 };
+      const viewportWidth = Number(viewportRect.width) || 0;
+      const viewportHeight = Number(viewportRect.height) || 0;
+      const naturalWidth = Number(glowPreviewResultImage && glowPreviewResultImage.naturalWidth) || viewportWidth || 1;
+      const naturalHeight = Number(glowPreviewResultImage && glowPreviewResultImage.naturalHeight) || viewportHeight || 1;
+      const fitScale = Math.min(viewportWidth / naturalWidth || 1, viewportHeight / naturalHeight || 1);
+      const renderedWidth = naturalWidth * fitScale * scale;
+      const renderedHeight = naturalHeight * fitScale * scale;
+      const keepVisibleX = Math.min(viewportWidth * 0.42, Math.max(80, viewportWidth * 0.18));
+      const keepVisibleY = Math.min(viewportHeight * 0.42, Math.max(80, viewportHeight * 0.18));
+      const maxX = Math.max(0, (renderedWidth + viewportWidth) / 2 - keepVisibleX);
+      const maxY = Math.max(0, (renderedHeight + viewportHeight) / 2 - keepVisibleY);
+      glowPreviewView.x = Math.max(-maxX, Math.min(maxX, Number(glowPreviewView.x) || 0));
+      glowPreviewView.y = Math.max(-maxY, Math.min(maxY, Number(glowPreviewView.y) || 0));
+    };
+
+    const applyGlowPreviewTransform = () => {
+      clampGlowPreviewView();
+      if (!glowPreviewResultImage) return;
+      glowPreviewResultImage.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+    };
+
+    const resetGlowPreviewTransform = () => {
+      glowPreviewView.scale = 1;
+      glowPreviewView.x = 0;
+      glowPreviewView.y = 0;
+      applyGlowPreviewTransform();
+    };
+
+    const zoomGlowPreview = (nextScale, anchorX, anchorY) => {
+      if (!glowPreviewViewport) return;
+      const previousScale = Math.max(1, Number(glowPreviewView.scale) || 1);
+      const scale = Math.max(1, Math.min(6, Number(nextScale) || 1));
+      const rect = glowPreviewViewport.getBoundingClientRect();
+      const localX = Number(anchorX) - rect.left - rect.width / 2;
+      const localY = Number(anchorY) - rect.top - rect.height / 2;
+      if (Math.abs(scale - previousScale) >= 0.001) {
+        glowPreviewView.x = (glowPreviewView.x - localX) * (scale / previousScale) + localX;
+        glowPreviewView.y = (glowPreviewView.y - localY) * (scale / previousScale) + localY;
+      }
+      glowPreviewView.scale = scale;
+      applyGlowPreviewTransform();
+    };
+
     const captureGlowCpuSource = async (maxDimension) => {
       const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
         maxDimension,
@@ -354,6 +414,7 @@
         glowPreviewSkinLikeImage,
         glowPreviewDarkProtectImage
       ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+      resetGlowPreviewTransform();
       if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
     };
 
@@ -362,6 +423,7 @@
       const sourceDataUrl = String(asset.dataUrl || "").trim();
       if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
       if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+      if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
       if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
       if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
       if (glowPreviewLumaImage) glowPreviewLumaImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.luma || "").trim();
@@ -380,14 +442,14 @@
     const callGlowCpuPreviewAction = async (action) => {
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-        glowCpuSourceAsset = await captureGlowCpuSource(320);
+        glowCpuSourceAsset = await captureGlowCpuSource(1280);
       }
       const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
       const jobId = glowPreviewJobId + 1;
       glowPreviewJobId = jobId;
       const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
         jobId,
-        includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+        includeDebug: false
       });
       if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
         return {
@@ -410,20 +472,35 @@
       const state = readGlowState();
       const layerName = `Glow ${state.strength}%`;
       const commitStrength = state.style === "none" ? 0 : state.strength;
-      const result = await runtime.callHost("photoshop.runToolAction", [{
-        action: "glowPreviewCommit",
-        style: state.style,
-        strength: commitStrength,
-        radius: state.radius,
-        threshold: state.threshold,
-        saturation: state.saturation,
-        brightnessBias: state.brightnessBias,
+      if (!glowCpuSourceAsset) {
+        glowCpuSourceAsset = await captureGlowCpuSource(1280);
+      }
+      const glowResult = await modules.glowPreviewEngine.createPreview(
+        String(glowCpuSourceAsset.dataUrl || "").trim(),
+        { ...state, strength: commitStrength },
+        { includeDebug: false }
+      );
+      const documentInfo = glowCpuSourceAsset.document || {};
+      const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
+        dataUrl: glowResult.glowLayerDataUrl,
+        targetDocumentId: glowCpuSourceAsset.documentId,
+        targetBounds: {
+          left: 0,
+          top: 0,
+          right: Number(documentInfo.width) || Number(glowCpuSourceAsset.originalWidth) || Number(glowResult.width) || 1,
+          bottom: Number(documentInfo.height) || Number(glowCpuSourceAsset.originalHeight) || Number(glowResult.height) || 1
+        },
+        fitMode: "stretch",
+        preserveCanvasBounds: true,
+        applyMask: false,
+        opacity: 100,
+        blendMode: "linearDodge",
         layerName
       }], { timeoutMs: 120000 });
       glowCpuSourceAsset = null;
       return {
         ok: true,
-        message: result && result.message ? result.message : `已按 Photoshop 原生管线生成 ${layerName}。`,
+        message: result && result.message ? result.message : `已按预览一致算法生成 ${layerName}。`,
         layerName: result && result.layerName ? result.layerName : layerName
       };
     };
@@ -556,6 +633,72 @@
     };
 
     updateGlowLabels();
+
+    if (glowPreviewViewport) {
+      glowPreviewViewport.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const direction = event.deltaY > 0 ? -1 : 1;
+        const factor = direction > 0 ? 1.18 : 1 / 1.18;
+        zoomGlowPreview(glowPreviewView.scale * factor, event.clientX, event.clientY);
+      }, { passive: false });
+
+      glowPreviewViewport.addEventListener("pointerdown", (event) => {
+        if (event.button != null && event.button !== 0) return;
+        event.preventDefault();
+        glowPreviewView.isPanning = true;
+        glowPreviewView.startX = event.clientX;
+        glowPreviewView.startY = event.clientY;
+        glowPreviewView.startPanX = glowPreviewView.x;
+        glowPreviewView.startPanY = glowPreviewView.y;
+        glowPreviewViewport.classList.add("is-panning");
+      });
+
+      const movePan = (event) => {
+        if (!glowPreviewView.isPanning) return;
+        event.preventDefault();
+        glowPreviewView.x = glowPreviewView.startPanX + event.clientX - glowPreviewView.startX;
+        glowPreviewView.y = glowPreviewView.startPanY + event.clientY - glowPreviewView.startY;
+        applyGlowPreviewTransform();
+      };
+
+      const endPan = (event) => {
+        if (!glowPreviewView.isPanning) return;
+        event.preventDefault();
+        glowPreviewView.isPanning = false;
+        glowPreviewViewport.classList.remove("is-panning");
+      };
+      window.addEventListener("pointermove", movePan, { passive: false });
+      window.addEventListener("pointerup", endPan, { passive: false });
+      window.addEventListener("pointercancel", endPan, { passive: false });
+      window.addEventListener("blur", () => {
+        glowPreviewView.isPanning = false;
+        glowPreviewViewport.classList.remove("is-panning");
+      });
+      glowPreviewViewport.addEventListener("dblclick", resetGlowPreviewTransform);
+    }
+
+    if (glowPreviewResultImage) {
+      glowPreviewResultImage.addEventListener("load", applyGlowPreviewTransform);
+    }
+
+    document.querySelectorAll("[data-glow-zoom]").forEach((button) => {
+      button.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const action = String(button.getAttribute("data-glow-zoom") || "");
+        if (action === "reset") {
+          resetGlowPreviewTransform();
+          return;
+        }
+        if (!glowPreviewViewport) return;
+        const rect = glowPreviewViewport.getBoundingClientRect();
+        const factor = action === "in" ? 1.25 : 1 / 1.25;
+        zoomGlowPreview(glowPreviewView.scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      });
+    });
+
     [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput]
       .filter(Boolean)
       .forEach((input) => {

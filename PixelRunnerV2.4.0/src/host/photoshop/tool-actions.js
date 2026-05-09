@@ -6,7 +6,7 @@ import {
 } from "./commands.js";
 
 const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
-const GLOW_PREVIEW_MAX_EDGE = 1280;
+const GLOW_PREVIEW_MAX_EDGE = 1800;
 const GLOW_STYLE_PRESETS = {
   natural: {
     detailOpacityWeight: 1,
@@ -110,8 +110,9 @@ function getGlowConfig(payload = {}) {
   const style = normalizeGlowStyle(payload.style);
   const stylePreset = GLOW_STYLE_PRESETS[style];
   const strength = clampNumber(payload.strength, 0, 100, 47);
-  const radius = clampNumber(payload.radius, 1, 120, 81);
+  const radius = clampNumber(payload.radius, 1, 240, 81);
   const threshold = clampNumber(payload.threshold, 0, 100, 81);
+  const thresholdGate = 100 - threshold;
   const fade = getStyleFade(style);
   const saturation = clampNumber(payload.saturation, -100, 100, 81);
   const brightnessBias = clampNumber(payload.brightnessBias, -50, 50, 0);
@@ -132,16 +133,16 @@ function getGlowConfig(payload = {}) {
   const midRadius = Math.max(haloRadius + 0.8, roundToTenth(radius * 0.72 * Math.max(1, stylePreset.glowRadiusWeight * 0.94) * glowExpansionFactor, haloRadius + 0.8));
   const bloomRadius = Math.max(midRadius + 1.2, roundToTenth(radius * 1.36 * stylePreset.glowRadiusWeight * glowExpansionFactor, midRadius + 1.2));
   const highlightFuzziness = clampNumber(Math.round((18 + radius * 0.28 + fade * 0.22) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 12, 72, 24);
-  const channelOutputClamp = clampNumber(Math.round(8 + threshold * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
-  const sourceInputBlack = clampNumber(Math.round(42 + threshold * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
+  const channelOutputClamp = clampNumber(Math.round(8 + thresholdGate * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
+  const sourceInputBlack = clampNumber(Math.round(42 + thresholdGate * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
   const sourceInputWhite = clampNumber(Math.round(248 - Math.max(0, brightnessBias) * 0.2), 220, 255, 248);
-  const sourceGamma = Number(clampNumber(0.68 + threshold / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
-  const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + threshold * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
+  const sourceGamma = Number(clampNumber(0.68 + thresholdGate / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
+  const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + thresholdGate * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
   const coreGammaBoost = Number(clampNumber(sourceGamma * 0.82, 0.42, 1.28, 0.76).toFixed(2));
   const sourceSaturation = clampNumber(Math.round(8 + saturation * 0.38 + stylePreset.sourceSaturationBias), -40, 72, 16);
   const finalSaturation = clampNumber(Math.round(10 + saturation * 0.78 * stylePreset.finalSaturationWeight), -60, 100, 10);
   const finalVibrance = clampNumber(Math.round(8 + saturation * 0.6 * stylePreset.finalVibranceWeight), -40, 100, 8);
-  const highlightLowerLimit = clampNumber(Math.round(188 + threshold * 0.34 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 150, 244, 202);
+  const highlightLowerLimit = clampNumber(Math.round(188 + thresholdGate * 0.34 + stylePreset.highlightLowerLimitBias - brightnessBias * 0.52), 150, 244, 202);
   const glowRadiiBase = [0.22, 0.48, 0.82, 1.18, 1.62].map((factor, index) => {
     const minRadius = [0.8, 1.4, 2.1, 2.8, 3.8][index];
     return Math.max(minRadius, roundToTenth(radius * factor * stylePreset.glowRadiusWeight * glowExpansionFactor, minRadius));
@@ -153,6 +154,24 @@ function getGlowConfig(payload = {}) {
     Math.min(44, Math.max(9, Math.round(bloomOpacityBase * (0.5 * fadeRatio)))),
     Math.min(34, Math.max(6, Math.round(bloomOpacityBase * (0.34 * fadeRatio))))
   ].map((opacity, index) => clampNumber(Math.round(opacity * stylePreset.glowOpacityWeight * glowOpacityFactor), index === 0 ? 18 : 6, 84, opacity));
+  const mipCount = clampNumber(Math.round(3 + Math.min(1, radius / 120) * 3 + Math.max(0, (radius - 120) / 120)), 3, 7, 5);
+  const mipScales = [50, 25, 12.5, 6.25, 3.125, 1.5625, 0.78125].slice(0, mipCount);
+  const mipOpacityBase = [
+    Math.round(bloomOpacityBase * 0.76),
+    Math.round(bloomOpacityBase * 0.92),
+    Math.round(bloomOpacityBase * (0.78 + radius / 120 * 0.24)),
+    Math.round(bloomOpacityBase * (0.54 + radius / 120 * 0.2)),
+    Math.round(bloomOpacityBase * (0.36 + radius / 120 * 0.16)),
+    Math.round(bloomOpacityBase * (0.22 + radius / 120 * 0.12))
+  ];
+  const mipOpacities = mipOpacityBase
+    .slice(0, mipCount)
+    .map((opacity, index) => clampNumber(
+      Math.round(opacity * stylePreset.glowOpacityWeight * glowOpacityFactor),
+      index === 0 ? 12 : 5,
+      86,
+      opacity
+    ));
   return {
     style,
     strength,
@@ -173,6 +192,9 @@ function getGlowConfig(payload = {}) {
     bloomRadius,
     glowRadii: glowRadiiBase,
     glowOpacities: glowOpacitiesBase,
+    mipScales,
+    mipOpacities,
+    mipBlurRadius: 2,
     sourceOpacity: clampNumber(Math.round(20 + strength * 0.28 + brightnessBias * 0.12), 14, 52, 24),
     isolationExposure: Number((-(0.04 + threshold / 100 * 0.42 + strengthRatio * 0.06) + brightnessLift * 0.05).toFixed(2)),
     isolationGamma: Number((1.01 + fade / 100 * 0.22 + stylePreset.isolationGammaBias - brightnessLift * 0.05).toFixed(2)),
@@ -260,6 +282,25 @@ async function createTransparentTempDocument(app, action, name, size, resolution
   return doc;
 }
 
+async function duplicateDocument(app, action, docRef, name, mergeLayers = false) {
+  if (docRef && typeof docRef.duplicate === "function") {
+    const duplicated = await docRef.duplicate(name, mergeLayers);
+    if (duplicated) return duplicated;
+  }
+
+  await ensureActiveDocumentRef(app, action, docRef, `Duplicate document ${name}`);
+  await action.batchPlay([{
+    _obj: "duplicate",
+    _target: [{ _ref: "document", _id: Number(docRef && docRef.id) }],
+    name,
+    merged: Boolean(mergeLayers)
+  }], {});
+
+  const duplicated = app && app.activeDocument ? app.activeDocument : null;
+  if (!duplicated) throw new Error(`无法创建辉光 mip 临时文档：${name}`);
+  return duplicated;
+}
+
 async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
   const limitedEdge = Math.max(256, Math.min(4096, Math.floor(Number(maxEdge) || 0)));
   if (!limitedEdge) return { scale: 1, width: getDocumentPixelSize(docRef).width, height: getDocumentPixelSize(docRef).height };
@@ -288,6 +329,26 @@ async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
   }
 
   return { scale, width: targetWidth, height: targetHeight };
+}
+
+async function resizeDocumentToSize(action, docRef, width, height) {
+  const targetWidth = Math.max(1, Math.round(Number(width) || 1));
+  const targetHeight = Math.max(1, Math.round(Number(height) || 1));
+
+  if (typeof docRef.resizeImage === "function") {
+    await docRef.resizeImage(targetWidth, targetHeight);
+  } else {
+    await action.batchPlay([{
+      _obj: "imageSize",
+      _target: [{ _ref: "document", _id: Number(docRef.id) }],
+      width: { _unit: "pixelsUnit", _value: targetWidth },
+      height: { _unit: "pixelsUnit", _value: targetHeight },
+      constrainProportions: false,
+      interfaceIconFrameDimmed: { _enum: "interpolationType", _value: "automaticInterpolation" }
+    }], {});
+  }
+
+  return { width: targetWidth, height: targetHeight };
 }
 
 function getDocumentBitDepth(doc) {
@@ -707,7 +768,8 @@ function createScaledGlowConfig(config, scale) {
     haloRadius: Math.max(0.8, roundToTenth(config.haloRadius * safeScale, 0.8)),
     midRadius: Math.max(0.8, roundToTenth(config.midRadius * safeScale, 0.8)),
     bloomRadius: Math.max(1.2, roundToTenth(config.bloomRadius * safeScale, 1.2)),
-    glowRadii: (Array.isArray(config.glowRadii) ? config.glowRadii : []).map((radius) => Math.max(0.5, roundToTenth(radius * safeScale, 0.5)))
+    glowRadii: (Array.isArray(config.glowRadii) ? config.glowRadii : []).map((radius) => Math.max(0.5, roundToTenth(radius * safeScale, 0.5))),
+    mipBlurRadius: Math.max(0.8, roundToTenth((config.mipBlurRadius || 2) * safeScale, 0.8))
   };
 }
 
@@ -792,7 +854,7 @@ function getGlowPreviewProfile(config) {
   }
 
   return {
-    maxEdge: Math.max(960, Math.min(GLOW_PREVIEW_MAX_EDGE, maxEdge)),
+    maxEdge: Math.max(1280, Math.min(GLOW_PREVIEW_MAX_EDGE, maxEdge)),
     sampleCount,
     radiusCaps,
     opacityBoost,
@@ -823,6 +885,12 @@ function createPreviewGlowConfig(config, previewProfile = getGlowPreviewProfile(
       const boost = index === list.length - 1 ? previewProfile.opacityBoost + 0.04 : previewProfile.opacityBoost;
       return clampNumber(Math.round(opacity * boost), 8, 84, opacity);
     }),
+    mipScales: (Array.isArray(config.mipScales) ? config.mipScales : [50, 25, 12.5]).slice(0, Math.max(2, previewProfile.sampleCount + 1)),
+    mipOpacities: (Array.isArray(config.mipOpacities) ? config.mipOpacities : sampledOpacities).slice(0, Math.max(2, previewProfile.sampleCount + 1)).map((opacity, index, list) => {
+      const boost = index === list.length - 1 ? previewProfile.opacityBoost + 0.04 : previewProfile.opacityBoost;
+      return clampNumber(Math.round(opacity * boost), 8, 84, opacity);
+    }),
+    mipBlurRadius: clampNumber(config.mipBlurRadius || 2, 0.8, 2.4, 2),
     channelOutputClamp: clampNumber(
       config.channelOutputClamp + previewProfile.channelOutputClampOffset,
       0,
@@ -876,18 +944,52 @@ async function fitImportedLayerToDocument(app, action, layerId, targetWidth, tar
   }
 }
 
+async function buildGlowMipLayerFromDocument(app, action, sourceDoc, targetDoc, config, mipIndex, scalePercent, opacity, saveOptions) {
+  const sourceSize = getDocumentPixelSize(sourceDoc);
+  const safeScale = Math.max(1, Math.min(50, Number(scalePercent) || 50)) / 100;
+  const mipWidth = Math.max(1, Math.round(sourceSize.width * safeScale));
+  const mipHeight = Math.max(1, Math.round(sourceSize.height * safeScale));
+  const mipDoc = await duplicateDocument(app, action, sourceDoc, `${config.layerName} Mip ${mipIndex + 1} Temp`, true);
+
+  try {
+    await ensureActiveDocumentRef(app, action, mipDoc, `Prepare glow mip ${mipIndex + 1}`);
+    await resizeDocumentToSize(action, mipDoc, mipWidth, mipHeight);
+    await applyGaussianBlur(action, config.mipBlurRadius || 2);
+    await resizeDocumentToSize(action, mipDoc, sourceSize.width, sourceSize.height);
+    await applyExposureIsolation(action, -0.02, 1.04);
+
+    const mipLayer = mipDoc && mipDoc.activeLayers && mipDoc.activeLayers[0];
+    if (!mipLayer) throw new Error(`Glow mip ${mipIndex + 1} layer was not created.`);
+
+    const importedLayer = await mipLayer.duplicate(targetDoc);
+    await ensureActiveDocumentRef(app, action, targetDoc, `Import glow mip ${mipIndex + 1}`);
+    const importedLayerId = Number((importedLayer && importedLayer.id) || getActiveLayerId(app) || 0);
+    if (importedLayerId > 0) {
+      await selectLayerById(action, importedLayerId);
+    }
+    await renameActiveLayer(action, `${config.layerName} Mip ${mipIndex + 1}`);
+    await setActiveLayerStyle(action, opacity, "linearDodge");
+    return importedLayerId;
+  } finally {
+    try {
+      await mipDoc.close(saveOptions.DONOTSAVECHANGES);
+    } catch (_) {}
+    try {
+      await activateDocumentByRef(app, action, targetDoc);
+    } catch (_) {}
+  }
+}
+
 async function createGlowLayerFromDocument(config, app, document, action, saveOptions = {}, options = {}) {
   const originalDocument = document;
   const sourceName = `${config.layerName} Source`;
-  const baseName = `${config.layerName} Base`;
   const detailName = `${config.layerName} Detail`;
-  const coreName = `${config.layerName} Core`;
-  const haloName = `${config.layerName} Halo`;
   const previewMaxEdge = Math.max(0, Math.floor(Number(options.previewMaxEdge) || 0));
   const sourceSize = getDocumentPixelSize(document);
   const sourceResolution = getDocumentResolutionValue(document);
   const sourceLayerId = Number(options.sourceLayerId) || 0;
   let tempDoc = null;
+  let mipSourceDoc = null;
   let importedLayer = null;
 
   try {
@@ -961,39 +1063,34 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     }
     await tempOp("Prepare glow detail layer", async () => {
       await renameActiveLayer(action, detailName);
-      await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
+      await setActiveLayerStyle(action, workingConfig.detailOpacity, "linearDodge");
     });
 
-    await tempOp("Build glow core layer", async () => {
-    await selectLayerByName(action, detailName);
-    await duplicateActiveLayer(action, coreName);
-    await renameActiveLayer(action, coreName);
-    await applyCompositeLevels(action, workingConfig.coreInputBlack, 255, workingConfig.coreGammaBoost, 0, 255);
-    await applyGaussianBlur(action, workingConfig.coreRadius);
-    await applyExposureIsolation(action, workingConfig.coreExposure, workingConfig.coreGamma);
-    await setActiveLayerStyle(action, workingConfig.coreOpacity, "screen");
-    });
+    mipSourceDoc = await duplicateDocument(app, action, tempDoc, `${config.layerName} Mip Source`, true);
+    await ensureActiveDocumentRef(app, action, mipSourceDoc, "Prepare glow mip source");
 
-    await tempOp("Build glow halo layer", async () => {
-    await selectLayerByName(action, detailName);
-    await duplicateActiveLayer(action, haloName);
-    await renameActiveLayer(action, haloName);
-    await applyGaussianBlur(action, workingConfig.haloRadius);
-    await applyExposureIsolation(action, workingConfig.glowExposure, Number((workingConfig.glowGamma - 0.04).toFixed(2)));
-    await setActiveLayerStyle(action, workingConfig.haloOpacity, "screen");
-    });
+    const mipScales = Array.isArray(workingConfig.mipScales) && workingConfig.mipScales.length
+      ? workingConfig.mipScales
+      : [50, 25, 12.5, 6.25, 3.125];
+    const mipOpacities = Array.isArray(workingConfig.mipOpacities) && workingConfig.mipOpacities.length
+      ? workingConfig.mipOpacities
+      : workingConfig.glowOpacities;
 
-    for (let index = 0; index < workingConfig.glowRadii.length; index += 1) {
-      await tempOp(`Build glow bloom layer ${index + 1}`, async () => {
-      await selectLayerByName(action, detailName);
-      await duplicateActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
-      await renameActiveLayer(action, `${config.layerName} Glow ${index + 1}`);
-      if (index > 0) {
-        await applyCompositeLevels(action, Math.max(0, workingConfig.sourceInputBlack - 8), 255, Math.max(0.5, workingConfig.sourceGamma * 0.92), 0, 255);
-      }
-      await applyGaussianBlur(action, workingConfig.glowRadii[index]);
-      await applyExposureIsolation(action, workingConfig.glowExposure, workingConfig.glowGamma);
-      await setActiveLayerStyle(action, workingConfig.glowOpacities[index], "screen");
+    for (let index = 0; index < mipScales.length; index += 1) {
+      await tempOp(`Build Unity bloom mip ${index + 1}`, async () => {
+        const scalePercent = clampNumber(mipScales[index], 1, 50, 50);
+        const opacity = clampNumber(mipOpacities[index], 5, 86, 24);
+        await buildGlowMipLayerFromDocument(
+          app,
+          action,
+          mipSourceDoc,
+          tempDoc,
+          workingConfig,
+          index,
+          scalePercent,
+          opacity,
+          saveOptions
+        );
       });
     }
 
@@ -1016,7 +1113,7 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     if (workingConfig.finalVibrance !== 0 || workingConfig.finalSaturation !== 0) {
       await tempOp("Finalize glow temp layer color", () => applyVibrance(action, workingConfig.finalVibrance, workingConfig.finalSaturation));
     }
-    await tempOp("Finalize glow temp layer style", () => setActiveLayerStyle(action, 100, "screen"));
+    await tempOp("Finalize glow temp layer style", () => setActiveLayerStyle(action, 100, "linearDodge"));
 
     const tempResultLayer = tempDoc && tempDoc.activeLayers && tempDoc.activeLayers[0];
     if (!tempResultLayer) {
@@ -1032,7 +1129,7 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
         await selectLayerById(action, importedLayerId);
       }
       await renameActiveLayer(action, config.layerName);
-      await setActiveLayerStyle(action, 100, "screen");
+      await setActiveLayerStyle(action, 100, "linearDodge");
       if (previewMaxEdge > 0) {
         await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
       }
@@ -1041,6 +1138,11 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     try {
       await activateDocumentByRef(app, action, originalDocument);
     } catch (_) {}
+    if (mipSourceDoc) {
+      try {
+        await mipSourceDoc.close(saveOptions.DONOTSAVECHANGES);
+      } catch (_) {}
+    }
     if (tempDoc) {
       try {
         await tempDoc.close(saveOptions.DONOTSAVECHANGES);

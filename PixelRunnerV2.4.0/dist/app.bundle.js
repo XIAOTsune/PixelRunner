@@ -598,12 +598,14 @@ var PixelRunnerWebviewBundle = (() => {
       const style = normalizeStyle(config.style);
       const preset = STYLE_PRESETS[style];
       const strength = style === "none" ? 0 : clamp(config.strength, 0, 100, 47);
-      const radius = clamp(config.radius, 1, 120, 81);
+      const radius = clamp(config.radius, 1, 240, 81);
       const threshold = clamp(config.threshold, 0, 100, 81);
       const saturation = clamp(config.saturation, -100, 100, 81);
       const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
-      const radiusRatio = radius / 120;
-      const thresholdRatio = threshold / 100;
+      const radiusRatio = radius / 240;
+      const legacyRadiusRatio = Math.min(1, radius / 120);
+      const wideRadiusRatio = Math.max(0, (radius - 120) / 120);
+      const thresholdRatio = 1 - threshold / 100;
       const brightnessLift = brightnessBias / 50;
       return {
         style,
@@ -615,8 +617,8 @@ var PixelRunnerWebviewBundle = (() => {
         source: {
           thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - brightnessLift * 0.065, 0.2, 0.86, 0.62),
           thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - brightnessLift * 0.085, 0.32, 0.96, 0.78),
-          thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + radiusRatio * 0.04, 0.08, 0.34, 0.2),
-          localRadius: Math.max(3, Math.round(4 + radiusRatio * 10)),
+          thresholdKnee: clamp(preset.knee * (1.08 - thresholdRatio * 0.38) + legacyRadiusRatio * 0.04, 0.08, 0.34, 0.2),
+          localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
           contrastLow: 0.025,
           contrastHigh: clamp(0.095 - thresholdRatio * 0.035, 0.038, 0.11, 0.07),
           specularLow: 0.06,
@@ -627,13 +629,21 @@ var PixelRunnerWebviewBundle = (() => {
           darkProtect: preset.darkProtect
         },
         blur: {
-          smallRadius: Math.max(1, Math.round(1.5 + radiusRatio * 4)),
-          mediumRadius: Math.max(2, Math.round(5 + radiusRatio * 14)),
-          largeRadius: Math.max(3, Math.round(7 + radiusRatio * 24)),
+          mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.2 + wideRadiusRatio))),
+          mipWeights: [
+            preset.smallWeight * 0.72,
+            preset.mediumWeight * 0.94,
+            preset.largeWeight * (0.76 + legacyRadiusRatio * preset.scatter * 0.42),
+            preset.largeWeight * (0.52 + legacyRadiusRatio * preset.scatter * 0.36 + wideRadiusRatio * 0.22),
+            preset.largeWeight * (0.34 + legacyRadiusRatio * preset.scatter * 0.26 + wideRadiusRatio * 0.34),
+            preset.largeWeight * (0.2 + legacyRadiusRatio * preset.scatter * 0.18 + wideRadiusRatio * 0.4),
+            preset.largeWeight * (0.12 + wideRadiusRatio * 0.34)
+          ],
+          pyramidWeight: clamp(0.72 + legacyRadiusRatio * 0.52 + wideRadiusRatio * 0.42 + preset.scatter * 0.1, 0.72, 1.9, 1),
           smallWeight: preset.smallWeight,
           mediumWeight: preset.mediumWeight,
-          largeWeight: preset.largeWeight * (0.7 + radiusRatio * preset.scatter),
-          passes: radius > 72 ? 2 : 1
+          largeWeight: preset.largeWeight * (0.7 + legacyRadiusRatio * preset.scatter + wideRadiusRatio * 0.42),
+          passes: 1
         },
         composite: {
           intensity: strength / 100 * 2.35,
@@ -900,52 +910,80 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return out;
     }
-    function blurChannelHorizontal(src, width, height, radius) {
-      const out = new Float32Array(src.length);
-      const size = radius * 2 + 1;
+    function sampleBilinear(layer, x, y, channel) {
+      const sx = Math.min(layer.width - 1, Math.max(0, x));
+      const sy = Math.min(layer.height - 1, Math.max(0, y));
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const x1 = Math.min(layer.width - 1, x0 + 1);
+      const y1 = Math.min(layer.height - 1, y0 + 1);
+      const tx = sx - x0;
+      const ty = sy - y0;
+      const a = y0 * layer.width + x0;
+      const b = y0 * layer.width + x1;
+      const c = y1 * layer.width + x0;
+      const d = y1 * layer.width + x1;
+      const wa = (1 - tx) * (1 - ty);
+      const wb = tx * (1 - ty);
+      const wc = (1 - tx) * ty;
+      const wd = tx * ty;
+      return channel[a] * wa + channel[b] * wb + channel[c] * wc + channel[d] * wd;
+    }
+    function kawaseBlurLayer(layer, offset = 1) {
+      const out = createLayer(layer.width, layer.height);
+      const taps = [
+        [-offset, -offset, 1],
+        [offset, -offset, 1],
+        [-offset, offset, 1],
+        [offset, offset, 1],
+        [0, 0, 2]
+      ];
+      const weightTotal = 6;
+      for (let y = 0; y < layer.height; y += 1) {
+        for (let x = 0; x < layer.width; x += 1) {
+          const target = y * layer.width + x;
+          let r = 0;
+          let g = 0;
+          let b = 0;
+          for (let index = 0; index < taps.length; index += 1) {
+            const tap = taps[index];
+            const sx = x + tap[0];
+            const sy = y + tap[1];
+            const weight = tap[2];
+            r += sampleBilinear(layer, sx, sy, layer.r) * weight;
+            g += sampleBilinear(layer, sx, sy, layer.g) * weight;
+            b += sampleBilinear(layer, sx, sy, layer.b) * weight;
+          }
+          out.r[target] = r / weightTotal;
+          out.g[target] = g / weightTotal;
+          out.b[target] = b / weightTotal;
+        }
+      }
+      return out;
+    }
+    function upsampleLayer(source, width, height) {
+      const out = createLayer(width, height);
+      const xScale = source.width / width;
+      const yScale = source.height / height;
       for (let y = 0; y < height; y += 1) {
-        const row = y * width;
-        let sum = 0;
-        for (let x = -radius; x <= radius; x += 1) {
-          sum += src[row + Math.min(width - 1, Math.max(0, x))];
-        }
+        const sy = (y + 0.5) * yScale - 0.5;
         for (let x = 0; x < width; x += 1) {
-          out[row + x] = sum / size;
-          const removeX = Math.max(0, x - radius);
-          const addX = Math.min(width - 1, x + radius + 1);
-          sum += src[row + addX] - src[row + removeX];
+          const sx = (x + 0.5) * xScale - 0.5;
+          const target = y * width + x;
+          out.r[target] = sampleBilinear(source, sx, sy, source.r);
+          out.g[target] = sampleBilinear(source, sx, sy, source.g);
+          out.b[target] = sampleBilinear(source, sx, sy, source.b);
         }
       }
       return out;
     }
-    function blurChannelVertical(src, width, height, radius) {
-      const out = new Float32Array(src.length);
-      const size = radius * 2 + 1;
-      for (let x = 0; x < width; x += 1) {
-        let sum = 0;
-        for (let y = -radius; y <= radius; y += 1) {
-          sum += src[Math.min(height - 1, Math.max(0, y)) * width + x];
-        }
-        for (let y = 0; y < height; y += 1) {
-          out[y * width + x] = sum / size;
-          const removeY = Math.max(0, y - radius);
-          const addY = Math.min(height - 1, y + radius + 1);
-          sum += src[addY * width + x] - src[removeY * width + x];
-        }
+    function addLayer(target, source, weight) {
+      const count = Math.min(target.r.length, source.r.length);
+      for (let index = 0; index < count; index += 1) {
+        target.r[index] += source.r[index] * weight;
+        target.g[index] += source.g[index] * weight;
+        target.b[index] += source.b[index] * weight;
       }
-      return out;
-    }
-    function boxBlurLayer(layer, radius, passes = 1) {
-      const blurRadius = Math.max(1, Math.floor(radius));
-      let r = layer.r;
-      let g = layer.g;
-      let b = layer.b;
-      for (let pass = 0; pass < passes; pass += 1) {
-        r = blurChannelVertical(blurChannelHorizontal(r, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
-        g = blurChannelVertical(blurChannelHorizontal(g, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
-        b = blurChannelVertical(blurChannelHorizontal(b, layer.width, layer.height, blurRadius), layer.width, layer.height, blurRadius);
-      }
-      return { width: layer.width, height: layer.height, r, g, b };
     }
     function addUpsampled(target, source, weight) {
       const xScale = source.width / target.width;
@@ -976,17 +1014,30 @@ var PixelRunnerWebviewBundle = (() => {
       }
     }
     function buildMultiScaleGlow(sourceLayer, params) {
-      const level1 = downsampleLayer(sourceLayer);
-      const level2 = downsampleLayer(level1);
-      const level3 = downsampleLayer(level2);
-      const small = boxBlurLayer(sourceLayer, params.blur.smallRadius, 1);
-      const medium = boxBlurLayer(level1, params.blur.mediumRadius, params.blur.passes);
-      const large = boxBlurLayer(level2.width > 1 && level2.height > 1 ? level2 : level3, params.blur.largeRadius, 2);
+      const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
+      const mipCount = Math.max(2, Math.min(7, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 4))));
+      const weights = Array.isArray(params.blur.mipWeights) && params.blur.mipWeights.length ? params.blur.mipWeights : [0.52, 0.86, 0.72, 0.46, 0.28, 0.16, 0.1];
+      const levels = [];
+      let current = sourceLayer;
+      for (let index = 0; index < mipCount; index += 1) {
+        if (current.width <= 1 && current.height <= 1) break;
+        current = kawaseBlurLayer(downsampleLayer(current), 1);
+        levels.push(current);
+      }
+      let combined = levels.length ? levels[levels.length - 1] : sourceLayer;
+      for (let index = levels.length - 2; index >= 0; index -= 1) {
+        const upsampled = upsampleLayer(combined, levels[index].width, levels[index].height);
+        addLayer(upsampled, levels[index], weights[index] || weights[weights.length - 1] || 0.25);
+        combined = kawaseBlurLayer(upsampled, 0.75);
+      }
       const out = createLayer(sourceLayer.width, sourceLayer.height);
-      addUpsampled(out, small, params.blur.smallWeight);
-      addUpsampled(out, medium, params.blur.mediumWeight);
-      addUpsampled(out, large, params.blur.largeWeight);
-      return { glowLayer: out, levels: { small, medium, large } };
+      if (levels.length) {
+        addUpsampled(out, combined, params.blur.pyramidWeight || 1);
+        for (let index = 0; index < levels.length; index += 1) {
+          addUpsampled(out, levels[index], weights[index] || weights[weights.length - 1] || 0.2);
+        }
+      }
+      return { glowLayer: out, levels: { mips: levels } };
     }
     modules.glowPyramidBlur = {
       createLayer,
@@ -1052,8 +1103,35 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return out;
     }
+    function renderGlowLayer(glowLayer, masks, params) {
+      const out = new ImageData(glowLayer.width, glowLayer.height);
+      const data = out.data;
+      for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
+        const source = masks.sourceMask[pixel];
+        const protect = masks.protectMask[pixel];
+        const darkProtect = masks.darkProtect[pixel];
+        const highlightProtect = protect * params.composite.highlightProtect * 0.82;
+        const shadowProtect = darkProtect * params.composite.shadowProtect;
+        const sourceAnchor = 0.62 + source * 0.38;
+        const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+        const warmedR = glowLayer.r[pixel] * (1 + params.composite.warmth);
+        const warmedG = glowLayer.g[pixel] * (1 + params.composite.warmth * 0.35);
+        const warmedB = glowLayer.b[pixel] * (1 - params.composite.warmth * 0.28);
+        const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
+        const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
+        const alpha = clamp(Math.max(glowR, glowG, glowB), 0, 1);
+        data[index] = Math.round(clamp(glowR, 0, 1) * 255);
+        data[index + 1] = Math.round(clamp(glowG, 0, 1) * 255);
+        data[index + 2] = Math.round(clamp(glowB, 0, 1) * 255);
+        data[index + 3] = Math.round(alpha * 255);
+      }
+      return out;
+    }
     modules.glowCompositor = {
-      composeProtected
+      composeProtected,
+      renderGlowLayer
     };
   })(window);
 
@@ -1113,6 +1191,11 @@ var PixelRunnerWebviewBundle = (() => {
         sourceResult.masks,
         params
       );
+      const glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
       const compositeMs = performance.now() - compositeStartedAt;
       return {
         ok: true,
@@ -1121,6 +1204,7 @@ var PixelRunnerWebviewBundle = (() => {
         height: source.height,
         baseDataUrl: sourceDataUrl,
         previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
+        glowLayerDataUrl: imageDataToDataUrl(glowLayerImageData, "image/png", 0.92),
         sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
         protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
         debugDataUrls: sourceResult.debugImages ? {
@@ -1155,6 +1239,7 @@ var PixelRunnerWebviewBundle = (() => {
       return {
         dataUrl: result.previewDataUrl,
         previewDataUrl: result.previewDataUrl,
+        glowLayerDataUrl: result.glowLayerDataUrl,
         baseDataUrl: result.baseDataUrl,
         sourceMaskDataUrl: result.sourceMaskDataUrl,
         protectMaskDataUrl: result.protectMaskDataUrl,
@@ -1391,6 +1476,7 @@ ${text}` : text;
       const glowCancelButton = runtime.getById("btnGlowPreviewCancel");
       const glowModalClose = runtime.getById("glowModalClose");
       const glowInlinePreview = runtime.getById("glowInlinePreview");
+      const glowPreviewViewport = runtime.getById("glowPreviewViewport");
       const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
       const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
       const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
@@ -1409,6 +1495,16 @@ ${text}` : text;
       let glowLastPreviewSignature = "";
       let glowCpuSourceAsset = null;
       let glowPreviewJobId = 0;
+      const glowPreviewView = {
+        scale: 1,
+        x: 0,
+        y: 0,
+        isPanning: false,
+        startX: 0,
+        startY: 0,
+        startPanX: 0,
+        startPanY: 0
+      };
       const readGlowSlider = (input, fallback, min, max) => {
         if (!input) return fallback;
         const parsed = Number(input.value);
@@ -1423,7 +1519,7 @@ ${text}` : text;
       const readGlowState = () => ({
         style: readGlowStyle(),
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-        radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 120),
+        radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
         threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
         saturation: 0,
         brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50)
@@ -1454,6 +1550,49 @@ ${text}` : text;
         if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
         if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
         if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
+      };
+      const clampGlowPreviewView = () => {
+        const scale = Math.max(1, Math.min(6, Number(glowPreviewView.scale) || 1));
+        glowPreviewView.scale = scale;
+        const viewportRect = glowPreviewViewport && glowPreviewViewport.getBoundingClientRect ? glowPreviewViewport.getBoundingClientRect() : { width: 0, height: 0 };
+        const viewportWidth = Number(viewportRect.width) || 0;
+        const viewportHeight = Number(viewportRect.height) || 0;
+        const naturalWidth = Number(glowPreviewResultImage && glowPreviewResultImage.naturalWidth) || viewportWidth || 1;
+        const naturalHeight = Number(glowPreviewResultImage && glowPreviewResultImage.naturalHeight) || viewportHeight || 1;
+        const fitScale = Math.min(viewportWidth / naturalWidth || 1, viewportHeight / naturalHeight || 1);
+        const renderedWidth = naturalWidth * fitScale * scale;
+        const renderedHeight = naturalHeight * fitScale * scale;
+        const keepVisibleX = Math.min(viewportWidth * 0.42, Math.max(80, viewportWidth * 0.18));
+        const keepVisibleY = Math.min(viewportHeight * 0.42, Math.max(80, viewportHeight * 0.18));
+        const maxX = Math.max(0, (renderedWidth + viewportWidth) / 2 - keepVisibleX);
+        const maxY = Math.max(0, (renderedHeight + viewportHeight) / 2 - keepVisibleY);
+        glowPreviewView.x = Math.max(-maxX, Math.min(maxX, Number(glowPreviewView.x) || 0));
+        glowPreviewView.y = Math.max(-maxY, Math.min(maxY, Number(glowPreviewView.y) || 0));
+      };
+      const applyGlowPreviewTransform = () => {
+        clampGlowPreviewView();
+        if (!glowPreviewResultImage) return;
+        glowPreviewResultImage.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+      };
+      const resetGlowPreviewTransform = () => {
+        glowPreviewView.scale = 1;
+        glowPreviewView.x = 0;
+        glowPreviewView.y = 0;
+        applyGlowPreviewTransform();
+      };
+      const zoomGlowPreview = (nextScale, anchorX, anchorY) => {
+        if (!glowPreviewViewport) return;
+        const previousScale = Math.max(1, Number(glowPreviewView.scale) || 1);
+        const scale = Math.max(1, Math.min(6, Number(nextScale) || 1));
+        const rect = glowPreviewViewport.getBoundingClientRect();
+        const localX = Number(anchorX) - rect.left - rect.width / 2;
+        const localY = Number(anchorY) - rect.top - rect.height / 2;
+        if (Math.abs(scale - previousScale) >= 1e-3) {
+          glowPreviewView.x = (glowPreviewView.x - localX) * (scale / previousScale) + localX;
+          glowPreviewView.y = (glowPreviewView.y - localY) * (scale / previousScale) + localY;
+        }
+        glowPreviewView.scale = scale;
+        applyGlowPreviewTransform();
       };
       const captureGlowCpuSource = async (maxDimension) => {
         const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
@@ -1486,6 +1625,7 @@ ${text}` : text;
           glowPreviewSkinLikeImage,
           glowPreviewDarkProtectImage
         ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+        resetGlowPreviewTransform();
         if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
       };
       const updateInlineGlowPreview = (asset, glowResult) => {
@@ -1493,6 +1633,7 @@ ${text}` : text;
         const sourceDataUrl = String(asset.dataUrl || "").trim();
         if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
         if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+        if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
         if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
         if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
         if (glowPreviewLumaImage) glowPreviewLumaImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.luma || "").trim();
@@ -1510,14 +1651,14 @@ ${text}` : text;
       const callGlowCpuPreviewAction = async (action) => {
         const state = readGlowState();
         if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
-          glowCpuSourceAsset = await captureGlowCpuSource(320);
+          glowCpuSourceAsset = await captureGlowCpuSource(1280);
         }
         const sourceDataUrl = String(glowCpuSourceAsset.dataUrl || "").trim();
         const jobId = glowPreviewJobId + 1;
         glowPreviewJobId = jobId;
         const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
           jobId,
-          includeDebug: Boolean(glowDebugPanel && glowDebugPanel.open)
+          includeDebug: false
         });
         if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
           return {
@@ -1539,20 +1680,35 @@ ${text}` : text;
         const state = readGlowState();
         const layerName = `Glow ${state.strength}%`;
         const commitStrength = state.style === "none" ? 0 : state.strength;
-        const result = await runtime.callHost("photoshop.runToolAction", [{
-          action: "glowPreviewCommit",
-          style: state.style,
-          strength: commitStrength,
-          radius: state.radius,
-          threshold: state.threshold,
-          saturation: state.saturation,
-          brightnessBias: state.brightnessBias,
+        if (!glowCpuSourceAsset) {
+          glowCpuSourceAsset = await captureGlowCpuSource(1280);
+        }
+        const glowResult = await modules.glowPreviewEngine.createPreview(
+          String(glowCpuSourceAsset.dataUrl || "").trim(),
+          { ...state, strength: commitStrength },
+          { includeDebug: false }
+        );
+        const documentInfo = glowCpuSourceAsset.document || {};
+        const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
+          dataUrl: glowResult.glowLayerDataUrl,
+          targetDocumentId: glowCpuSourceAsset.documentId,
+          targetBounds: {
+            left: 0,
+            top: 0,
+            right: Number(documentInfo.width) || Number(glowCpuSourceAsset.originalWidth) || Number(glowResult.width) || 1,
+            bottom: Number(documentInfo.height) || Number(glowCpuSourceAsset.originalHeight) || Number(glowResult.height) || 1
+          },
+          fitMode: "stretch",
+          preserveCanvasBounds: true,
+          applyMask: false,
+          opacity: 100,
+          blendMode: "linearDodge",
           layerName
         }], { timeoutMs: 12e4 });
         glowCpuSourceAsset = null;
         return {
           ok: true,
-          message: result && result.message ? result.message : `已按 Photoshop 原生管线生成 ${layerName}。`,
+          message: result && result.message ? result.message : `已按预览一致算法生成 ${layerName}。`,
           layerName: result && result.layerName ? result.layerName : layerName
         };
       };
@@ -1670,6 +1826,65 @@ ${text}` : text;
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
+      if (glowPreviewViewport) {
+        glowPreviewViewport.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          const direction = event.deltaY > 0 ? -1 : 1;
+          const factor = direction > 0 ? 1.18 : 1 / 1.18;
+          zoomGlowPreview(glowPreviewView.scale * factor, event.clientX, event.clientY);
+        }, { passive: false });
+        glowPreviewViewport.addEventListener("pointerdown", (event) => {
+          if (event.button != null && event.button !== 0) return;
+          event.preventDefault();
+          glowPreviewView.isPanning = true;
+          glowPreviewView.startX = event.clientX;
+          glowPreviewView.startY = event.clientY;
+          glowPreviewView.startPanX = glowPreviewView.x;
+          glowPreviewView.startPanY = glowPreviewView.y;
+          glowPreviewViewport.classList.add("is-panning");
+        });
+        const movePan = (event) => {
+          if (!glowPreviewView.isPanning) return;
+          event.preventDefault();
+          glowPreviewView.x = glowPreviewView.startPanX + event.clientX - glowPreviewView.startX;
+          glowPreviewView.y = glowPreviewView.startPanY + event.clientY - glowPreviewView.startY;
+          applyGlowPreviewTransform();
+        };
+        const endPan = (event) => {
+          if (!glowPreviewView.isPanning) return;
+          event.preventDefault();
+          glowPreviewView.isPanning = false;
+          glowPreviewViewport.classList.remove("is-panning");
+        };
+        window.addEventListener("pointermove", movePan, { passive: false });
+        window.addEventListener("pointerup", endPan, { passive: false });
+        window.addEventListener("pointercancel", endPan, { passive: false });
+        window.addEventListener("blur", () => {
+          glowPreviewView.isPanning = false;
+          glowPreviewViewport.classList.remove("is-panning");
+        });
+        glowPreviewViewport.addEventListener("dblclick", resetGlowPreviewTransform);
+      }
+      if (glowPreviewResultImage) {
+        glowPreviewResultImage.addEventListener("load", applyGlowPreviewTransform);
+      }
+      document.querySelectorAll("[data-glow-zoom]").forEach((button) => {
+        button.addEventListener("pointerdown", (event) => {
+          event.stopPropagation();
+        });
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const action = String(button.getAttribute("data-glow-zoom") || "");
+          if (action === "reset") {
+            resetGlowPreviewTransform();
+            return;
+          }
+          if (!glowPreviewViewport) return;
+          const rect = glowPreviewViewport.getBoundingClientRect();
+          const factor = action === "in" ? 1.25 : 1 / 1.25;
+          zoomGlowPreview(glowPreviewView.scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+        });
+      });
       [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();

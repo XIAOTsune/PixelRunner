@@ -1,4 +1,4 @@
-import { ensureDeps, fetchBinary } from "./deps.js";
+import { base64ToArrayBuffer, ensureDeps, fetchBinary, parseDataUrl } from "./deps.js";
 import {
   activateDocument,
   buildDataUrl,
@@ -1054,7 +1054,9 @@ export async function runToolAction(payload = {}) {
 export async function placeImageFromUrl(payload) {
   const options = payload && typeof payload === "object" ? payload : {};
   const url = String(options.url || "").trim();
-  if (!url) throw new Error("Result URL is missing");
+  const dataUrl = String(options.dataUrl || "").trim();
+  const base64 = String(options.base64 || "").trim();
+  if (!url && !dataUrl && !base64) throw new Error("Result image is missing");
 
   const { photoshop, storage } = await ensureDeps();
   const app = photoshop.app;
@@ -1063,7 +1065,16 @@ export async function placeImageFromUrl(payload) {
 
   if (!app || !app.activeDocument) throw new Error("No active Photoshop document");
 
-  const buffer = await fetchBinary(url);
+  let buffer = null;
+  if (dataUrl) {
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed || !parsed.base64) throw new Error("Result dataUrl is not a valid base64 image");
+    buffer = base64ToArrayBuffer(parsed.base64);
+  } else if (base64) {
+    buffer = base64ToArrayBuffer(base64);
+  } else {
+    buffer = await fetchBinary(url);
+  }
   const pngInfo = await parsePngInfo(buffer);
   const preserveCanvasBounds = options.preserveCanvasBounds === true;
   const anchorTransparentCanvas = options.anchorTransparentCanvas === true;

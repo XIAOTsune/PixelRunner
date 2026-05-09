@@ -61,6 +61,11 @@
       sourceResult.masks,
       params
     );
+    const glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+      blurResult.glowLayer,
+      sourceResult.masks,
+      params
+    );
     const compositeMs = performance.now() - compositeStartedAt;
 
     return {
@@ -70,6 +75,7 @@
       height: source.height,
       baseDataUrl: sourceDataUrl,
       previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", 0.9),
+      glowLayerDataUrl: imageDataToDataUrl(glowLayerImageData, "image/png", 0.92),
       sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
       protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
       debugDataUrls: sourceResult.debugImages
