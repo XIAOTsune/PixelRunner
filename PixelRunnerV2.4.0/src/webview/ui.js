@@ -439,7 +439,8 @@
         const timings = glowResult.timings || {};
         const sourceBackend = timings.sourceBackend ? ` ${timings.sourceBackend}` : "";
         const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
-        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
+        const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
+        glowPreviewMeta.textContent = `预览 · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias}`;
       }
     };
 
@@ -466,9 +467,10 @@
       const timings = glowResult.timings || {};
       const sourceBackend = timings.sourceBackend || "cpu";
       const blurBackend = timings.blurBackend || "cpu";
+      const compositeBackend = timings.compositeBackend || "cpu";
       return {
         ok: true,
-        message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
+        message: `Glow Lab 已更新：${glowResult.width}x${glowResult.height}，source ${sourceBackend} ${timings.sourceMs || 0}ms / blur ${blurBackend} ${timings.blurMs || 0}ms / composite ${compositeBackend} ${timings.compositeMs || 0}ms / total ${timings.totalMs || 0}ms。`,
         layerName: GLOW_PREVIEW_LAYER_NAME,
         elapsedMs: timings.totalMs || 0
       };

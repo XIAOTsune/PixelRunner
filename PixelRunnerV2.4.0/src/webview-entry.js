@@ -6,6 +6,7 @@ import "./webview/glow/pyramid-blur.js";
 import "./webview/glow/gpu/capabilities.js";
 import "./webview/glow/gpu/webgl-source-mask.js";
 import "./webview/glow/gpu/webgl-pyramid-blur.js";
+import "./webview/glow/gpu/webgl-compositor.js";
 import "./webview/glow/compositor.js";
 import "./webview/glow/preview-engine.js";
 import "./webview/glow-cpu.js";

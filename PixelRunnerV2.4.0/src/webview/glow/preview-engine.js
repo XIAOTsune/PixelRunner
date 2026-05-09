@@ -94,17 +94,45 @@
     const blurMs = performance.now() - blurStartedAt;
 
     const compositeStartedAt = performance.now();
-    const previewImageData = modules.glowCompositor.composeProtected(
-      source.imageData,
-      blurResult.glowLayer,
-      sourceResult.masks,
-      params
-    );
-    const glowLayerImageData = modules.glowCompositor.renderGlowLayer(
-      blurResult.glowLayer,
-      sourceResult.masks,
-      params
-    );
+    let previewImageData;
+    let glowLayerImageData;
+    let compositeBackend = "cpu";
+    try {
+      if (
+        config.useGpu !== false &&
+        modules.glowWebglCompositor &&
+        modules.glowGpuCapabilities &&
+        modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+      ) {
+        const compositeResult = modules.glowWebglCompositor.compose(
+          source.imageData,
+          blurResult.glowLayer,
+          sourceResult.masks,
+          params
+        );
+        previewImageData = compositeResult.previewImageData;
+        glowLayerImageData = compositeResult.glowLayerImageData;
+        compositeBackend = compositeResult.backend || "webgl2";
+      }
+    } catch (error) {
+      console.warn("[PixelRunner] WebGL2 glow compositor failed, falling back to CPU:", error);
+      previewImageData = null;
+      glowLayerImageData = null;
+      compositeBackend = "cpu-fallback";
+    }
+    if (!previewImageData || !glowLayerImageData) {
+      previewImageData = modules.glowCompositor.composeProtected(
+        source.imageData,
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
+      glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
+    }
     const compositeMs = performance.now() - compositeStartedAt;
 
     return {
@@ -132,7 +160,8 @@
         compositeMs: Math.round(compositeMs),
         totalMs: Math.round(performance.now() - startedAt),
         sourceBackend,
-        blurBackend
+        blurBackend,
+        compositeBackend
       },
       params
     };
