@@ -3141,11 +3141,14 @@ ${text}` : text;
       const glowPreviewSkinLikeImage = runtime.getById("glowPreviewSkinLikeImage");
       const glowPreviewDarkProtectImage = runtime.getById("glowPreviewDarkProtectImage");
       const glowPreviewMeta = runtime.getById("glowPreviewMeta");
+      const glowWorkbench = document.querySelector("#glowModal .glow-workbench");
+      const glowSliderStack = document.querySelector("#glowModal .glow-slider-stack");
       let glowPreviewTimer = 0;
       let glowRefinePreviewTimer = 0;
       let glowPreviewInFlight = false;
       let glowPreviewNeedsReplay = false;
       let glowPreviewOpen = false;
+      let glowPreviewHasContent = false;
       let glowLastPreviewSignature = "";
       let glowLastPreviewQuality = "";
       let glowPreviewQuality = "full";
@@ -3234,8 +3237,15 @@ ${text}` : text;
         if (glowColorPickerInput) glowColorPickerInput.disabled = !state.colorEnabled;
         if (glowChromaticInput) glowChromaticInput.disabled = !state.chromaticEnabled;
       };
+      const updateGlowWorkbenchLayout = () => {
+        if (!glowWorkbench || !glowSliderStack) return;
+        const style = window.getComputedStyle(glowSliderStack);
+        const template = String(style.gridTemplateColumns || "").trim();
+        const isSingleColumn = !template || !template.includes(" ");
+        glowWorkbench.classList.toggle("is-side-by-side", !isSingleColumn);
+      };
       const clampGlowPreviewView = () => {
-        const scale = Math.max(1, Math.min(6, Number(glowPreviewView.scale) || 1));
+        const scale = Math.max(0.35, Math.min(8, Number(glowPreviewView.scale) || 1));
         glowPreviewView.scale = scale;
         const viewportRect = glowPreviewViewport && glowPreviewViewport.getBoundingClientRect ? glowPreviewViewport.getBoundingClientRect() : { width: 0, height: 0 };
         const viewportWidth = Number(viewportRect.width) || 0;
@@ -3291,8 +3301,8 @@ ${text}` : text;
       };
       const zoomGlowPreview = (nextScale, anchorX, anchorY) => {
         if (!glowPreviewViewport) return;
-        const previousScale = Math.max(1, Number(glowPreviewView.scale) || 1);
-        const scale = Math.max(1, Math.min(6, Number(nextScale) || 1));
+        const previousScale = Math.max(0.35, Number(glowPreviewView.scale) || 1);
+        const scale = Math.max(0.35, Math.min(8, Number(nextScale) || 1));
         const rect = glowPreviewViewport.getBoundingClientRect();
         const localX = Number(anchorX) - rect.left - rect.width / 2;
         const localY = Number(anchorY) - rect.top - rect.height / 2;
@@ -3345,6 +3355,7 @@ ${text}` : text;
         }
         if (glowPreviewGlowImage) glowPreviewGlowImage.removeAttribute("src");
         if (glowPreviewResultImage) glowPreviewResultImage.removeAttribute("src");
+        glowPreviewHasContent = false;
         resetGlowPreviewTransform();
         if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
       };
@@ -3359,7 +3370,12 @@ ${text}` : text;
         if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage && !glowPreviewGlowImage) {
           glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
         }
-        if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
+        if (!glowPreviewHasContent) {
+          resetGlowPreviewTransform();
+        } else {
+          applyGlowPreviewTransform();
+        }
+        glowPreviewHasContent = true;
         if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
         if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
         if (glowPreviewLumaImage) glowPreviewLumaImage.src = String(glowResult.debugDataUrls && glowResult.debugDataUrls.luma || "").trim();
@@ -3624,6 +3640,7 @@ ${text}` : text;
         if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
           modules.glowPreviewEngine.clearCache();
         }
+        updateGlowWorkbenchLayout();
         modules.workspace.setModalOpen("glowModal", true);
         updateGlowLabels();
         if (!runtime.isPluginRuntime()) {
@@ -3660,6 +3677,15 @@ ${text}` : text;
         modules.workspace.setModalOpen("glowModal", false);
       };
       updateGlowLabels();
+      updateGlowWorkbenchLayout();
+      window.addEventListener("resize", updateGlowWorkbenchLayout);
+      if (typeof ResizeObserver === "function" && glowSliderStack) {
+        const glowLayoutObserver = new ResizeObserver(() => {
+          updateGlowWorkbenchLayout();
+        });
+        glowLayoutObserver.observe(glowSliderStack);
+        if (glowWorkbench) glowLayoutObserver.observe(glowWorkbench);
+      }
       if (glowPreviewViewport) {
         glowPreviewViewport.addEventListener("wheel", (event) => {
           event.preventDefault();

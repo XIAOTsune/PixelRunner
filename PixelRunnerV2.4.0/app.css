@@ -1437,6 +1437,8 @@ button {
 .overlay-card.glow-modal-card {
   width: min(96vw, 1440px);
   min-height: min(86vh, 920px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .glow-modal-hero {
@@ -1462,16 +1464,22 @@ button {
 }
 
 .glow-workbench {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   align-items: stretch;
   min-height: 0;
 }
 
+.glow-workbench.is-side-by-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+}
+
 .glow-inline-preview {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 8px;
   padding: 10px;
   border-radius: 8px;
@@ -1510,15 +1518,23 @@ button {
 }
 
 .glow-lab-tile-wide {
-  min-height: clamp(320px, 56vh, 760px);
-  height: auto;
-  aspect-ratio: 16 / 10;
+  min-height: 240px;
+  height: clamp(260px, 42vh, 620px);
+}
+
+.glow-workbench.is-side-by-side .glow-lab-tile-wide {
+  height: clamp(280px, 48vh, 620px);
+}
+
+.glow-workbench:not(.is-side-by-side) .glow-lab-tile-wide {
+  height: clamp(260px, 36vh, 460px);
 }
 
 .glow-preview-viewport {
   position: relative;
   flex: 1 1 auto;
-  min-height: clamp(220px, 42vh, 620px);
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.28);
   cursor: grab;
@@ -1672,6 +1688,7 @@ button {
   top: 0;
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 12px;
   min-width: 0;
   max-height: calc(100vh - 128px);
@@ -1811,10 +1828,6 @@ button {
     min-height: auto;
   }
 
-  .glow-workbench {
-    grid-template-columns: 1fr;
-  }
-
   .glow-controls-panel {
     position: static;
     max-height: none;
@@ -1826,9 +1839,8 @@ button {
   }
 
   .glow-lab-tile-wide {
-    min-height: clamp(220px, 46vh, 520px);
-    height: auto;
-    aspect-ratio: 16 / 10;
+    min-height: 220px;
+    height: clamp(240px, 36vh, 420px);
   }
 
   .glow-inline-preview {
@@ -1842,12 +1854,13 @@ button {
   }
 
   .glow-lab-tile-wide {
-    min-height: 200px;
-    height: auto;
+    min-height: 220px;
+    height: 220px;
   }
 
   .glow-preview-viewport {
-    min-height: 200px;
+    min-height: 0;
+    height: 100%;
   }
 
   .glow-slider-stack {
