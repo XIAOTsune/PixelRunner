@@ -41,6 +41,26 @@
     return canvas.toDataURL(type, quality);
   }
 
+  function buildLinearDodgePreview(baseImageData, glowLayerImageData) {
+    const width = baseImageData && baseImageData.width;
+    const height = baseImageData && baseImageData.height;
+    if (!width || !height || !glowLayerImageData || glowLayerImageData.width !== width || glowLayerImageData.height !== height) {
+      return baseImageData;
+    }
+    const out = new ImageData(width, height);
+    const base = baseImageData.data;
+    const glow = glowLayerImageData.data;
+    const data = out.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = (glow[i + 3] || 0) / 255;
+      data[i] = Math.min(255, Math.round(base[i] + glow[i] * alpha));
+      data[i + 1] = Math.min(255, Math.round(base[i + 1] + glow[i + 1] * alpha));
+      data[i + 2] = Math.min(255, Math.round(base[i + 2] + glow[i + 2] * alpha));
+      data[i + 3] = base[i + 3];
+    }
+    return out;
+  }
+
   let sourceImageCache = {
     sourceDataUrl: "",
     image: null,
@@ -124,6 +144,8 @@
     const jobId = Number(options.jobId) || 0;
     const startedAt = performance.now();
     const includeGlowLayer = options.includeGlowLayer !== false;
+    const requestRawImageData = options.returnImageData === true;
+    const gpuOnly = options.gpuOnly === true;
     const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
     const params = modules.glowPresets.normalizeGlowParams(config);
     const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
@@ -152,6 +174,7 @@
           sourceBackend = sourceResult.backend || "webgl2";
         }
       } catch (error) {
+        if (gpuOnly) throw error;
         console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
         sourceResult = null;
         sourceBackend = "cpu-fallback";
@@ -188,6 +211,7 @@
           blurBackend = blurResult.backend || "webgl2";
         }
       } catch (error) {
+        if (gpuOnly) throw error;
         console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
         blurResult = null;
         blurBackend = "cpu-fallback";
@@ -226,6 +250,7 @@
         compositeBackend = compositeResult.backend || "webgl2";
       }
     } catch (error) {
+      if (gpuOnly) throw error;
       console.warn("[PixelRunner] WebGL2 glow compositor failed, falling back to CPU:", error);
       previewImageData = null;
       glowLayerImageData = null;
@@ -248,13 +273,22 @@
     }
     const compositeMs = performance.now() - compositeStartedAt;
 
+    const finalSimImageData = includeGlowLayer && glowLayerImageData
+      ? buildLinearDodgePreview(source.imageData, glowLayerImageData)
+      : previewImageData;
+    const previewDataUrl = requestRawImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
+    const finalSimDataUrl = requestRawImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
+
     return {
       ok: true,
       jobId,
       width: source.width,
       height: source.height,
       baseDataUrl: sourceDataUrl,
-      previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", Number(options.previewQuality) || 0.9),
+      previewDataUrl,
+      finalSimDataUrl,
+      previewImageData: requestRawImageData ? previewImageData : null,
+      finalSimImageData: requestRawImageData ? finalSimImageData : null,
       glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
       sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
       protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",

@@ -1542,6 +1542,10 @@ button {
   will-change: transform;
 }
 
+#glowPreviewResultImage {
+  display: none;
+}
+
 .glow-preview-tools {
   position: absolute;
   right: 10px;

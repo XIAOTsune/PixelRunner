@@ -560,18 +560,18 @@ var PixelRunnerWebviewBundle = (() => {
         scatter: 0
       },
       darkSoft: {
-        thresholdBias: 0.02,
+        thresholdBias: 0.04,
         whiteProtect: 0.86,
         skinProtect: 0.78,
         darkProtect: 0.42,
-        knee: 0.24,
+        knee: 0.2,
         chromaBoost: 0.28,
-        smallWeight: 0.42,
-        mediumWeight: 0.88,
-        largeWeight: 0.48,
-        softAddMix: 0.42,
+        smallWeight: 0.5,
+        mediumWeight: 0.82,
+        largeWeight: 0.38,
+        softAddMix: 0.36,
         warmth: 0.035,
-        scatter: 0.88
+        scatter: 0.78
       },
       whiteSoft: {
         thresholdBias: -0.02,
@@ -588,18 +588,18 @@ var PixelRunnerWebviewBundle = (() => {
         scatter: 1
       },
       shine: {
-        thresholdBias: -0.06,
-        whiteProtect: 0.78,
+        thresholdBias: -0.03,
+        whiteProtect: 0.84,
         skinProtect: 0.74,
         darkProtect: 0.5,
-        knee: 0.32,
+        knee: 0.26,
         chromaBoost: 0.36,
-        smallWeight: 0.3,
-        mediumWeight: 0.9,
-        largeWeight: 0.72,
-        softAddMix: 0.64,
-        warmth: 0.06,
-        scatter: 1.18
+        smallWeight: 0.42,
+        mediumWeight: 0.86,
+        largeWeight: 0.52,
+        softAddMix: 0.5,
+        warmth: 0.045,
+        scatter: 0.92
       }
     };
     function normalizeGlowParams(config = {}) {
@@ -664,14 +664,14 @@ var PixelRunnerWebviewBundle = (() => {
           passes: 1
         },
         composite: {
-          intensity: strength / 100 * 2.35,
+          intensity: strength / 100 * 2.05,
           softAddMix: preset.softAddMix,
           warmth: preset.warmth,
           saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
-          highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
+          highlightProtect: clamp(0.62 + thresholdRatio * 0.24, 0.52, 0.9, 0.72),
           shadowProtect: preset.darkProtect,
-          colorProtect: 0.18,
-          shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58),
+          colorProtect: clamp(0.24 + strength / 100 * 0.08, 0.24, 0.38, 0.28),
+          shoulder: clamp(0.72 - strength / 100 * 0.2, 0.5, 0.8, 0.64),
           colorShift: colorShift / 100,
           colorTint,
           colorAmount: colorAmount / 100,
@@ -2497,6 +2497,25 @@ var PixelRunnerWebviewBundle = (() => {
       ctx.putImageData(imageData, 0, 0);
       return canvas.toDataURL(type, quality);
     }
+    function buildLinearDodgePreview(baseImageData, glowLayerImageData) {
+      const width = baseImageData && baseImageData.width;
+      const height = baseImageData && baseImageData.height;
+      if (!width || !height || !glowLayerImageData || glowLayerImageData.width !== width || glowLayerImageData.height !== height) {
+        return baseImageData;
+      }
+      const out = new ImageData(width, height);
+      const base = baseImageData.data;
+      const glow = glowLayerImageData.data;
+      const data = out.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const alpha = (glow[i + 3] || 0) / 255;
+        data[i] = Math.min(255, Math.round(base[i] + glow[i] * alpha));
+        data[i + 1] = Math.min(255, Math.round(base[i + 1] + glow[i + 1] * alpha));
+        data[i + 2] = Math.min(255, Math.round(base[i + 2] + glow[i + 2] * alpha));
+        data[i + 3] = base[i + 3];
+      }
+      return out;
+    }
     let sourceImageCache = {
       sourceDataUrl: "",
       image: null,
@@ -2572,6 +2591,8 @@ var PixelRunnerWebviewBundle = (() => {
       const jobId = Number(options.jobId) || 0;
       const startedAt = performance.now();
       const includeGlowLayer = options.includeGlowLayer !== false;
+      const requestRawImageData = options.returnImageData === true;
+      const gpuOnly = options.gpuOnly === true;
       const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
       const params = modules.glowPresets.normalizeGlowParams(config);
       const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
@@ -2593,6 +2614,7 @@ var PixelRunnerWebviewBundle = (() => {
             sourceBackend = sourceResult.backend || "webgl2";
           }
         } catch (error) {
+          if (gpuOnly) throw error;
           console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
           sourceResult = null;
           sourceBackend = "cpu-fallback";
@@ -2623,6 +2645,7 @@ var PixelRunnerWebviewBundle = (() => {
             blurBackend = blurResult.backend || "webgl2";
           }
         } catch (error) {
+          if (gpuOnly) throw error;
           console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
           blurResult = null;
           blurBackend = "cpu-fallback";
@@ -2655,6 +2678,7 @@ var PixelRunnerWebviewBundle = (() => {
           compositeBackend = compositeResult.backend || "webgl2";
         }
       } catch (error) {
+        if (gpuOnly) throw error;
         console.warn("[PixelRunner] WebGL2 glow compositor failed, falling back to CPU:", error);
         previewImageData = null;
         glowLayerImageData = null;
@@ -2676,13 +2700,19 @@ var PixelRunnerWebviewBundle = (() => {
         }
       }
       const compositeMs = performance.now() - compositeStartedAt;
+      const finalSimImageData = includeGlowLayer && glowLayerImageData ? buildLinearDodgePreview(source.imageData, glowLayerImageData) : previewImageData;
+      const previewDataUrl = requestRawImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
+      const finalSimDataUrl = requestRawImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
       return {
         ok: true,
         jobId,
         width: source.width,
         height: source.height,
         baseDataUrl: sourceDataUrl,
-        previewDataUrl: imageDataToDataUrl(previewImageData, "image/jpeg", Number(options.previewQuality) || 0.9),
+        previewDataUrl,
+        finalSimDataUrl,
+        previewImageData: requestRawImageData ? previewImageData : null,
+        finalSimImageData: requestRawImageData ? finalSimImageData : null,
         glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
         sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
         protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
@@ -2983,6 +3013,7 @@ ${text}` : text;
       const glowModalClose = runtime.getById("glowModalClose");
       const glowInlinePreview = runtime.getById("glowInlinePreview");
       const glowPreviewViewport = runtime.getById("glowPreviewViewport");
+      const glowPreviewResultCanvas = runtime.getById("glowPreviewResultCanvas");
       const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
       const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
       const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
@@ -3004,7 +3035,11 @@ ${text}` : text;
       let glowPreviewQuality = "full";
       let glowCpuSourceAsset = null;
       let glowPreviewJobId = 0;
+      let glowSliderDragging = false;
+      let glowDragPreviewRaf = 0;
+      let glowGpuFastPathAvailable = true;
       const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
+      const GLOW_DRAG_PROCESS_DIMENSION = 1400;
       const GLOW_FULL_PROCESS_DIMENSION = 3e3;
       const glowPreviewView = {
         scale: 1,
@@ -3084,9 +3119,13 @@ ${text}` : text;
         const viewportHeight = Number(viewportRect.height) || 0;
         const naturalWidth = Number(glowPreviewResultImage && glowPreviewResultImage.naturalWidth) || viewportWidth || 1;
         const naturalHeight = Number(glowPreviewResultImage && glowPreviewResultImage.naturalHeight) || viewportHeight || 1;
-        const fitScale = Math.min(viewportWidth / naturalWidth || 1, viewportHeight / naturalHeight || 1);
-        const renderedWidth = naturalWidth * fitScale * scale;
-        const renderedHeight = naturalHeight * fitScale * scale;
+        const canvasWidth = Number(glowPreviewResultCanvas && glowPreviewResultCanvas.width) || 0;
+        const canvasHeight = Number(glowPreviewResultCanvas && glowPreviewResultCanvas.height) || 0;
+        const contentWidth = canvasWidth || naturalWidth;
+        const contentHeight = canvasHeight || naturalHeight;
+        const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
+        const renderedWidth = contentWidth * fitScale * scale;
+        const renderedHeight = contentHeight * fitScale * scale;
         const keepVisibleX = Math.min(viewportWidth * 0.42, Math.max(80, viewportWidth * 0.18));
         const keepVisibleY = Math.min(viewportHeight * 0.42, Math.max(80, viewportHeight * 0.18));
         const maxX = Math.max(0, (renderedWidth + viewportWidth) / 2 - keepVisibleX);
@@ -3096,8 +3135,24 @@ ${text}` : text;
       };
       const applyGlowPreviewTransform = () => {
         clampGlowPreviewView();
+        if (glowPreviewResultCanvas) {
+          glowPreviewResultCanvas.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+        }
         if (!glowPreviewResultImage) return;
         glowPreviewResultImage.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+      };
+      const drawGlowPreviewToCanvas = (glowResult) => {
+        if (!glowPreviewResultCanvas || !glowResult) return false;
+        const imageData = glowResult.finalSimImageData || glowResult.previewImageData;
+        if (!imageData || !imageData.width || !imageData.height) return false;
+        const width = Number(imageData.width) || 1;
+        const height = Number(imageData.height) || 1;
+        if (glowPreviewResultCanvas.width !== width) glowPreviewResultCanvas.width = width;
+        if (glowPreviewResultCanvas.height !== height) glowPreviewResultCanvas.height = height;
+        const ctx = glowPreviewResultCanvas.getContext("2d", { alpha: true, desynchronized: true });
+        if (!ctx) return false;
+        ctx.putImageData(imageData, 0, 0);
+        return true;
       };
       const resetGlowPreviewTransform = () => {
         glowPreviewView.scale = 1;
@@ -3142,7 +3197,6 @@ ${text}` : text;
         if (glowInlinePreview) glowInlinePreview.hidden = true;
         [
           glowPreviewBaseImage,
-          glowPreviewResultImage,
           glowPreviewSourceMaskImage,
           glowPreviewProtectMaskImage,
           glowPreviewLumaImage,
@@ -3151,6 +3205,11 @@ ${text}` : text;
           glowPreviewSkinLikeImage,
           glowPreviewDarkProtectImage
         ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+        if (glowPreviewResultCanvas) {
+          const ctx = glowPreviewResultCanvas.getContext("2d");
+          if (ctx) ctx.clearRect(0, 0, glowPreviewResultCanvas.width || 0, glowPreviewResultCanvas.height || 0);
+        }
+        if (glowPreviewResultImage) glowPreviewResultImage.removeAttribute("src");
         resetGlowPreviewTransform();
         if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
       };
@@ -3158,7 +3217,10 @@ ${text}` : text;
         if (!asset || !glowResult) return;
         const sourceDataUrl = String(asset.dataUrl || "").trim();
         if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
-        if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+        const drawn = drawGlowPreviewToCanvas(glowResult);
+        if (!drawn && glowPreviewResultImage) {
+          glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+        }
         if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
         if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
         if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
@@ -3187,13 +3249,31 @@ ${text}` : text;
         const jobId = glowPreviewJobId + 1;
         glowPreviewJobId = jobId;
         const isInteractive = glowPreviewQuality === "interactive";
-        const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
-          jobId,
-          includeDebug: false,
-          includeGlowLayer: false,
-          previewQuality: isInteractive ? 0.76 : 0.82,
-          processMaxDimension: isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
-        });
+        const useFastInteractivePath = isInteractive && glowSliderDragging;
+        let glowResult;
+        try {
+          glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+            jobId,
+            includeDebug: false,
+            includeGlowLayer: true,
+            returnImageData: true,
+            gpuOnly: useFastInteractivePath && glowGpuFastPathAvailable,
+            previewQuality: isInteractive ? 0.76 : 0.82,
+            processMaxDimension: useFastInteractivePath ? GLOW_DRAG_PROCESS_DIMENSION : isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
+          });
+        } catch (error) {
+          if (!(useFastInteractivePath && glowGpuFastPathAvailable)) throw error;
+          glowGpuFastPathAvailable = false;
+          glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+            jobId,
+            includeDebug: false,
+            includeGlowLayer: true,
+            returnImageData: true,
+            gpuOnly: false,
+            previewQuality: isInteractive ? 0.76 : 0.82,
+            processMaxDimension: GLOW_DRAG_PROCESS_DIMENSION
+          });
+        }
         if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
           return {
             ok: false,
@@ -3265,6 +3345,7 @@ ${text}` : text;
       };
       const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
       const getGlowPreviewDelay = () => {
+        if (glowSliderDragging) return 36;
         const state = readGlowState();
         const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function" ? modules.glowPreviewEngine.getCacheInfo() : null;
         if (cacheInfo && cacheInfo.hasBlurResult) {
@@ -3279,6 +3360,16 @@ ${text}` : text;
         if (state.brightnessBias >= 32) delay += 20;
         if (state.style === "shine") delay += 20;
         return delay;
+      };
+      const requestLiveGlowPreviewDuringDrag = () => {
+        if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
+        if (glowDragPreviewRaf) return;
+        glowDragPreviewRaf = window.requestAnimationFrame(() => {
+          glowDragPreviewRaf = 0;
+          glowPreviewQuality = "interactive";
+          glowPreviewJobId += 1;
+          void runGlowPreviewUpdate("glowPreviewUpdate");
+        });
       };
       const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
         if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
@@ -3370,6 +3461,7 @@ ${text}` : text;
         glowLastPreviewSignature = "";
         glowLastPreviewQuality = "";
         glowPreviewQuality = "full";
+        glowGpuFastPathAvailable = true;
         glowPreviewJobId += 1;
         if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
           modules.glowPreviewEngine.clearCache();
@@ -3469,13 +3561,45 @@ ${text}` : text;
           zoomGlowPreview(glowPreviewView.scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
         });
       });
+      const glowRealtimeInputs = [glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorAmountInput, glowChromaticInput].filter(Boolean);
+      const stopSliderDragging = () => {
+        if (!glowSliderDragging) return;
+        glowSliderDragging = false;
+        if (glowDragPreviewRaf) {
+          window.cancelAnimationFrame(glowDragPreviewRaf);
+          glowDragPreviewRaf = 0;
+        }
+        scheduleGlowPreviewUpdate("full");
+      };
+      glowRealtimeInputs.forEach((input) => {
+        input.addEventListener("pointerdown", () => {
+          if (glowPreviewTimer) {
+            clearTimeout(glowPreviewTimer);
+            glowPreviewTimer = 0;
+          }
+          if (glowRefinePreviewTimer) {
+            clearTimeout(glowRefinePreviewTimer);
+            glowRefinePreviewTimer = 0;
+          }
+          glowSliderDragging = true;
+        });
+        input.addEventListener("pointerup", stopSliderDragging);
+        input.addEventListener("pointercancel", stopSliderDragging);
+      });
+      window.addEventListener("pointerup", stopSliderDragging);
+      window.addEventListener("blur", stopSliderDragging);
       [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorEnabledInput, glowColorAmountInput, glowColorPickerInput, glowChromaticEnabledInput, glowChromaticInput].filter(Boolean).forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate("interactive");
+          if (glowSliderDragging) {
+            requestLiveGlowPreviewDuringDrag();
+          } else {
+            scheduleGlowPreviewUpdate("interactive");
+          }
         });
         input.addEventListener("change", () => {
           updateGlowLabels();
+          stopSliderDragging();
           scheduleGlowPreviewUpdate("full");
         });
       });

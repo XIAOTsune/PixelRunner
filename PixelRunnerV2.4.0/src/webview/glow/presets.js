@@ -40,18 +40,18 @@
       scatter: 0
     },
     darkSoft: {
-      thresholdBias: 0.02,
+      thresholdBias: 0.04,
       whiteProtect: 0.86,
       skinProtect: 0.78,
       darkProtect: 0.42,
-      knee: 0.24,
+      knee: 0.2,
       chromaBoost: 0.28,
-      smallWeight: 0.42,
-      mediumWeight: 0.88,
-      largeWeight: 0.48,
-      softAddMix: 0.42,
+      smallWeight: 0.5,
+      mediumWeight: 0.82,
+      largeWeight: 0.38,
+      softAddMix: 0.36,
       warmth: 0.035,
-      scatter: 0.88
+      scatter: 0.78
     },
     whiteSoft: {
       thresholdBias: -0.02,
@@ -68,18 +68,18 @@
       scatter: 1
     },
     shine: {
-      thresholdBias: -0.06,
-      whiteProtect: 0.78,
+      thresholdBias: -0.03,
+      whiteProtect: 0.84,
       skinProtect: 0.74,
       darkProtect: 0.5,
-      knee: 0.32,
+      knee: 0.26,
       chromaBoost: 0.36,
-      smallWeight: 0.3,
-      mediumWeight: 0.9,
-      largeWeight: 0.72,
-      softAddMix: 0.64,
-      warmth: 0.06,
-      scatter: 1.18
+      smallWeight: 0.42,
+      mediumWeight: 0.86,
+      largeWeight: 0.52,
+      softAddMix: 0.5,
+      warmth: 0.045,
+      scatter: 0.92
     }
   };
 
@@ -146,14 +146,14 @@
         passes: 1
       },
       composite: {
-        intensity: (strength / 100) * 2.35,
+        intensity: (strength / 100) * 2.05,
         softAddMix: preset.softAddMix,
         warmth: preset.warmth,
         saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
-        highlightProtect: clamp(0.58 + thresholdRatio * 0.22, 0.48, 0.86, 0.68),
+        highlightProtect: clamp(0.62 + thresholdRatio * 0.24, 0.52, 0.9, 0.72),
         shadowProtect: preset.darkProtect,
-        colorProtect: 0.18,
-        shoulder: clamp(0.64 - strength / 100 * 0.18, 0.42, 0.72, 0.58),
+        colorProtect: clamp(0.24 + strength / 100 * 0.08, 0.24, 0.38, 0.28),
+        shoulder: clamp(0.72 - strength / 100 * 0.2, 0.5, 0.8, 0.64),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,

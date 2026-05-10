@@ -259,6 +259,7 @@
     const glowModalClose = runtime.getById("glowModalClose");
     const glowInlinePreview = runtime.getById("glowInlinePreview");
     const glowPreviewViewport = runtime.getById("glowPreviewViewport");
+    const glowPreviewResultCanvas = runtime.getById("glowPreviewResultCanvas");
     const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
     const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
     const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
@@ -281,7 +282,11 @@
     let glowPreviewQuality = "full";
     let glowCpuSourceAsset = null;
     let glowPreviewJobId = 0;
+    let glowSliderDragging = false;
+    let glowDragPreviewRaf = 0;
+    let glowGpuFastPathAvailable = true;
     const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
+    const GLOW_DRAG_PROCESS_DIMENSION = 1400;
     const GLOW_FULL_PROCESS_DIMENSION = 3000;
     const glowPreviewView = {
       scale: 1,
@@ -374,9 +379,13 @@
       const viewportHeight = Number(viewportRect.height) || 0;
       const naturalWidth = Number(glowPreviewResultImage && glowPreviewResultImage.naturalWidth) || viewportWidth || 1;
       const naturalHeight = Number(glowPreviewResultImage && glowPreviewResultImage.naturalHeight) || viewportHeight || 1;
-      const fitScale = Math.min(viewportWidth / naturalWidth || 1, viewportHeight / naturalHeight || 1);
-      const renderedWidth = naturalWidth * fitScale * scale;
-      const renderedHeight = naturalHeight * fitScale * scale;
+      const canvasWidth = Number(glowPreviewResultCanvas && glowPreviewResultCanvas.width) || 0;
+      const canvasHeight = Number(glowPreviewResultCanvas && glowPreviewResultCanvas.height) || 0;
+      const contentWidth = canvasWidth || naturalWidth;
+      const contentHeight = canvasHeight || naturalHeight;
+      const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
+      const renderedWidth = contentWidth * fitScale * scale;
+      const renderedHeight = contentHeight * fitScale * scale;
       const keepVisibleX = Math.min(viewportWidth * 0.42, Math.max(80, viewportWidth * 0.18));
       const keepVisibleY = Math.min(viewportHeight * 0.42, Math.max(80, viewportHeight * 0.18));
       const maxX = Math.max(0, (renderedWidth + viewportWidth) / 2 - keepVisibleX);
@@ -387,8 +396,25 @@
 
     const applyGlowPreviewTransform = () => {
       clampGlowPreviewView();
+      if (glowPreviewResultCanvas) {
+        glowPreviewResultCanvas.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+      }
       if (!glowPreviewResultImage) return;
       glowPreviewResultImage.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+    };
+
+    const drawGlowPreviewToCanvas = (glowResult) => {
+      if (!glowPreviewResultCanvas || !glowResult) return false;
+      const imageData = glowResult.finalSimImageData || glowResult.previewImageData;
+      if (!imageData || !imageData.width || !imageData.height) return false;
+      const width = Number(imageData.width) || 1;
+      const height = Number(imageData.height) || 1;
+      if (glowPreviewResultCanvas.width !== width) glowPreviewResultCanvas.width = width;
+      if (glowPreviewResultCanvas.height !== height) glowPreviewResultCanvas.height = height;
+      const ctx = glowPreviewResultCanvas.getContext("2d", { alpha: true, desynchronized: true });
+      if (!ctx) return false;
+      ctx.putImageData(imageData, 0, 0);
+      return true;
     };
 
     const resetGlowPreviewTransform = () => {
@@ -438,7 +464,6 @@
       if (glowInlinePreview) glowInlinePreview.hidden = true;
       [
         glowPreviewBaseImage,
-        glowPreviewResultImage,
         glowPreviewSourceMaskImage,
         glowPreviewProtectMaskImage,
         glowPreviewLumaImage,
@@ -447,6 +472,11 @@
         glowPreviewSkinLikeImage,
         glowPreviewDarkProtectImage
       ].filter(Boolean).forEach((image) => image.removeAttribute("src"));
+      if (glowPreviewResultCanvas) {
+        const ctx = glowPreviewResultCanvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, glowPreviewResultCanvas.width || 0, glowPreviewResultCanvas.height || 0);
+      }
+      if (glowPreviewResultImage) glowPreviewResultImage.removeAttribute("src");
       resetGlowPreviewTransform();
       if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
     };
@@ -455,7 +485,10 @@
       if (!asset || !glowResult) return;
       const sourceDataUrl = String(asset.dataUrl || "").trim();
       if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
-      if (glowPreviewResultImage) glowPreviewResultImage.src = String(glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+      const drawn = drawGlowPreviewToCanvas(glowResult);
+      if (!drawn && glowPreviewResultImage) {
+        glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+      }
       if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
       if (glowPreviewSourceMaskImage) glowPreviewSourceMaskImage.src = String(glowResult.sourceMaskDataUrl || "").trim();
       if (glowPreviewProtectMaskImage) glowPreviewProtectMaskImage.src = String(glowResult.protectMaskDataUrl || "").trim();
@@ -485,13 +518,33 @@
       const jobId = glowPreviewJobId + 1;
       glowPreviewJobId = jobId;
       const isInteractive = glowPreviewQuality === "interactive";
-      const glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
-        jobId,
-        includeDebug: false,
-        includeGlowLayer: false,
-        previewQuality: isInteractive ? 0.76 : 0.82,
-        processMaxDimension: isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
-      });
+      const useFastInteractivePath = isInteractive && glowSliderDragging;
+      let glowResult;
+      try {
+        glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+          jobId,
+          includeDebug: false,
+          includeGlowLayer: true,
+          returnImageData: true,
+          gpuOnly: useFastInteractivePath && glowGpuFastPathAvailable,
+          previewQuality: isInteractive ? 0.76 : 0.82,
+          processMaxDimension: useFastInteractivePath
+            ? GLOW_DRAG_PROCESS_DIMENSION
+            : (isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION)
+        });
+      } catch (error) {
+        if (!(useFastInteractivePath && glowGpuFastPathAvailable)) throw error;
+        glowGpuFastPathAvailable = false;
+        glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
+          jobId,
+          includeDebug: false,
+          includeGlowLayer: true,
+          returnImageData: true,
+          gpuOnly: false,
+          previewQuality: isInteractive ? 0.76 : 0.82,
+          processMaxDimension: GLOW_DRAG_PROCESS_DIMENSION
+        });
+      }
       if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
         return {
           ok: false,
@@ -567,6 +620,7 @@
     const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
 
     const getGlowPreviewDelay = () => {
+      if (glowSliderDragging) return 36;
       const state = readGlowState();
       const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function"
         ? modules.glowPreviewEngine.getCacheInfo()
@@ -583,6 +637,17 @@
       if (state.brightnessBias >= 32) delay += 20;
       if (state.style === "shine") delay += 20;
       return delay;
+    };
+
+    const requestLiveGlowPreviewDuringDrag = () => {
+      if (!glowPreviewOpen || !runtime.isPluginRuntime()) return;
+      if (glowDragPreviewRaf) return;
+      glowDragPreviewRaf = window.requestAnimationFrame(() => {
+        glowDragPreviewRaf = 0;
+        glowPreviewQuality = "interactive";
+        glowPreviewJobId += 1;
+        void runGlowPreviewUpdate("glowPreviewUpdate");
+      });
     };
 
     const runGlowPreviewUpdate = async (action = "glowPreviewUpdate") => {
@@ -681,6 +746,7 @@
       glowLastPreviewSignature = "";
       glowLastPreviewQuality = "";
       glowPreviewQuality = "full";
+      glowGpuFastPathAvailable = true;
       glowPreviewJobId += 1;
       if (modules.glowPreviewEngine && typeof modules.glowPreviewEngine.clearCache === "function") {
         modules.glowPreviewEngine.clearCache();
@@ -793,15 +859,51 @@
       });
     });
 
+    const glowRealtimeInputs = [glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorAmountInput, glowChromaticInput]
+      .filter(Boolean);
+
+    const stopSliderDragging = () => {
+      if (!glowSliderDragging) return;
+      glowSliderDragging = false;
+      if (glowDragPreviewRaf) {
+        window.cancelAnimationFrame(glowDragPreviewRaf);
+        glowDragPreviewRaf = 0;
+      }
+      scheduleGlowPreviewUpdate("full");
+    };
+
+    glowRealtimeInputs.forEach((input) => {
+      input.addEventListener("pointerdown", () => {
+        if (glowPreviewTimer) {
+          clearTimeout(glowPreviewTimer);
+          glowPreviewTimer = 0;
+        }
+        if (glowRefinePreviewTimer) {
+          clearTimeout(glowRefinePreviewTimer);
+          glowRefinePreviewTimer = 0;
+        }
+        glowSliderDragging = true;
+      });
+      input.addEventListener("pointerup", stopSliderDragging);
+      input.addEventListener("pointercancel", stopSliderDragging);
+    });
+    window.addEventListener("pointerup", stopSliderDragging);
+    window.addEventListener("blur", stopSliderDragging);
+
     [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorEnabledInput, glowColorAmountInput, glowColorPickerInput, glowChromaticEnabledInput, glowChromaticInput]
       .filter(Boolean)
       .forEach((input) => {
         input.addEventListener("input", () => {
           updateGlowLabels();
-          scheduleGlowPreviewUpdate("interactive");
+          if (glowSliderDragging) {
+            requestLiveGlowPreviewDuringDrag();
+          } else {
+            scheduleGlowPreviewUpdate("interactive");
+          }
         });
         input.addEventListener("change", () => {
           updateGlowLabels();
+          stopSliderDragging();
           scheduleGlowPreviewUpdate("full");
         });
       });
