@@ -423,7 +423,12 @@
     return getBackend().buildSourceMask(imageData, params);
   }
 
+  function reset() {
+    backend = null;
+  }
+
   modules.glowWebglSourceMask = {
-    buildSourceMask
+    buildSourceMask,
+    reset
   };
 })(window);

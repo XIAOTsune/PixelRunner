@@ -368,7 +368,12 @@
     return getBackend().buildMultiScaleGlow(sourceLayer, params);
   }
 
+  function reset() {
+    backend = null;
+  }
+
   modules.glowWebglPyramidBlur = {
-    buildMultiScaleGlow
+    buildMultiScaleGlow,
+    reset
   };
 })(window);

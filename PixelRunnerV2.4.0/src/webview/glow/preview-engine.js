@@ -175,10 +175,28 @@
           sourceBackend = sourceResult.backend || "webgl2";
         }
       } catch (error) {
-        if (gpuOnly) throw error;
-        console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
-        sourceResult = null;
-        sourceBackend = "cpu-fallback";
+        let recovered = false;
+        if (modules.glowWebglSourceMask && typeof modules.glowWebglSourceMask.reset === "function") {
+          try {
+            modules.glowWebglSourceMask.reset();
+            if (
+              !includeDebug &&
+              config.useGpu !== false &&
+              modules.glowGpuCapabilities &&
+              modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+            ) {
+              sourceResult = modules.glowWebglSourceMask.buildSourceMask(source.imageData, params);
+              sourceBackend = `${sourceResult.backend || "webgl2"}-recovered`;
+              recovered = true;
+            }
+          } catch (_) {}
+        }
+        if (!recovered) {
+          if (gpuOnly) throw error;
+          console.warn("[PixelRunner] WebGL2 glow source mask failed, falling back to CPU:", error);
+          sourceResult = null;
+          sourceBackend = "cpu-fallback";
+        }
       }
       if (!sourceResult) {
         sourceResult = modules.glowSourceMask.buildSourceMask(source.imageData, params, { includeDebug });
@@ -212,10 +230,27 @@
           blurBackend = blurResult.backend || "webgl2";
         }
       } catch (error) {
-        if (gpuOnly) throw error;
-        console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
-        blurResult = null;
-        blurBackend = "cpu-fallback";
+        let recovered = false;
+        if (modules.glowWebglPyramidBlur && typeof modules.glowWebglPyramidBlur.reset === "function") {
+          try {
+            modules.glowWebglPyramidBlur.reset();
+            if (
+              config.useGpu !== false &&
+              modules.glowGpuCapabilities &&
+              modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+            ) {
+              blurResult = modules.glowWebglPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
+              blurBackend = `${blurResult.backend || "webgl2"}-recovered`;
+              recovered = true;
+            }
+          } catch (_) {}
+        }
+        if (!recovered) {
+          if (gpuOnly) throw error;
+          console.warn("[PixelRunner] WebGL2 glow blur failed, falling back to CPU:", error);
+          blurResult = null;
+          blurBackend = "cpu-fallback";
+        }
       }
       if (!blurResult) {
         blurResult = modules.glowPyramidBlur.buildMultiScaleGlow(sourceResult.sourceLayer, params);
@@ -253,11 +288,37 @@
         compositeBackend = compositeResult.backend || "webgl2";
       }
     } catch (error) {
-      if (gpuOnly) throw error;
-      console.warn("[PixelRunner] WebGL2 glow compositor failed, falling back to CPU:", error);
-      previewImageData = null;
-      glowLayerImageData = null;
-      compositeBackend = "cpu-fallback";
+      let recovered = false;
+      if (modules.glowWebglCompositor && typeof modules.glowWebglCompositor.reset === "function") {
+        try {
+          modules.glowWebglCompositor.reset();
+          if (
+            config.useGpu !== false &&
+            modules.glowGpuCapabilities &&
+            modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
+          ) {
+            const compositeResult = modules.glowWebglCompositor.compose(
+              source.imageData,
+              blurResult.glowLayer,
+              sourceResult.masks,
+              params,
+              { includeGlowLayer, previewCanvas: previewTargetCanvas }
+            );
+            previewImageData = compositeResult.previewImageData;
+            glowLayerImageData = compositeResult.glowLayerImageData;
+            previewRenderedOnGpu = !!compositeResult.previewRenderedOnGpu;
+            compositeBackend = `${compositeResult.backend || "webgl2"}-recovered`;
+            recovered = true;
+          }
+        } catch (_) {}
+      }
+      if (!recovered) {
+        if (gpuOnly) throw error;
+        console.warn("[PixelRunner] WebGL2 glow compositor failed, falling back to CPU:", error);
+        previewImageData = null;
+        glowLayerImageData = null;
+        compositeBackend = "cpu-fallback";
+      }
     }
     if ((!previewImageData && !previewRenderedOnGpu) || (includeGlowLayer && !glowLayerImageData)) {
       previewImageData = modules.glowCompositor.composeProtected(

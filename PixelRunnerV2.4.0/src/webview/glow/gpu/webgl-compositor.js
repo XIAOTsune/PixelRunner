@@ -468,7 +468,12 @@
     return getBackend().compose(baseImageData, glowLayer, masks, params, options);
   }
 
+  function reset() {
+    backend = null;
+  }
+
   modules.glowWebglCompositor = {
-    compose
+    compose,
+    reset
   };
 })(window);
