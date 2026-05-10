@@ -289,9 +289,9 @@
     let glowDragKickoffTimer = 0;
     let glowDragStartedAt = 0;
     let glowGpuFastPathAvailable = true;
-    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1200;
-    const GLOW_DRAG_PROCESS_DIMENSION = 1200;
-    const GLOW_FULL_PROCESS_DIMENSION = 1200;
+    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1100;
+    const GLOW_DRAG_PROCESS_DIMENSION = 900;
+    const GLOW_FULL_PROCESS_DIMENSION = 1100;
     const glowPreviewView = {
       scale: 1,
       x: 0,
@@ -366,7 +366,7 @@
       const thresholdSlider = readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100);
       if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
       if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
-      if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
+      if (glowRadiusValue) glowRadiusValue.textContent = `扩散 ${state.radius}`;
       if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
       if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
@@ -528,7 +528,7 @@
         const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
         const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
         const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
-        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 半径 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
+        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 扩散 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
       }
     };
 
@@ -674,7 +674,7 @@
     const getGlowPreviewSignature = () => `${getGlowStateSignature()}|${glowPreviewQuality}`;
 
     const getGlowPreviewDelay = () => {
-      if (glowSliderDragging) return 36;
+      if (glowSliderDragging) return 24;
       const state = readGlowState();
       const cacheInfo = modules.glowPreviewEngine && typeof modules.glowPreviewEngine.getCacheInfo === "function"
         ? modules.glowPreviewEngine.getCacheInfo()
@@ -721,7 +721,7 @@
       glowPreviewNeedsReplay = false;
       const state = readGlowState();
       setGlowPreviewBadge("正在预览", "pending");
-      setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
+      setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 扩散 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
 
       try {
         const result = await callGlowCpuPreviewAction(action);
@@ -985,7 +985,7 @@
           const successMessage = result && result.message ? result.message : `已生成 Glow ${state.strength}%`;
           logToWorkspace(successMessage, "success");
           setGlowStatus(successMessage, "success");
-          setQuickGlowStatus(`${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 半径 ${state.radius} / 阈值 ${state.threshold}%`, "success");
+          setQuickGlowStatus(`${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 扩散 ${state.radius} / 阈值 ${state.threshold}%`, "success");
           glowPreviewOpen = false;
           modules.workspace.setModalOpen("glowModal", false);
         } catch (error) {

@@ -1510,14 +1510,15 @@ button {
 }
 
 .glow-lab-tile-wide {
-  height: clamp(420px, 68vh, 760px);
+  min-height: clamp(320px, 56vh, 760px);
+  height: auto;
   aspect-ratio: 16 / 10;
 }
 
 .glow-preview-viewport {
   position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: clamp(220px, 42vh, 620px);
   overflow: hidden;
   background: rgba(0, 0, 0, 0.28);
   cursor: grab;
@@ -1804,7 +1805,7 @@ button {
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 1120px) {
   .overlay-card.glow-modal-card {
     width: min(96vw, 860px);
     min-height: auto;
@@ -1825,16 +1826,13 @@ button {
   }
 
   .glow-lab-tile-wide {
-    height: clamp(260px, 52vh, 520px);
+    min-height: clamp(220px, 46vh, 520px);
+    height: auto;
     aspect-ratio: 16 / 10;
   }
 
   .glow-inline-preview {
     min-height: 0;
-  }
-
-  .glow-lab-image {
-    max-height: min(52vh, 420px);
   }
 }
 
@@ -1844,7 +1842,12 @@ button {
   }
 
   .glow-lab-tile-wide {
-    height: 230px;
+    min-height: 200px;
+    height: auto;
+  }
+
+  .glow-preview-viewport {
+    min-height: 200px;
   }
 
   .glow-slider-stack {

@@ -26,7 +26,9 @@
   }
 
   function getChromaticOffset(params) {
-    return Math.max(0, Math.min(24, (Number(params.composite.chromatic) || 0) * (4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.35)));
+    const c = Math.max(0, Math.min(1, Number(params.composite.chromatic) || 0));
+    const curved = Math.pow(c, 1.18);
+    return Math.max(0, Math.min(22, curved * (2.8 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.08)));
   }
 
   function applyGlowColorShift(r, g, b, shift) {
@@ -75,16 +77,19 @@
       const source = masks.sourceMask[pixel];
       const protect = masks.protectMask[pixel];
       const darkProtect = masks.darkProtect[pixel];
-      const highlightProtect = protect * params.composite.highlightProtect * (0.45 + baseLuma * 0.72);
+      const baseSat = Math.max(baseR, baseG, baseB) > 0 ? (Math.max(baseR, baseG, baseB) - Math.min(baseR, baseG, baseB)) / Math.max(baseR, baseG, baseB) : 0;
+      const highlightProtect = protect * params.composite.highlightProtect * (0.5 + baseLuma * 0.78 + (1 - baseSat) * 0.08);
       const shadowProtect = darkProtect * params.composite.shadowProtect;
       const sourceAnchor = 0.62 + source * 0.38;
-      const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+      const protectGain = clamp((1 - highlightProtect * 0.78) * (1 - shadowProtect * 0.8) * sourceAnchor, 0, 1);
       const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
       const layerG = glowLayer.g[pixel];
       const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
-      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
-      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
+      const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.35);
+      const edgeGate = source * (0.68 + (1 - protect) * 0.32);
+      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
+      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
       let warmedR = layerR * (1 + params.composite.warmth);
       let warmedG = layerG * (1 + params.composite.warmth * 0.35);
       let warmedB = layerB * (1 - params.composite.warmth * 0.28);
@@ -104,7 +109,8 @@
       const softG = clamp(baseG + glowG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
       const softB = clamp(baseB + glowB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
       const mix = params.composite.softAddMix;
-      const colorProtect = clamp(1 - Math.max(glowR, glowG, glowB) * params.composite.colorProtect, 0.84, 1);
+      const maxGlow = Math.max(glowR, glowG, glowB);
+      const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.88 + baseSat * 0.22), 0.86, 1);
       const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
       const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
       const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);
@@ -127,16 +133,18 @@
       const source = masks.sourceMask[pixel];
       const protect = masks.protectMask[pixel];
       const darkProtect = masks.darkProtect[pixel];
-      const highlightProtect = protect * params.composite.highlightProtect * 0.82;
+      const highlightProtect = protect * params.composite.highlightProtect * 0.86;
       const shadowProtect = darkProtect * params.composite.shadowProtect;
       const sourceAnchor = 0.62 + source * 0.38;
-      const protectGain = clamp((1 - highlightProtect * 0.72) * (1 - shadowProtect * 0.82) * sourceAnchor, 0, 1);
+      const protectGain = clamp((1 - highlightProtect * 0.78) * (1 - shadowProtect * 0.8) * sourceAnchor, 0, 1);
       const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
       const layerG = glowLayer.g[pixel];
       const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
-      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
-      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.72) * params.composite.chromatic * 1.9 : 0;
+      const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.35);
+      const edgeGate = source * (0.68 + (1 - protect) * 0.32);
+      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
+      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
       let warmedR = layerR * (1 + params.composite.warmth);
       let warmedG = layerG * (1 + params.composite.warmth * 0.35);
       let warmedB = layerB * (1 - params.composite.warmth * 0.28);

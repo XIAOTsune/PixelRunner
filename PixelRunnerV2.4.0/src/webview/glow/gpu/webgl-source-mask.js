@@ -123,10 +123,11 @@
         smooth01(uThresholdLow - uThresholdKnee * 0.92, uThresholdHigh, brightness);
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
-      float highLightness = smooth01(0.72, 0.94, lum);
-      float lowContrast = 1.0 - smooth01(0.012, 0.075, contrast);
+      float highLightness = smooth01(0.7, 0.95, lum);
+      float veryHighLightness = smooth01(0.84, 0.985, lum);
+      float lowContrast = 1.0 - smooth01(0.01, 0.068, contrast);
       float lowSat = 1.0 - smooth01(0.12, 0.36, sat);
-      float whiteFlat = highLightness * lowContrast * lowSat;
+      float whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
       float skinHue = isSkinHueFast(c, maxChannel, minChannel);
       float skinColor =
         skinHue *
@@ -135,12 +136,15 @@
         smooth01(0.38, 0.74, lum) *
         (1.0 - smooth01(0.9, 1.0, lum));
       float dark = 1.0 - smooth01(0.08, 0.28, lum);
-      float protection = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect + dark * uDarkProtect);
+      float protectionBase = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect + dark * uDarkProtect);
+      float nearClip = smooth01(0.92, 1.0, maxChannel);
+      float protection = saturate(protectionBase + nearClip * (0.12 + (1.0 - sat) * 0.1));
       float chromaSource = smooth01(0.08, 0.46, sat) * smooth01(0.44, 0.84, brightness);
-      float reflectiveBoost = clamp(0.5 + contrastScore * 0.46 + specularScore * 0.42 + chromaSource * 0.22, 0.0, 1.22);
-      float edgeSource = max(contrastScore * 0.22, specularScore * 0.36) * smooth01(0.44, 0.88, brightness);
-      float combinedSource = lumaScore * 0.88 + edgeSource * 0.32;
-      float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.78));
+      float detailBoost = smooth01(0.022, 0.12, contrast);
+      float reflectiveBoost = clamp(0.48 + contrastScore * 0.44 + specularScore * 0.48 + chromaSource * 0.18 + detailBoost * 0.16, 0.0, 1.28);
+      float edgeSource = max(contrastScore * 0.2, specularScore * 0.4) * smooth01(0.42, 0.9, brightness);
+      float combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
+      float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.82));
       float colorGain = pow(mask, 0.78);
       float chromaBoost = uChromaBoost * smooth01(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
       vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0) * colorGain;

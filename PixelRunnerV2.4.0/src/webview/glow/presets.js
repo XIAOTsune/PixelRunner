@@ -46,12 +46,12 @@
       darkProtect: 0.42,
       knee: 0.2,
       chromaBoost: 0.28,
-      smallWeight: 0.5,
-      mediumWeight: 0.82,
-      largeWeight: 0.38,
+      smallWeight: 0.44,
+      mediumWeight: 0.86,
+      largeWeight: 0.46,
       softAddMix: 0.36,
       warmth: 0.035,
-      scatter: 0.78
+      scatter: 0.9
     },
     whiteSoft: {
       thresholdBias: -0.02,
@@ -74,12 +74,12 @@
       darkProtect: 0.5,
       knee: 0.26,
       chromaBoost: 0.36,
-      smallWeight: 0.42,
-      mediumWeight: 0.86,
-      largeWeight: 0.52,
+      smallWeight: 0.36,
+      mediumWeight: 0.9,
+      largeWeight: 0.6,
       softAddMix: 0.5,
       warmth: 0.045,
-      scatter: 0.92
+      scatter: 1.04
     }
   };
 
@@ -129,20 +129,20 @@
         darkProtect: preset.darkProtect
       },
       blur: {
-        mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.2 + wideRadiusRatio))),
+        mipCount: Math.max(2, Math.min(7, Math.round(2.9 + legacyRadiusRatio * 3.25 + wideRadiusRatio * 1.15))),
         mipWeights: [
-          preset.smallWeight * 0.72,
-          preset.mediumWeight * 0.94,
-          preset.largeWeight * (0.76 + legacyRadiusRatio * preset.scatter * 0.42),
-          preset.largeWeight * (0.52 + legacyRadiusRatio * preset.scatter * 0.36 + wideRadiusRatio * 0.22),
-          preset.largeWeight * (0.34 + legacyRadiusRatio * preset.scatter * 0.26 + wideRadiusRatio * 0.34),
-          preset.largeWeight * (0.2 + legacyRadiusRatio * preset.scatter * 0.18 + wideRadiusRatio * 0.4),
-          preset.largeWeight * (0.12 + wideRadiusRatio * 0.34)
+          preset.smallWeight * 0.64,
+          preset.mediumWeight * 0.98,
+          preset.largeWeight * (0.84 + legacyRadiusRatio * preset.scatter * 0.46),
+          preset.largeWeight * (0.6 + legacyRadiusRatio * preset.scatter * 0.4 + wideRadiusRatio * 0.28),
+          preset.largeWeight * (0.42 + legacyRadiusRatio * preset.scatter * 0.3 + wideRadiusRatio * 0.38),
+          preset.largeWeight * (0.28 + legacyRadiusRatio * preset.scatter * 0.22 + wideRadiusRatio * 0.46),
+          preset.largeWeight * (0.17 + wideRadiusRatio * 0.42)
         ],
-        pyramidWeight: clamp(0.72 + legacyRadiusRatio * 0.52 + wideRadiusRatio * 0.42 + preset.scatter * 0.1, 0.72, 1.9, 1),
+        pyramidWeight: clamp(0.78 + legacyRadiusRatio * 0.56 + wideRadiusRatio * 0.48 + preset.scatter * 0.12, 0.78, 2, 1),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
-        largeWeight: preset.largeWeight * (0.7 + legacyRadiusRatio * preset.scatter + wideRadiusRatio * 0.42),
+        largeWeight: preset.largeWeight * (0.78 + legacyRadiusRatio * preset.scatter * 1.08 + wideRadiusRatio * 0.5),
         passes: 1
       },
       composite: {
@@ -150,9 +150,9 @@
         softAddMix: preset.softAddMix,
         warmth: preset.warmth,
         saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
-        highlightProtect: clamp(0.62 + thresholdRatio * 0.24, 0.52, 0.9, 0.72),
+        highlightProtect: clamp(0.66 + thresholdRatio * 0.22, 0.56, 0.92, 0.76),
         shadowProtect: preset.darkProtect,
-        colorProtect: clamp(0.24 + strength / 100 * 0.08, 0.24, 0.38, 0.28),
+        colorProtect: clamp(0.26 + strength / 100 * 0.1, 0.26, 0.42, 0.3),
         shoulder: clamp(0.72 - strength / 100 * 0.2, 0.5, 0.8, 0.64),
         colorShift: colorShift / 100,
         colorTint,
