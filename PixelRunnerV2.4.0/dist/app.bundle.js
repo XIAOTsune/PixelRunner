@@ -2225,8 +2225,13 @@ var PixelRunnerWebviewBundle = (() => {
       }
       render(program, target) {
         const gl = this.gl;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
-        gl.viewport(0, 0, target.width, target.height);
+        if (target && target.framebuffer) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+          gl.viewport(0, 0, target.width, target.height);
+        } else {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        }
         gl.drawArrays(gl.TRIANGLES, 0, 3);
       }
       readTarget(target) {
@@ -2240,6 +2245,7 @@ var PixelRunnerWebviewBundle = (() => {
         const gl = this.gl;
         const { width, height } = baseImageData;
         const includeGlowLayer = options.includeGlowLayer !== false;
+        const previewCanvas = options.previewCanvas || null;
         this.canvas.width = width;
         this.canvas.height = height;
         gl.disable(gl.BLEND);
@@ -2248,7 +2254,7 @@ var PixelRunnerWebviewBundle = (() => {
         const baseTexture = createTexture(gl, width, height, imageDataToRgba8(baseImageData));
         const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
         const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
-        const previewTarget = createTarget(gl, width, height);
+        const previewTarget = previewCanvas ? null : createTarget(gl, width, height);
         const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;
         try {
           let program = this.programs.composite;
@@ -2258,6 +2264,15 @@ var PixelRunnerWebviewBundle = (() => {
           this.bindTexture(program, "uMasks", masksTexture, 2);
           this.setCompositeUniforms(program, params);
           this.render(program, previewTarget);
+          if (previewCanvas) {
+            const previewCtx = previewCanvas.getContext("2d", { alpha: true, desynchronized: true });
+            if (previewCtx) {
+              if (previewCanvas.width !== width) previewCanvas.width = width;
+              if (previewCanvas.height !== height) previewCanvas.height = height;
+              previewCtx.clearRect(0, 0, width, height);
+              previewCtx.drawImage(this.canvas, 0, 0, width, height);
+            }
+          }
           if (glowLayerTarget) {
             program = this.programs.glowLayer;
             this.bindProgram(program);
@@ -2267,15 +2282,16 @@ var PixelRunnerWebviewBundle = (() => {
             this.render(program, glowLayerTarget);
           }
           return {
-            previewImageData: this.readTarget(previewTarget),
+            previewImageData: previewTarget ? this.readTarget(previewTarget) : null,
             glowLayerImageData: glowLayerTarget ? this.readTarget(glowLayerTarget) : null,
+            previewRenderedOnGpu: !!previewCanvas,
             backend: "webgl2"
           };
         } finally {
-          [baseTexture, glowTexture, masksTexture, previewTarget.texture, glowLayerTarget && glowLayerTarget.texture].filter(Boolean).forEach((texture) => {
+          [baseTexture, glowTexture, masksTexture, previewTarget && previewTarget.texture, glowLayerTarget && glowLayerTarget.texture].filter(Boolean).forEach((texture) => {
             gl.deleteTexture(texture);
           });
-          gl.deleteFramebuffer(previewTarget.framebuffer);
+          if (previewTarget) gl.deleteFramebuffer(previewTarget.framebuffer);
           if (glowLayerTarget) gl.deleteFramebuffer(glowLayerTarget.framebuffer);
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           gl.bindTexture(gl.TEXTURE_2D, null);
@@ -2593,6 +2609,7 @@ var PixelRunnerWebviewBundle = (() => {
       const includeGlowLayer = options.includeGlowLayer !== false;
       const requestRawImageData = options.returnImageData === true;
       const gpuOnly = options.gpuOnly === true;
+      const previewTargetCanvas = options.previewTargetCanvas || null;
       const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
       const params = modules.glowPresets.normalizeGlowParams(config);
       const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
@@ -2663,6 +2680,7 @@ var PixelRunnerWebviewBundle = (() => {
       const compositeStartedAt = performance.now();
       let previewImageData;
       let glowLayerImageData;
+      let previewRenderedOnGpu = false;
       let compositeBackend = "cpu";
       try {
         if (config.useGpu !== false && modules.glowWebglCompositor && modules.glowGpuCapabilities && modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)) {
@@ -2671,10 +2689,11 @@ var PixelRunnerWebviewBundle = (() => {
             blurResult.glowLayer,
             sourceResult.masks,
             params,
-            { includeGlowLayer }
+            { includeGlowLayer, previewCanvas: previewTargetCanvas }
           );
           previewImageData = compositeResult.previewImageData;
           glowLayerImageData = compositeResult.glowLayerImageData;
+          previewRenderedOnGpu = !!compositeResult.previewRenderedOnGpu;
           compositeBackend = compositeResult.backend || "webgl2";
         }
       } catch (error) {
@@ -2684,7 +2703,7 @@ var PixelRunnerWebviewBundle = (() => {
         glowLayerImageData = null;
         compositeBackend = "cpu-fallback";
       }
-      if (!previewImageData || includeGlowLayer && !glowLayerImageData) {
+      if (!previewImageData && !previewRenderedOnGpu || includeGlowLayer && !glowLayerImageData) {
         previewImageData = modules.glowCompositor.composeProtected(
           source.imageData,
           blurResult.glowLayer,
@@ -2700,9 +2719,9 @@ var PixelRunnerWebviewBundle = (() => {
         }
       }
       const compositeMs = performance.now() - compositeStartedAt;
-      const finalSimImageData = includeGlowLayer && glowLayerImageData ? buildLinearDodgePreview(source.imageData, glowLayerImageData) : previewImageData;
-      const previewDataUrl = requestRawImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
-      const finalSimDataUrl = requestRawImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
+      const finalSimImageData = includeGlowLayer && glowLayerImageData ? buildLinearDodgePreview(source.imageData, glowLayerImageData) : previewImageData || null;
+      const previewDataUrl = requestRawImageData || !previewImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
+      const finalSimDataUrl = requestRawImageData || !finalSimImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
       return {
         ok: true,
         jobId,
@@ -2713,6 +2732,7 @@ var PixelRunnerWebviewBundle = (() => {
         finalSimDataUrl,
         previewImageData: requestRawImageData ? previewImageData : null,
         finalSimImageData: requestRawImageData ? finalSimImageData : null,
+        previewRenderedOnGpu,
         glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
         sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
         protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
@@ -3037,9 +3057,11 @@ ${text}` : text;
       let glowPreviewJobId = 0;
       let glowSliderDragging = false;
       let glowDragPreviewRaf = 0;
+      let glowDragKickoffTimer = 0;
+      let glowDragStartedAt = 0;
       let glowGpuFastPathAvailable = true;
-      const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
-      const GLOW_DRAG_PROCESS_DIMENSION = 1400;
+      const GLOW_INTERACTIVE_PROCESS_DIMENSION = 3e3;
+      const GLOW_DRAG_PROCESS_DIMENSION = 3e3;
       const GLOW_FULL_PROCESS_DIMENSION = 3e3;
       const glowPreviewView = {
         scale: 1,
@@ -3218,7 +3240,7 @@ ${text}` : text;
         const sourceDataUrl = String(asset.dataUrl || "").trim();
         if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
         const drawn = drawGlowPreviewToCanvas(glowResult);
-        if (!drawn && glowPreviewResultImage) {
+        if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage) {
           glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
         }
         if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
@@ -3250,6 +3272,14 @@ ${text}` : text;
         glowPreviewJobId = jobId;
         const isInteractive = glowPreviewQuality === "interactive";
         const useFastInteractivePath = isInteractive && glowSliderDragging;
+        const targetProcessDimension = useFastInteractivePath ? GLOW_DRAG_PROCESS_DIMENSION : isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION;
+        const sourceDocWidth = Number(glowCpuSourceAsset && (glowCpuSourceAsset.originalWidth || glowCpuSourceAsset.width)) || 0;
+        const sourceDocHeight = Number(glowCpuSourceAsset && (glowCpuSourceAsset.originalHeight || glowCpuSourceAsset.height)) || 0;
+        const sourceMaxSide = Math.max(1, sourceDocWidth, sourceDocHeight);
+        const previewScale = targetProcessDimension > 0 ? Math.min(1, targetProcessDimension / sourceMaxSide) : 1;
+        const targetWidth = Math.max(1, Math.round(sourceDocWidth * previewScale) || targetProcessDimension || sourceDocWidth || 1);
+        const targetHeight = Math.max(1, Math.round(sourceDocHeight * previewScale) || targetProcessDimension || sourceDocHeight || 1);
+        const gpuOnlyEligible = !!(useFastInteractivePath && glowGpuFastPathAvailable && modules.glowGpuCapabilities && typeof modules.glowGpuCapabilities.canUseWebgl2 === "function" && modules.glowGpuCapabilities.canUseWebgl2(targetWidth, targetHeight));
         let glowResult;
         try {
           glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
@@ -3257,21 +3287,23 @@ ${text}` : text;
             includeDebug: false,
             includeGlowLayer: true,
             returnImageData: true,
-            gpuOnly: useFastInteractivePath && glowGpuFastPathAvailable,
+            previewTargetCanvas: glowPreviewResultCanvas,
+            gpuOnly: gpuOnlyEligible,
             previewQuality: isInteractive ? 0.76 : 0.82,
-            processMaxDimension: useFastInteractivePath ? GLOW_DRAG_PROCESS_DIMENSION : isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION
+            processMaxDimension: targetProcessDimension
           });
         } catch (error) {
-          if (!(useFastInteractivePath && glowGpuFastPathAvailable)) throw error;
+          if (!gpuOnlyEligible) throw error;
           glowGpuFastPathAvailable = false;
           glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
             jobId,
             includeDebug: false,
             includeGlowLayer: true,
             returnImageData: true,
+            previewTargetCanvas: glowPreviewResultCanvas,
             gpuOnly: false,
             previewQuality: isInteractive ? 0.76 : 0.82,
-            processMaxDimension: GLOW_DRAG_PROCESS_DIMENSION
+            processMaxDimension: targetProcessDimension
           });
         }
         if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
@@ -3301,11 +3333,20 @@ ${text}` : text;
         if (!glowCpuSourceAsset) {
           glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
         }
-        const glowResult = await modules.glowPreviewEngine.createPreview(
-          String(glowCpuSourceAsset.dataUrl || "").trim(),
-          { ...state, strength: commitStrength, useGpu: false },
-          { includeDebug: false }
-        );
+        let glowResult;
+        try {
+          glowResult = await modules.glowPreviewEngine.createPreview(
+            String(glowCpuSourceAsset.dataUrl || "").trim(),
+            { ...state, strength: commitStrength, useGpu: true },
+            { includeDebug: false }
+          );
+        } catch (_) {
+          glowResult = await modules.glowPreviewEngine.createPreview(
+            String(glowCpuSourceAsset.dataUrl || "").trim(),
+            { ...state, strength: commitStrength, useGpu: false },
+            { includeDebug: false }
+          );
+        }
         const documentInfo = glowCpuSourceAsset.document || {};
         const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
           dataUrl: glowResult.glowLayerDataUrl,
@@ -3324,9 +3365,15 @@ ${text}` : text;
           layerName
         }], { timeoutMs: 12e4 });
         glowCpuSourceAsset = null;
+        const timings = glowResult && glowResult.timings ? glowResult.timings : {};
+        const backendLabel = [
+          timings.sourceBackend || "cpu",
+          timings.blurBackend || "cpu",
+          timings.compositeBackend || "cpu"
+        ].join("/");
         return {
           ok: true,
-          message: result && result.message ? result.message : `已按预览一致算法生成 ${layerName}。`,
+          message: result && result.message ? `${result.message}（backend ${backendLabel}）` : `已按预览一致算法生成 ${layerName}（backend ${backendLabel}）。`,
           layerName: result && result.layerName ? result.layerName : layerName
         };
       };
@@ -3565,6 +3612,11 @@ ${text}` : text;
       const stopSliderDragging = () => {
         if (!glowSliderDragging) return;
         glowSliderDragging = false;
+        glowDragStartedAt = 0;
+        if (glowDragKickoffTimer) {
+          clearTimeout(glowDragKickoffTimer);
+          glowDragKickoffTimer = 0;
+        }
         if (glowDragPreviewRaf) {
           window.cancelAnimationFrame(glowDragPreviewRaf);
           glowDragPreviewRaf = 0;
@@ -3582,6 +3634,7 @@ ${text}` : text;
             glowRefinePreviewTimer = 0;
           }
           glowSliderDragging = true;
+          glowDragStartedAt = performance.now();
         });
         input.addEventListener("pointerup", stopSliderDragging);
         input.addEventListener("pointercancel", stopSliderDragging);

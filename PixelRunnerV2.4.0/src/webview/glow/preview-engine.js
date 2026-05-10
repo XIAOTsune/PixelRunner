@@ -146,6 +146,7 @@
     const includeGlowLayer = options.includeGlowLayer !== false;
     const requestRawImageData = options.returnImageData === true;
     const gpuOnly = options.gpuOnly === true;
+    const previewTargetCanvas = options.previewTargetCanvas || null;
     const source = await getSourceFromDataUrl(sourceDataUrl, options.processMaxDimension);
     const params = modules.glowPresets.normalizeGlowParams(config);
     const allowCache = options.cache !== false && options.includeDebug === false && config.useGpu !== false;
@@ -230,6 +231,7 @@
     const compositeStartedAt = performance.now();
     let previewImageData;
     let glowLayerImageData;
+    let previewRenderedOnGpu = false;
     let compositeBackend = "cpu";
     try {
       if (
@@ -243,10 +245,11 @@
           blurResult.glowLayer,
           sourceResult.masks,
           params,
-          { includeGlowLayer }
+          { includeGlowLayer, previewCanvas: previewTargetCanvas }
         );
         previewImageData = compositeResult.previewImageData;
         glowLayerImageData = compositeResult.glowLayerImageData;
+        previewRenderedOnGpu = !!compositeResult.previewRenderedOnGpu;
         compositeBackend = compositeResult.backend || "webgl2";
       }
     } catch (error) {
@@ -256,7 +259,7 @@
       glowLayerImageData = null;
       compositeBackend = "cpu-fallback";
     }
-    if (!previewImageData || (includeGlowLayer && !glowLayerImageData)) {
+    if ((!previewImageData && !previewRenderedOnGpu) || (includeGlowLayer && !glowLayerImageData)) {
       previewImageData = modules.glowCompositor.composeProtected(
         source.imageData,
         blurResult.glowLayer,
@@ -275,9 +278,9 @@
 
     const finalSimImageData = includeGlowLayer && glowLayerImageData
       ? buildLinearDodgePreview(source.imageData, glowLayerImageData)
-      : previewImageData;
-    const previewDataUrl = requestRawImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
-    const finalSimDataUrl = requestRawImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
+      : (previewImageData || null);
+    const previewDataUrl = requestRawImageData || !previewImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
+    const finalSimDataUrl = requestRawImageData || !finalSimImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
 
     return {
       ok: true,
@@ -289,6 +292,7 @@
       finalSimDataUrl,
       previewImageData: requestRawImageData ? previewImageData : null,
       finalSimImageData: requestRawImageData ? finalSimImageData : null,
+      previewRenderedOnGpu,
       glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
       sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
       protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",

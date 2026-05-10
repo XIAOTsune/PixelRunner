@@ -284,9 +284,11 @@
     let glowPreviewJobId = 0;
     let glowSliderDragging = false;
     let glowDragPreviewRaf = 0;
+    let glowDragKickoffTimer = 0;
+    let glowDragStartedAt = 0;
     let glowGpuFastPathAvailable = true;
-    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1800;
-    const GLOW_DRAG_PROCESS_DIMENSION = 1400;
+    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 3000;
+    const GLOW_DRAG_PROCESS_DIMENSION = 3000;
     const GLOW_FULL_PROCESS_DIMENSION = 3000;
     const glowPreviewView = {
       scale: 1,
@@ -486,7 +488,7 @@
       const sourceDataUrl = String(asset.dataUrl || "").trim();
       if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
       const drawn = drawGlowPreviewToCanvas(glowResult);
-      if (!drawn && glowPreviewResultImage) {
+      if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage) {
         glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
       }
       if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
@@ -519,6 +521,22 @@
       glowPreviewJobId = jobId;
       const isInteractive = glowPreviewQuality === "interactive";
       const useFastInteractivePath = isInteractive && glowSliderDragging;
+      const targetProcessDimension = useFastInteractivePath
+        ? GLOW_DRAG_PROCESS_DIMENSION
+        : (isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION);
+      const sourceDocWidth = Number(glowCpuSourceAsset && (glowCpuSourceAsset.originalWidth || glowCpuSourceAsset.width)) || 0;
+      const sourceDocHeight = Number(glowCpuSourceAsset && (glowCpuSourceAsset.originalHeight || glowCpuSourceAsset.height)) || 0;
+      const sourceMaxSide = Math.max(1, sourceDocWidth, sourceDocHeight);
+      const previewScale = targetProcessDimension > 0 ? Math.min(1, targetProcessDimension / sourceMaxSide) : 1;
+      const targetWidth = Math.max(1, Math.round(sourceDocWidth * previewScale) || targetProcessDimension || sourceDocWidth || 1);
+      const targetHeight = Math.max(1, Math.round(sourceDocHeight * previewScale) || targetProcessDimension || sourceDocHeight || 1);
+      const gpuOnlyEligible = !!(
+        useFastInteractivePath &&
+        glowGpuFastPathAvailable &&
+        modules.glowGpuCapabilities &&
+        typeof modules.glowGpuCapabilities.canUseWebgl2 === "function" &&
+        modules.glowGpuCapabilities.canUseWebgl2(targetWidth, targetHeight)
+      );
       let glowResult;
       try {
         glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
@@ -526,23 +544,23 @@
           includeDebug: false,
           includeGlowLayer: true,
           returnImageData: true,
-          gpuOnly: useFastInteractivePath && glowGpuFastPathAvailable,
+          previewTargetCanvas: glowPreviewResultCanvas,
+          gpuOnly: gpuOnlyEligible,
           previewQuality: isInteractive ? 0.76 : 0.82,
-          processMaxDimension: useFastInteractivePath
-            ? GLOW_DRAG_PROCESS_DIMENSION
-            : (isInteractive ? GLOW_INTERACTIVE_PROCESS_DIMENSION : GLOW_FULL_PROCESS_DIMENSION)
+          processMaxDimension: targetProcessDimension
         });
       } catch (error) {
-        if (!(useFastInteractivePath && glowGpuFastPathAvailable)) throw error;
+        if (!gpuOnlyEligible) throw error;
         glowGpuFastPathAvailable = false;
         glowResult = await modules.glowPreviewEngine.createPreview(sourceDataUrl, state, {
           jobId,
           includeDebug: false,
           includeGlowLayer: true,
           returnImageData: true,
+          previewTargetCanvas: glowPreviewResultCanvas,
           gpuOnly: false,
           previewQuality: isInteractive ? 0.76 : 0.82,
-          processMaxDimension: GLOW_DRAG_PROCESS_DIMENSION
+          processMaxDimension: targetProcessDimension
         });
       }
       if (Number(glowResult.jobId) !== Number(glowPreviewJobId)) {
@@ -573,11 +591,20 @@
       if (!glowCpuSourceAsset) {
         glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
       }
-      const glowResult = await modules.glowPreviewEngine.createPreview(
-        String(glowCpuSourceAsset.dataUrl || "").trim(),
-        { ...state, strength: commitStrength, useGpu: false },
-        { includeDebug: false }
-      );
+      let glowResult;
+      try {
+        glowResult = await modules.glowPreviewEngine.createPreview(
+          String(glowCpuSourceAsset.dataUrl || "").trim(),
+          { ...state, strength: commitStrength, useGpu: true },
+          { includeDebug: false }
+        );
+      } catch (_) {
+        glowResult = await modules.glowPreviewEngine.createPreview(
+          String(glowCpuSourceAsset.dataUrl || "").trim(),
+          { ...state, strength: commitStrength, useGpu: false },
+          { includeDebug: false }
+        );
+      }
       const documentInfo = glowCpuSourceAsset.document || {};
       const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
         dataUrl: glowResult.glowLayerDataUrl,
@@ -596,9 +623,15 @@
         layerName
       }], { timeoutMs: 120000 });
       glowCpuSourceAsset = null;
+      const timings = glowResult && glowResult.timings ? glowResult.timings : {};
+      const backendLabel = [
+        timings.sourceBackend || "cpu",
+        timings.blurBackend || "cpu",
+        timings.compositeBackend || "cpu"
+      ].join("/");
       return {
         ok: true,
-        message: result && result.message ? result.message : `已按预览一致算法生成 ${layerName}。`,
+        message: result && result.message ? `${result.message}（backend ${backendLabel}）` : `已按预览一致算法生成 ${layerName}（backend ${backendLabel}）。`,
         layerName: result && result.layerName ? result.layerName : layerName
       };
     };
@@ -865,6 +898,11 @@
     const stopSliderDragging = () => {
       if (!glowSliderDragging) return;
       glowSliderDragging = false;
+      glowDragStartedAt = 0;
+      if (glowDragKickoffTimer) {
+        clearTimeout(glowDragKickoffTimer);
+        glowDragKickoffTimer = 0;
+      }
       if (glowDragPreviewRaf) {
         window.cancelAnimationFrame(glowDragPreviewRaf);
         glowDragPreviewRaf = 0;
@@ -883,6 +921,7 @@
           glowRefinePreviewTimer = 0;
         }
         glowSliderDragging = true;
+        glowDragStartedAt = performance.now();
       });
       input.addEventListener("pointerup", stopSliderDragging);
       input.addEventListener("pointercancel", stopSliderDragging);

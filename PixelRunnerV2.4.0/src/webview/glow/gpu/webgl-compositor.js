@@ -358,8 +358,13 @@
 
     render(program, target) {
       const gl = this.gl;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
-      gl.viewport(0, 0, target.width, target.height);
+      if (target && target.framebuffer) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+        gl.viewport(0, 0, target.width, target.height);
+      } else {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      }
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
@@ -375,6 +380,7 @@
       const gl = this.gl;
       const { width, height } = baseImageData;
       const includeGlowLayer = options.includeGlowLayer !== false;
+      const previewCanvas = options.previewCanvas || null;
       this.canvas.width = width;
       this.canvas.height = height;
       gl.disable(gl.BLEND);
@@ -384,7 +390,7 @@
       const baseTexture = createTexture(gl, width, height, imageDataToRgba8(baseImageData));
       const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
       const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
-      const previewTarget = createTarget(gl, width, height);
+      const previewTarget = previewCanvas ? null : createTarget(gl, width, height);
       const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;
 
       try {
@@ -395,6 +401,15 @@
         this.bindTexture(program, "uMasks", masksTexture, 2);
         this.setCompositeUniforms(program, params);
         this.render(program, previewTarget);
+        if (previewCanvas) {
+          const previewCtx = previewCanvas.getContext("2d", { alpha: true, desynchronized: true });
+          if (previewCtx) {
+            if (previewCanvas.width !== width) previewCanvas.width = width;
+            if (previewCanvas.height !== height) previewCanvas.height = height;
+            previewCtx.clearRect(0, 0, width, height);
+            previewCtx.drawImage(this.canvas, 0, 0, width, height);
+          }
+        }
 
         if (glowLayerTarget) {
           program = this.programs.glowLayer;
@@ -406,15 +421,16 @@
         }
 
         return {
-          previewImageData: this.readTarget(previewTarget),
+          previewImageData: previewTarget ? this.readTarget(previewTarget) : null,
           glowLayerImageData: glowLayerTarget ? this.readTarget(glowLayerTarget) : null,
+          previewRenderedOnGpu: !!previewCanvas,
           backend: "webgl2"
         };
       } finally {
-        [baseTexture, glowTexture, masksTexture, previewTarget.texture, glowLayerTarget && glowLayerTarget.texture].filter(Boolean).forEach((texture) => {
+        [baseTexture, glowTexture, masksTexture, previewTarget && previewTarget.texture, glowLayerTarget && glowLayerTarget.texture].filter(Boolean).forEach((texture) => {
           gl.deleteTexture(texture);
         });
-        gl.deleteFramebuffer(previewTarget.framebuffer);
+        if (previewTarget) gl.deleteFramebuffer(previewTarget.framebuffer);
         if (glowLayerTarget) gl.deleteFramebuffer(glowLayerTarget.framebuffer);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.bindTexture(gl.TEXTURE_2D, null);
