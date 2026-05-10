@@ -678,6 +678,8 @@
           <div class="glow-lab-grid">
             <figure class="glow-lab-tile glow-lab-tile-wide">
               <div id="glowPreviewViewport" class="glow-preview-viewport">
+                <img id="glowPreviewBaseImage" class="glow-base-image" alt="辉光测试台底图" />
+                <img id="glowPreviewGlowImage" class="glow-overlay-image" alt="辉光测试台辉光层" />
                 <canvas id="glowPreviewResultCanvas" class="glow-lab-image" aria-label="辉光测试台结果图"></canvas>
                 <img id="glowPreviewResultImage" class="glow-lab-image" alt="辉光测试台结果图" />
                 <div class="glow-preview-tools" aria-label="预览缩放控制">
@@ -709,7 +711,7 @@
             </label>
             <label class="field glow-slider-field">
               <span class="glow-param-line"><span class="field-label">半径</span><span id="glowRadiusParamValue">20</span></span>
-              <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="360" step="1" value="20" />
+              <input id="glowRadiusInput" class="field-input glow-strength-slider" type="range" min="1" max="500" step="1" value="20" />
             </label>
             <label class="field glow-slider-field">
               <span class="glow-param-line"><span class="field-label">阈值</span><span id="glowThresholdParamValue">0.20</span></span>
@@ -717,7 +719,7 @@
             </label>
             <label class="field glow-slider-field">
               <span class="glow-param-line"><span class="field-label">曝光</span><span id="glowExposureParamValue">0</span></span>
-              <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-50" max="50" step="1" value="0" />
+              <input id="glowBrightnessBiasInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="0" />
             </label>
             <label class="field glow-slider-field glow-color-field">
               <span class="glow-param-line">

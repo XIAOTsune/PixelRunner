@@ -262,6 +262,7 @@
     const glowPreviewViewport = runtime.getById("glowPreviewViewport");
     const glowPreviewResultCanvas = runtime.getById("glowPreviewResultCanvas");
     const glowPreviewBaseImage = runtime.getById("glowPreviewBaseImage");
+    const glowPreviewGlowImage = runtime.getById("glowPreviewGlowImage");
     const glowPreviewResultImage = runtime.getById("glowPreviewResultImage");
     const glowPreviewSourceMaskImage = runtime.getById("glowPreviewSourceMaskImage");
     const glowPreviewProtectMaskImage = runtime.getById("glowPreviewProtectMaskImage");
@@ -288,9 +289,9 @@
     let glowDragKickoffTimer = 0;
     let glowDragStartedAt = 0;
     let glowGpuFastPathAvailable = true;
-    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 2200;
+    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1200;
     const GLOW_DRAG_PROCESS_DIMENSION = 1200;
-    const GLOW_FULL_PROCESS_DIMENSION = 3000;
+    const GLOW_FULL_PROCESS_DIMENSION = 1200;
     const glowPreviewView = {
       scale: 1,
       x: 0,
@@ -329,10 +330,10 @@
     const readGlowState = () => ({
       style: readGlowStyle(),
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 360),
+      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 500),
       threshold: mapThresholdSliderToEffective(readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100)),
       saturation: 0,
-      brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50),
+      brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -100, 100),
       colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
       colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
       colorHex: readGlowColorHex(),
@@ -388,10 +389,12 @@
       const viewportHeight = Number(viewportRect.height) || 0;
       const naturalWidth = Number(glowPreviewResultImage && glowPreviewResultImage.naturalWidth) || viewportWidth || 1;
       const naturalHeight = Number(glowPreviewResultImage && glowPreviewResultImage.naturalHeight) || viewportHeight || 1;
+      const baseNaturalWidth = Number(glowPreviewBaseImage && glowPreviewBaseImage.naturalWidth) || 0;
+      const baseNaturalHeight = Number(glowPreviewBaseImage && glowPreviewBaseImage.naturalHeight) || 0;
       const canvasWidth = Number(glowPreviewResultCanvas && glowPreviewResultCanvas.width) || 0;
       const canvasHeight = Number(glowPreviewResultCanvas && glowPreviewResultCanvas.height) || 0;
-      const contentWidth = canvasWidth || naturalWidth;
-      const contentHeight = canvasHeight || naturalHeight;
+      const contentWidth = baseNaturalWidth || canvasWidth || naturalWidth;
+      const contentHeight = baseNaturalHeight || canvasHeight || naturalHeight;
       const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
       const renderedWidth = contentWidth * fitScale * scale;
       const renderedHeight = contentHeight * fitScale * scale;
@@ -405,6 +408,12 @@
 
     const applyGlowPreviewTransform = () => {
       clampGlowPreviewView();
+      if (glowPreviewBaseImage) {
+        glowPreviewBaseImage.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+      }
+      if (glowPreviewGlowImage) {
+        glowPreviewGlowImage.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
+      }
       if (glowPreviewResultCanvas) {
         glowPreviewResultCanvas.style.transform = `translate(${glowPreviewView.x}px, ${glowPreviewView.y}px) scale(${glowPreviewView.scale})`;
       }
@@ -473,6 +482,7 @@
       if (glowInlinePreview) glowInlinePreview.hidden = true;
       [
         glowPreviewBaseImage,
+        glowPreviewGlowImage,
         glowPreviewSourceMaskImage,
         glowPreviewProtectMaskImage,
         glowPreviewLumaImage,
@@ -485,6 +495,7 @@
         const ctx = glowPreviewResultCanvas.getContext("2d");
         if (ctx) ctx.clearRect(0, 0, glowPreviewResultCanvas.width || 0, glowPreviewResultCanvas.height || 0);
       }
+      if (glowPreviewGlowImage) glowPreviewGlowImage.removeAttribute("src");
       if (glowPreviewResultImage) glowPreviewResultImage.removeAttribute("src");
       resetGlowPreviewTransform();
       if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
@@ -494,8 +505,11 @@
       if (!asset || !glowResult) return;
       const sourceDataUrl = String(asset.dataUrl || "").trim();
       if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
-      const drawn = drawGlowPreviewToCanvas(glowResult);
-      if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage) {
+      if (glowPreviewGlowImage) {
+        glowPreviewGlowImage.src = String(glowResult.glowLayerDataUrl || "").trim();
+      }
+      const drawn = !glowPreviewGlowImage && drawGlowPreviewToCanvas(glowResult);
+      if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage && !glowPreviewGlowImage) {
         glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
       }
       if (glowPreviewView.scale <= 1.001) applyGlowPreviewTransform();
@@ -603,13 +617,13 @@
         glowResult = await modules.glowPreviewEngine.createPreview(
           String(glowCpuSourceAsset.dataUrl || "").trim(),
           { ...state, strength: commitStrength, useGpu: true },
-          { includeDebug: false }
+          { includeDebug: false, processMaxDimension: GLOW_FULL_PROCESS_DIMENSION }
         );
       } catch (_) {
         glowResult = await modules.glowPreviewEngine.createPreview(
           String(glowCpuSourceAsset.dataUrl || "").trim(),
           { ...state, strength: commitStrength, useGpu: false },
-          { includeDebug: false }
+          { includeDebug: false, processMaxDimension: GLOW_FULL_PROCESS_DIMENSION }
         );
       }
       const documentInfo = glowCpuSourceAsset.document || {};
@@ -747,12 +761,7 @@
         void runGlowPreviewUpdate("glowPreviewUpdate");
       }, delay);
       if (quality === "interactive") {
-        glowRefinePreviewTimer = window.setTimeout(() => {
-          glowRefinePreviewTimer = 0;
-          glowPreviewQuality = "full";
-          glowPreviewJobId += 1;
-          void runGlowPreviewUpdate("glowPreviewUpdate");
-        }, Math.max(760, delay + 420));
+        glowRefinePreviewTimer = 0;
       }
     };
 

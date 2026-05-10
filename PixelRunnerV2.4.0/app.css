@@ -1529,6 +1529,29 @@ button {
   cursor: grabbing;
 }
 
+.glow-base-image,
+.glow-overlay-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.glow-base-image {
+  z-index: 0;
+}
+
+.glow-overlay-image {
+  z-index: 1;
+  mix-blend-mode: plus-lighter;
+  opacity: 1;
+}
+
 .glow-lab-image {
   display: block;
   width: 100%;
@@ -1542,7 +1565,8 @@ button {
   will-change: transform;
 }
 
-#glowPreviewResultImage {
+#glowPreviewResultImage,
+#glowPreviewResultCanvas {
   display: none;
 }
 
