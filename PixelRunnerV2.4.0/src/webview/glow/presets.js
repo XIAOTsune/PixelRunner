@@ -87,7 +87,7 @@
     const style = normalizeStyle(config.style);
     const preset = STYLE_PRESETS[style];
     const strength = style === "none" ? 0 : clamp(config.strength, 0, 100, 47);
-    const radius = clamp(config.radius, 1, 240, 81);
+    const radius = clamp(config.radius, 1, 360, 81);
     const threshold = clamp(config.threshold, 0, 100, 81);
     const saturation = clamp(config.saturation, -100, 100, 81);
     const brightnessBias = clamp(config.brightnessBias, -50, 50, 0);
@@ -96,9 +96,9 @@
     const colorAmount = colorEnabled ? clamp(config.colorAmount, 0, 100, 0) : 0;
     const colorTint = hexToRgb01(config.colorHex);
     const chromatic = config.chromaticEnabled === false ? 0 : clamp(config.chromatic, 0, 100, 0);
-    const radiusRatio = radius / 240;
-    const legacyRadiusRatio = Math.min(1, radius / 120);
-    const wideRadiusRatio = Math.max(0, (radius - 120) / 120);
+    const radiusRatio = radius / 360;
+    const legacyRadiusRatio = Math.min(1, radius / 180);
+    const wideRadiusRatio = Math.max(0, (radius - 180) / 180);
     const thresholdRatio = 1 - threshold / 100;
     const brightnessLift = brightnessBias / 50;
 

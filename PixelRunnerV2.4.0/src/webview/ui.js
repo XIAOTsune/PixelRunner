@@ -18,6 +18,7 @@
     colorHex: "#ffd27a",
     chromatic: 0
   };
+  const GLOW_THRESHOLD_CURVE_EXPONENT = 1.8;
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
   const GLOW_STYLE_LABELS = {
     none: "无",
@@ -287,8 +288,8 @@
     let glowDragKickoffTimer = 0;
     let glowDragStartedAt = 0;
     let glowGpuFastPathAvailable = true;
-    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 3000;
-    const GLOW_DRAG_PROCESS_DIMENSION = 3000;
+    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 2200;
+    const GLOW_DRAG_PROCESS_DIMENSION = 1200;
     const GLOW_FULL_PROCESS_DIMENSION = 3000;
     const glowPreviewView = {
       scale: 1,
@@ -320,11 +321,16 @@
       return /^#[0-9a-fA-F]{6}$/.test(value) ? value : GLOW_DEFAULTS.colorHex;
     };
 
+    const mapThresholdSliderToEffective = (sliderValue) => {
+      const normalized = Math.max(0, Math.min(100, Number(sliderValue) || 0)) / 100;
+      return Math.round(Math.pow(normalized, GLOW_THRESHOLD_CURVE_EXPONENT) * 100);
+    };
+
     const readGlowState = () => ({
       style: readGlowStyle(),
       strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 240),
-      threshold: readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100),
+      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 360),
+      threshold: mapThresholdSliderToEffective(readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100)),
       saturation: 0,
       brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -50, 50),
       colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
@@ -356,13 +362,14 @@
 
     const updateGlowLabels = () => {
       const state = readGlowState();
+      const thresholdSlider = readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100);
       if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
       if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
       if (glowRadiusValue) glowRadiusValue.textContent = `半径 ${state.radius}`;
       if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
       if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
-      if (glowThresholdParamValue) glowThresholdParamValue.textContent = (state.threshold / 100).toFixed(2);
+      if (glowThresholdParamValue) glowThresholdParamValue.textContent = `${(state.threshold / 100).toFixed(2)} (滑块 ${thresholdSlider})`;
       if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
       if (glowColorParamValue) glowColorParamValue.textContent = state.colorEnabled ? `${state.colorAmount}%` : "关";
       if (glowChromaticParamValue) glowChromaticParamValue.textContent = state.chromaticEnabled ? String(state.chromatic) : "关";
