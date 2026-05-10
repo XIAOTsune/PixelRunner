@@ -615,11 +615,16 @@ var PixelRunnerWebviewBundle = (() => {
       const colorAmount = colorEnabled ? clamp(config.colorAmount, 0, 100, 0) : 0;
       const colorTint = hexToRgb01(config.colorHex);
       const chromatic = config.chromaticEnabled === false ? 0 : clamp(config.chromatic, 0, 100, 0);
+      const strengthRatio = strength / 100;
       const radiusRatio = radius / 500;
       const legacyRadiusRatio = Math.min(1, radius / 250);
       const wideRadiusRatio = Math.max(0, (radius - 250) / 250);
       const thresholdRatio = 1 - threshold / 100;
       const brightnessLift = brightnessBias / 100;
+      const spreadRatio = Math.pow(radiusRatio, 0.9);
+      const spreadAir = Math.pow(radiusRatio, 1.15);
+      const spreadEnergyCompensation = 1 - spreadRatio * 0.24 - spreadAir * 0.08;
+      const strengthEnergyBoost = 0.58 + Math.pow(strengthRatio, 1.08) * 1.72;
       return {
         style,
         strength,
@@ -649,29 +654,29 @@ var PixelRunnerWebviewBundle = (() => {
         blur: {
           mipCount: Math.max(2, Math.min(7, Math.round(2.9 + legacyRadiusRatio * 3.25 + wideRadiusRatio * 1.15))),
           mipWeights: [
-            preset.smallWeight * 0.64,
-            preset.mediumWeight * 0.98,
-            preset.largeWeight * (0.84 + legacyRadiusRatio * preset.scatter * 0.46),
-            preset.largeWeight * (0.6 + legacyRadiusRatio * preset.scatter * 0.4 + wideRadiusRatio * 0.28),
-            preset.largeWeight * (0.42 + legacyRadiusRatio * preset.scatter * 0.3 + wideRadiusRatio * 0.38),
-            preset.largeWeight * (0.28 + legacyRadiusRatio * preset.scatter * 0.22 + wideRadiusRatio * 0.46),
-            preset.largeWeight * (0.17 + wideRadiusRatio * 0.42)
+            preset.smallWeight * (0.82 - spreadRatio * 0.34),
+            preset.mediumWeight * (0.94 + spreadRatio * 0.12),
+            preset.largeWeight * (0.72 + spreadRatio * preset.scatter * 0.58 + wideRadiusRatio * 0.16),
+            preset.largeWeight * (0.48 + spreadRatio * preset.scatter * 0.56 + wideRadiusRatio * 0.3),
+            preset.largeWeight * (0.32 + spreadRatio * preset.scatter * 0.46 + wideRadiusRatio * 0.44),
+            preset.largeWeight * (0.2 + spreadRatio * preset.scatter * 0.36 + wideRadiusRatio * 0.52),
+            preset.largeWeight * (0.1 + spreadRatio * 0.14 + wideRadiusRatio * 0.48)
           ],
-          pyramidWeight: clamp(0.78 + legacyRadiusRatio * 0.56 + wideRadiusRatio * 0.48 + preset.scatter * 0.12, 0.78, 2, 1),
+          pyramidWeight: clamp(0.86 + spreadRatio * 0.34 + wideRadiusRatio * 0.22 + preset.scatter * 0.08, 0.82, 1.68, 1),
           smallWeight: preset.smallWeight,
           mediumWeight: preset.mediumWeight,
-          largeWeight: preset.largeWeight * (0.78 + legacyRadiusRatio * preset.scatter * 1.08 + wideRadiusRatio * 0.5),
+          largeWeight: preset.largeWeight * (0.68 + spreadRatio * preset.scatter * 0.86 + wideRadiusRatio * 0.4),
           passes: 1
         },
         composite: {
-          intensity: strength / 100 * 2.05,
-          softAddMix: preset.softAddMix,
+          intensity: clamp(strengthEnergyBoost * spreadEnergyCompensation, 0, 2.35, 1),
+          softAddMix: clamp(preset.softAddMix + spreadAir * 0.18 - strengthRatio * 0.08, 0.24, 0.74, preset.softAddMix),
           warmth: preset.warmth,
           saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
-          highlightProtect: clamp(0.66 + thresholdRatio * 0.22, 0.56, 0.92, 0.76),
+          highlightProtect: clamp(0.66 + thresholdRatio * 0.22 + spreadAir * 0.05, 0.58, 0.94, 0.76),
           shadowProtect: preset.darkProtect,
-          colorProtect: clamp(0.26 + strength / 100 * 0.1, 0.26, 0.42, 0.3),
-          shoulder: clamp(0.72 - strength / 100 * 0.2, 0.5, 0.8, 0.64),
+          colorProtect: clamp(0.24 + strengthRatio * 0.16 - spreadRatio * 0.04, 0.22, 0.46, 0.3),
+          shoulder: clamp(0.74 - strengthRatio * 0.22 + spreadAir * 0.07, 0.48, 0.82, 0.64),
           colorShift: colorShift / 100,
           colorTint,
           colorAmount: colorAmount / 100,
@@ -3246,10 +3251,8 @@ ${text}` : text;
         const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
         const renderedWidth = contentWidth * fitScale * scale;
         const renderedHeight = contentHeight * fitScale * scale;
-        const keepVisibleX = Math.min(viewportWidth * 0.42, Math.max(80, viewportWidth * 0.18));
-        const keepVisibleY = Math.min(viewportHeight * 0.42, Math.max(80, viewportHeight * 0.18));
-        const maxX = Math.max(0, (renderedWidth + viewportWidth) / 2 - keepVisibleX);
-        const maxY = Math.max(0, (renderedHeight + viewportHeight) / 2 - keepVisibleY);
+        const maxX = Math.max(0, (renderedWidth - viewportWidth) / 2);
+        const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
         glowPreviewView.x = Math.max(-maxX, Math.min(maxX, Number(glowPreviewView.x) || 0));
         glowPreviewView.y = Math.max(-maxY, Math.min(maxY, Number(glowPreviewView.y) || 0));
       };
@@ -3298,6 +3301,10 @@ ${text}` : text;
           glowPreviewView.y = (glowPreviewView.y - localY) * (scale / previousScale) + localY;
         }
         glowPreviewView.scale = scale;
+        if (scale <= 1.001) {
+          glowPreviewView.x = 0;
+          glowPreviewView.y = 0;
+        }
         applyGlowPreviewTransform();
       };
       const GLOW_PREVIEW_MAX_DIMENSION = 3e3;
@@ -3662,6 +3669,7 @@ ${text}` : text;
         }, { passive: false });
         glowPreviewViewport.addEventListener("pointerdown", (event) => {
           if (event.button != null && event.button !== 0) return;
+          if ((Number(glowPreviewView.scale) || 1) <= 1.001) return;
           event.preventDefault();
           glowPreviewView.isPanning = true;
           glowPreviewView.startX = event.clientX;
