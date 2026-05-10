@@ -1805,7 +1805,7 @@ button {
   }
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 980px) {
   .overlay-card.glow-modal-card {
     width: min(96vw, 860px);
     min-height: auto;
