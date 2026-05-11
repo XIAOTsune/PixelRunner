@@ -968,7 +968,7 @@ async function buildGlowMipLayerFromDocument(app, action, sourceDoc, targetDoc, 
       await selectLayerById(action, importedLayerId);
     }
     await renameActiveLayer(action, `${config.layerName} Mip ${mipIndex + 1}`);
-    await setActiveLayerStyle(action, opacity, "linearDodge");
+    await setActiveLayerStyle(action, opacity, "screen");
     return importedLayerId;
   } finally {
     try {
@@ -1063,7 +1063,7 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     }
     await tempOp("Prepare glow detail layer", async () => {
       await renameActiveLayer(action, detailName);
-      await setActiveLayerStyle(action, workingConfig.detailOpacity, "linearDodge");
+      await setActiveLayerStyle(action, workingConfig.detailOpacity, "screen");
     });
 
     mipSourceDoc = await duplicateDocument(app, action, tempDoc, `${config.layerName} Mip Source`, true);
@@ -1113,7 +1113,7 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
     if (workingConfig.finalVibrance !== 0 || workingConfig.finalSaturation !== 0) {
       await tempOp("Finalize glow temp layer color", () => applyVibrance(action, workingConfig.finalVibrance, workingConfig.finalSaturation));
     }
-    await tempOp("Finalize glow temp layer style", () => setActiveLayerStyle(action, 100, "linearDodge"));
+    await tempOp("Finalize glow temp layer style", () => setActiveLayerStyle(action, 100, "screen"));
 
     const tempResultLayer = tempDoc && tempDoc.activeLayers && tempDoc.activeLayers[0];
     if (!tempResultLayer) {
@@ -1129,7 +1129,7 @@ async function createGlowLayerFromDocument(config, app, document, action, saveOp
         await selectLayerById(action, importedLayerId);
       }
       await renameActiveLayer(action, config.layerName);
-      await setActiveLayerStyle(action, 100, "linearDodge");
+      await setActiveLayerStyle(action, 100, "screen");
       if (previewMaxEdge > 0) {
         await fitImportedLayerToDocument(app, action, importedLayerId, sourceSize.width, sourceSize.height);
       }

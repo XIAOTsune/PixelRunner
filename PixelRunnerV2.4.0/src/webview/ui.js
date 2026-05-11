@@ -659,7 +659,7 @@
         preserveCanvasBounds: true,
         applyMask: false,
         opacity: 100,
-        blendMode: "linearDodge",
+        blendMode: "screen",
         layerName
       }], { timeoutMs: 120000 });
       glowCpuSourceAsset = null;

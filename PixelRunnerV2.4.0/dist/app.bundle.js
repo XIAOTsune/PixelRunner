@@ -621,10 +621,14 @@ var PixelRunnerWebviewBundle = (() => {
       const wideRadiusRatio = Math.max(0, (radius - 250) / 250);
       const thresholdRatio = 1 - threshold / 100;
       const exposureRatio = brightnessBias / 100;
-      const spreadRatio = Math.pow(radiusRatio, 0.9);
+      const spreadRatio = Math.pow(radiusRatio, 0.92);
       const spreadAir = Math.pow(radiusRatio, 1.15);
-      const spreadEnergyCompensation = 1 - spreadRatio * 0.24 - spreadAir * 0.08;
-      const strengthEnergyBoost = 0.58 + Math.pow(strengthRatio, 1.08) * 1.72;
+      const lensArea = Math.pow(radiusRatio, 2);
+      const strengthDrive = Math.pow(strengthRatio, 0.88);
+      const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
+      const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
+      const strengthEnergyBoost = strengthDrive * 3.35;
+      const chromaticRatio = Math.pow(chromatic / 100, 0.88);
       return {
         style,
         strength,
@@ -639,17 +643,17 @@ var PixelRunnerWebviewBundle = (() => {
         chromatic,
         source: {
           // Decouple from threshold: threshold sets the center; exposure mainly tunes source activity.
-          thresholdLow: clamp(0.36 + thresholdRatio * 0.32 + preset.thresholdBias - exposureRatio * 0.022, 0.2, 0.86, 0.62),
-          thresholdHigh: clamp(0.55 + thresholdRatio * 0.29 + preset.thresholdBias - exposureRatio * 0.028, 0.32, 0.96, 0.78),
+          thresholdLow: clamp(0.38 + thresholdRatio * 0.36 + preset.thresholdBias - exposureRatio * 0.016, 0.2, 0.9, 0.64),
+          thresholdHigh: clamp(0.58 + thresholdRatio * 0.3 + preset.thresholdBias - exposureRatio * 0.02, 0.34, 0.97, 0.8),
           thresholdKnee: clamp(
-            preset.knee * (1.08 - thresholdRatio * 0.38) + legacyRadiusRatio * 0.04 + exposureRatio * 0.055,
-            0.08,
-            0.36,
+            preset.knee * (1.06 - thresholdRatio * 0.44) + legacyRadiusRatio * 0.032 + exposureRatio * 0.042,
+            0.07,
+            0.32,
             0.2
           ),
           localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
-          contrastLow: clamp(0.025 - exposureRatio * 8e-3, 0.015, 0.04, 0.025),
-          contrastHigh: clamp(0.095 - thresholdRatio * 0.035 - exposureRatio * 0.02, 0.03, 0.11, 0.07),
+          contrastLow: clamp(0.024 - exposureRatio * 9e-3, 0.013, 0.038, 0.024),
+          contrastHigh: clamp(0.092 - thresholdRatio * 0.04 - exposureRatio * 0.022, 0.028, 0.11, 0.068),
           specularLow: 0.06,
           specularHigh: 0.28,
           chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22 + Math.max(0, exposureRatio) * 0.03, 0, 0.62, preset.chromaBoost),
@@ -658,40 +662,47 @@ var PixelRunnerWebviewBundle = (() => {
           darkProtect: preset.darkProtect
         },
         blur: {
-          mipCount: Math.max(2, Math.min(7, Math.round(2.9 + legacyRadiusRatio * 3.25 + wideRadiusRatio * 1.15))),
+          mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
           mipWeights: [
-            preset.smallWeight * (0.82 - spreadRatio * 0.34),
-            preset.mediumWeight * (0.94 + spreadRatio * 0.12),
-            preset.largeWeight * (0.72 + spreadRatio * preset.scatter * 0.58 + wideRadiusRatio * 0.16),
-            preset.largeWeight * (0.48 + spreadRatio * preset.scatter * 0.56 + wideRadiusRatio * 0.3),
-            preset.largeWeight * (0.32 + spreadRatio * preset.scatter * 0.46 + wideRadiusRatio * 0.44),
-            preset.largeWeight * (0.2 + spreadRatio * preset.scatter * 0.36 + wideRadiusRatio * 0.52),
-            preset.largeWeight * (0.1 + spreadRatio * 0.14 + wideRadiusRatio * 0.48)
+            // Radius grows: reduce near-core weights; push more energy to far halo levels.
+            preset.smallWeight * (0.74 - spreadRatio * 0.52 - lensArea * 0.08),
+            preset.mediumWeight * (0.88 + spreadRatio * 0.05 - lensArea * 0.04),
+            preset.largeWeight * (0.8 + spreadRatio * preset.scatter * 0.62 + lensArea * 0.22 + wideRadiusRatio * 0.18),
+            preset.largeWeight * (0.62 + spreadRatio * preset.scatter * 0.7 + lensArea * 0.34 + wideRadiusRatio * 0.34),
+            preset.largeWeight * (0.46 + spreadRatio * preset.scatter * 0.62 + lensArea * 0.48 + wideRadiusRatio * 0.48),
+            preset.largeWeight * (0.3 + spreadRatio * preset.scatter * 0.52 + lensArea * 0.62 + wideRadiusRatio * 0.62),
+            preset.largeWeight * (0.18 + spreadRatio * 0.24 + lensArea * 0.7 + wideRadiusRatio * 0.68)
           ],
-          pyramidWeight: clamp(0.86 + spreadRatio * 0.34 + wideRadiusRatio * 0.22 + preset.scatter * 0.08, 0.82, 1.68, 1),
+          pyramidWeight: clamp(0.9 + spreadRatio * 0.24 + lensArea * 0.58 + wideRadiusRatio * 0.2 + preset.scatter * 0.06, 0.86, 1.98, 1),
           smallWeight: preset.smallWeight,
           mediumWeight: preset.mediumWeight,
-          largeWeight: preset.largeWeight * (0.68 + spreadRatio * preset.scatter * 0.86 + wideRadiusRatio * 0.4),
+          largeWeight: preset.largeWeight * (0.78 + spreadRatio * preset.scatter * 0.86 + lensArea * 0.74 + wideRadiusRatio * 0.46),
           passes: 1
         },
         composite: {
-          intensity: clamp(strengthEnergyBoost * spreadEnergyCompensation, 0, 2.35, 1),
-          softAddMix: clamp(preset.softAddMix + spreadAir * 0.18 - strengthRatio * 0.08, 0.24, 0.74, preset.softAddMix),
+          intensity: clamp(strengthEnergyBoost * spreadEnergyCompensation * (0.78 + radiusEnergyDamping * 0.52), 0, 3.2, 1),
+          // Favor screen-like appearance; reduce additive/linear-dodge feel.
+          softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
           warmth: preset.warmth,
           saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
-          highlightProtect: clamp(0.66 + thresholdRatio * 0.22 + spreadAir * 0.05, 0.58, 0.94, 0.76),
+          highlightProtect: clamp(0.72 + thresholdRatio * 0.24 + spreadAir * 0.03 + strengthRatio * 0.08, 0.64, 0.97, 0.82),
           shadowProtect: preset.darkProtect,
-          colorProtect: clamp(0.24 + strengthRatio * 0.16 - spreadRatio * 0.04, 0.22, 0.46, 0.3),
-          shoulder: clamp(0.74 - strengthRatio * 0.22 + spreadAir * 0.07 + Math.max(0, exposureRatio) * 0.03, 0.48, 0.82, 0.64),
+          colorProtect: clamp(0.25 + strengthRatio * 0.13 - spreadRatio * 0.02, 0.22, 0.46, 0.31),
+          // Increase shoulder with strength to avoid dead-white cores.
+          shoulder: clamp(0.5 + strengthRatio * 0.12 + spreadAir * 0.03 + Math.max(0, exposureRatio) * 0.018, 0.42, 0.74, 0.56),
           colorShift: colorShift / 100,
           colorTint,
           colorAmount: colorAmount / 100,
-          chromatic: chromatic / 100
+          chromatic: chromaticRatio,
+          // Split glow into core vs halo at composite stage (strength-gated).
+          coreSuppression: clamp(0.2 + strengthDrive * 0.5 + thresholdRatio * 0.14, 0.16, 0.92, 0.44),
+          haloBoost: clamp((0.56 + spreadAir * 0.62 + lensArea * 0.4 + wideRadiusRatio * 0.22) * Math.pow(strengthRatio, 0.74) * (0.7 + radiusEnergyDamping * 0.5), 0, 2.05, 0),
+          haloMix: clamp((0.24 + spreadAir * 0.46 + lensArea * 0.38) * Math.pow(strengthRatio, 0.56), 0, 0.9, 0)
         },
         sourceTone: {
           // Exposure is mostly source-side activity shaping (not output intensity).
-          exposure: clamp(exposureRatio * 0.12, -0.12, 0.12, 0),
-          gamma: clamp(1 - exposureRatio * 0.12, 0.86, 1.14, 1)
+          exposure: clamp(exposureRatio * 0.18, -0.18, 0.18, 0),
+          gamma: clamp(1 - exposureRatio * 0.16, 0.82, 1.18, 1)
         }
       };
     }
@@ -1939,6 +1950,9 @@ var PixelRunnerWebviewBundle = (() => {
     uniform float uColorAmount;
     uniform float uChromaticOffset;
     uniform float uChromaticAmount;
+    uniform float uCoreSuppression;
+    uniform float uHaloBoost;
+    uniform float uHaloMix;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -1973,6 +1987,28 @@ var PixelRunnerWebviewBundle = (() => {
       return mix(color, tinted, amount);
     }
 
+    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source) {
+      float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
+      float haloBoost = max(0.0, uHaloBoost);
+      float haloMix = clamp(uHaloMix, 0.0, 1.0);
+      float brightCoreGate = clamp(1.0 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1.0);
+      float protectCoreGate = clamp(1.0 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1.0);
+      float coreGate = brightCoreGate * protectCoreGate;
+      float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
+      float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
+      float darkLift = pow(clamp(1.0 - baseLuma, 0.0, 1.0), 0.6);
+      float haloGate = clamp(
+        (1.0 - protect * 0.46) * (0.36 + source * 0.42 + darkLift * 0.44) * (0.64 + energyGate * 0.88),
+        0.12,
+        1.36
+      );
+      float coreScale = 1.0 - haloMix * 0.48;
+      float haloScale = 1.0 + haloMix * 0.66;
+      vec3 core = glow * coreGate * coreScale;
+      vec3 halo = glow * haloGate * haloBoost * haloScale;
+      return core * (1.0 - haloMix) + halo * haloMix;
+    }
+
     vec3 computeGlow(vec3 glowLayer, vec3 fringe, vec4 masks) {
       float baseLuma = masks.r;
       float protect = masks.g;
@@ -1994,11 +2030,12 @@ var PixelRunnerWebviewBundle = (() => {
       warmed = applyGlowTint(warmed);
       warmed += fringe;
       vec3 saturated = applySaturation(warmed, uSaturation);
-      return clamp(vec3(
+      vec3 glow = clamp(vec3(
         softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
+      return splitCoreAndHalo(glow, baseLuma, protect, source);
     }
 
     void main() {
@@ -2012,12 +2049,12 @@ var PixelRunnerWebviewBundle = (() => {
       );
       vec3 centerGlow = texture(uGlow, vUv).rgb;
       float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
-      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.35);
+      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.02);
       float edgeGate = texture(uMasks, vUv).a * (0.68 + (1.0 - protect) * 0.32);
       vec3 fringe = vec3(
-        max(0.0, glowLayer.r - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate,
+        max(0.0, glowLayer.r - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate,
         0.0,
-        max(0.0, glowLayer.b - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate
+        max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       vec3 glow = computeGlow(glowLayer, fringe, texture(uMasks, vUv));
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
@@ -2046,6 +2083,9 @@ var PixelRunnerWebviewBundle = (() => {
     uniform float uColorAmount;
     uniform float uChromaticOffset;
     uniform float uChromaticAmount;
+    uniform float uCoreSuppression;
+    uniform float uHaloBoost;
+    uniform float uHaloMix;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -2080,6 +2120,28 @@ var PixelRunnerWebviewBundle = (() => {
       return mix(color, tinted, amount);
     }
 
+    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source) {
+      float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
+      float haloBoost = max(0.0, uHaloBoost);
+      float haloMix = clamp(uHaloMix, 0.0, 1.0);
+      float brightCoreGate = clamp(1.0 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1.0);
+      float protectCoreGate = clamp(1.0 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1.0);
+      float coreGate = brightCoreGate * protectCoreGate;
+      float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
+      float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
+      float darkLift = pow(clamp(1.0 - baseLuma, 0.0, 1.0), 0.6);
+      float haloGate = clamp(
+        (1.0 - protect * 0.46) * (0.36 + source * 0.42 + darkLift * 0.44) * (0.64 + energyGate * 0.88),
+        0.12,
+        1.36
+      );
+      float coreScale = 1.0 - haloMix * 0.48;
+      float haloScale = 1.0 + haloMix * 0.66;
+      vec3 core = glow * coreGate * coreScale;
+      vec3 halo = glow * haloGate * haloBoost * haloScale;
+      return core * (1.0 - haloMix) + halo * haloMix;
+    }
+
     void main() {
       vec2 chroma = vec2(uChromaticOffset, 0.0) * uTexel;
       vec3 glowLayer = vec3(
@@ -2089,16 +2151,17 @@ var PixelRunnerWebviewBundle = (() => {
       );
       vec3 centerGlow = texture(uGlow, vUv).rgb;
       float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
-      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.35);
-      float edgeGate = source * (0.68 + (1.0 - protect) * 0.32);
-      vec3 fringe = vec3(
-        max(0.0, glowLayer.r - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate,
-        0.0,
-        max(0.0, glowLayer.b - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate
-      );
       vec4 masks = texture(uMasks, vUv);
+      float baseLuma = masks.r;
       float source = masks.a;
       float protect = masks.g;
+      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.02);
+      float edgeGate = source * (0.68 + (1.0 - protect) * 0.32);
+      vec3 fringe = vec3(
+        max(0.0, glowLayer.r - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate,
+        0.0,
+        max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
+      );
       float darkProtect = masks.b;
       float highlightProtect = protect * uHighlightProtect * 0.86;
       float shadowProtect = darkProtect * uShadowProtect;
@@ -2118,6 +2181,7 @@ var PixelRunnerWebviewBundle = (() => {
         softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
+      glow = splitCoreAndHalo(glow, baseLuma, protect, source);
       float alpha = max(max(glow.r, glow.g), glow.b);
       outColor = vec4(glow, alpha);
     }
@@ -2244,8 +2308,11 @@ var PixelRunnerWebviewBundle = (() => {
         const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
         gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
         gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
-        gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(22, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 1.18) * (2.8 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.08))));
+        gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(30, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 0.96) * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22))));
         gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
+        gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
+        gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
+        gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
         gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
       }
       setGlowLayerUniforms(program, params) {
@@ -2261,8 +2328,11 @@ var PixelRunnerWebviewBundle = (() => {
         const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
         gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
         gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
-        gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(22, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 1.18) * (2.8 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.08))));
+        gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(30, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 0.96) * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22))));
         gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
+        gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
+        gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
+        gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
         gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
       }
       render(program, target) {
@@ -2391,8 +2461,8 @@ var PixelRunnerWebviewBundle = (() => {
     }
     function getChromaticOffset(params) {
       const c = Math.max(0, Math.min(1, Number(params.composite.chromatic) || 0));
-      const curved = Math.pow(c, 1.18);
-      return Math.max(0, Math.min(22, curved * (2.8 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.08)));
+      const curved = Math.pow(c, 0.96);
+      return Math.max(0, Math.min(30, curved * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22)));
     }
     function applyGlowColorShift(r, g, b, shift) {
       const amount = clamp(Number(shift) || 0, -1, 1);
@@ -2424,6 +2494,35 @@ var PixelRunnerWebviewBundle = (() => {
         b * (1 - amount) + tintB * amount
       ];
     }
+    function splitCoreAndHalo(glow, baseLuma, protect, source, params) {
+      const coreSuppression = clamp(Number(params.composite.coreSuppression) || 0.5, 0, 1);
+      const haloBoost = Math.max(0, Number(params.composite.haloBoost) || 1);
+      const haloMix = clamp(Number(params.composite.haloMix) || 0.5, 0, 1);
+      const brightCoreGate = clamp(1 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1);
+      const protectCoreGate = clamp(1 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1);
+      const coreGate = brightCoreGate * protectCoreGate;
+      const glowLuma = glow[0] * 0.2126 + glow[1] * 0.7152 + glow[2] * 0.0722;
+      const energyGate = Math.pow(clamp(glowLuma, 0, 1), 0.66);
+      const darkLift = Math.pow(clamp(1 - baseLuma, 0, 1), 0.6);
+      const haloGate = clamp(
+        (1 - protect * 0.46) * (0.36 + source * 0.42 + darkLift * 0.44) * (0.64 + energyGate * 0.88),
+        0.12,
+        1.36
+      );
+      const coreScale = 1 - haloMix * 0.48;
+      const haloScale = 1 + haloMix * 0.66;
+      const coreR = glow[0] * coreGate * coreScale;
+      const coreG = glow[1] * coreGate * coreScale;
+      const coreB = glow[2] * coreGate * coreScale;
+      const haloR = glow[0] * haloGate * haloBoost * haloScale;
+      const haloG = glow[1] * haloGate * haloBoost * haloScale;
+      const haloB = glow[2] * haloGate * haloBoost * haloScale;
+      return [
+        clamp(coreR * (1 - haloMix) + haloR * haloMix, 0, 1),
+        clamp(coreG * (1 - haloMix) + haloG * haloMix, 0, 1),
+        clamp(coreB * (1 - haloMix) + haloB * haloMix, 0, 1)
+      ];
+    }
     function composeProtected(baseImageData, glowLayer, masks, params) {
       const { width, height, data } = baseImageData;
       const out = new ImageData(width, height);
@@ -2447,10 +2546,10 @@ var PixelRunnerWebviewBundle = (() => {
         const layerG = glowLayer.g[pixel];
         const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
         const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
-        const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.35);
+        const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
         const edgeGate = source * (0.68 + (1 - protect) * 0.32);
-        const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
-        const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
+        const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
+        const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
         let warmedR = layerR * (1 + params.composite.warmth);
         let warmedG = layerG * (1 + params.composite.warmth * 0.35);
         let warmedB = layerB * (1 - params.composite.warmth * 0.28);
@@ -2462,14 +2561,15 @@ var PixelRunnerWebviewBundle = (() => {
         const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-        const screenR = 1 - (1 - baseR) * (1 - glowR);
-        const screenG = 1 - (1 - baseG) * (1 - glowG);
-        const screenB = 1 - (1 - baseB) * (1 - glowB);
-        const softR = clamp(baseR + glowR * (1 - baseR * (0.58 + protect * 0.34)), 0, 1);
-        const softG = clamp(baseG + glowG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
-        const softB = clamp(baseB + glowB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
+        const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], baseLuma, protect, source, params);
+        const screenR = 1 - (1 - baseR) * (1 - shapedR);
+        const screenG = 1 - (1 - baseG) * (1 - shapedG);
+        const screenB = 1 - (1 - baseB) * (1 - shapedB);
+        const softR = clamp(baseR + shapedR * (1 - baseR * (0.58 + protect * 0.34)), 0, 1);
+        const softG = clamp(baseG + shapedG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
+        const softB = clamp(baseB + shapedB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
         const mix = params.composite.softAddMix;
-        const maxGlow = Math.max(glowR, glowG, glowB);
+        const maxGlow = Math.max(shapedR, shapedG, shapedB);
         const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.88 + baseSat * 0.22), 0.86, 1);
         const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
         const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
@@ -2499,10 +2599,10 @@ var PixelRunnerWebviewBundle = (() => {
         const layerG = glowLayer.g[pixel];
         const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
         const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
-        const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.35);
+        const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
         const edgeGate = source * (0.68 + (1 - protect) * 0.32);
-        const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
-        const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.7) * chromaStrength * 1.62 * edgeGate : 0;
+        const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
+        const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
         let warmedR = layerR * (1 + params.composite.warmth);
         let warmedG = layerG * (1 + params.composite.warmth * 0.35);
         let warmedB = layerB * (1 - params.composite.warmth * 0.28);
@@ -2514,10 +2614,11 @@ var PixelRunnerWebviewBundle = (() => {
         const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-        const alpha = clamp(Math.max(glowR, glowG, glowB), 0, 1);
-        data[index] = Math.round(clamp(glowR, 0, 1) * 255);
-        data[index + 1] = Math.round(clamp(glowG, 0, 1) * 255);
-        data[index + 2] = Math.round(clamp(glowB, 0, 1) * 255);
+        const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, source, params);
+        const alpha = clamp(Math.max(shapedR, shapedG, shapedB), 0, 1);
+        data[index] = Math.round(clamp(shapedR, 0, 1) * 255);
+        data[index + 1] = Math.round(clamp(shapedG, 0, 1) * 255);
+        data[index + 2] = Math.round(clamp(shapedB, 0, 1) * 255);
         data[index + 3] = Math.round(alpha * 255);
       }
       return out;
@@ -3504,7 +3605,7 @@ ${text}` : text;
           preserveCanvasBounds: true,
           applyMask: false,
           opacity: 100,
-          blendMode: "linearDodge",
+          blendMode: "screen",
           layerName
         }], { timeoutMs: 12e4 });
         glowCpuSourceAsset = null;
