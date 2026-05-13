@@ -898,13 +898,15 @@ var PixelRunnerWebviewBundle = (() => {
           0,
           1
         );
-        const nearClip = smoothstep(0.9, 1, maxChannel);
-        const clippingDetail = clamp(specularScore * 0.62 + contrastScore * 0.26 + sat * 0.18, 0, 1);
+        const nearClip = smoothstep(0.94, 1, maxChannel);
+        const clippingDetail = clamp(specularScore * 0.78 + sat * 0.16, 0, 1);
         const protection = clamp(protectionBase * (1 - nearClip * (0.18 + clippingDetail * 0.38)), 0, 1);
         const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
         const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
         let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+        const neutralClothReject = whiteFlat * (1 - specularScore * 0.58) * (1 - nearClip * 0.55) * (1 - colorReflection * 0.45);
         emissionEnergy *= 1 - protection * 0.86;
+        emissionEnergy *= 1 - neutralClothReject * 0.68;
         emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
         emissionEnergy = clamp(Math.pow(emissionEnergy, 0.96) * 1.26, 0, 1);
         const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1, maxChannel);
@@ -1424,12 +1426,14 @@ var PixelRunnerWebviewBundle = (() => {
         dark * uDarkProtect +
         midtoneReject * 0.62
       );
-      float nearClip = smooth01(0.9, 1.0, maxChannel);
-      float clippingDetail = saturate(specularScore * 0.62 + contrastScore * 0.26 + sat * 0.18);
+      float nearClip = smooth01(0.94, 1.0, maxChannel);
+      float clippingDetail = saturate(specularScore * 0.78 + sat * 0.16);
       float protection = saturate(protectionBase * (1.0 - nearClip * (0.18 + clippingDetail * 0.38)));
       float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
       float emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.58) * (1.0 - nearClip * 0.55) * (1.0 - colorReflection * 0.45);
       emissionEnergy *= 1.0 - protection * 0.86;
+      emissionEnergy *= 1.0 - neutralClothReject * 0.68;
       emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
       emissionEnergy = saturate(pow(emissionEnergy, 0.96) * 1.26);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
@@ -1923,12 +1927,32 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return data;
     }
+    function sourceLayerToFloat32(layer) {
+      const count = layer.width * layer.height;
+      const data = new Float32Array(count * 4);
+      for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+        data[index] = Math.max(0, layer.r[pixel]);
+        data[index + 1] = Math.max(0, layer.g[pixel]);
+        data[index + 2] = Math.max(0, layer.b[pixel]);
+        data[index + 3] = 1;
+      }
+      return data;
+    }
     function rgba8ToLayer(data, width, height) {
       const out = createLayer(width, height);
       for (let pixel = 0, index = 0; pixel < out.r.length; pixel += 1, index += 4) {
         out.r[pixel] = data[index] / 255;
         out.g[pixel] = data[index + 1] / 255;
         out.b[pixel] = data[index + 2] / 255;
+      }
+      return out;
+    }
+    function rgbaFloatToLayer(data, width, height) {
+      const out = createLayer(width, height);
+      for (let pixel = 0, index = 0; pixel < out.r.length; pixel += 1, index += 4) {
+        out.r[pixel] = Math.max(0, data[index]);
+        out.g[pixel] = Math.max(0, data[index + 1]);
+        out.b[pixel] = Math.max(0, data[index + 2]);
       }
       return out;
     }
@@ -1968,6 +1992,11 @@ var PixelRunnerWebviewBundle = (() => {
           internalFormat: this.gl.RGBA16F,
           format: this.gl.RGBA,
           type: this.gl.HALF_FLOAT
+        } : null;
+        this.sourceFloatFormat = this.floatTargets ? {
+          internalFormat: this.gl.RGBA32F,
+          format: this.gl.RGBA,
+          type: this.gl.FLOAT
         } : null;
       }
       bindProgram(program) {
@@ -2039,7 +2068,7 @@ var PixelRunnerWebviewBundle = (() => {
       }
       finalComposite(combined, pyramidWeight, width, height) {
         const gl = this.gl;
-        const target = createTarget(gl, width, height);
+        const target = createTarget(gl, width, height, this.targetFormat);
         if (this.allocatedTargets) this.allocatedTargets.push(target);
         const program = this.programs.final;
         this.bindProgram(program);
@@ -2049,6 +2078,9 @@ var PixelRunnerWebviewBundle = (() => {
         return target;
       }
       buildMultiScaleGlow(sourceLayer, params) {
+        if (!this.floatTargets) {
+          throw new Error("WebGL2 glow blur requires float render targets");
+        }
         const width = sourceLayer.width;
         const height = sourceLayer.height;
         const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
@@ -2062,7 +2094,7 @@ var PixelRunnerWebviewBundle = (() => {
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.SCISSOR_TEST);
         this.allocatedTargets = [];
-        const currentTexture = createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
+        const currentTexture = this.floatTargets ? createTexture(gl, width, height, sourceLayerToFloat32(sourceLayer), this.sourceFloatFormat) : createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
         try {
           let current = { width, height, texture: currentTexture, framebuffer: null };
           const levels = [];
@@ -2082,11 +2114,19 @@ var PixelRunnerWebviewBundle = (() => {
             width,
             height
           );
-          const pixels = new Uint8Array(width * height * 4);
           gl.bindFramebuffer(gl.FRAMEBUFFER, finalTarget.framebuffer);
-          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          let glowLayer;
+          if (this.floatTargets) {
+            const pixels = new Float32Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+            glowLayer = rgbaFloatToLayer(pixels, width, height);
+          } else {
+            const pixels = new Uint8Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            glowLayer = rgba8ToLayer(pixels, width, height);
+          }
           return {
-            glowLayer: rgba8ToLayer(pixels, width, height),
+            glowLayer,
             levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })) },
             backend: "webgl2"
           };
@@ -2185,6 +2225,10 @@ var PixelRunnerWebviewBundle = (() => {
       return vec3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
     }
 
+    float hashNoise(vec2 p, float channel) {
+      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
     vec3 applySaturation(vec3 color, float saturation) {
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
       return vec3(luma) + (color - vec3(luma)) * saturation;
@@ -2218,9 +2262,9 @@ var PixelRunnerWebviewBundle = (() => {
       float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
       float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
       float haloGate = clamp(
-        (1.0 - protect * 0.14) * (0.68 + haloEnergy * 0.92) * (0.78 + energyGate * 1.02),
+        (1.0 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
         0.0,
-        2.08
+        2.18
       );
       float coreScale = 0.62 + sourceCore * 1.08 - haloMix * 0.28;
       float haloScale = 1.28 + haloMix * 1.36;
@@ -2238,9 +2282,9 @@ var PixelRunnerWebviewBundle = (() => {
       float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
       float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.5);
-      float haloAnchor = pow(clamp(haloSource, 0.0, 1.0), 0.72);
-      float sourceAnchor = uSourceAnchorBase + coreAnchor * 0.54 + haloAnchor * uSourceAnchorAmount;
+      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.62);
+      float glowAnchor = pow(clamp(dot(glowLayer, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0), 0.42);
+      float sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
       float protectGain = clamp((1.0 - highlightProtect * 0.14) * sourceAnchor, 0.0, 2.4);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
@@ -2278,6 +2322,12 @@ var PixelRunnerWebviewBundle = (() => {
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       vec3 glow = clamp(linearToSrgb(computeGlow(glowLayer, fringe, texture(uMasks, vUv))), 0.0, 1.0);
+      vec3 previewDither = (vec3(
+        hashNoise(gl_FragCoord.xy, 0.0),
+        hashNoise(gl_FragCoord.xy, 1.0),
+        hashNoise(gl_FragCoord.xy, 2.0)
+      ) - vec3(0.5)) * (0.45 / 255.0);
+      glow = clamp(glow + previewDither, 0.0, 1.0);
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
       vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * (0.58 + protect * 0.34)), 0.0, 1.0);
       float maxGlow = max(max(glow.r, glow.g), glow.b);
@@ -2331,6 +2381,10 @@ var PixelRunnerWebviewBundle = (() => {
       return vec3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
     }
 
+    float hashNoise(vec2 p, float channel) {
+      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
     vec3 applySaturation(vec3 color, float saturation) {
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
       return vec3(luma) + (color - vec3(luma)) * saturation;
@@ -2364,9 +2418,9 @@ var PixelRunnerWebviewBundle = (() => {
       float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
       float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
       float haloGate = clamp(
-        (1.0 - protect * 0.14) * (0.68 + haloEnergy * 0.92) * (0.78 + energyGate * 1.02),
+        (1.0 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
         0.0,
-        2.08
+        2.18
       );
       float coreScale = 0.62 + sourceCore * 1.08 - haloMix * 0.28;
       float haloScale = 1.28 + haloMix * 1.36;
@@ -2397,9 +2451,9 @@ var PixelRunnerWebviewBundle = (() => {
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       float highlightProtect = protect * uHighlightProtect * 0.86;
-      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.5);
-      float haloAnchor = pow(clamp(haloSource, 0.0, 1.0), 0.72);
-      float sourceAnchor = uSourceAnchorBase + coreAnchor * 0.54 + haloAnchor * uSourceAnchorAmount;
+      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.62);
+      float glowAnchor = pow(clamp(dot(glowLayer, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0), 0.42);
+      float sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
       float protectGain = clamp((1.0 - highlightProtect * 0.14) * sourceAnchor, 0.0, 2.4);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
@@ -2416,7 +2470,13 @@ var PixelRunnerWebviewBundle = (() => {
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
       glow = splitCoreAndHalo(glow, baseLuma, protect, source, haloSource);
-      outColor = vec4(clamp(linearToSrgb(glow), 0.0, 1.0), 1.0);
+      vec3 encoded = linearToSrgb(glow);
+      vec3 dither = (vec3(
+        hashNoise(gl_FragCoord.xy, 0.0),
+        hashNoise(gl_FragCoord.xy, 1.0),
+        hashNoise(gl_FragCoord.xy, 2.0)
+      ) - vec3(0.5)) * (0.75 / 255.0);
+      outColor = vec4(clamp(encoded + dither, 0.0, 1.0), 1.0);
     }
   `;
     const FULLSCREEN_TRIANGLE = new Float32Array([
@@ -2454,14 +2514,19 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return program;
     }
-    function createTexture(gl, width, height, data = null) {
+    function createTexture(gl, width, height, data = null, format = null) {
+      const textureFormat = format || {
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE
+      };
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      gl.texImage2D(gl.TEXTURE_2D, 0, textureFormat.internalFormat, width, height, 0, textureFormat.format, textureFormat.type, data);
       return texture;
     }
     function createTarget(gl, width, height) {
@@ -2488,6 +2553,17 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return data;
     }
+    function layerToFloat32(layer) {
+      const count = layer.width * layer.height;
+      const data = new Float32Array(count * 4);
+      for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+        data[index] = Math.max(0, layer.r[pixel]);
+        data[index + 1] = Math.max(0, layer.g[pixel]);
+        data[index + 2] = Math.max(0, layer.b[pixel]);
+        data[index + 3] = 1;
+      }
+      return data;
+    }
     function masksToRgba8(masks, width, height) {
       const count = width * height;
       const data = new Uint8Array(count * 4);
@@ -2511,6 +2587,12 @@ var PixelRunnerWebviewBundle = (() => {
         this.vertexBuffer = this.gl.createBuffer();
         this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
         this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
+        this.floatTextures = !!this.gl.getExtension("OES_texture_float_linear");
+        this.sourceFloatFormat = this.floatTextures ? {
+          internalFormat: this.gl.RGBA32F,
+          format: this.gl.RGBA,
+          type: this.gl.FLOAT
+        } : null;
       }
       bindProgram(program) {
         const gl = this.gl;
@@ -2593,6 +2675,9 @@ var PixelRunnerWebviewBundle = (() => {
         return new ImageData(pixels, target.width, target.height);
       }
       compose(baseImageData, glowLayer, masks, params, options = {}) {
+        if (!this.floatTextures) {
+          throw new Error("WebGL2 glow compositor requires float textures");
+        }
         const gl = this.gl;
         const { width, height } = baseImageData;
         const includeGlowLayer = options.includeGlowLayer !== false;
@@ -2603,7 +2688,7 @@ var PixelRunnerWebviewBundle = (() => {
         gl.disable(gl.DEPTH_TEST);
         gl.disable(gl.SCISSOR_TEST);
         const baseTexture = createTexture(gl, width, height, imageDataToRgba8(baseImageData));
-        const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
+        const glowTexture = this.floatTextures ? createTexture(gl, width, height, layerToFloat32(glowLayer), this.sourceFloatFormat) : createTexture(gl, width, height, layerToRgba8(glowLayer));
         const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
         const previewTarget = previewCanvas ? null : createTarget(gl, width, height);
         const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;
@@ -2702,6 +2787,10 @@ var PixelRunnerWebviewBundle = (() => {
       const sy = Math.min(layer.height - 1, Math.max(0, Math.round(y)));
       return channel[sy * layer.width + sx];
     }
+    function hashNoise(x, y, channel) {
+      const seed = Math.sin(x * 12.9898 + y * 78.233 + channel * 37.719) * 43758.5453;
+      return seed - Math.floor(seed);
+    }
     function getChromaticOffset(params) {
       const c = Math.max(0, Math.min(1, Number(params.composite.chromatic) || 0));
       const curved = Math.pow(c, 0.96);
@@ -2749,9 +2838,9 @@ var PixelRunnerWebviewBundle = (() => {
       const sourceCore = Math.pow(clamp(source, 0, 1), 0.58);
       const haloEnergy = Math.pow(clamp(haloSource, 0, 1), 0.72);
       const haloGate = clamp(
-        (1 - protect * 0.14) * (0.68 + haloEnergy * 0.92) * (0.78 + energyGate * 1.02),
+        (1 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
         0,
-        2.08
+        2.18
       );
       const coreScale = 0.62 + sourceCore * 1.08 - haloMix * 0.28;
       const haloScale = 1.28 + haloMix * 1.36;
@@ -2783,14 +2872,14 @@ var PixelRunnerWebviewBundle = (() => {
         const protect = masks.protectMask[pixel];
         const baseSat = Math.max(baseR, baseG, baseB) > 0 ? (Math.max(baseR, baseG, baseB) - Math.min(baseR, baseG, baseB)) / Math.max(baseR, baseG, baseB) : 0;
         const highlightProtect = protect * params.composite.highlightProtect * (0.5 + baseLuma * 0.78 + (1 - baseSat) * 0.08);
-        const radiusRatio = clamp((Number(params.radius) || 0) / 500, 0, 1);
-        const coreAnchor = Math.pow(clamp(source, 0, 1), 0.5);
-        const haloAnchor = Math.pow(clamp(haloSource, 0, 1), 0.72);
-        const sourceAnchor = 0.38 + radiusRatio * 0.08 + coreAnchor * 0.54 + haloAnchor * (0.78 - radiusRatio * 0.1);
-        const protectGain = clamp((1 - highlightProtect * 0.14) * sourceAnchor, 0, 2.4);
         const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
         const layerG = glowLayer.g[pixel];
         const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
+        const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
+        const coreAnchor = Math.pow(clamp(source, 0, 1), 0.62);
+        const glowAnchor = Math.pow(clamp(layerLuma, 0, 1), 0.42);
+        const sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
+        const protectGain = clamp((1 - highlightProtect * 0.14) * sourceAnchor, 0, 2.4);
         const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
         const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
         const edgeGate = source * (0.68 + (1 - protect) * 0.32);
@@ -2841,14 +2930,14 @@ var PixelRunnerWebviewBundle = (() => {
         const haloSource = masks.haloMask ? masks.haloMask[pixel] : source;
         const protect = masks.protectMask[pixel];
         const highlightProtect = protect * params.composite.highlightProtect * 0.86;
-        const radiusRatio = clamp((Number(params.radius) || 0) / 500, 0, 1);
-        const coreAnchor = Math.pow(clamp(source, 0, 1), 0.5);
-        const haloAnchor = Math.pow(clamp(haloSource, 0, 1), 0.72);
-        const sourceAnchor = 0.38 + radiusRatio * 0.08 + coreAnchor * 0.54 + haloAnchor * (0.78 - radiusRatio * 0.1);
-        const protectGain = clamp((1 - highlightProtect * 0.14) * sourceAnchor, 0, 2.4);
         const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
         const layerG = glowLayer.g[pixel];
         const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
+        const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
+        const coreAnchor = Math.pow(clamp(source, 0, 1), 0.62);
+        const glowAnchor = Math.pow(clamp(layerLuma, 0, 1), 0.42);
+        const sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
+        const protectGain = clamp((1 - highlightProtect * 0.14) * sourceAnchor, 0, 2.4);
         const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
         const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
         const edgeGate = source * (0.68 + (1 - protect) * 0.32);
@@ -2866,9 +2955,10 @@ var PixelRunnerWebviewBundle = (() => {
         const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, source, haloSource, params);
-        data[index] = Math.round(clamp(linearToSrgb(shapedR), 0, 1) * 255);
-        data[index + 1] = Math.round(clamp(linearToSrgb(shapedG), 0, 1) * 255);
-        data[index + 2] = Math.round(clamp(linearToSrgb(shapedB), 0, 1) * 255);
+        const dither = 0.75 / 255;
+        data[index] = Math.round(clamp(linearToSrgb(shapedR) + (hashNoise(x, y, 0) - 0.5) * dither, 0, 1) * 255);
+        data[index + 1] = Math.round(clamp(linearToSrgb(shapedG) + (hashNoise(x, y, 1) - 0.5) * dither, 0, 1) * 255);
+        data[index + 2] = Math.round(clamp(linearToSrgb(shapedB) + (hashNoise(x, y, 2) - 0.5) * dither, 0, 1) * 255);
         data[index + 3] = 255;
       }
       return out;
@@ -2882,6 +2972,7 @@ var PixelRunnerWebviewBundle = (() => {
   // src/webview/glow/preview-engine.js
   (function initGlowPreviewEngineModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
+    const GLOW_ALGORITHM_VERSION = "engine-bloom-float-v3";
     function createCanvas(width, height) {
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.floor(width));
@@ -2964,6 +3055,7 @@ var PixelRunnerWebviewBundle = (() => {
     function getSourceCacheKey(params, width, height) {
       const source = params.source;
       return [
+        GLOW_ALGORITHM_VERSION,
         width,
         height,
         params.style,
@@ -2987,6 +3079,7 @@ var PixelRunnerWebviewBundle = (() => {
     function getBlurCacheKey(params, sourceKey) {
       const blur = params.blur;
       return [
+        GLOW_ALGORITHM_VERSION,
         sourceKey,
         params.radius,
         blur.mipCount,

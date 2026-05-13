@@ -1,5 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
+  const GLOW_ALGORITHM_VERSION = "engine-bloom-float-v3";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");
@@ -92,6 +93,7 @@
   function getSourceCacheKey(params, width, height) {
     const source = params.source;
     return [
+      GLOW_ALGORITHM_VERSION,
       width,
       height,
       params.style,
@@ -116,6 +118,7 @@
   function getBlurCacheKey(params, sourceKey) {
     const blur = params.blur;
     return [
+      GLOW_ALGORITHM_VERSION,
       sourceKey,
       params.radius,
       blur.mipCount,

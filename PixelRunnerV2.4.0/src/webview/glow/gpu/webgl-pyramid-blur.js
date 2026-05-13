@@ -186,12 +186,34 @@
     return data;
   }
 
+  function sourceLayerToFloat32(layer) {
+    const count = layer.width * layer.height;
+    const data = new Float32Array(count * 4);
+    for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+      data[index] = Math.max(0, layer.r[pixel]);
+      data[index + 1] = Math.max(0, layer.g[pixel]);
+      data[index + 2] = Math.max(0, layer.b[pixel]);
+      data[index + 3] = 1;
+    }
+    return data;
+  }
+
   function rgba8ToLayer(data, width, height) {
     const out = createLayer(width, height);
     for (let pixel = 0, index = 0; pixel < out.r.length; pixel += 1, index += 4) {
       out.r[pixel] = data[index] / 255;
       out.g[pixel] = data[index + 1] / 255;
       out.b[pixel] = data[index + 2] / 255;
+    }
+    return out;
+  }
+
+  function rgbaFloatToLayer(data, width, height) {
+    const out = createLayer(width, height);
+    for (let pixel = 0, index = 0; pixel < out.r.length; pixel += 1, index += 4) {
+      out.r[pixel] = Math.max(0, data[index]);
+      out.g[pixel] = Math.max(0, data[index + 1]);
+      out.b[pixel] = Math.max(0, data[index + 2]);
     }
     return out;
   }
@@ -237,6 +259,13 @@
             internalFormat: this.gl.RGBA16F,
             format: this.gl.RGBA,
             type: this.gl.HALF_FLOAT
+          }
+        : null;
+      this.sourceFloatFormat = this.floatTargets
+        ? {
+            internalFormat: this.gl.RGBA32F,
+            format: this.gl.RGBA,
+            type: this.gl.FLOAT
           }
         : null;
     }
@@ -317,7 +346,7 @@
 
     finalComposite(combined, pyramidWeight, width, height) {
       const gl = this.gl;
-      const target = createTarget(gl, width, height);
+      const target = createTarget(gl, width, height, this.targetFormat);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.final;
       this.bindProgram(program);
@@ -328,6 +357,9 @@
     }
 
     buildMultiScaleGlow(sourceLayer, params) {
+      if (!this.floatTargets) {
+        throw new Error("WebGL2 glow blur requires float render targets");
+      }
       const width = sourceLayer.width;
       const height = sourceLayer.height;
       const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
@@ -345,7 +377,9 @@
       gl.disable(gl.SCISSOR_TEST);
       this.allocatedTargets = [];
 
-      const currentTexture = createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
+      const currentTexture = this.floatTargets
+        ? createTexture(gl, width, height, sourceLayerToFloat32(sourceLayer), this.sourceFloatFormat)
+        : createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
       try {
         let current = { width, height, texture: currentTexture, framebuffer: null };
         const levels = [];
@@ -370,12 +404,20 @@
           width,
           height
         );
-        const pixels = new Uint8Array(width * height * 4);
         gl.bindFramebuffer(gl.FRAMEBUFFER, finalTarget.framebuffer);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        let glowLayer;
+        if (this.floatTargets) {
+          const pixels = new Float32Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+          glowLayer = rgbaFloatToLayer(pixels, width, height);
+        } else {
+          const pixels = new Uint8Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          glowLayer = rgba8ToLayer(pixels, width, height);
+        }
 
         return {
-          glowLayer: rgba8ToLayer(pixels, width, height),
+          glowLayer,
           levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })) },
           backend: "webgl2"
         };

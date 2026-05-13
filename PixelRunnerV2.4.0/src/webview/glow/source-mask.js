@@ -186,13 +186,15 @@
         0,
         1
       );
-      const nearClip = smoothstep(0.9, 1.0, maxChannel);
-      const clippingDetail = clamp(specularScore * 0.62 + contrastScore * 0.26 + sat * 0.18, 0, 1);
+      const nearClip = smoothstep(0.94, 1.0, maxChannel);
+      const clippingDetail = clamp(specularScore * 0.78 + sat * 0.16, 0, 1);
       const protection = clamp(protectionBase * (1 - nearClip * (0.18 + clippingDetail * 0.38)), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
       const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
       let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      const neutralClothReject = whiteFlat * (1 - specularScore * 0.58) * (1 - nearClip * 0.55) * (1 - colorReflection * 0.45);
       emissionEnergy *= 1 - protection * 0.86;
+      emissionEnergy *= 1 - neutralClothReject * 0.68;
       emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
       emissionEnergy = clamp(Math.pow(emissionEnergy, 0.96) * 1.26, 0, 1);
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);

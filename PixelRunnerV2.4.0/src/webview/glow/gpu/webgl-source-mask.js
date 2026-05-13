@@ -168,12 +168,14 @@
         dark * uDarkProtect +
         midtoneReject * 0.62
       );
-      float nearClip = smooth01(0.9, 1.0, maxChannel);
-      float clippingDetail = saturate(specularScore * 0.62 + contrastScore * 0.26 + sat * 0.18);
+      float nearClip = smooth01(0.94, 1.0, maxChannel);
+      float clippingDetail = saturate(specularScore * 0.78 + sat * 0.16);
       float protection = saturate(protectionBase * (1.0 - nearClip * (0.18 + clippingDetail * 0.38)));
       float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
       float emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.58) * (1.0 - nearClip * 0.55) * (1.0 - colorReflection * 0.45);
       emissionEnergy *= 1.0 - protection * 0.86;
+      emissionEnergy *= 1.0 - neutralClothReject * 0.68;
       emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
       emissionEnergy = saturate(pow(emissionEnergy, 0.96) * 1.26);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);

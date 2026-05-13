@@ -55,6 +55,10 @@
       return vec3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
     }
 
+    float hashNoise(vec2 p, float channel) {
+      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
     vec3 applySaturation(vec3 color, float saturation) {
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
       return vec3(luma) + (color - vec3(luma)) * saturation;
@@ -88,9 +92,9 @@
       float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
       float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
       float haloGate = clamp(
-        (1.0 - protect * 0.14) * (0.68 + haloEnergy * 0.92) * (0.78 + energyGate * 1.02),
+        (1.0 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
         0.0,
-        2.08
+        2.18
       );
       float coreScale = 0.62 + sourceCore * 1.08 - haloMix * 0.28;
       float haloScale = 1.28 + haloMix * 1.36;
@@ -108,9 +112,9 @@
       float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
       float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.5);
-      float haloAnchor = pow(clamp(haloSource, 0.0, 1.0), 0.72);
-      float sourceAnchor = uSourceAnchorBase + coreAnchor * 0.54 + haloAnchor * uSourceAnchorAmount;
+      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.62);
+      float glowAnchor = pow(clamp(dot(glowLayer, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0), 0.42);
+      float sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
       float protectGain = clamp((1.0 - highlightProtect * 0.14) * sourceAnchor, 0.0, 2.4);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
@@ -148,6 +152,12 @@
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       vec3 glow = clamp(linearToSrgb(computeGlow(glowLayer, fringe, texture(uMasks, vUv))), 0.0, 1.0);
+      vec3 previewDither = (vec3(
+        hashNoise(gl_FragCoord.xy, 0.0),
+        hashNoise(gl_FragCoord.xy, 1.0),
+        hashNoise(gl_FragCoord.xy, 2.0)
+      ) - vec3(0.5)) * (0.45 / 255.0);
+      glow = clamp(glow + previewDither, 0.0, 1.0);
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
       vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * (0.58 + protect * 0.34)), 0.0, 1.0);
       float maxGlow = max(max(glow.r, glow.g), glow.b);
@@ -202,6 +212,10 @@
       return vec3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
     }
 
+    float hashNoise(vec2 p, float channel) {
+      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
     vec3 applySaturation(vec3 color, float saturation) {
       float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
       return vec3(luma) + (color - vec3(luma)) * saturation;
@@ -235,9 +249,9 @@
       float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
       float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
       float haloGate = clamp(
-        (1.0 - protect * 0.14) * (0.68 + haloEnergy * 0.92) * (0.78 + energyGate * 1.02),
+        (1.0 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
         0.0,
-        2.08
+        2.18
       );
       float coreScale = 0.62 + sourceCore * 1.08 - haloMix * 0.28;
       float haloScale = 1.28 + haloMix * 1.36;
@@ -268,9 +282,9 @@
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       float highlightProtect = protect * uHighlightProtect * 0.86;
-      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.5);
-      float haloAnchor = pow(clamp(haloSource, 0.0, 1.0), 0.72);
-      float sourceAnchor = uSourceAnchorBase + coreAnchor * 0.54 + haloAnchor * uSourceAnchorAmount;
+      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.62);
+      float glowAnchor = pow(clamp(dot(glowLayer, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0), 0.42);
+      float sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
       float protectGain = clamp((1.0 - highlightProtect * 0.14) * sourceAnchor, 0.0, 2.4);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
@@ -287,7 +301,13 @@
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
       glow = splitCoreAndHalo(glow, baseLuma, protect, source, haloSource);
-      outColor = vec4(clamp(linearToSrgb(glow), 0.0, 1.0), 1.0);
+      vec3 encoded = linearToSrgb(glow);
+      vec3 dither = (vec3(
+        hashNoise(gl_FragCoord.xy, 0.0),
+        hashNoise(gl_FragCoord.xy, 1.0),
+        hashNoise(gl_FragCoord.xy, 2.0)
+      ) - vec3(0.5)) * (0.75 / 255.0);
+      outColor = vec4(clamp(encoded + dither, 0.0, 1.0), 1.0);
     }
   `;
 
@@ -326,14 +346,19 @@
     return program;
   }
 
-  function createTexture(gl, width, height, data = null) {
+  function createTexture(gl, width, height, data = null, format = null) {
+    const textureFormat = format || {
+      internalFormat: gl.RGBA8,
+      format: gl.RGBA,
+      type: gl.UNSIGNED_BYTE
+    };
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, textureFormat.internalFormat, width, height, 0, textureFormat.format, textureFormat.type, data);
     return texture;
   }
 
@@ -364,6 +389,19 @@
     return data;
   }
 
+  function layerToFloat32(layer) {
+    const count = layer.width * layer.height;
+    const data = new Float32Array(count * 4);
+    for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+      data[index] = Math.max(0, layer.r[pixel]);
+      data[index + 1] = Math.max(0, layer.g[pixel]);
+      data[index + 2] = Math.max(0, layer.b[pixel]);
+      data[index + 3] = 1;
+    }
+    return data;
+  }
+
+
   function masksToRgba8(masks, width, height) {
     const count = width * height;
     const data = new Uint8Array(count * 4);
@@ -388,6 +426,14 @@
       this.vertexBuffer = this.gl.createBuffer();
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
       this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
+      this.floatTextures = !!this.gl.getExtension("OES_texture_float_linear");
+      this.sourceFloatFormat = this.floatTextures
+        ? {
+            internalFormat: this.gl.RGBA32F,
+            format: this.gl.RGBA,
+            type: this.gl.FLOAT
+          }
+        : null;
     }
 
     bindProgram(program) {
@@ -477,6 +523,9 @@
     }
 
     compose(baseImageData, glowLayer, masks, params, options = {}) {
+      if (!this.floatTextures) {
+        throw new Error("WebGL2 glow compositor requires float textures");
+      }
       const gl = this.gl;
       const { width, height } = baseImageData;
       const includeGlowLayer = options.includeGlowLayer !== false;
@@ -488,7 +537,9 @@
       gl.disable(gl.SCISSOR_TEST);
 
       const baseTexture = createTexture(gl, width, height, imageDataToRgba8(baseImageData));
-      const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
+      const glowTexture = this.floatTextures
+        ? createTexture(gl, width, height, layerToFloat32(glowLayer), this.sourceFloatFormat)
+        : createTexture(gl, width, height, layerToRgba8(glowLayer));
       const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
       const previewTarget = previewCanvas ? null : createTarget(gl, width, height);
       const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;
