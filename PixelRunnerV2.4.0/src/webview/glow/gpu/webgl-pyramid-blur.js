@@ -124,19 +124,24 @@
     return program;
   }
 
-  function createTexture(gl, width, height, data = null) {
+  function createTexture(gl, width, height, data = null, format = null) {
+    const textureFormat = format || {
+      internalFormat: gl.RGBA8,
+      format: gl.RGBA,
+      type: gl.UNSIGNED_BYTE
+    };
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, textureFormat.internalFormat, width, height, 0, textureFormat.format, textureFormat.type, data);
     return texture;
   }
 
-  function createTarget(gl, width, height) {
-    const texture = createTexture(gl, width, height);
+  function createTarget(gl, width, height, format = null) {
+    const texture = createTexture(gl, width, height, null, format);
     const framebuffer = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
@@ -184,6 +189,17 @@
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
       this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
       this.framebuffer = this.gl.createFramebuffer();
+      this.floatTargets = !!(
+        this.gl.getExtension("EXT_color_buffer_float") &&
+        this.gl.getExtension("OES_texture_float_linear")
+      );
+      this.targetFormat = this.floatTargets
+        ? {
+            internalFormat: this.gl.RGBA16F,
+            format: this.gl.RGBA,
+            type: this.gl.HALF_FLOAT
+          }
+        : null;
     }
 
     bindProgram(program) {
@@ -211,7 +227,7 @@
 
     downsample(source, width, height) {
       const gl = this.gl;
-      const target = createTarget(gl, Math.max(1, Math.floor(width / 2)), Math.max(1, Math.floor(height / 2)));
+      const target = createTarget(gl, Math.max(1, Math.floor(width / 2)), Math.max(1, Math.floor(height / 2)), this.targetFormat);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.downsample;
       this.bindProgram(program);
@@ -223,7 +239,7 @@
 
     kawase(sourceTarget, offset) {
       const gl = this.gl;
-      const target = createTarget(gl, sourceTarget.width, sourceTarget.height);
+      const target = createTarget(gl, sourceTarget.width, sourceTarget.height, this.targetFormat);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.kawase;
       this.bindProgram(program);
@@ -236,7 +252,7 @@
 
     upsampleAdd(baseTarget, addTarget, weight) {
       const gl = this.gl;
-      const target = createTarget(gl, addTarget.width, addTarget.height);
+      const target = createTarget(gl, addTarget.width, addTarget.height, this.targetFormat);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.upsampleAdd;
       this.bindProgram(program);

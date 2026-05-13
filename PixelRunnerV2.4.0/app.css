@@ -1547,7 +1547,9 @@ button {
 }
 
 .glow-base-image,
-.glow-overlay-image {
+.glow-overlay-image,
+#glowPreviewResultImage,
+#glowPreviewResultCanvas {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1569,6 +1571,13 @@ button {
   opacity: 1;
 }
 
+.glow-base-image:not([src]),
+.glow-overlay-image:not([src]),
+#glowPreviewResultImage:not(.is-active),
+#glowPreviewResultCanvas:not(.is-active) {
+  display: none;
+}
+
 .glow-lab-image {
   display: block;
   width: 100%;
@@ -1584,7 +1593,7 @@ button {
 
 #glowPreviewResultImage,
 #glowPreviewResultCanvas {
-  display: none;
+  z-index: 1;
 }
 
 .glow-preview-tools {

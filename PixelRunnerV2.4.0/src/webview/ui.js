@@ -433,7 +433,7 @@
 
     const drawGlowPreviewToCanvas = (glowResult) => {
       if (!glowPreviewResultCanvas || !glowResult) return false;
-      const imageData = glowResult.finalSimImageData || glowResult.previewImageData;
+      const imageData = glowResult.previewImageData || glowResult.finalSimImageData;
       if (!imageData || !imageData.width || !imageData.height) return false;
       const width = Number(imageData.width) || 1;
       const height = Number(imageData.height) || 1;
@@ -442,6 +442,8 @@
       const ctx = glowPreviewResultCanvas.getContext("2d", { alpha: true, desynchronized: true });
       if (!ctx) return false;
       ctx.putImageData(imageData, 0, 0);
+      glowPreviewResultCanvas.classList.add("is-active");
+      if (glowPreviewResultImage) glowPreviewResultImage.classList.remove("is-active");
       return true;
     };
 
@@ -509,9 +511,13 @@
       if (glowPreviewResultCanvas) {
         const ctx = glowPreviewResultCanvas.getContext("2d");
         if (ctx) ctx.clearRect(0, 0, glowPreviewResultCanvas.width || 0, glowPreviewResultCanvas.height || 0);
+        glowPreviewResultCanvas.classList.remove("is-active");
       }
       if (glowPreviewGlowImage) glowPreviewGlowImage.removeAttribute("src");
-      if (glowPreviewResultImage) glowPreviewResultImage.removeAttribute("src");
+      if (glowPreviewResultImage) {
+        glowPreviewResultImage.removeAttribute("src");
+        glowPreviewResultImage.classList.remove("is-active");
+      }
       glowPreviewHasContent = false;
       resetGlowPreviewTransform();
       if (glowPreviewMeta) glowPreviewMeta.textContent = "Glow Lab 等待捕获图像";
@@ -520,13 +526,23 @@
     const updateInlineGlowPreview = (asset, glowResult) => {
       if (!asset || !glowResult) return;
       const sourceDataUrl = String(asset.dataUrl || "").trim();
-      if (glowPreviewBaseImage) glowPreviewBaseImage.src = String(glowResult.baseDataUrl || "").trim() || sourceDataUrl;
-      if (glowPreviewGlowImage) {
-        glowPreviewGlowImage.src = String(glowResult.glowLayerDataUrl || "").trim();
+      if (glowPreviewBaseImage) glowPreviewBaseImage.removeAttribute("src");
+      if (glowPreviewGlowImage) glowPreviewGlowImage.removeAttribute("src");
+      if (glowPreviewResultImage) {
+        glowPreviewResultImage.removeAttribute("src");
+        glowPreviewResultImage.classList.remove("is-active");
       }
-      const drawn = !glowPreviewGlowImage && drawGlowPreviewToCanvas(glowResult);
-      if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage && !glowPreviewGlowImage) {
-        glowPreviewResultImage.src = String(glowResult.finalSimDataUrl || glowResult.previewDataUrl || "").trim() || sourceDataUrl;
+      let drawn = false;
+      if (glowResult.previewRenderedOnGpu && glowPreviewResultCanvas) {
+        glowPreviewResultCanvas.classList.add("is-active");
+        drawn = true;
+      } else {
+        drawn = drawGlowPreviewToCanvas(glowResult);
+      }
+      if (!drawn && !glowResult.previewRenderedOnGpu && glowPreviewResultImage) {
+        glowPreviewResultImage.src = String(glowResult.previewDataUrl || glowResult.finalSimDataUrl || "").trim() || sourceDataUrl;
+        glowPreviewResultImage.classList.add("is-active");
+        if (glowPreviewResultCanvas) glowPreviewResultCanvas.classList.remove("is-active");
       }
       if (!glowPreviewHasContent) {
         resetGlowPreviewTransform();
@@ -586,7 +602,6 @@
           includeDebug: false,
           includeGlowLayer: true,
           returnImageData: true,
-          previewTargetCanvas: glowPreviewResultCanvas,
           gpuOnly: gpuOnlyEligible,
           previewQuality: isInteractive ? 0.76 : 0.82,
           processMaxDimension: targetProcessDimension
@@ -599,7 +614,6 @@
           includeDebug: false,
           includeGlowLayer: true,
           returnImageData: true,
-          previewTargetCanvas: glowPreviewResultCanvas,
           gpuOnly: false,
           previewQuality: isInteractive ? 0.76 : 0.82,
           processMaxDimension: targetProcessDimension
