@@ -207,9 +207,9 @@
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
       const warmColorHint = smoothstep(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
       const chromaKeep = clamp(
-        0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + chromaBoostAmount * 0.25 - neutralHighlight * 0.1,
-        0.14,
-        0.95
+        0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + chromaBoostAmount * 0.3 - neutralHighlight * 0.06,
+        0.18,
+        0.98
       );
       const whiteEnergy = brightness;
       const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;

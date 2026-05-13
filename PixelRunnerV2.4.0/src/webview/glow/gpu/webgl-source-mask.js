@@ -185,7 +185,7 @@
       emissionEnergy = saturate(pow(emissionEnergy, 1.04) * 1.18);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
       float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
-      float chromaKeep = clamp(0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + uChromaBoost * 0.25 - neutralHighlight * 0.1, 0.14, 0.95);
+      float chromaKeep = clamp(0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + uChromaBoost * 0.3 - neutralHighlight * 0.06, 0.18, 0.98);
       vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
       outSource = vec4(emissionColor * emissionEnergy, 1.0);
       outMasks = vec4(lum, protection, dark, emissionEnergy);

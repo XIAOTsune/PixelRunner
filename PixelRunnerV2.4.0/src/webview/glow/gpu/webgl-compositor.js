@@ -156,7 +156,7 @@
       float baseMax = max(max(base.r, base.g), base.b);
       float baseMin = min(min(base.r, base.g), base.b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
-      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.88 + baseSat * 0.22), 0.86, 1.0);
+      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.84 + baseSat * 0.58), 0.8, 1.0);
       vec3 result = mix(screen, soft, uSoftAddMix) * colorProtect + base.rgb * (1.0 - colorProtect);
       outColor = vec4(clamp(result, 0.0, 1.0), base.a);
     }

@@ -148,7 +148,7 @@
       const softB = clamp(baseB + glowSrgbB * (1 - baseB * 0.62), 0, 1);
       const mix = params.composite.softAddMix;
       const maxGlow = Math.max(glowSrgbR, glowSrgbG, glowSrgbB);
-      const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.88 + baseSat * 0.22), 0.86, 1);
+      const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.84 + baseSat * 0.58), 0.8, 1);
       const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
       const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
       const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);

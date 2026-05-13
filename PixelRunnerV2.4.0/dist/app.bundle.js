@@ -638,8 +638,9 @@ var PixelRunnerWebviewBundle = (() => {
       const wideRadiusRatio = Math.max(0, (radius - 250) / 250);
       const thresholdRatio = threshold / 100;
       const thresholdSelectivity = 1 - thresholdRatio;
-      const thresholdPrecision = Math.pow(thresholdSelectivity, 0.72);
+      const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.45);
       const thresholdOpen = thresholdRatio;
+      const thresholdKneeOpen = Math.pow(thresholdRatio, 1.22);
       const exposureRatio = brightnessBias / 100;
       const spreadRatio = Math.pow(radiusRatio, 0.92);
       const spreadAir = Math.pow(radiusRatio, 1.15);
@@ -684,7 +685,7 @@ var PixelRunnerWebviewBundle = (() => {
           ),
           thresholdHigh: clamp(0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.96, 0.58),
           thresholdKnee: clamp(
-            0.026 + thresholdOpen * 0.11 + legacyRadiusRatio * 0.012 + spreadRatio * 0.018 + Math.max(0, exposureRatio) * 0.02,
+            0.022 + thresholdKneeOpen * 0.12 + legacyRadiusRatio * 0.01 + spreadRatio * 0.014 + Math.max(0, exposureRatio) * 0.018,
             0.025,
             0.17,
             0.08
@@ -697,7 +698,7 @@ var PixelRunnerWebviewBundle = (() => {
           specularLow: 0.06,
           specularHigh: 0.28,
           lowEnergyCutoff: 0.038,
-          chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22 + Math.max(0, exposureRatio) * 0.03, 0, 0.62, preset.chromaBoost),
+          chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.24 + Math.max(0, exposureRatio) * 0.03, 0, 0.68, preset.chromaBoost),
           whiteProtect: preset.whiteProtect,
           skinProtect: preset.skinProtect,
           darkProtect: preset.darkProtect
@@ -719,7 +720,7 @@ var PixelRunnerWebviewBundle = (() => {
           saturation: clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
           highlightProtect: clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
           shadowProtect: preset.darkProtect,
-          colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
+          colorProtect: clamp(0.24 + strengthRatio * 0.1 + spreadRatio * 0.025, 0.22, 0.48, 0.3),
           // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
           shoulder: clamp(0.16 + strengthRatio * 0.028 + spreadAir * 0.012 + Math.max(0, exposureRatio) * 4e-3, 0.12, 0.28, 0.18),
           colorShift: colorShift / 100,
@@ -930,9 +931,9 @@ var PixelRunnerWebviewBundle = (() => {
         const neutralHighlight = brightPass * (1 - sat) * smoothstep2(0.82, 1, maxChannel);
         const warmColorHint = smoothstep2(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
         const chromaKeep = clamp(
-          0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + chromaBoostAmount * 0.25 - neutralHighlight * 0.1,
-          0.14,
-          0.95
+          0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + chromaBoostAmount * 0.3 - neutralHighlight * 0.06,
+          0.18,
+          0.98
         );
         const whiteEnergy = brightness;
         const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;
@@ -1462,7 +1463,7 @@ var PixelRunnerWebviewBundle = (() => {
       emissionEnergy = saturate(pow(emissionEnergy, 1.04) * 1.18);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
       float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
-      float chromaKeep = clamp(0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + uChromaBoost * 0.25 - neutralHighlight * 0.1, 0.14, 0.95);
+      float chromaKeep = clamp(0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + uChromaBoost * 0.3 - neutralHighlight * 0.06, 0.18, 0.98);
       vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
       outSource = vec4(emissionColor * emissionEnergy, 1.0);
       outMasks = vec4(lum, protection, dark, emissionEnergy);
@@ -2365,7 +2366,7 @@ var PixelRunnerWebviewBundle = (() => {
       float baseMax = max(max(base.r, base.g), base.b);
       float baseMin = min(min(base.r, base.g), base.b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
-      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.88 + baseSat * 0.22), 0.86, 1.0);
+      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.84 + baseSat * 0.58), 0.8, 1.0);
       vec3 result = mix(screen, soft, uSoftAddMix) * colorProtect + base.rgb * (1.0 - colorProtect);
       outColor = vec4(clamp(result, 0.0, 1.0), base.a);
     }
@@ -2927,7 +2928,7 @@ var PixelRunnerWebviewBundle = (() => {
         const softB = clamp(baseB + glowSrgbB * (1 - baseB * 0.62), 0, 1);
         const mix = params.composite.softAddMix;
         const maxGlow = Math.max(glowSrgbR, glowSrgbG, glowSrgbB);
-        const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.88 + baseSat * 0.22), 0.86, 1);
+        const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.84 + baseSat * 0.58), 0.8, 1);
         const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
         const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
         const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);
@@ -2991,7 +2992,7 @@ var PixelRunnerWebviewBundle = (() => {
   // src/webview/glow/preview-engine.js
   (function initGlowPreviewEngineModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
-    const GLOW_ALGORITHM_VERSION = "engine-bloom-compositor-unmask-v9";
+    const GLOW_ALGORITHM_VERSION = "engine-bloom-threshold-color-v10";
     function createCanvas(width, height) {
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.floor(width));
@@ -3397,7 +3398,7 @@ var PixelRunnerWebviewBundle = (() => {
       colorHex: "#ffd27a",
       chromatic: 0
     };
-    const GLOW_THRESHOLD_CURVE_EXPONENT = 1.8;
+    const GLOW_THRESHOLD_CURVE_EXPONENT = 2.15;
     const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
     const GLOW_STYLE_LABELS = {
       none: "无",

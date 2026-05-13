@@ -123,8 +123,9 @@
     const thresholdRatio = threshold / 100;
     // Lower UI threshold is the precision end: fewer, more clipping-like highlights are allowed to emit.
     const thresholdSelectivity = 1 - thresholdRatio;
-    const thresholdPrecision = Math.pow(thresholdSelectivity, 0.72);
+    const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.45);
     const thresholdOpen = thresholdRatio;
+    const thresholdKneeOpen = Math.pow(thresholdRatio, 1.22);
     const exposureRatio = brightnessBias / 100;
     const spreadRatio = Math.pow(radiusRatio, 0.92);
     const spreadAir = Math.pow(radiusRatio, 1.15);
@@ -179,7 +180,7 @@
         ),
         thresholdHigh: clamp(0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.96, 0.58),
         thresholdKnee: clamp(
-          0.026 + thresholdOpen * 0.11 + legacyRadiusRatio * 0.012 + spreadRatio * 0.018 + Math.max(0, exposureRatio) * 0.02,
+          0.022 + thresholdKneeOpen * 0.12 + legacyRadiusRatio * 0.01 + spreadRatio * 0.014 + Math.max(0, exposureRatio) * 0.018,
           0.025,
           0.17,
           0.08
@@ -192,7 +193,7 @@
         specularLow: 0.06,
         specularHigh: 0.28,
         lowEnergyCutoff: 0.038,
-        chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22 + Math.max(0, exposureRatio) * 0.03, 0, 0.62, preset.chromaBoost),
+        chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.24 + Math.max(0, exposureRatio) * 0.03, 0, 0.68, preset.chromaBoost),
         whiteProtect: preset.whiteProtect,
         skinProtect: preset.skinProtect,
         darkProtect: preset.darkProtect
@@ -214,7 +215,7 @@
         saturation: clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
         highlightProtect: clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
         shadowProtect: preset.darkProtect,
-        colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
+        colorProtect: clamp(0.24 + strengthRatio * 0.1 + spreadRatio * 0.025, 0.22, 0.48, 0.3),
         // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
         shoulder: clamp(0.16 + strengthRatio * 0.028 + spreadAir * 0.012 + Math.max(0, exposureRatio) * 0.004, 0.12, 0.28, 0.18),
         colorShift: colorShift / 100,
