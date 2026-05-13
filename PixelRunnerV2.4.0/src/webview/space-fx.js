@@ -12,7 +12,8 @@
       feather: 54,
       angle: 90,
       detail: 58,
-      glow: 12
+      glow: 12,
+      brush: 42
     },
     airflow: {
       label: "气流",
@@ -21,7 +22,8 @@
       feather: 48,
       angle: 0,
       detail: 70,
-      glow: 26
+      glow: 26,
+      brush: 46
     },
     slash: {
       label: "刀光",
@@ -30,7 +32,8 @@
       feather: 38,
       angle: -24,
       detail: 54,
-      glow: 56
+      glow: 56,
+      brush: 34
     }
   };
 
@@ -48,6 +51,8 @@
     centerX: 0.5,
     centerY: 0.5,
     pathPoints: [],
+    pathVersion: 0,
+    pathCache: null,
     drawMode: false,
     isDrawing: false,
     activePointerId: null,
@@ -154,7 +159,8 @@
       ["spaceFxFeather", "feather"],
       ["spaceFxAngle", "angle"],
       ["spaceFxDetail", "detail"],
-      ["spaceFxGlow", "glow"]
+      ["spaceFxGlow", "glow"],
+      ["spaceFxBrush", "brush"]
     ];
     pairs.forEach(([prefix, key]) => {
       const input = getById(`${prefix}Input`);
@@ -185,7 +191,8 @@
       feather: clamp(getById("spaceFxFeatherInput")?.value, 0, 100, state.params.feather),
       angle: clamp(getById("spaceFxAngleInput")?.value, -180, 180, state.params.angle),
       detail: clamp(getById("spaceFxDetailInput")?.value, 0, 100, state.params.detail),
-      glow: clamp(getById("spaceFxGlowInput")?.value, 0, 100, state.params.glow)
+      glow: clamp(getById("spaceFxGlowInput")?.value, 0, 100, state.params.glow),
+      brush: clamp(getById("spaceFxBrushInput")?.value, 8, 120, state.params.brush)
     };
     syncControls();
   }
@@ -257,9 +264,19 @@
     };
   }
 
-  function getPathInfo(x, y, width, height) {
+  function markPathChanged() {
+    state.pathVersion += 1;
+    state.pathCache = null;
+  }
+
+  function getPathSegments(width, height) {
     if (!state.pathPoints || state.pathPoints.length < 2) return null;
-    let best = null;
+    const cache = state.pathCache;
+    if (cache && cache.width === width && cache.height === height && cache.version === state.pathVersion) {
+      return cache;
+    }
+    const segments = [];
+    let totalLength = 0;
     for (let i = 0; i < state.pathPoints.length - 1; i += 1) {
       const a = state.pathPoints[i];
       const b = state.pathPoints[i + 1];
@@ -271,16 +288,47 @@
       const vy = by - ay;
       const lengthSq = vx * vx + vy * vy;
       if (lengthSq < 1) continue;
-      const t = clamp(((x - ax) * vx + (y - ay) * vy) / lengthSq, 0, 1, 0);
-      const px = ax + vx * t;
-      const py = ay + vy * t;
+      const length = Math.sqrt(lengthSq);
+      segments.push({
+        ax,
+        ay,
+        bx,
+        by,
+        vx,
+        vy,
+        lengthSq,
+        length,
+        startLength: totalLength,
+        index: i
+      });
+      totalLength += length;
+    }
+    state.pathCache = {
+      width,
+      height,
+      version: state.pathVersion,
+      segments,
+      totalLength: Math.max(1, totalLength)
+    };
+    return state.pathCache;
+  }
+
+  function getPathInfo(x, y, width, height) {
+    if (!state.pathPoints || state.pathPoints.length < 2) return null;
+    const path = getPathSegments(width, height);
+    if (!path || !path.segments.length) return null;
+    let best = null;
+    for (let i = 0; i < path.segments.length; i += 1) {
+      const segment = path.segments[i];
+      const t = clamp(((x - segment.ax) * segment.vx + (y - segment.ay) * segment.vy) / segment.lengthSq, 0, 1, 0);
+      const px = segment.ax + segment.vx * t;
+      const py = segment.ay + segment.vy * t;
       const dx = x - px;
       const dy = y - py;
       const distSq = dx * dx + dy * dy;
       if (!best || distSq < best.distSq) {
-        const length = Math.sqrt(lengthSq);
-        const dirX = vx / length;
-        const dirY = vy / length;
+        const dirX = segment.vx / segment.length;
+        const dirY = segment.vy / segment.length;
         const normalX = -dirY;
         const normalY = dirX;
         const signed = dx * normalX + dy * normalY;
@@ -289,7 +337,8 @@
           distance: Math.sqrt(distSq),
           signed,
           t,
-          segmentIndex: i,
+          progress: clamp((segment.startLength + segment.length * t) / path.totalLength, 0, 1, 0),
+          segmentIndex: segment.index,
           dirX,
           dirY,
           normalX,
@@ -310,23 +359,26 @@
     const feather = clamp(params.feather, 0, 100, 48) / 100;
     const detail = clamp(params.detail, 0, 100, 58) / 100;
     const glow = clamp(params.glow, 0, 100, 12) / 100;
+    const brushScale = clamp(params.brush, 8, 120, 42) / 42;
     const widthPx = maxSide * (effect === "slash"
       ? (0.012 + range * 0.068)
       : effect === "airflow"
         ? (0.028 + range * 0.12)
-        : (0.04 + range * 0.15));
+        : (0.04 + range * 0.15)) * (0.55 + brushScale * 0.45);
     const outerPx = widthPx * (1.65 + feather * 2.2);
     const mask = 1 - smoothstep(widthPx, outerPx, info.distance);
     if (mask <= 0) return { dx: 0, dy: 0, mask: 0, light: 0, line: 0 };
     const strengthPx = maxSide * (0.004 + intensity * 0.04);
     const signedNorm = info.signed / Math.max(1, widthPx);
     const side = signedNorm >= 0 ? 1 : -1;
-    const phase = info.segmentIndex * 0.77 + info.t * 7.4;
-    const texture = (fbm(x * (0.01 + detail * 0.018), y * (0.01 + detail * 0.018) + phase) - 0.5) * 2;
+    const progress = Number(info.progress) || 0;
+    const phase = progress * (6.5 + detail * 10);
+    const textureScale = 0.004 + detail * 0.009;
+    const texture = (fbm(x * textureScale + phase * 0.24, y * textureScale * 0.74 + phase * 0.18) - 0.5) * 2;
     const core = (1 - smoothstep(0.05, 0.88, Math.abs(signedNorm))) * mask;
 
     if (effect === "airflow") {
-      const stream = Math.sin(info.t * 40 + texture * 4 + info.segmentIndex * 0.9);
+      const stream = Math.sin(progress * (18 + detail * 22) + signedNorm * (4.2 + detail * 7.5) + texture * 2.2);
       const line = Math.pow(Math.max(0, 0.5 + stream * 0.5), 2.1) * mask;
       const push = (stream * 0.7 + texture * 0.42) * strengthPx * mask;
       const drag = strengthPx * (0.18 + line * 0.55) * mask;
@@ -352,7 +404,7 @@
       };
     }
 
-    const heat = Math.sin(info.t * 32 + texture * 4);
+    const heat = Math.sin(progress * (10 + detail * 16) + texture * 2.6);
     const push = (heat * 0.68 + texture * 0.46) * strengthPx * mask;
     return {
       dx: info.normalX * push,
@@ -655,12 +707,10 @@
       drawOverlay.style.top = `${metrics.top}px`;
       drawOverlay.style.width = `${metrics.renderedWidth}px`;
       drawOverlay.style.height = `${metrics.renderedHeight}px`;
+      const stroke = Math.max(3, Math.min(22, (clamp(state.params.brush, 8, 120, 42) / 42) * 7));
+      drawPath.style.setProperty("--space-fx-draw-stroke", `${stroke.toFixed(1)}px`);
       if (state.pathPoints.length >= 2) {
-        const d = state.pathPoints.map((point, index) => {
-          const px = point.x * metrics.renderedWidth;
-          const py = point.y * metrics.renderedHeight;
-          return `${index === 0 ? "M" : "L"} ${px.toFixed(1)} ${py.toFixed(1)}`;
-        }).join(" ");
+        const d = buildSmoothSvgPath(state.pathPoints, metrics.renderedWidth, metrics.renderedHeight);
         drawPath.setAttribute("d", d);
       } else {
         drawPath.setAttribute("d", "");
@@ -699,8 +749,62 @@
     if (state.pathPoints.length > 180) {
       state.pathPoints = state.pathPoints.filter((_, index) => index % 2 === 0);
     }
+    markPathChanged();
     updateControlOverlay();
     syncControls();
+  }
+
+  function buildSmoothSvgPath(points, renderedWidth, renderedHeight) {
+    if (!points || points.length < 2) return "";
+    const first = points[0];
+    let d = `M ${(first.x * renderedWidth).toFixed(1)} ${(first.y * renderedHeight).toFixed(1)}`;
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const current = points[i];
+      const next = points[i + 1];
+      const midX = ((current.x + next.x) * 0.5 * renderedWidth).toFixed(1);
+      const midY = ((current.y + next.y) * 0.5 * renderedHeight).toFixed(1);
+      d += ` Q ${(current.x * renderedWidth).toFixed(1)} ${(current.y * renderedHeight).toFixed(1)} ${midX} ${midY}`;
+    }
+    const last = points[points.length - 1];
+    d += ` L ${(last.x * renderedWidth).toFixed(1)} ${(last.y * renderedHeight).toFixed(1)}`;
+    return d;
+  }
+
+  function smoothDrawnPath(points) {
+    if (!points || points.length < 4) return points || [];
+    const simplified = [];
+    points.forEach((point) => {
+      const last = simplified[simplified.length - 1];
+      if (!last) {
+        simplified.push(point);
+        return;
+      }
+      const dx = point.x - last.x;
+      const dy = point.y - last.y;
+      if (Math.sqrt(dx * dx + dy * dy) >= 0.004) simplified.push(point);
+    });
+    if (simplified.length < 4) return simplified;
+    let result = simplified;
+    for (let pass = 0; pass < 2; pass += 1) {
+      const next = [result[0]];
+      for (let i = 0; i < result.length - 1; i += 1) {
+        const a = result[i];
+        const b = result[i + 1];
+        next.push({
+          x: a.x * 0.75 + b.x * 0.25,
+          y: a.y * 0.75 + b.y * 0.25
+        });
+        next.push({
+          x: a.x * 0.25 + b.x * 0.75,
+          y: a.y * 0.25 + b.y * 0.75
+        });
+      }
+      next.push(result[result.length - 1]);
+      result = next;
+    }
+    if (result.length <= 220) return result;
+    const step = Math.ceil(result.length / 220);
+    return result.filter((_, index) => index === 0 || index === result.length - 1 || index % step === 0);
   }
 
   function startDrawPath(event) {
@@ -722,6 +826,8 @@
     if (!state.isDrawing || (event && state.activePointerId !== event.pointerId)) return;
     state.isDrawing = false;
     state.activePointerId = null;
+    state.pathPoints = smoothDrawnPath(state.pathPoints);
+    markPathChanged();
     syncControls();
     schedulePreviewUpdate();
   }
@@ -826,6 +932,11 @@
   async function openSpaceFxModal() {
     modules.workspace.setModalOpen("spaceFxModal", true);
     syncControls();
+    updateSpaceFxWorkbenchLayout();
+    window.requestAnimationFrame(() => {
+      updateSpaceFxWorkbenchLayout();
+      applyPreviewTransform();
+    });
     if (!modules.runtime.isPluginRuntime()) {
       setStatus("浏览器预览模式下可查看界面，但不会捕获或写回 Photoshop。", "warn");
       return;
@@ -925,6 +1036,17 @@
     state.params = { effect: name, ...PRESETS[name] };
     syncControls();
     schedulePreviewUpdate();
+  }
+
+  function updateSpaceFxWorkbenchLayout() {
+    const workbench = document.querySelector("#spaceFxModal .space-fx-workbench");
+    const sliderStack = document.querySelector("#spaceFxModal .space-fx-slider-stack");
+    if (!workbench || !sliderStack) return;
+    const style = window.getComputedStyle(sliderStack);
+    const template = String(style.gridTemplateColumns || "").trim();
+    const isSingleColumn = !template || !template.includes(" ");
+    workbench.classList.toggle("is-side-by-side", !isSingleColumn);
+    updateControlOverlay();
   }
 
   function bindPreviewInteractions() {
@@ -1035,6 +1157,7 @@
     if (clearPathButton) {
       clearPathButton.addEventListener("click", () => {
         state.pathPoints = [];
+        markPathChanged();
         state.isDrawing = false;
         state.activePointerId = null;
         syncControls();
@@ -1048,7 +1171,7 @@
     document.querySelectorAll("[data-space-fx-preset]").forEach((button) => {
       button.addEventListener("click", () => applyPreset(button.getAttribute("data-space-fx-preset")));
     });
-    ["Intensity", "Range", "Feather", "Angle", "Detail", "Glow"].forEach((name) => {
+    ["Intensity", "Range", "Feather", "Angle", "Detail", "Glow", "Brush"].forEach((name) => {
       const input = getById(`spaceFx${name}Input`);
       if (!input) return;
       input.addEventListener("input", () => {
@@ -1076,6 +1199,17 @@
     });
     bindPreviewInteractions();
     syncControls();
+    updateSpaceFxWorkbenchLayout();
+    window.addEventListener("resize", updateSpaceFxWorkbenchLayout);
+    const sliderStack = document.querySelector("#spaceFxModal .space-fx-slider-stack");
+    const workbench = document.querySelector("#spaceFxModal .space-fx-workbench");
+    if (typeof ResizeObserver === "function" && sliderStack) {
+      const observer = new ResizeObserver(() => {
+        updateSpaceFxWorkbenchLayout();
+      });
+      observer.observe(sliderStack);
+      if (workbench) observer.observe(workbench);
+    }
   }
 
   modules.spaceFx = {

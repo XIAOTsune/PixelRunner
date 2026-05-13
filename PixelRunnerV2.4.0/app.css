@@ -1497,19 +1497,32 @@ button {
 }
 
 .space-fx-workbench {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
   min-height: 0;
+}
+
+.space-fx-workbench.is-side-by-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
 }
 
 .space-fx-inline-preview {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
   gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(117, 216, 199, 0.42);
+  background:
+    linear-gradient(135deg, rgba(6, 15, 18, 0.74), rgba(18, 39, 45, 0.88)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.03) 0 8px, transparent 8px 16px);
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .space-fx-lab-grid {
@@ -1531,8 +1544,16 @@ button {
 }
 
 .space-fx-lab-tile-wide {
-  min-height: 260px;
-  height: clamp(440px, 66vh, 720px);
+  min-height: 240px;
+  height: clamp(260px, 42vh, 620px);
+}
+
+.space-fx-workbench.is-side-by-side .space-fx-lab-tile-wide {
+  height: clamp(280px, 48vh, 620px);
+}
+
+.space-fx-workbench:not(.is-side-by-side) .space-fx-lab-tile-wide {
+  height: clamp(260px, 36vh, 460px);
 }
 
 .space-fx-preview-viewport {
@@ -1636,7 +1657,7 @@ button {
 .space-fx-draw-overlay path {
   fill: none;
   stroke: rgba(255, 236, 172, 0.98);
-  stroke-width: 7;
+  stroke-width: var(--space-fx-draw-stroke, 7);
   stroke-linecap: round;
   stroke-linejoin: round;
   filter: drop-shadow(0 0 8px rgba(117, 216, 199, 0.82)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));
@@ -1775,12 +1796,17 @@ button {
   }
 
   .space-fx-workbench {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
   }
 
   .space-fx-lab-tile-wide {
-    min-height: 300px;
-    height: clamp(300px, 46vh, 520px);
+    min-height: 220px;
+    height: clamp(240px, 36vh, 420px);
+  }
+
+  .space-fx-inline-preview {
+    min-height: 0;
   }
 }
 
@@ -1791,7 +1817,12 @@ button {
 
   .space-fx-lab-tile-wide {
     min-height: 220px;
-    height: 240px;
+    height: 220px;
+  }
+
+  .space-fx-preview-viewport {
+    min-height: 0;
+    height: 100%;
   }
 
   .space-fx-slider-stack {
