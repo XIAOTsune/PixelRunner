@@ -17,18 +17,20 @@
     in vec2 vUv;
     out vec4 outColor;
     void main() {
-      vec3 color = vec3(0.0);
-      float total = 0.0;
-      for (int y = -1; y <= 2; y++) {
-        float wy = (y == 0 || y == 1) ? 3.0 : 1.0;
-        for (int x = -1; x <= 2; x++) {
-          float wx = (x == 0 || x == 1) ? 3.0 : 1.0;
-          float weight = wx * wy;
-          color += texture(uSource, vUv + vec2(float(x), float(y)) * uTexel).rgb * weight;
-          total += weight;
-        }
-      }
-      outColor = vec4(color / max(total, 0.0001), 1.0);
+      vec3 color = texture(uSource, vUv + vec2(-2.0, -2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2( 0.0, -2.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv + vec2( 2.0, -2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2(-2.0,  0.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv).rgb * 0.125;
+      color += texture(uSource, vUv + vec2( 2.0,  0.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv + vec2(-2.0,  2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2( 0.0,  2.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv + vec2( 2.0,  2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2(-1.0, -1.0) * uTexel).rgb * 0.125;
+      color += texture(uSource, vUv + vec2( 1.0, -1.0) * uTexel).rgb * 0.125;
+      color += texture(uSource, vUv + vec2(-1.0,  1.0) * uTexel).rgb * 0.125;
+      color += texture(uSource, vUv + vec2( 1.0,  1.0) * uTexel).rgb * 0.125;
+      outColor = vec4(color, 1.0);
     }
   `;
 
@@ -66,11 +68,21 @@
     precision highp float;
     uniform sampler2D uBase;
     uniform sampler2D uAdd;
+    uniform vec2 uBaseTexel;
     uniform float uWeight;
     in vec2 vUv;
     out vec4 outColor;
     void main() {
-      outColor = vec4(texture(uBase, vUv).rgb + texture(uAdd, vUv).rgb * uWeight, 1.0);
+      vec3 base = texture(uBase, vUv + vec2(-1.0, -1.0) * uBaseTexel).rgb;
+      base += texture(uBase, vUv + vec2( 0.0, -1.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv + vec2( 1.0, -1.0) * uBaseTexel).rgb;
+      base += texture(uBase, vUv + vec2(-1.0,  0.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv).rgb * 4.0;
+      base += texture(uBase, vUv + vec2( 1.0,  0.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv + vec2(-1.0,  1.0) * uBaseTexel).rgb;
+      base += texture(uBase, vUv + vec2( 0.0,  1.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv + vec2( 1.0,  1.0) * uBaseTexel).rgb;
+      outColor = vec4(base * 0.0625 + texture(uAdd, vUv).rgb * uWeight, 1.0);
     }
   `;
 
@@ -297,6 +309,7 @@
       this.bindProgram(program);
       this.bindTexture(program, "uBase", baseTarget.texture, 0);
       this.bindTexture(program, "uAdd", addTarget.texture, 1);
+      gl.uniform2f(gl.getUniformLocation(program, "uBaseTexel"), 1 / baseTarget.width, 1 / baseTarget.height);
       gl.uniform1f(gl.getUniformLocation(program, "uWeight"), weight);
       this.renderTo(target, program);
       return target;
@@ -339,8 +352,7 @@
 
         for (let index = 0; index < mipCount; index += 1) {
           if (current.width <= 1 && current.height <= 1) break;
-          const downsampled = this.downsample(current.texture, current.width, current.height);
-          current = this.kawase(downsampled, 1);
+          current = this.downsample(current.texture, current.width, current.height);
           levels.push(current);
         }
 
@@ -349,8 +361,7 @@
           ? this.scale(levels[levels.length - 1], effectiveWeights[levels.length - 1])
           : current;
         for (let index = levels.length - 2; index >= 0; index -= 1) {
-          const added = this.upsampleAdd(combined, levels[index], effectiveWeights[index]);
-          combined = this.kawase(added, 0.75);
+          combined = this.upsampleAdd(combined, levels[index], effectiveWeights[index]);
         }
 
         const finalTarget = this.finalComposite(

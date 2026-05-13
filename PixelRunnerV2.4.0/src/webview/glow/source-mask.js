@@ -17,6 +17,10 @@
     return clamp(Math.max(curved, value - threshold) / Math.max(value, 0.0001), 0, 1);
   }
 
+  function srgbToLinear(value) {
+    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  }
+
   function createLayer(width, height) {
     return {
       width,
@@ -102,9 +106,9 @@
     const saturationMap = new Float32Array(total);
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-      const r = data[index] * (1 / 255);
-      const g = data[index + 1] * (1 / 255);
-      const b = data[index + 2] * (1 / 255);
+      const r = srgbToLinear(data[index] * (1 / 255));
+      const g = srgbToLinear(data[index + 1] * (1 / 255));
+      const b = srgbToLinear(data[index + 2] * (1 / 255));
       const maxChannel = r > g ? (r > b ? r : b) : (g > b ? g : b);
       const minChannel = r < g ? (r < b ? r : b) : (g < b ? g : b);
       luma[pixel] = r * 0.2126 + g * 0.7152 + b * 0.0722;
@@ -133,9 +137,12 @@
     const chromaBoostAmount = sourceParams.chromaBoost;
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-      const r = data[index] * inv255;
-      const g = data[index + 1] * inv255;
-      const b = data[index + 2] * inv255;
+      const sr = data[index] * inv255;
+      const sg = data[index + 1] * inv255;
+      const sb = data[index + 2] * inv255;
+      const r = srgbToLinear(sr);
+      const g = srgbToLinear(sg);
+      const b = srgbToLinear(sb);
       const lum = luma[pixel];
       const sat = saturationMap[pixel];
       const maxChannel = maxChannelMap[pixel];
@@ -160,7 +167,9 @@
       const lowContrast = 1 - smoothstep(0.01, 0.068, contrast);
       const lowSat = 1 - smoothstep(0.12, 0.36, sat);
       const whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
-      const skinHue = isSkinHueFast(r, g, b, maxChannel, minChannelMap[pixel]) ? 1 : 0;
+      const srgbMax = sr > sg ? (sr > sb ? sr : sb) : (sg > sb ? sg : sb);
+      const srgbMin = sr < sg ? (sr < sb ? sr : sb) : (sg < sb ? sg : sb);
+      const skinHue = isSkinHueFast(sr, sg, sb, srgbMax, srgbMin) ? 1 : 0;
       const skinColor =
         skinHue *
         smoothstep(0.16, 0.36, sat) *
@@ -177,19 +186,21 @@
         0,
         1
       );
-      const nearClip = smoothstep(0.88, 1.0, maxChannel);
-      const protection = clamp(protectionBase * (1 - nearClip * 0.42), 0, 1);
+      const nearClip = smoothstep(0.9, 1.0, maxChannel);
+      const clippingDetail = clamp(specularScore * 0.62 + contrastScore * 0.26 + sat * 0.18, 0, 1);
+      const protection = clamp(protectionBase * (1 - nearClip * (0.18 + clippingDetail * 0.38)), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
-      let emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
-      emissionEnergy *= 1 - protection * 0.92;
+      const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
+      let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      emissionEnergy *= 1 - protection * 0.86;
       emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
-      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.03) * 1.18, 0, 1);
+      emissionEnergy = clamp(Math.pow(emissionEnergy, 0.96) * 1.26, 0, 1);
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
       const warmColorHint = smoothstep(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
       const chromaKeep = clamp(
-        0.24 + sat * 0.78 + warmColorHint * 0.2 + chromaBoostAmount * 0.22 - neutralHighlight * 0.12,
-        0.12,
-        0.9
+        0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + chromaBoostAmount * 0.25 - neutralHighlight * 0.1,
+        0.14,
+        0.95
       );
       const whiteEnergy = brightness;
       const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;

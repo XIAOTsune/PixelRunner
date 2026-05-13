@@ -15,8 +15,14 @@
     uniform sampler2D uImage;
     in vec2 vUv;
     out vec4 outColor;
+    float srgbToLinear(float value) {
+      return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+    }
+    vec3 srgbToLinear(vec3 color) {
+      return vec3(srgbToLinear(color.r), srgbToLinear(color.g), srgbToLinear(color.b));
+    }
     void main() {
-      vec3 c = texture(uImage, vUv).rgb;
+      vec3 c = srgbToLinear(texture(uImage, vUv).rgb);
       float maxChannel = max(max(c.r, c.g), c.b);
       float minChannel = min(min(c.r, c.g), c.b);
       float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -100,6 +106,14 @@
       return saturate(max(curved, value - threshold) / max(value, 0.0001));
     }
 
+    float srgbToLinear(float value) {
+      return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+    }
+
+    vec3 srgbToLinear(vec3 color) {
+      return vec3(srgbToLinear(color.r), srgbToLinear(color.g), srgbToLinear(color.b));
+    }
+
     float isSkinHueFast(vec3 c, float maxChannel, float minChannel) {
       float delta = maxChannel - minChannel;
       if (delta <= 0.0001 || maxChannel != c.r) return 0.0;
@@ -108,7 +122,8 @@
     }
 
     void main() {
-      vec3 c = texture(uImage, vUv).rgb;
+      vec3 cSrgb = texture(uImage, vUv).rgb;
+      vec3 c = srgbToLinear(cSrgb);
       vec4 metrics = texture(uMetrics, vUv);
       float lum = metrics.r;
       float maxChannel = metrics.g;
@@ -136,7 +151,9 @@
       float lowContrast = 1.0 - smooth01(0.01, 0.068, contrast);
       float lowSat = 1.0 - smooth01(0.12, 0.36, sat);
       float whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
-      float skinHue = isSkinHueFast(c, maxChannel, minChannel);
+      float srgbMax = max(max(cSrgb.r, cSrgb.g), cSrgb.b);
+      float srgbMin = min(min(cSrgb.r, cSrgb.g), cSrgb.b);
+      float skinHue = isSkinHueFast(cSrgb, srgbMax, srgbMin);
       float skinColor =
         skinHue *
         smooth01(0.16, 0.36, sat) *
@@ -151,15 +168,17 @@
         dark * uDarkProtect +
         midtoneReject * 0.62
       );
-      float nearClip = smooth01(0.88, 1.0, maxChannel);
-      float protection = saturate(protectionBase * (1.0 - nearClip * 0.42));
-      float emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
-      emissionEnergy *= 1.0 - protection * 0.92;
+      float nearClip = smooth01(0.9, 1.0, maxChannel);
+      float clippingDetail = saturate(specularScore * 0.62 + contrastScore * 0.26 + sat * 0.18);
+      float protection = saturate(protectionBase * (1.0 - nearClip * (0.18 + clippingDetail * 0.38)));
+      float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
+      float emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      emissionEnergy *= 1.0 - protection * 0.86;
       emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
-      emissionEnergy = saturate(pow(emissionEnergy, 1.03) * 1.18);
+      emissionEnergy = saturate(pow(emissionEnergy, 0.96) * 1.26);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
       float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
-      float chromaKeep = clamp(0.24 + sat * 0.78 + warmColorHint * 0.2 + uChromaBoost * 0.22 - neutralHighlight * 0.12, 0.12, 0.9);
+      float chromaKeep = clamp(0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + uChromaBoost * 0.25 - neutralHighlight * 0.1, 0.14, 0.95);
       vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
       outSource = vec4(emissionColor * emissionEnergy, 1.0);
       outMasks = vec4(lum, protection, dark, emissionEnergy);
