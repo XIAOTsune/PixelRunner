@@ -153,11 +153,12 @@
       );
       float nearClip = smooth01(0.88, 1.0, maxChannel);
       float protection = saturate(protectionBase * (1.0 - nearClip * 0.55));
-      float emissionEnergy = brightEnergy * 1.08 + specularPass * 0.24 + rimPass * 0.035;
+      float emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
       emissionEnergy *= 1.0 - protection * 0.92;
       emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
-      emissionEnergy = saturate(pow(emissionEnergy, 1.18) * 1.08);
-      float chromaKeep = clamp(0.16 + sat * 0.48 - brightPass * 0.18 + uChromaBoost * 0.12, 0.08, 0.58);
+      emissionEnergy = saturate(pow(emissionEnergy, 1.08) * 1.26);
+      float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
+      float chromaKeep = clamp(0.18 + sat * 0.76 + uChromaBoost * 0.18 - neutralHighlight * 0.2, 0.12, 0.82);
       vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
       outSource = vec4(emissionColor * emissionEnergy, 1.0);
       outMasks = vec4(lum, protection, dark, emissionEnergy);

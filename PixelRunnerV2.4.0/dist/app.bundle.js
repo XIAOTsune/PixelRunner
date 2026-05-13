@@ -641,10 +641,10 @@ var PixelRunnerWebviewBundle = (() => {
       const spreadRatio = Math.pow(radiusRatio, 0.92);
       const spreadAir = Math.pow(radiusRatio, 1.15);
       const lensArea = Math.pow(radiusRatio, 2);
-      const strengthDrive = Math.pow(strengthRatio, 0.58);
+      const strengthDrive = Math.pow(strengthRatio, 0.48);
       const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
       const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
-      const strengthEnergyBoost = strengthDrive * 6.2;
+      const strengthEnergyBoost = strengthDrive * 10.4;
       const chromaticRatio = Math.pow(chromatic / 100, 0.88);
       const diffusionT = Math.max(0, Math.min(1, spreadRatio));
       const nearMipWeights = [0.5, 0.28, 0.13, 0.06, 0.022, 6e-3, 2e-3];
@@ -704,16 +704,16 @@ var PixelRunnerWebviewBundle = (() => {
           passes: 1
         },
         composite: {
-          intensity: clamp(strengthEnergyBoost * (0.86 + radiusEnergyDamping * 0.48) * (1 - diffusionT * 0.03), 0, 6.4, 1),
+          intensity: clamp(strengthEnergyBoost * (0.94 + radiusEnergyDamping * 0.52) * (1 - diffusionT * 0.02), 0, 12.8, 1),
           // Favor screen-like appearance; reduce additive/linear-dodge feel.
           softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
           warmth: preset.warmth,
-          saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
+          saturation: clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
           highlightProtect: clamp(0.72 + thresholdRatio * 0.24 + spreadAir * 0.03 + strengthRatio * 0.08, 0.64, 0.97, 0.82),
           shadowProtect: preset.darkProtect,
           colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
           // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
-          shoulder: clamp(0.38 + strengthRatio * 0.055 + spreadAir * 0.02 + Math.max(0, exposureRatio) * 0.012, 0.32, 0.58, 0.46),
+          shoulder: clamp(0.3 + strengthRatio * 0.035 + spreadAir * 0.015 + Math.max(0, exposureRatio) * 8e-3, 0.24, 0.44, 0.36),
           colorShift: colorShift / 100,
           colorTint,
           colorAmount: colorAmount / 100,
@@ -893,14 +893,15 @@ var PixelRunnerWebviewBundle = (() => {
         const nearClip = smoothstep(0.88, 1, maxChannel);
         const protection = clamp(protectionBase * (1 - nearClip * 0.55), 0, 1);
         const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
-        let emissionEnergy = brightEnergy * 1.08 + specularPass * 0.24 + rimPass * 0.035;
+        let emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
         emissionEnergy *= 1 - protection * 0.92;
         emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
-        emissionEnergy = clamp(Math.pow(emissionEnergy, 1.18) * 1.08, 0, 1);
+        emissionEnergy = clamp(Math.pow(emissionEnergy, 1.08) * 1.26, 0, 1);
+        const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1, maxChannel);
         const chromaKeep = clamp(
-          0.16 + sat * 0.48 - brightPass * 0.18 + chromaBoostAmount * 0.12,
-          0.08,
-          0.58
+          0.18 + sat * 0.76 + chromaBoostAmount * 0.18 - neutralHighlight * 0.2,
+          0.12,
+          0.82
         );
         const whiteEnergy = brightness;
         const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;
@@ -1370,11 +1371,12 @@ var PixelRunnerWebviewBundle = (() => {
       );
       float nearClip = smooth01(0.88, 1.0, maxChannel);
       float protection = saturate(protectionBase * (1.0 - nearClip * 0.55));
-      float emissionEnergy = brightEnergy * 1.08 + specularPass * 0.24 + rimPass * 0.035;
+      float emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
       emissionEnergy *= 1.0 - protection * 0.92;
       emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
-      emissionEnergy = saturate(pow(emissionEnergy, 1.18) * 1.08);
-      float chromaKeep = clamp(0.16 + sat * 0.48 - brightPass * 0.18 + uChromaBoost * 0.12, 0.08, 0.58);
+      emissionEnergy = saturate(pow(emissionEnergy, 1.08) * 1.26);
+      float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
+      float chromaKeep = clamp(0.18 + sat * 0.76 + uChromaBoost * 0.18 - neutralHighlight * 0.2, 0.12, 0.82);
       vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
       outSource = vec4(emissionColor * emissionEnergy, 1.0);
       outMasks = vec4(lum, protection, dark, emissionEnergy);

@@ -180,14 +180,15 @@
       const nearClip = smoothstep(0.88, 1.0, maxChannel);
       const protection = clamp(protectionBase * (1 - nearClip * 0.55), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
-      let emissionEnergy = brightEnergy * 1.08 + specularPass * 0.24 + rimPass * 0.035;
+      let emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
       emissionEnergy *= 1 - protection * 0.92;
       emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
-      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.18) * 1.08, 0, 1);
+      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.08) * 1.26, 0, 1);
+      const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
       const chromaKeep = clamp(
-        0.16 + sat * 0.48 - brightPass * 0.18 + chromaBoostAmount * 0.12,
-        0.08,
-        0.58
+        0.18 + sat * 0.76 + chromaBoostAmount * 0.18 - neutralHighlight * 0.2,
+        0.12,
+        0.82
       );
       const whiteEnergy = brightness;
       const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;

@@ -127,12 +127,12 @@
     // Lens-scatter proxy: halo footprint follows area growth (~r^2 trend in normalized domain).
     const lensArea = Math.pow(radiusRatio, 2);
     // Strength should react earlier in low-mid range while still leaving headroom.
-    const strengthDrive = Math.pow(strengthRatio, 0.58);
+    const strengthDrive = Math.pow(strengthRatio, 0.48);
     // Radius should mostly move energy outward into halo instead of boosting local white.
     const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
     const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
     // Physical mapping: strength=0 should produce zero emitted glow energy.
-    const strengthEnergyBoost = strengthDrive * 6.2;
+    const strengthEnergyBoost = strengthDrive * 10.4;
     // Chromatic slider should become visible earlier (especially in 12~45 range).
     const chromaticRatio = Math.pow(chromatic / 100, 0.88);
     const diffusionT = Math.max(0, Math.min(1, spreadRatio));
@@ -197,16 +197,16 @@
         passes: 1
       },
       composite: {
-        intensity: clamp(strengthEnergyBoost * (0.86 + radiusEnergyDamping * 0.48) * (1 - diffusionT * 0.03), 0, 6.4, 1),
+        intensity: clamp(strengthEnergyBoost * (0.94 + radiusEnergyDamping * 0.52) * (1 - diffusionT * 0.02), 0, 12.8, 1),
         // Favor screen-like appearance; reduce additive/linear-dodge feel.
         softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
         warmth: preset.warmth,
-        saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
+        saturation: clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
         highlightProtect: clamp(0.72 + thresholdRatio * 0.24 + spreadAir * 0.03 + strengthRatio * 0.08, 0.64, 0.97, 0.82),
         shadowProtect: preset.darkProtect,
         colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
         // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
-        shoulder: clamp(0.38 + strengthRatio * 0.055 + spreadAir * 0.02 + Math.max(0, exposureRatio) * 0.012, 0.32, 0.58, 0.46),
+        shoulder: clamp(0.3 + strengthRatio * 0.035 + spreadAir * 0.015 + Math.max(0, exposureRatio) * 0.008, 0.24, 0.44, 0.36),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,
