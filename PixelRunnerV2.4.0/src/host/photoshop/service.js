@@ -968,7 +968,8 @@ export async function captureDocumentPreview(options = {}) {
   const docInfo = getDocumentInfo(doc);
   const maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(options.maxDimension) || 1536)));
   const quality = Math.max(20, Math.min(100, Math.floor(Number(options.quality) || 82)));
-  const rawSelectionBounds = normalizeBounds(docInfo.selectionBounds);
+  const ignoreSelection = options.ignoreSelection === true || options.captureFullDocument === true;
+  const rawSelectionBounds = ignoreSelection ? null : normalizeBounds(docInfo.selectionBounds);
   const selectionBounds = rawSelectionBounds ? clampBoundsToDocument(rawSelectionBounds, docInfo) : null;
   const captureBounds = clampBoundsToDocument(selectionBounds, docInfo);
   const sourceWidth = Math.max(1, Number(captureBounds.right) - Number(captureBounds.left));
@@ -1174,7 +1175,7 @@ export async function placeImageFromUrl(payload) {
         mode: placementMode,
         imageSize: pngInfo,
         applyMask,
-        preferTransformBounds: isTransparentPngResult && !preserveCanvasBounds
+        preferTransformBounds: isTransparentPngResult
       });
     }
     await setActiveLayerStyle(action, {

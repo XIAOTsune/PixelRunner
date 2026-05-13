@@ -292,9 +292,10 @@
     let glowDragKickoffTimer = 0;
     let glowDragStartedAt = 0;
     let glowGpuFastPathAvailable = true;
-    const GLOW_INTERACTIVE_PROCESS_DIMENSION = 1100;
-    const GLOW_DRAG_PROCESS_DIMENSION = 900;
-    const GLOW_FULL_PROCESS_DIMENSION = 1100;
+    const GLOW_PROCESS_DIMENSION = 1000;
+    const GLOW_INTERACTIVE_PROCESS_DIMENSION = GLOW_PROCESS_DIMENSION;
+    const GLOW_DRAG_PROCESS_DIMENSION = GLOW_PROCESS_DIMENSION;
+    const GLOW_FULL_PROCESS_DIMENSION = GLOW_PROCESS_DIMENSION;
     const glowPreviewView = {
       scale: 1,
       x: 0,
@@ -475,6 +476,7 @@
     const captureGlowCpuSource = async (maxDimension = GLOW_PREVIEW_MAX_DIMENSION) => {
       const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
         maxDimension,
+        ignoreSelection: true,
         quality: 92,
         uploadTargetBytes: 18_000_000,
         uploadHardLimitBytes: 24_000_000
@@ -657,6 +659,7 @@
         },
         fitMode: "stretch",
         preserveCanvasBounds: true,
+        anchorTransparentCanvas: true,
         applyMask: false,
         opacity: 100,
         blendMode: "screen",
