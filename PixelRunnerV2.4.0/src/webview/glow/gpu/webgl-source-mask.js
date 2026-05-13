@@ -79,6 +79,7 @@
     uniform float uSkinProtect;
     uniform float uDarkProtect;
     uniform float uChromaBoost;
+    uniform float uLowEnergyCutoff;
     in vec2 vUv;
     layout(location = 0) out vec4 outSource;
     layout(location = 1) out vec4 outMasks;
@@ -116,13 +117,15 @@
       float localMean = texture(uLocalMean, vUv).r;
       float contrast = max(0.0, lum - localMean);
       float specular = max(0.0, maxChannel - localMean);
-      float brightness = max(lum * 0.82 + maxChannel * 0.18, maxChannel * 0.88);
+      float brightness = max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
-      float lumaScore =
+      float brightPass =
         softThresholdMask(brightness, uThresholdLow, uThresholdKnee) *
         smooth01(uThresholdLow - uThresholdKnee * 0.92, uThresholdHigh, brightness);
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
+      float specularPass = specularScore * smooth01(0.45, 0.92, brightness);
+      float rimPass = contrastScore * smooth01(0.58, 0.95, brightness);
       float highLightness = smooth01(0.7, 0.95, lum);
       float veryHighLightness = smooth01(0.84, 0.985, lum);
       float lowContrast = 1.0 - smooth01(0.01, 0.068, contrast);
@@ -135,20 +138,21 @@
         (1.0 - smooth01(0.78, 0.96, sat)) *
         smooth01(0.38, 0.74, lum) *
         (1.0 - smooth01(0.9, 1.0, lum));
-      float dark = 1.0 - smooth01(0.08, 0.28, lum);
-      float protectionBase = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect * 0.55);
-      float nearClip = smooth01(0.92, 1.0, maxChannel);
-      float protection = saturate(protectionBase + nearClip * (0.12 + (1.0 - sat) * 0.1));
-      float chromaSource = smooth01(0.08, 0.46, sat) * smooth01(0.44, 0.84, brightness);
-      float detailBoost = smooth01(0.022, 0.12, contrast);
-      float reflectiveBoost = clamp(0.48 + contrastScore * 0.44 + specularScore * 0.48 + chromaSource * 0.18 + detailBoost * 0.16, 0.0, 1.28);
-      float edgeSource = max(contrastScore * 0.2, specularScore * 0.4) * smooth01(0.42, 0.9, brightness);
-      float combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
-      float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.82));
-      float chromaBoost = uChromaBoost * smooth01(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0);
-      outSource = vec4(sourceColor, 1.0);
-      outMasks = vec4(lum, protection, dark, mask);
+      float dark = 1.0 - smooth01(0.12, 0.32, brightness);
+      float protectionBase = saturate(
+        whiteFlat * uWhiteProtect +
+        skinColor * uSkinProtect * 0.68 +
+        dark * uDarkProtect
+      );
+      float nearClip = smooth01(0.88, 1.0, maxChannel);
+      float protection = saturate(protectionBase * (1.0 - nearClip * 0.55));
+      float emissionEnergy = brightPass * 0.9 + specularPass * 0.35 + rimPass * 0.12;
+      emissionEnergy *= 1.0 - protection * 0.85;
+      emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
+      float chromaKeep = clamp(0.16 + sat * 0.48 - brightPass * 0.18 + uChromaBoost * 0.12, 0.08, 0.58);
+      vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
+      outSource = vec4(emissionColor * emissionEnergy, 1.0);
+      outMasks = vec4(lum, protection, dark, emissionEnergy);
     }
   `;
 
@@ -382,6 +386,7 @@
         gl.uniform1f(gl.getUniformLocation(program, "uSkinProtect"), sourceParams.skinProtect);
         gl.uniform1f(gl.getUniformLocation(program, "uDarkProtect"), sourceParams.darkProtect);
         gl.uniform1f(gl.getUniformLocation(program, "uChromaBoost"), sourceParams.chromaBoost);
+        gl.uniform1f(gl.getUniformLocation(program, "uLowEnergyCutoff"), sourceParams.lowEnergyCutoff || 0.024);
         this.renderTo(sourceTarget, program);
 
         const sourcePixels = new Uint8Array(width * height * 4);
@@ -413,16 +418,8 @@
           sourceMask[pixel] = maskPixels[index + 3] / 255;
         }
         const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
-        const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
         const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
         const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
-        for (let pixel = 0; pixel < total; pixel += 1) {
-          const softMask = Math.max(0, Math.min(1, sourceMask[pixel] * 0.78 + featheredSourceMask[pixel] * 0.22));
-          const gain = Math.pow(softMask, 0.78);
-          sourceLayer.r[pixel] *= gain;
-          sourceLayer.g[pixel] *= gain;
-          sourceLayer.b[pixel] *= gain;
-        }
 
         return {
           width,

@@ -105,6 +105,7 @@
       source.contrastHigh,
       source.specularLow,
       source.specularHigh,
+      source.lowEnergyCutoff,
       source.chromaBoost,
       source.whiteProtect,
       source.skinProtect,

@@ -181,6 +181,7 @@
         contrastHigh: clamp(0.092 - thresholdRatio * 0.04 - exposureRatio * 0.022, 0.028, 0.11, 0.068),
         specularLow: 0.06,
         specularHigh: 0.28,
+        lowEnergyCutoff: 0.024,
         chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22 + Math.max(0, exposureRatio) * 0.03, 0, 0.62, preset.chromaBoost),
         whiteProtect: preset.whiteProtect,
         skinProtect: preset.skinProtect,
