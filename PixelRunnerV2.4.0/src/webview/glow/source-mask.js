@@ -155,7 +155,7 @@
         smoothstep(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
       const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
       const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
-      const highlightGate = smoothstep(0.56, 0.86, brightness);
+      const highlightGate = smoothstep(Math.max(0.18, thresholdLow * 0.82), Math.max(thresholdHigh, thresholdLow + 0.08), brightness);
       const brightEnergy = Math.pow(clamp(brightPass * highlightGate, 0, 1), 1.38);
       const specularPass =
         Math.pow(specularScore, 1.16) *

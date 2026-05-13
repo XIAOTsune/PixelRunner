@@ -139,7 +139,7 @@
         smooth01(uThresholdLow - uThresholdKnee * 0.92, uThresholdHigh, brightness);
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
-      float highlightGate = smooth01(0.56, 0.86, brightness);
+      float highlightGate = smooth01(max(0.18, uThresholdLow * 0.82), max(uThresholdHigh, uThresholdLow + 0.08), brightness);
       float brightEnergy = pow(saturate(brightPass * highlightGate), 1.38);
       float specularPass =
         pow(specularScore, 1.16) *

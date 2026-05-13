@@ -35,6 +35,13 @@
     return seed - Math.floor(seed);
   }
 
+  function visibilityGate(value, params) {
+    const floor = clamp(Number(params.composite.energyFloor) || 0, 0, 0.4);
+    const softness = clamp(Number(params.composite.energyFloorSoftness) || 0.04, 0.001, 0.4);
+    const gate = smoothstep(floor, floor + softness, value);
+    return value * gate;
+  }
+
   function getChromaticOffset(params) {
     const c = Math.max(0, Math.min(1, Number(params.composite.chromatic) || 0));
     const curved = Math.pow(c, 0.96);
@@ -77,6 +84,7 @@
     const coreSuppression = clamp(Number(params.composite.coreSuppression) || 0.5, 0, 1);
     const haloBoost = Math.max(0, Number(params.composite.haloBoost) || 1);
     const haloMix = clamp(Number(params.composite.haloMix) || 0.5, 0, 1);
+    const coreCeiling = clamp(Number(params.composite.coreCeiling) || 0.42, 0.12, 1);
     const brightCoreGate = clamp(1 - baseLuma * (0.42 + coreSuppression * 0.18), 0.24, 1);
     const protectCoreGate = clamp(1 - protect * (0.58 + coreSuppression * 0.34), 0.08, 1);
     const coreGate = brightCoreGate * protectCoreGate;
@@ -90,11 +98,11 @@
       0,
       2.18
     );
-    const coreScale = 0.62 + sourceCore * 1.08 - haloMix * 0.28;
-    const haloScale = 1.28 + haloMix * 1.36;
-    const coreR = glow[0] * coreGate * coreScale;
-    const coreG = glow[1] * coreGate * coreScale;
-    const coreB = glow[2] * coreGate * coreScale;
+    const coreScale = 0.38 + sourceCore * 0.62 - haloMix * 0.22;
+    const haloScale = 1.22 + haloMix * 1.42;
+    const coreR = softShoulder(glow[0] * coreGate * coreScale, 0.82) * coreCeiling;
+    const coreG = softShoulder(glow[1] * coreGate * coreScale, 0.82) * coreCeiling;
+    const coreB = softShoulder(glow[2] * coreGate * coreScale, 0.82) * coreCeiling;
     const haloR = glow[0] * haloGate * haloBoost * haloScale;
     const haloG = glow[1] * haloGate * haloBoost * haloScale;
     const haloB = glow[2] * haloGate * haloBoost * haloScale;
@@ -145,7 +153,10 @@
       const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], baseLuma, protect, source, haloSource, params);
+      const [rawR, rawG, rawB] = splitCoreAndHalo([glowR, glowG, glowB], baseLuma, protect, source, haloSource, params);
+      const shapedR = visibilityGate(rawR, params);
+      const shapedG = visibilityGate(rawG, params);
+      const shapedB = visibilityGate(rawB, params);
       const glowSrgbR = clamp(linearToSrgb(shapedR), 0, 1);
       const glowSrgbG = clamp(linearToSrgb(shapedG), 0, 1);
       const glowSrgbB = clamp(linearToSrgb(shapedB), 0, 1);
@@ -206,7 +217,10 @@
       const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, source, haloSource, params);
+      const [rawR, rawG, rawB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, source, haloSource, params);
+      const shapedR = visibilityGate(rawR, params);
+      const shapedG = visibilityGate(rawG, params);
+      const shapedB = visibilityGate(rawB, params);
       const dither = 0.75 / 255;
       data[index] = Math.round(clamp(linearToSrgb(shapedR) + (hashNoise(x, y, 0) - 0.5) * dither, 0, 1) * 255);
       data[index + 1] = Math.round(clamp(linearToSrgb(shapedG) + (hashNoise(x, y, 1) - 0.5) * dither, 0, 1) * 255);
