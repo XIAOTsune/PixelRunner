@@ -133,12 +133,14 @@
         thresholdLow: clamp(0.38 + thresholdRatio * 0.36 + preset.thresholdBias - exposureRatio * 0.016, 0.2, 0.9, 0.64),
         thresholdHigh: clamp(0.58 + thresholdRatio * 0.3 + preset.thresholdBias - exposureRatio * 0.02, 0.34, 0.97, 0.8),
         thresholdKnee: clamp(
-          preset.knee * (1.06 - thresholdRatio * 0.44) + legacyRadiusRatio * 0.032 + exposureRatio * 0.042,
-          0.07,
+          preset.knee * (1.02 - thresholdRatio * 0.28) + legacyRadiusRatio * 0.052 + spreadRatio * 0.035 + exposureRatio * 0.042,
+          0.1,
           0.32,
           0.2
         ),
         localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
+        sourceFeatherRadius: Math.max(1, Math.min(4, Math.round(1 + legacyRadiusRatio * 2.2))),
+        haloMaskRadius: Math.max(3, Math.min(36, Math.round(4 + legacyRadiusRatio * 24 + wideRadiusRatio * 8))),
         contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
         contrastHigh: clamp(0.092 - thresholdRatio * 0.04 - exposureRatio * 0.022, 0.028, 0.11, 0.068),
         specularLow: 0.06,

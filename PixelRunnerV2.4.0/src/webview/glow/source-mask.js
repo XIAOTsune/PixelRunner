@@ -122,6 +122,9 @@
     const darkProtect = new Float32Array(total);
     const protectMask = new Float32Array(total);
     const sourceMask = new Float32Array(total);
+    const rawSourceR = new Float32Array(total);
+    const rawSourceG = new Float32Array(total);
+    const rawSourceB = new Float32Array(total);
     const sourceLayer = createLayer(width, height);
     const sourceParams = params.source;
     const inv255 = 1 / 255;
@@ -177,7 +180,6 @@
       const edgeSource = Math.max(contrastScore * 0.2, specularScore * 0.4) * smoothstep(0.42, 0.9, brightness);
       const combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
       const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.82), 0, 1);
-      const colorGain = Math.pow(mask, 0.78);
       const chromaBoost = chromaBoostAmount * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
       const saturationGain = 1 + chromaBoost;
       const sourceR = clamp(lum + (r - lum) * saturationGain, 0, 1);
@@ -192,9 +194,21 @@
       darkProtect[pixel] = dark;
       protectMask[pixel] = protection;
       sourceMask[pixel] = mask;
-      sourceLayer.r[pixel] = sourceR * colorGain;
-      sourceLayer.g[pixel] = sourceG * colorGain;
-      sourceLayer.b[pixel] = sourceB * colorGain;
+      rawSourceR[pixel] = sourceR;
+      rawSourceG[pixel] = sourceG;
+      rawSourceB[pixel] = sourceB;
+    }
+
+    const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
+    const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
+    const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
+    const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
+    for (let pixel = 0; pixel < total; pixel += 1) {
+      const softMask = clamp(sourceMask[pixel] * 0.78 + featheredSourceMask[pixel] * 0.22, 0, 1);
+      const colorGain = Math.pow(softMask, 0.78);
+      sourceLayer.r[pixel] = rawSourceR[pixel] * colorGain;
+      sourceLayer.g[pixel] = rawSourceG[pixel] * colorGain;
+      sourceLayer.b[pixel] = rawSourceB[pixel] * colorGain;
     }
 
     return {
@@ -210,7 +224,8 @@
         skinLikeMask,
         darkProtect,
         protectMask,
-        sourceMask
+        sourceMask,
+        haloMask
       },
       debugImages: options.includeDebug === false
         ? null

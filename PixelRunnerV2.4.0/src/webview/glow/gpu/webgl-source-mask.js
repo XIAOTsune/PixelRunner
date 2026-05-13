@@ -169,6 +169,50 @@
     };
   }
 
+  function blurFloatHorizontal(src, width, height, radius) {
+    const out = new Float32Array(src.length);
+    const size = radius * 2 + 1;
+    const rightEdgeOffset = width - 1;
+    for (let y = 0; y < height; y += 1) {
+      const row = y * width;
+      let sum = 0;
+      for (let offset = -radius; offset <= radius; offset += 1) {
+        const x = offset < 0 ? 0 : (offset < width ? offset : rightEdgeOffset);
+        sum += src[row + x];
+      }
+      for (let x = 0; x < width; x += 1) {
+        out[row + x] = sum / size;
+        const removeX = x > radius ? x - radius : 0;
+        const addCandidate = x + radius + 1;
+        const addX = addCandidate < width ? addCandidate : rightEdgeOffset;
+        sum += src[row + addX] - src[row + removeX];
+      }
+    }
+    return out;
+  }
+
+  function blurFloat(src, width, height, radius) {
+    const r = Math.max(1, Math.floor(radius));
+    const horizontal = blurFloatHorizontal(src, width, height, r);
+    const out = new Float32Array(src.length);
+    const size = r * 2 + 1;
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      for (let offset = -r; offset <= r; offset += 1) {
+        const y = offset < 0 ? 0 : (offset < height ? offset : height - 1);
+        sum += horizontal[y * width + x];
+      }
+      for (let y = 0; y < height; y += 1) {
+        out[y * width + x] = sum / size;
+        const removeY = y > r ? y - r : 0;
+        const addCandidate = y + r + 1;
+        const addY = addCandidate < height ? addCandidate : height - 1;
+        sum += horizontal[addY * width + x] - horizontal[removeY * width + x];
+      }
+    }
+    return out;
+  }
+
   function compileShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -369,6 +413,19 @@
           darkProtect[pixel] = maskPixels[index + 2] / 255;
           sourceMask[pixel] = maskPixels[index + 3] / 255;
         }
+        const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
+        const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
+        const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
+        const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
+        for (let pixel = 0; pixel < total; pixel += 1) {
+          const source = Math.max(0, Math.min(1, sourceMask[pixel]));
+          const softMask = Math.max(0, Math.min(1, source * 0.78 + featheredSourceMask[pixel] * 0.22));
+          if (source <= 0.0001) continue;
+          const gain = Math.pow(softMask, 0.78) / Math.max(0.0001, Math.pow(source, 0.78));
+          sourceLayer.r[pixel] *= gain;
+          sourceLayer.g[pixel] *= gain;
+          sourceLayer.b[pixel] *= gain;
+        }
 
         return {
           width,
@@ -383,7 +440,8 @@
             skinLikeMask,
             darkProtect,
             protectMask,
-            sourceMask
+            sourceMask,
+            haloMask
           },
           debugImages: null,
           backend: "webgl2"
