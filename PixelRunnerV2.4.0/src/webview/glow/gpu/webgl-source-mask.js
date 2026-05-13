@@ -136,7 +136,7 @@
         smooth01(0.38, 0.74, lum) *
         (1.0 - smooth01(0.9, 1.0, lum));
       float dark = 1.0 - smooth01(0.08, 0.28, lum);
-      float protectionBase = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect + dark * uDarkProtect);
+      float protectionBase = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect * 0.55);
       float nearClip = smooth01(0.92, 1.0, maxChannel);
       float protection = saturate(protectionBase + nearClip * (0.12 + (1.0 - sat) * 0.1));
       float chromaSource = smooth01(0.08, 0.46, sat) * smooth01(0.44, 0.84, brightness);

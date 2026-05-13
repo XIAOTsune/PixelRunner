@@ -133,7 +133,6 @@
     const thresholdKnee = sourceParams.thresholdKnee;
     const whiteProtect = sourceParams.whiteProtect;
     const skinProtect = sourceParams.skinProtect;
-    const darkProtectAmount = sourceParams.darkProtect;
     const chromaBoostAmount = sourceParams.chromaBoost;
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
@@ -167,8 +166,7 @@
       const dark = 1 - smoothstep(0.08, 0.28, lum);
       const protectionBase = clamp(
         whiteFlat * whiteProtect +
-          skinColor * skinProtect +
-          dark * darkProtectAmount,
+          skinColor * skinProtect * 0.55,
         0,
         1
       );

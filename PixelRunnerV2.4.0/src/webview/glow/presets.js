@@ -24,6 +24,26 @@
     ];
   }
 
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function mixLists(a, b, t) {
+    const out = [];
+    const count = Math.max(a.length, b.length);
+    for (let index = 0; index < count; index += 1) {
+      out.push(lerp(Number(a[index]) || 0, Number(b[index]) || 0, t));
+    }
+    return out;
+  }
+
+  function normalizeWeights(weights, scale = 1) {
+    const positive = weights.map((weight) => Math.max(0, Number(weight) || 0));
+    const total = positive.reduce((sum, weight) => sum + weight, 0);
+    if (total <= 0.0001) return positive;
+    return positive.map((weight) => weight / total * scale);
+  }
+
   const STYLE_PRESETS = {
     none: {
       thresholdBias: 0,
@@ -107,14 +127,29 @@
     // Lens-scatter proxy: halo footprint follows area growth (~r^2 trend in normalized domain).
     const lensArea = Math.pow(radiusRatio, 2);
     // Strength should react earlier in low-mid range while still leaving headroom.
-    const strengthDrive = Math.pow(strengthRatio, 0.88);
+    const strengthDrive = Math.pow(strengthRatio, 0.58);
     // Radius should mostly move energy outward into halo instead of boosting local white.
     const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
     const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
     // Physical mapping: strength=0 should produce zero emitted glow energy.
-    const strengthEnergyBoost = strengthDrive * 3.35;
+    const strengthEnergyBoost = strengthDrive * 6.2;
     // Chromatic slider should become visible earlier (especially in 12~45 range).
     const chromaticRatio = Math.pow(chromatic / 100, 0.88);
+    const diffusionT = Math.max(0, Math.min(1, spreadRatio));
+    const nearMipWeights = [0.48, 0.28, 0.14, 0.065, 0.025, 0.008, 0.002];
+    const midMipWeights = [0.2, 0.26, 0.24, 0.16, 0.085, 0.04, 0.015];
+    const farMipWeights = [0.055, 0.1, 0.16, 0.22, 0.22, 0.165, 0.08];
+    const mipShape = diffusionT < 0.52
+      ? mixLists(nearMipWeights, midMipWeights, diffusionT / 0.52)
+      : mixLists(midMipWeights, farMipWeights, (diffusionT - 0.52) / 0.48);
+    const styleEnergy = style === "none" ? 0 : clamp(
+      0.98 + preset.smallWeight * 0.16 + preset.mediumWeight * 0.14 + preset.largeWeight * 0.12,
+      0,
+      1.42,
+      1.16
+    );
+    const diffusionEnergyCompensation = 1 + diffusionT * 0.12;
+    const normalizedMipWeights = normalizeWeights(mipShape, styleEnergy * diffusionEnergyCompensation);
 
     return {
       style,
@@ -139,8 +174,8 @@
           0.2
         ),
         localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
-        sourceFeatherRadius: Math.max(1, Math.min(4, Math.round(1 + legacyRadiusRatio * 2.2))),
-        haloMaskRadius: Math.max(3, Math.min(36, Math.round(4 + legacyRadiusRatio * 24 + wideRadiusRatio * 8))),
+        sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
+        haloMaskRadius: Math.max(4, Math.min(8, Math.round(4 + legacyRadiusRatio * 3 + wideRadiusRatio * 1.5))),
         contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
         contrastHigh: clamp(0.092 - thresholdRatio * 0.04 - exposureRatio * 0.022, 0.028, 0.11, 0.068),
         specularLow: 0.06,
@@ -152,24 +187,15 @@
       },
       blur: {
         mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
-        mipWeights: [
-          // Radius grows: reduce near-core weights; push more energy to far halo levels.
-          preset.smallWeight * (0.74 - spreadRatio * 0.52 - lensArea * 0.08),
-          preset.mediumWeight * (0.88 + spreadRatio * 0.05 - lensArea * 0.04),
-          preset.largeWeight * (0.8 + spreadRatio * preset.scatter * 0.62 + lensArea * 0.22 + wideRadiusRatio * 0.18),
-          preset.largeWeight * (0.62 + spreadRatio * preset.scatter * 0.7 + lensArea * 0.34 + wideRadiusRatio * 0.34),
-          preset.largeWeight * (0.46 + spreadRatio * preset.scatter * 0.62 + lensArea * 0.48 + wideRadiusRatio * 0.48),
-          preset.largeWeight * (0.3 + spreadRatio * preset.scatter * 0.52 + lensArea * 0.62 + wideRadiusRatio * 0.62),
-          preset.largeWeight * (0.18 + spreadRatio * 0.24 + lensArea * 0.7 + wideRadiusRatio * 0.68)
-        ],
-        pyramidWeight: clamp(0.9 + spreadRatio * 0.24 + lensArea * 0.58 + wideRadiusRatio * 0.2 + preset.scatter * 0.06, 0.86, 1.98, 1),
+        mipWeights: normalizedMipWeights,
+        pyramidWeight: clamp(0.72 + diffusionT * 0.14 + preset.scatter * 0.035, 0.68, 0.96, 0.78),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
-        largeWeight: preset.largeWeight * (0.78 + spreadRatio * preset.scatter * 0.86 + lensArea * 0.74 + wideRadiusRatio * 0.46),
+        largeWeight: preset.largeWeight,
         passes: 1
       },
       composite: {
-        intensity: clamp(strengthEnergyBoost * spreadEnergyCompensation * (0.78 + radiusEnergyDamping * 0.52), 0, 3.2, 1),
+        intensity: clamp(strengthEnergyBoost * (0.86 + radiusEnergyDamping * 0.48) * (1 - diffusionT * 0.03), 0, 6.4, 1),
         // Favor screen-like appearance; reduce additive/linear-dodge feel.
         softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
         warmth: preset.warmth,
@@ -178,15 +204,15 @@
         shadowProtect: preset.darkProtect,
         colorProtect: clamp(0.25 + strengthRatio * 0.13 - spreadRatio * 0.02, 0.22, 0.46, 0.31),
         // Increase shoulder with strength to avoid dead-white cores.
-        shoulder: clamp(0.5 + strengthRatio * 0.12 + spreadAir * 0.03 + Math.max(0, exposureRatio) * 0.018, 0.42, 0.74, 0.56),
+        shoulder: clamp(0.48 + strengthRatio * 0.1 + spreadAir * 0.03 + Math.max(0, exposureRatio) * 0.018, 0.4, 0.72, 0.56),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,
         chromatic: chromaticRatio,
         // Split glow into core vs halo at composite stage (strength-gated).
-        coreSuppression: clamp(0.2 + strengthDrive * 0.5 + thresholdRatio * 0.14, 0.16, 0.92, 0.44),
-        haloBoost: clamp((0.56 + spreadAir * 0.62 + lensArea * 0.4 + wideRadiusRatio * 0.22) * Math.pow(strengthRatio, 0.74) * (0.7 + radiusEnergyDamping * 0.5), 0, 2.05, 0),
-        haloMix: clamp((0.24 + spreadAir * 0.46 + lensArea * 0.38) * Math.pow(strengthRatio, 0.56), 0, 0.9, 0)
+        coreSuppression: clamp(0.2 + strengthDrive * 0.46 + thresholdRatio * 0.12 + diffusionT * 0.14, 0.16, 0.92, 0.44),
+        haloBoost: clamp((1.04 + diffusionT * 0.3 + wideRadiusRatio * 0.12) * Math.pow(strengthRatio, 0.54), 0, 2.15, 0),
+        haloMix: clamp((0.22 + diffusionT * 0.48) * Math.pow(strengthRatio, 0.56), 0, 0.84, 0)
       },
       sourceTone: {
         // Exposure is mostly source-side activity shaping (not output intensity).

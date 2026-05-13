@@ -92,15 +92,13 @@
     vec3 computeGlow(vec3 glowLayer, vec3 fringe, vec4 masks) {
       float baseLuma = masks.r;
       float protect = masks.g;
-      float darkProtect = masks.b;
       float source = masks.a;
       float baseMax = max(max(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
       float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float shadowProtect = darkProtect * uShadowProtect;
       float sourceAnchor = uSourceAnchorBase + source * uSourceAnchorAmount;
-      float protectGain = saturate((1.0 - highlightProtect * 0.78) * (1.0 - shadowProtect * 0.8) * sourceAnchor);
+      float protectGain = saturate((1.0 - highlightProtect * 0.42) * sourceAnchor);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -245,11 +243,9 @@
         0.0,
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
-      float darkProtect = masks.b;
       float highlightProtect = protect * uHighlightProtect * 0.86;
-      float shadowProtect = darkProtect * uShadowProtect;
       float sourceAnchor = uSourceAnchorBase + source * uSourceAnchorAmount;
-      float protectGain = saturate((1.0 - highlightProtect * 0.78) * (1.0 - shadowProtect * 0.8) * sourceAnchor);
+      float protectGain = saturate((1.0 - highlightProtect * 0.42) * sourceAnchor);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
