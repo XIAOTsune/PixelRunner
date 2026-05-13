@@ -1434,6 +1434,325 @@ button {
   min-height: 40px;
 }
 
+.tool-space-fx-card {
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(117, 216, 199, 0.48);
+  background:
+    radial-gradient(circle at top right, rgba(255, 213, 106, 0.12), transparent 34%),
+    radial-gradient(circle at left center, rgba(120, 185, 255, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(25, 43, 48, 0.98) 0%, rgba(22, 28, 39, 0.99) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(13, 31, 34, 0.46);
+}
+
+.tool-space-fx-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-space-fx-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-space-fx-header-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.space-fx-open-btn {
+  width: 100%;
+  min-height: 40px;
+}
+
+.overlay-card.space-fx-modal-card {
+  width: min(96vw, 1440px);
+  min-height: min(86vh, 920px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.space-fx-modal-hero {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(117, 216, 199, 0.48);
+  background:
+    radial-gradient(circle at top left, rgba(255, 213, 106, 0.1), transparent 34%),
+    radial-gradient(circle at right center, rgba(121, 191, 255, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(31, 52, 57, 0.95), rgba(20, 30, 42, 0.98));
+}
+
+.space-fx-modal-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.space-fx-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.space-fx-inline-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.space-fx-lab-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.space-fx-lab-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(117, 216, 199, 0.34);
+  background: rgba(6, 12, 16, 0.94);
+}
+
+.space-fx-lab-tile-wide {
+  min-height: 260px;
+  height: clamp(280px, 48vh, 640px);
+}
+
+.space-fx-preview-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.32), rgba(13, 22, 30, 0.28)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 8px, transparent 8px 16px);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.space-fx-preview-viewport.is-panning {
+  cursor: grabbing;
+}
+
+.space-fx-base-image,
+.space-fx-lab-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.space-fx-base-image {
+  z-index: 0;
+}
+
+.space-fx-lab-image {
+  z-index: 1;
+}
+
+.space-fx-base-image:not([src]),
+.space-fx-lab-image:not(.is-active) {
+  display: none;
+}
+
+.space-fx-control-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  will-change: transform;
+}
+
+.space-fx-control-center {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid rgba(255, 236, 172, 0.98);
+  border-radius: 999px;
+  background: rgba(255, 213, 106, 0.25);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.38), 0 0 16px rgba(255, 213, 106, 0.68);
+}
+
+.space-fx-control-line {
+  position: absolute;
+  height: 2px;
+  width: 150px;
+  margin-top: -1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(255, 236, 172, 0.96), rgba(117, 216, 199, 0.1));
+  box-shadow: 0 0 12px rgba(117, 216, 199, 0.6);
+}
+
+.space-fx-control-range {
+  position: absolute;
+  width: 180px;
+  height: 120px;
+  margin: -60px 0 0 -90px;
+  border: 1px solid rgba(117, 216, 199, 0.58);
+  border-radius: 999px;
+  box-shadow: inset 0 0 24px rgba(117, 216, 199, 0.08), 0 0 20px rgba(117, 216, 199, 0.22);
+}
+
+.space-fx-preview-tools {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(117, 216, 199, 0.62);
+  background: rgba(7, 17, 22, 0.88);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.space-fx-preview-tool-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(238, 255, 250, 0.96);
+  background: rgba(36, 111, 116, 0.9);
+}
+
+.space-fx-lab-tile figcaption {
+  flex: 0 0 auto;
+  padding: 6px 7px;
+  border-top: 1px solid rgba(117, 216, 199, 0.24);
+  font-size: 10px;
+  line-height: 1.3;
+  color: rgba(218, 239, 236, 0.82);
+  background: rgba(12, 24, 30, 0.92);
+}
+
+.space-fx-preview-meta {
+  min-height: 26px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: rgba(8, 18, 23, 0.5);
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(204, 229, 226, 0.76);
+}
+
+.space-fx-controls-panel {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 12px;
+  min-width: 0;
+  max-height: calc(100vh - 128px);
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(117, 216, 199, 0.34);
+  background: rgba(11, 27, 33, 0.58);
+}
+
+.space-fx-preset-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.space-fx-preset-btn {
+  min-width: 0;
+}
+
+.space-fx-preset-btn.is-selected {
+  color: var(--text-strong);
+  border-color: rgba(117, 216, 199, 0.9);
+  box-shadow: 3px 4px 0 rgba(33, 117, 120, 0.82);
+  background: rgba(33, 98, 101, 0.92);
+}
+
+.space-fx-slider-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.space-fx-slider-field {
+  flex: 1 1 auto;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(15, 36, 43, 0.54);
+}
+
+.space-fx-modal-actions .secondary-btn,
+.space-fx-modal-actions .primary-btn {
+  min-height: 38px;
+}
+
+@media (max-width: 980px) {
+  .overlay-card.space-fx-modal-card {
+    width: min(96vw, 860px);
+    min-height: auto;
+  }
+
+  .space-fx-controls-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 760px) {
+  .overlay-card.space-fx-modal-card {
+    width: calc(100vw - 20px);
+  }
+
+  .space-fx-lab-tile-wide {
+    min-height: 220px;
+    height: 240px;
+  }
+
+  .space-fx-slider-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .space-fx-preset-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .overlay-card.glow-modal-card {
   width: min(96vw, 1440px);
   min-height: min(86vh, 920px);
