@@ -17,18 +17,20 @@
     in vec2 vUv;
     out vec4 outColor;
     void main() {
-      vec3 color = vec3(0.0);
-      float total = 0.0;
-      for (int y = -1; y <= 2; y++) {
-        float wy = (y == 0 || y == 1) ? 3.0 : 1.0;
-        for (int x = -1; x <= 2; x++) {
-          float wx = (x == 0 || x == 1) ? 3.0 : 1.0;
-          float weight = wx * wy;
-          color += texture(uSource, vUv + vec2(float(x), float(y)) * uTexel).rgb * weight;
-          total += weight;
-        }
-      }
-      outColor = vec4(color / max(total, 0.0001), 1.0);
+      vec3 color = texture(uSource, vUv + vec2(-2.0, -2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2( 0.0, -2.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv + vec2( 2.0, -2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2(-2.0,  0.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv).rgb * 0.125;
+      color += texture(uSource, vUv + vec2( 2.0,  0.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv + vec2(-2.0,  2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2( 0.0,  2.0) * uTexel).rgb * 0.0625;
+      color += texture(uSource, vUv + vec2( 2.0,  2.0) * uTexel).rgb * 0.03125;
+      color += texture(uSource, vUv + vec2(-1.0, -1.0) * uTexel).rgb * 0.125;
+      color += texture(uSource, vUv + vec2( 1.0, -1.0) * uTexel).rgb * 0.125;
+      color += texture(uSource, vUv + vec2(-1.0,  1.0) * uTexel).rgb * 0.125;
+      color += texture(uSource, vUv + vec2( 1.0,  1.0) * uTexel).rgb * 0.125;
+      outColor = vec4(color, 1.0);
     }
   `;
 
@@ -66,11 +68,21 @@
     precision highp float;
     uniform sampler2D uBase;
     uniform sampler2D uAdd;
+    uniform vec2 uBaseTexel;
     uniform float uWeight;
     in vec2 vUv;
     out vec4 outColor;
     void main() {
-      outColor = vec4(texture(uBase, vUv).rgb + texture(uAdd, vUv).rgb * uWeight, 1.0);
+      vec3 base = texture(uBase, vUv + vec2(-1.0, -1.0) * uBaseTexel).rgb;
+      base += texture(uBase, vUv + vec2( 0.0, -1.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv + vec2( 1.0, -1.0) * uBaseTexel).rgb;
+      base += texture(uBase, vUv + vec2(-1.0,  0.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv).rgb * 4.0;
+      base += texture(uBase, vUv + vec2( 1.0,  0.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv + vec2(-1.0,  1.0) * uBaseTexel).rgb;
+      base += texture(uBase, vUv + vec2( 0.0,  1.0) * uBaseTexel).rgb * 2.0;
+      base += texture(uBase, vUv + vec2( 1.0,  1.0) * uBaseTexel).rgb;
+      outColor = vec4(base * 0.0625 + texture(uAdd, vUv).rgb * uWeight, 1.0);
     }
   `;
 
@@ -174,12 +186,34 @@
     return data;
   }
 
+  function sourceLayerToFloat32(layer) {
+    const count = layer.width * layer.height;
+    const data = new Float32Array(count * 4);
+    for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+      data[index] = Math.max(0, layer.r[pixel]);
+      data[index + 1] = Math.max(0, layer.g[pixel]);
+      data[index + 2] = Math.max(0, layer.b[pixel]);
+      data[index + 3] = 1;
+    }
+    return data;
+  }
+
   function rgba8ToLayer(data, width, height) {
     const out = createLayer(width, height);
     for (let pixel = 0, index = 0; pixel < out.r.length; pixel += 1, index += 4) {
       out.r[pixel] = data[index] / 255;
       out.g[pixel] = data[index + 1] / 255;
       out.b[pixel] = data[index + 2] / 255;
+    }
+    return out;
+  }
+
+  function rgbaFloatToLayer(data, width, height) {
+    const out = createLayer(width, height);
+    for (let pixel = 0, index = 0; pixel < out.r.length; pixel += 1, index += 4) {
+      out.r[pixel] = Math.max(0, data[index]);
+      out.g[pixel] = Math.max(0, data[index + 1]);
+      out.b[pixel] = Math.max(0, data[index + 2]);
     }
     return out;
   }
@@ -225,6 +259,13 @@
             internalFormat: this.gl.RGBA16F,
             format: this.gl.RGBA,
             type: this.gl.HALF_FLOAT
+          }
+        : null;
+      this.sourceFloatFormat = this.floatTargets
+        ? {
+            internalFormat: this.gl.RGBA32F,
+            format: this.gl.RGBA,
+            type: this.gl.FLOAT
           }
         : null;
     }
@@ -297,6 +338,7 @@
       this.bindProgram(program);
       this.bindTexture(program, "uBase", baseTarget.texture, 0);
       this.bindTexture(program, "uAdd", addTarget.texture, 1);
+      gl.uniform2f(gl.getUniformLocation(program, "uBaseTexel"), 1 / baseTarget.width, 1 / baseTarget.height);
       gl.uniform1f(gl.getUniformLocation(program, "uWeight"), weight);
       this.renderTo(target, program);
       return target;
@@ -304,7 +346,7 @@
 
     finalComposite(combined, pyramidWeight, width, height) {
       const gl = this.gl;
-      const target = createTarget(gl, width, height);
+      const target = createTarget(gl, width, height, this.targetFormat);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.final;
       this.bindProgram(program);
@@ -315,6 +357,9 @@
     }
 
     buildMultiScaleGlow(sourceLayer, params) {
+      if (!this.floatTargets) {
+        throw new Error("WebGL2 glow blur requires float render targets");
+      }
       const width = sourceLayer.width;
       const height = sourceLayer.height;
       const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
@@ -332,15 +377,16 @@
       gl.disable(gl.SCISSOR_TEST);
       this.allocatedTargets = [];
 
-      const currentTexture = createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
+      const currentTexture = this.floatTargets
+        ? createTexture(gl, width, height, sourceLayerToFloat32(sourceLayer), this.sourceFloatFormat)
+        : createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
       try {
         let current = { width, height, texture: currentTexture, framebuffer: null };
         const levels = [];
 
         for (let index = 0; index < mipCount; index += 1) {
           if (current.width <= 1 && current.height <= 1) break;
-          const downsampled = this.downsample(current.texture, current.width, current.height);
-          current = this.kawase(downsampled, 1);
+          current = this.downsample(current.texture, current.width, current.height);
           levels.push(current);
         }
 
@@ -349,8 +395,7 @@
           ? this.scale(levels[levels.length - 1], effectiveWeights[levels.length - 1])
           : current;
         for (let index = levels.length - 2; index >= 0; index -= 1) {
-          const added = this.upsampleAdd(combined, levels[index], effectiveWeights[index]);
-          combined = this.kawase(added, 0.75);
+          combined = this.upsampleAdd(combined, levels[index], effectiveWeights[index]);
         }
 
         const finalTarget = this.finalComposite(
@@ -359,12 +404,20 @@
           width,
           height
         );
-        const pixels = new Uint8Array(width * height * 4);
         gl.bindFramebuffer(gl.FRAMEBUFFER, finalTarget.framebuffer);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        let glowLayer;
+        if (this.floatTargets) {
+          const pixels = new Float32Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+          glowLayer = rgbaFloatToLayer(pixels, width, height);
+        } else {
+          const pixels = new Uint8Array(width * height * 4);
+          gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          glowLayer = rgba8ToLayer(pixels, width, height);
+        }
 
         return {
-          glowLayer: rgba8ToLayer(pixels, width, height),
+          glowLayer,
           levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })) },
           backend: "webgl2"
         };

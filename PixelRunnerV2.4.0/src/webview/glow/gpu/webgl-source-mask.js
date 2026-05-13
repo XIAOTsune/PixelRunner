@@ -15,8 +15,14 @@
     uniform sampler2D uImage;
     in vec2 vUv;
     out vec4 outColor;
+    float srgbToLinear(float value) {
+      return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+    }
+    vec3 srgbToLinear(vec3 color) {
+      return vec3(srgbToLinear(color.r), srgbToLinear(color.g), srgbToLinear(color.b));
+    }
     void main() {
-      vec3 c = texture(uImage, vUv).rgb;
+      vec3 c = srgbToLinear(texture(uImage, vUv).rgb);
       float maxChannel = max(max(c.r, c.g), c.b);
       float minChannel = min(min(c.r, c.g), c.b);
       float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -79,6 +85,7 @@
     uniform float uSkinProtect;
     uniform float uDarkProtect;
     uniform float uChromaBoost;
+    uniform float uLowEnergyCutoff;
     in vec2 vUv;
     layout(location = 0) out vec4 outSource;
     layout(location = 1) out vec4 outMasks;
@@ -99,6 +106,14 @@
       return saturate(max(curved, value - threshold) / max(value, 0.0001));
     }
 
+    float srgbToLinear(float value) {
+      return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4);
+    }
+
+    vec3 srgbToLinear(vec3 color) {
+      return vec3(srgbToLinear(color.r), srgbToLinear(color.g), srgbToLinear(color.b));
+    }
+
     float isSkinHueFast(vec3 c, float maxChannel, float minChannel) {
       float delta = maxChannel - minChannel;
       if (delta <= 0.0001 || maxChannel != c.r) return 0.0;
@@ -107,7 +122,8 @@
     }
 
     void main() {
-      vec3 c = texture(uImage, vUv).rgb;
+      vec3 cSrgb = texture(uImage, vUv).rgb;
+      vec3 c = srgbToLinear(cSrgb);
       vec4 metrics = texture(uMetrics, vUv);
       float lum = metrics.r;
       float maxChannel = metrics.g;
@@ -116,39 +132,63 @@
       float localMean = texture(uLocalMean, vUv).r;
       float contrast = max(0.0, lum - localMean);
       float specular = max(0.0, maxChannel - localMean);
-      float brightness = max(lum * 0.82 + maxChannel * 0.18, maxChannel * 0.88);
+      float brightness = max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
-      float lumaScore =
-        softThresholdMask(brightness, uThresholdLow, uThresholdKnee) *
-        smooth01(uThresholdLow - uThresholdKnee * 0.92, uThresholdHigh, brightness);
+      float thresholdGate = softThresholdMask(brightness, uThresholdHigh, uThresholdKnee);
+      float secondaryThresholdGate = smooth01(uThresholdLow, uThresholdHigh + uThresholdKnee * 0.5, brightness);
+      float brightPass = thresholdGate;
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
+      float brightEnergy = pow(saturate(brightPass), 1.16);
+      float specularPass =
+        pow(specularScore, 1.16) *
+        secondaryThresholdGate *
+        smooth01(0.055, 0.22, specular);
+      float rimPass = contrastScore * thresholdGate * smooth01(0.82, 0.98, brightness);
       float highLightness = smooth01(0.7, 0.95, lum);
       float veryHighLightness = smooth01(0.84, 0.985, lum);
-      float lowContrast = 1.0 - smooth01(0.01, 0.068, contrast);
+      float clothContrast = 1.0 - smooth01(0.028, 0.16, contrast);
+      float lowContrast = 1.0 - smooth01(0.01, 0.11, contrast);
       float lowSat = 1.0 - smooth01(0.12, 0.36, sat);
-      float whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
-      float skinHue = isSkinHueFast(c, maxChannel, minChannel);
+      float whiteFlat = highLightness * clothContrast * lowSat * (0.9 + veryHighLightness * 0.58);
+      float srgbMax = max(max(cSrgb.r, cSrgb.g), cSrgb.b);
+      float srgbMin = min(min(cSrgb.r, cSrgb.g), cSrgb.b);
+      float skinHue = isSkinHueFast(cSrgb, srgbMax, srgbMin);
       float skinColor =
         skinHue *
         smooth01(0.16, 0.36, sat) *
         (1.0 - smooth01(0.78, 0.96, sat)) *
         smooth01(0.38, 0.74, lum) *
         (1.0 - smooth01(0.9, 1.0, lum));
-      float dark = 1.0 - smooth01(0.08, 0.28, lum);
-      float protectionBase = saturate(whiteFlat * uWhiteProtect + skinColor * uSkinProtect * 0.55);
-      float nearClip = smooth01(0.92, 1.0, maxChannel);
-      float protection = saturate(protectionBase + nearClip * (0.12 + (1.0 - sat) * 0.1));
-      float chromaSource = smooth01(0.08, 0.46, sat) * smooth01(0.44, 0.84, brightness);
-      float detailBoost = smooth01(0.022, 0.12, contrast);
-      float reflectiveBoost = clamp(0.48 + contrastScore * 0.44 + specularScore * 0.48 + chromaSource * 0.18 + detailBoost * 0.16, 0.0, 1.28);
-      float edgeSource = max(contrastScore * 0.2, specularScore * 0.4) * smooth01(0.42, 0.9, brightness);
-      float combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
-      float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.82));
-      float chromaBoost = uChromaBoost * smooth01(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0);
-      outSource = vec4(sourceColor, 1.0);
-      outMasks = vec4(lum, protection, dark, mask);
+      float dark = 1.0 - smooth01(0.18, 0.42, brightness);
+      float midtoneReject = 1.0 - smooth01(0.48, 0.72, brightness);
+      float protectionBase = saturate(
+        whiteFlat * uWhiteProtect +
+        skinColor * uSkinProtect * 0.9 +
+        dark * uDarkProtect +
+        midtoneReject * 0.62
+      );
+      float nearClip = smooth01(0.975, 1.0, maxChannel);
+      float clippingDetail = saturate(
+        smooth01(0.12, 0.34, specular) * 0.72 +
+        contrastScore * thresholdGate * 0.18 +
+        sat * 0.1
+      );
+      float nearClipException = nearClip * clippingDetail * thresholdGate;
+      float protection = saturate(protectionBase * (1.0 - nearClipException * 0.42));
+      float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
+      float emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.42) * (1.0 - nearClipException * 0.35) * (1.0 - colorReflection * 0.32);
+      emissionEnergy *= 1.0 - protection * 0.86;
+      emissionEnergy *= 1.0 - neutralClothReject * 0.82;
+      emissionEnergy *= smooth01(uLowEnergyCutoff * 0.62, uLowEnergyCutoff * 2.6, emissionEnergy);
+      emissionEnergy = saturate(pow(emissionEnergy, 1.04) * 1.18);
+      float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
+      float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
+      float chromaKeep = clamp(0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + uChromaBoost * 0.3 - neutralHighlight * 0.06, 0.18, 0.98);
+      vec3 emissionColor = mix(vec3(brightness), c, chromaKeep);
+      outSource = vec4(emissionColor * emissionEnergy, 1.0);
+      outMasks = vec4(lum, protection, dark, emissionEnergy);
     }
   `;
 
@@ -241,23 +281,28 @@
     return program;
   }
 
-  function createTexture(gl, width, height, data = null) {
+  function createTexture(gl, width, height, data = null, format = null) {
+    const textureFormat = format || {
+      internalFormat: gl.RGBA8,
+      format: gl.RGBA,
+      type: gl.UNSIGNED_BYTE
+    };
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, textureFormat.internalFormat, width, height, 0, textureFormat.format, textureFormat.type, data);
     return texture;
   }
 
-  function createTarget(gl, width, height, attachmentCount = 1) {
+  function createTarget(gl, width, height, attachmentCount = 1, formats = null) {
     const framebuffer = gl.createFramebuffer();
     const textures = [];
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     for (let index = 0; index < attachmentCount; index += 1) {
-      const texture = createTexture(gl, width, height);
+      const texture = createTexture(gl, width, height, null, Array.isArray(formats) ? formats[index] : formats);
       textures.push(texture);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + index, gl.TEXTURE_2D, texture, 0);
     }
@@ -283,6 +328,17 @@
         blurV: createProgram(this.gl, BLUR_V_SHADER),
         source: createProgram(this.gl, SOURCE_SHADER)
       };
+      this.floatTargets = !!(
+        this.gl.getExtension("EXT_color_buffer_float") &&
+        this.gl.getExtension("OES_texture_float_linear")
+      );
+      this.targetFormat = this.floatTargets
+        ? {
+            internalFormat: this.gl.RGBA32F,
+            format: this.gl.RGBA,
+            type: this.gl.FLOAT
+          }
+        : null;
       this.vertexBuffer = this.gl.createBuffer();
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
       this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
@@ -313,7 +369,7 @@
 
     renderSingleTexture(program, sourceTexture, sourceUniform, width, height, configure = null) {
       const gl = this.gl;
-      const target = createTarget(gl, width, height);
+      const target = createTarget(gl, width, height, 1, this.targetFormat);
       this.bindProgram(program);
       this.bindTexture(program, sourceUniform, sourceTexture, 0);
       if (configure) configure(program);
@@ -325,6 +381,9 @@
       const gl = this.gl;
       const { width, height } = imageData;
       const sourceParams = params.source;
+      if (!this.floatTargets) {
+        throw new Error("WebGL2 glow source mask requires float render targets");
+      }
       const radius = Math.max(1, Math.min(24, Math.floor(sourceParams.localRadius)));
       this.canvas.width = width;
       this.canvas.height = height;
@@ -364,7 +423,7 @@
         );
         targets.push(localMeanTarget);
 
-        const sourceTarget = createTarget(gl, width, height, 2);
+        const sourceTarget = createTarget(gl, width, height, 2, [this.targetFormat, this.targetFormat]);
         targets.push(sourceTarget);
         const program = this.programs.source;
         this.bindProgram(program);
@@ -382,15 +441,16 @@
         gl.uniform1f(gl.getUniformLocation(program, "uSkinProtect"), sourceParams.skinProtect);
         gl.uniform1f(gl.getUniformLocation(program, "uDarkProtect"), sourceParams.darkProtect);
         gl.uniform1f(gl.getUniformLocation(program, "uChromaBoost"), sourceParams.chromaBoost);
+        gl.uniform1f(gl.getUniformLocation(program, "uLowEnergyCutoff"), sourceParams.lowEnergyCutoff || 0.046);
         this.renderTo(sourceTarget, program);
 
-        const sourcePixels = new Uint8Array(width * height * 4);
-        const maskPixels = new Uint8Array(width * height * 4);
+        const sourcePixels = new Float32Array(width * height * 4);
+        const maskPixels = new Float32Array(width * height * 4);
         gl.bindFramebuffer(gl.FRAMEBUFFER, sourceTarget.framebuffer);
         gl.readBuffer(gl.COLOR_ATTACHMENT0);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, sourcePixels);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, sourcePixels);
         gl.readBuffer(gl.COLOR_ATTACHMENT1);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, maskPixels);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, maskPixels);
 
         const total = width * height;
         const sourceLayer = createLayer(width, height);
@@ -404,25 +464,18 @@
         const protectMask = new Float32Array(total);
         const sourceMask = new Float32Array(total);
         for (let pixel = 0, index = 0; pixel < total; pixel += 1, index += 4) {
-          sourceLayer.r[pixel] = sourcePixels[index] / 255;
-          sourceLayer.g[pixel] = sourcePixels[index + 1] / 255;
-          sourceLayer.b[pixel] = sourcePixels[index + 2] / 255;
-          luma[pixel] = maskPixels[index] / 255;
-          protectMask[pixel] = maskPixels[index + 1] / 255;
-          darkProtect[pixel] = maskPixels[index + 2] / 255;
-          sourceMask[pixel] = maskPixels[index + 3] / 255;
+          sourceLayer.r[pixel] = Math.max(0, sourcePixels[index]);
+          sourceLayer.g[pixel] = Math.max(0, sourcePixels[index + 1]);
+          sourceLayer.b[pixel] = Math.max(0, sourcePixels[index + 2]);
+          luma[pixel] = Math.min(1, Math.max(0, maskPixels[index]));
+          protectMask[pixel] = Math.min(1, Math.max(0, maskPixels[index + 1]));
+          darkProtect[pixel] = Math.min(1, Math.max(0, maskPixels[index + 2]));
+          sourceMask[pixel] = Math.min(1, Math.max(0, maskPixels[index + 3]));
         }
         const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
-        const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
         const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
-        const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
-        for (let pixel = 0; pixel < total; pixel += 1) {
-          const softMask = Math.max(0, Math.min(1, sourceMask[pixel] * 0.78 + featheredSourceMask[pixel] * 0.22));
-          const gain = Math.pow(softMask, 0.78);
-          sourceLayer.r[pixel] *= gain;
-          sourceLayer.g[pixel] *= gain;
-          sourceLayer.b[pixel] *= gain;
-        }
+        const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
+        const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
         return {
           width,
@@ -437,7 +490,7 @@
             skinLikeMask,
             darkProtect,
             protectMask,
-            sourceMask,
+            sourceMask: featheredSourceMask,
             haloMask
           },
           debugImages: null,

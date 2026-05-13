@@ -29,10 +29,13 @@
     uniform float uChromaticOffset;
     uniform float uChromaticAmount;
     uniform float uCoreSuppression;
+    uniform float uCoreCeiling;
     uniform float uHaloBoost;
     uniform float uHaloMix;
     uniform float uSourceAnchorBase;
     uniform float uSourceAnchorAmount;
+    uniform float uEnergyFloor;
+    uniform float uEnergyFloorSoftness;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -42,8 +45,21 @@
     }
 
     float softShoulder(float value, float shoulder) {
-      float safeShoulder = clamp(shoulder, 0.1, 0.95);
+      float safeShoulder = clamp(shoulder, 0.04, 0.95);
       return value / (1.0 + value * safeShoulder);
+    }
+
+    float linearToSrgb(float value) {
+      float v = max(0.0, value);
+      return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055;
+    }
+
+    vec3 linearToSrgb(vec3 color) {
+      return vec3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
+    }
+
+    float hashNoise(vec2 p, float channel) {
+      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
     }
 
     vec3 applySaturation(vec3 color, float saturation) {
@@ -67,38 +83,31 @@
       return mix(color, tinted, amount);
     }
 
-    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source) {
-      float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
+    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
       float haloBoost = max(0.0, uHaloBoost);
       float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float brightCoreGate = clamp(1.0 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1.0);
-      float protectCoreGate = clamp(1.0 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1.0);
-      float coreGate = brightCoreGate * protectCoreGate;
-      float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
-      float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
-      float darkLift = pow(clamp(1.0 - baseLuma, 0.0, 1.0), 0.6);
-      float haloGate = clamp(
-        (1.0 - protect * 0.34) * (0.42 + source * 0.28 + darkLift * 0.48) * (0.64 + energyGate * 0.88),
-        0.12,
-        1.36
-      );
-      float coreScale = 1.0 - haloMix * 0.48;
-      float haloScale = 1.0 + haloMix * 0.66;
-      vec3 core = glow * coreGate * coreScale;
-      vec3 halo = glow * haloGate * haloBoost * haloScale;
-      return core * (1.0 - haloMix) + halo * haloMix;
+      float baseGuard = 1.0 - clamp(baseLuma, 0.0, 1.0) * 0.018;
+      float protectGuard = 1.0 - clamp(protect, 0.0, 1.0) * 0.035;
+      float diffusionGain = 1.0 + haloMix * 0.16 + max(0.0, haloBoost - 1.0) * 0.06;
+      return clamp(glow * clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18), 0.0, 1.0);
+    }
+
+    vec3 visibilityGate(vec3 glow) {
+      if (uEnergyFloor <= 0.000001) return glow;
+      vec3 gate = smoothstep(vec3(uEnergyFloor), vec3(uEnergyFloor + uEnergyFloorSoftness), glow);
+      return glow * gate;
     }
 
     vec3 computeGlow(vec3 glowLayer, vec3 fringe, vec4 masks) {
       float baseLuma = masks.r;
       float protect = masks.g;
       float source = masks.a;
+      float haloSource = masks.b;
       float baseMax = max(max(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
       float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float sourceAnchor = uSourceAnchorBase + source * uSourceAnchorAmount;
-      float protectGain = saturate((1.0 - highlightProtect * 0.42) * sourceAnchor);
+      float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -113,7 +122,7 @@
         softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
-      return splitCoreAndHalo(glow, baseLuma, protect, source);
+      return visibilityGate(splitCoreAndHalo(glow, baseLuma, protect, source, haloSource));
     }
 
     void main() {
@@ -134,14 +143,20 @@
         0.0,
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
-      vec3 glow = computeGlow(glowLayer, fringe, texture(uMasks, vUv));
+      vec3 glow = clamp(linearToSrgb(computeGlow(glowLayer, fringe, texture(uMasks, vUv))), 0.0, 1.0);
+      vec3 previewDither = (vec3(
+        hashNoise(gl_FragCoord.xy, 0.0),
+        hashNoise(gl_FragCoord.xy, 1.0),
+        hashNoise(gl_FragCoord.xy, 2.0)
+      ) - vec3(0.5)) * (0.45 / 255.0);
+      glow = clamp(glow + previewDither, 0.0, 1.0);
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
-      vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * (0.58 + protect * 0.34)), 0.0, 1.0);
+      vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * 0.62), 0.0, 1.0);
       float maxGlow = max(max(glow.r, glow.g), glow.b);
       float baseMax = max(max(base.r, base.g), base.b);
       float baseMin = min(min(base.r, base.g), base.b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
-      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.88 + baseSat * 0.22), 0.86, 1.0);
+      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.84 + baseSat * 0.58), 0.8, 1.0);
       vec3 result = mix(screen, soft, uSoftAddMix) * colorProtect + base.rgb * (1.0 - colorProtect);
       outColor = vec4(clamp(result, 0.0, 1.0), base.a);
     }
@@ -163,10 +178,13 @@
     uniform float uChromaticOffset;
     uniform float uChromaticAmount;
     uniform float uCoreSuppression;
+    uniform float uCoreCeiling;
     uniform float uHaloBoost;
     uniform float uHaloMix;
     uniform float uSourceAnchorBase;
     uniform float uSourceAnchorAmount;
+    uniform float uEnergyFloor;
+    uniform float uEnergyFloorSoftness;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -176,8 +194,21 @@
     }
 
     float softShoulder(float value, float shoulder) {
-      float safeShoulder = clamp(shoulder, 0.1, 0.95);
+      float safeShoulder = clamp(shoulder, 0.04, 0.95);
       return value / (1.0 + value * safeShoulder);
+    }
+
+    float linearToSrgb(float value) {
+      float v = max(0.0, value);
+      return v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1.0 / 2.4) - 0.055;
+    }
+
+    vec3 linearToSrgb(vec3 color) {
+      return vec3(linearToSrgb(color.r), linearToSrgb(color.g), linearToSrgb(color.b));
+    }
+
+    float hashNoise(vec2 p, float channel) {
+      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
     }
 
     vec3 applySaturation(vec3 color, float saturation) {
@@ -201,26 +232,19 @@
       return mix(color, tinted, amount);
     }
 
-    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source) {
-      float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
+    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
       float haloBoost = max(0.0, uHaloBoost);
       float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float brightCoreGate = clamp(1.0 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1.0);
-      float protectCoreGate = clamp(1.0 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1.0);
-      float coreGate = brightCoreGate * protectCoreGate;
-      float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
-      float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
-      float darkLift = pow(clamp(1.0 - baseLuma, 0.0, 1.0), 0.6);
-      float haloGate = clamp(
-        (1.0 - protect * 0.34) * (0.42 + source * 0.28 + darkLift * 0.48) * (0.64 + energyGate * 0.88),
-        0.12,
-        1.36
-      );
-      float coreScale = 1.0 - haloMix * 0.48;
-      float haloScale = 1.0 + haloMix * 0.66;
-      vec3 core = glow * coreGate * coreScale;
-      vec3 halo = glow * haloGate * haloBoost * haloScale;
-      return core * (1.0 - haloMix) + halo * haloMix;
+      float baseGuard = 1.0 - clamp(baseLuma, 0.0, 1.0) * 0.018;
+      float protectGuard = 1.0 - clamp(protect, 0.0, 1.0) * 0.035;
+      float diffusionGain = 1.0 + haloMix * 0.16 + max(0.0, haloBoost - 1.0) * 0.06;
+      return clamp(glow * clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18), 0.0, 1.0);
+    }
+
+    vec3 visibilityGate(vec3 glow) {
+      if (uEnergyFloor <= 0.000001) return glow;
+      vec3 gate = smoothstep(vec3(uEnergyFloor), vec3(uEnergyFloor + uEnergyFloorSoftness), glow);
+      return glow * gate;
     }
 
     void main() {
@@ -235,6 +259,7 @@
       vec4 masks = texture(uMasks, vUv);
       float baseLuma = masks.r;
       float source = masks.a;
+      float haloSource = masks.b;
       float protect = masks.g;
       float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.02);
       float edgeGate = source * (0.68 + (1.0 - protect) * 0.32);
@@ -244,8 +269,7 @@
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       float highlightProtect = protect * uHighlightProtect * 0.86;
-      float sourceAnchor = uSourceAnchorBase + source * uSourceAnchorAmount;
-      float protectGain = saturate((1.0 - highlightProtect * 0.42) * sourceAnchor);
+      float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -260,8 +284,14 @@
         softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
-      glow = splitCoreAndHalo(glow, baseLuma, protect, source);
-      outColor = vec4(glow, 1.0);
+      glow = visibilityGate(splitCoreAndHalo(glow, baseLuma, protect, source, haloSource));
+      vec3 encoded = linearToSrgb(glow);
+      vec3 dither = (vec3(
+        hashNoise(gl_FragCoord.xy, 0.0),
+        hashNoise(gl_FragCoord.xy, 1.0),
+        hashNoise(gl_FragCoord.xy, 2.0)
+      ) - vec3(0.5)) * (0.75 / 255.0);
+      outColor = vec4(clamp(encoded + dither, 0.0, 1.0), 1.0);
     }
   `;
 
@@ -300,14 +330,19 @@
     return program;
   }
 
-  function createTexture(gl, width, height, data = null) {
+  function createTexture(gl, width, height, data = null, format = null) {
+    const textureFormat = format || {
+      internalFormat: gl.RGBA8,
+      format: gl.RGBA,
+      type: gl.UNSIGNED_BYTE
+    };
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, textureFormat.internalFormat, width, height, 0, textureFormat.format, textureFormat.type, data);
     return texture;
   }
 
@@ -338,14 +373,27 @@
     return data;
   }
 
+  function layerToFloat32(layer) {
+    const count = layer.width * layer.height;
+    const data = new Float32Array(count * 4);
+    for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
+      data[index] = Math.max(0, layer.r[pixel]);
+      data[index + 1] = Math.max(0, layer.g[pixel]);
+      data[index + 2] = Math.max(0, layer.b[pixel]);
+      data[index + 3] = 1;
+    }
+    return data;
+  }
+
+
   function masksToRgba8(masks, width, height) {
     const count = width * height;
     const data = new Uint8Array(count * 4);
     for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
       data[index] = Math.round(Math.min(1, Math.max(0, masks.luma[pixel] || 0)) * 255);
       data[index + 1] = Math.round(Math.min(1, Math.max(0, masks.protectMask[pixel] || 0)) * 255);
-      data[index + 2] = Math.round(Math.min(1, Math.max(0, masks.darkProtect[pixel] || 0)) * 255);
-      data[index + 3] = Math.round(Math.min(1, Math.max(0, (masks.haloMask || masks.sourceMask)[pixel] || 0)) * 255);
+      data[index + 2] = Math.round(Math.min(1, Math.max(0, (masks.haloMask || masks.sourceMask)[pixel] || 0)) * 255);
+      data[index + 3] = Math.round(Math.min(1, Math.max(0, masks.sourceMask[pixel] || 0)) * 255);
     }
     return data;
   }
@@ -362,6 +410,14 @@
       this.vertexBuffer = this.gl.createBuffer();
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
       this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
+      this.floatTextures = !!this.gl.getExtension("OES_texture_float_linear");
+      this.sourceFloatFormat = this.floatTextures
+        ? {
+            internalFormat: this.gl.RGBA32F,
+            format: this.gl.RGBA,
+            type: this.gl.FLOAT
+          }
+        : null;
     }
 
     bindProgram(program) {
@@ -398,11 +454,14 @@
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(30, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 0.96) * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22))));
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
       gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
+      gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0.12, Math.min(1, Number(composite.coreCeiling) || 0.42)));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
       const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.68 + radiusRatio * 0.18);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.32 - radiusRatio * 0.18);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.38 + radiusRatio * 0.08);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.78 - radiusRatio * 0.1);
+      gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloor"), Math.max(0, Number(composite.energyFloor) || 0));
+      gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloorSoftness"), Math.max(0.001, Number(composite.energyFloorSoftness) || 0.04));
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 
@@ -422,11 +481,14 @@
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(30, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 0.96) * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22))));
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
       gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
+      gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0.12, Math.min(1, Number(composite.coreCeiling) || 0.42)));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
       const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.68 + radiusRatio * 0.18);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.32 - radiusRatio * 0.18);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.38 + radiusRatio * 0.08);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.78 - radiusRatio * 0.1);
+      gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloor"), Math.max(0, Number(composite.energyFloor) || 0));
+      gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloorSoftness"), Math.max(0.001, Number(composite.energyFloorSoftness) || 0.04));
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 
@@ -451,6 +513,9 @@
     }
 
     compose(baseImageData, glowLayer, masks, params, options = {}) {
+      if (!this.floatTextures) {
+        throw new Error("WebGL2 glow compositor requires float textures");
+      }
       const gl = this.gl;
       const { width, height } = baseImageData;
       const includeGlowLayer = options.includeGlowLayer !== false;
@@ -462,7 +527,9 @@
       gl.disable(gl.SCISSOR_TEST);
 
       const baseTexture = createTexture(gl, width, height, imageDataToRgba8(baseImageData));
-      const glowTexture = createTexture(gl, width, height, layerToRgba8(glowLayer));
+      const glowTexture = this.floatTextures
+        ? createTexture(gl, width, height, layerToFloat32(glowLayer), this.sourceFloatFormat)
+        : createTexture(gl, width, height, layerToRgba8(glowLayer));
       const masksTexture = createTexture(gl, width, height, masksToRgba8(masks, width, height));
       const previewTarget = previewCanvas ? null : createTarget(gl, width, height);
       const glowLayerTarget = includeGlowLayer ? createTarget(gl, width, height) : null;

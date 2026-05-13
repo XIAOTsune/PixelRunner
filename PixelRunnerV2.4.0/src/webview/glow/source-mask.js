@@ -17,6 +17,10 @@
     return clamp(Math.max(curved, value - threshold) / Math.max(value, 0.0001), 0, 1);
   }
 
+  function srgbToLinear(value) {
+    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  }
+
   function createLayer(width, height) {
     return {
       width,
@@ -102,9 +106,9 @@
     const saturationMap = new Float32Array(total);
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-      const r = data[index] * (1 / 255);
-      const g = data[index + 1] * (1 / 255);
-      const b = data[index + 2] * (1 / 255);
+      const r = srgbToLinear(data[index] * (1 / 255));
+      const g = srgbToLinear(data[index + 1] * (1 / 255));
+      const b = srgbToLinear(data[index + 2] * (1 / 255));
       const maxChannel = r > g ? (r > b ? r : b) : (g > b ? g : b);
       const minChannel = r < g ? (r < b ? r : b) : (g < b ? g : b);
       luma[pixel] = r * 0.2126 + g * 0.7152 + b * 0.0722;
@@ -122,9 +126,6 @@
     const darkProtect = new Float32Array(total);
     const protectMask = new Float32Array(total);
     const sourceMask = new Float32Array(total);
-    const rawSourceR = new Float32Array(total);
-    const rawSourceG = new Float32Array(total);
-    const rawSourceB = new Float32Array(total);
     const sourceLayer = createLayer(width, height);
     const sourceParams = params.source;
     const inv255 = 1 / 255;
@@ -136,78 +137,102 @@
     const chromaBoostAmount = sourceParams.chromaBoost;
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
-      const r = data[index] * inv255;
-      const g = data[index + 1] * inv255;
-      const b = data[index + 2] * inv255;
+      const sr = data[index] * inv255;
+      const sg = data[index + 1] * inv255;
+      const sb = data[index + 2] * inv255;
+      const r = srgbToLinear(sr);
+      const g = srgbToLinear(sg);
+      const b = srgbToLinear(sb);
       const lum = luma[pixel];
       const sat = saturationMap[pixel];
       const maxChannel = maxChannelMap[pixel];
       const contrast = Math.max(0, lum - localMean[pixel]);
       const specular = Math.max(0, maxChannel - localMean[pixel]);
-      const brightness = Math.max(lum * 0.82 + maxChannel * 0.18, maxChannel * 0.88);
+      const brightness = Math.max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
-      const lumaScore =
-        softThresholdMask(brightness, thresholdLow, thresholdKnee) *
-        smoothstep(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
+      const thresholdGate = softThresholdMask(brightness, thresholdHigh, thresholdKnee);
+      const secondaryThresholdGate = smoothstep(thresholdLow, thresholdHigh + thresholdKnee * 0.5, brightness);
+      const brightPass = thresholdGate;
       const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
       const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
+      const brightEnergy = Math.pow(clamp(brightPass, 0, 1), 1.16);
+      const specularPass =
+        Math.pow(specularScore, 1.16) *
+        secondaryThresholdGate *
+        smoothstep(0.055, 0.22, specular);
+      const rimPass = contrastScore * thresholdGate * smoothstep(0.82, 0.98, brightness);
       const highLightness = smoothstep(0.7, 0.95, lum);
       const veryHighLightness = smoothstep(0.84, 0.985, lum);
-      const lowContrast = 1 - smoothstep(0.01, 0.068, contrast);
+      const clothContrast = 1 - smoothstep(0.028, 0.16, contrast);
+      const lowContrast = 1 - smoothstep(0.01, 0.11, contrast);
       const lowSat = 1 - smoothstep(0.12, 0.36, sat);
-      const whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
-      const skinHue = isSkinHueFast(r, g, b, maxChannel, minChannelMap[pixel]) ? 1 : 0;
+      const whiteFlat = highLightness * clothContrast * lowSat * (0.9 + veryHighLightness * 0.58);
+      const srgbMax = sr > sg ? (sr > sb ? sr : sb) : (sg > sb ? sg : sb);
+      const srgbMin = sr < sg ? (sr < sb ? sr : sb) : (sg < sb ? sg : sb);
+      const skinHue = isSkinHueFast(sr, sg, sb, srgbMax, srgbMin) ? 1 : 0;
       const skinColor =
         skinHue *
         smoothstep(0.16, 0.36, sat) *
         (1 - smoothstep(0.78, 0.96, sat)) *
         smoothstep(0.38, 0.74, lum) *
         (1 - smoothstep(0.9, 1.0, lum));
-      const dark = 1 - smoothstep(0.08, 0.28, lum);
+      const dark = 1 - smoothstep(0.18, 0.42, brightness);
+      const midtoneReject = 1 - smoothstep(0.48, 0.72, brightness);
       const protectionBase = clamp(
         whiteFlat * whiteProtect +
-          skinColor * skinProtect * 0.55,
+          skinColor * skinProtect * 0.9 +
+          dark * sourceParams.darkProtect +
+          midtoneReject * 0.62,
         0,
         1
       );
-      const nearClip = smoothstep(0.92, 1.0, maxChannel);
-      const protection = clamp(protectionBase + nearClip * (0.12 + (1 - sat) * 0.1), 0, 1);
-      const chromaSource = smoothstep(0.08, 0.46, sat) * smoothstep(0.44, 0.84, brightness);
-      const detailBoost = smoothstep(0.022, 0.12, contrast);
-      const reflectiveBoost = clamp(0.48 + contrastScore * 0.44 + specularScore * 0.48 + chromaSource * 0.18 + detailBoost * 0.16, 0, 1.28);
-      const edgeSource = Math.max(contrastScore * 0.2, specularScore * 0.4) * smoothstep(0.42, 0.9, brightness);
-      const combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
-      const mask = clamp(combinedSource * reflectiveBoost * (1 - protection * 0.82), 0, 1);
-      const chromaBoost = chromaBoostAmount * smoothstep(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-      const saturationGain = 1 + chromaBoost;
-      const sourceR = clamp(lum + (r - lum) * saturationGain, 0, 1);
-      const sourceG = clamp(lum + (g - lum) * saturationGain, 0, 1);
-      const sourceB = clamp(lum + (b - lum) * saturationGain, 0, 1);
+      const nearClip = smoothstep(0.975, 1.0, maxChannel);
+      const clippingDetail = clamp(
+        smoothstep(0.12, 0.34, specular) * 0.72 +
+          contrastScore * thresholdGate * 0.18 +
+          sat * 0.1,
+        0,
+        1
+      );
+      const nearClipException = nearClip * clippingDetail * thresholdGate;
+      const protection = clamp(protectionBase * (1 - nearClipException * 0.42), 0, 1);
+      const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
+      const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
+      let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      const neutralClothReject = whiteFlat * (1 - specularScore * 0.42) * (1 - nearClipException * 0.35) * (1 - colorReflection * 0.32);
+      emissionEnergy *= 1 - protection * 0.86;
+      emissionEnergy *= 1 - neutralClothReject * 0.82;
+      emissionEnergy *= smoothstep(lowEnergyCutoff * 0.62, lowEnergyCutoff * 2.6, emissionEnergy);
+      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.04) * 1.18, 0, 1);
+      const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
+      const warmColorHint = smoothstep(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
+      const chromaKeep = clamp(
+        0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + chromaBoostAmount * 0.3 - neutralHighlight * 0.06,
+        0.18,
+        0.98
+      );
+      const whiteEnergy = brightness;
+      const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;
+      const emissionG = whiteEnergy * (1 - chromaKeep) + g * chromaKeep;
+      const emissionB = whiteEnergy * (1 - chromaKeep) + b * chromaKeep;
 
       localContrast[pixel] = contrast;
-      lumaMask[pixel] = lumaScore;
+      lumaMask[pixel] = brightPass;
       contrastMask[pixel] = Math.max(contrastScore, specularScore * 0.72);
       whiteFlatMask[pixel] = whiteFlat;
       skinLikeMask[pixel] = skinColor;
       darkProtect[pixel] = dark;
       protectMask[pixel] = protection;
-      sourceMask[pixel] = mask;
-      rawSourceR[pixel] = sourceR;
-      rawSourceG[pixel] = sourceG;
-      rawSourceB[pixel] = sourceB;
+      sourceMask[pixel] = emissionEnergy;
+      sourceLayer.r[pixel] = emissionR * emissionEnergy;
+      sourceLayer.g[pixel] = emissionG * emissionEnergy;
+      sourceLayer.b[pixel] = emissionB * emissionEnergy;
     }
 
     const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
-    const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
     const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
-    const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
-    for (let pixel = 0; pixel < total; pixel += 1) {
-      const softMask = clamp(sourceMask[pixel] * 0.78 + featheredSourceMask[pixel] * 0.22, 0, 1);
-      const colorGain = Math.pow(softMask, 0.78);
-      sourceLayer.r[pixel] = rawSourceR[pixel] * colorGain;
-      sourceLayer.g[pixel] = rawSourceG[pixel] * colorGain;
-      sourceLayer.b[pixel] = rawSourceB[pixel] * colorGain;
-    }
+    const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
+    const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
     return {
       width,
@@ -222,7 +247,7 @@
         skinLikeMask,
         darkProtect,
         protectMask,
-        sourceMask,
+        sourceMask: featheredSourceMask,
         haloMask
       },
       debugImages: options.includeDebug === false
@@ -233,7 +258,7 @@
             whiteFlat: createMaskImageData(whiteFlatMask, width, height),
             skinLike: createMaskImageData(skinLikeMask, width, height, [255, 188, 126]),
             darkProtect: createMaskImageData(darkProtect, width, height, [120, 172, 255]),
-            sourceMask: createMaskImageData(sourceMask, width, height, [255, 244, 190]),
+            sourceMask: createMaskImageData(featheredSourceMask, width, height, [255, 244, 190]),
             protectMask: createMaskImageData(protectMask, width, height, [142, 207, 255])
           }
     };

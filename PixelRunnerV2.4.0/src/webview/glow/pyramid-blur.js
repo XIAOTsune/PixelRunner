@@ -15,32 +15,30 @@
     const nextWidth = Math.max(1, Math.floor(layer.width / 2));
     const nextHeight = Math.max(1, Math.floor(layer.height / 2));
     const out = createLayer(nextWidth, nextHeight);
+    const offsets = [
+      [-2, -2, 0.03125], [0, -2, 0.0625], [2, -2, 0.03125],
+      [-2, 0, 0.0625], [0, 0, 0.125], [2, 0, 0.0625],
+      [-2, 2, 0.03125], [0, 2, 0.0625], [2, 2, 0.03125],
+      [-1, -1, 0.125], [1, -1, 0.125], [-1, 1, 0.125], [1, 1, 0.125]
+    ];
     for (let y = 0; y < nextHeight; y += 1) {
       for (let x = 0; x < nextWidth; x += 1) {
-        const sx = x * 2;
-        const sy = y * 2;
+        const sx = (x + 0.5) * 2 - 0.5;
+        const sy = (y + 0.5) * 2 - 0.5;
         const target = y * nextWidth + x;
         let r = 0;
         let g = 0;
         let b = 0;
-        let weightTotal = 0;
-        for (let oy = -1; oy <= 2; oy += 1) {
-          const yy = Math.min(layer.height - 1, Math.max(0, sy + oy));
-          const wy = oy === 0 || oy === 1 ? 3 : 1;
-          for (let ox = -1; ox <= 2; ox += 1) {
-            const xx = Math.min(layer.width - 1, Math.max(0, sx + ox));
-            const wx = ox === 0 || ox === 1 ? 3 : 1;
-            const weight = wx * wy;
-            const source = yy * layer.width + xx;
-            r += layer.r[source] * weight;
-            g += layer.g[source] * weight;
-            b += layer.b[source] * weight;
-            weightTotal += weight;
-          }
+        for (let index = 0; index < offsets.length; index += 1) {
+          const tap = offsets[index];
+          const weight = tap[2];
+          r += sampleBilinear(layer, sx + tap[0], sy + tap[1], layer.r) * weight;
+          g += sampleBilinear(layer, sx + tap[0], sy + tap[1], layer.g) * weight;
+          b += sampleBilinear(layer, sx + tap[0], sy + tap[1], layer.b) * weight;
         }
-        out.r[target] = r / weightTotal;
-        out.g[target] = g / weightTotal;
-        out.b[target] = b / weightTotal;
+        out.r[target] = r;
+        out.g[target] = g;
+        out.b[target] = b;
       }
     }
     return out;
@@ -103,14 +101,28 @@
     const out = createLayer(width, height);
     const xScale = source.width / width;
     const yScale = source.height / height;
+    const taps = [
+      [-1, -1, 1], [0, -1, 2], [1, -1, 1],
+      [-1, 0, 2], [0, 0, 4], [1, 0, 2],
+      [-1, 1, 1], [0, 1, 2], [1, 1, 1]
+    ];
     for (let y = 0; y < height; y += 1) {
       const sy = (y + 0.5) * yScale - 0.5;
       for (let x = 0; x < width; x += 1) {
         const sx = (x + 0.5) * xScale - 0.5;
         const target = y * width + x;
-        out.r[target] = sampleBilinear(source, sx, sy, source.r);
-        out.g[target] = sampleBilinear(source, sx, sy, source.g);
-        out.b[target] = sampleBilinear(source, sx, sy, source.b);
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        for (let index = 0; index < taps.length; index += 1) {
+          const tap = taps[index];
+          r += sampleBilinear(source, sx + tap[0], sy + tap[1], source.r) * tap[2];
+          g += sampleBilinear(source, sx + tap[0], sy + tap[1], source.g) * tap[2];
+          b += sampleBilinear(source, sx + tap[0], sy + tap[1], source.b) * tap[2];
+        }
+        out.r[target] = r * 0.0625;
+        out.g[target] = g * 0.0625;
+        out.b[target] = b * 0.0625;
       }
     }
     return out;
@@ -190,7 +202,7 @@
 
     for (let index = 0; index < mipCount; index += 1) {
       if (current.width <= 1 && current.height <= 1) break;
-      current = kawaseBlurLayer(downsampleLayer(current), 1);
+      current = downsampleLayer(current);
       levels.push(current);
     }
 
@@ -201,7 +213,7 @@
     for (let index = levels.length - 2; index >= 0; index -= 1) {
       const upsampled = upsampleLayer(combined, levels[index].width, levels[index].height);
       addLayer(upsampled, levels[index], effectiveWeights[index]);
-      combined = kawaseBlurLayer(upsampled, 0.75);
+      combined = upsampled;
     }
 
     const out = createLayer(sourceLayer.width, sourceLayer.height);

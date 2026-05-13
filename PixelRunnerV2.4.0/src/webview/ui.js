@@ -18,7 +18,7 @@
     colorHex: "#ffd27a",
     chromatic: 0
   };
-  const GLOW_THRESHOLD_CURVE_EXPONENT = 1.8;
+  const GLOW_THRESHOLD_CURVE_EXPONENT = 2.15;
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
   const GLOW_STYLE_LABELS = {
     none: "无",
