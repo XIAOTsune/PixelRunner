@@ -41,7 +41,7 @@
     return canvas.toDataURL(type, quality);
   }
 
-  function buildLinearDodgePreview(baseImageData, glowLayerImageData) {
+  function buildScreenPreview(baseImageData, glowLayerImageData) {
     const width = baseImageData && baseImageData.width;
     const height = baseImageData && baseImageData.height;
     if (!width || !height || !glowLayerImageData || glowLayerImageData.width !== width || glowLayerImageData.height !== height) {
@@ -53,9 +53,15 @@
     const data = out.data;
     for (let i = 0; i < data.length; i += 4) {
       const alpha = (glow[i + 3] || 0) / 255;
-      data[i] = Math.min(255, Math.round(base[i] + glow[i] * alpha));
-      data[i + 1] = Math.min(255, Math.round(base[i + 1] + glow[i + 1] * alpha));
-      data[i + 2] = Math.min(255, Math.round(base[i + 2] + glow[i + 2] * alpha));
+      const glowR = glow[i] / 255 * alpha;
+      const glowG = glow[i + 1] / 255 * alpha;
+      const glowB = glow[i + 2] / 255 * alpha;
+      const baseR = base[i] / 255;
+      const baseG = base[i + 1] / 255;
+      const baseB = base[i + 2] / 255;
+      data[i] = Math.round((1 - (1 - baseR) * (1 - glowR)) * 255);
+      data[i + 1] = Math.round((1 - (1 - baseG) * (1 - glowG)) * 255);
+      data[i + 2] = Math.round((1 - (1 - baseB) * (1 - glowB)) * 255);
       data[i + 3] = base[i + 3];
     }
     return out;
@@ -338,7 +344,7 @@
     const compositeMs = performance.now() - compositeStartedAt;
 
     const finalSimImageData = includeGlowLayer && glowLayerImageData
-      ? buildLinearDodgePreview(source.imageData, glowLayerImageData)
+      ? buildScreenPreview(source.imageData, glowLayerImageData)
       : (previewImageData || null);
     const previewDataUrl = requestRawImageData || !previewImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
     const finalSimDataUrl = requestRawImageData || !finalSimImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);

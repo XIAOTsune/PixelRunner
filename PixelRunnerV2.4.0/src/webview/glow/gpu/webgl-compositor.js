@@ -261,8 +261,7 @@
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
       glow = splitCoreAndHalo(glow, baseLuma, protect, source);
-      float alpha = max(max(glow.r, glow.g), glow.b);
-      outColor = vec4(glow, alpha);
+      outColor = vec4(glow, 1.0);
     }
   `;
 

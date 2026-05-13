@@ -433,7 +433,7 @@
 
     const drawGlowPreviewToCanvas = (glowResult) => {
       if (!glowPreviewResultCanvas || !glowResult) return false;
-      const imageData = glowResult.previewImageData || glowResult.finalSimImageData;
+      const imageData = glowResult.finalSimImageData || glowResult.previewImageData;
       if (!imageData || !imageData.width || !imageData.height) return false;
       const width = Number(imageData.width) || 1;
       const height = Number(imageData.height) || 1;

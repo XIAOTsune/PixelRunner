@@ -125,6 +125,31 @@
     }
   }
 
+  function scaleLayer(source, weight) {
+    const out = createLayer(source.width, source.height);
+    for (let index = 0; index < source.r.length; index += 1) {
+      out.r[index] = source.r[index] * weight;
+      out.g[index] = source.g[index] * weight;
+      out.b[index] = source.b[index] * weight;
+    }
+    return out;
+  }
+
+  function resolveMipWeights(weights, count) {
+    const out = [];
+    const fallback = weights.length ? Math.max(0, Number(weights[weights.length - 1]) || 0) : 0.2;
+    let total = 0;
+    for (let index = 0; index < count; index += 1) {
+      const value = Math.max(0, Number(weights[index]) || fallback);
+      out.push(value);
+      total += value;
+    }
+    if (total <= 0.0001) return out.map(() => 1);
+    const energyScale = Math.min(1.35, Math.max(0.75, total));
+    const normalize = count * energyScale / total;
+    return out.map((value) => value * normalize);
+  }
+
   function addUpsampled(target, source, weight) {
     const xScale = source.width / target.width;
     const yScale = source.height / target.height;
@@ -169,10 +194,13 @@
       levels.push(current);
     }
 
-    let combined = levels.length ? levels[levels.length - 1] : sourceLayer;
+    const effectiveWeights = resolveMipWeights(weights, levels.length);
+    let combined = levels.length
+      ? scaleLayer(levels[levels.length - 1], effectiveWeights[levels.length - 1])
+      : sourceLayer;
     for (let index = levels.length - 2; index >= 0; index -= 1) {
       const upsampled = upsampleLayer(combined, levels[index].width, levels[index].height);
-      addLayer(upsampled, levels[index], 1);
+      addLayer(upsampled, levels[index], effectiveWeights[index]);
       combined = kawaseBlurLayer(upsampled, 0.75);
     }
 

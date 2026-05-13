@@ -203,9 +203,9 @@
         saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
         highlightProtect: clamp(0.72 + thresholdRatio * 0.24 + spreadAir * 0.03 + strengthRatio * 0.08, 0.64, 0.97, 0.82),
         shadowProtect: preset.darkProtect,
-        colorProtect: clamp(0.25 + strengthRatio * 0.13 - spreadRatio * 0.02, 0.22, 0.46, 0.31),
-        // Increase shoulder with strength to avoid dead-white cores.
-        shoulder: clamp(0.48 + strengthRatio * 0.1 + spreadAir * 0.03 + Math.max(0, exposureRatio) * 0.018, 0.4, 0.72, 0.56),
+        colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
+        // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
+        shoulder: clamp(0.38 + strengthRatio * 0.055 + spreadAir * 0.02 + Math.max(0, exposureRatio) * 0.012, 0.32, 0.58, 0.46),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,

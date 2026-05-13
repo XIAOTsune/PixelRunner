@@ -189,11 +189,11 @@
       const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
       const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, haloSource, params);
-      const alpha = clamp(Math.max(shapedR, shapedG, shapedB), 0, 1);
       data[index] = Math.round(clamp(shapedR, 0, 1) * 255);
       data[index + 1] = Math.round(clamp(shapedG, 0, 1) * 255);
       data[index + 2] = Math.round(clamp(shapedB, 0, 1) * 255);
-      data[index + 3] = Math.round(alpha * 255);
+      // Photoshop Screen already uses RGB energy; alpha here would multiply the glow a second time.
+      data[index + 3] = 255;
     }
     return out;
   }

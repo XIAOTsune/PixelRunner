@@ -51,6 +51,17 @@
     }
   `;
 
+  const SCALE_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uSource;
+    uniform float uWeight;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      outColor = vec4(texture(uSource, vUv).rgb * uWeight, 1.0);
+    }
+  `;
+
   const UPSAMPLE_ADD_SHADER = `#version 300 es
     precision highp float;
     uniform sampler2D uBase;
@@ -173,6 +184,21 @@
     return out;
   }
 
+  function resolveMipWeights(weights, count) {
+    const out = [];
+    const fallback = weights.length ? Math.max(0, Number(weights[weights.length - 1]) || 0) : 0.2;
+    let total = 0;
+    for (let index = 0; index < count; index += 1) {
+      const value = Math.max(0, Number(weights[index]) || fallback);
+      out.push(value);
+      total += value;
+    }
+    if (total <= 0.0001) return out.map(() => 1);
+    const energyScale = Math.min(1.35, Math.max(0.75, total));
+    const normalize = count * energyScale / total;
+    return out.map((value) => value * normalize);
+  }
+
   class WebglPyramidBlurBackend {
     constructor() {
       this.canvas = document.createElement("canvas");
@@ -182,6 +208,7 @@
       this.programs = {
         downsample: createProgram(this.gl, DOWNSAMPLE_SHADER),
         kawase: createProgram(this.gl, KAWASE_SHADER),
+        scale: createProgram(this.gl, SCALE_SHADER),
         upsampleAdd: createProgram(this.gl, UPSAMPLE_ADD_SHADER),
         final: createProgram(this.gl, FINAL_SHADER)
       };
@@ -250,6 +277,18 @@
       return target;
     }
 
+    scale(sourceTarget, weight) {
+      const gl = this.gl;
+      const target = createTarget(gl, sourceTarget.width, sourceTarget.height, this.targetFormat);
+      if (this.allocatedTargets) this.allocatedTargets.push(target);
+      const program = this.programs.scale;
+      this.bindProgram(program);
+      this.bindTexture(program, "uSource", sourceTarget.texture, 0);
+      gl.uniform1f(gl.getUniformLocation(program, "uWeight"), weight);
+      this.renderTo(target, program);
+      return target;
+    }
+
     upsampleAdd(baseTarget, addTarget, weight) {
       const gl = this.gl;
       const target = createTarget(gl, addTarget.width, addTarget.height, this.targetFormat);
@@ -305,9 +344,12 @@
           levels.push(current);
         }
 
-        let combined = levels.length ? levels[levels.length - 1] : current;
+        const effectiveWeights = resolveMipWeights(weights, levels.length);
+        let combined = levels.length
+          ? this.scale(levels[levels.length - 1], effectiveWeights[levels.length - 1])
+          : current;
         for (let index = levels.length - 2; index >= 0; index -= 1) {
-          const added = this.upsampleAdd(combined, levels[index], 1);
+          const added = this.upsampleAdd(combined, levels[index], effectiveWeights[index]);
           combined = this.kawase(added, 0.75);
         }
 

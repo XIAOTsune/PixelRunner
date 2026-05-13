@@ -710,9 +710,9 @@ var PixelRunnerWebviewBundle = (() => {
           saturation: clamp(1.16 + saturation / 100 * 0.46 + preset.chromaBoost * 0.22, 0.72, 1.62, 1),
           highlightProtect: clamp(0.72 + thresholdRatio * 0.24 + spreadAir * 0.03 + strengthRatio * 0.08, 0.64, 0.97, 0.82),
           shadowProtect: preset.darkProtect,
-          colorProtect: clamp(0.25 + strengthRatio * 0.13 - spreadRatio * 0.02, 0.22, 0.46, 0.31),
-          // Increase shoulder with strength to avoid dead-white cores.
-          shoulder: clamp(0.48 + strengthRatio * 0.1 + spreadAir * 0.03 + Math.max(0, exposureRatio) * 0.018, 0.4, 0.72, 0.56),
+          colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
+          // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
+          shoulder: clamp(0.38 + strengthRatio * 0.055 + spreadAir * 0.02 + Math.max(0, exposureRatio) * 0.012, 0.32, 0.58, 0.46),
           colorShift: colorShift / 100,
           colorTint,
           colorAmount: colorAmount / 100,
@@ -1077,6 +1077,29 @@ var PixelRunnerWebviewBundle = (() => {
         target.b[index] += source.b[index] * weight;
       }
     }
+    function scaleLayer(source, weight) {
+      const out = createLayer(source.width, source.height);
+      for (let index = 0; index < source.r.length; index += 1) {
+        out.r[index] = source.r[index] * weight;
+        out.g[index] = source.g[index] * weight;
+        out.b[index] = source.b[index] * weight;
+      }
+      return out;
+    }
+    function resolveMipWeights(weights, count) {
+      const out = [];
+      const fallback = weights.length ? Math.max(0, Number(weights[weights.length - 1]) || 0) : 0.2;
+      let total = 0;
+      for (let index = 0; index < count; index += 1) {
+        const value = Math.max(0, Number(weights[index]) || fallback);
+        out.push(value);
+        total += value;
+      }
+      if (total <= 1e-4) return out.map(() => 1);
+      const energyScale = Math.min(1.35, Math.max(0.75, total));
+      const normalize = count * energyScale / total;
+      return out.map((value) => value * normalize);
+    }
     function addUpsampled(target, source, weight) {
       const xScale = source.width / target.width;
       const yScale = source.height / target.height;
@@ -1116,10 +1139,11 @@ var PixelRunnerWebviewBundle = (() => {
         current = kawaseBlurLayer(downsampleLayer(current), 1);
         levels.push(current);
       }
-      let combined = levels.length ? levels[levels.length - 1] : sourceLayer;
+      const effectiveWeights = resolveMipWeights(weights, levels.length);
+      let combined = levels.length ? scaleLayer(levels[levels.length - 1], effectiveWeights[levels.length - 1]) : sourceLayer;
       for (let index = levels.length - 2; index >= 0; index -= 1) {
         const upsampled = upsampleLayer(combined, levels[index].width, levels[index].height);
-        addLayer(upsampled, levels[index], 1);
+        addLayer(upsampled, levels[index], effectiveWeights[index]);
         combined = kawaseBlurLayer(upsampled, 0.75);
       }
       const out = createLayer(sourceLayer.width, sourceLayer.height);
@@ -1709,6 +1733,16 @@ var PixelRunnerWebviewBundle = (() => {
       outColor = vec4(color / 6.0, 1.0);
     }
   `;
+    const SCALE_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uSource;
+    uniform float uWeight;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      outColor = vec4(texture(uSource, vUv).rgb * uWeight, 1.0);
+    }
+  `;
     const UPSAMPLE_ADD_SHADER = `#version 300 es
     precision highp float;
     uniform sampler2D uBase;
@@ -1823,6 +1857,20 @@ var PixelRunnerWebviewBundle = (() => {
       }
       return out;
     }
+    function resolveMipWeights(weights, count) {
+      const out = [];
+      const fallback = weights.length ? Math.max(0, Number(weights[weights.length - 1]) || 0) : 0.2;
+      let total = 0;
+      for (let index = 0; index < count; index += 1) {
+        const value = Math.max(0, Number(weights[index]) || fallback);
+        out.push(value);
+        total += value;
+      }
+      if (total <= 1e-4) return out.map(() => 1);
+      const energyScale = Math.min(1.35, Math.max(0.75, total));
+      const normalize = count * energyScale / total;
+      return out.map((value) => value * normalize);
+    }
     class WebglPyramidBlurBackend {
       constructor() {
         this.canvas = document.createElement("canvas");
@@ -1832,6 +1880,7 @@ var PixelRunnerWebviewBundle = (() => {
         this.programs = {
           downsample: createProgram(this.gl, DOWNSAMPLE_SHADER),
           kawase: createProgram(this.gl, KAWASE_SHADER),
+          scale: createProgram(this.gl, SCALE_SHADER),
           upsampleAdd: createProgram(this.gl, UPSAMPLE_ADD_SHADER),
           final: createProgram(this.gl, FINAL_SHADER)
         };
@@ -1889,6 +1938,17 @@ var PixelRunnerWebviewBundle = (() => {
         this.renderTo(target, program);
         return target;
       }
+      scale(sourceTarget, weight) {
+        const gl = this.gl;
+        const target = createTarget(gl, sourceTarget.width, sourceTarget.height, this.targetFormat);
+        if (this.allocatedTargets) this.allocatedTargets.push(target);
+        const program = this.programs.scale;
+        this.bindProgram(program);
+        this.bindTexture(program, "uSource", sourceTarget.texture, 0);
+        gl.uniform1f(gl.getUniformLocation(program, "uWeight"), weight);
+        this.renderTo(target, program);
+        return target;
+      }
       upsampleAdd(baseTarget, addTarget, weight) {
         const gl = this.gl;
         const target = createTarget(gl, addTarget.width, addTarget.height, this.targetFormat);
@@ -1936,9 +1996,10 @@ var PixelRunnerWebviewBundle = (() => {
             current = this.kawase(downsampled, 1);
             levels.push(current);
           }
-          let combined = levels.length ? levels[levels.length - 1] : current;
+          const effectiveWeights = resolveMipWeights(weights, levels.length);
+          let combined = levels.length ? this.scale(levels[levels.length - 1], effectiveWeights[levels.length - 1]) : current;
           for (let index = levels.length - 2; index >= 0; index -= 1) {
-            const added = this.upsampleAdd(combined, levels[index], 1);
+            const added = this.upsampleAdd(combined, levels[index], effectiveWeights[index]);
             combined = this.kawase(added, 0.75);
           }
           const finalTarget = this.finalComposite(
@@ -2255,8 +2316,7 @@ var PixelRunnerWebviewBundle = (() => {
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
       glow = splitCoreAndHalo(glow, baseLuma, protect, source);
-      float alpha = max(max(glow.r, glow.g), glow.b);
-      outColor = vec4(glow, alpha);
+      outColor = vec4(glow, 1.0);
     }
   `;
     const FULLSCREEN_TRIANGLE = new Float32Array([
@@ -2694,11 +2754,10 @@ var PixelRunnerWebviewBundle = (() => {
         const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
         const [shapedR, shapedG, shapedB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, haloSource, params);
-        const alpha = clamp(Math.max(shapedR, shapedG, shapedB), 0, 1);
         data[index] = Math.round(clamp(shapedR, 0, 1) * 255);
         data[index + 1] = Math.round(clamp(shapedG, 0, 1) * 255);
         data[index + 2] = Math.round(clamp(shapedB, 0, 1) * 255);
-        data[index + 3] = Math.round(alpha * 255);
+        data[index + 3] = 255;
       }
       return out;
     }
@@ -2747,7 +2806,7 @@ var PixelRunnerWebviewBundle = (() => {
       ctx.putImageData(imageData, 0, 0);
       return canvas.toDataURL(type, quality);
     }
-    function buildLinearDodgePreview(baseImageData, glowLayerImageData) {
+    function buildScreenPreview(baseImageData, glowLayerImageData) {
       const width = baseImageData && baseImageData.width;
       const height = baseImageData && baseImageData.height;
       if (!width || !height || !glowLayerImageData || glowLayerImageData.width !== width || glowLayerImageData.height !== height) {
@@ -2759,9 +2818,15 @@ var PixelRunnerWebviewBundle = (() => {
       const data = out.data;
       for (let i = 0; i < data.length; i += 4) {
         const alpha = (glow[i + 3] || 0) / 255;
-        data[i] = Math.min(255, Math.round(base[i] + glow[i] * alpha));
-        data[i + 1] = Math.min(255, Math.round(base[i + 1] + glow[i + 1] * alpha));
-        data[i + 2] = Math.min(255, Math.round(base[i + 2] + glow[i + 2] * alpha));
+        const glowR = glow[i] / 255 * alpha;
+        const glowG = glow[i + 1] / 255 * alpha;
+        const glowB = glow[i + 2] / 255 * alpha;
+        const baseR = base[i] / 255;
+        const baseG = base[i + 1] / 255;
+        const baseB = base[i + 2] / 255;
+        data[i] = Math.round((1 - (1 - baseR) * (1 - glowR)) * 255);
+        data[i + 1] = Math.round((1 - (1 - baseG) * (1 - glowG)) * 255);
+        data[i + 2] = Math.round((1 - (1 - baseB) * (1 - glowB)) * 255);
         data[i + 3] = base[i + 3];
       }
       return out;
@@ -3004,7 +3069,7 @@ var PixelRunnerWebviewBundle = (() => {
         }
       }
       const compositeMs = performance.now() - compositeStartedAt;
-      const finalSimImageData = includeGlowLayer && glowLayerImageData ? buildLinearDodgePreview(source.imageData, glowLayerImageData) : previewImageData || null;
+      const finalSimImageData = includeGlowLayer && glowLayerImageData ? buildScreenPreview(source.imageData, glowLayerImageData) : previewImageData || null;
       const previewDataUrl = requestRawImageData || !previewImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
       const finalSimDataUrl = requestRawImageData || !finalSimImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
       return {
@@ -3474,7 +3539,7 @@ ${text}` : text;
       };
       const drawGlowPreviewToCanvas = (glowResult) => {
         if (!glowPreviewResultCanvas || !glowResult) return false;
-        const imageData = glowResult.previewImageData || glowResult.finalSimImageData;
+        const imageData = glowResult.finalSimImageData || glowResult.previewImageData;
         if (!imageData || !imageData.width || !imageData.height) return false;
         const width = Number(imageData.width) || 1;
         const height = Number(imageData.height) || 1;
