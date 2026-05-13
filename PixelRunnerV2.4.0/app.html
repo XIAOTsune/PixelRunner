@@ -682,7 +682,7 @@
           <span id="spaceFxIntensityBadge" class="status-chip">强度 34%</span>
           <span id="spaceFxGlowBadge" class="status-chip">光效 12%</span>
         </div>
-        <p class="subtle-note">选择模板后点击预览图放置特效中心；滚轮缩放，放大后拖动查看细节。</p>
+        <p class="subtle-note">可点击定位，也可以开启手绘路径，让刀光和气流沿着你画出的轨迹生成。</p>
       </div>
 
       <div class="space-fx-workbench">
@@ -696,6 +696,9 @@
                   <span class="space-fx-control-center"></span>
                   <span class="space-fx-control-line"></span>
                   <span class="space-fx-control-range"></span>
+                  <svg id="spaceFxDrawOverlay" class="space-fx-draw-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" focusable="false" aria-hidden="true">
+                    <path id="spaceFxDrawPath" d=""></path>
+                  </svg>
                 </div>
                 <div class="space-fx-preview-tools" aria-label="预览缩放控制">
                   <button class="mini-btn space-fx-preview-tool-btn" type="button" data-space-fx-zoom="out" title="缩小预览">−</button>
@@ -714,6 +717,11 @@
             <button class="mini-btn space-fx-preset-btn is-selected" type="button" data-space-fx-preset="heat">热浪</button>
             <button class="mini-btn space-fx-preset-btn" type="button" data-space-fx-preset="airflow">气流</button>
             <button class="mini-btn space-fx-preset-btn" type="button" data-space-fx-preset="slash">刀光</button>
+          </div>
+
+          <div class="space-fx-draw-actions">
+            <button id="btnSpaceFxDraw" class="secondary-btn space-fx-draw-btn" type="button" aria-pressed="false">手绘路径</button>
+            <button id="btnSpaceFxClearPath" class="secondary-btn space-fx-draw-btn" type="button" disabled>清除路径</button>
           </div>
 
           <div class="space-fx-slider-stack">

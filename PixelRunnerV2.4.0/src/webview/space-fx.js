@@ -1,6 +1,6 @@
 (function initSpaceFxModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const PREVIEW_MAX_DIMENSION = 1200;
+  const PREVIEW_MAX_DIMENSION = 1000;
   const CAPTURE_MAX_DIMENSION = 2200;
   const PREVIEW_DEBOUNCE_MS = 90;
 
@@ -47,6 +47,10 @@
     lastRender: null,
     centerX: 0.5,
     centerY: 0.5,
+    pathPoints: [],
+    drawMode: false,
+    isDrawing: false,
+    activePointerId: null,
     hasContent: false,
     view: {
       scale: 1,
@@ -161,6 +165,14 @@
     document.querySelectorAll("[data-space-fx-preset]").forEach((button) => {
       button.classList.toggle("is-selected", button.getAttribute("data-space-fx-preset") === state.params.effect);
     });
+    const drawButton = getById("btnSpaceFxDraw");
+    const clearButton = getById("btnSpaceFxClearPath");
+    if (drawButton) {
+      drawButton.classList.toggle("is-active", state.drawMode);
+      drawButton.setAttribute("aria-pressed", state.drawMode ? "true" : "false");
+      drawButton.textContent = state.drawMode ? "正在手绘" : "手绘路径";
+    }
+    if (clearButton) clearButton.disabled = state.pathPoints.length < 2;
     updateBadges();
     updateControlOverlay();
   }
@@ -245,6 +257,112 @@
     };
   }
 
+  function getPathInfo(x, y, width, height) {
+    if (!state.pathPoints || state.pathPoints.length < 2) return null;
+    let best = null;
+    for (let i = 0; i < state.pathPoints.length - 1; i += 1) {
+      const a = state.pathPoints[i];
+      const b = state.pathPoints[i + 1];
+      const ax = a.x * width;
+      const ay = a.y * height;
+      const bx = b.x * width;
+      const by = b.y * height;
+      const vx = bx - ax;
+      const vy = by - ay;
+      const lengthSq = vx * vx + vy * vy;
+      if (lengthSq < 1) continue;
+      const t = clamp(((x - ax) * vx + (y - ay) * vy) / lengthSq, 0, 1, 0);
+      const px = ax + vx * t;
+      const py = ay + vy * t;
+      const dx = x - px;
+      const dy = y - py;
+      const distSq = dx * dx + dy * dy;
+      if (!best || distSq < best.distSq) {
+        const length = Math.sqrt(lengthSq);
+        const dirX = vx / length;
+        const dirY = vy / length;
+        const normalX = -dirY;
+        const normalY = dirX;
+        const signed = dx * normalX + dy * normalY;
+        best = {
+          distSq,
+          distance: Math.sqrt(distSq),
+          signed,
+          t,
+          segmentIndex: i,
+          dirX,
+          dirY,
+          normalX,
+          normalY
+        };
+      }
+    }
+    return best;
+  }
+
+  function getPathDisplacement(x, y, width, height, params) {
+    const info = getPathInfo(x, y, width, height);
+    if (!info) return null;
+    const maxSide = Math.max(width, height);
+    const effect = String(params.effect || "heat");
+    const intensity = clamp(params.intensity, 0, 100, 34) / 100;
+    const range = clamp(params.range, 10, 100, 62) / 100;
+    const feather = clamp(params.feather, 0, 100, 48) / 100;
+    const detail = clamp(params.detail, 0, 100, 58) / 100;
+    const glow = clamp(params.glow, 0, 100, 12) / 100;
+    const widthPx = maxSide * (effect === "slash"
+      ? (0.012 + range * 0.068)
+      : effect === "airflow"
+        ? (0.028 + range * 0.12)
+        : (0.04 + range * 0.15));
+    const outerPx = widthPx * (1.65 + feather * 2.2);
+    const mask = 1 - smoothstep(widthPx, outerPx, info.distance);
+    if (mask <= 0) return { dx: 0, dy: 0, mask: 0, light: 0, line: 0 };
+    const strengthPx = maxSide * (0.004 + intensity * 0.04);
+    const signedNorm = info.signed / Math.max(1, widthPx);
+    const side = signedNorm >= 0 ? 1 : -1;
+    const phase = info.segmentIndex * 0.77 + info.t * 7.4;
+    const texture = (fbm(x * (0.01 + detail * 0.018), y * (0.01 + detail * 0.018) + phase) - 0.5) * 2;
+    const core = (1 - smoothstep(0.05, 0.88, Math.abs(signedNorm))) * mask;
+
+    if (effect === "airflow") {
+      const stream = Math.sin(info.t * 40 + texture * 4 + info.segmentIndex * 0.9);
+      const line = Math.pow(Math.max(0, 0.5 + stream * 0.5), 2.1) * mask;
+      const push = (stream * 0.7 + texture * 0.42) * strengthPx * mask;
+      const drag = strengthPx * (0.18 + line * 0.55) * mask;
+      return {
+        dx: info.normalX * push - info.dirX * drag,
+        dy: info.normalY * push - info.dirY * drag,
+        mask,
+        light: line * glow,
+        line
+      };
+    }
+
+    if (effect === "slash") {
+      const edge = (1 - smoothstep(0.18, 1.08, Math.abs(signedNorm))) * mask;
+      const push = side * strengthPx * (0.62 + edge * 0.72 + texture * 0.12) * mask;
+      const drag = strengthPx * core * 0.2;
+      return {
+        dx: info.normalX * push - info.dirX * drag,
+        dy: info.normalY * push - info.dirY * drag,
+        mask,
+        light: (core * 1.24 + edge * 0.32) * glow,
+        line: core
+      };
+    }
+
+    const heat = Math.sin(info.t * 32 + texture * 4);
+    const push = (heat * 0.68 + texture * 0.46) * strengthPx * mask;
+    return {
+      dx: info.normalX * push,
+      dy: info.normalY * push * 0.28 - info.dirY * Math.abs(texture) * strengthPx * mask * 0.08,
+      mask,
+      light: Math.max(0, heat) * mask * glow * 0.45,
+      line: Math.abs(heat) * mask
+    };
+  }
+
   function ellipticalMask(along, across, length, width, feather) {
     const l = Math.abs(along) / Math.max(1, length);
     const a = Math.abs(across) / Math.max(1, width);
@@ -261,6 +379,9 @@
   }
 
   function getDisplacement(x, y, width, height, params) {
+    const pathDisplacement = getPathDisplacement(x, y, width, height, params);
+    if (pathDisplacement) return pathDisplacement;
+
     const basis = getLocalBasis(params);
     const maxSide = Math.max(width, height);
     const cx = state.centerX * width;
@@ -503,6 +624,8 @@
     const line = overlay.querySelector(".space-fx-control-line");
     const center = overlay.querySelector(".space-fx-control-center");
     const rangeEl = overlay.querySelector(".space-fx-control-range");
+    const drawOverlay = getById("spaceFxDrawOverlay");
+    const drawPath = getById("spaceFxDrawPath");
     if (center) {
       center.style.left = `${cx}px`;
       center.style.top = `${cy}px`;
@@ -526,6 +649,23 @@
       rangeEl.style.marginTop = `${-height / 2}px`;
       rangeEl.style.transform = `rotate(${angle}deg)`;
     }
+    if (drawOverlay && drawPath) {
+      drawOverlay.setAttribute("viewBox", `0 0 ${Math.max(1, metrics.renderedWidth)} ${Math.max(1, metrics.renderedHeight)}`);
+      drawOverlay.style.left = `${metrics.left}px`;
+      drawOverlay.style.top = `${metrics.top}px`;
+      drawOverlay.style.width = `${metrics.renderedWidth}px`;
+      drawOverlay.style.height = `${metrics.renderedHeight}px`;
+      if (state.pathPoints.length >= 2) {
+        const d = state.pathPoints.map((point, index) => {
+          const px = point.x * metrics.renderedWidth;
+          const py = point.y * metrics.renderedHeight;
+          return `${index === 0 ? "M" : "L"} ${px.toFixed(1)} ${py.toFixed(1)}`;
+        }).join(" ");
+        drawPath.setAttribute("d", d);
+      } else {
+        drawPath.setAttribute("d", "");
+      }
+    }
   }
 
   function setCenterFromPointer(event) {
@@ -535,6 +675,54 @@
     state.centerX = clamp(localX / Math.max(1, metrics.renderedWidth), 0, 1, state.centerX);
     state.centerY = clamp(localY / Math.max(1, metrics.renderedHeight), 0, 1, state.centerY);
     updateControlOverlay();
+    schedulePreviewUpdate();
+  }
+
+  function getNormalizedPointFromPointer(event) {
+    const metrics = getContentMetrics();
+    const localX = event.clientX - metrics.rect.left - metrics.left;
+    const localY = event.clientY - metrics.rect.top - metrics.top;
+    return {
+      x: clamp(localX / Math.max(1, metrics.renderedWidth), 0, 1, 0.5),
+      y: clamp(localY / Math.max(1, metrics.renderedHeight), 0, 1, 0.5)
+    };
+  }
+
+  function addPathPoint(point, force = false) {
+    const last = state.pathPoints[state.pathPoints.length - 1];
+    if (!force && last) {
+      const dx = point.x - last.x;
+      const dy = point.y - last.y;
+      if (Math.sqrt(dx * dx + dy * dy) < 0.006) return;
+    }
+    state.pathPoints.push(point);
+    if (state.pathPoints.length > 180) {
+      state.pathPoints = state.pathPoints.filter((_, index) => index % 2 === 0);
+    }
+    updateControlOverlay();
+    syncControls();
+  }
+
+  function startDrawPath(event) {
+    state.isDrawing = true;
+    state.activePointerId = event.pointerId;
+    state.pathPoints = [];
+    const point = getNormalizedPointFromPointer(event);
+    state.centerX = point.x;
+    state.centerY = point.y;
+    addPathPoint(point, true);
+  }
+
+  function continueDrawPath(event) {
+    if (!state.isDrawing || state.activePointerId !== event.pointerId) return;
+    addPathPoint(getNormalizedPointFromPointer(event));
+  }
+
+  function finishDrawPath(event) {
+    if (!state.isDrawing || (event && state.activePointerId !== event.pointerId)) return;
+    state.isDrawing = false;
+    state.activePointerId = null;
+    syncControls();
     schedulePreviewUpdate();
   }
 
@@ -752,6 +940,11 @@
       if (event.button != null && event.button !== 0) return;
       if (event.target && event.target.closest(".space-fx-preview-tools")) return;
       event.preventDefault();
+      if (state.drawMode) {
+        viewport.classList.add("is-drawing");
+        startDrawPath(event);
+        return;
+      }
       if ((Number(state.view.scale) || 1) > 1.001) {
         state.view.isPanning = true;
         state.view.startX = event.clientX;
@@ -765,6 +958,11 @@
     });
 
     const movePan = (event) => {
+      if (state.isDrawing) {
+        event.preventDefault();
+        continueDrawPath(event);
+        return;
+      }
       if (!state.view.isPanning) return;
       event.preventDefault();
       state.view.x = state.view.startPanX + event.clientX - state.view.startX;
@@ -773,6 +971,12 @@
     };
 
     const endPan = (event) => {
+      if (state.isDrawing) {
+        event.preventDefault();
+        finishDrawPath(event);
+        viewport.classList.remove("is-drawing");
+        return;
+      }
       if (!state.view.isPanning) return;
       event.preventDefault();
       state.view.isPanning = false;
@@ -783,8 +987,11 @@
     window.addEventListener("pointerup", endPan, { passive: false });
     window.addEventListener("pointercancel", endPan, { passive: false });
     window.addEventListener("blur", () => {
+      state.isDrawing = false;
+      state.activePointerId = null;
       state.view.isPanning = false;
       viewport.classList.remove("is-panning");
+      viewport.classList.remove("is-drawing");
     });
     viewport.addEventListener("dblclick", resetPreviewTransform);
   }
@@ -795,6 +1002,8 @@
     const recaptureButton = getById("btnSpaceFxRecapture");
     const applyButton = getById("btnSpaceFxApply");
     const mapButton = getById("btnSpaceFxMap");
+    const drawButton = getById("btnSpaceFxDraw");
+    const clearPathButton = getById("btnSpaceFxClearPath");
     if (openButton) {
       openButton.addEventListener("click", () => {
         void openSpaceFxModal();
@@ -814,6 +1023,23 @@
     if (mapButton) {
       mapButton.addEventListener("click", () => {
         void applyDisplacementMap();
+      });
+    }
+    if (drawButton) {
+      drawButton.addEventListener("click", () => {
+        state.drawMode = !state.drawMode;
+        syncControls();
+        setStatus(state.drawMode ? "手绘路径已开启：在预览图上按住拖一笔生成特效轨迹。" : "手绘路径已关闭：点击预览图放置中心点。", "info");
+      });
+    }
+    if (clearPathButton) {
+      clearPathButton.addEventListener("click", () => {
+        state.pathPoints = [];
+        state.isDrawing = false;
+        state.activePointerId = null;
+        syncControls();
+        schedulePreviewUpdate();
+        setStatus("已清除手绘路径，恢复模板默认形状。", "info");
       });
     }
     document.addEventListener("click", (event) => {
