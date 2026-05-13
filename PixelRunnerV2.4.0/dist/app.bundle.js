@@ -647,9 +647,9 @@ var PixelRunnerWebviewBundle = (() => {
       const strengthEnergyBoost = strengthDrive * 6.2;
       const chromaticRatio = Math.pow(chromatic / 100, 0.88);
       const diffusionT = Math.max(0, Math.min(1, spreadRatio));
-      const nearMipWeights = [0.48, 0.28, 0.14, 0.065, 0.025, 8e-3, 2e-3];
-      const midMipWeights = [0.2, 0.26, 0.24, 0.16, 0.085, 0.04, 0.015];
-      const farMipWeights = [0.055, 0.1, 0.16, 0.22, 0.22, 0.165, 0.08];
+      const nearMipWeights = [0.5, 0.28, 0.13, 0.06, 0.022, 6e-3, 2e-3];
+      const midMipWeights = [0.26, 0.25, 0.21, 0.14, 0.08, 0.04, 0.02];
+      const farMipWeights = [0.13, 0.16, 0.18, 0.19, 0.16, 0.115, 0.065];
       const mipShape = diffusionT < 0.52 ? mixLists(nearMipWeights, midMipWeights, diffusionT / 0.52) : mixLists(midMipWeights, farMipWeights, (diffusionT - 0.52) / 0.48);
       const styleEnergy = style === "none" ? 0 : clamp(
         0.98 + preset.smallWeight * 0.16 + preset.mediumWeight * 0.14 + preset.largeWeight * 0.12,
@@ -696,7 +696,7 @@ var PixelRunnerWebviewBundle = (() => {
         blur: {
           mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
           mipWeights: normalizedMipWeights,
-          pyramidWeight: clamp(0.72 + diffusionT * 0.14 + preset.scatter * 0.035, 0.68, 0.96, 0.78),
+          pyramidWeight: clamp(0.7 + diffusionT * 0.09 + preset.scatter * 0.03, 0.66, 0.88, 0.76),
           smallWeight: preset.smallWeight,
           mediumWeight: preset.mediumWeight,
           largeWeight: preset.largeWeight,
@@ -718,9 +718,9 @@ var PixelRunnerWebviewBundle = (() => {
           colorAmount: colorAmount / 100,
           chromatic: chromaticRatio,
           // Split glow into core vs halo at composite stage (strength-gated).
-          coreSuppression: clamp(0.2 + strengthDrive * 0.46 + thresholdRatio * 0.12 + diffusionT * 0.14, 0.16, 0.92, 0.44),
-          haloBoost: clamp((1.04 + diffusionT * 0.3 + wideRadiusRatio * 0.12) * Math.pow(strengthRatio, 0.54), 0, 2.15, 0),
-          haloMix: clamp((0.22 + diffusionT * 0.48) * Math.pow(strengthRatio, 0.56), 0, 0.84, 0)
+          coreSuppression: clamp(0.18 + strengthDrive * 0.34 + thresholdRatio * 0.08 + diffusionT * 0.05, 0.14, 0.72, 0.38),
+          haloBoost: clamp((0.98 + diffusionT * 0.22 + wideRadiusRatio * 0.08) * Math.pow(strengthRatio, 0.54), 0, 1.78, 0),
+          haloMix: clamp((0.18 + diffusionT * 0.32) * Math.pow(strengthRatio, 0.56), 0, 0.66, 0)
         },
         sourceTone: {
           // Exposure is mostly source-side activity shaping (not output intensity).
@@ -1119,15 +1119,12 @@ var PixelRunnerWebviewBundle = (() => {
       let combined = levels.length ? levels[levels.length - 1] : sourceLayer;
       for (let index = levels.length - 2; index >= 0; index -= 1) {
         const upsampled = upsampleLayer(combined, levels[index].width, levels[index].height);
-        addLayer(upsampled, levels[index], weights[index] || weights[weights.length - 1] || 0.25);
+        addLayer(upsampled, levels[index], 1);
         combined = kawaseBlurLayer(upsampled, 0.75);
       }
       const out = createLayer(sourceLayer.width, sourceLayer.height);
       if (levels.length) {
         addUpsampled(out, combined, params.blur.pyramidWeight || 1);
-        for (let index = 0; index < levels.length; index += 1) {
-          addUpsampled(out, levels[index], weights[index] || weights[weights.length - 1] || 0.2);
-        }
       }
       return { glowLayer: out, levels: { mips: levels } };
     }
@@ -1343,9 +1340,8 @@ var PixelRunnerWebviewBundle = (() => {
       float edgeSource = max(contrastScore * 0.2, specularScore * 0.4) * smooth01(0.42, 0.9, brightness);
       float combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
       float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.82));
-      float colorGain = pow(mask, 0.78);
       float chromaBoost = uChromaBoost * smooth01(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0) * colorGain;
+      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0);
       outSource = vec4(sourceColor, 1.0);
       outMasks = vec4(lum, protection, dark, mask);
     }
@@ -1598,10 +1594,8 @@ var PixelRunnerWebviewBundle = (() => {
           const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
           const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
           for (let pixel = 0; pixel < total; pixel += 1) {
-            const source = Math.max(0, Math.min(1, sourceMask[pixel]));
-            const softMask = Math.max(0, Math.min(1, source * 0.78 + featheredSourceMask[pixel] * 0.22));
-            if (source <= 1e-4) continue;
-            const gain = Math.pow(softMask, 0.78) / Math.max(1e-4, Math.pow(source, 0.78));
+            const softMask = Math.max(0, Math.min(1, sourceMask[pixel] * 0.78 + featheredSourceMask[pixel] * 0.22));
+            const gain = Math.pow(softMask, 0.78);
             sourceLayer.r[pixel] *= gain;
             sourceLayer.g[pixel] *= gain;
             sourceLayer.b[pixel] *= gain;
@@ -1729,27 +1723,11 @@ var PixelRunnerWebviewBundle = (() => {
     const FINAL_SHADER = `#version 300 es
     precision highp float;
     uniform sampler2D uCombined;
-    uniform sampler2D uLevel0;
-    uniform sampler2D uLevel1;
-    uniform sampler2D uLevel2;
-    uniform sampler2D uLevel3;
-    uniform sampler2D uLevel4;
-    uniform sampler2D uLevel5;
-    uniform sampler2D uLevel6;
-    uniform int uLevelCount;
     uniform float uPyramidWeight;
-    uniform float uWeights[7];
     in vec2 vUv;
     out vec4 outColor;
     void main() {
       vec3 color = texture(uCombined, vUv).rgb * uPyramidWeight;
-      if (uLevelCount > 0) color += texture(uLevel0, vUv).rgb * uWeights[0];
-      if (uLevelCount > 1) color += texture(uLevel1, vUv).rgb * uWeights[1];
-      if (uLevelCount > 2) color += texture(uLevel2, vUv).rgb * uWeights[2];
-      if (uLevelCount > 3) color += texture(uLevel3, vUv).rgb * uWeights[3];
-      if (uLevelCount > 4) color += texture(uLevel4, vUv).rgb * uWeights[4];
-      if (uLevelCount > 5) color += texture(uLevel5, vUv).rgb * uWeights[5];
-      if (uLevelCount > 6) color += texture(uLevel6, vUv).rgb * uWeights[6];
       outColor = vec4(color, 1.0);
     }
   `;
@@ -1912,20 +1890,14 @@ var PixelRunnerWebviewBundle = (() => {
         this.renderTo(target, program);
         return target;
       }
-      finalComposite(combined, levels, weights, pyramidWeight, width, height) {
+      finalComposite(combined, pyramidWeight, width, height) {
         const gl = this.gl;
         const target = createTarget(gl, width, height);
         if (this.allocatedTargets) this.allocatedTargets.push(target);
         const program = this.programs.final;
         this.bindProgram(program);
         this.bindTexture(program, "uCombined", combined.texture, 0);
-        for (let index = 0; index < 7; index += 1) {
-          const level = levels[index] || levels[levels.length - 1] || combined;
-          this.bindTexture(program, `uLevel${index}`, level.texture, index + 1);
-        }
-        gl.uniform1i(gl.getUniformLocation(program, "uLevelCount"), Math.min(7, levels.length));
         gl.uniform1f(gl.getUniformLocation(program, "uPyramidWeight"), pyramidWeight);
-        gl.uniform1fv(gl.getUniformLocation(program, "uWeights"), new Float32Array(weights.slice(0, 7)));
         this.renderTo(target, program);
         return target;
       }
@@ -1955,13 +1927,11 @@ var PixelRunnerWebviewBundle = (() => {
           }
           let combined = levels.length ? levels[levels.length - 1] : current;
           for (let index = levels.length - 2; index >= 0; index -= 1) {
-            const added = this.upsampleAdd(combined, levels[index], weights[index] || weights[weights.length - 1] || 0.25);
+            const added = this.upsampleAdd(combined, levels[index], 1);
             combined = this.kawase(added, 0.75);
           }
           const finalTarget = this.finalComposite(
             combined,
-            levels,
-            weights,
             params.blur.pyramidWeight || 1,
             width,
             height

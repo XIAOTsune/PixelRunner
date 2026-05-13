@@ -145,9 +145,8 @@
       float edgeSource = max(contrastScore * 0.2, specularScore * 0.4) * smooth01(0.42, 0.9, brightness);
       float combinedSource = lumaScore * 0.82 + edgeSource * 0.38 + specularScore * 0.12;
       float mask = saturate(combinedSource * reflectiveBoost * (1.0 - protection * 0.82));
-      float colorGain = pow(mask, 0.78);
       float chromaBoost = uChromaBoost * smooth01(0.06, 0.58, sat) * (0.62 + contrastScore * 0.26 + specularScore * 0.18);
-      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0) * colorGain;
+      vec3 sourceColor = clamp(vec3(lum) + (c - vec3(lum)) * (1.0 + chromaBoost), 0.0, 1.0);
       outSource = vec4(sourceColor, 1.0);
       outMasks = vec4(lum, protection, dark, mask);
     }
@@ -418,10 +417,8 @@
         const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
         const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
         for (let pixel = 0; pixel < total; pixel += 1) {
-          const source = Math.max(0, Math.min(1, sourceMask[pixel]));
-          const softMask = Math.max(0, Math.min(1, source * 0.78 + featheredSourceMask[pixel] * 0.22));
-          if (source <= 0.0001) continue;
-          const gain = Math.pow(softMask, 0.78) / Math.max(0.0001, Math.pow(source, 0.78));
+          const softMask = Math.max(0, Math.min(1, sourceMask[pixel] * 0.78 + featheredSourceMask[pixel] * 0.22));
+          const gain = Math.pow(softMask, 0.78);
           sourceLayer.r[pixel] *= gain;
           sourceLayer.g[pixel] *= gain;
           sourceLayer.b[pixel] *= gain;

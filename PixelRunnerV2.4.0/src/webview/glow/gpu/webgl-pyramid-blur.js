@@ -66,27 +66,11 @@
   const FINAL_SHADER = `#version 300 es
     precision highp float;
     uniform sampler2D uCombined;
-    uniform sampler2D uLevel0;
-    uniform sampler2D uLevel1;
-    uniform sampler2D uLevel2;
-    uniform sampler2D uLevel3;
-    uniform sampler2D uLevel4;
-    uniform sampler2D uLevel5;
-    uniform sampler2D uLevel6;
-    uniform int uLevelCount;
     uniform float uPyramidWeight;
-    uniform float uWeights[7];
     in vec2 vUv;
     out vec4 outColor;
     void main() {
       vec3 color = texture(uCombined, vUv).rgb * uPyramidWeight;
-      if (uLevelCount > 0) color += texture(uLevel0, vUv).rgb * uWeights[0];
-      if (uLevelCount > 1) color += texture(uLevel1, vUv).rgb * uWeights[1];
-      if (uLevelCount > 2) color += texture(uLevel2, vUv).rgb * uWeights[2];
-      if (uLevelCount > 3) color += texture(uLevel3, vUv).rgb * uWeights[3];
-      if (uLevelCount > 4) color += texture(uLevel4, vUv).rgb * uWeights[4];
-      if (uLevelCount > 5) color += texture(uLevel5, vUv).rgb * uWeights[5];
-      if (uLevelCount > 6) color += texture(uLevel6, vUv).rgb * uWeights[6];
       outColor = vec4(color, 1.0);
     }
   `;
@@ -263,20 +247,14 @@
       return target;
     }
 
-    finalComposite(combined, levels, weights, pyramidWeight, width, height) {
+    finalComposite(combined, pyramidWeight, width, height) {
       const gl = this.gl;
       const target = createTarget(gl, width, height);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.final;
       this.bindProgram(program);
       this.bindTexture(program, "uCombined", combined.texture, 0);
-      for (let index = 0; index < 7; index += 1) {
-        const level = levels[index] || levels[levels.length - 1] || combined;
-        this.bindTexture(program, `uLevel${index}`, level.texture, index + 1);
-      }
-      gl.uniform1i(gl.getUniformLocation(program, "uLevelCount"), Math.min(7, levels.length));
       gl.uniform1f(gl.getUniformLocation(program, "uPyramidWeight"), pyramidWeight);
-      gl.uniform1fv(gl.getUniformLocation(program, "uWeights"), new Float32Array(weights.slice(0, 7)));
       this.renderTo(target, program);
       return target;
     }
@@ -313,14 +291,12 @@
 
         let combined = levels.length ? levels[levels.length - 1] : current;
         for (let index = levels.length - 2; index >= 0; index -= 1) {
-          const added = this.upsampleAdd(combined, levels[index], weights[index] || weights[weights.length - 1] || 0.25);
+          const added = this.upsampleAdd(combined, levels[index], 1);
           combined = this.kawase(added, 0.75);
         }
 
         const finalTarget = this.finalComposite(
           combined,
-          levels,
-          weights,
           params.blur.pyramidWeight || 1,
           width,
           height

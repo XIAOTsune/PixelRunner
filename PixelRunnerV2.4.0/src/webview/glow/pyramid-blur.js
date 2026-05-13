@@ -172,16 +172,13 @@
     let combined = levels.length ? levels[levels.length - 1] : sourceLayer;
     for (let index = levels.length - 2; index >= 0; index -= 1) {
       const upsampled = upsampleLayer(combined, levels[index].width, levels[index].height);
-      addLayer(upsampled, levels[index], weights[index] || weights[weights.length - 1] || 0.25);
+      addLayer(upsampled, levels[index], 1);
       combined = kawaseBlurLayer(upsampled, 0.75);
     }
 
     const out = createLayer(sourceLayer.width, sourceLayer.height);
     if (levels.length) {
       addUpsampled(out, combined, params.blur.pyramidWeight || 1);
-      for (let index = 0; index < levels.length; index += 1) {
-        addUpsampled(out, levels[index], weights[index] || weights[weights.length - 1] || 0.2);
-      }
     }
     return { glowLayer: out, levels: { mips: levels } };
   }

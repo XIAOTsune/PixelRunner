@@ -136,9 +136,10 @@
     // Chromatic slider should become visible earlier (especially in 12~45 range).
     const chromaticRatio = Math.pow(chromatic / 100, 0.88);
     const diffusionT = Math.max(0, Math.min(1, spreadRatio));
-    const nearMipWeights = [0.48, 0.28, 0.14, 0.065, 0.025, 0.008, 0.002];
-    const midMipWeights = [0.2, 0.26, 0.24, 0.16, 0.085, 0.04, 0.015];
-    const farMipWeights = [0.055, 0.1, 0.16, 0.22, 0.22, 0.165, 0.08];
+    const nearMipWeights = [0.5, 0.28, 0.13, 0.06, 0.022, 0.006, 0.002];
+    const midMipWeights = [0.26, 0.25, 0.21, 0.14, 0.08, 0.04, 0.02];
+    // Keep a near-field core floor even at maximum diffusion; far mips add veil instead of replacing bloom.
+    const farMipWeights = [0.13, 0.16, 0.18, 0.19, 0.16, 0.115, 0.065];
     const mipShape = diffusionT < 0.52
       ? mixLists(nearMipWeights, midMipWeights, diffusionT / 0.52)
       : mixLists(midMipWeights, farMipWeights, (diffusionT - 0.52) / 0.48);
@@ -188,7 +189,7 @@
       blur: {
         mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
         mipWeights: normalizedMipWeights,
-        pyramidWeight: clamp(0.72 + diffusionT * 0.14 + preset.scatter * 0.035, 0.68, 0.96, 0.78),
+        pyramidWeight: clamp(0.7 + diffusionT * 0.09 + preset.scatter * 0.03, 0.66, 0.88, 0.76),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
         largeWeight: preset.largeWeight,
@@ -210,9 +211,9 @@
         colorAmount: colorAmount / 100,
         chromatic: chromaticRatio,
         // Split glow into core vs halo at composite stage (strength-gated).
-        coreSuppression: clamp(0.2 + strengthDrive * 0.46 + thresholdRatio * 0.12 + diffusionT * 0.14, 0.16, 0.92, 0.44),
-        haloBoost: clamp((1.04 + diffusionT * 0.3 + wideRadiusRatio * 0.12) * Math.pow(strengthRatio, 0.54), 0, 2.15, 0),
-        haloMix: clamp((0.22 + diffusionT * 0.48) * Math.pow(strengthRatio, 0.56), 0, 0.84, 0)
+        coreSuppression: clamp(0.18 + strengthDrive * 0.34 + thresholdRatio * 0.08 + diffusionT * 0.05, 0.14, 0.72, 0.38),
+        haloBoost: clamp((0.98 + diffusionT * 0.22 + wideRadiusRatio * 0.08) * Math.pow(strengthRatio, 0.54), 0, 1.78, 0),
+        haloMix: clamp((0.18 + diffusionT * 0.32) * Math.pow(strengthRatio, 0.56), 0, 0.66, 0)
       },
       sourceTone: {
         // Exposure is mostly source-side activity shaping (not output intensity).
