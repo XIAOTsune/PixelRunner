@@ -1,1 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
 release/
+*.ccx
+*.zip
+*.tgz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime and local state
+.env
+.env.*
+*.local
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor and tooling
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Adobe UXP / local package tooling
+.uxp/
+.tmp-uxp/
+uxp-debug.log*
