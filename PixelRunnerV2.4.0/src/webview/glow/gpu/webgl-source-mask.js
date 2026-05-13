@@ -134,18 +134,16 @@
       float specular = max(0.0, maxChannel - localMean);
       float brightness = max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
-      float thresholdGate = smooth01(uThresholdLow, uThresholdHigh, brightness);
+      float thresholdGate = softThresholdMask(brightness, uThresholdLow, uThresholdKnee);
       float secondaryThresholdGate = smooth01(
         max(0.48, uThresholdLow * 0.9),
         max(uThresholdHigh, uThresholdLow + 0.06),
         brightness
       );
-      float brightPass =
-        softThresholdMask(brightness, uThresholdLow, uThresholdKnee) *
-        smooth01(uThresholdLow - uThresholdKnee * 0.45, uThresholdHigh, brightness);
+      float brightPass = thresholdGate;
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
-      float brightEnergy = pow(saturate(brightPass * thresholdGate), 1.45);
+      float brightEnergy = pow(saturate(brightPass), 1.16);
       float specularPass =
         pow(specularScore, 1.16) *
         secondaryThresholdGate *
@@ -187,8 +185,8 @@
       float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.42) * (1.0 - nearClipException * 0.35) * (1.0 - colorReflection * 0.32);
       emissionEnergy *= 1.0 - protection * 0.86;
       emissionEnergy *= 1.0 - neutralClothReject * 0.82;
-      emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
-      emissionEnergy = saturate(pow(emissionEnergy, 0.96) * 1.26);
+      emissionEnergy *= smooth01(uLowEnergyCutoff * 0.42, uLowEnergyCutoff * 2.2, emissionEnergy);
+      emissionEnergy = saturate(pow(emissionEnergy, 1.04) * 1.18);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
       float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
       float chromaKeep = clamp(0.28 + sat * 0.88 + warmColorHint * 0.24 + colorReflection * 0.16 + uChromaBoost * 0.25 - neutralHighlight * 0.1, 0.14, 0.95);
@@ -287,23 +285,28 @@
     return program;
   }
 
-  function createTexture(gl, width, height, data = null) {
+  function createTexture(gl, width, height, data = null, format = null) {
+    const textureFormat = format || {
+      internalFormat: gl.RGBA8,
+      format: gl.RGBA,
+      type: gl.UNSIGNED_BYTE
+    };
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texImage2D(gl.TEXTURE_2D, 0, textureFormat.internalFormat, width, height, 0, textureFormat.format, textureFormat.type, data);
     return texture;
   }
 
-  function createTarget(gl, width, height, attachmentCount = 1) {
+  function createTarget(gl, width, height, attachmentCount = 1, formats = null) {
     const framebuffer = gl.createFramebuffer();
     const textures = [];
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     for (let index = 0; index < attachmentCount; index += 1) {
-      const texture = createTexture(gl, width, height);
+      const texture = createTexture(gl, width, height, null, Array.isArray(formats) ? formats[index] : formats);
       textures.push(texture);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + index, gl.TEXTURE_2D, texture, 0);
     }
@@ -329,6 +332,17 @@
         blurV: createProgram(this.gl, BLUR_V_SHADER),
         source: createProgram(this.gl, SOURCE_SHADER)
       };
+      this.floatTargets = !!(
+        this.gl.getExtension("EXT_color_buffer_float") &&
+        this.gl.getExtension("OES_texture_float_linear")
+      );
+      this.targetFormat = this.floatTargets
+        ? {
+            internalFormat: this.gl.RGBA32F,
+            format: this.gl.RGBA,
+            type: this.gl.FLOAT
+          }
+        : null;
       this.vertexBuffer = this.gl.createBuffer();
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
       this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
@@ -359,7 +373,7 @@
 
     renderSingleTexture(program, sourceTexture, sourceUniform, width, height, configure = null) {
       const gl = this.gl;
-      const target = createTarget(gl, width, height);
+      const target = createTarget(gl, width, height, 1, this.targetFormat);
       this.bindProgram(program);
       this.bindTexture(program, sourceUniform, sourceTexture, 0);
       if (configure) configure(program);
@@ -371,6 +385,9 @@
       const gl = this.gl;
       const { width, height } = imageData;
       const sourceParams = params.source;
+      if (!this.floatTargets) {
+        throw new Error("WebGL2 glow source mask requires float render targets");
+      }
       const radius = Math.max(1, Math.min(24, Math.floor(sourceParams.localRadius)));
       this.canvas.width = width;
       this.canvas.height = height;
@@ -410,7 +427,7 @@
         );
         targets.push(localMeanTarget);
 
-        const sourceTarget = createTarget(gl, width, height, 2);
+        const sourceTarget = createTarget(gl, width, height, 2, [this.targetFormat, this.targetFormat]);
         targets.push(sourceTarget);
         const program = this.programs.source;
         this.bindProgram(program);
@@ -431,13 +448,13 @@
         gl.uniform1f(gl.getUniformLocation(program, "uLowEnergyCutoff"), sourceParams.lowEnergyCutoff || 0.046);
         this.renderTo(sourceTarget, program);
 
-        const sourcePixels = new Uint8Array(width * height * 4);
-        const maskPixels = new Uint8Array(width * height * 4);
+        const sourcePixels = new Float32Array(width * height * 4);
+        const maskPixels = new Float32Array(width * height * 4);
         gl.bindFramebuffer(gl.FRAMEBUFFER, sourceTarget.framebuffer);
         gl.readBuffer(gl.COLOR_ATTACHMENT0);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, sourcePixels);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, sourcePixels);
         gl.readBuffer(gl.COLOR_ATTACHMENT1);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, maskPixels);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, maskPixels);
 
         const total = width * height;
         const sourceLayer = createLayer(width, height);
@@ -451,13 +468,13 @@
         const protectMask = new Float32Array(total);
         const sourceMask = new Float32Array(total);
         for (let pixel = 0, index = 0; pixel < total; pixel += 1, index += 4) {
-          sourceLayer.r[pixel] = sourcePixels[index] / 255;
-          sourceLayer.g[pixel] = sourcePixels[index + 1] / 255;
-          sourceLayer.b[pixel] = sourcePixels[index + 2] / 255;
-          luma[pixel] = maskPixels[index] / 255;
-          protectMask[pixel] = maskPixels[index + 1] / 255;
-          darkProtect[pixel] = maskPixels[index + 2] / 255;
-          sourceMask[pixel] = maskPixels[index + 3] / 255;
+          sourceLayer.r[pixel] = Math.max(0, sourcePixels[index]);
+          sourceLayer.g[pixel] = Math.max(0, sourcePixels[index + 1]);
+          sourceLayer.b[pixel] = Math.max(0, sourcePixels[index + 2]);
+          luma[pixel] = Math.min(1, Math.max(0, maskPixels[index]));
+          protectMask[pixel] = Math.min(1, Math.max(0, maskPixels[index + 1]));
+          darkProtect[pixel] = Math.min(1, Math.max(0, maskPixels[index + 2]));
+          sourceMask[pixel] = Math.min(1, Math.max(0, maskPixels[index + 3]));
         }
         const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
         const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));

@@ -120,9 +120,10 @@
     const radiusRatio = radius / 500;
     const legacyRadiusRatio = Math.min(1, radius / 250);
     const wideRadiusRatio = Math.max(0, (radius - 250) / 250);
-    // Higher UI threshold should mean stricter source selection.
     const thresholdRatio = threshold / 100;
-    const thresholdOpen = 1 - thresholdRatio;
+    // Lower UI threshold is the precision end: fewer, more clipping-like highlights are allowed to emit.
+    const thresholdSelectivity = 1 - thresholdRatio;
+    const thresholdOpen = thresholdRatio;
     const exposureRatio = brightnessBias / 100;
     const spreadRatio = Math.pow(radiusRatio, 0.92);
     const spreadAir = Math.pow(radiusRatio, 1.15);
@@ -168,8 +169,8 @@
       chromatic,
       source: {
         // Decouple from threshold: threshold sets the center; exposure mainly tunes source activity.
-        thresholdLow: clamp(0.1 + thresholdRatio * 0.72 + preset.thresholdBias * 0.5 - exposureRatio * 0.02, 0.06, 0.9, 0.28),
-        thresholdHigh: clamp(0.24 + thresholdRatio * 0.72 + preset.thresholdBias * 0.5 - exposureRatio * 0.024, 0.16, 0.98, 0.48),
+        thresholdLow: clamp(0.1 + thresholdSelectivity * 0.72 + preset.thresholdBias * 0.5 - exposureRatio * 0.02, 0.06, 0.9, 0.28),
+        thresholdHigh: clamp(0.24 + thresholdSelectivity * 0.72 + preset.thresholdBias * 0.5 - exposureRatio * 0.024, 0.16, 0.98, 0.48),
         thresholdKnee: clamp(
           preset.knee * (0.7 + thresholdOpen * 0.56) + legacyRadiusRatio * 0.035 + spreadRatio * 0.026 + exposureRatio * 0.034,
           0.055,
@@ -180,7 +181,7 @@
         sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
         haloMaskRadius: Math.max(10, Math.min(20, Math.round(10 + legacyRadiusRatio * 7 + wideRadiusRatio * 3))),
         contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
-        contrastHigh: clamp(0.052 + thresholdRatio * 0.06 - exposureRatio * 0.018, 0.032, 0.13, 0.068),
+        contrastHigh: clamp(0.052 + thresholdSelectivity * 0.06 - exposureRatio * 0.018, 0.032, 0.13, 0.068),
         specularLow: 0.06,
         specularHigh: 0.28,
         lowEnergyCutoff: 0.038,
@@ -204,7 +205,7 @@
         softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
         warmth: preset.warmth,
         saturation: clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
-        highlightProtect: clamp(0.58 + thresholdRatio * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
+        highlightProtect: clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
         shadowProtect: preset.darkProtect,
         colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
         // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
@@ -214,7 +215,7 @@
         colorAmount: colorAmount / 100,
         chromatic: chromaticRatio,
         // Split glow into core vs halo at composite stage (strength-gated).
-        coreSuppression: clamp(0.34 + strengthDrive * 0.28 + thresholdRatio * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
+        coreSuppression: clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
         coreCeiling: clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
         haloBoost: clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 0.58), 0, 3.4, 0),
         haloMix: clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 0.62), 0, 0.82, 0),
