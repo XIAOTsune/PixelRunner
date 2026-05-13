@@ -879,18 +879,24 @@ var PixelRunnerWebviewBundle = (() => {
         const contrast = Math.max(0, lum - localMean[pixel]);
         const specular = Math.max(0, maxChannel - localMean[pixel]);
         const brightness = Math.max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
-        const brightPass = softThresholdMask(brightness, thresholdLow, thresholdKnee) * smoothstep2(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
+        const thresholdGate = smoothstep2(thresholdLow, thresholdHigh, brightness);
+        const secondaryThresholdGate = smoothstep2(
+          Math.max(0.48, thresholdLow * 0.9),
+          Math.max(thresholdHigh, thresholdLow + 0.06),
+          brightness
+        );
+        const brightPass = softThresholdMask(brightness, thresholdLow, thresholdKnee) * smoothstep2(thresholdLow - thresholdKnee * 0.45, thresholdHigh, brightness);
         const contrastScore = smoothstep2(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
         const specularScore = smoothstep2(sourceParams.specularLow, sourceParams.specularHigh, specular);
-        const highlightGate = smoothstep2(Math.max(0.18, thresholdLow * 0.82), Math.max(thresholdHigh, thresholdLow + 0.08), brightness);
-        const brightEnergy = Math.pow(clamp(brightPass * highlightGate, 0, 1), 1.38);
-        const specularPass = Math.pow(specularScore, 1.16) * smoothstep2(0.64, 0.94, brightness) * smoothstep2(0.038, 0.18, specular);
-        const rimPass = contrastScore * smoothstep2(0.74, 0.97, brightness);
+        const brightEnergy = Math.pow(clamp(brightPass * thresholdGate, 0, 1), 1.45);
+        const specularPass = Math.pow(specularScore, 1.16) * secondaryThresholdGate * smoothstep2(0.055, 0.22, specular);
+        const rimPass = contrastScore * thresholdGate * smoothstep2(0.82, 0.98, brightness);
         const highLightness = smoothstep2(0.7, 0.95, lum);
         const veryHighLightness = smoothstep2(0.84, 0.985, lum);
-        const lowContrast = 1 - smoothstep2(0.01, 0.068, contrast);
+        const clothContrast = 1 - smoothstep2(0.028, 0.16, contrast);
+        const lowContrast = 1 - smoothstep2(0.01, 0.11, contrast);
         const lowSat = 1 - smoothstep2(0.12, 0.36, sat);
-        const whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
+        const whiteFlat = highLightness * clothContrast * lowSat * (0.9 + veryHighLightness * 0.58);
         const srgbMax = sr > sg ? sr > sb ? sr : sb : sg > sb ? sg : sb;
         const srgbMin = sr < sg ? sr < sb ? sr : sb : sg < sb ? sg : sb;
         const skinHue = isSkinHueFast(sr, sg, sb, srgbMax, srgbMin) ? 1 : 0;
@@ -902,15 +908,20 @@ var PixelRunnerWebviewBundle = (() => {
           0,
           1
         );
-        const nearClip = smoothstep2(0.94, 1, maxChannel);
-        const clippingDetail = clamp(specularScore * 0.78 + sat * 0.16, 0, 1);
-        const protection = clamp(protectionBase * (1 - nearClip * (0.18 + clippingDetail * 0.38)), 0, 1);
+        const nearClip = smoothstep2(0.975, 1, maxChannel);
+        const clippingDetail = clamp(
+          smoothstep2(0.12, 0.34, specular) * 0.72 + contrastScore * thresholdGate * 0.18 + sat * 0.1,
+          0,
+          1
+        );
+        const nearClipException = nearClip * clippingDetail * thresholdGate;
+        const protection = clamp(protectionBase * (1 - nearClipException * 0.42), 0, 1);
         const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
         const colorReflection = smoothstep2(0.1, 0.48, sat) * smoothstep2(0.52, 0.92, brightness);
         let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
-        const neutralClothReject = whiteFlat * (1 - specularScore * 0.58) * (1 - nearClip * 0.55) * (1 - colorReflection * 0.45);
+        const neutralClothReject = whiteFlat * (1 - specularScore * 0.42) * (1 - nearClipException * 0.35) * (1 - colorReflection * 0.32);
         emissionEnergy *= 1 - protection * 0.86;
-        emissionEnergy *= 1 - neutralClothReject * 0.68;
+        emissionEnergy *= 1 - neutralClothReject * 0.82;
         emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
         emissionEnergy = clamp(Math.pow(emissionEnergy, 0.96) * 1.26, 0, 1);
         const neutralHighlight = brightPass * (1 - sat) * smoothstep2(0.82, 1, maxChannel);
@@ -1396,23 +1407,29 @@ var PixelRunnerWebviewBundle = (() => {
       float specular = max(0.0, maxChannel - localMean);
       float brightness = max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
+      float thresholdGate = smooth01(uThresholdLow, uThresholdHigh, brightness);
+      float secondaryThresholdGate = smooth01(
+        max(0.48, uThresholdLow * 0.9),
+        max(uThresholdHigh, uThresholdLow + 0.06),
+        brightness
+      );
       float brightPass =
         softThresholdMask(brightness, uThresholdLow, uThresholdKnee) *
-        smooth01(uThresholdLow - uThresholdKnee * 0.92, uThresholdHigh, brightness);
+        smooth01(uThresholdLow - uThresholdKnee * 0.45, uThresholdHigh, brightness);
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
-      float highlightGate = smooth01(max(0.18, uThresholdLow * 0.82), max(uThresholdHigh, uThresholdLow + 0.08), brightness);
-      float brightEnergy = pow(saturate(brightPass * highlightGate), 1.38);
+      float brightEnergy = pow(saturate(brightPass * thresholdGate), 1.45);
       float specularPass =
         pow(specularScore, 1.16) *
-        smooth01(0.64, 0.94, brightness) *
-        smooth01(0.038, 0.18, specular);
-      float rimPass = contrastScore * smooth01(0.74, 0.97, brightness);
+        secondaryThresholdGate *
+        smooth01(0.055, 0.22, specular);
+      float rimPass = contrastScore * thresholdGate * smooth01(0.82, 0.98, brightness);
       float highLightness = smooth01(0.7, 0.95, lum);
       float veryHighLightness = smooth01(0.84, 0.985, lum);
-      float lowContrast = 1.0 - smooth01(0.01, 0.068, contrast);
+      float clothContrast = 1.0 - smooth01(0.028, 0.16, contrast);
+      float lowContrast = 1.0 - smooth01(0.01, 0.11, contrast);
       float lowSat = 1.0 - smooth01(0.12, 0.36, sat);
-      float whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
+      float whiteFlat = highLightness * clothContrast * lowSat * (0.9 + veryHighLightness * 0.58);
       float srgbMax = max(max(cSrgb.r, cSrgb.g), cSrgb.b);
       float srgbMin = min(min(cSrgb.r, cSrgb.g), cSrgb.b);
       float skinHue = isSkinHueFast(cSrgb, srgbMax, srgbMin);
@@ -1430,14 +1447,19 @@ var PixelRunnerWebviewBundle = (() => {
         dark * uDarkProtect +
         midtoneReject * 0.62
       );
-      float nearClip = smooth01(0.94, 1.0, maxChannel);
-      float clippingDetail = saturate(specularScore * 0.78 + sat * 0.16);
-      float protection = saturate(protectionBase * (1.0 - nearClip * (0.18 + clippingDetail * 0.38)));
+      float nearClip = smooth01(0.975, 1.0, maxChannel);
+      float clippingDetail = saturate(
+        smooth01(0.12, 0.34, specular) * 0.72 +
+        contrastScore * thresholdGate * 0.18 +
+        sat * 0.1
+      );
+      float nearClipException = nearClip * clippingDetail * thresholdGate;
+      float protection = saturate(protectionBase * (1.0 - nearClipException * 0.42));
       float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
       float emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
-      float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.58) * (1.0 - nearClip * 0.55) * (1.0 - colorReflection * 0.45);
+      float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.42) * (1.0 - nearClipException * 0.35) * (1.0 - colorReflection * 0.32);
       emissionEnergy *= 1.0 - protection * 0.86;
-      emissionEnergy *= 1.0 - neutralClothReject * 0.68;
+      emissionEnergy *= 1.0 - neutralClothReject * 0.82;
       emissionEnergy = saturate(emissionEnergy - uLowEnergyCutoff);
       emissionEnergy = saturate(pow(emissionEnergy, 0.96) * 1.26);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
@@ -3021,7 +3043,7 @@ var PixelRunnerWebviewBundle = (() => {
   // src/webview/glow/preview-engine.js
   (function initGlowPreviewEngineModule(global) {
     const modules = global.PixelRunnerModules = global.PixelRunnerModules || {};
-    const GLOW_ALGORITHM_VERSION = "engine-bloom-core-balance-v5";
+    const GLOW_ALGORITHM_VERSION = "engine-bloom-source-gate-v6";
     function createCanvas(width, height) {
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.floor(width));

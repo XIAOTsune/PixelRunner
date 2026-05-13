@@ -150,23 +150,29 @@
       const specular = Math.max(0, maxChannel - localMean[pixel]);
       const brightness = Math.max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
+      const thresholdGate = smoothstep(thresholdLow, thresholdHigh, brightness);
+      const secondaryThresholdGate = smoothstep(
+        Math.max(0.48, thresholdLow * 0.9),
+        Math.max(thresholdHigh, thresholdLow + 0.06),
+        brightness
+      );
       const brightPass =
         softThresholdMask(brightness, thresholdLow, thresholdKnee) *
-        smoothstep(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
+        smoothstep(thresholdLow - thresholdKnee * 0.45, thresholdHigh, brightness);
       const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
       const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
-      const highlightGate = smoothstep(Math.max(0.18, thresholdLow * 0.82), Math.max(thresholdHigh, thresholdLow + 0.08), brightness);
-      const brightEnergy = Math.pow(clamp(brightPass * highlightGate, 0, 1), 1.38);
+      const brightEnergy = Math.pow(clamp(brightPass * thresholdGate, 0, 1), 1.45);
       const specularPass =
         Math.pow(specularScore, 1.16) *
-        smoothstep(0.64, 0.94, brightness) *
-        smoothstep(0.038, 0.18, specular);
-      const rimPass = contrastScore * smoothstep(0.74, 0.97, brightness);
+        secondaryThresholdGate *
+        smoothstep(0.055, 0.22, specular);
+      const rimPass = contrastScore * thresholdGate * smoothstep(0.82, 0.98, brightness);
       const highLightness = smoothstep(0.7, 0.95, lum);
       const veryHighLightness = smoothstep(0.84, 0.985, lum);
-      const lowContrast = 1 - smoothstep(0.01, 0.068, contrast);
+      const clothContrast = 1 - smoothstep(0.028, 0.16, contrast);
+      const lowContrast = 1 - smoothstep(0.01, 0.11, contrast);
       const lowSat = 1 - smoothstep(0.12, 0.36, sat);
-      const whiteFlat = highLightness * lowContrast * lowSat * (0.72 + veryHighLightness * 0.5);
+      const whiteFlat = highLightness * clothContrast * lowSat * (0.9 + veryHighLightness * 0.58);
       const srgbMax = sr > sg ? (sr > sb ? sr : sb) : (sg > sb ? sg : sb);
       const srgbMin = sr < sg ? (sr < sb ? sr : sb) : (sg < sb ? sg : sb);
       const skinHue = isSkinHueFast(sr, sg, sb, srgbMax, srgbMin) ? 1 : 0;
@@ -186,15 +192,22 @@
         0,
         1
       );
-      const nearClip = smoothstep(0.94, 1.0, maxChannel);
-      const clippingDetail = clamp(specularScore * 0.78 + sat * 0.16, 0, 1);
-      const protection = clamp(protectionBase * (1 - nearClip * (0.18 + clippingDetail * 0.38)), 0, 1);
+      const nearClip = smoothstep(0.975, 1.0, maxChannel);
+      const clippingDetail = clamp(
+        smoothstep(0.12, 0.34, specular) * 0.72 +
+          contrastScore * thresholdGate * 0.18 +
+          sat * 0.1,
+        0,
+        1
+      );
+      const nearClipException = nearClip * clippingDetail * thresholdGate;
+      const protection = clamp(protectionBase * (1 - nearClipException * 0.42), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
       const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
       let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
-      const neutralClothReject = whiteFlat * (1 - specularScore * 0.58) * (1 - nearClip * 0.55) * (1 - colorReflection * 0.45);
+      const neutralClothReject = whiteFlat * (1 - specularScore * 0.42) * (1 - nearClipException * 0.35) * (1 - colorReflection * 0.32);
       emissionEnergy *= 1 - protection * 0.86;
-      emissionEnergy *= 1 - neutralClothReject * 0.68;
+      emissionEnergy *= 1 - neutralClothReject * 0.82;
       emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
       emissionEnergy = clamp(Math.pow(emissionEnergy, 0.96) * 1.26, 0, 1);
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
