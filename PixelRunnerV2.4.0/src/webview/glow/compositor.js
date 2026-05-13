@@ -37,6 +37,7 @@
 
   function visibilityGate(value, params) {
     const floor = clamp(Number(params.composite.energyFloor) || 0, 0, 0.4);
+    if (floor <= 0.000001) return value;
     const softness = clamp(Number(params.composite.energyFloorSoftness) || 0.04, 0.001, 0.4);
     const gate = smoothstep(floor, floor + softness, value);
     return value * gate;
@@ -81,35 +82,16 @@
   }
 
   function splitCoreAndHalo(glow, baseLuma, protect, source, haloSource, params) {
-    const coreSuppression = clamp(Number(params.composite.coreSuppression) || 0.5, 0, 1);
     const haloBoost = Math.max(0, Number(params.composite.haloBoost) || 1);
     const haloMix = clamp(Number(params.composite.haloMix) || 0.5, 0, 1);
-    const coreCeiling = clamp(Number(params.composite.coreCeiling) || 0.42, 0.12, 1);
-    const brightCoreGate = clamp(1 - baseLuma * (0.42 + coreSuppression * 0.18), 0.24, 1);
-    const protectCoreGate = clamp(1 - protect * (0.58 + coreSuppression * 0.34), 0.08, 1);
-    const coreGate = brightCoreGate * protectCoreGate;
-    const glowLuma = glow[0] * 0.2126 + glow[1] * 0.7152 + glow[2] * 0.0722;
-    const energyGate = Math.pow(clamp(glowLuma, 0, 1), 0.66);
-    // The source stage already decides where light exists; do not lift dark image shapes into halo.
-    const sourceCore = Math.pow(clamp(source, 0, 1), 0.58);
-    const haloEnergy = Math.pow(clamp(haloSource, 0, 1), 0.72);
-    const haloGate = clamp(
-      (1 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
-      0,
-      2.18
-    );
-    const coreScale = 0.38 + sourceCore * 0.62 - haloMix * 0.22;
-    const haloScale = 1.22 + haloMix * 1.42;
-    const coreR = softShoulder(glow[0] * coreGate * coreScale, 0.82) * coreCeiling;
-    const coreG = softShoulder(glow[1] * coreGate * coreScale, 0.82) * coreCeiling;
-    const coreB = softShoulder(glow[2] * coreGate * coreScale, 0.82) * coreCeiling;
-    const haloR = glow[0] * haloGate * haloBoost * haloScale;
-    const haloG = glow[1] * haloGate * haloBoost * haloScale;
-    const haloB = glow[2] * haloGate * haloBoost * haloScale;
+    const baseGuard = 1 - clamp(baseLuma, 0, 1) * 0.018;
+    const protectGuard = 1 - clamp(protect, 0, 1) * 0.035;
+    const diffusionGain = 1 + haloMix * 0.16 + Math.max(0, haloBoost - 1) * 0.06;
+    const scale = clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18);
     return [
-      clamp(coreR * (1 - haloMix) + haloR * haloMix, 0, 1),
-      clamp(coreG * (1 - haloMix) + haloG * haloMix, 0, 1),
-      clamp(coreB * (1 - haloMix) + haloB * haloMix, 0, 1)
+      clamp(glow[0] * scale, 0, 1),
+      clamp(glow[1] * scale, 0, 1),
+      clamp(glow[2] * scale, 0, 1)
     ];
   }
 
@@ -133,10 +115,7 @@
       const layerG = glowLayer.g[pixel];
       const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
       const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
-      const coreAnchor = Math.pow(clamp(source, 0, 1), 0.62);
-      const glowAnchor = Math.pow(clamp(layerLuma, 0, 1), 0.42);
-      const sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
-      const protectGain = clamp((1 - highlightProtect * 0.14) * sourceAnchor, 0, 2.4);
+      const protectGain = clamp(1 - highlightProtect * 0.045, 0.9, 1);
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
       const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
       const edgeGate = source * (0.68 + (1 - protect) * 0.32);
@@ -164,9 +143,9 @@
       const screenR = 1 - (1 - baseR) * (1 - glowSrgbR);
       const screenG = 1 - (1 - baseG) * (1 - glowSrgbG);
       const screenB = 1 - (1 - baseB) * (1 - glowSrgbB);
-      const softR = clamp(baseR + glowSrgbR * (1 - baseR * (0.58 + protect * 0.34)), 0, 1);
-      const softG = clamp(baseG + glowSrgbG * (1 - baseG * (0.58 + protect * 0.34)), 0, 1);
-      const softB = clamp(baseB + glowSrgbB * (1 - baseB * (0.58 + protect * 0.34)), 0, 1);
+      const softR = clamp(baseR + glowSrgbR * (1 - baseR * 0.62), 0, 1);
+      const softG = clamp(baseG + glowSrgbG * (1 - baseG * 0.62), 0, 1);
+      const softB = clamp(baseB + glowSrgbB * (1 - baseB * 0.62), 0, 1);
       const mix = params.composite.softAddMix;
       const maxGlow = Math.max(glowSrgbR, glowSrgbG, glowSrgbB);
       const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.88 + baseSat * 0.22), 0.86, 1);
@@ -197,10 +176,7 @@
       const layerG = glowLayer.g[pixel];
       const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
       const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
-      const coreAnchor = Math.pow(clamp(source, 0, 1), 0.62);
-      const glowAnchor = Math.pow(clamp(layerLuma, 0, 1), 0.42);
-      const sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
-      const protectGain = clamp((1 - highlightProtect * 0.14) * sourceAnchor, 0, 2.4);
+      const protectGain = clamp(1 - highlightProtect * 0.045, 0.9, 1);
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
       const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
       const edgeGate = source * (0.68 + (1 - protect) * 0.32);

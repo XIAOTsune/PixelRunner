@@ -123,6 +123,7 @@
     const thresholdRatio = threshold / 100;
     // Lower UI threshold is the precision end: fewer, more clipping-like highlights are allowed to emit.
     const thresholdSelectivity = 1 - thresholdRatio;
+    const thresholdPrecision = Math.pow(thresholdSelectivity, 0.72);
     const thresholdOpen = thresholdRatio;
     const exposureRatio = brightnessBias / 100;
     const spreadRatio = Math.pow(radiusRatio, 0.92);
@@ -168,14 +169,20 @@
       colorTint,
       chromatic,
       source: {
-        // Decouple from threshold: threshold sets the center; exposure mainly tunes source activity.
-        thresholdLow: clamp(0.1 + thresholdSelectivity * 0.72 + preset.thresholdBias * 0.5 - exposureRatio * 0.02, 0.06, 0.9, 0.28),
-        thresholdHigh: clamp(0.24 + thresholdSelectivity * 0.72 + preset.thresholdBias * 0.5 - exposureRatio * 0.024, 0.16, 0.98, 0.48),
+        // thresholdHigh is the soft-knee center; thresholdLow is only the lower support for specular/rim gates.
+        thresholdLow: clamp(
+          0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
+            (0.045 + thresholdOpen * 0.13 + spreadRatio * 0.02) * 0.65,
+          0.06,
+          0.92,
+          0.42
+        ),
+        thresholdHigh: clamp(0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.96, 0.58),
         thresholdKnee: clamp(
-          preset.knee * (0.7 + thresholdOpen * 0.56) + legacyRadiusRatio * 0.035 + spreadRatio * 0.026 + exposureRatio * 0.034,
-          0.055,
-          0.3,
-          0.2
+          0.026 + thresholdOpen * 0.11 + legacyRadiusRatio * 0.012 + spreadRatio * 0.018 + Math.max(0, exposureRatio) * 0.02,
+          0.025,
+          0.17,
+          0.08
         ),
         localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
         sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),

@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-bloom-soft-prefilter-v7";
+  const GLOW_ALGORITHM_VERSION = "engine-bloom-compositor-unmask-v9";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");

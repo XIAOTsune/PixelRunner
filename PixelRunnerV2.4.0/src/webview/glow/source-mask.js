@@ -150,12 +150,8 @@
       const specular = Math.max(0, maxChannel - localMean[pixel]);
       const brightness = Math.max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
-      const thresholdGate = softThresholdMask(brightness, thresholdLow, thresholdKnee);
-      const secondaryThresholdGate = smoothstep(
-        Math.max(0.48, thresholdLow * 0.9),
-        Math.max(thresholdHigh, thresholdLow + 0.06),
-        brightness
-      );
+      const thresholdGate = softThresholdMask(brightness, thresholdHigh, thresholdKnee);
+      const secondaryThresholdGate = smoothstep(thresholdLow, thresholdHigh + thresholdKnee * 0.5, brightness);
       const brightPass = thresholdGate;
       const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
       const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
@@ -206,7 +202,7 @@
       const neutralClothReject = whiteFlat * (1 - specularScore * 0.42) * (1 - nearClipException * 0.35) * (1 - colorReflection * 0.32);
       emissionEnergy *= 1 - protection * 0.86;
       emissionEnergy *= 1 - neutralClothReject * 0.82;
-      emissionEnergy *= smoothstep(lowEnergyCutoff * 0.42, lowEnergyCutoff * 2.2, emissionEnergy);
+      emissionEnergy *= smoothstep(lowEnergyCutoff * 0.62, lowEnergyCutoff * 2.6, emissionEnergy);
       emissionEnergy = clamp(Math.pow(emissionEnergy, 1.04) * 1.18, 0, 1);
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
       const warmColorHint = smoothstep(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
@@ -235,7 +231,8 @@
 
     const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
     const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
-    const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
+    const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
+    const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
     return {
       width,
@@ -250,7 +247,7 @@
         skinLikeMask,
         darkProtect,
         protectMask,
-        sourceMask,
+        sourceMask: featheredSourceMask,
         haloMask
       },
       debugImages: options.includeDebug === false
@@ -261,7 +258,7 @@
             whiteFlat: createMaskImageData(whiteFlatMask, width, height),
             skinLike: createMaskImageData(skinLikeMask, width, height, [255, 188, 126]),
             darkProtect: createMaskImageData(darkProtect, width, height, [120, 172, 255]),
-            sourceMask: createMaskImageData(sourceMask, width, height, [255, 244, 190]),
+            sourceMask: createMaskImageData(featheredSourceMask, width, height, [255, 244, 190]),
             protectMask: createMaskImageData(protectMask, width, height, [142, 207, 255])
           }
     };

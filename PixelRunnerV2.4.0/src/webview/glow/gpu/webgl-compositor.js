@@ -84,34 +84,16 @@
     }
 
     vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
-      float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
       float haloBoost = max(0.0, uHaloBoost);
       float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float coreCeiling = clamp(uCoreCeiling, 0.12, 1.0);
-      float brightCoreGate = clamp(1.0 - baseLuma * (0.42 + coreSuppression * 0.18), 0.24, 1.0);
-      float protectCoreGate = clamp(1.0 - protect * (0.58 + coreSuppression * 0.34), 0.08, 1.0);
-      float coreGate = brightCoreGate * protectCoreGate;
-      float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
-      float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
-      float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
-      float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
-      float haloGate = clamp(
-        (1.0 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
-        0.0,
-        2.18
-      );
-      float coreScale = 0.38 + sourceCore * 0.62 - haloMix * 0.22;
-      float haloScale = 1.22 + haloMix * 1.42;
-      vec3 core = vec3(
-        softShoulder(glow.r * coreGate * coreScale, 0.82),
-        softShoulder(glow.g * coreGate * coreScale, 0.82),
-        softShoulder(glow.b * coreGate * coreScale, 0.82)
-      ) * coreCeiling;
-      vec3 halo = glow * haloGate * haloBoost * haloScale;
-      return core * (1.0 - haloMix) + halo * haloMix;
+      float baseGuard = 1.0 - clamp(baseLuma, 0.0, 1.0) * 0.018;
+      float protectGuard = 1.0 - clamp(protect, 0.0, 1.0) * 0.035;
+      float diffusionGain = 1.0 + haloMix * 0.16 + max(0.0, haloBoost - 1.0) * 0.06;
+      return clamp(glow * clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18), 0.0, 1.0);
     }
 
     vec3 visibilityGate(vec3 glow) {
+      if (uEnergyFloor <= 0.000001) return glow;
       vec3 gate = smoothstep(vec3(uEnergyFloor), vec3(uEnergyFloor + uEnergyFloorSoftness), glow);
       return glow * gate;
     }
@@ -125,10 +107,7 @@
       float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
       float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.62);
-      float glowAnchor = pow(clamp(dot(glowLayer, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0), 0.42);
-      float sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
-      float protectGain = clamp((1.0 - highlightProtect * 0.14) * sourceAnchor, 0.0, 2.4);
+      float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -172,7 +151,7 @@
       ) - vec3(0.5)) * (0.45 / 255.0);
       glow = clamp(glow + previewDither, 0.0, 1.0);
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
-      vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * (0.58 + protect * 0.34)), 0.0, 1.0);
+      vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * 0.62), 0.0, 1.0);
       float maxGlow = max(max(glow.r, glow.g), glow.b);
       float baseMax = max(max(base.r, base.g), base.b);
       float baseMin = min(min(base.r, base.g), base.b);
@@ -254,34 +233,16 @@
     }
 
     vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
-      float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
       float haloBoost = max(0.0, uHaloBoost);
       float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float coreCeiling = clamp(uCoreCeiling, 0.12, 1.0);
-      float brightCoreGate = clamp(1.0 - baseLuma * (0.42 + coreSuppression * 0.18), 0.24, 1.0);
-      float protectCoreGate = clamp(1.0 - protect * (0.58 + coreSuppression * 0.34), 0.08, 1.0);
-      float coreGate = brightCoreGate * protectCoreGate;
-      float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
-      float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
-      float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
-      float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
-      float haloGate = clamp(
-        (1.0 - protect * 0.08) * (0.82 + energyGate * 1.18) * (0.9 + haloEnergy * 0.18),
-        0.0,
-        2.18
-      );
-      float coreScale = 0.38 + sourceCore * 0.62 - haloMix * 0.22;
-      float haloScale = 1.22 + haloMix * 1.42;
-      vec3 core = vec3(
-        softShoulder(glow.r * coreGate * coreScale, 0.82),
-        softShoulder(glow.g * coreGate * coreScale, 0.82),
-        softShoulder(glow.b * coreGate * coreScale, 0.82)
-      ) * coreCeiling;
-      vec3 halo = glow * haloGate * haloBoost * haloScale;
-      return core * (1.0 - haloMix) + halo * haloMix;
+      float baseGuard = 1.0 - clamp(baseLuma, 0.0, 1.0) * 0.018;
+      float protectGuard = 1.0 - clamp(protect, 0.0, 1.0) * 0.035;
+      float diffusionGain = 1.0 + haloMix * 0.16 + max(0.0, haloBoost - 1.0) * 0.06;
+      return clamp(glow * clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18), 0.0, 1.0);
     }
 
     vec3 visibilityGate(vec3 glow) {
+      if (uEnergyFloor <= 0.000001) return glow;
       vec3 gate = smoothstep(vec3(uEnergyFloor), vec3(uEnergyFloor + uEnergyFloorSoftness), glow);
       return glow * gate;
     }
@@ -308,10 +269,7 @@
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       float highlightProtect = protect * uHighlightProtect * 0.86;
-      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.62);
-      float glowAnchor = pow(clamp(dot(glowLayer, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0), 0.42);
-      float sourceAnchor = 0.42 + glowAnchor * 1.26 + coreAnchor * 0.22;
-      float protectGain = clamp((1.0 - highlightProtect * 0.14) * sourceAnchor, 0.0, 2.4);
+      float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),

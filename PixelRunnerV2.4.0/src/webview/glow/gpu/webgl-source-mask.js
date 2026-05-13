@@ -134,12 +134,8 @@
       float specular = max(0.0, maxChannel - localMean);
       float brightness = max(lum * 0.45 + maxChannel * 0.55, maxChannel * 0.86);
 
-      float thresholdGate = softThresholdMask(brightness, uThresholdLow, uThresholdKnee);
-      float secondaryThresholdGate = smooth01(
-        max(0.48, uThresholdLow * 0.9),
-        max(uThresholdHigh, uThresholdLow + 0.06),
-        brightness
-      );
+      float thresholdGate = softThresholdMask(brightness, uThresholdHigh, uThresholdKnee);
+      float secondaryThresholdGate = smooth01(uThresholdLow, uThresholdHigh + uThresholdKnee * 0.5, brightness);
       float brightPass = thresholdGate;
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
@@ -185,7 +181,7 @@
       float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.42) * (1.0 - nearClipException * 0.35) * (1.0 - colorReflection * 0.32);
       emissionEnergy *= 1.0 - protection * 0.86;
       emissionEnergy *= 1.0 - neutralClothReject * 0.82;
-      emissionEnergy *= smooth01(uLowEnergyCutoff * 0.42, uLowEnergyCutoff * 2.2, emissionEnergy);
+      emissionEnergy *= smooth01(uLowEnergyCutoff * 0.62, uLowEnergyCutoff * 2.6, emissionEnergy);
       emissionEnergy = saturate(pow(emissionEnergy, 1.04) * 1.18);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
       float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
@@ -478,7 +474,8 @@
         }
         const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
         const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
-        const haloMask = blurFloat(sourceMask, width, height, haloMaskRadius);
+        const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
+        const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
         return {
           width,
@@ -493,7 +490,7 @@
             skinLikeMask,
             darkProtect,
             protectMask,
-            sourceMask,
+            sourceMask: featheredSourceMask,
             haloMask
           },
           debugImages: null,
