@@ -72,12 +72,11 @@
     const coreGate = brightCoreGate * protectCoreGate;
     const glowLuma = glow[0] * 0.2126 + glow[1] * 0.7152 + glow[2] * 0.0722;
     const energyGate = Math.pow(clamp(glowLuma, 0, 1), 0.66);
-    const darkLift = Math.pow(clamp(1 - baseLuma, 0, 1), 0.6);
-    // Let halo spread into darker neighbor regions; do not over-bind it to the hard source mask.
+    // The source stage already decides where light exists; do not lift dark image shapes into halo.
     const haloGate = clamp(
-      (1 - protect * 0.34) * (0.42 + source * 0.28 + darkLift * 0.48) * (0.64 + energyGate * 0.88),
-      0.12,
-      1.36
+      (1 - protect * 0.5) * (0.28 + source * 0.72) * (0.5 + energyGate),
+      0,
+      1.12
     );
     const coreScale = 1 - haloMix * 0.48;
     const haloScale = 1 + haloMix * 0.66;
@@ -111,7 +110,7 @@
       const baseSat = Math.max(baseR, baseG, baseB) > 0 ? (Math.max(baseR, baseG, baseB) - Math.min(baseR, baseG, baseB)) / Math.max(baseR, baseG, baseB) : 0;
       const highlightProtect = protect * params.composite.highlightProtect * (0.5 + baseLuma * 0.78 + (1 - baseSat) * 0.08);
       const radiusRatio = clamp((Number(params.radius) || 0) / 500, 0, 1);
-      const sourceAnchor = (0.68 + radiusRatio * 0.18) + haloSource * (0.32 - radiusRatio * 0.18);
+      const sourceAnchor = (0.12 + radiusRatio * 0.04) + haloSource * (0.72 - radiusRatio * 0.18);
       const protectGain = clamp((1 - highlightProtect * 0.42) * sourceAnchor, 0, 1);
       const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
       const layerG = glowLayer.g[pixel];
@@ -167,7 +166,7 @@
       const protect = masks.protectMask[pixel];
       const highlightProtect = protect * params.composite.highlightProtect * 0.86;
       const radiusRatio = clamp((Number(params.radius) || 0) / 500, 0, 1);
-      const sourceAnchor = (0.68 + radiusRatio * 0.18) + haloSource * (0.32 - radiusRatio * 0.18);
+      const sourceAnchor = (0.12 + radiusRatio * 0.04) + haloSource * (0.72 - radiusRatio * 0.18);
       const protectGain = clamp((1 - highlightProtect * 0.42) * sourceAnchor, 0, 1);
       const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
       const layerG = glowLayer.g[pixel];

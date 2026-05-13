@@ -166,8 +166,8 @@
       chromatic,
       source: {
         // Decouple from threshold: threshold sets the center; exposure mainly tunes source activity.
-        thresholdLow: clamp(0.38 + thresholdRatio * 0.36 + preset.thresholdBias - exposureRatio * 0.016, 0.2, 0.9, 0.64),
-        thresholdHigh: clamp(0.58 + thresholdRatio * 0.3 + preset.thresholdBias - exposureRatio * 0.02, 0.34, 0.97, 0.8),
+        thresholdLow: clamp(0.5 + thresholdRatio * 0.28 + preset.thresholdBias - exposureRatio * 0.016, 0.32, 0.92, 0.64),
+        thresholdHigh: clamp(0.68 + thresholdRatio * 0.22 + preset.thresholdBias - exposureRatio * 0.02, 0.46, 0.98, 0.8),
         thresholdKnee: clamp(
           preset.knee * (1.02 - thresholdRatio * 0.28) + legacyRadiusRatio * 0.052 + spreadRatio * 0.035 + exposureRatio * 0.042,
           0.1,
@@ -181,7 +181,7 @@
         contrastHigh: clamp(0.092 - thresholdRatio * 0.04 - exposureRatio * 0.022, 0.028, 0.11, 0.068),
         specularLow: 0.06,
         specularHigh: 0.28,
-        lowEnergyCutoff: 0.024,
+        lowEnergyCutoff: 0.046,
         chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.22 + Math.max(0, exposureRatio) * 0.03, 0, 0.62, preset.chromaBoost),
         whiteProtect: preset.whiteProtect,
         skinProtect: preset.skinProtect,

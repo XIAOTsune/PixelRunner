@@ -76,11 +76,10 @@
       float coreGate = brightCoreGate * protectCoreGate;
       float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
       float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
-      float darkLift = pow(clamp(1.0 - baseLuma, 0.0, 1.0), 0.6);
       float haloGate = clamp(
-        (1.0 - protect * 0.34) * (0.42 + source * 0.28 + darkLift * 0.48) * (0.64 + energyGate * 0.88),
-        0.12,
-        1.36
+        (1.0 - protect * 0.5) * (0.28 + source * 0.72) * (0.5 + energyGate),
+        0.0,
+        1.12
       );
       float coreScale = 1.0 - haloMix * 0.48;
       float haloScale = 1.0 + haloMix * 0.66;
@@ -210,11 +209,10 @@
       float coreGate = brightCoreGate * protectCoreGate;
       float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
       float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
-      float darkLift = pow(clamp(1.0 - baseLuma, 0.0, 1.0), 0.6);
       float haloGate = clamp(
-        (1.0 - protect * 0.34) * (0.42 + source * 0.28 + darkLift * 0.48) * (0.64 + energyGate * 0.88),
-        0.12,
-        1.36
+        (1.0 - protect * 0.5) * (0.28 + source * 0.72) * (0.5 + energyGate),
+        0.0,
+        1.12
       );
       float coreScale = 1.0 - haloMix * 0.48;
       float haloScale = 1.0 + haloMix * 0.66;
@@ -401,8 +399,8 @@
       gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
       const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.68 + radiusRatio * 0.18);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.32 - radiusRatio * 0.18);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.12 + radiusRatio * 0.04);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.72 - radiusRatio * 0.18);
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 
@@ -425,8 +423,8 @@
       gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
       const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.68 + radiusRatio * 0.18);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.32 - radiusRatio * 0.18);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.12 + radiusRatio * 0.04);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.72 - radiusRatio * 0.18);
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 

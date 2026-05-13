@@ -148,8 +148,13 @@
         smoothstep(thresholdLow - thresholdKnee * 0.92, thresholdHigh, brightness);
       const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
       const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
-      const specularPass = specularScore * smoothstep(0.45, 0.92, brightness);
-      const rimPass = contrastScore * smoothstep(0.58, 0.95, brightness);
+      const highlightGate = smoothstep(0.56, 0.86, brightness);
+      const brightEnergy = Math.pow(clamp(brightPass * highlightGate, 0, 1), 1.38);
+      const specularPass =
+        Math.pow(specularScore, 1.16) *
+        smoothstep(0.64, 0.94, brightness) *
+        smoothstep(0.038, 0.18, specular);
+      const rimPass = contrastScore * smoothstep(0.74, 0.97, brightness);
       const highLightness = smoothstep(0.7, 0.95, lum);
       const veryHighLightness = smoothstep(0.84, 0.985, lum);
       const lowContrast = 1 - smoothstep(0.01, 0.068, contrast);
@@ -162,20 +167,23 @@
         (1 - smoothstep(0.78, 0.96, sat)) *
         smoothstep(0.38, 0.74, lum) *
         (1 - smoothstep(0.9, 1.0, lum));
-      const dark = 1 - smoothstep(0.12, 0.32, brightness);
+      const dark = 1 - smoothstep(0.18, 0.42, brightness);
+      const midtoneReject = 1 - smoothstep(0.48, 0.72, brightness);
       const protectionBase = clamp(
         whiteFlat * whiteProtect +
-          skinColor * skinProtect * 0.68 +
-          dark * sourceParams.darkProtect,
+          skinColor * skinProtect * 0.9 +
+          dark * sourceParams.darkProtect +
+          midtoneReject * 0.62,
         0,
         1
       );
       const nearClip = smoothstep(0.88, 1.0, maxChannel);
       const protection = clamp(protectionBase * (1 - nearClip * 0.55), 0, 1);
-      const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.024;
-      let emissionEnergy = brightPass * 0.9 + specularPass * 0.35 + rimPass * 0.12;
-      emissionEnergy *= 1 - protection * 0.85;
+      const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
+      let emissionEnergy = brightEnergy * 1.08 + specularPass * 0.24 + rimPass * 0.035;
+      emissionEnergy *= 1 - protection * 0.92;
       emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
+      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.18) * 1.08, 0, 1);
       const chromaKeep = clamp(
         0.16 + sat * 0.48 - brightPass * 0.18 + chromaBoostAmount * 0.12,
         0.08,
