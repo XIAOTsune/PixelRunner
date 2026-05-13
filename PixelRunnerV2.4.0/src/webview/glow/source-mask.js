@@ -178,17 +178,18 @@
         1
       );
       const nearClip = smoothstep(0.88, 1.0, maxChannel);
-      const protection = clamp(protectionBase * (1 - nearClip * 0.55), 0, 1);
+      const protection = clamp(protectionBase * (1 - nearClip * 0.42), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
       let emissionEnergy = brightEnergy * 1.36 + specularPass * 0.36 + rimPass * 0.04;
       emissionEnergy *= 1 - protection * 0.92;
       emissionEnergy = clamp(emissionEnergy - lowEnergyCutoff, 0, 1);
-      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.08) * 1.26, 0, 1);
+      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.03) * 1.18, 0, 1);
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
+      const warmColorHint = smoothstep(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
       const chromaKeep = clamp(
-        0.18 + sat * 0.76 + chromaBoostAmount * 0.18 - neutralHighlight * 0.2,
+        0.24 + sat * 0.78 + warmColorHint * 0.2 + chromaBoostAmount * 0.22 - neutralHighlight * 0.12,
         0.12,
-        0.82
+        0.9
       );
       const whiteEnergy = brightness;
       const emissionR = whiteEnergy * (1 - chromaKeep) + r * chromaKeep;

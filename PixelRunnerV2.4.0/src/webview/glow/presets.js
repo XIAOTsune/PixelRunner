@@ -127,12 +127,12 @@
     // Lens-scatter proxy: halo footprint follows area growth (~r^2 trend in normalized domain).
     const lensArea = Math.pow(radiusRatio, 2);
     // Strength should react earlier in low-mid range while still leaving headroom.
-    const strengthDrive = Math.pow(strengthRatio, 0.48);
+    const strengthDrive = Math.pow(strengthRatio, 0.42);
     // Radius should mostly move energy outward into halo instead of boosting local white.
     const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
     const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
     // Physical mapping: strength=0 should produce zero emitted glow energy.
-    const strengthEnergyBoost = strengthDrive * 10.4;
+    const strengthEnergyBoost = strengthDrive * 18;
     // Chromatic slider should become visible earlier (especially in 12~45 range).
     const chromaticRatio = Math.pow(chromatic / 100, 0.88);
     const diffusionT = Math.max(0, Math.min(1, spreadRatio));
@@ -176,7 +176,7 @@
         ),
         localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
         sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
-        haloMaskRadius: Math.max(4, Math.min(8, Math.round(4 + legacyRadiusRatio * 3 + wideRadiusRatio * 1.5))),
+        haloMaskRadius: Math.max(7, Math.min(14, Math.round(7 + legacyRadiusRatio * 5 + wideRadiusRatio * 2))),
         contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
         contrastHigh: clamp(0.092 - thresholdRatio * 0.04 - exposureRatio * 0.022, 0.028, 0.11, 0.068),
         specularLow: 0.06,
@@ -197,7 +197,7 @@
         passes: 1
       },
       composite: {
-        intensity: clamp(strengthEnergyBoost * (0.94 + radiusEnergyDamping * 0.52) * (1 - diffusionT * 0.02), 0, 12.8, 1),
+        intensity: clamp(strengthEnergyBoost * (1.16 + radiusEnergyDamping * 0.68) * (1 - diffusionT * 0.01), 0, 34, 1),
         // Favor screen-like appearance; reduce additive/linear-dodge feel.
         softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
         warmth: preset.warmth,
@@ -206,15 +206,15 @@
         shadowProtect: preset.darkProtect,
         colorProtect: clamp(0.18 + strengthRatio * 0.07 - spreadRatio * 0.015, 0.14, 0.34, 0.24),
         // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
-        shoulder: clamp(0.3 + strengthRatio * 0.035 + spreadAir * 0.015 + Math.max(0, exposureRatio) * 0.008, 0.24, 0.44, 0.36),
+        shoulder: clamp(0.18 + strengthRatio * 0.014 + spreadAir * 0.01 + Math.max(0, exposureRatio) * 0.005, 0.12, 0.28, 0.22),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,
         chromatic: chromaticRatio,
         // Split glow into core vs halo at composite stage (strength-gated).
         coreSuppression: clamp(0.18 + strengthDrive * 0.34 + thresholdRatio * 0.08 + diffusionT * 0.05, 0.14, 0.72, 0.38),
-        haloBoost: clamp((0.98 + diffusionT * 0.22 + wideRadiusRatio * 0.08) * Math.pow(strengthRatio, 0.54), 0, 1.78, 0),
-        haloMix: clamp((0.18 + diffusionT * 0.32) * Math.pow(strengthRatio, 0.56), 0, 0.66, 0)
+        haloBoost: clamp((1.18 + diffusionT * 0.34 + wideRadiusRatio * 0.12) * Math.pow(strengthRatio, 0.46), 0, 2.8, 0),
+        haloMix: clamp((0.22 + diffusionT * 0.36) * Math.pow(strengthRatio, 0.48), 0, 0.76, 0)
       },
       sourceTone: {
         // Exposure is mostly source-side activity shaping (not output intensity).

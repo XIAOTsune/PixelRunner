@@ -67,22 +67,24 @@
       return mix(color, tinted, amount);
     }
 
-    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source) {
+    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
       float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
       float haloBoost = max(0.0, uHaloBoost);
       float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float brightCoreGate = clamp(1.0 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1.0);
-      float protectCoreGate = clamp(1.0 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1.0);
+      float brightCoreGate = clamp(1.0 - baseLuma * (0.5 + coreSuppression * 0.22), 0.18, 1.0);
+      float protectCoreGate = clamp(1.0 - protect * (0.7 + coreSuppression * 0.42), 0.04, 1.0);
       float coreGate = brightCoreGate * protectCoreGate;
       float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
       float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
+      float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
+      float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
       float haloGate = clamp(
-        (1.0 - protect * 0.5) * (0.28 + source * 0.72) * (0.5 + energyGate),
+        (1.0 - protect * 0.24) * (0.54 + haloEnergy * 0.74) * (0.7 + energyGate * 0.92),
         0.0,
-        1.12
+        1.62
       );
-      float coreScale = 1.0 - haloMix * 0.48;
-      float haloScale = 1.0 + haloMix * 0.66;
+      float coreScale = 0.52 + sourceCore * 0.98 - haloMix * 0.34;
+      float haloScale = 1.12 + haloMix * 1.18;
       vec3 core = glow * coreGate * coreScale;
       vec3 halo = glow * haloGate * haloBoost * haloScale;
       return core * (1.0 - haloMix) + halo * haloMix;
@@ -92,12 +94,15 @@
       float baseLuma = masks.r;
       float protect = masks.g;
       float source = masks.a;
+      float haloSource = masks.b;
       float baseMax = max(max(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
       float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
       float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float sourceAnchor = uSourceAnchorBase + source * uSourceAnchorAmount;
-      float protectGain = saturate((1.0 - highlightProtect * 0.42) * sourceAnchor);
+      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.5);
+      float haloAnchor = pow(clamp(haloSource, 0.0, 1.0), 0.72);
+      float sourceAnchor = uSourceAnchorBase + coreAnchor * 0.46 + haloAnchor * uSourceAnchorAmount;
+      float protectGain = clamp((1.0 - highlightProtect * 0.24) * sourceAnchor, 0.0, 1.75);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -112,7 +117,7 @@
         softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
-      return splitCoreAndHalo(glow, baseLuma, protect, source);
+      return splitCoreAndHalo(glow, baseLuma, protect, source, haloSource);
     }
 
     void main() {
@@ -200,22 +205,24 @@
       return mix(color, tinted, amount);
     }
 
-    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source) {
+    vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
       float coreSuppression = clamp(uCoreSuppression, 0.0, 1.0);
       float haloBoost = max(0.0, uHaloBoost);
       float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float brightCoreGate = clamp(1.0 - baseLuma * (0.64 + coreSuppression * 0.28), 0.12, 1.0);
-      float protectCoreGate = clamp(1.0 - protect * (0.46 + coreSuppression * 0.4), 0.08, 1.0);
+      float brightCoreGate = clamp(1.0 - baseLuma * (0.5 + coreSuppression * 0.22), 0.18, 1.0);
+      float protectCoreGate = clamp(1.0 - protect * (0.7 + coreSuppression * 0.42), 0.04, 1.0);
       float coreGate = brightCoreGate * protectCoreGate;
       float glowLuma = dot(glow, vec3(0.2126, 0.7152, 0.0722));
       float energyGate = pow(clamp(glowLuma, 0.0, 1.0), 0.66);
+      float sourceCore = pow(clamp(source, 0.0, 1.0), 0.58);
+      float haloEnergy = pow(clamp(haloSource, 0.0, 1.0), 0.72);
       float haloGate = clamp(
-        (1.0 - protect * 0.5) * (0.28 + source * 0.72) * (0.5 + energyGate),
+        (1.0 - protect * 0.24) * (0.54 + haloEnergy * 0.74) * (0.7 + energyGate * 0.92),
         0.0,
-        1.12
+        1.62
       );
-      float coreScale = 1.0 - haloMix * 0.48;
-      float haloScale = 1.0 + haloMix * 0.66;
+      float coreScale = 0.52 + sourceCore * 0.98 - haloMix * 0.34;
+      float haloScale = 1.12 + haloMix * 1.18;
       vec3 core = glow * coreGate * coreScale;
       vec3 halo = glow * haloGate * haloBoost * haloScale;
       return core * (1.0 - haloMix) + halo * haloMix;
@@ -233,6 +240,7 @@
       vec4 masks = texture(uMasks, vUv);
       float baseLuma = masks.r;
       float source = masks.a;
+      float haloSource = masks.b;
       float protect = masks.g;
       float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.02);
       float edgeGate = source * (0.68 + (1.0 - protect) * 0.32);
@@ -242,8 +250,10 @@
         max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
       );
       float highlightProtect = protect * uHighlightProtect * 0.86;
-      float sourceAnchor = uSourceAnchorBase + source * uSourceAnchorAmount;
-      float protectGain = saturate((1.0 - highlightProtect * 0.42) * sourceAnchor);
+      float coreAnchor = pow(clamp(source, 0.0, 1.0), 0.5);
+      float haloAnchor = pow(clamp(haloSource, 0.0, 1.0), 0.72);
+      float sourceAnchor = uSourceAnchorBase + coreAnchor * 0.46 + haloAnchor * uSourceAnchorAmount;
+      float protectGain = clamp((1.0 - highlightProtect * 0.24) * sourceAnchor, 0.0, 1.75);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -258,7 +268,7 @@
         softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
         softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
       ), 0.0, 1.0);
-      glow = splitCoreAndHalo(glow, baseLuma, protect, source);
+      glow = splitCoreAndHalo(glow, baseLuma, protect, source, haloSource);
       outColor = vec4(glow, 1.0);
     }
   `;
@@ -342,8 +352,8 @@
     for (let pixel = 0, index = 0; pixel < count; pixel += 1, index += 4) {
       data[index] = Math.round(Math.min(1, Math.max(0, masks.luma[pixel] || 0)) * 255);
       data[index + 1] = Math.round(Math.min(1, Math.max(0, masks.protectMask[pixel] || 0)) * 255);
-      data[index + 2] = Math.round(Math.min(1, Math.max(0, masks.darkProtect[pixel] || 0)) * 255);
-      data[index + 3] = Math.round(Math.min(1, Math.max(0, (masks.haloMask || masks.sourceMask)[pixel] || 0)) * 255);
+      data[index + 2] = Math.round(Math.min(1, Math.max(0, (masks.haloMask || masks.sourceMask)[pixel] || 0)) * 255);
+      data[index + 3] = Math.round(Math.min(1, Math.max(0, masks.sourceMask[pixel] || 0)) * 255);
     }
     return data;
   }
@@ -399,8 +409,8 @@
       gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
       const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.12 + radiusRatio * 0.04);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.72 - radiusRatio * 0.18);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.26 + radiusRatio * 0.06);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.62 - radiusRatio * 0.12);
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 
@@ -423,8 +433,8 @@
       gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
       gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
       const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.12 + radiusRatio * 0.04);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.72 - radiusRatio * 0.18);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.26 + radiusRatio * 0.06);
+      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.62 - radiusRatio * 0.12);
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
     }
 
