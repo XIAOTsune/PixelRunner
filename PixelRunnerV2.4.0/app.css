@@ -1778,6 +1778,12 @@ button {
   background: rgba(15, 36, 43, 0.54);
 }
 
+.space-fx-color-field {
+  background:
+    linear-gradient(135deg, rgba(19, 48, 59, 0.78), rgba(22, 36, 47, 0.58)),
+    radial-gradient(circle at 78% 28%, rgba(125, 223, 255, 0.18), transparent 42%);
+}
+
 .space-fx-modal-actions .secondary-btn,
 .space-fx-modal-actions .primary-btn {
   min-height: 38px;

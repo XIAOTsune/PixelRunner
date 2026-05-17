@@ -30,6 +30,7 @@ function getIncludedEntries(version, channel) {
       "app.css",
       "dist",
       "icons",
+      "assets",
       "pages",
       "video"
     ]
