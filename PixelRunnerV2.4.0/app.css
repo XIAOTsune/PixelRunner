@@ -236,6 +236,17 @@ body.has-custom-theme-image .panel-main {
   background: transparent;
 }
 
+/* 修复自定义背景下 select 下拉框背景过白、选项文字不可见的问题 */
+body.has-custom-theme-image select.field-input {
+  background: rgba(12, 20, 29, 0.85);
+  color: var(--text-strong);
+}
+
+select.field-input option {
+  background: #1a2533;
+  color: #d8e5f0;
+}
+
 body.is-browser-preview {
   font-size: 14px;
 }
