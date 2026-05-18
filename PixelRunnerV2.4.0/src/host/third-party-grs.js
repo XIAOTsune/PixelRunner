@@ -1,5 +1,6 @@
 const grsTaskControllers = new Map();
 const grsImmediateResults = new Map();
+const grsTaskMeta = new Map();
 
 const DEFAULT_GRS_HOST = "https://grsaiapi.com";
 const DEFAULT_GRS_IMAGE_MODELS = [
@@ -114,6 +115,9 @@ function getGrsHost(apiUrl) {
 function getEndpoint(apiUrl, path) {
   const raw = String(apiUrl || "").trim();
   if (path === "/v1/api/generate" && /\/v1\/api\/generate\/?$/i.test(raw)) return raw;
+  if (path === "/v1/draw/nano-banana" && /\/v1\/draw\/nano-banana\/?$/i.test(raw)) return raw;
+  if (path === "/v1/draw/completions" && /\/v1\/draw\/completions\/?$/i.test(raw)) return raw;
+  if (path === "/v1/draw/result" && /\/v1\/draw\/result\/?$/i.test(raw)) return raw;
   if (path === "/v1/images/generations" && /\/v1\/images\/generations\/?$/i.test(raw)) return raw;
   if (path === "/v1/chat/completions" && /\/v1\/chat\/completions\/?$/i.test(raw)) return raw;
   return `${getGrsHost(raw)}${path}`;
@@ -308,7 +312,7 @@ async function fetchJson(url, options = {}, timeoutMs = 30000, controller = null
 function resolveAspectRatio(model, value) {
   const text = String(value || "").trim();
   if (text && text !== "auto") return text;
-  return isGrsGptImageModel(model) ? "1024x1024" : "1:1";
+  return isGrsGptImageModel(model) ? "1024x1024" : "auto";
 }
 
 function resolveResolution(model, value) {
@@ -338,6 +342,41 @@ function buildImageRequestBody(payload, imageUrls) {
     };
   }
 
+  if (isGrsNanoBananaModel(model)) {
+    const imageSize = /^(\d+k)$/i.test(resolution) ? resolution.toUpperCase() : "1K";
+    return {
+      endpointPath: "/v1/draw/nano-banana",
+      resultEndpointPath: "/v1/draw/result",
+      resultMethod: "POST",
+      body: {
+        model,
+        prompt,
+        urls: imageUrls,
+        aspectRatio,
+        imageSize,
+        shutProgress: true,
+        cdn: "zh"
+      }
+    };
+  }
+
+  if (isGrsGptImageModel(model)) {
+    return {
+      endpointPath: "/v1/draw/completions",
+      resultEndpointPath: "/v1/draw/result",
+      resultMethod: "POST",
+      body: {
+        model,
+        prompt,
+        urls: imageUrls,
+        aspectRatio,
+        imageSize: resolution || "1K",
+        shutProgress: true,
+        cdn: "zh"
+      }
+    };
+  }
+
   const body = {
     model,
     prompt,
@@ -346,7 +385,7 @@ function buildImageRequestBody(payload, imageUrls) {
     replyType: "json"
   };
   if (isGrsNanoBananaModel(model)) body.imageSize = /^(\d+k)$/i.test(resolution) ? resolution.toUpperCase() : "1K";
-  return { endpointPath: "/v1/api/generate", body };
+  return { endpointPath: "/v1/api/generate", resultEndpointPath: "/v1/api/result", resultMethod: "GET", body };
 }
 
 function normalizeSubmitResult(json, rawText, apiUrl) {
@@ -406,7 +445,14 @@ export async function submitThirdPartyGrsTask(args = []) {
     controller
   );
   const result = normalizeSubmitResult(json, rawText, apiUrl);
-  if (controller && result.taskId && !result.immediate) grsTaskControllers.set(result.taskId, controller);
+  if (result.taskId && !result.immediate) {
+    if (controller) grsTaskControllers.set(result.taskId, controller);
+    grsTaskMeta.set(result.taskId, {
+      apiUrl,
+      resultEndpointPath: request.resultEndpointPath || "/v1/api/result",
+      resultMethod: request.resultMethod || "GET"
+    });
+  }
   return result;
 }
 
@@ -426,6 +472,29 @@ function buildPollResponse(taskId, json, rawText = "") {
   };
 }
 
+async function fetchGrsTaskResult(apiUrl, apiKey, taskId, meta = {}, controller = null, timeoutMs = 30000) {
+  const resultEndpointPath = String(meta.resultEndpointPath || "/v1/api/result");
+  const resultMethod = String(meta.resultMethod || "GET").toUpperCase();
+  if (resultMethod === "POST") {
+    return fetchJson(
+      getEndpoint(apiUrl, resultEndpointPath),
+      {
+        method: "POST",
+        headers: authHeaders(apiKey),
+        body: JSON.stringify({ id: taskId, taskId })
+      },
+      timeoutMs,
+      controller
+    );
+  }
+  return fetchJson(
+    `${getGrsHost(apiUrl)}${resultEndpointPath}?id=${encodeURIComponent(taskId)}`,
+    { method: "GET", headers: authHeaders(apiKey) },
+    timeoutMs,
+    controller
+  );
+}
+
 export async function pollThirdPartyGrsTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || (payload.config && payload.config.apiKey) || "").trim();
@@ -443,13 +512,13 @@ export async function pollThirdPartyGrsTask(args = []) {
   const startedAt = Date.now();
   const controller = grsTaskControllers.get(taskId) || (typeof AbortController !== "undefined" ? new AbortController() : null);
   if (controller) grsTaskControllers.set(taskId, controller);
-  const resultUrl = `${getGrsHost(apiUrl)}/v1/api/result?id=${encodeURIComponent(taskId)}`;
+  const taskMeta = grsTaskMeta.get(taskId) || {};
   let lastResult = null;
 
   try {
     while (Date.now() - startedAt < timeoutMs) {
       if (controller && controller.signal.aborted) throw new Error("GRS task polling cancelled");
-      const { json, rawText } = await fetchJson(resultUrl, { method: "GET", headers: authHeaders(apiKey) }, 30000, controller);
+      const { json, rawText } = await fetchGrsTaskResult(apiUrl, apiKey, taskId, taskMeta, controller, 30000);
       lastResult = buildPollResponse(taskId, json, rawText);
       if (lastResult.outputUrl) return { ...lastResult, ok: true, result: json };
       if (lastResult.failed) return { ...lastResult, ok: false, result: json };
@@ -468,6 +537,7 @@ export async function pollThirdPartyGrsTask(args = []) {
     };
   } finally {
     grsTaskControllers.delete(taskId);
+    if (lastResult && (lastResult.outputUrl || lastResult.failed)) grsTaskMeta.delete(taskId);
   }
 }
 
@@ -482,8 +552,14 @@ export async function fetchThirdPartyGrsTaskStatus(args = []) {
   const immediate = grsImmediateResults.get(taskId);
   if (immediate) return { ok: true, taskId, status: "SUCCEEDED", outputUrl: immediate.outputUrl, raw: immediate.raw };
 
-  const resultUrl = `${getGrsHost(apiUrl)}/v1/api/result?id=${encodeURIComponent(taskId)}`;
-  const { json, rawText } = await fetchJson(resultUrl, { method: "GET", headers: authHeaders(apiKey) }, Math.max(5000, Number(payload.timeoutMs) || 30000));
+  const { json, rawText } = await fetchGrsTaskResult(
+    apiUrl,
+    apiKey,
+    taskId,
+    grsTaskMeta.get(taskId) || {},
+    null,
+    Math.max(5000, Number(payload.timeoutMs) || 30000)
+  );
   return buildPollResponse(taskId, json, rawText);
 }
 
@@ -498,6 +574,7 @@ export async function cancelThirdPartyGrsTask(args = []) {
     } catch (_) {}
   }
   grsTaskControllers.delete(taskId);
+  grsTaskMeta.delete(taskId);
   return { ok: true, taskId };
 }
 

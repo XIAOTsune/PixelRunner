@@ -917,13 +917,23 @@
 
     if (input.type === "select" || input.type === "enum") {
       const options = Array.isArray(input.options) ? input.options : [];
+      const customKey = String(input.customKey || `${key}Custom`);
+      const customValue = String(state.formValues[customKey] || "");
+      const currentValue = String(value ?? "");
+      const optionValues = options.map((option) => String((typeof option === "object" ? option.value : option) ?? ""));
+      const isCustomSelected = Boolean(input.allowCustom && currentValue && !optionValues.includes(currentValue));
+      const selectedValue = isCustomSelected ? "__custom__" : currentValue;
       return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><select class="field-input" data-form-key="${escapedKey}"><option value="">请选择</option>${options
         .map((option) => {
           const optValue = typeof option === "object" ? option.value : option;
           const optLabel = typeof option === "object" ? option.label : option;
-          return `<option value="${runtime.escapeHtml(String(optValue ?? ""))}" ${String(value ?? "") === String(optValue ?? "") ? "selected" : ""}>${runtime.escapeHtml(String(optLabel ?? optValue ?? ""))}</option>`;
+          return `<option value="${runtime.escapeHtml(String(optValue ?? ""))}" ${selectedValue === String(optValue ?? "") ? "selected" : ""}>${runtime.escapeHtml(String(optLabel ?? optValue ?? ""))}</option>`;
         })
-        .join("")}</select></label>`;
+        .join("")}</select>${
+        input.allowCustom
+          ? `<input class="field-input third-party-custom-input ${selectedValue === "__custom__" ? "" : "is-hidden"}" type="text" data-form-key="${runtime.escapeHtml(customKey)}" value="${runtime.escapeHtml(isCustomSelected ? currentValue : customValue)}" placeholder="${runtime.escapeHtml(input.customPlaceholder || "输入自定义值")}" />`
+          : ""
+      }</label>`;
     }
 
     return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
@@ -983,6 +993,7 @@
   function renderWorkspace() {
     const runtime = modules.runtime;
     const state = modules.state.state;
+    updateThirdPartyDynamicOptions(state.formValues && state.formValues.model);
     const appPickerMeta = runtime.getById("appPickerMeta");
     const dynamicInputContainer = runtime.getById("dynamicInputContainer");
     const workspaceInputArea = runtime.getById("workspaceInputArea");
@@ -1074,12 +1085,53 @@
       if (inputMeta && isImageInput(inputMeta)) return;
       if (element.matches("input, textarea, select")) {
         const nextValue = inputMeta ? getNormalizedFieldValue(inputMeta, element.value) : element.value;
-        state.formValues[key] = nextValue;
+        if (inputMeta && inputMeta.allowCustom && String(nextValue) === "__custom__") {
+          const customKey = String(inputMeta.customKey || `${key}Custom`);
+          const customInput = container.querySelector(`[data-form-key="${customKey}"]`);
+          state.formValues[customKey] = customInput ? customInput.value : state.formValues[customKey];
+          state.formValues[key] = String(state.formValues[customKey] || "").trim();
+        } else {
+          state.formValues[key] = nextValue;
+        }
         if (inputMeta && isNumericInput(inputMeta) && element.matches('input[type="number"]') && !isNumericInputInterimValue(nextValue)) {
           element.value = formatNumericInputValue(inputMeta, nextValue);
         }
       }
     });
+  }
+
+  function updateThirdPartyDynamicOptions(modelValue = "") {
+    const state = modules.state.state;
+    if (!modules.state.isThirdPartyApp(state.currentApp)) return false;
+    const model = String(modelValue || state.formValues.model || "").trim();
+    const capabilities = modules.state.getThirdPartyModelCapabilities(model);
+    const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
+    const ratioInput = inputs.find((input) => String(input.key || "") === "aspectRatio");
+    const resolutionInput = inputs.find((input) => String(input.key || "") === "resolution");
+    if (ratioInput) {
+      ratioInput.options = capabilities.allowCustomAspectRatio
+        ? [...capabilities.aspectRatios, { value: "__custom__", label: "自定义比例" }]
+        : capabilities.aspectRatios;
+      ratioInput.allowCustom = capabilities.allowCustomAspectRatio;
+      ratioInput.customKey = "aspectRatioCustom";
+      ratioInput.customPlaceholder = "例如 5:4、7:5 或 1328x768";
+    }
+    if (resolutionInput) {
+      resolutionInput.options = capabilities.resolutions;
+    }
+
+    const currentRatio = String(state.formValues.aspectRatio || "").trim();
+    if (!currentRatio || (!capabilities.aspectRatios.includes(currentRatio) && !capabilities.allowCustomAspectRatio)) {
+      state.formValues.aspectRatio = capabilities.defaultAspectRatio;
+    } else if (capabilities.allowCustomAspectRatio && !capabilities.aspectRatios.includes(currentRatio)) {
+      state.formValues.aspectRatioCustom = currentRatio;
+    }
+
+    const currentResolution = String(state.formValues.resolution || "").trim();
+    if (!currentResolution || !capabilities.resolutions.includes(currentResolution)) {
+      state.formValues.resolution = capabilities.defaultResolution;
+    }
+    return true;
   }
 
   async function persistThirdPartyLastSelection() {
@@ -1088,7 +1140,8 @@
     collectFormValuesFromDom();
     const snapshot = {
       model: String(state.formValues.model || "").trim(),
-      aspectRatio: String(state.formValues.aspectRatio || "").trim(),
+      aspectRatio: String(state.formValues.aspectRatio || state.formValues.aspectRatioCustom || "").trim(),
+      aspectRatioCustom: String(state.formValues.aspectRatioCustom || "").trim(),
       resolution: String(state.formValues.resolution || "").trim()
     };
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_LAST_SELECTION, JSON.stringify(snapshot));
@@ -2204,9 +2257,18 @@
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
-        if (!inputMeta || isImageInput(inputMeta)) return;
+        if (!inputMeta) {
+          modules.state.state.formValues[key] = element.value;
+          return;
+        }
+        if (isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
-        modules.state.state.formValues[key] = nextValue;
+        if (inputMeta.allowCustom && String(nextValue) === "__custom__") {
+          const customKey = String(inputMeta.customKey || `${key}Custom`);
+          modules.state.state.formValues[key] = String(modules.state.state.formValues[customKey] || "").trim();
+        } else {
+          modules.state.state.formValues[key] = nextValue;
+        }
         if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
           modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
         }
@@ -2225,14 +2287,30 @@
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
-        if (!inputMeta || isImageInput(inputMeta)) return;
+        if (!inputMeta) {
+          modules.state.state.formValues[key] = element.value;
+          return;
+        }
+        if (isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
-        modules.state.state.formValues[key] = nextValue;
+        if (inputMeta.allowCustom && String(nextValue) === "__custom__") {
+          const customKey = String(inputMeta.customKey || `${key}Custom`);
+          modules.state.state.formValues[key] = String(modules.state.state.formValues[customKey] || "").trim();
+        } else {
+          modules.state.state.formValues[key] = nextValue;
+        }
         if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
           modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
         }
         if (isNumericInput(inputMeta) && element.matches('input[type="number"]')) {
           element.value = formatNumericInputValue(inputMeta, nextValue);
+        }
+        if (modules.state.isThirdPartyApp(modules.state.state.currentApp) && key === "model") {
+          collectFormValuesFromDom();
+          updateThirdPartyDynamicOptions(nextValue);
+          renderWorkspace();
+        } else if (inputMeta.allowCustom) {
+          renderWorkspace();
         }
       });
 
@@ -2452,6 +2530,7 @@
   modules.workspace = {
     setModalOpen,
     updateRunButtonState,
+    updateThirdPartyDynamicOptions,
     renderWorkspace,
     buildRunPayload,
     collectFormValuesFromDom,

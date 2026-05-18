@@ -34,13 +34,16 @@
       imageModels: ["gpt-image-2", "gpt-image-2-vip", "nano-banana-pro", "nano-banana", "nano-banana-2"],
       chatModel: "gpt-5.5",
       selectedModel: "gpt-image-2",
-      aspectRatio: "1:1",
+      aspectRatio: "auto",
       resolution: "1K",
       adapter: "grs-image-generate"
     }
   };
 
   const THIRD_PARTY_APP_ID = "__pixelrunner_third_party_api__";
+
+  const GRS_COMMON_BANANA_RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"];
+  const GRS_GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "1774x887", "887x1774"];
 
   const DEFAULT_THEME = {
     preset: "classic",
@@ -186,7 +189,70 @@
     return Boolean(app && String(app.id || "") === THIRD_PARTY_APP_ID);
   }
 
+  function normalizeGrsModelId(value) {
+    const text = String(value || "").trim().toLowerCase();
+    const compact = text.replace(/[\s_-]/g, "");
+    const aliases = {
+      gptimage2: "gpt-image-2",
+      gptimage2vip: "gpt-image-2-vip",
+      nanobanana: "nano-banana",
+      nanobananapro: "nano-banana-pro",
+      nanobananafast: "nano-banana-fast",
+      nanobanana2: "nano-banana-2",
+      nanobanana2cl: "nano-banana-2-cl",
+      nanobananaprocl: "nano-banana-pro-cl",
+      nanobanana24kcl: "nano-banana-2-4k-cl",
+      nanobananaprovip: "nano-banana-pro-vip",
+      nanobananapro4kvip: "nano-banana-pro-4k-vip",
+      nanobananaprovt: "nano-banana-pro-vt"
+    };
+    return aliases[compact] || text;
+  }
+
+  function isGrsNanoBananaModel(value) {
+    return /^nano-banana(?:$|-)/i.test(normalizeGrsModelId(value));
+  }
+
+  function isGrsGptImageModel(value) {
+    return /^gpt-image-2(?:-vip)?$/i.test(normalizeGrsModelId(value));
+  }
+
+  function getThirdPartyModelCapabilities(model) {
+    const normalized = normalizeGrsModelId(model);
+    if (isGrsGptImageModel(normalized)) {
+      return {
+        model: normalized,
+        aspectRatios: GRS_GPT_IMAGE_SIZES,
+        resolutions: normalized === "gpt-image-2-vip" ? ["1K", "2K", "4K"] : ["1K"],
+        allowCustomAspectRatio: false,
+        defaultAspectRatio: "1024x1024",
+        defaultResolution: "1K"
+      };
+    }
+    if (isGrsNanoBananaModel(normalized)) {
+      const hasHighResolution = /(?:^nano-banana-(?:2|pro)|4k|vip)/i.test(normalized);
+      return {
+        model: normalized,
+        aspectRatios: GRS_COMMON_BANANA_RATIOS,
+        resolutions: hasHighResolution ? ["1K", "2K", "4K"] : ["1K"],
+        allowCustomAspectRatio: true,
+        defaultAspectRatio: "auto",
+        defaultResolution: "1K"
+      };
+    }
+    return {
+      model: normalized,
+      aspectRatios: ["1:1"],
+      resolutions: ["1K"],
+      allowCustomAspectRatio: false,
+      defaultAspectRatio: "1:1",
+      defaultResolution: "1K"
+    };
+  }
+
   function getThirdPartyApp() {
+    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : DEFAULT_THIRD_PARTY_SETTINGS.grs;
+    const capabilities = getThirdPartyModelCapabilities(grs.selectedModel || grs.imageModels[0]);
     return {
       id: THIRD_PARTY_APP_ID,
       appId: THIRD_PARTY_APP_ID,
@@ -198,16 +264,19 @@
         { key: "mainImage", label: "主图", name: "主图", type: "image", required: false },
         { key: "referenceImage", label: "参考图", name: "参考图", type: "image", required: false },
         { key: "prompt", label: "提示词", name: "提示词", type: "textarea", required: true },
-        { key: "model", label: "模型", name: "模型", type: "select", required: true, options: state.thirdPartySettings.grs.imageModels },
+        { key: "model", label: "模型", name: "模型", type: "select", required: true, options: grs.imageModels },
         {
           key: "aspectRatio",
           label: "比例",
           name: "比例",
           type: "select",
           required: true,
-          options: ["1:1", "16:9", "9:16", "4:3", "3:4", "1024x1024", "1536x1024", "1024x1536"]
+          options: capabilities.allowCustomAspectRatio ? [...capabilities.aspectRatios, { value: "__custom__", label: "自定义比例" }] : capabilities.aspectRatios,
+          allowCustom: capabilities.allowCustomAspectRatio,
+          customKey: "aspectRatioCustom",
+          customPlaceholder: "例如 5:4、7:5 或 1328x768"
         },
-        { key: "resolution", label: "分辨率", name: "分辨率", type: "select", required: true, options: ["1K", "2K", "4K", "1024x1024", "1536x1024", "1024x1536"] }
+        { key: "resolution", label: "分辨率", name: "分辨率", type: "select", required: true, options: capabilities.resolutions }
       ]
     };
   }
@@ -382,6 +451,10 @@
     normalizeSettings,
     normalizeThirdPartySettings,
     isThirdPartyApp,
+    normalizeGrsModelId,
+    isGrsNanoBananaModel,
+    isGrsGptImageModel,
+    getThirdPartyModelCapabilities,
     getThirdPartyApp,
     normalizeAppInputs,
     resolveAppId,

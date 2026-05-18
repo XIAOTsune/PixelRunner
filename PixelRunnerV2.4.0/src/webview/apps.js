@@ -354,6 +354,7 @@
       resolution: grs.resolution || defaults.resolution || "1K",
       ...(last && typeof last === "object" ? last : {})
     };
+    modules.workspace.updateThirdPartyDynamicOptions(state.formValues.model);
     await persistCurrentAppId(modules.state.THIRD_PARTY_APP_ID);
     if (!options.preserveWorkspaceMode && modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
       await modules.quickEntries.setWorkspaceMode("app", { skipRender: true });
