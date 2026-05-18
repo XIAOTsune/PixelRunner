@@ -1160,6 +1160,10 @@
       grs.selectedModel = snapshot.model || grs.selectedModel;
       grs.aspectRatio = snapshot.aspectRatio || grs.aspectRatio;
       grs.resolution = snapshot.resolution || grs.resolution;
+      const thirdPartySettings = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
+      state.thirdPartySettings = thirdPartySettings;
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdPartySettings));
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdPartySettings.grs.apiKey || "");
     }
   }
 

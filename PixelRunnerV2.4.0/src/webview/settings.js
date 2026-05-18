@@ -499,7 +499,25 @@
   async function loadSettingsSnapshot() {
     const apiKey = String((await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY)) || "").trim();
     const rawSettings = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS), {});
-    const thirdParty = modules.state.normalizeThirdPartySettings(rawSettings && rawSettings.thirdParty);
+    const rawThirdPartySettings = modules.runtime.readJsonText(
+      await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS),
+      null
+    );
+    const rawThirdPartyApiKey = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY);
+    const legacyThirdParty = rawSettings && rawSettings.thirdParty && typeof rawSettings.thirdParty === "object" ? rawSettings.thirdParty : {};
+    const storedThirdParty = rawThirdPartySettings && typeof rawThirdPartySettings === "object" ? rawThirdPartySettings : {};
+    const legacyGrs = legacyThirdParty.grs && typeof legacyThirdParty.grs === "object" ? legacyThirdParty.grs : {};
+    const storedGrs = storedThirdParty.grs && typeof storedThirdParty.grs === "object" ? storedThirdParty.grs : {};
+    const mergedThirdParty = {
+      ...legacyThirdParty,
+      ...storedThirdParty,
+      grs: {
+        ...legacyGrs,
+        ...storedGrs,
+        ...(rawThirdPartyApiKey !== null && rawThirdPartyApiKey !== undefined ? { apiKey: rawThirdPartyApiKey } : {})
+      }
+    };
+    const thirdParty = modules.state.normalizeThirdPartySettings(mergedThirdParty);
     modules.state.state.thirdPartySettings = thirdParty;
     return modules.state.normalizeSettings({
       apiKey,
@@ -514,6 +532,8 @@
     const normalized = modules.state.normalizeSettings(settings);
     const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdParty));
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdParty.grs.apiKey || "");
     await modules.runtime.storageSetItem(
       modules.state.STORAGE_KEYS.SETTINGS,
       JSON.stringify({

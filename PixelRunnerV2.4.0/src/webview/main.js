@@ -24,12 +24,14 @@ document.addEventListener("DOMContentLoaded", () => {
   modules.settings.bindSettingsActions();
   modules.sound.initialize();
 
-  Promise.all([
-    modules.apps.refreshWorkspaceApps({ quiet: true }),
-    modules.quickEntries.initializeQuickEntries(),
-    modules.templates.refreshTemplates({ quiet: true }),
-    modules.settings.initializeSettings()
-  ])
+  modules.settings.initializeSettings()
+    .then(() =>
+      Promise.all([
+        modules.apps.refreshWorkspaceApps({ quiet: true }),
+        modules.quickEntries.initializeQuickEntries(),
+        modules.templates.refreshTemplates({ quiet: true })
+      ])
+    )
     .then(() => {
       modules.apps.renderSavedAppsList();
       modules.templates.renderSavedTemplatesList();
