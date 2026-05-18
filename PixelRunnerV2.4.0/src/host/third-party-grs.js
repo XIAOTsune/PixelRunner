@@ -42,6 +42,21 @@ function parseJsonSafe(text) {
   }
 }
 
+function parseSseJsonLines(text) {
+  const rows = [];
+  String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const marker = line.replace(/^data:\s*/i, "").trim();
+      if (!marker || marker === "[DONE]") return;
+      const parsed = parseJsonSafe(marker);
+      if (parsed) rows.push(parsed);
+    });
+  return rows;
+}
+
 function normalizeModelId(value) {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -220,10 +235,15 @@ function extractApiError(json, rawText) {
 
 function getFailureMessage(value, rawText = "") {
   const obj = value && typeof value === "object" ? value : {};
-  const status = String(obj.status || obj.state || (obj.data && obj.data.status) || "").toLowerCase();
-  const error = obj.error || obj.errors || obj.failure_reason || obj.message || obj.msg || (obj.data && (obj.data.error || obj.data.message));
+  const data = obj.data && typeof obj.data === "object" ? obj.data : {};
+  const output = obj.output && typeof obj.output === "object" ? obj.output : {};
+  const status = String(obj.status || obj.state || data.status || output.status || "").toLowerCase();
+  const error = obj.error || obj.errors || obj.failure_reason || obj.failureReason || obj.message || obj.msg || data.error || data.message || data.failure_reason || output.error;
   if (status && /failed|error|cancelled|canceled/.test(status)) {
     return typeof error === "string" && error.trim() ? error.trim() : `GRS 任务失败：${status}`;
+  }
+  if (Number(obj.status) < 0 || Number(data.status) < 0) {
+    return typeof error === "string" && error.trim() ? error.trim() : "GRS 任务失败";
   }
   if (error && typeof error === "object") return String(error.message || error.msg || JSON.stringify(error)).slice(0, 500);
   if (typeof error === "string" && /failed|error|失败|错误/.test(error)) return error.trim();
@@ -238,6 +258,9 @@ function findImageUrl(value, depth = 0) {
     const text = value.trim();
     if (/^https?:\/\/.+\.(png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(text)) return text;
     if (/^https?:\/\/.+\/file\//i.test(text)) return text;
+    if (/^https?:\/\/.+/i.test(text) && /(image|img|media|output|result|cdn|file)/i.test(text)) return text;
+    const parsed = parseJsonSafe(text);
+    if (parsed) return findImageUrl(parsed, depth + 1);
     return "";
   }
   if (Array.isArray(value)) {
@@ -249,11 +272,27 @@ function findImageUrl(value, depth = 0) {
   }
   if (typeof value !== "object") return "";
 
-  for (const key of ["url", "image", "imageUrl", "image_url", "output", "fileUrl", "downloadUrl"]) {
+  for (const key of [
+    "url",
+    "image",
+    "imageUrl",
+    "image_url",
+    "output",
+    "fileUrl",
+    "file_url",
+    "downloadUrl",
+    "download_url",
+    "mediaUrl",
+    "media_url",
+    "resultUrl",
+    "result_url",
+    "response",
+    "taskResult"
+  ]) {
     const found = findImageUrl(value[key], depth + 1);
     if (found) return found;
   }
-  for (const key of ["results", "data", "result", "outputs", "images", "files", "items"]) {
+  for (const key of ["results", "data", "result", "outputs", "output", "images", "files", "items", "media", "urls"]) {
     const found = findImageUrl(value[key], depth + 1);
     if (found) return found;
   }
@@ -266,24 +305,39 @@ function findImageUrl(value, depth = 0) {
 
 function extractGrsTaskId(value) {
   if (!value || typeof value !== "object") return "";
-  const data = value.data && typeof value.data === "object" ? value.data : null;
-  const id = value.id || value.taskId || value.task_id || value.jobId || value.job_id ||
-    (data && (data.id || data.taskId || data.task_id || data.jobId || data.job_id));
+  const data = value.data;
+  if (typeof data === "string" && data.trim() && !/^https?:\/\//i.test(data.trim())) {
+    const parsedData = parseJsonSafe(data);
+    if (parsedData) return extractGrsTaskId(parsedData);
+    return data.trim();
+  }
+  const dataObj = data && typeof data === "object" ? data : null;
+  const resultObj = value.result && typeof value.result === "object" ? value.result : null;
+  const outputObj = value.output && typeof value.output === "object" ? value.output : null;
+  const id = value.id || value.taskId || value.task_id || value.requestId || value.request_id || value.jobId || value.job_id ||
+    (dataObj && (dataObj.id || dataObj.taskId || dataObj.task_id || dataObj.requestId || dataObj.request_id || dataObj.jobId || dataObj.job_id)) ||
+    (resultObj && (resultObj.id || resultObj.taskId || resultObj.task_id || resultObj.requestId || resultObj.request_id || resultObj.jobId || resultObj.job_id)) ||
+    (outputObj && (outputObj.id || outputObj.taskId || outputObj.task_id || outputObj.requestId || outputObj.request_id || outputObj.jobId || outputObj.job_id));
   return String(id || "").trim();
 }
 
 function extractTaskStatus(value) {
   if (!value || typeof value !== "object") return "";
   const data = value.data && typeof value.data === "object" ? value.data : null;
-  return String(value.status || value.state || value.taskStatus || (data && (data.status || data.state)) || "").toUpperCase();
+  const output = value.output && typeof value.output === "object" ? value.output : null;
+  return String(value.status || value.state || value.taskStatus || (data && (data.status || data.state || data.taskStatus)) || (output && (output.status || output.state)) || "").toUpperCase();
 }
 
 function isPendingStatus(status) {
-  return ["PENDING", "RUNNING", "PROCESSING", "QUEUED", "QUEUE", "WAITING", "IN_PROGRESS", "CREATED", "SUBMITTED"].includes(String(status || "").toUpperCase());
+  return ["0", "PENDING", "RUNNING", "PROCESSING", "QUEUED", "QUEUE", "WAITING", "IN_PROGRESS", "CREATED", "SUBMITTED"].includes(String(status || "").toUpperCase());
+}
+
+function isSucceededStatus(status) {
+  return ["1", "SUCCESS", "SUCCEEDED", "SUCCEED", "COMPLETED", "COMPLETE", "DONE", "FINISHED"].includes(String(status || "").toUpperCase());
 }
 
 function isFailedStatus(status) {
-  return ["FAILED", "ERROR", "CANCELLED", "CANCELED"].includes(String(status || "").toUpperCase());
+  return ["-1", "2", "FAILED", "ERROR", "CANCELLED", "CANCELED"].includes(String(status || "").toUpperCase());
 }
 
 async function fetchJson(url, options = {}, timeoutMs = 30000, controller = null) {
@@ -354,6 +408,7 @@ function buildImageRequestBody(payload, imageUrls) {
         urls: imageUrls,
         aspectRatio,
         imageSize,
+        webHook: "-1",
         shutProgress: true,
         cdn: "zh"
       }
@@ -371,6 +426,7 @@ function buildImageRequestBody(payload, imageUrls) {
         urls: imageUrls,
         aspectRatio,
         imageSize: resolution || "1K",
+        webHook: "-1",
         shutProgress: true,
         cdn: "zh"
       }
@@ -392,8 +448,9 @@ function normalizeSubmitResult(json, rawText, apiUrl) {
   const failureMessage = getFailureMessage(json, rawText);
   if (failureMessage) throw new Error(failureMessage);
 
-  const outputUrl = findImageUrl(json || rawText);
-  const taskId = extractGrsTaskId(json);
+  const sseRows = parseSseJsonLines(rawText);
+  const outputUrl = findImageUrl(json || rawText) || sseRows.map(findImageUrl).find(Boolean) || "";
+  const taskId = extractGrsTaskId(json) || sseRows.map(extractGrsTaskId).find(Boolean) || "";
   const status = extractTaskStatus(json);
   if (outputUrl) {
     const localTaskId = taskId || `grs-immediate-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -407,7 +464,8 @@ function normalizeSubmitResult(json, rawText, apiUrl) {
     return { ok: true, taskId: localTaskId, outputUrl, immediate: true, result: json };
   }
   if (taskId) return { ok: true, taskId, status: status || "RUNNING", result: json };
-  throw new Error("GRS 未返回可识别的任务 ID 或图片地址");
+  const responsePreview = summarizeGrsPayload(json || sseRows[0] || rawText);
+  throw new Error(`GRS 未返回可识别的任务 ID 或图片地址${responsePreview ? `：${responsePreview}` : ""}`);
 }
 
 export async function submitThirdPartyGrsTask(args = []) {
@@ -458,18 +516,30 @@ export async function submitThirdPartyGrsTask(args = []) {
 
 function buildPollResponse(taskId, json, rawText = "") {
   const failureMessage = getFailureMessage(json, rawText);
-  const outputUrl = findImageUrl(json || rawText);
-  const status = extractTaskStatus(json);
+  const sseRows = parseSseJsonLines(rawText);
+  const outputUrl = findImageUrl(json || rawText) || sseRows.map(findImageUrl).find(Boolean) || "";
+  const status = extractTaskStatus(json) || sseRows.map(extractTaskStatus).find(Boolean) || "";
+  const succeeded = isSucceededStatus(status);
   return {
     ok: Boolean(outputUrl && !failureMessage),
     taskId,
     status,
     outputUrl,
-    failed: Boolean(failureMessage || isFailedStatus(status)),
-    stillRunning: isPendingStatus(status) || (!outputUrl && !failureMessage),
-    message: failureMessage,
+    failed: Boolean(failureMessage || isFailedStatus(status) || (succeeded && !outputUrl)),
+    stillRunning: isPendingStatus(status) || (!outputUrl && !failureMessage && !succeeded),
+    message: failureMessage || (succeeded && !outputUrl ? `GRS 任务已成功，但插件未识别到结果图字段：${summarizeGrsPayload(json || sseRows[0] || rawText)}` : ""),
     raw: json || null
   };
+}
+
+function summarizeGrsPayload(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim().replace(/\s+/g, " ").slice(0, 300);
+  if (typeof value !== "object") return String(value).slice(0, 300);
+  const keys = Object.keys(value).slice(0, 12).join(",");
+  const data = value.data && typeof value.data === "object" ? ` dataKeys=${Object.keys(value.data).slice(0, 12).join(",")}` : "";
+  const output = value.output && typeof value.output === "object" ? ` outputKeys=${Object.keys(value.output).slice(0, 12).join(",")}` : "";
+  return `keys=${keys}${data}${output}`.slice(0, 300);
 }
 
 async function fetchGrsTaskResult(apiUrl, apiKey, taskId, meta = {}, controller = null, timeoutMs = 30000) {
@@ -481,7 +551,7 @@ async function fetchGrsTaskResult(apiUrl, apiKey, taskId, meta = {}, controller 
       {
         method: "POST",
         headers: authHeaders(apiKey),
-        body: JSON.stringify({ id: taskId, taskId })
+        body: JSON.stringify({ id: taskId })
       },
       timeoutMs,
       controller

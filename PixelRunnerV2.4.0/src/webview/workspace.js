@@ -5,6 +5,7 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const RUNNINGHUB_CALL_RECORD_URL = "https://www.runninghub.cn/call-api/call-record";
+  const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -509,6 +510,14 @@
     return ["failed", "error", "timeout"].includes(normalized);
   }
 
+  function isThirdPartyTaskRecord(task) {
+    return Boolean(task && (String(task.provider || "").trim() === "grs" || String(task.appName || "").trim() === "第三方 API"));
+  }
+
+  function getTaskDetailUrl(task) {
+    return isThirdPartyTaskRecord(task) ? GRS_CONSUMPTION_LOG_URL : RUNNINGHUB_CALL_RECORD_URL;
+  }
+
   function getActiveRunningTasks() {
     return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status));
   }
@@ -765,6 +774,7 @@
         const canCancel = isTaskCancellable(task);
         const canDelete = isTaskDeletable(task);
         const canOpenCallRecord = canOpenRunningHubCallRecord(task);
+        const detailTitle = isThirdPartyTaskRecord(task) ? "打开 GRS 消费记录" : "打开 RunningHub 调用记录";
         const actionTaskId = modules.runtime.escapeHtml(String(task.taskId || "").trim());
         return `
           <div class="running-task-item">
@@ -775,7 +785,7 @@
                   <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
                   ${
                     canOpenCallRecord
-                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-runninghub-call-record" data-task-id="${actionTaskId}" title="打开 RunningHub 调用记录">详情</button>`
+                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-runninghub-call-record" data-task-id="${actionTaskId}" title="${modules.runtime.escapeHtml(detailTitle)}">详情</button>`
                       : ""
                   }
                   ${
@@ -1240,6 +1250,7 @@
     const nextTask = {
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
+      provider: String(patch.provider || "").trim(),
       appName: String(patch.appName || "").trim(),
       status: String(patch.status || "running").trim() || "running",
       detail: String(patch.detail || "").trim(),
@@ -1269,6 +1280,7 @@
       list[index] = {
         ...current,
         ...nextTask,
+        provider: nextTask.provider || current.provider || "",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
@@ -1966,6 +1978,7 @@
     upsertRunningTask({
       taskId: tempTaskId,
       remoteTaskId: "",
+      provider: payload.provider || "",
       appName: payload.appName,
       status: "submitting",
       detail: isThirdPartyTask ? "正在提交到 GRS..." : "正在提交到 RunningHub...",
@@ -2505,19 +2518,22 @@
 
       if (action === "open-runninghub-call-record") {
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
+        const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === taskId);
+        const targetUrl = getTaskDetailUrl(currentTask);
+        const targetName = isThirdPartyTaskRecord(currentTask) ? "GRS 消费记录" : "RunningHub 调用记录";
         target.disabled = true;
         try {
           if (!modules.runtime.isPluginRuntime()) {
-            global.open(RUNNINGHUB_CALL_RECORD_URL, "_blank", "noopener");
+            global.open(targetUrl, "_blank", "noopener");
           } else {
             const result = await modules.runtime.callHost(
               "shell.openExternal",
-              [RUNNINGHUB_CALL_RECORD_URL, "将使用系统默认浏览器打开 RunningHub 调用记录页面。"],
+              [targetUrl, `将使用系统默认浏览器打开 ${targetName} 页面。`],
               { timeoutMs: 15000 }
             );
             if (!result || !result.ok) throw new Error("系统未确认打开成功");
           }
-          modules.ui.logToWorkspace(`已打开 RunningHub 调用记录${taskId ? `：${taskId}` : ""}`, "info");
+          modules.ui.logToWorkspace(`已打开 ${targetName}${taskId ? `：${taskId}` : ""}`, "info");
         } catch (error) {
           modules.ui.logToWorkspace(`打开调用记录失败：${error.message || error}`, "error");
         } finally {
