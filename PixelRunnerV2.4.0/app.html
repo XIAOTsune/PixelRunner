@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.4.5</span>
+              <span class="version-text">v2.4.6</span>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.5 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.6 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -127,7 +127,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.4.5</span>
+            <span class="version-text">v2.4.6</span>
           </div>
         </div>
 
@@ -145,11 +145,25 @@
           <div id="glowQuickHint" class="summary-strip">默认参数已切换为当前这组更自然的高光辉光手感。</div>
         </section>
 
+        <section class="surface-card tool-space-fx-card">
+          <div class="tool-space-fx-launcher">
+            <div class="tool-space-fx-summary-main">
+              <div class="tool-space-fx-header-line">
+                <h3 class="card-title">空间特效</h3>
+                <span id="spaceFxPresetBadge" class="status-chip">热浪</span>
+              </div>
+              <p class="subtle-note">生成热浪、气流、刀光等本地空间扭曲效果，实时预览后输出可编辑结果层。</p>
+            </div>
+            <button id="btnOpenSpaceFxPanel" class="primary-btn space-fx-open-btn" type="button">打开空间特效</button>
+          </div>
+          <div id="spaceFxQuickHint" class="summary-strip">点击预览图放置特效中心，滚轮可放大预览，拖动可查看局部。</div>
+        </section>
+
         <div class="tool-group-grid">
           <section class="surface-card">
             <div class="card-head">
               <h3 class="card-title">图层辅助</h3>
-              <span class="status-chip">2 项预置</span>
+              <span class="status-chip">3 项预置</span>
             </div>
             <div class="tool-list">
               <article class="tool-item">
@@ -165,6 +179,13 @@
                   <p>预留 50% 灰加柔光的修图入口。</p>
                 </div>
                 <button id="btnNeutralGray" class="mini-btn" type="button">创建</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>高低频</h4>
+                  <p>分离为纹理层和颜色层，便于精修。</p>
+                </div>
+                <button id="btnFreqSep" class="mini-btn" type="button">创建</button>
               </article>
             </div>
           </section>
@@ -240,7 +261,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.4.5</span>
+          <span class="version-text">v2.4.6</span>
           </div>
         </div>
 
@@ -650,6 +671,120 @@
     </section>
   </div>
 
+  <div id="spaceFxModal" class="overlay-modal">
+    <div id="spaceFxBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card space-fx-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 class="card-title">空间特效</h3>
+        </div>
+        <button id="spaceFxModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="space-fx-modal-hero">
+        <div class="space-fx-modal-badges">
+          <span id="spaceFxStateBadge" class="status-chip">等待捕获</span>
+          <span id="spaceFxTypeBadge" class="status-chip">热浪</span>
+          <span id="spaceFxIntensityBadge" class="status-chip">强度 34%</span>
+          <span id="spaceFxGlowBadge" class="status-chip">光效 12%</span>
+        </div>
+        <p class="subtle-note">可点击定位，也可以开启手绘路径，让刀光和气流沿着你画出的轨迹生成。</p>
+      </div>
+
+      <div class="space-fx-workbench">
+        <div id="spaceFxInlinePreview" class="space-fx-inline-preview" hidden>
+          <div class="space-fx-lab-grid">
+            <figure class="space-fx-lab-tile space-fx-lab-tile-wide">
+              <div id="spaceFxPreviewViewport" class="space-fx-preview-viewport">
+                <img id="spaceFxSourceImage" class="space-fx-base-image" alt="空间特效原图" />
+                <canvas id="spaceFxResultCanvas" class="space-fx-lab-image is-active" aria-label="空间特效预览结果"></canvas>
+                <div id="spaceFxControlOverlay" class="space-fx-control-overlay" aria-hidden="true">
+                  <span class="space-fx-control-center"></span>
+                  <span class="space-fx-control-line"></span>
+                  <span class="space-fx-control-range"></span>
+                  <svg id="spaceFxDrawOverlay" class="space-fx-draw-overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" focusable="false" aria-hidden="true">
+                    <path id="spaceFxDrawPath" d=""></path>
+                  </svg>
+                </div>
+                <div class="space-fx-preview-tools" aria-label="预览缩放控制">
+                  <button class="mini-btn space-fx-preview-tool-btn" type="button" data-space-fx-zoom="out" title="缩小预览">−</button>
+                  <button class="mini-btn space-fx-preview-tool-btn" type="button" data-space-fx-zoom="reset" title="重置预览">⟲</button>
+                  <button class="mini-btn space-fx-preview-tool-btn" type="button" data-space-fx-zoom="in" title="放大预览">+</button>
+                </div>
+              </div>
+              <figcaption>空间特效预览</figcaption>
+            </figure>
+          </div>
+          <div id="spaceFxPreviewMeta" class="space-fx-preview-meta">打开面板后会捕获当前图像。</div>
+        </div>
+
+        <div class="space-fx-controls-panel">
+          <div class="space-fx-preset-row" aria-label="空间特效模板">
+            <button class="mini-btn space-fx-preset-btn is-selected" type="button" data-space-fx-preset="heat">热浪</button>
+            <button class="mini-btn space-fx-preset-btn" type="button" data-space-fx-preset="airflow">气流</button>
+            <button class="mini-btn space-fx-preset-btn" type="button" data-space-fx-preset="slash">刀光</button>
+          </div>
+
+          <div class="space-fx-draw-actions">
+            <button id="btnSpaceFxDraw" class="secondary-btn space-fx-draw-btn" type="button" aria-pressed="false">手绘路径</button>
+            <button id="btnSpaceFxClearPath" class="secondary-btn space-fx-draw-btn" type="button" disabled>清除路径</button>
+          </div>
+
+          <div class="space-fx-slider-stack">
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">效果强度</span><span id="spaceFxIntensityValue">34</span></span>
+              <input id="spaceFxIntensityInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="34" />
+            </label>
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">影响范围</span><span id="spaceFxRangeValue">62</span></span>
+              <input id="spaceFxRangeInput" class="field-input glow-strength-slider" type="range" min="10" max="100" step="1" value="62" />
+            </label>
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">边缘柔和</span><span id="spaceFxFeatherValue">48</span></span>
+              <input id="spaceFxFeatherInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="48" />
+            </label>
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">方向</span><span id="spaceFxAngleValue">90°</span></span>
+              <input id="spaceFxAngleInput" class="field-input glow-strength-slider" type="range" min="-180" max="180" step="1" value="90" />
+            </label>
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">纹理细节</span><span id="spaceFxDetailValue">58</span></span>
+              <input id="spaceFxDetailInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="58" />
+            </label>
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">光效强度</span><span id="spaceFxGlowValue">12</span></span>
+              <input id="spaceFxGlowInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="12" />
+            </label>
+            <label class="field space-fx-slider-field space-fx-color-field">
+              <span class="glow-param-line">
+                <span class="field-label">光效颜色</span>
+                <span class="glow-inline-control">
+                  <input id="spaceFxGlowColorEnabledInput" type="checkbox" checked />
+                  <input id="spaceFxGlowColorPickerInput" class="glow-color-picker" type="color" value="#7ddfff" />
+                  <span id="spaceFxGlowColorValue">64</span>
+                </span>
+              </span>
+              <input id="spaceFxGlowColorInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="64" />
+            </label>
+            <label class="field space-fx-slider-field">
+              <span class="glow-param-line"><span class="field-label">画笔粗细</span><span id="spaceFxBrushValue">42</span></span>
+              <input id="spaceFxBrushInput" class="field-input glow-strength-slider" type="range" min="8" max="120" step="1" value="42" />
+            </label>
+          </div>
+
+          <div class="glow-control-grid space-fx-modal-actions">
+            <button id="btnSpaceFxRecapture" class="secondary-btn" type="button">重新捕获</button>
+            <button id="btnSpaceFxMap" class="secondary-btn" type="button" disabled>生成置换图</button>
+            <button id="btnSpaceFxApply" class="primary-btn" type="button" disabled>应用特效</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="spaceFxHint" class="summary-strip">空间特效使用本地 Canvas 位移纹理生成，不依赖 AI 模型或 Photoshop 原生置换对话框。</div>
+    </section>
+  </div>
+
   <div id="glowModal" class="overlay-modal">
     <div id="glowBackdrop" class="overlay-backdrop"></div>
     <section class="overlay-card glow-modal-card">
@@ -752,6 +887,74 @@
       </div>
 
       <div id="glowHint" class="summary-strip">打开面板后会捕获当前图像，在插件内生成 CPU 辉光预览。</div>
+    </section>
+  </div>
+
+  <div id="freqSepModal" class="overlay-modal">
+    <div id="freqSepBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card freq-sep-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 class="card-title">高低频分离</h3>
+        </div>
+        <button id="freqSepModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="freq-sep-description">
+        <p class="subtle-note">将当前图层分离为低频（颜色/光影）和高频（纹理/细节），便于分别精修。</p>
+      </div>
+
+      <div class="freq-sep-params">
+        <label class="field freq-sep-slider-field">
+          <span class="freq-sep-param-line">
+            <span class="field-label">分离半径</span>
+            <span id="freqSepRadiusValue" class="freq-sep-param-value">10</span>
+            <span class="freq-sep-unit">px</span>
+          </span>
+          <input id="freqSepRadiusInput" class="field-input" type="range" min="1" max="50" step="1" value="10" />
+        </label>
+      </div>
+
+      <div id="freqSepPreviewPanel" class="freq-sep-preview-panel">
+        <div class="freq-sep-preview-toolbar">
+          <span id="freqSepPreviewState" class="status-chip">等待捕获</span>
+          <div class="freq-sep-preview-modes" aria-label="高低频预览模式">
+            <button class="mini-btn active" type="button" data-freq-sep-preview-mode="split">分离</button>
+            <button class="mini-btn" type="button" data-freq-sep-preview-mode="low">低频</button>
+            <button class="mini-btn" type="button" data-freq-sep-preview-mode="high">高频</button>
+          </div>
+        </div>
+        <div class="freq-sep-preview-frame">
+          <canvas id="freqSepPreviewCanvas" aria-label="高低频分离预览"></canvas>
+          <div id="freqSepPreviewEmpty" class="freq-sep-preview-empty">打开面板后会捕获当前图像</div>
+        </div>
+        <div class="freq-sep-preview-footer">
+          <button id="btnFreqSepRefreshPreview" class="mini-btn" type="button">刷新预览</button>
+          <label class="freq-sep-check-field compact">
+            <input id="freqSepVisualBoostToggle" type="checkbox" checked />
+            <span>视觉增强</span>
+          </label>
+          <span id="freqSepPreviewMeta" class="freq-sep-preview-meta">低频 &lt;- 预览 -&gt; 高频</span>
+        </div>
+      </div>
+
+      <div class="freq-sep-layer-options">
+        <span class="field-label">附加图层</span>
+        <label class="freq-sep-check-field">
+          <input id="freqSepColorAdjustToggle" type="checkbox" checked />
+          <span>创建颜色辅助层（颜色混合层 + 颜色覆盖层）</span>
+        </label>
+      </div>
+
+      <div class="freq-sep-preview-hint">
+        <p class="subtle-note">半径越大，低频承接更宽的颜色/光影，高频只留下更粗的纹理边缘。建议值 5-15px。</p>
+      </div>
+
+      <div class="action-row freq-sep-actions">
+        <button id="btnFreqSepCancel" class="secondary-btn" type="button">取消</button>
+        <button id="btnFreqSepApply" class="primary-btn" type="button">创建高低频</button>
+      </div>
     </section>
   </div>
 

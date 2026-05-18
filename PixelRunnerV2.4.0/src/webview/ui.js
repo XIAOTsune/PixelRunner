@@ -1072,9 +1072,299 @@
       }
     });
 
+    const freqSepRadiusInput = runtime.getById("freqSepRadiusInput");
+    const freqSepRadiusValue = runtime.getById("freqSepRadiusValue");
+    const freqSepColorAdjustToggle = runtime.getById("freqSepColorAdjustToggle");
+    const freqSepApplyButton = runtime.getById("btnFreqSepApply");
+    const freqSepPreviewCanvas = runtime.getById("freqSepPreviewCanvas");
+    const freqSepPreviewEmpty = runtime.getById("freqSepPreviewEmpty");
+    const freqSepPreviewState = runtime.getById("freqSepPreviewState");
+    const freqSepPreviewMeta = runtime.getById("freqSepPreviewMeta");
+    const freqSepPreviewRefreshButton = runtime.getById("btnFreqSepRefreshPreview");
+    const freqSepVisualBoostToggle = runtime.getById("freqSepVisualBoostToggle");
+    let freqSepPreviewAsset = null;
+    let freqSepPreviewSource = null;
+    let freqSepPreviewMode = "split";
+    let freqSepPreviewJobId = 0;
+    let freqSepPreviewTimer = null;
+
+    const FREQ_SEP_PREVIEW_MAX_DIMENSION = 1100;
+
+    const setFreqSepPreviewState = (message) => {
+      if (freqSepPreviewState) freqSepPreviewState.textContent = String(message || "");
+    };
+
+    const loadFreqSepImage = (dataUrl) => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("高低频预览读取图像失败。"));
+      image.src = dataUrl;
+    });
+
+    const getFreqSepPreviewSize = (width, height) => {
+      const sourceWidth = Math.max(1, Number(width) || 1);
+      const sourceHeight = Math.max(1, Number(height) || 1);
+      const maxEdge = Math.max(sourceWidth, sourceHeight);
+      if (maxEdge <= FREQ_SEP_PREVIEW_MAX_DIMENSION) return { width: sourceWidth, height: sourceHeight };
+      const scale = FREQ_SEP_PREVIEW_MAX_DIMENSION / maxEdge;
+      return {
+        width: Math.max(1, Math.round(sourceWidth * scale)),
+        height: Math.max(1, Math.round(sourceHeight * scale))
+      };
+    };
+
+    const imageToFreqSepImageData = async (dataUrl) => {
+      const image = await loadFreqSepImage(dataUrl);
+      const size = getFreqSepPreviewSize(image.naturalWidth || image.width, image.naturalHeight || image.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = size.width;
+      canvas.height = size.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, size.width, size.height);
+      return {
+        width: size.width,
+        height: size.height,
+        imageData: ctx.getImageData(0, 0, size.width, size.height)
+      };
+    };
+
+    const runFreqSepBoxBlurPass = (source, target, width, height, radius, horizontal) => {
+      const windowSize = radius * 2 + 1;
+      if (horizontal) {
+        for (let y = 0; y < height; y += 1) {
+          const rowOffset = y * width * 4;
+          for (let channel = 0; channel < 4; channel += 1) {
+            let sum = 0;
+            for (let k = -radius; k <= radius; k += 1) {
+              const x = Math.min(width - 1, Math.max(0, k));
+              sum += source[rowOffset + x * 4 + channel];
+            }
+            for (let x = 0; x < width; x += 1) {
+              target[rowOffset + x * 4 + channel] = sum / windowSize;
+              const removeX = Math.min(width - 1, Math.max(0, x - radius));
+              const addX = Math.min(width - 1, Math.max(0, x + radius + 1));
+              sum += source[rowOffset + addX * 4 + channel] - source[rowOffset + removeX * 4 + channel];
+            }
+          }
+        }
+        return;
+      }
+
+      for (let x = 0; x < width; x += 1) {
+        for (let channel = 0; channel < 4; channel += 1) {
+          let sum = 0;
+          for (let k = -radius; k <= radius; k += 1) {
+            const y = Math.min(height - 1, Math.max(0, k));
+            sum += source[(y * width + x) * 4 + channel];
+          }
+          for (let y = 0; y < height; y += 1) {
+            target[(y * width + x) * 4 + channel] = sum / windowSize;
+            const removeY = Math.min(height - 1, Math.max(0, y - radius));
+            const addY = Math.min(height - 1, Math.max(0, y + radius + 1));
+            sum += source[(addY * width + x) * 4 + channel] - source[(removeY * width + x) * 4 + channel];
+          }
+        }
+      }
+    };
+
+    const createFreqSepLowData = (sourceData, width, height, radius) => {
+      const blurRadius = Math.max(1, Math.round(Number(radius) || 1));
+      let current = new Float32Array(sourceData.length);
+      current.set(sourceData);
+      let temp = new Float32Array(sourceData.length);
+      const iterations = 3;
+      for (let pass = 0; pass < iterations; pass += 1) {
+        runFreqSepBoxBlurPass(current, temp, width, height, blurRadius, true);
+        const next = pass === iterations - 1 ? new Uint8ClampedArray(sourceData.length) : new Float32Array(sourceData.length);
+        runFreqSepBoxBlurPass(temp, next, width, height, blurRadius, false);
+        current = next;
+        temp = new Float32Array(sourceData.length);
+      }
+      return current instanceof Uint8ClampedArray ? current : new Uint8ClampedArray(current);
+    };
+
+    const renderFreqSepPreview = () => {
+      if (!freqSepPreviewCanvas || !freqSepPreviewSource) return;
+      const jobId = freqSepPreviewJobId;
+      const radius = Math.min(50, Math.max(1, Number(freqSepRadiusInput && freqSepRadiusInput.value) || 10));
+      const { width, height, imageData } = freqSepPreviewSource;
+      const ctx = freqSepPreviewCanvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      if (freqSepPreviewCanvas.width !== width) freqSepPreviewCanvas.width = width;
+      if (freqSepPreviewCanvas.height !== height) freqSepPreviewCanvas.height = height;
+      setFreqSepPreviewState("计算预览");
+
+      window.setTimeout(() => {
+        if (jobId !== freqSepPreviewJobId) return;
+        const source = imageData.data;
+        const low = createFreqSepLowData(source, width, height, radius);
+        const output = ctx.createImageData(width, height);
+        const data = output.data;
+        const splitX = Math.floor(width / 2);
+        const boost = freqSepVisualBoostToggle && freqSepVisualBoostToggle.checked ? 2.35 : 1;
+
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const index = (y * width + x) * 4;
+            const showLow = freqSepPreviewMode === "low" || (freqSepPreviewMode === "split" && x < splitX);
+            const showHigh = freqSepPreviewMode === "high" || (freqSepPreviewMode === "split" && x >= splitX);
+            if (showLow && !showHigh) {
+              data[index] = low[index];
+              data[index + 1] = low[index + 1];
+              data[index + 2] = low[index + 2];
+            } else {
+              data[index] = Math.min(255, Math.max(0, 128 + (source[index] - low[index]) * boost));
+              data[index + 1] = Math.min(255, Math.max(0, 128 + (source[index + 1] - low[index + 1]) * boost));
+              data[index + 2] = Math.min(255, Math.max(0, 128 + (source[index + 2] - low[index + 2]) * boost));
+            }
+            data[index + 3] = source[index + 3];
+          }
+        }
+
+        if (freqSepPreviewMode === "split") {
+          for (let y = 0; y < height; y += 1) {
+            const index = (y * width + splitX) * 4;
+            data[index] = 245;
+            data[index + 1] = 245;
+            data[index + 2] = 245;
+            data[index + 3] = 210;
+          }
+        }
+
+        ctx.putImageData(output, 0, 0);
+        if (freqSepPreviewEmpty) freqSepPreviewEmpty.classList.add("is-hidden");
+        setFreqSepPreviewState("实时预览");
+        if (freqSepPreviewMeta) {
+          const modeLabel = freqSepPreviewMode === "low" ? "低频" : (freqSepPreviewMode === "high" ? "高频" : "低频 <- 预览 -> 高频");
+          freqSepPreviewMeta.textContent = `${modeLabel} · ${width}x${height} · 半径 ${radius}px`;
+        }
+      }, 0);
+    };
+
+    const scheduleFreqSepPreviewRender = (delay = 120) => {
+      if (!freqSepPreviewSource) return;
+      freqSepPreviewJobId += 1;
+      if (freqSepPreviewTimer) window.clearTimeout(freqSepPreviewTimer);
+      freqSepPreviewTimer = window.setTimeout(renderFreqSepPreview, delay);
+    };
+
+    const captureFreqSepPreview = async (force = false) => {
+      if (!freqSepPreviewCanvas) return;
+      if (!runtime.isPluginRuntime()) {
+        setFreqSepPreviewState("浏览器模式");
+        if (freqSepPreviewMeta) freqSepPreviewMeta.textContent = "浏览器预览模式下无法捕获 Photoshop 图像";
+        return;
+      }
+      if (freqSepPreviewSource && !force) {
+        scheduleFreqSepPreviewRender(0);
+        return;
+      }
+      setFreqSepPreviewState("捕获图像");
+      if (freqSepPreviewRefreshButton) freqSepPreviewRefreshButton.disabled = true;
+      try {
+        freqSepPreviewAsset = await runtime.callHost("photoshop.captureDocumentPreview", [{
+          maxDimension: FREQ_SEP_PREVIEW_MAX_DIMENSION,
+          ignoreSelection: true,
+          quality: 92
+        }], { timeoutMs: 60000 });
+        const dataUrl = String(freqSepPreviewAsset && freqSepPreviewAsset.dataUrl || "").trim();
+        if (!dataUrl) throw new Error("未能捕获当前 Photoshop 图像。");
+        freqSepPreviewSource = await imageToFreqSepImageData(dataUrl);
+        scheduleFreqSepPreviewRender(0);
+      } catch (error) {
+        setFreqSepPreviewState("预览失败");
+        if (freqSepPreviewMeta) freqSepPreviewMeta.textContent = error.message;
+        logToWorkspace(`高低频预览失败：${error.message}`, "warn");
+      } finally {
+        if (freqSepPreviewRefreshButton) freqSepPreviewRefreshButton.disabled = false;
+      }
+    };
+
+    const openFreqSepModal = () => {
+      if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+        modules.workspace.setModalOpen("freqSepModal", true);
+      }
+      void captureFreqSepPreview(true);
+    };
+
+    const closeFreqSepModal = () => {
+      if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+        modules.workspace.setModalOpen("freqSepModal", false);
+      }
+    };
+
+    if (freqSepRadiusInput && freqSepRadiusValue) {
+      const syncFreqSepRadius = () => {
+        freqSepRadiusValue.textContent = String(freqSepRadiusInput.value || "10");
+        scheduleFreqSepPreviewRender(90);
+      };
+      freqSepRadiusInput.addEventListener("input", syncFreqSepRadius);
+      syncFreqSepRadius();
+    }
+
+    document.querySelectorAll("[data-freq-sep-preview-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        freqSepPreviewMode = String(button.getAttribute("data-freq-sep-preview-mode") || "split");
+        document.querySelectorAll("[data-freq-sep-preview-mode]").forEach((item) => {
+          item.classList.toggle("active", item === button);
+        });
+        scheduleFreqSepPreviewRender(0);
+      });
+    });
+
+    if (freqSepVisualBoostToggle) {
+      freqSepVisualBoostToggle.addEventListener("change", () => scheduleFreqSepPreviewRender(0));
+    }
+
+    if (freqSepPreviewRefreshButton) {
+      freqSepPreviewRefreshButton.addEventListener("click", () => {
+        void captureFreqSepPreview(true);
+      });
+    }
+
+    ["freqSepModalClose", "btnFreqSepCancel"].forEach((id) => {
+      const button = runtime.getById(id);
+      if (button) button.addEventListener("click", closeFreqSepModal);
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target && event.target.closest("#freqSepBackdrop")) {
+        closeFreqSepModal();
+      }
+    });
+
+    if (freqSepApplyButton) {
+      freqSepApplyButton.addEventListener("click", async () => {
+        if (!runtime.isPluginRuntime()) {
+          logToWorkspace("浏览器预览模式下不会执行高低频分离。", "info");
+          return;
+        }
+
+        const blurRadius = Math.min(50, Math.max(1, Number(freqSepRadiusInput && freqSepRadiusInput.value) || 10));
+        const payload = {
+          action: "frequencySeparation",
+          blurRadius,
+          createColorAdjust: !freqSepColorAdjustToggle || freqSepColorAdjustToggle.checked
+        };
+
+        freqSepApplyButton.disabled = true;
+        logToWorkspace(`正在创建高低频分离：半径 ${blurRadius}px...`, "info");
+        try {
+          const result = await runtime.callHost("photoshop.runToolAction", [payload], { timeoutMs: 60000 });
+          logToWorkspace(result && result.message ? result.message : "已创建高低频分离图层组。", "success");
+          closeFreqSepModal();
+        } catch (error) {
+          logToWorkspace(`高低频执行失败：${error.message}`, "error");
+        } finally {
+          freqSepApplyButton.disabled = false;
+        }
+      });
+    }
+
     const toolConfigs = [
       { id: "btnObserver", payload: { action: "observerLayer", layerName: "黑白观察层" }, pending: "正在创建黑白观察层...", success: (result) => (result && result.message ? result.message : "已创建黑白观察层") },
       { id: "btnNeutralGray", payload: { action: "neutralGrayLayer" }, pending: "正在创建中性灰图层...", success: (result) => (result && result.message ? result.message : "已创建中性灰图层") },
+      { id: "btnFreqSep", openModal: openFreqSepModal },
       { id: "btnGaussianBlur", payload: { action: "gaussianBlur", radius: 4 }, pending: "正在打开高斯模糊...", success: (result) => (result && result.message ? result.message : "已打开高斯模糊") },
       { id: "btnSharpen", payload: { action: "sharpen" }, pending: "正在打开锐化...", success: (result) => (result && result.message ? result.message : "已打开锐化") },
       { id: "btnHighPass", payload: { action: "highPass", radius: 2 }, pending: "正在打开高反差保留...", success: (result) => (result && result.message ? result.message : "已打开高反差保留") },
@@ -1087,6 +1377,10 @@
       const button = runtime.getById(config.id);
       if (!button) return;
       button.addEventListener("click", async () => {
+        if (typeof config.openModal === "function") {
+          config.openModal();
+          return;
+        }
         if (!runtime.isPluginRuntime()) {
           logToWorkspace(`浏览器预览模式下不会执行工具动作：${config.id}`, "info");
           return;

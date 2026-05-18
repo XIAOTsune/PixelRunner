@@ -236,6 +236,17 @@ body.has-custom-theme-image .panel-main {
   background: transparent;
 }
 
+/* 修复自定义背景下 select 下拉框背景过白、选项文字不可见的问题 */
+body.has-custom-theme-image select.field-input {
+  background: rgba(12, 20, 29, 0.85);
+  color: var(--text-strong);
+}
+
+select.field-input option {
+  background: #1a2533;
+  color: #d8e5f0;
+}
+
 body.is-browser-preview {
   font-size: 14px;
 }
@@ -1434,6 +1445,412 @@ button {
   min-height: 40px;
 }
 
+.tool-space-fx-card {
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(117, 216, 199, 0.48);
+  background:
+    radial-gradient(circle at top right, rgba(255, 213, 106, 0.12), transparent 34%),
+    radial-gradient(circle at left center, rgba(120, 185, 255, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(25, 43, 48, 0.98) 0%, rgba(22, 28, 39, 0.99) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(13, 31, 34, 0.46);
+}
+
+.tool-space-fx-launcher {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-space-fx-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-space-fx-header-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.space-fx-open-btn {
+  width: 100%;
+  min-height: 40px;
+}
+
+.overlay-card.space-fx-modal-card {
+  width: min(96vw, 1440px);
+  min-height: min(86vh, 920px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.space-fx-modal-hero {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(117, 216, 199, 0.48);
+  background:
+    radial-gradient(circle at top left, rgba(255, 213, 106, 0.1), transparent 34%),
+    radial-gradient(circle at right center, rgba(121, 191, 255, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(31, 52, 57, 0.95), rgba(20, 30, 42, 0.98));
+}
+
+.space-fx-modal-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.space-fx-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.space-fx-workbench.is-side-by-side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+}
+
+.space-fx-inline-preview {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(117, 216, 199, 0.42);
+  background:
+    linear-gradient(135deg, rgba(6, 15, 18, 0.74), rgba(18, 39, 45, 0.88)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.03) 0 8px, transparent 8px 16px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.space-fx-lab-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.space-fx-lab-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(117, 216, 199, 0.34);
+  background: rgba(6, 12, 16, 0.94);
+}
+
+.space-fx-lab-tile-wide {
+  min-height: 240px;
+  height: clamp(260px, 42vh, 620px);
+}
+
+.space-fx-workbench.is-side-by-side .space-fx-lab-tile-wide {
+  height: clamp(280px, 48vh, 620px);
+}
+
+.space-fx-workbench:not(.is-side-by-side) .space-fx-lab-tile-wide {
+  height: clamp(260px, 36vh, 460px);
+}
+
+.space-fx-preview-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.32), rgba(13, 22, 30, 0.28)),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 8px, transparent 8px 16px);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.space-fx-preview-viewport.is-panning {
+  cursor: grabbing;
+}
+
+.space-fx-preview-viewport.is-drawing {
+  cursor: crosshair;
+}
+
+.space-fx-base-image,
+.space-fx-lab-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.space-fx-base-image {
+  z-index: 0;
+}
+
+.space-fx-lab-image {
+  z-index: 1;
+}
+
+.space-fx-base-image:not([src]),
+.space-fx-lab-image:not(.is-active) {
+  display: none;
+}
+
+.space-fx-control-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  will-change: transform;
+}
+
+.space-fx-control-center {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid rgba(255, 236, 172, 0.98);
+  border-radius: 999px;
+  background: rgba(255, 213, 106, 0.25);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.38), 0 0 16px rgba(255, 213, 106, 0.68);
+}
+
+.space-fx-control-line {
+  position: absolute;
+  height: 2px;
+  width: 150px;
+  margin-top: -1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(255, 236, 172, 0.96), rgba(117, 216, 199, 0.1));
+  box-shadow: 0 0 12px rgba(117, 216, 199, 0.6);
+}
+
+.space-fx-control-range {
+  position: absolute;
+  width: 180px;
+  height: 120px;
+  margin: -60px 0 0 -90px;
+  border: 1px solid rgba(117, 216, 199, 0.58);
+  border-radius: 999px;
+  box-shadow: inset 0 0 24px rgba(117, 216, 199, 0.08), 0 0 20px rgba(117, 216, 199, 0.22);
+}
+
+.space-fx-draw-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.space-fx-draw-overlay path {
+  fill: none;
+  stroke: rgba(255, 236, 172, 0.98);
+  stroke-width: var(--space-fx-draw-stroke, 7);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px rgba(117, 216, 199, 0.82)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));
+}
+
+.space-fx-preview-tools {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(117, 216, 199, 0.62);
+  background: rgba(7, 17, 22, 0.88);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.space-fx-preview-tool-btn {
+  width: 34px;
+  min-width: 34px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  color: rgba(238, 255, 250, 0.96);
+  background: rgba(36, 111, 116, 0.9);
+}
+
+.space-fx-lab-tile figcaption {
+  flex: 0 0 auto;
+  padding: 6px 7px;
+  border-top: 1px solid rgba(117, 216, 199, 0.24);
+  font-size: 10px;
+  line-height: 1.3;
+  color: rgba(218, 239, 236, 0.82);
+  background: rgba(12, 24, 30, 0.92);
+}
+
+.space-fx-preview-meta {
+  min-height: 26px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: rgba(8, 18, 23, 0.5);
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(204, 229, 226, 0.76);
+}
+
+.space-fx-controls-panel {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 12px;
+  min-width: 0;
+  max-height: calc(100vh - 128px);
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(117, 216, 199, 0.34);
+  background: rgba(11, 27, 33, 0.58);
+}
+
+.space-fx-preset-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.space-fx-draw-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.space-fx-draw-btn {
+  min-height: 36px;
+}
+
+.space-fx-draw-btn.is-active,
+.space-fx-draw-btn[aria-pressed="true"] {
+  color: var(--text-strong);
+  border-color: rgba(255, 213, 106, 0.9);
+  box-shadow: 3px 4px 0 rgba(151, 110, 31, 0.82);
+  background: rgba(114, 88, 34, 0.92);
+}
+
+.space-fx-preset-btn {
+  min-width: 0;
+}
+
+.space-fx-preset-btn.is-selected {
+  color: var(--text-strong);
+  border-color: rgba(117, 216, 199, 0.9);
+  box-shadow: 3px 4px 0 rgba(33, 117, 120, 0.82);
+  background: rgba(33, 98, 101, 0.92);
+}
+
+.space-fx-slider-stack {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.space-fx-slider-field {
+  flex: 1 1 auto;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(15, 36, 43, 0.54);
+}
+
+.space-fx-color-field {
+  background:
+    linear-gradient(135deg, rgba(19, 48, 59, 0.78), rgba(22, 36, 47, 0.58)),
+    radial-gradient(circle at 78% 28%, rgba(125, 223, 255, 0.18), transparent 42%);
+}
+
+.space-fx-modal-actions .secondary-btn,
+.space-fx-modal-actions .primary-btn {
+  min-height: 38px;
+}
+
+@media (max-width: 980px) {
+  .overlay-card.space-fx-modal-card {
+    width: min(96vw, 860px);
+    min-height: auto;
+  }
+
+  .space-fx-controls-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .space-fx-workbench {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .space-fx-lab-tile-wide {
+    min-height: 220px;
+    height: clamp(240px, 36vh, 420px);
+  }
+
+  .space-fx-inline-preview {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .overlay-card.space-fx-modal-card {
+    width: calc(100vw - 20px);
+  }
+
+  .space-fx-lab-tile-wide {
+    min-height: 220px;
+    height: 220px;
+  }
+
+  .space-fx-preview-viewport {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .space-fx-slider-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .space-fx-preset-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .overlay-card.glow-modal-card {
   width: min(96vw, 1440px);
   min-height: min(86vh, 920px);
@@ -1896,6 +2313,192 @@ button {
 #viewTools .tool-item .mini-btn {
   align-self: flex-start;
   min-width: 88px;
+}
+
+.freq-sep-modal-card {
+  width: min(94vw, 720px);
+}
+
+.freq-sep-description,
+.freq-sep-preview-hint {
+  padding: 0 2px;
+}
+
+.freq-sep-params,
+.freq-sep-layer-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.freq-sep-slider-field {
+  gap: 6px;
+}
+
+.freq-sep-param-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.freq-sep-param-value {
+  min-width: 24px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.freq-sep-unit {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.freq-sep-check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.freq-sep-check-field input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.freq-sep-check-field.compact {
+  align-items: center;
+  white-space: nowrap;
+}
+
+.freq-sep-check-field.compact input[type="checkbox"] {
+  margin: 0;
+}
+
+.freq-sep-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+}
+
+.freq-sep-preview-toolbar,
+.freq-sep-preview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.freq-sep-preview-modes {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.freq-sep-preview-modes .mini-btn {
+  min-width: 50px;
+}
+
+.freq-sep-preview-modes .mini-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.freq-sep-preview-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  max-height: 52vh;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+    rgba(0, 0, 0, 0.22);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 6px;
+}
+
+.freq-sep-preview-frame canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+}
+
+.freq-sep-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.freq-sep-preview-empty.is-hidden {
+  display: none;
+}
+
+.freq-sep-preview-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.freq-sep-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .freq-sep-preview-toolbar,
+  .freq-sep-preview-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .freq-sep-preview-modes {
+    justify-content: stretch;
+  }
+
+  .freq-sep-preview-modes .mini-btn,
+  #btnFreqSepRefreshPreview {
+    flex: 1 1 auto;
+  }
+
+  .freq-sep-preview-frame {
+    min-height: 220px;
+  }
+
+  .freq-sep-preview-meta {
+    width: 100%;
+    text-align: left;
+  }
 }
 
 @media (min-width: 460px) {
