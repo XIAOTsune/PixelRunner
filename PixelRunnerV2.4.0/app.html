@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.4.6</span>
+              <span class="version-text">v2.4.7</span>
             </div>
           </div>
         </div>
@@ -112,7 +112,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.6 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.7 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -127,7 +127,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.4.6</span>
+            <span class="version-text">v2.4.7</span>
           </div>
         </div>
 
@@ -261,7 +261,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.4.6</span>
+          <span class="version-text">v2.4.7</span>
           </div>
         </div>
 
@@ -448,15 +448,78 @@
           </details>
 
           <details class="surface-card settings-collapsible">
-            <summary class="settings-collapse-summary">环境诊断</summary>
-            <div class="collapsible-body">
-              <div id="settingsDiagnosticBox" class="diagnostic-box">
-                <p>这里会显示环境摘要、存储状态与运行诊断信息。</p>
+            <summary class="settings-collapse-summary">第三方支持</summary>
+            <div class="form-stack collapsible-body">
+              <label class="field toggle-field">
+                <span class="field-label">启用第三方 API</span>
+                <label class="checkbox-line">
+                  <input id="thirdPartyEnabledInput" type="checkbox" />
+                  <span>在工作台应用切换中显示“第三方 API”卡片</span>
+                </label>
+              </label>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">GRS API URL</span>
+                  <input id="thirdPartyGrsApiUrlInput" class="field-input" type="url" placeholder="https://grsaiapi.com" />
+                </label>
+                <label class="field">
+                  <span class="field-label">GRS API Key</span>
+                  <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
+                </label>
+              </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">生图模型列表</span>
+                  <input id="thirdPartyGrsImageModelsInput" class="field-input" type="text" placeholder="gpt-image-2, nano-banana-pro" />
+                </label>
+                <label class="field">
+                  <span class="field-label">AI 优化文本模型</span>
+                  <input id="thirdPartyGrsChatModelInput" class="field-input" type="text" placeholder="gpt-5.5" />
+                </label>
+              </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">默认模型</span>
+                  <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
+                </label>
+                <label class="field">
+                  <span class="field-label">默认比例</span>
+                  <select id="thirdPartyGrsDefaultRatioInput" class="field-input">
+                    <option value="1:1">1:1</option>
+                    <option value="16:9">16:9</option>
+                    <option value="9:16">9:16</option>
+                    <option value="4:3">4:3</option>
+                    <option value="3:4">3:4</option>
+                    <option value="1024x1024">1024x1024</option>
+                    <option value="1536x1024">1536x1024</option>
+                    <option value="1024x1536">1024x1536</option>
+                  </select>
+                </label>
+              </div>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">默认分辨率</span>
+                  <select id="thirdPartyGrsDefaultResolutionInput" class="field-input">
+                    <option value="1K">1K</option>
+                    <option value="2K">2K</option>
+                    <option value="4K">4K</option>
+                    <option value="1024x1024">1024x1024</option>
+                    <option value="1536x1024">1536x1024</option>
+                    <option value="1024x1536">1024x1536</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field-label">请求适配器</span>
+                  <select id="thirdPartyGrsAdapterInput" class="field-input">
+                    <option value="grs-image-generate">GRS 原生图片生成</option>
+                    <option value="grs-image-openai">GRS OpenAI 图片兼容</option>
+                  </select>
+                </label>
               </div>
               <div class="action-row">
-                <button id="btnLoadParseDebug" class="secondary-btn" type="button">加载最近解析调试</button>
+                <button id="btnScanThirdPartyGrsModels" class="secondary-btn" type="button">扫描 GRS 模型</button>
               </div>
-              <pre id="parseDebugOutput" class="diagnostic-box">这里会显示最近一次应用解析的调试记录。</pre>
+              <div id="thirdPartyStatusSummary" class="summary-strip">启用后，工作台应用切换中会出现固定的第三方 API 卡片。</div>
             </div>
           </details>
         </div>

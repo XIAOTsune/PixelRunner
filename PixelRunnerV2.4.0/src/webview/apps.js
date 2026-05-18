@@ -54,6 +54,18 @@
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID, String(appId || ""));
   }
 
+  function isThirdPartyEnabled() {
+    return Boolean(modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.enabled);
+  }
+
+  function getThirdPartyPickerButton() {
+    if (!isThirdPartyEnabled()) return "";
+    const state = modules.state.state;
+    const isActive = modules.state.isThirdPartyApp(state.currentApp);
+    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
+    return `<button class="picker-item picker-item-special third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS 生图快捷入口</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
+  }
+
   function analyzeAppInputsText(text) {
     const marker = String(text || "").trim();
     if (!marker) return { normalized: [], summary: "当前应用还没有输入结构。", status: "info" };
@@ -204,18 +216,19 @@
       ? state.apps
       : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
 
-    if (statsEl) statsEl.textContent = `${visibleApps.length} / ${state.apps.length}`;
+    if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${state.apps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
     const quickEntryButton = `<button class="picker-item picker-item-special ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>先框选 Photoshop 区域，点击入口即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
+    const thirdPartyButton = getThirdPartyPickerButton();
 
     if (visibleApps.length === 0) {
       listEl.innerHTML =
         state.apps.length === 0
-          ? `${quickEntryButton}<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>`
-          : `${quickEntryButton}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
+          ? `${quickEntryButton}${thirdPartyButton}<div class="picker-empty"><strong>还没有已保存应用</strong><p>请先在设置页添加应用。</p></div>`
+          : `${quickEntryButton}${thirdPartyButton}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
       return;
     }
 
-    listEl.innerHTML = quickEntryButton + visibleApps
+    listEl.innerHTML = quickEntryButton + thirdPartyButton + visibleApps
       .map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
         return `<button class="picker-item is-draggable ${isActive ? "active" : ""}" type="button" draggable="true" value="${runtime.escapeHtml(String(app.id || ""))}" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span></span></button>`;
@@ -301,9 +314,13 @@
 
   async function setCurrentAppById(appId, options = {}) {
     const state = modules.state.state;
+    if (String(appId || "") === modules.state.THIRD_PARTY_APP_ID) {
+      return setCurrentThirdPartyApp(options);
+    }
     const nextApp = state.apps.find((item) => String(item.id) === String(appId));
     if (!nextApp) return false;
 
+    const previousWasThirdParty = modules.state.isThirdPartyApp(state.currentApp);
     state.currentApp = nextApp;
     state.formValues = modules.state.buildDefaultFormValues(nextApp);
     await persistCurrentAppId(nextApp.id || "");
@@ -316,7 +333,38 @@
     modules.workspace.renderWorkspace();
     renderSavedAppsList();
     renderAppPickerList();
+    if (previousWasThirdParty) modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
     if (!options.quiet) modules.ui.logToWorkspace(`已选择应用：${modules.state.getAppDisplayName(nextApp)}`);
+    return true;
+  }
+
+  async function setCurrentThirdPartyApp(options = {}) {
+    const state = modules.state.state;
+    if (!isThirdPartyEnabled()) return false;
+    const nextApp = modules.state.getThirdPartyApp();
+    state.currentApp = nextApp;
+    const defaults = modules.state.buildDefaultFormValues(nextApp);
+    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
+    const rawLast = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_LAST_SELECTION);
+    const last = modules.runtime.readJsonText(rawLast, {});
+    state.formValues = {
+      ...defaults,
+      model: grs.selectedModel || defaults.model || "",
+      aspectRatio: grs.aspectRatio || defaults.aspectRatio || "1:1",
+      resolution: grs.resolution || defaults.resolution || "1K",
+      ...(last && typeof last === "object" ? last : {})
+    };
+    await persistCurrentAppId(modules.state.THIRD_PARTY_APP_ID);
+    if (!options.preserveWorkspaceMode && modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
+      await modules.quickEntries.setWorkspaceMode("app", { skipRender: true });
+    } else if (!options.preserveWorkspaceMode) {
+      state.workspaceMode = "app";
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE, "app");
+    }
+    modules.workspace.renderWorkspace();
+    renderSavedAppsList();
+    renderAppPickerList();
+    if (!options.quiet) modules.ui.logToWorkspace("已选择第三方 API：GRS 生图入口");
     return true;
   }
 
@@ -326,6 +374,7 @@
     if (currentId && (await setCurrentAppById(currentId, { quiet: true, preserveWorkspaceMode: true }))) return;
 
     const persistedId = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID);
+    if (persistedId === modules.state.THIRD_PARTY_APP_ID && (await setCurrentThirdPartyApp({ quiet: true, preserveWorkspaceMode: true }))) return;
     if (persistedId && (await setCurrentAppById(persistedId, { quiet: true, preserveWorkspaceMode: true }))) return;
 
     state.currentApp = null;
@@ -418,6 +467,14 @@
         renderAppPickerList();
         modules.workspace.setModalOpen("appPickerModal", false);
         modules.ui.logToWorkspace("已切换到快捷入口模式。", "info");
+        return;
+      }
+
+      if (item.getAttribute("data-action") === "select-third-party-app") {
+        if (await setCurrentThirdPartyApp()) {
+          renderAppPickerList();
+          modules.workspace.setModalOpen("appPickerModal", false);
+        }
         return;
       }
 
@@ -637,6 +694,7 @@
     renderSavedAppsList,
     renderAppPickerList,
     setCurrentAppById,
+    setCurrentThirdPartyApp,
     hydrateCurrentApp,
     refreshWorkspaceApps,
     openAppEditor,
