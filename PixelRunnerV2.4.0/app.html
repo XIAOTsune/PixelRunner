@@ -908,7 +908,7 @@
       <div class="freq-sep-params">
         <label class="field freq-sep-slider-field">
           <span class="freq-sep-param-line">
-            <span class="field-label">模糊半径</span>
+            <span class="field-label">分离半径</span>
             <span id="freqSepRadiusValue" class="freq-sep-param-value">10</span>
             <span class="freq-sep-unit">px</span>
           </span>
@@ -916,20 +916,39 @@
         </label>
       </div>
 
+      <div id="freqSepPreviewPanel" class="freq-sep-preview-panel">
+        <div class="freq-sep-preview-toolbar">
+          <span id="freqSepPreviewState" class="status-chip">等待捕获</span>
+          <div class="freq-sep-preview-modes" aria-label="高低频预览模式">
+            <button class="mini-btn active" type="button" data-freq-sep-preview-mode="split">分离</button>
+            <button class="mini-btn" type="button" data-freq-sep-preview-mode="low">低频</button>
+            <button class="mini-btn" type="button" data-freq-sep-preview-mode="high">高频</button>
+          </div>
+        </div>
+        <div class="freq-sep-preview-frame">
+          <canvas id="freqSepPreviewCanvas" aria-label="高低频分离预览"></canvas>
+          <div id="freqSepPreviewEmpty" class="freq-sep-preview-empty">打开面板后会捕获当前图像</div>
+        </div>
+        <div class="freq-sep-preview-footer">
+          <button id="btnFreqSepRefreshPreview" class="mini-btn" type="button">刷新预览</button>
+          <label class="freq-sep-check-field compact">
+            <input id="freqSepVisualBoostToggle" type="checkbox" checked />
+            <span>视觉增强</span>
+          </label>
+          <span id="freqSepPreviewMeta" class="freq-sep-preview-meta">低频 &lt;- 预览 -&gt; 高频</span>
+        </div>
+      </div>
+
       <div class="freq-sep-layer-options">
         <span class="field-label">附加图层</span>
         <label class="freq-sep-check-field">
-          <input id="freqSepObserverToggle" type="checkbox" checked />
-          <span>创建黑白观察层</span>
-        </label>
-        <label class="freq-sep-check-field">
           <input id="freqSepColorAdjustToggle" type="checkbox" checked />
-          <span>创建色彩调整层组（曲线 + 色彩平衡 + 色相/饱和度）</span>
+          <span>创建颜色辅助层（颜色混合层 + 颜色覆盖层）</span>
         </label>
       </div>
 
       <div class="freq-sep-preview-hint">
-        <p class="subtle-note">模糊半径越大，低频保留的颜色信息越多，高频提取的纹理越少。建议值 5-15px。</p>
+        <p class="subtle-note">半径越大，低频承接更宽的颜色/光影，高频只留下更粗的纹理边缘。建议值 5-15px。</p>
       </div>
 
       <div class="action-row freq-sep-actions">

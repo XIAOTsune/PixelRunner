@@ -2316,7 +2316,7 @@ button {
 }
 
 .freq-sep-modal-card {
-  width: min(92vw, 480px);
+  width: min(94vw, 720px);
 }
 
 .freq-sep-description,
@@ -2373,8 +2373,132 @@ button {
   margin: 2px 0 0;
 }
 
+.freq-sep-check-field.compact {
+  align-items: center;
+  white-space: nowrap;
+}
+
+.freq-sep-check-field.compact input[type="checkbox"] {
+  margin: 0;
+}
+
+.freq-sep-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+}
+
+.freq-sep-preview-toolbar,
+.freq-sep-preview-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.freq-sep-preview-modes {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.freq-sep-preview-modes .mini-btn {
+  min-width: 50px;
+}
+
+.freq-sep-preview-modes .mini-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.freq-sep-preview-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  max-height: 52vh;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.035) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.035) 75%),
+    rgba(0, 0, 0, 0.22);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 6px;
+}
+
+.freq-sep-preview-frame canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+}
+
+.freq-sep-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.freq-sep-preview-empty.is-hidden {
+  display: none;
+}
+
+.freq-sep-preview-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .freq-sep-actions {
   justify-content: flex-end;
+}
+
+@media (max-width: 560px) {
+  .freq-sep-preview-toolbar,
+  .freq-sep-preview-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .freq-sep-preview-modes {
+    justify-content: stretch;
+  }
+
+  .freq-sep-preview-modes .mini-btn,
+  #btnFreqSepRefreshPreview {
+    flex: 1 1 auto;
+  }
+
+  .freq-sep-preview-frame {
+    min-height: 220px;
+  }
+
+  .freq-sep-preview-meta {
+    width: 100%;
+    text-align: left;
+  }
 }
 
 @media (min-width: 460px) {

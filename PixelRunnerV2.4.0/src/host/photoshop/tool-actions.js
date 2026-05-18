@@ -251,8 +251,34 @@ async function applyImageSubtract(action, sourceLayerId, scale = 2, offset = 128
     scale,
     offset,
     invert: false,
-    preserveTransparency: true
+    preserveTransparency: false
   }], {});
+}
+
+async function applyImageAddInverted(action, sourceLayerId, scale = 2, offset = 0) {
+  await action.batchPlay([{
+    _obj: "applyImage",
+    with: {
+      _ref: [
+        { _ref: "channel", _enum: "channel", _value: "RGB" },
+        { _ref: "layer", _id: sourceLayerId }
+      ]
+    },
+    calculation: { _enum: "calculationType", _value: "add" },
+    scale,
+    offset,
+    invert: true,
+    preserveTransparency: false
+  }], {});
+}
+
+async function applyFrequencySeparationImage(action, sourceLayerId, bitDepth) {
+  if (Number(bitDepth) > 8) {
+    await applyImageAddInverted(action, sourceLayerId, 2, 0);
+    return "addInverted16";
+  }
+  await applyImageSubtract(action, sourceLayerId, 2, 128);
+  return "subtract8";
 }
 
 async function makeAdjustmentLayer(action, layerName, type) {
@@ -263,6 +289,43 @@ async function makeAdjustmentLayer(action, layerName, type) {
       _obj: "adjustmentLayer",
       name: layerName,
       type: { _obj: type }
+    }
+  }], {});
+}
+
+async function makeEmptyPixelLayer(action, layerName) {
+  await action.batchPlay([{
+    _obj: "make",
+    _target: [{ _ref: "layer" }],
+    using: {
+      _obj: "layer",
+      name: layerName
+    }
+  }], {});
+}
+
+async function fillActiveLayerWithGray(action, gray = 128) {
+  const value = Math.min(255, Math.max(0, Math.round(Number(gray) || 128)));
+  await action.batchPlay([{
+    _obj: "fill",
+    using: {
+      _obj: "RGBColor",
+      red: value,
+      green: value,
+      blue: value
+    },
+    opacity: { _unit: "percentUnit", _value: 100 },
+    mode: { _enum: "blendMode", _value: "normal" }
+  }], {});
+}
+
+async function setActiveLayerClippingMask(action, enabled = true) {
+  await action.batchPlay([{
+    _obj: "set",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "layer",
+      group: Boolean(enabled)
     }
   }], {});
 }
@@ -284,6 +347,34 @@ async function selectLayerIds(action, layerIds) {
 async function groupSelectedLayers(action, groupName) {
   await action.batchPlay([{ _obj: "groupEvent" }], {});
   await renameActiveLayer(action, groupName);
+}
+
+async function lockActiveLayer(action) {
+  await action.batchPlay([{
+    _obj: "set",
+    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+    to: {
+      _obj: "layer",
+      locked: true
+    }
+  }], {});
+}
+
+async function moveLayerBefore(action, layerId, referenceLayerId) {
+  await action.batchPlay([{
+    _obj: "move",
+    _target: [{ _ref: "layer", _id: layerId }],
+    to: { _ref: "layer", _id: referenceLayerId, _enum: "ordinal", _value: "placeBefore" }
+  }], {});
+}
+
+async function moveLayerToTarget(action, layerId, referenceLayerId, position) {
+  const ordinal = position === "placeAfter" ? "placeAfter" : "placeBefore";
+  await action.batchPlay([{
+    _obj: "move",
+    _target: [{ _ref: "layer", _id: layerId }],
+    to: { _ref: "layer", _id: referenceLayerId, _enum: "ordinal", _value: ordinal }
+  }], {});
 }
 
 function getDocumentPixelSize(doc) {
@@ -1351,71 +1442,129 @@ async function runModalToolAction(actionName, payload, app, document, action, co
     }
     case "frequencySeparation": {
       const blurRadius = clampNumber(payload.blurRadius ?? payload.radius, 1, 50, 10);
-      const createObserver = payload.createObserver !== false;
       const createColorAdjust = payload.createColorAdjust !== false;
       const sourceLayerId = getActiveLayerId(app);
       if (!(sourceLayerId > 0)) throw new Error("请先选择一个可复制的图层。");
+      const createdLayerIds = [];
 
+      // ── 目标图层顺序（从上到下）──
+      //   高频修改层（正常，剪贴到纹理层）
+      //   纹理层（线性光，高反差保留）
+      //   颜色覆盖层（正常，剪贴到低频处理层）
+      //   颜色混合层（颜色，剪贴到低频处理层）
+      //   低频处理层（高斯模糊，锁定）
+      //
+      // 都在"高低频磨皮"图层组内
+
+      // 第1步：复制原图层作为低频处理层
       await selectLayerById(action, sourceLayerId);
-      await duplicateActiveLayer(action, "低频");
+      await duplicateActiveLayer(action, "低频处理层");
       const lowLayerId = getActiveLayerId(app);
-      if (!(lowLayerId > 0)) throw new Error("低频层创建失败。");
-      await applyGaussianBlur(action, blurRadius);
+      if (!(lowLayerId > 0)) throw new Error("低频处理层创建失败。");
 
+      // 第2步：复制原图层作为纹理层
       await selectLayerById(action, sourceLayerId);
-      await duplicateActiveLayer(action, "高频");
-      const highLayerId = getActiveLayerId(app);
-      if (!(highLayerId > 0)) throw new Error("高频层创建失败。");
-      try {
-        await applyImageSubtract(action, lowLayerId, 2, 128);
-      } catch (_) {
-        await applyHighPass(action, blurRadius);
-      }
+      await duplicateActiveLayer(action, "纹理层");
+      const textureLayerId = getActiveLayerId(app);
+      if (!(textureLayerId > 0)) throw new Error("纹理层创建失败。");
+
+      // 此时顺序（从下到上）：原图层 → 纹理层 → 低频处理层
+      // 因为 duplicate 把复制出的图层放在原图层上方，第二次复制也在原图层上方（在第一次下方）
+
+      // 第3步：低频处理层 → 高斯模糊 + 锁定
+      await selectLayerById(action, lowLayerId);
+      await applyGaussianBlur(action, blurRadius);
+      await lockActiveLayer(action);
+
+      // 第4步：纹理层 → 高反差保留 + 线性光
+      await selectLayerById(action, textureLayerId);
+      await applyHighPass(action, blurRadius);
       await setActiveLayerStyle(action, 100, "linearLight");
 
-      const adjustmentLayerIds = [];
-      if (createColorAdjust) {
-        const adjustments = [
-          ["色相/饱和度", "hueSaturation"],
-          ["色彩平衡", "colorBalance"],
-          ["曲线", "curves"]
-        ];
-        for (const [layerName, type] of adjustments) {
-          try {
-            await makeAdjustmentLayer(action, layerName, type);
-            const layerId = getActiveLayerId(app);
-            if (layerId > 0) adjustmentLayerIds.push(layerId);
-          } catch (_) {}
-        }
-      }
-
-      let observerLayerId = 0;
-      if (createObserver) {
+      // 第5步：复制纹理层 → 高频修改层（正常，剪贴到纹理层）
+      await selectLayerById(action, textureLayerId);
+      await duplicateActiveLayer(action, "高频修改层");
+      const highEditLayerId = getActiveLayerId(app);
+      if (highEditLayerId > 0) {
+        await setActiveLayerStyle(action, 100, "normal");
         try {
-          await makeAdjustmentLayer(action, "观察层", "blackAndWhite");
-          observerLayerId = getActiveLayerId(app);
+          await setActiveLayerClippingMask(action, true);
         } catch (_) {}
+        createdLayerIds.push(highEditLayerId);
+      }
+      // 此时顺序（从下到上）：原图层 → 纹理层 → 高频修改层 → 低频处理层
+
+      // 第6步：颜色辅助层
+      if (createColorAdjust) {
+        // 选中低频处理层 → 新建图层在其上方
+        await selectLayerById(action, lowLayerId);
+        await makeEmptyPixelLayer(action, "颜色混合层");
+        const colorMixLayerId = getActiveLayerId(app);
+        if (colorMixLayerId > 0) {
+          await setActiveLayerStyle(action, 100, "color");
+          try {
+            await setActiveLayerClippingMask(action, true);
+          } catch (_) {}
+          createdLayerIds.push(colorMixLayerId);
+        }
+
+        // 再新建一个，在颜色混合层上方
+        await makeEmptyPixelLayer(action, "颜色覆盖层");
+        const colorOverlayLayerId = getActiveLayerId(app);
+        if (colorOverlayLayerId > 0) {
+          await setActiveLayerStyle(action, 100, "normal");
+          try {
+            await setActiveLayerClippingMask(action, true);
+          } catch (_) {}
+          createdLayerIds.push(colorOverlayLayerId);
+        }
+        // 此时顺序（从下到上）：原图层 → 纹理层 → 高频修改层 → 低频处理层 → 颜色混合层 → 颜色覆盖层
       }
 
-      const groupLayerIds = [
-        observerLayerId,
-        ...adjustmentLayerIds,
-        highLayerId,
+      // 第7步：创建图层组，包含所有新建图层
+      const allLayerIds = [
+        highEditLayerId,
+        createColorAdjust ? colorOverlayLayerId : null,
+        createColorAdjust ? colorMixLayerId : null,
+        textureLayerId,
         lowLayerId
       ].filter((id) => Number(id) > 0);
 
-      if (groupLayerIds.length >= 2) {
-        await selectLayerIds(action, groupLayerIds);
-        await groupSelectedLayers(action, "高低频");
-      }
+      // 选中所有新建图层和原图层一起建组
+      const groupSelectionIds = [...allLayerIds, sourceLayerId].filter((id) => Number(id) > 0);
+      await selectLayerIds(action, groupSelectionIds);
+      await groupSelectedLayers(action, "高低频磨皮");
+      const groupId = getActiveLayerId(app);
+      if (groupId > 0) createdLayerIds.push(groupId);
 
-      return buildToolCommandResponse(actionName, app, `已创建高低频分离：低频层 + 高频层，半径 ${blurRadius}px。`, {
+      // 第8步：把原图层移出组外
+      await moveLayerToTarget(action, sourceLayerId, groupId, "placeAfter");
+
+      // 第9步：在组内调整顺序
+      // 当前组内顺序（从下到上）：纹理层 → 高频修改层 → 低频处理层 → [颜色混合层 → 颜色覆盖层]
+      // 目标（从下到上）：低频处理层 → [颜色混合层 → 颜色覆盖层] → 纹理层 → 高频修改层
+      //
+      // 先把低频处理层移到纹理层下方（组内最底部）
+      await moveLayerToTarget(action, lowLayerId, textureLayerId, "placeBefore");
+      // 现在：低频处理层 → 纹理层 → 高频修改层 → [颜色混合层 → 颜色覆盖层]
+
+      if (createColorAdjust) {
+        // 把颜色混合层移到低频处理层上方、纹理层下方
+        await moveLayerToTarget(action, colorMixLayerId, lowLayerId, "placeAfter");
+        // 把颜色覆盖层移到颜色混合层上方、纹理层下方
+        await moveLayerToTarget(action, colorOverlayLayerId, colorMixLayerId, "placeAfter");
+      }
+      // 现在：低频处理层 → [颜色混合层 → 颜色覆盖层] → 纹理层 → 高频修改层 ✓
+
+      return buildToolCommandResponse(actionName, app, `已创建高低频磨皮：低频处理层 + 纹理层 + 高频修改层 + 颜色辅助层，半径 ${blurRadius}px。`, {
         blurRadius,
         sourceLayerId,
         lowLayerId,
-        highLayerId,
-        createObserver: Boolean(observerLayerId),
-        createColorAdjust: adjustmentLayerIds.length > 0
+        textureLayerId,
+        highEditLayerId,
+        createColorAdjust: Boolean(createColorAdjust),
+        groupId,
+        createdLayerIds
       });
     }
     case "glow":
