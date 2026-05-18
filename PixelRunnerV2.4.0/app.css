@@ -2315,6 +2315,68 @@ button {
   min-width: 88px;
 }
 
+.freq-sep-modal-card {
+  width: min(92vw, 480px);
+}
+
+.freq-sep-description,
+.freq-sep-preview-hint {
+  padding: 0 2px;
+}
+
+.freq-sep-params,
+.freq-sep-layer-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+}
+
+.freq-sep-slider-field {
+  gap: 6px;
+}
+
+.freq-sep-param-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.freq-sep-param-value {
+  min-width: 24px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.freq-sep-unit {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.freq-sep-check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.freq-sep-check-field input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.freq-sep-actions {
+  justify-content: flex-end;
+}
+
 @media (min-width: 460px) {
   #viewTools .tool-list {
     flex-direction: row;

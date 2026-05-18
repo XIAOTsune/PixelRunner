@@ -1072,9 +1072,76 @@
       }
     });
 
+    const openFreqSepModal = () => {
+      if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+        modules.workspace.setModalOpen("freqSepModal", true);
+      }
+    };
+
+    const closeFreqSepModal = () => {
+      if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+        modules.workspace.setModalOpen("freqSepModal", false);
+      }
+    };
+
+    const freqSepRadiusInput = runtime.getById("freqSepRadiusInput");
+    const freqSepRadiusValue = runtime.getById("freqSepRadiusValue");
+    const freqSepObserverToggle = runtime.getById("freqSepObserverToggle");
+    const freqSepColorAdjustToggle = runtime.getById("freqSepColorAdjustToggle");
+    const freqSepApplyButton = runtime.getById("btnFreqSepApply");
+
+    if (freqSepRadiusInput && freqSepRadiusValue) {
+      const syncFreqSepRadius = () => {
+        freqSepRadiusValue.textContent = String(freqSepRadiusInput.value || "10");
+      };
+      freqSepRadiusInput.addEventListener("input", syncFreqSepRadius);
+      syncFreqSepRadius();
+    }
+
+    ["freqSepModalClose", "btnFreqSepCancel"].forEach((id) => {
+      const button = runtime.getById(id);
+      if (button) button.addEventListener("click", closeFreqSepModal);
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target && event.target.closest("#freqSepBackdrop")) {
+        closeFreqSepModal();
+      }
+    });
+
+    if (freqSepApplyButton) {
+      freqSepApplyButton.addEventListener("click", async () => {
+        if (!runtime.isPluginRuntime()) {
+          logToWorkspace("浏览器预览模式下不会执行高低频分离。", "info");
+          return;
+        }
+
+        const blurRadius = Math.min(50, Math.max(1, Number(freqSepRadiusInput && freqSepRadiusInput.value) || 10));
+        const payload = {
+          action: "frequencySeparation",
+          blurRadius,
+          createObserver: !freqSepObserverToggle || freqSepObserverToggle.checked,
+          createColorAdjust: !freqSepColorAdjustToggle || freqSepColorAdjustToggle.checked
+        };
+
+        freqSepApplyButton.disabled = true;
+        logToWorkspace(`正在创建高低频分离：半径 ${blurRadius}px...`, "info");
+        try {
+          const result = await runtime.callHost("photoshop.runToolAction", [payload], { timeoutMs: 60000 });
+          logToWorkspace(result && result.message ? result.message : "已创建高低频分离图层组。", "success");
+          closeFreqSepModal();
+        } catch (error) {
+          logToWorkspace(`高低频执行失败：${error.message}`, "error");
+        } finally {
+          freqSepApplyButton.disabled = false;
+        }
+      });
+    }
+
     const toolConfigs = [
       { id: "btnObserver", payload: { action: "observerLayer", layerName: "黑白观察层" }, pending: "正在创建黑白观察层...", success: (result) => (result && result.message ? result.message : "已创建黑白观察层") },
       { id: "btnNeutralGray", payload: { action: "neutralGrayLayer" }, pending: "正在创建中性灰图层...", success: (result) => (result && result.message ? result.message : "已创建中性灰图层") },
+      { id: "btnFreqSep", openModal: openFreqSepModal },
       { id: "btnGaussianBlur", payload: { action: "gaussianBlur", radius: 4 }, pending: "正在打开高斯模糊...", success: (result) => (result && result.message ? result.message : "已打开高斯模糊") },
       { id: "btnSharpen", payload: { action: "sharpen" }, pending: "正在打开锐化...", success: (result) => (result && result.message ? result.message : "已打开锐化") },
       { id: "btnHighPass", payload: { action: "highPass", radius: 2 }, pending: "正在打开高反差保留...", success: (result) => (result && result.message ? result.message : "已打开高反差保留") },
@@ -1087,6 +1154,10 @@
       const button = runtime.getById(config.id);
       if (!button) return;
       button.addEventListener("click", async () => {
+        if (typeof config.openModal === "function") {
+          config.openModal();
+          return;
+        }
         if (!runtime.isPluginRuntime()) {
           logToWorkspace(`浏览器预览模式下不会执行工具动作：${config.id}`, "info");
           return;

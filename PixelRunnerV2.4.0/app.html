@@ -163,7 +163,7 @@
           <section class="surface-card">
             <div class="card-head">
               <h3 class="card-title">图层辅助</h3>
-              <span class="status-chip">2 项预置</span>
+              <span class="status-chip">3 项预置</span>
             </div>
             <div class="tool-list">
               <article class="tool-item">
@@ -179,6 +179,13 @@
                   <p>预留 50% 灰加柔光的修图入口。</p>
                 </div>
                 <button id="btnNeutralGray" class="mini-btn" type="button">创建</button>
+              </article>
+              <article class="tool-item">
+                <div>
+                  <h4>高低频</h4>
+                  <p>分离为纹理层和颜色层，便于精修。</p>
+                </div>
+                <button id="btnFreqSep" class="mini-btn" type="button">创建</button>
               </article>
             </div>
           </section>
@@ -880,6 +887,55 @@
       </div>
 
       <div id="glowHint" class="summary-strip">打开面板后会捕获当前图像，在插件内生成 CPU 辉光预览。</div>
+    </section>
+  </div>
+
+  <div id="freqSepModal" class="overlay-modal">
+    <div id="freqSepBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card freq-sep-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 class="card-title">高低频分离</h3>
+        </div>
+        <button id="freqSepModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="freq-sep-description">
+        <p class="subtle-note">将当前图层分离为低频（颜色/光影）和高频（纹理/细节），便于分别精修。</p>
+      </div>
+
+      <div class="freq-sep-params">
+        <label class="field freq-sep-slider-field">
+          <span class="freq-sep-param-line">
+            <span class="field-label">模糊半径</span>
+            <span id="freqSepRadiusValue" class="freq-sep-param-value">10</span>
+            <span class="freq-sep-unit">px</span>
+          </span>
+          <input id="freqSepRadiusInput" class="field-input" type="range" min="1" max="50" step="1" value="10" />
+        </label>
+      </div>
+
+      <div class="freq-sep-layer-options">
+        <span class="field-label">附加图层</span>
+        <label class="freq-sep-check-field">
+          <input id="freqSepObserverToggle" type="checkbox" checked />
+          <span>创建黑白观察层</span>
+        </label>
+        <label class="freq-sep-check-field">
+          <input id="freqSepColorAdjustToggle" type="checkbox" checked />
+          <span>创建色彩调整层组（曲线 + 色彩平衡 + 色相/饱和度）</span>
+        </label>
+      </div>
+
+      <div class="freq-sep-preview-hint">
+        <p class="subtle-note">模糊半径越大，低频保留的颜色信息越多，高频提取的纹理越少。建议值 5-15px。</p>
+      </div>
+
+      <div class="action-row freq-sep-actions">
+        <button id="btnFreqSepCancel" class="secondary-btn" type="button">取消</button>
+        <button id="btnFreqSepApply" class="primary-btn" type="button">创建高低频</button>
+      </div>
     </section>
   </div>
 

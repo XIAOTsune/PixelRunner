@@ -231,6 +231,61 @@ async function applyGaussianBlur(action, radius) {
   }], {});
 }
 
+async function applyHighPass(action, radius) {
+  await action.batchPlay([{
+    _obj: "highPass",
+    radius: { _unit: "pixelsUnit", _value: radius }
+  }], {});
+}
+
+async function applyImageSubtract(action, sourceLayerId, scale = 2, offset = 128) {
+  await action.batchPlay([{
+    _obj: "applyImage",
+    with: {
+      _ref: [
+        { _ref: "channel", _enum: "channel", _value: "RGB" },
+        { _ref: "layer", _id: sourceLayerId }
+      ]
+    },
+    calculation: { _enum: "calculationType", _value: "subtract" },
+    scale,
+    offset,
+    invert: false,
+    preserveTransparency: true
+  }], {});
+}
+
+async function makeAdjustmentLayer(action, layerName, type) {
+  await action.batchPlay([{
+    _obj: "make",
+    _target: [{ _ref: "adjustmentLayer" }],
+    using: {
+      _obj: "adjustmentLayer",
+      name: layerName,
+      type: { _obj: type }
+    }
+  }], {});
+}
+
+async function selectLayerIds(action, layerIds) {
+  const ids = layerIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0);
+  if (ids.length === 0) return;
+  await selectLayerById(action, ids[0]);
+  for (const id of ids.slice(1)) {
+    await action.batchPlay([{
+      _obj: "select",
+      _target: [{ _ref: "layer", _id: id }],
+      selectionModifier: { _enum: "selectionModifierType", _value: "addToSelection" },
+      makeVisible: false
+    }], {});
+  }
+}
+
+async function groupSelectedLayers(action, groupName) {
+  await action.batchPlay([{ _obj: "groupEvent" }], {});
+  await renameActiveLayer(action, groupName);
+}
+
 function getDocumentPixelSize(doc) {
   const width = Math.max(1, Number(doc && doc.width && (doc.width._value ?? doc.width.value ?? doc.width)) || 1);
   const height = Math.max(1, Number(doc && doc.height && (doc.height._value ?? doc.height.value ?? doc.height)) || 1);
@@ -1293,6 +1348,75 @@ async function runModalToolAction(actionName, payload, app, document, action, co
           app.activeDocument = document;
         } catch (_) {}
       }
+    }
+    case "frequencySeparation": {
+      const blurRadius = clampNumber(payload.blurRadius ?? payload.radius, 1, 50, 10);
+      const createObserver = payload.createObserver !== false;
+      const createColorAdjust = payload.createColorAdjust !== false;
+      const sourceLayerId = getActiveLayerId(app);
+      if (!(sourceLayerId > 0)) throw new Error("请先选择一个可复制的图层。");
+
+      await selectLayerById(action, sourceLayerId);
+      await duplicateActiveLayer(action, "低频");
+      const lowLayerId = getActiveLayerId(app);
+      if (!(lowLayerId > 0)) throw new Error("低频层创建失败。");
+      await applyGaussianBlur(action, blurRadius);
+
+      await selectLayerById(action, sourceLayerId);
+      await duplicateActiveLayer(action, "高频");
+      const highLayerId = getActiveLayerId(app);
+      if (!(highLayerId > 0)) throw new Error("高频层创建失败。");
+      try {
+        await applyImageSubtract(action, lowLayerId, 2, 128);
+      } catch (_) {
+        await applyHighPass(action, blurRadius);
+      }
+      await setActiveLayerStyle(action, 100, "linearLight");
+
+      const adjustmentLayerIds = [];
+      if (createColorAdjust) {
+        const adjustments = [
+          ["色相/饱和度", "hueSaturation"],
+          ["色彩平衡", "colorBalance"],
+          ["曲线", "curves"]
+        ];
+        for (const [layerName, type] of adjustments) {
+          try {
+            await makeAdjustmentLayer(action, layerName, type);
+            const layerId = getActiveLayerId(app);
+            if (layerId > 0) adjustmentLayerIds.push(layerId);
+          } catch (_) {}
+        }
+      }
+
+      let observerLayerId = 0;
+      if (createObserver) {
+        try {
+          await makeAdjustmentLayer(action, "观察层", "blackAndWhite");
+          observerLayerId = getActiveLayerId(app);
+        } catch (_) {}
+      }
+
+      const groupLayerIds = [
+        observerLayerId,
+        ...adjustmentLayerIds,
+        highLayerId,
+        lowLayerId
+      ].filter((id) => Number(id) > 0);
+
+      if (groupLayerIds.length >= 2) {
+        await selectLayerIds(action, groupLayerIds);
+        await groupSelectedLayers(action, "高低频");
+      }
+
+      return buildToolCommandResponse(actionName, app, `已创建高低频分离：低频层 + 高频层，半径 ${blurRadius}px。`, {
+        blurRadius,
+        sourceLayerId,
+        lowLayerId,
+        highLayerId,
+        createObserver: Boolean(observerLayerId),
+        createColorAdjust: adjustmentLayerIds.length > 0
+      });
     }
     case "glow":
     case "glowPreviewStart":
