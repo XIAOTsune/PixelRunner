@@ -2647,6 +2647,16 @@ button {
   overflow: auto;
 }
 
+#appPickerList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  align-content: start;
+  gap: 8px;
+  min-height: 320px;
+  max-height: min(62vh, 560px);
+  padding: 1px 2px 8px;
+}
+
 .picker-item,
 .picker-empty {
   width: 100%;
@@ -2673,6 +2683,39 @@ button {
   padding: 7px;
 }
 
+#appPickerList .app-picker-tile {
+  position: relative;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  min-height: 142px;
+  padding: 7px;
+  border-width: 1px;
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(var(--surface-soft-rgb), 0.92), rgba(var(--surface-rgb), 0.86));
+  box-shadow: none;
+}
+
+#appPickerList .app-picker-tile:hover {
+  transform: translateY(-1px);
+  border-color: var(--cta-strong);
+  background:
+    linear-gradient(180deg, rgba(var(--control-rgb), 0.78), rgba(var(--surface-rgb), 0.9));
+}
+
+#appPickerList .app-picker-tile.active {
+  border-color: var(--accent);
+  background:
+    linear-gradient(180deg, var(--accent-wash), rgba(var(--surface-rgb), 0.9));
+  box-shadow: inset 0 0 0 1px rgba(99, 214, 123, 0.42);
+}
+
+#appPickerList .picker-empty {
+  grid-column: 1 / -1;
+}
+
 .app-picker-card-main {
   display: flex;
   min-width: 0;
@@ -2686,6 +2729,12 @@ button {
   text-align: left;
 }
 
+#appPickerList .app-picker-tile .app-picker-card-main {
+  width: 100%;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .app-picker-card-main:hover {
   color: var(--text-strong);
 }
@@ -2695,6 +2744,30 @@ button {
   flex: 0 0 auto;
   flex-direction: column;
   gap: 4px;
+}
+
+#appPickerList .app-picker-tile .app-picker-card-actions {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  flex-direction: row;
+  gap: 4px;
+  opacity: 0.72;
+}
+
+#appPickerList .app-picker-tile:hover .app-picker-card-actions,
+#appPickerList .app-picker-tile:focus-within .app-picker-card-actions {
+  opacity: 1;
+}
+
+.app-picker-icon-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .app-card-thumb {
@@ -2708,6 +2781,14 @@ button {
   background:
     linear-gradient(135deg, rgba(99, 214, 123, 0.16), rgba(169, 222, 242, 0.12)),
     rgba(var(--surface-soft-rgb), var(--surface-soft-alpha));
+}
+
+#appPickerList .app-picker-tile .app-card-thumb {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border-color: rgba(122, 154, 184, 0.36);
 }
 
 .app-card-thumb img {
@@ -2728,6 +2809,10 @@ button {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+#appPickerList .app-picker-tile .app-card-thumb span {
+  font-size: 12px;
 }
 
 .app-card-thumb.is-empty img {
@@ -2833,12 +2918,39 @@ button {
   font-weight: 700;
 }
 
+#appPickerList .app-picker-tile .picker-item-title {
+  display: -webkit-box;
+  min-height: 30px;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 11px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .picker-item-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   color: var(--muted);
   font-size: 9px;
+}
+
+#appPickerList .app-picker-tile .picker-item-meta {
+  display: block;
+  width: calc(100% - 52px);
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#appPickerList .app-picker-special-card {
+  min-height: 96px;
+  justify-content: center;
 }
 
 .picker-item-desc {
@@ -2854,6 +2966,10 @@ button {
 
 .app-picker-editor-view .field-textarea {
   min-height: 76px;
+}
+
+.app-picker-advanced-field[hidden] {
+  display: none !important;
 }
 
 .app-picker-confirm-view {

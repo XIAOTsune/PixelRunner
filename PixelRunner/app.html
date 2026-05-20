@@ -576,19 +576,19 @@
           <span class="field-label">应用名称</span>
           <input id="appPickerEditorNameInput" class="field-input" type="text" placeholder="例如：SDXL 风格化" />
         </label>
-        <label class="field">
+        <label class="field app-picker-advanced-field" hidden>
           <span class="field-label">说明</span>
           <textarea id="appPickerEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
         </label>
-        <label class="field">
+        <label class="field app-picker-advanced-field" hidden>
           <span class="field-label">预览图 URL / 路径</span>
           <input id="appPickerEditorPreviewImageInput" class="field-input" type="text" placeholder="可选：RunningHub 封面、图片 URL、plugin:/ 或 data:image" />
         </label>
-        <label class="field">
+        <label class="field app-picker-advanced-field" hidden>
           <span class="field-label">输入结构 JSON</span>
           <textarea id="appPickerEditorInputsInput" class="field-input field-textarea" rows="7"></textarea>
         </label>
-        <div id="appPickerEditorSchemaSummary" class="summary-strip">输入结构摘要</div>
+        <div id="appPickerEditorSchemaSummary" class="summary-strip app-picker-advanced-field" hidden>输入结构摘要</div>
         <div id="appPickerEditorStatus" class="summary-strip">输入应用 ID 或链接后解析，确认名称后保存。</div>
         <div class="action-row">
           <button id="btnCancelPickerAppEditor" class="secondary-btn" type="button">取消</button>

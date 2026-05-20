@@ -81,7 +81,7 @@
     const state = modules.state.state;
     const isActive = modules.state.isThirdPartyApp(state.currentApp);
     const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
-    return `<button class="picker-item picker-item-special third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS 生图快捷入口</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
+    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS 生图快捷入口</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
   }
 
   function getAppPreviewImage(app) {
@@ -343,7 +343,7 @@
       : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
 
     if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${state.apps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
-    const quickEntryButton = `<button class="picker-item picker-item-special ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>先框选 Photoshop 区域，点击入口即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
+    const quickEntryButton = `<button class="picker-item picker-item-special app-picker-special-card ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>先框选 Photoshop 区域，点击入口即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
     const thirdPartyButton = getThirdPartyPickerButton();
 
     if (visibleApps.length === 0) {
@@ -357,8 +357,7 @@
     listEl.innerHTML = quickEntryButton + thirdPartyButton + visibleApps
       .map((app) => {
         const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
-        const description = getAppDescriptionSummary(app);
-        return `<article class="picker-item app-picker-card is-draggable ${isActive ? "active" : ""}" draggable="true" data-app-id="${runtime.escapeHtml(String(app.id || ""))}">${renderAppThumb(app)}<button class="app-picker-card-main" type="button" value="${runtime.escapeHtml(String(app.id || ""))}" data-action="select-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta"><span>应用 ID：${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span><span>输入项：${runtime.escapeHtml(String(modules.state.getAppInputCount(app)))}</span>${isActive ? "<span>当前使用</span>" : ""}</span>${description ? `<span class="picker-item-desc">${runtime.escapeHtml(description)}</span>` : ""}</button><div class="app-picker-card-actions"><button class="mini-btn" type="button" data-action="edit-picker-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}">编辑</button><button class="mini-btn" type="button" data-action="delete-picker-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}">删除</button></div></article>`;
+        return `<article class="picker-item app-picker-card app-picker-tile is-draggable ${isActive ? "active" : ""}" draggable="true" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><button class="app-picker-card-main" type="button" value="${runtime.escapeHtml(String(app.id || ""))}" data-action="select-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}">${renderAppThumb(app)}<span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta">${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span></button><div class="app-picker-card-actions"><button class="mini-btn app-picker-icon-btn" type="button" data-action="edit-picker-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}" title="编辑应用" aria-label="编辑应用">✎</button><button class="mini-btn app-picker-icon-btn" type="button" data-action="delete-picker-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}" title="删除应用" aria-label="删除应用">⌫</button></div></article>`;
       })
       .join("");
   }
