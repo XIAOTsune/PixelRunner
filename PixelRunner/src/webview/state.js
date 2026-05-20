@@ -3,6 +3,7 @@
 
   const STORAGE_KEYS = {
     API_KEY: "rh_api_key",
+    API_PROFILES: "pixelrunner.runninghub.apiProfiles.v1",
     SETTINGS: "rh_settings",
     APPS: "rh_ai_apps_v2",
     PROMPT_TEMPLATES: "rh_prompt_templates",
@@ -67,6 +68,8 @@
     templateManagerKeyword: "",
     templateManagerSort: "manual",
     settings: { ...DEFAULT_SETTINGS },
+    apiProfiles: [],
+    activeApiProfileId: "",
     thirdPartySettings: normalizeThirdPartySettings(DEFAULT_THIRD_PARTY_SETTINGS),
     settingsLoaded: false,
     accountSummary: {
@@ -147,8 +150,44 @@
       pollInterval,
       timeout,
       maxConcurrentTasks,
-      aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID
+      aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
+      activeApiProfileId: String(source.activeApiProfileId || "").trim()
     };
+  }
+
+  function normalizeApiProfileRecord(profile, index = 0) {
+    const source = profile && typeof profile === "object" ? profile : {};
+    const apiKey = String(source.apiKey || "").trim();
+    const name = String(source.name || source.title || `API ${index + 1}`).trim() || `API ${index + 1}`;
+    const id = String(source.id || "").trim() || modules.runtime.createId("api");
+    const now = Date.now();
+    return {
+      id,
+      name,
+      apiKey,
+      createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
+      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+    };
+  }
+
+  function normalizeApiProfileList(profiles) {
+    const seenIds = new Set();
+    const seenKeys = new Set();
+    return (Array.isArray(profiles) ? profiles : [])
+      .map((item, index) => normalizeApiProfileRecord(item, index))
+      .filter((item) => {
+        const key = item.apiKey.toLowerCase();
+        if (!item.apiKey || seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        if (seenIds.has(item.id)) item.id = modules.runtime.createId("api");
+        seenIds.add(item.id);
+        return true;
+      });
+  }
+
+  function getActiveApiProfile() {
+    const activeId = String(state.activeApiProfileId || state.settings.activeApiProfileId || "").trim();
+    return state.apiProfiles.find((item) => String(item.id) === activeId) || state.apiProfiles[0] || null;
   }
 
   function normalizeModelList(models, fallback) {
@@ -451,6 +490,9 @@
     state,
     normalizeTheme,
     normalizeSettings,
+    normalizeApiProfileRecord,
+    normalizeApiProfileList,
+    getActiveApiProfile,
     normalizeThirdPartySettings,
     isThirdPartyApp,
     normalizeGrsModelId,

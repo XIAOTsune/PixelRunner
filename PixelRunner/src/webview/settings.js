@@ -107,6 +107,7 @@
 
   function fillSettingsForm(settings) {
     if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
+    renderApiProfileControls();
     if (modules.runtime.getById("settingsPollIntervalInput")) {
       modules.runtime.getById("settingsPollIntervalInput").value = String(
         settings.pollInterval ?? modules.state.DEFAULT_SETTINGS.pollInterval
@@ -128,6 +129,105 @@
       );
     }
     fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+  }
+
+  function maskApiKey(apiKey) {
+    const value = String(apiKey || "").trim();
+    if (!value) return "未填写";
+    if (value.length <= 8) return `${value.slice(0, 2)}****${value.slice(-2)}`;
+    return `${value.slice(0, 4)}****${value.slice(-4)}`;
+  }
+
+  function getActiveApiProfile() {
+    return modules.state.getActiveApiProfile ? modules.state.getActiveApiProfile() : null;
+  }
+
+  function renderApiProfileControls() {
+    const runtime = modules.runtime;
+    const select = runtime.getById("settingsApiProfileSelect");
+    const nameInput = runtime.getById("settingsApiProfileNameInput");
+    const listEl = runtime.getById("apiProfileList");
+    const deleteButton = runtime.getById("btnDeleteApiProfile");
+    const profiles = Array.isArray(modules.state.state.apiProfiles) ? modules.state.state.apiProfiles : [];
+    const active = getActiveApiProfile();
+
+    if (select) {
+      select.innerHTML = profiles.length
+        ? '<option value="">新增 API 档案...</option>' + profiles
+            .map((profile) => {
+              const selected = active && String(profile.id) === String(active.id) ? "selected" : "";
+              return `<option value="${runtime.escapeHtml(profile.id)}" ${selected}>${runtime.escapeHtml(profile.name)}</option>`;
+            })
+            .join("")
+        : '<option value="">尚未保存 API 档案</option>';
+      select.value = active ? active.id : "";
+    }
+
+    if (nameInput) nameInput.value = active ? active.name : "";
+    if (deleteButton) deleteButton.disabled = !active;
+
+    if (listEl) {
+      listEl.innerHTML = profiles.length
+        ? profiles
+            .map((profile) => {
+              const isActive = active && String(profile.id) === String(active.id);
+              return `
+                <button class="api-profile-chip ${isActive ? "is-active" : ""}" type="button" data-api-profile-id="${runtime.escapeHtml(profile.id)}">
+                  <span>${runtime.escapeHtml(profile.name)}</span>
+                  <small>${runtime.escapeHtml(maskApiKey(profile.apiKey))}</small>
+                </button>
+              `;
+            })
+            .join("")
+        : '<div class="api-profile-empty">保存后会在这里显示 API 档案。</div>';
+    }
+  }
+
+  function applyActiveApiProfile(profile) {
+    const normalized = modules.state.normalizeApiProfileRecord(profile || {}, 0);
+    modules.state.state.activeApiProfileId = normalized.id;
+    modules.state.state.settings.activeApiProfileId = normalized.id;
+    modules.state.state.settings.apiKey = normalized.apiKey;
+    const keyInput = modules.runtime.getById("settingsApiKeyInput");
+    if (keyInput) keyInput.value = normalized.apiKey;
+    renderApiProfileControls();
+  }
+
+  function readApiProfilesFromUi(settings) {
+    const profiles = modules.state.normalizeApiProfileList(modules.state.state.apiProfiles);
+    const apiKey = String(settings.apiKey || "").trim();
+    const activeId = String(modules.state.state.activeApiProfileId || settings.activeApiProfileId || "").trim();
+    const nameInput = modules.runtime.getById("settingsApiProfileNameInput");
+    const profileName = String((nameInput && nameInput.value) || "").trim();
+    const now = Date.now();
+
+    if (!apiKey) return { profiles, activeApiProfileId: "" };
+
+    const existingIndex = profiles.findIndex((item) => String(item.id) === activeId);
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = modules.state.normalizeApiProfileRecord({
+        ...profiles[existingIndex],
+        name: profileName || profiles[existingIndex].name,
+        apiKey,
+        updatedAt: now
+      }, existingIndex);
+      return { profiles: modules.state.normalizeApiProfileList(profiles), activeApiProfileId: profiles[existingIndex].id };
+    }
+
+    const duplicate = profiles.find((item) => String(item.apiKey).trim() === apiKey);
+    if (duplicate) {
+      duplicate.name = profileName || duplicate.name;
+      duplicate.updatedAt = now;
+      return { profiles: modules.state.normalizeApiProfileList(profiles), activeApiProfileId: duplicate.id };
+    }
+
+    const nextProfile = modules.state.normalizeApiProfileRecord({
+      name: profileName || `API ${profiles.length + 1}`,
+      apiKey,
+      createdAt: now,
+      updatedAt: now
+    }, profiles.length);
+    return { profiles: modules.state.normalizeApiProfileList([nextProfile, ...profiles]), activeApiProfileId: nextProfile.id };
   }
 
   function fillThirdPartyModelSelect(models, selected) {
@@ -492,13 +592,15 @@
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
-      aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || ""
+      aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
+      activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
     });
   }
 
   async function loadSettingsSnapshot() {
     const apiKey = String((await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY)) || "").trim();
     const rawSettings = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS), {});
+    const rawApiProfiles = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_PROFILES), null);
     const rawThirdPartySettings = modules.runtime.readJsonText(
       await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS),
       null
@@ -519,36 +621,76 @@
     };
     const thirdParty = modules.state.normalizeThirdPartySettings(mergedThirdParty);
     modules.state.state.thirdPartySettings = thirdParty;
+    const storedProfiles = modules.state.normalizeApiProfileList(
+      Array.isArray(rawApiProfiles) ? rawApiProfiles : rawApiProfiles && Array.isArray(rawApiProfiles.profiles) ? rawApiProfiles.profiles : []
+    );
+    const migratedProfiles = storedProfiles.length || !apiKey
+      ? storedProfiles
+      : modules.state.normalizeApiProfileList([{ name: "默认 API", apiKey }]);
+    const activeApiProfileId = String(
+      (rawApiProfiles && rawApiProfiles.activeApiProfileId) ||
+        (rawSettings && rawSettings.activeApiProfileId) ||
+        ""
+    ).trim();
+    const activeProfile =
+      migratedProfiles.find((profile) => String(profile.id) === activeApiProfileId) ||
+      migratedProfiles.find((profile) => String(profile.apiKey) === apiKey) ||
+      migratedProfiles[0] ||
+      null;
+    modules.state.state.apiProfiles = migratedProfiles;
+    modules.state.state.activeApiProfileId = activeProfile ? activeProfile.id : "";
     return modules.state.normalizeSettings({
-      apiKey,
+      apiKey: activeProfile ? activeProfile.apiKey : apiKey,
       pollInterval: rawSettings && rawSettings.pollInterval,
       timeout: rawSettings && rawSettings.timeout,
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
-      aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId
+      aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
+      activeApiProfileId: activeProfile ? activeProfile.id : ""
     });
   }
 
   async function saveSettingsSnapshot(settings) {
     const normalized = modules.state.normalizeSettings(settings);
     const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
+    const apiProfileState = readApiProfilesFromUi(normalized);
+    const activeProfile =
+      apiProfileState.profiles.find((profile) => String(profile.id) === String(apiProfileState.activeApiProfileId)) ||
+      apiProfileState.profiles[0] ||
+      null;
+    const nextSettings = modules.state.normalizeSettings({
+      ...normalized,
+      apiKey: activeProfile ? activeProfile.apiKey : normalized.apiKey,
+      activeApiProfileId: activeProfile ? activeProfile.id : ""
+    });
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, nextSettings.apiKey);
+    await modules.runtime.storageSetItem(
+      modules.state.STORAGE_KEYS.API_PROFILES,
+      JSON.stringify({
+        version: 1,
+        activeApiProfileId: nextSettings.activeApiProfileId,
+        profiles: apiProfileState.profiles
+      })
+    );
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdParty));
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdParty.grs.apiKey || "");
     await modules.runtime.storageSetItem(
       modules.state.STORAGE_KEYS.SETTINGS,
       JSON.stringify({
-        pollInterval: normalized.pollInterval,
-        timeout: normalized.timeout,
-        maxConcurrentTasks: normalized.maxConcurrentTasks,
-        aiOptimizeAppId: normalized.aiOptimizeAppId,
+        pollInterval: nextSettings.pollInterval,
+        timeout: nextSettings.timeout,
+        maxConcurrentTasks: nextSettings.maxConcurrentTasks,
+        aiOptimizeAppId: nextSettings.aiOptimizeAppId,
+        activeApiProfileId: nextSettings.activeApiProfileId,
         thirdParty
       })
     );
 
-    modules.state.state.settings = normalized;
+    modules.state.state.apiProfiles = apiProfileState.profiles;
+    modules.state.state.activeApiProfileId = nextSettings.activeApiProfileId;
+    modules.state.state.settings = nextSettings;
     modules.state.state.thirdPartySettings = thirdParty;
     modules.state.state.settingsLoaded = true;
-    fillSettingsForm(normalized);
+    fillSettingsForm(nextSettings);
     if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
       modules.workspace.updateRunButtonState();
     }
@@ -558,12 +700,13 @@
     renderSettingsStatus("设置已保存到宿主本地存储。", "success");
     renderSettingsDiagnostics("当前设置已同步。", {
       runtime: modules.state.state.hostRuntime,
-      hasApiKey: Boolean(normalized.apiKey)
+      hasApiKey: Boolean(nextSettings.apiKey)
     });
     modules.ui.logToWorkspace(
-      `设置已保存：轮询 ${normalized.pollInterval}s，超时 ${normalized.timeout}s，并发 ${normalized.maxConcurrentTasks} 个。`,
+      `设置已保存：轮询 ${nextSettings.pollInterval}s，超时 ${nextSettings.timeout}s，并发 ${nextSettings.maxConcurrentTasks} 个。`,
       "success"
     );
+    return nextSettings;
   }
 
   async function initializeSettings() {
@@ -618,6 +761,10 @@
     const runtime = modules.runtime;
     const saveButton = runtime.getById("btnSaveSettings");
     const resetButton = runtime.getById("btnResetSettings");
+    const apiProfileSelect = runtime.getById("settingsApiProfileSelect");
+    const newApiProfileButton = runtime.getById("btnNewApiProfile");
+    const deleteApiProfileButton = runtime.getById("btnDeleteApiProfile");
+    const apiProfileList = runtime.getById("apiProfileList");
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const parseAppButton = runtime.getById("btnParseApp");
     const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
@@ -630,6 +777,7 @@
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
       "settingsApiKeyInput",
+      "settingsApiProfileNameInput",
       "settingsPollIntervalInput",
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
@@ -646,6 +794,83 @@
     ];
 
     bindAppManagerControls();
+
+    async function persistApiProfileSelection(profile) {
+      if (!profile) return;
+      applyActiveApiProfile(profile);
+      const settings = modules.state.normalizeSettings({
+        ...readSettingsForm(),
+        apiKey: profile.apiKey,
+        activeApiProfileId: profile.id
+      });
+      await saveSettingsSnapshot(settings);
+      await refreshAccountSummary({ apiKey: settings.apiKey, quiet: true, force: true });
+      renderSettingsStatus(`已切换到 API 档案：${profile.name}`, "success");
+    }
+
+    if (apiProfileSelect) {
+      apiProfileSelect.addEventListener("change", async () => {
+        const profile = modules.state.state.apiProfiles.find((item) => String(item.id) === String(apiProfileSelect.value));
+        if (!profile) return;
+        try {
+          await persistApiProfileSelection(profile);
+        } catch (error) {
+          renderSettingsStatus(`切换 API 档案失败：${error.message}`, "error");
+        }
+      });
+    }
+
+    if (apiProfileList) {
+      apiProfileList.addEventListener("click", async (event) => {
+        const button = event.target && event.target.closest("[data-api-profile-id]");
+        if (!button) return;
+        const profile = modules.state.state.apiProfiles.find((item) => String(item.id) === String(button.getAttribute("data-api-profile-id")));
+        if (!profile) return;
+        try {
+          await persistApiProfileSelection(profile);
+        } catch (error) {
+          renderSettingsStatus(`切换 API 档案失败：${error.message}`, "error");
+        }
+      });
+    }
+
+    if (newApiProfileButton) {
+      newApiProfileButton.addEventListener("click", () => {
+        modules.state.state.activeApiProfileId = "";
+        modules.state.state.settings.activeApiProfileId = "";
+        const keyInput = runtime.getById("settingsApiKeyInput");
+        const nameInput = runtime.getById("settingsApiProfileNameInput");
+        const select = runtime.getById("settingsApiProfileSelect");
+        if (keyInput) keyInput.value = "";
+        if (nameInput) nameInput.value = `API ${modules.state.state.apiProfiles.length + 1}`;
+        if (select) select.value = "";
+        if (keyInput) keyInput.focus();
+        renderSettingsStatus("已准备新增 API 档案，填写 Key 后点击保存设置。", "pending");
+      });
+    }
+
+    if (deleteApiProfileButton) {
+      deleteApiProfileButton.addEventListener("click", async () => {
+        const active = getActiveApiProfile();
+        if (!active) return;
+        const nextProfiles = modules.state.state.apiProfiles.filter((profile) => String(profile.id) !== String(active.id));
+        modules.state.state.apiProfiles = modules.state.normalizeApiProfileList(nextProfiles);
+        const nextActive = modules.state.state.apiProfiles[0] || null;
+        modules.state.state.activeApiProfileId = nextActive ? nextActive.id : "";
+        modules.state.state.settings.apiKey = nextActive ? nextActive.apiKey : "";
+        modules.state.state.settings.activeApiProfileId = nextActive ? nextActive.id : "";
+        renderApiProfileControls();
+        const keyInput = runtime.getById("settingsApiKeyInput");
+        if (keyInput) keyInput.value = nextActive ? nextActive.apiKey : "";
+        try {
+          await saveSettingsSnapshot(modules.state.state.settings);
+          await refreshAccountSummary({ apiKey: modules.state.state.settings.apiKey, quiet: true, force: true });
+          renderSettingsStatus(`已删除 API 档案：${active.name}`, "warn");
+        } catch (error) {
+          renderSettingsStatus(`删除 API 档案失败：${error.message}`, "error");
+        }
+      });
+    }
 
     document.querySelectorAll("[data-theme-preset]").forEach((button) => {
       button.addEventListener("click", async () => {
