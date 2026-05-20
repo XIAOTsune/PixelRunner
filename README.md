@@ -1,7 +1,7 @@
 # PixelRunner
 
 <p align="center">
-  <img src="PixelRunnerV2.4.0/icons/icon.png" width="128" height="128" alt="PixelRunner logo" />
+  <img src="PixelRunner/icons/icon.png" width="128" height="128" alt="PixelRunner logo" />
 </p>
 
 <h3 align="center">Photoshop 里的 AI 修图工作台</h3>
@@ -223,7 +223,7 @@ PixelRunner 可以使用参考图和当前主 prompt，调用你配置的 Runnin
 
 ```bash
 git clone https://github.com/XIAOTsune/PixelRunner.git
-cd PixelRunner/PixelRunnerV2.4.0
+cd PixelRunner/PixelRunner
 ```
 
 ### 3. 安装依赖并构建
@@ -237,7 +237,7 @@ npm run build
 
 1. 打开 Adobe UXP Developer Tool。
 2. 点击 `Add Plugin`。
-3. 选择 `PixelRunnerV2.4.0/manifest.json`。
+3. 选择 `PixelRunner/manifest.json`。
 4. 点击 `Load` 或 `Watch`。
 5. 在 Photoshop 中打开 `Plugins -> Development -> PixelRunner（小T修图助手）`。
 
@@ -257,7 +257,7 @@ npm run build
 ├── LICENSE
 ├── README.md
 ├── .gitignore
-└── PixelRunnerV2.4.0/
+└── PixelRunner/
     ├── app.html                 # WebView 主界面
     ├── app.css                  # WebView 样式
     ├── index.html               # UXP Host Shell
@@ -281,7 +281,7 @@ npm run build
 进入插件目录：
 
 ```bash
-cd PixelRunnerV2.4.0
+cd PixelRunner
 ```
 
 安装依赖：

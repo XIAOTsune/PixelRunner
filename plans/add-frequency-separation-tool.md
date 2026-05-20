@@ -53,11 +53,11 @@ flowchart TD
 
 | 文件 | 修改内容 |
 |------|----------|
-| `PixelRunnerV2.4.0/app.html` | 1. 在「图层辅助」分类中新增高低频工具项<br>2. 新增高低频参数对话框（`freqSepModal`） |
-| `PixelRunnerV2.4.0/app.css` | 新增高低频对话框专用样式（`.freq-sep-modal-card`、`.freq-sep-slider-field` 等） |
-| `PixelRunnerV2.4.0/src/host/photoshop/tool-actions.js` | 新增 `frequencySeparation` case，实现完整的高低频分离逻辑 |
-| `PixelRunnerV2.4.0/src/webview/ui.js` | 1. 新增 `bindFreqSepActions()` 函数绑定对话框事件<br>2. 在 `toolConfigs` 中注册按钮（改为打开对话框） |
-| `PixelRunnerV2.4.0/src/webview/main.js` | 在 DOMContentLoaded 中调用 `bindFreqSepActions()` |
+| `PixelRunner/app.html` | 1. 在「图层辅助」分类中新增高低频工具项<br>2. 新增高低频参数对话框（`freqSepModal`） |
+| `PixelRunner/app.css` | 新增高低频对话框专用样式（`.freq-sep-modal-card`、`.freq-sep-slider-field` 等） |
+| `PixelRunner/src/host/photoshop/tool-actions.js` | 新增 `frequencySeparation` case，实现完整的高低频分离逻辑 |
+| `PixelRunner/src/webview/ui.js` | 1. 新增 `bindFreqSepActions()` 函数绑定对话框事件<br>2. 在 `toolConfigs` 中注册按钮（改为打开对话框） |
+| `PixelRunner/src/webview/main.js` | 在 DOMContentLoaded 中调用 `bindFreqSepActions()` |
 
 ## 五、详细实现
 

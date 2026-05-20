@@ -8,7 +8,7 @@
 
 ### 1. 样式覆盖链
 
-在 [`app.css`](../PixelRunnerV2.4.0/app.css) 中，存在两条关键的样式规则：
+在 [`app.css`](../PixelRunner/app.css) 中，存在两条关键的样式规则：
 
 **基础样式**（第 2775-2791 行）：
 ```css
@@ -51,7 +51,7 @@ body.has-custom-theme-image .image-capture-preview {
 
 ### 3. 关键代码位置
 
-下拉框渲染在 [`src/webview/workspace.js`](../PixelRunnerV2.4.0/src/webview/workspace.js:911-920)：
+下拉框渲染在 [`src/webview/workspace.js`](../PixelRunner/src/webview/workspace.js:911-920)：
 ```javascript
 if (input.type === "select" || input.type === "enum") {
   const options = Array.isArray(input.options) ? input.options : [];
@@ -65,7 +65,7 @@ if (input.type === "select" || input.type === "enum") {
 
 在 `body.has-custom-theme-image` 的样式块中，为 `select.field-input` 单独设置一个不透明或高不透明度的深色背景，确保下拉面板的背景是深色的。
 
-**修改位置**：[`app.css`](../PixelRunnerV2.4.0/app.css) 第 208-217 行之后
+**修改位置**：[`app.css`](../PixelRunner/app.css) 第 208-217 行之后
 
 ```css
 /* 修复自定义背景下 select 下拉框背景过白的问题 */
@@ -99,7 +99,7 @@ select.field-input option {
 
 ## 修改文件
 
-仅需修改 [`PixelRunnerV2.4.0/app.css`](../PixelRunnerV2.4.0/app.css)
+仅需修改 [`PixelRunner/app.css`](../PixelRunner/app.css)
 
 ## 影响范围
 
