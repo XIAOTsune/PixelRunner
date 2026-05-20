@@ -63,6 +63,11 @@
     quickEntries: [],
     templates: [],
     appPickerKeyword: "",
+    appPickerView: "picker",
+    appPickerEditingAppId: null,
+    appPickerEditorSnapshot: "",
+    appPickerPendingDeleteId: "",
+    appPickerConfirm: null,
     appManagerKeyword: "",
     appManagerSort: "manual",
     templateManagerKeyword: "",
@@ -377,12 +382,24 @@
     const id = String(source.id || "").trim() || runtime.createId("app");
     const fallbackName = `应用 ${index + 1}`;
     const name = String(source.name || source.title || fallbackName).trim() || fallbackName;
+    const previewImage = String(
+      source.previewImage ||
+      source.thumbnail ||
+      source.preview ||
+      source.cover ||
+      source.coverUrl ||
+      source.image ||
+      source.imageUrl ||
+      source.icon ||
+      ""
+    ).trim();
 
     return {
       id,
       appId,
       name,
       description: String(source.description || "").trim(),
+      previewImage,
       inputs: normalizeAppInputs(source.inputs),
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now

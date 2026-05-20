@@ -2610,6 +2610,28 @@ button {
   gap: 6px;
 }
 
+.app-picker-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.app-picker-view[hidden] {
+  display: none !important;
+}
+
+.picker-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.app-picker-search-field {
+  min-width: 0;
+}
+
 .picker-caption,
 .picker-stats {
   font-size: 9px;
@@ -2641,6 +2663,89 @@ button {
   gap: 4px;
   color: var(--text);
   text-align: left;
+}
+
+.app-picker-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+}
+
+.app-picker-card-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.app-picker-card-main:hover {
+  color: var(--text-strong);
+}
+
+.app-picker-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-card-thumb {
+  position: relative;
+  width: 58px;
+  height: 44px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(122, 154, 184, 0.42);
+  background:
+    linear-gradient(135deg, rgba(99, 214, 123, 0.16), rgba(169, 222, 242, 0.12)),
+    rgba(var(--surface-soft-rgb), var(--surface-soft-alpha));
+}
+
+.app-card-thumb img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-card-thumb span {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-strong);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.app-card-thumb.is-empty img {
+  display: none;
+}
+
+.app-card-thumb.is-empty span {
+  display: flex;
+}
+
+.app-card-thumb-small {
+  width: 38px;
+  height: 30px;
+  border-radius: 6px;
+}
+
+.app-card-thumb-small span {
+  font-size: 8px;
 }
 
 .is-draggable {
@@ -2736,6 +2841,53 @@ button {
   font-size: 9px;
 }
 
+.picker-item-desc {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-picker-editor-view .field-textarea {
+  min-height: 76px;
+}
+
+.app-picker-confirm-view {
+  justify-content: center;
+  min-height: 220px;
+}
+
+.confirm-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+@media (max-width: 560px) {
+  .picker-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .app-picker-card {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .app-picker-card-actions {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .app-card-thumb {
+    width: 52px;
+    height: 40px;
+  }
+}
+
 .picker-empty {
   color: var(--muted);
 }
@@ -2783,6 +2935,7 @@ button {
 }
 
 .resizable-overlay-card > .field,
+.resizable-overlay-card > .app-picker-view,
 .resizable-overlay-card > .dual-grid,
 .resizable-overlay-card > .summary-strip,
 .resizable-overlay-card > .picker-toolbar,
@@ -2791,7 +2944,18 @@ button {
   flex: 0 0 auto;
 }
 
+.resizable-overlay-card > .app-picker-view {
+  flex: 1 1 0;
+}
+
 .resizable-overlay-card > .picker-list {
+  height: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+}
+
+.app-picker-view > .picker-list {
   height: auto;
   flex: 1 1 0;
   min-height: 0;

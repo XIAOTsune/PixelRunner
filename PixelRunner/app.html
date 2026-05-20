@@ -292,11 +292,8 @@
             </div>
           </section>
 
-          <section class="surface-card settings-manage-card">
-            <div class="settings-section-head">
-              <span class="settings-section-checkbox"></span>
-              <h3 class="card-title">AI 应用管理</h3>
-            </div>
+          <details class="surface-card settings-manage-card settings-collapsible app-management-collapsible">
+            <summary class="settings-collapse-summary">AI 应用管理（高级）</summary>
             <div class="form-stack">
               <label class="field">
                 <span class="field-label">应用 ID / URL</span>
@@ -312,6 +309,10 @@
               <label class="field is-hidden">
                 <span class="field-label">说明</span>
                 <textarea id="appEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
+              </label>
+              <label class="field">
+                <span class="field-label">预览图 URL / 路径</span>
+                <input id="appEditorPreviewImageInput" class="field-input" type="text" placeholder="可选：RunningHub 封面、图片 URL、plugin:/ 或 data:image" />
               </label>
               <label class="field is-hidden">
                 <span class="field-label">输入结构 JSON</span>
@@ -343,7 +344,7 @@
               <div id="savedAppsList" class="list-shell compact-list-shell"></div>
               <textarea id="appTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
             </div>
-          </section>
+          </details>
 
           <section class="surface-card settings-manage-card">
             <div class="settings-section-head">
@@ -541,22 +542,68 @@
       <div class="card-head">
         <div>
           <p class="card-kicker">工作台</p>
-          <h3 id="appPickerTitle" class="card-title">选择已保存应用</h3>
+          <h3 id="appPickerTitle" class="card-title">选择与管理应用</h3>
         </div>
         <button id="appPickerModalClose" class="mini-btn" type="button">关闭</button>
       </div>
 
-      <label class="field">
-        <span class="field-label">搜索应用</span>
-        <input id="appPickerSearchInput" class="field-input" type="search" placeholder="输入应用名称或应用 ID 进行筛选" />
-      </label>
+      <div id="appPickerListView" class="app-picker-view">
+        <div class="picker-topbar">
+          <label class="field app-picker-search-field">
+            <span class="field-label">搜索应用</span>
+            <input id="appPickerSearchInput" class="field-input" type="search" placeholder="输入应用名称或应用 ID 进行筛选" />
+          </label>
+          <button id="btnAppPickerAddApp" class="secondary-btn" type="button">添加应用</button>
+        </div>
 
-      <div class="picker-toolbar">
-        <span class="picker-caption">已保存应用</span>
-        <span id="appPickerStats" class="picker-stats">0 / 0</span>
+        <div class="picker-toolbar">
+          <span class="picker-caption">已保存应用</span>
+          <span id="appPickerStats" class="picker-stats">0 / 0</span>
+        </div>
+
+        <div id="appPickerList" class="picker-list"></div>
       </div>
 
-      <div id="appPickerList" class="picker-list"></div>
+      <div id="appPickerEditorView" class="app-picker-view app-picker-editor-view" hidden>
+        <label class="field">
+          <span class="field-label">应用 ID / URL</span>
+          <input id="appPickerEditorAppIdInput" class="field-input" type="text" placeholder="例如：123456 或 RunningHub 应用链接" />
+        </label>
+        <div class="action-row">
+          <button id="btnParsePickerApp" class="secondary-btn" type="button">解析</button>
+        </div>
+        <label class="field">
+          <span class="field-label">应用名称</span>
+          <input id="appPickerEditorNameInput" class="field-input" type="text" placeholder="例如：SDXL 风格化" />
+        </label>
+        <label class="field">
+          <span class="field-label">说明</span>
+          <textarea id="appPickerEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">预览图 URL / 路径</span>
+          <input id="appPickerEditorPreviewImageInput" class="field-input" type="text" placeholder="可选：RunningHub 封面、图片 URL、plugin:/ 或 data:image" />
+        </label>
+        <label class="field">
+          <span class="field-label">输入结构 JSON</span>
+          <textarea id="appPickerEditorInputsInput" class="field-input field-textarea" rows="7"></textarea>
+        </label>
+        <div id="appPickerEditorSchemaSummary" class="summary-strip">输入结构摘要</div>
+        <div id="appPickerEditorStatus" class="summary-strip">输入应用 ID 或链接后解析，确认名称后保存。</div>
+        <div class="action-row">
+          <button id="btnCancelPickerAppEditor" class="secondary-btn" type="button">取消</button>
+          <button id="btnSavePickerAppEditor" class="primary-btn" type="button">保存应用</button>
+        </div>
+      </div>
+
+      <div id="appPickerConfirmView" class="app-picker-view app-picker-confirm-view" hidden>
+        <h4 id="appPickerConfirmTitle" class="confirm-title">确认操作</h4>
+        <div id="appPickerConfirmMessage" class="summary-strip">确定继续吗？</div>
+        <div class="action-row">
+          <button id="btnCancelAppPickerConfirm" class="secondary-btn" type="button">取消</button>
+          <button id="btnConfirmAppPickerAction" class="primary-btn" type="button">确认</button>
+        </div>
+      </div>
     </section>
   </div>
 

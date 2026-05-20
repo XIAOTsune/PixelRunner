@@ -1031,7 +1031,7 @@
       });
     }
 
-    ["appEditorAppIdInput", "appEditorNameInput", "appEditorDescriptionInput", "appEditorInputsInput"].forEach((id) => {
+    ["appEditorAppIdInput", "appEditorNameInput", "appEditorDescriptionInput", "appEditorPreviewImageInput", "appEditorInputsInput"].forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
       element.addEventListener("input", () => {

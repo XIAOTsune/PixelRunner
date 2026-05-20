@@ -653,6 +653,46 @@ function resolveBestAppName(data) {
   return candidates[0] && candidates[0].value ? candidates[0].value : "未命名应用";
 }
 
+function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set(), parentKey = "") {
+  if (depth > 8 || value === undefined || value === null) return bucket;
+
+  if (typeof value === "string") {
+    const text = value.trim();
+    const key = normalizeFieldToken(parentKey);
+    const looksLikeImageKey = /thumb|thumbnail|preview|cover|image|img|icon|avatar|poster|banner/.test(key);
+    const looksLikeImageUrl = /^(https?:|data:image|plugin:|file:)/i.test(text) && /(\.(png|jpe?g|webp|gif|svg)(\?|#|$)|image|img|cover|thumb|preview|cdn|oss|cos|media|file)/i.test(text);
+    const looksLikeImagePath = /^(\.{0,2}\/|[a-z]:\\|[^<>:"|?*]+\.(png|jpe?g|webp|gif|svg)(\?|#|$))/i.test(text);
+    if (text && (looksLikeImageUrl || (looksLikeImageKey && looksLikeImagePath)) && !seen.has(text)) {
+      seen.add(text);
+      const weights = { thumbnail: 60, cover: 56, preview: 54, imageurl: 48, icon: 32 };
+      bucket.push({ value: text, score: (weights[key] || (looksLikeImageKey ? 36 : 24)) - depth });
+    }
+
+    const parsed = parseJsonFromEscapedText(text);
+    if (parsed !== undefined) collectImageUrlCandidates(parsed, depth + 1, bucket, seen, "");
+    return bucket;
+  }
+
+  if (Array.isArray(value)) {
+    value.slice(0, 30).forEach((item) => collectImageUrlCandidates(item, depth + 1, bucket, seen, parentKey));
+    return bucket;
+  }
+
+  if (typeof value !== "object") return bucket;
+
+  ["thumbnail", "thumb", "preview", "previewImage", "previewUrl", "cover", "coverUrl", "image", "imageUrl", "icon", "avatar", "poster", "banner"].forEach((key) => {
+    if (value[key] !== undefined) collectImageUrlCandidates(value[key], depth, bucket, seen, key);
+  });
+  Object.entries(value).forEach(([key, child]) => collectImageUrlCandidates(child, depth + 1, bucket, seen, key));
+  return bucket;
+}
+
+function resolveBestPreviewImage(data) {
+  const candidates = collectImageUrlCandidates(data, 0, [], new Set(), "");
+  candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
+  return candidates[0] && candidates[0].value ? candidates[0].value : "";
+}
+
 function extractNodeInfoListFromText(rawText) {
   if (typeof rawText !== "string" || !rawText.trim()) return [];
   const parsed = parseJsonFromEscapedText(rawText);
@@ -763,6 +803,7 @@ function extractAppInfoPayload(data) {
     payload: {
       name: resolveBestAppName(data),
       description: String(data.description || data.desc || data.summary || "").trim(),
+      previewImage: resolveBestPreviewImage(data),
       inputs
     },
     debug: {
@@ -895,13 +936,13 @@ export async function parseRunningHubApp(args = []) {
       const { ok, status, result } = await fetchJson(buildParseUrl(PARSE_ENDPOINT, query), { method: "GET", headers });
       const parsed = tryHandleResult(PARSE_ENDPOINT, result);
       if (parsed) {
-        return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", inputs: parsed.inputs, source: "remote-parse" };
+        return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", previewImage: parsed.previewImage || "", inputs: parsed.inputs, source: "remote-parse" };
       }
       reasons.push(`apiCallDemo(GET): ${resolveMessage(result, `HTTP ${status}`)}`);
       if (ok && result && (result.code === 0 || result.success === true)) {
         const retry = tryHandleResult(PARSE_ENDPOINT, result);
         if (retry) {
-          return { ok: true, appId: normalizedId, name: retry.name, description: retry.description || "", inputs: retry.inputs, source: "remote-parse" };
+          return { ok: true, appId: normalizedId, name: retry.name, description: retry.description || "", previewImage: retry.previewImage || "", inputs: retry.inputs, source: "remote-parse" };
         }
       }
     } catch (error) {
@@ -924,7 +965,7 @@ export async function parseRunningHubApp(args = []) {
       });
       const parsed = tryHandleResult(PARSE_ENDPOINT, result);
       if (parsed) {
-        return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", inputs: parsed.inputs, source: "remote-parse" };
+        return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", previewImage: parsed.previewImage || "", inputs: parsed.inputs, source: "remote-parse" };
       }
       reasons.push(`apiCallDemo(POST): ${resolveMessage(result, `HTTP ${status}`)}`);
     } catch (error) {
@@ -938,13 +979,13 @@ export async function parseRunningHubApp(args = []) {
         const { ok, status, result } = await fetchJson(url, { method: "GET", headers });
         const parsed = tryHandleResult(endpoint, result);
         if (parsed) {
-          return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", inputs: parsed.inputs, source: "remote-parse" };
+          return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", previewImage: parsed.previewImage || "", inputs: parsed.inputs, source: "remote-parse" };
         }
         reasons.push(`${endpoint}: ${resolveMessage(result, `HTTP ${status}`)}`);
         if (ok && result && (result.code === 0 || result.success === true)) {
           const retry = tryHandleResult(endpoint, result);
           if (retry) {
-            return { ok: true, appId: normalizedId, name: retry.name, description: retry.description || "", inputs: retry.inputs, source: "remote-parse" };
+            return { ok: true, appId: normalizedId, name: retry.name, description: retry.description || "", previewImage: retry.previewImage || "", inputs: retry.inputs, source: "remote-parse" };
           }
         }
       } catch (error) {
