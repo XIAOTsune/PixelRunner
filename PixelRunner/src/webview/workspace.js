@@ -885,14 +885,15 @@
     if (input.type === "textarea" || input.type === "multiline" || isPromptField(input)) {
       const currentValue = String(value ?? "");
       const showAiOptimizeButton = isPrimaryPromptField(input);
+      const fieldId = `dynamic-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-") || "input"}`;
       const aiOptimizeAvailability =
         showAiOptimizeButton && modules.aiOptimize && typeof modules.aiOptimize.getAvailability === "function"
           ? modules.aiOptimize.getAvailability(key)
           : { available: false, reason: "" };
       return `
-        <label class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
+        <div class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
           <span class="field-label">
-            <span>${label}${requiredMark}</span>
+            <label for="${runtime.escapeHtml(fieldId)}">${label}${requiredMark}</label>
             ${
               isPromptField(input)
                 ? `
@@ -908,9 +909,9 @@
                 : ""
             }
           </span>
-          <textarea class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
+          <textarea id="${runtime.escapeHtml(fieldId)}" class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
           ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
-        </label>
+        </div>
       `;
     }
 

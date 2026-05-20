@@ -764,6 +764,10 @@ button {
   gap: 6px;
 }
 
+#viewTools {
+  gap: 6px;
+}
+
 .workspace-grid-classic {
   gap: 12px;
 }
@@ -1407,9 +1411,9 @@ button {
 }
 
 .tool-glow-card {
-  gap: 10px;
-  padding: 10px 12px 12px;
-  border-radius: 18px;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(98, 128, 152, 0.62);
   background:
     radial-gradient(circle at top right, rgba(159, 220, 255, 0.1), transparent 36%),
@@ -1422,8 +1426,9 @@ button {
 
 .tool-glow-launcher {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
 }
 
 .tool-glow-summary-main {
@@ -1436,19 +1441,22 @@ button {
 .tool-glow-header-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .glow-open-btn {
-  width: 100%;
-  min-height: 40px;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 104px;
+  min-height: 30px;
+  padding-inline: 14px;
 }
 
 .tool-space-fx-card {
-  gap: 10px;
-  padding: 10px 12px 12px;
-  border-radius: 18px;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
   border: 1px solid rgba(117, 216, 199, 0.48);
   background:
     radial-gradient(circle at top right, rgba(255, 213, 106, 0.12), transparent 34%),
@@ -1461,8 +1469,9 @@ button {
 
 .tool-space-fx-launcher {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
 }
 
 .tool-space-fx-summary-main {
@@ -1475,13 +1484,16 @@ button {
 .tool-space-fx-header-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .space-fx-open-btn {
-  width: 100%;
-  min-height: 40px;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 104px;
+  min-height: 30px;
+  padding-inline: 14px;
 }
 
 .overlay-card.space-fx-modal-card {
@@ -2296,23 +2308,63 @@ button {
 }
 
 #viewTools .tool-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
 }
 
 #viewTools .tool-item {
-  min-height: 92px;
-  align-items: flex-start;
+  min-height: 54px;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 7px;
 }
 
 #viewTools .tool-item > div {
-  width: 100%;
+  min-width: 0;
+  width: auto;
 }
 
 #viewTools .tool-item .mini-btn {
-  align-self: flex-start;
-  min-width: 88px;
+  align-self: center;
+  min-width: 52px;
+  min-height: 28px;
+  padding-inline: 10px;
+}
+
+#viewTools .tool-item h4 {
+  margin-bottom: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#viewTools .tool-item p,
+#viewTools .tool-glow-card .subtle-note,
+#viewTools .tool-space-fx-card .subtle-note {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+#viewTools .summary-strip {
+  padding-block: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#viewTools .card-head {
+  align-items: center;
+}
+
+#viewTools .status-chip {
+  min-height: 20px;
+  padding-inline: 7px;
+  border-width: 1px;
+  box-shadow: 1px 2px 0 rgba(29, 40, 54, 0.68);
 }
 
 .freq-sep-modal-card {
@@ -2503,13 +2555,10 @@ button {
 
 @media (min-width: 460px) {
   #viewTools .tool-list {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: stretch;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   #viewTools .tool-item {
-    flex: 0 0 calc(50% - 3px);
     min-width: 0;
   }
 }
@@ -3915,12 +3964,10 @@ button {
   }
 
   #viewTools .tool-list {
-    flex-direction: column;
-    flex-wrap: nowrap;
+    grid-template-columns: 1fr;
   }
 
   #viewTools .tool-item {
-    flex-basis: auto;
     width: 100%;
   }
 
