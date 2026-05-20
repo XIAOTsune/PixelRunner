@@ -5,6 +5,7 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const RUNNINGHUB_CALL_RECORD_URL = "https://www.runninghub.cn/call-api/call-record";
+  const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -122,6 +123,9 @@
   }
 
   function isPrimaryPromptField(input) {
+    if (modules.state.isThirdPartyApp(modules.state.state.currentApp)) {
+      return String((input && input.key) || "") === "prompt";
+    }
     if (!isPromptField(input) || !modules.aiOptimize || typeof modules.aiOptimize.getPrimaryPromptInput !== "function") {
       return false;
     }
@@ -467,6 +471,10 @@
   function renderAppMeta(app) {
     const runtime = modules.runtime;
     if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
+    if (modules.state.isThirdPartyApp(app)) {
+      const grs = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs ? modules.state.state.thirdPartySettings.grs : {};
+      return `<div class="workspace-app-summary"><div class="workspace-app-name">第三方 API</div><span class="workspace-quick-count">GRS · ${runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></div>`;
+    }
     return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
   }
 
@@ -500,6 +508,14 @@
     if (!task || typeof task !== "object") return false;
     const normalized = String(task.status || "").trim().toLowerCase();
     return ["failed", "error", "timeout"].includes(normalized);
+  }
+
+  function isThirdPartyTaskRecord(task) {
+    return Boolean(task && (String(task.provider || "").trim() === "grs" || String(task.appName || "").trim() === "第三方 API"));
+  }
+
+  function getTaskDetailUrl(task) {
+    return isThirdPartyTaskRecord(task) ? GRS_CONSUMPTION_LOG_URL : RUNNINGHUB_CALL_RECORD_URL;
   }
 
   function getActiveRunningTasks() {
@@ -758,6 +774,7 @@
         const canCancel = isTaskCancellable(task);
         const canDelete = isTaskDeletable(task);
         const canOpenCallRecord = canOpenRunningHubCallRecord(task);
+        const detailTitle = isThirdPartyTaskRecord(task) ? "打开 GRS 消费记录" : "打开 RunningHub 调用记录";
         const actionTaskId = modules.runtime.escapeHtml(String(task.taskId || "").trim());
         return `
           <div class="running-task-item">
@@ -768,7 +785,7 @@
                   <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
                   ${
                     canOpenCallRecord
-                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-runninghub-call-record" data-task-id="${actionTaskId}" title="打开 RunningHub 调用记录">详情</button>`
+                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-runninghub-call-record" data-task-id="${actionTaskId}" title="${modules.runtime.escapeHtml(detailTitle)}">详情</button>`
                       : ""
                   }
                   ${
@@ -910,13 +927,23 @@
 
     if (input.type === "select" || input.type === "enum") {
       const options = Array.isArray(input.options) ? input.options : [];
+      const customKey = String(input.customKey || `${key}Custom`);
+      const customValue = String(state.formValues[customKey] || "");
+      const currentValue = String(value ?? "");
+      const optionValues = options.map((option) => String((typeof option === "object" ? option.value : option) ?? ""));
+      const isCustomSelected = Boolean(input.allowCustom && currentValue && !optionValues.includes(currentValue));
+      const selectedValue = isCustomSelected ? "__custom__" : currentValue;
       return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><select class="field-input" data-form-key="${escapedKey}"><option value="">请选择</option>${options
         .map((option) => {
           const optValue = typeof option === "object" ? option.value : option;
           const optLabel = typeof option === "object" ? option.label : option;
-          return `<option value="${runtime.escapeHtml(String(optValue ?? ""))}" ${String(value ?? "") === String(optValue ?? "") ? "selected" : ""}>${runtime.escapeHtml(String(optLabel ?? optValue ?? ""))}</option>`;
+          return `<option value="${runtime.escapeHtml(String(optValue ?? ""))}" ${selectedValue === String(optValue ?? "") ? "selected" : ""}>${runtime.escapeHtml(String(optLabel ?? optValue ?? ""))}</option>`;
         })
-        .join("")}</select></label>`;
+        .join("")}</select>${
+        input.allowCustom
+          ? `<input class="field-input third-party-custom-input ${selectedValue === "__custom__" ? "" : "is-hidden"}" type="text" data-form-key="${runtime.escapeHtml(customKey)}" value="${runtime.escapeHtml(isCustomSelected ? currentValue : customValue)}" placeholder="${runtime.escapeHtml(input.customPlaceholder || "输入自定义值")}" />`
+          : ""
+      }</label>`;
     }
 
     return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
@@ -976,6 +1003,7 @@
   function renderWorkspace() {
     const runtime = modules.runtime;
     const state = modules.state.state;
+    updateThirdPartyDynamicOptions(state.formValues && state.formValues.model);
     const appPickerMeta = runtime.getById("appPickerMeta");
     const dynamicInputContainer = runtime.getById("dynamicInputContainer");
     const workspaceInputArea = runtime.getById("workspaceInputArea");
@@ -1067,7 +1095,14 @@
       if (inputMeta && isImageInput(inputMeta)) return;
       if (element.matches("input, textarea, select")) {
         const nextValue = inputMeta ? getNormalizedFieldValue(inputMeta, element.value) : element.value;
-        state.formValues[key] = nextValue;
+        if (inputMeta && inputMeta.allowCustom && String(nextValue) === "__custom__") {
+          const customKey = String(inputMeta.customKey || `${key}Custom`);
+          const customInput = container.querySelector(`[data-form-key="${customKey}"]`);
+          state.formValues[customKey] = customInput ? customInput.value : state.formValues[customKey];
+          state.formValues[key] = String(state.formValues[customKey] || "").trim();
+        } else {
+          state.formValues[key] = nextValue;
+        }
         if (inputMeta && isNumericInput(inputMeta) && element.matches('input[type="number"]') && !isNumericInputInterimValue(nextValue)) {
           element.value = formatNumericInputValue(inputMeta, nextValue);
         }
@@ -1075,9 +1110,69 @@
     });
   }
 
+  function updateThirdPartyDynamicOptions(modelValue = "") {
+    const state = modules.state.state;
+    if (!modules.state.isThirdPartyApp(state.currentApp)) return false;
+    const model = String(modelValue || state.formValues.model || "").trim();
+    const capabilities = modules.state.getThirdPartyModelCapabilities(model);
+    const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
+    const ratioInput = inputs.find((input) => String(input.key || "") === "aspectRatio");
+    const resolutionInput = inputs.find((input) => String(input.key || "") === "resolution");
+    if (ratioInput) {
+      ratioInput.options = capabilities.allowCustomAspectRatio
+        ? [...capabilities.aspectRatios, { value: "__custom__", label: "自定义比例" }]
+        : capabilities.aspectRatios;
+      ratioInput.allowCustom = capabilities.allowCustomAspectRatio;
+      ratioInput.customKey = "aspectRatioCustom";
+      ratioInput.customPlaceholder = "例如 5:4、7:5 或 1328x768";
+    }
+    if (resolutionInput) {
+      resolutionInput.options = capabilities.resolutions;
+    }
+
+    const currentRatio = String(state.formValues.aspectRatio || "").trim();
+    if (!currentRatio || (!capabilities.aspectRatios.includes(currentRatio) && !capabilities.allowCustomAspectRatio)) {
+      state.formValues.aspectRatio = capabilities.defaultAspectRatio;
+    } else if (capabilities.allowCustomAspectRatio && !capabilities.aspectRatios.includes(currentRatio)) {
+      state.formValues.aspectRatioCustom = currentRatio;
+    }
+
+    const currentResolution = String(state.formValues.resolution || "").trim();
+    if (!currentResolution || !capabilities.resolutions.includes(currentResolution)) {
+      state.formValues.resolution = capabilities.defaultResolution;
+    }
+    return true;
+  }
+
+  async function persistThirdPartyLastSelection() {
+    const state = modules.state.state;
+    if (!modules.state.isThirdPartyApp(state.currentApp)) return;
+    collectFormValuesFromDom();
+    const snapshot = {
+      model: String(state.formValues.model || "").trim(),
+      aspectRatio: String(state.formValues.aspectRatio || state.formValues.aspectRatioCustom || "").trim(),
+      aspectRatioCustom: String(state.formValues.aspectRatioCustom || "").trim(),
+      resolution: String(state.formValues.resolution || "").trim()
+    };
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_LAST_SELECTION, JSON.stringify(snapshot));
+    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : null;
+    if (grs) {
+      grs.selectedModel = snapshot.model || grs.selectedModel;
+      grs.aspectRatio = snapshot.aspectRatio || grs.aspectRatio;
+      grs.resolution = snapshot.resolution || grs.resolution;
+      const thirdPartySettings = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
+      state.thirdPartySettings = thirdPartySettings;
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdPartySettings));
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdPartySettings.grs.apiKey || "");
+    }
+  }
+
   function buildRunPayload() {
     const state = modules.state.state;
     collectFormValuesFromDom();
+    if (modules.state.isThirdPartyApp(state.currentApp)) {
+      return buildThirdPartyRunPayload();
+    }
     const currentAppId = modules.state.resolveAppId(state.currentApp);
     const payload = {
       appId: currentAppId,
@@ -1096,6 +1191,33 @@
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
         maxConcurrentTasks: state.settings.maxConcurrentTasks
+      }
+    };
+    state.lastRunPayload = payload;
+    return payload;
+  }
+
+  function buildThirdPartyRunPayload() {
+    const state = modules.state.state;
+    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
+    const payload = {
+      provider: "grs",
+      adapter: grs.adapter || "grs-image-generate",
+      appId: modules.state.THIRD_PARTY_APP_ID,
+      appName: "第三方 API",
+      app: state.currentApp,
+      apiKey: grs.apiKey || "",
+      inputs: normalizePayloadInputs(state.currentApp, state.formValues),
+      settings: {
+        pollInterval: state.settings.pollInterval,
+        timeout: state.settings.timeout,
+        maxConcurrentTasks: state.settings.maxConcurrentTasks
+      },
+      config: {
+        apiUrl: grs.apiUrl || "https://grsaiapi.com",
+        apiKey: grs.apiKey || "",
+        chatModel: grs.chatModel || "",
+        adapter: grs.adapter || "grs-image-generate"
       }
     };
     state.lastRunPayload = payload;
@@ -1132,6 +1254,7 @@
     const nextTask = {
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
+      provider: String(patch.provider || "").trim(),
       appName: String(patch.appName || "").trim(),
       status: String(patch.status || "running").trim() || "running",
       detail: String(patch.detail || "").trim(),
@@ -1161,6 +1284,7 @@
       list[index] = {
         ...current,
         ...nextTask,
+        provider: nextTask.provider || current.provider || "",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
@@ -1595,6 +1719,14 @@
     const state = modules.state.state;
     const app = state.currentApp;
     if (!app) throw new Error("请先选择一个应用");
+    if (modules.state.isThirdPartyApp(app)) {
+      if (!modules.state.state.thirdPartySettings || !modules.state.state.thirdPartySettings.enabled) {
+        throw new Error("请先在设置页启用第三方支持");
+      }
+      if (!String(modules.state.state.thirdPartySettings.grs.apiKey || "").trim()) {
+        throw new Error("请先在第三方支持中配置 GRS API Key");
+      }
+    }
     collectFormValuesFromDom();
     const missing = (Array.isArray(app.inputs) ? app.inputs : [])
       .filter((input) => input.required)
@@ -1843,15 +1975,17 @@
   }
 
   async function startRunTaskFlow(payload, sourceDocument) {
+    const isThirdPartyTask = payload && payload.provider === "grs";
     const tempTaskId = createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
     upsertRunningTask({
       taskId: tempTaskId,
       remoteTaskId: "",
+      provider: payload.provider || "",
       appName: payload.appName,
       status: "submitting",
-      detail: "正在提交到 RunningHub...",
+      detail: isThirdPartyTask ? "正在提交到 GRS..." : "正在提交到 RunningHub...",
       accountSnapshot: getCurrentAccountSnapshot(),
       sourceDocument,
       createdAt: Date.now(),
@@ -1860,11 +1994,14 @@
 
     try {
       modules.ui.logToWorkspace(
-        `[运行提交] appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
+        `[运行提交] provider=${payload.provider || "runninghub"} appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
         "info"
       );
 
-      const submitResult = await modules.runtime.callHost("runninghub.submitTask", [payload], {
+      const submitMethod = isThirdPartyTask ? "thirdParty.grs.submitTask" : "runninghub.submitTask";
+      const pollMethod = isThirdPartyTask ? "thirdParty.grs.pollTask" : "runninghub.pollTask";
+      const statusLabel = isThirdPartyTask ? "GRS" : "RunningHub";
+      const submitResult = await modules.runtime.callHost(submitMethod, [payload], {
         timeoutMs: Math.max(10000, Number(payload.settings.timeout || 180) * 1000 + 5000)
       });
 
@@ -1877,21 +2014,21 @@
         remoteTaskId,
         appName: payload.appName,
         status: "running",
-        detail: "任务已提交，正在等待 RunningHub 返回结果。",
+        detail: `任务已提交，正在等待 ${statusLabel} 返回结果。`,
         sourceDocument,
         submittedAt: Date.now()
       });
-      scheduleAccountSummaryRefresh(600);
+      if (!isThirdPartyTask) scheduleAccountSummaryRefresh(600);
 
       const pollResult = await modules.runtime.callHost(
-        "runninghub.pollTask",
-        [{ apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
+        pollMethod,
+        [isThirdPartyTask ? { ...payload, taskId: remoteTaskId } : { apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
         { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
       );
 
       if (pollResult && pollResult.timedOut) {
         const timeoutDetail = pollResult.stillRunning
-          ? `本地等待超时，但云端状态仍为 ${pollResult.status || "RUNNING"}，已切换为后台追踪。`
+          ? `本地等待超时，但 ${statusLabel} 状态仍为 ${pollResult.status || "RUNNING"}，已切换为后台追踪。`
           : `本地等待超时，当前状态：${pollResult.status || "未知"}。已切换为后台追踪继续确认。`;
         upsertRunningTask({
           taskId: remoteTaskId,
@@ -1902,7 +2039,7 @@
           sourceDocument
         });
         modules.ui.logToWorkspace(timeoutDetail, "warn");
-        startTaskStatusTracking(remoteTaskId, payload, sourceDocument);
+        if (!isThirdPartyTask) startTaskStatusTracking(remoteTaskId, payload, sourceDocument);
         return;
       }
 
@@ -1929,9 +2066,9 @@
           sourceDocument,
           finishedAt
         });
-        if (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null) {
+        if (!isThirdPartyTask && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
           scheduleAccountSummaryRefresh();
-        } else {
+        } else if (!isThirdPartyTask) {
           await refreshAccountAndPatchTaskCharge(remoteTaskId);
         }
         modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
@@ -1953,9 +2090,9 @@
         sourceDocument,
         finishedAt: completedAt
       });
-      if (pollResult && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
+      if (!isThirdPartyTask && pollResult && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
         scheduleAccountSummaryRefresh();
-      } else {
+      } else if (!isThirdPartyTask) {
         await refreshAccountAndPatchTaskCharge(remoteTaskId);
       }
       setLastResult({
@@ -2024,7 +2161,7 @@
         sourceDocument,
         finishedAt: Date.now()
       });
-      scheduleAccountSummaryRefresh();
+      if (!isThirdPartyTask) scheduleAccountSummaryRefresh();
       modules.ui.logToWorkspace(normalizedMessage, cancelled ? "warn" : "error");
     }
   }
@@ -2137,9 +2274,18 @@
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
-        if (!inputMeta || isImageInput(inputMeta)) return;
+        if (!inputMeta) {
+          modules.state.state.formValues[key] = element.value;
+          return;
+        }
+        if (isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
-        modules.state.state.formValues[key] = nextValue;
+        if (inputMeta.allowCustom && String(nextValue) === "__custom__") {
+          const customKey = String(inputMeta.customKey || `${key}Custom`);
+          modules.state.state.formValues[key] = String(modules.state.state.formValues[customKey] || "").trim();
+        } else {
+          modules.state.state.formValues[key] = nextValue;
+        }
         if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
           modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
         }
@@ -2158,14 +2304,30 @@
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
-        if (!inputMeta || isImageInput(inputMeta)) return;
+        if (!inputMeta) {
+          modules.state.state.formValues[key] = element.value;
+          return;
+        }
+        if (isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
-        modules.state.state.formValues[key] = nextValue;
+        if (inputMeta.allowCustom && String(nextValue) === "__custom__") {
+          const customKey = String(inputMeta.customKey || `${key}Custom`);
+          modules.state.state.formValues[key] = String(modules.state.state.formValues[customKey] || "").trim();
+        } else {
+          modules.state.state.formValues[key] = nextValue;
+        }
         if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
           modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
         }
         if (isNumericInput(inputMeta) && element.matches('input[type="number"]')) {
           element.value = formatNumericInputValue(inputMeta, nextValue);
+        }
+        if (modules.state.isThirdPartyApp(modules.state.state.currentApp) && key === "model") {
+          collectFormValuesFromDom();
+          updateThirdPartyDynamicOptions(nextValue);
+          renderWorkspace();
+        } else if (inputMeta.allowCustom) {
+          renderWorkspace();
         }
       });
 
@@ -2274,7 +2436,7 @@
             modules.ui.logToWorkspace(`浏览器预览模式已生成任务负载：${JSON.stringify(payload)}`, "info");
             return;
           }
-          if (!payload.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
+          if (!payload.apiKey) throw new Error(payload.provider === "grs" ? "请先在第三方支持中配置 GRS API Key" : "请先在设置页保存 RunningHub API Key");
           if (!payload.appId) throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
           if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
             throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
@@ -2284,6 +2446,7 @@
           }
 
           markRunCooldown();
+          await persistThirdPartyLastSelection();
           const fallbackSourceDocument = await captureSourceDocumentInfo();
           const sourceDocument = resolveSourceDocumentFromImageInputs(
             modules.state.state.currentApp,
@@ -2315,16 +2478,21 @@
       const action = target.getAttribute("data-action");
       if (action === "cancel-running-task") {
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
-        const apiKey = modules.state.state.settings.apiKey;
         if (!taskId) return;
         const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === taskId);
         const remoteTaskId = String((currentTask && (currentTask.remoteTaskId || currentTask.taskId)) || taskId).trim();
         if (!remoteTaskId) return;
+        const isThirdPartyTask = currentTask && String(currentTask.appName || "") === "第三方 API";
+        const grs = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs ? modules.state.state.thirdPartySettings.grs : {};
+        const cancelMethod = isThirdPartyTask ? "thirdParty.grs.cancelTask" : "runninghub.cancelTask";
+        const cancelPayload = isThirdPartyTask
+          ? { apiKey: grs.apiKey, apiUrl: grs.apiUrl, taskId: remoteTaskId }
+          : { apiKey: modules.state.state.settings.apiKey, taskId: remoteTaskId };
         target.disabled = true;
         try {
           stopTaskStatusTracking(remoteTaskId);
           pendingAutoPlacements.delete(remoteTaskId);
-          await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId: remoteTaskId }], { timeoutMs: 20000 });
+          await modules.runtime.callHost(cancelMethod, [cancelPayload], { timeoutMs: 20000 });
           upsertRunningTask({
             taskId,
             remoteTaskId,
@@ -2334,7 +2502,7 @@
             failureLabel: "已取消",
             finishedAt: Date.now()
           });
-          scheduleAccountSummaryRefresh();
+          if (!isThirdPartyTask) scheduleAccountSummaryRefresh();
           modules.ui.logToWorkspace(`任务已取消：${remoteTaskId}`, "warn");
         } catch (error) {
           modules.ui.logToWorkspace(`取消任务失败：${error.message}`, "error");
@@ -2354,19 +2522,22 @@
 
       if (action === "open-runninghub-call-record") {
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
+        const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === taskId);
+        const targetUrl = getTaskDetailUrl(currentTask);
+        const targetName = isThirdPartyTaskRecord(currentTask) ? "GRS 消费记录" : "RunningHub 调用记录";
         target.disabled = true;
         try {
           if (!modules.runtime.isPluginRuntime()) {
-            global.open(RUNNINGHUB_CALL_RECORD_URL, "_blank", "noopener");
+            global.open(targetUrl, "_blank", "noopener");
           } else {
             const result = await modules.runtime.callHost(
               "shell.openExternal",
-              [RUNNINGHUB_CALL_RECORD_URL, "将使用系统默认浏览器打开 RunningHub 调用记录页面。"],
+              [targetUrl, `将使用系统默认浏览器打开 ${targetName} 页面。`],
               { timeoutMs: 15000 }
             );
             if (!result || !result.ok) throw new Error("系统未确认打开成功");
           }
-          modules.ui.logToWorkspace(`已打开 RunningHub 调用记录${taskId ? `：${taskId}` : ""}`, "info");
+          modules.ui.logToWorkspace(`已打开 ${targetName}${taskId ? `：${taskId}` : ""}`, "info");
         } catch (error) {
           modules.ui.logToWorkspace(`打开调用记录失败：${error.message || error}`, "error");
         } finally {
@@ -2379,6 +2550,7 @@
   modules.workspace = {
     setModalOpen,
     updateRunButtonState,
+    updateThirdPartyDynamicOptions,
     renderWorkspace,
     buildRunPayload,
     collectFormValuesFromDom,

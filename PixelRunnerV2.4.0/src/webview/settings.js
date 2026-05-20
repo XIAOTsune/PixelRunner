@@ -7,7 +7,7 @@
   }
 
   function renderSettingsDiagnostics(message, options = {}) {
-    const box = modules.runtime.getById("settingsDiagnosticBox");
+    const box = modules.runtime.getById("thirdPartyStatusSummary");
     if (!box) return;
 
     const runtimeText = options.runtime ? `<p>宿主环境：${modules.runtime.escapeHtml(options.runtime)}</p>` : "";
@@ -21,7 +21,11 @@
       ? `<p>当前应用：${modules.runtime.escapeHtml(modules.state.getAppDisplayName(currentApp))}。</p>`
       : "<p>当前应用：尚未选择。</p>";
 
-    box.innerHTML = `<p>${modules.runtime.escapeHtml(String(message || ""))}</p>${runtimeText}${apiKeyText}${appText}${templateText}${currentAppText}`;
+    const thirdPartyText = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.enabled
+      ? "<p>第三方支持：已启用，工作台会显示第三方 API 卡片。</p>"
+      : "<p>第三方支持：未启用。</p>";
+
+    box.innerHTML = `<p>${modules.runtime.escapeHtml(String(message || ""))}</p>${runtimeText}${apiKeyText}${appText}${templateText}${currentAppText}${thirdPartyText}`;
   }
 
   function updateAccountSummary(account) {
@@ -123,6 +127,51 @@
         settings.aiOptimizeAppId ?? modules.state.DEFAULT_AI_OPTIMIZE_APP_ID
       );
     }
+    fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+  }
+
+  function fillThirdPartyModelSelect(models, selected) {
+    const select = modules.runtime.getById("thirdPartyGrsDefaultModelInput");
+    if (!select) return;
+    const list = Array.isArray(models) && models.length ? models : modules.state.DEFAULT_THIRD_PARTY_SETTINGS.grs.imageModels;
+    const value = String(selected || list[0] || "").trim();
+    select.innerHTML = list
+      .map((model) => `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(String(model))}</option>`)
+      .join("");
+    if (value && !list.includes(value)) {
+      select.insertAdjacentHTML("afterbegin", `<option value="${modules.runtime.escapeHtml(value)}" selected>${modules.runtime.escapeHtml(value)}</option>`);
+    }
+  }
+
+  function fillThirdPartySettingsForm(settings) {
+    const normalized = modules.state.normalizeThirdPartySettings(settings);
+    const grs = normalized.grs;
+    if (modules.runtime.getById("thirdPartyEnabledInput")) modules.runtime.getById("thirdPartyEnabledInput").checked = Boolean(normalized.enabled);
+    if (modules.runtime.getById("thirdPartyGrsApiUrlInput")) modules.runtime.getById("thirdPartyGrsApiUrlInput").value = grs.apiUrl || "";
+    if (modules.runtime.getById("thirdPartyGrsApiKeyInput")) modules.runtime.getById("thirdPartyGrsApiKeyInput").value = grs.apiKey || "";
+    if (modules.runtime.getById("thirdPartyGrsImageModelsInput")) modules.runtime.getById("thirdPartyGrsImageModelsInput").value = grs.imageModels.join(", ");
+    if (modules.runtime.getById("thirdPartyGrsChatModelInput")) modules.runtime.getById("thirdPartyGrsChatModelInput").value = grs.chatModel || "";
+    if (modules.runtime.getById("thirdPartyGrsDefaultRatioInput")) modules.runtime.getById("thirdPartyGrsDefaultRatioInput").value = grs.aspectRatio || "1:1";
+    if (modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")) modules.runtime.getById("thirdPartyGrsDefaultResolutionInput").value = grs.resolution || "1K";
+    if (modules.runtime.getById("thirdPartyGrsAdapterInput")) modules.runtime.getById("thirdPartyGrsAdapterInput").value = grs.adapter || "grs-image-generate";
+    fillThirdPartyModelSelect(grs.imageModels, grs.selectedModel);
+  }
+
+  function readThirdPartySettingsForm() {
+    return modules.state.normalizeThirdPartySettings({
+      enabled: Boolean(modules.runtime.getById("thirdPartyEnabledInput")?.checked),
+      provider: "grs",
+      grs: {
+        apiUrl: modules.runtime.getById("thirdPartyGrsApiUrlInput")?.value || "",
+        apiKey: modules.runtime.getById("thirdPartyGrsApiKeyInput")?.value || "",
+        imageModels: modules.runtime.getById("thirdPartyGrsImageModelsInput")?.value || "",
+        chatModel: modules.runtime.getById("thirdPartyGrsChatModelInput")?.value || "",
+        selectedModel: modules.runtime.getById("thirdPartyGrsDefaultModelInput")?.value || "",
+        aspectRatio: modules.runtime.getById("thirdPartyGrsDefaultRatioInput")?.value || "",
+        resolution: modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")?.value || "",
+        adapter: modules.runtime.getById("thirdPartyGrsAdapterInput")?.value || ""
+      }
+    });
   }
 
   const THEME_PRESETS = {
@@ -437,6 +486,7 @@
   }
 
   function readSettingsForm() {
+    modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
     return modules.state.normalizeSettings({
       apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
@@ -449,6 +499,26 @@
   async function loadSettingsSnapshot() {
     const apiKey = String((await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY)) || "").trim();
     const rawSettings = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS), {});
+    const rawThirdPartySettings = modules.runtime.readJsonText(
+      await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS),
+      null
+    );
+    const rawThirdPartyApiKey = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY);
+    const legacyThirdParty = rawSettings && rawSettings.thirdParty && typeof rawSettings.thirdParty === "object" ? rawSettings.thirdParty : {};
+    const storedThirdParty = rawThirdPartySettings && typeof rawThirdPartySettings === "object" ? rawThirdPartySettings : {};
+    const legacyGrs = legacyThirdParty.grs && typeof legacyThirdParty.grs === "object" ? legacyThirdParty.grs : {};
+    const storedGrs = storedThirdParty.grs && typeof storedThirdParty.grs === "object" ? storedThirdParty.grs : {};
+    const mergedThirdParty = {
+      ...legacyThirdParty,
+      ...storedThirdParty,
+      grs: {
+        ...legacyGrs,
+        ...storedGrs,
+        ...(rawThirdPartyApiKey !== null && rawThirdPartyApiKey !== undefined ? { apiKey: rawThirdPartyApiKey } : {})
+      }
+    };
+    const thirdParty = modules.state.normalizeThirdPartySettings(mergedThirdParty);
+    modules.state.state.thirdPartySettings = thirdParty;
     return modules.state.normalizeSettings({
       apiKey,
       pollInterval: rawSettings && rawSettings.pollInterval,
@@ -460,18 +530,23 @@
 
   async function saveSettingsSnapshot(settings) {
     const normalized = modules.state.normalizeSettings(settings);
+    const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, normalized.apiKey);
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdParty));
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdParty.grs.apiKey || "");
     await modules.runtime.storageSetItem(
       modules.state.STORAGE_KEYS.SETTINGS,
       JSON.stringify({
         pollInterval: normalized.pollInterval,
         timeout: normalized.timeout,
         maxConcurrentTasks: normalized.maxConcurrentTasks,
-        aiOptimizeAppId: normalized.aiOptimizeAppId
+        aiOptimizeAppId: normalized.aiOptimizeAppId,
+        thirdParty
       })
     );
 
     modules.state.state.settings = normalized;
+    modules.state.state.thirdPartySettings = thirdParty;
     modules.state.state.settingsLoaded = true;
     fillSettingsForm(normalized);
     if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
@@ -550,6 +625,7 @@
     const saveTemplateButton = runtime.getById("btnSaveTemplate");
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
+    const scanThirdPartyModelsButton = runtime.getById("btnScanThirdPartyGrsModels");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
@@ -557,7 +633,16 @@
       "settingsPollIntervalInput",
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
-      "settingsAiOptimizeAppIdInput"
+      "settingsAiOptimizeAppIdInput",
+      "thirdPartyEnabledInput",
+      "thirdPartyGrsApiUrlInput",
+      "thirdPartyGrsApiKeyInput",
+      "thirdPartyGrsImageModelsInput",
+      "thirdPartyGrsChatModelInput",
+      "thirdPartyGrsDefaultModelInput",
+      "thirdPartyGrsDefaultRatioInput",
+      "thirdPartyGrsDefaultResolutionInput",
+      "thirdPartyGrsAdapterInput"
     ];
 
     bindAppManagerControls();
@@ -630,6 +715,19 @@
     fieldIds.forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
+      if (id === "thirdPartyGrsImageModelsInput") {
+        element.addEventListener("input", () => {
+          const snapshot = readThirdPartySettingsForm();
+          fillThirdPartyModelSelect(snapshot.grs.imageModels, snapshot.grs.selectedModel);
+        });
+      }
+      if (id === "thirdPartyEnabledInput") {
+        element.addEventListener("change", () => {
+          modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
+          if (modules.apps && typeof modules.apps.renderAppPickerList === "function") modules.apps.renderAppPickerList();
+          if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
+        });
+      }
       if (id === "settingsMaxConcurrentTasksInput") {
         element.addEventListener("input", () => {
           const previewSettings = modules.state.normalizeSettings({
@@ -766,6 +864,43 @@
             runtime: modules.state.state.hostRuntime,
             hasApiKey: Boolean(modules.state.state.settings.apiKey)
           });
+        }
+      });
+    }
+
+    if (scanThirdPartyModelsButton) {
+      scanThirdPartyModelsButton.addEventListener("click", async () => {
+        scanThirdPartyModelsButton.disabled = true;
+        const statusEl = runtime.getById("thirdPartyStatusSummary");
+        runtime.setSummaryStatus(statusEl, "正在扫描 GRS 生图模型...", "info");
+        try {
+          const snapshot = readThirdPartySettingsForm();
+          if (!modules.runtime.isPluginRuntime()) {
+            runtime.setSummaryStatus(statusEl, "浏览器预览模式无法访问 GRS，请在 UXP 插件内扫描。", "warn");
+            return;
+          }
+          const result = await modules.runtime.callHost(
+            "thirdParty.grs.listModels",
+            [{ apiUrl: snapshot.grs.apiUrl, apiKey: snapshot.grs.apiKey, kind: "image" }],
+            { timeoutMs: 45000 }
+          );
+          const models = Array.isArray(result && result.models) ? result.models : [];
+          if (!models.length) throw new Error("未获取到可用生图模型");
+          const nextSettings = modules.state.normalizeThirdPartySettings({
+            ...snapshot,
+            grs: {
+              ...snapshot.grs,
+              imageModels: models,
+              selectedModel: models.includes(snapshot.grs.selectedModel) ? snapshot.grs.selectedModel : models[0]
+            }
+          });
+          modules.state.state.thirdPartySettings = nextSettings;
+          fillThirdPartySettingsForm(nextSettings);
+          runtime.setSummaryStatus(statusEl, `已获取 ${models.length} 个 GRS 生图模型，记得保存设置。`, "success");
+        } catch (error) {
+          runtime.setSummaryStatus(statusEl, `扫描失败：${error.message}`, "error");
+        } finally {
+          scanThirdPartyModelsButton.disabled = false;
         }
       });
     }

@@ -24,12 +24,14 @@ document.addEventListener("DOMContentLoaded", () => {
   modules.settings.bindSettingsActions();
   modules.sound.initialize();
 
-  Promise.all([
-    modules.apps.refreshWorkspaceApps({ quiet: true }),
-    modules.quickEntries.initializeQuickEntries(),
-    modules.templates.refreshTemplates({ quiet: true }),
-    modules.settings.initializeSettings()
-  ])
+  modules.settings.initializeSettings()
+    .then(() =>
+      Promise.all([
+        modules.apps.refreshWorkspaceApps({ quiet: true }),
+        modules.quickEntries.initializeQuickEntries(),
+        modules.templates.refreshTemplates({ quiet: true })
+      ])
+    )
     .then(() => {
       modules.apps.renderSavedAppsList();
       modules.templates.renderSavedTemplatesList();
@@ -41,7 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.4.6"
+        version: "2.4.7"
       });
     })
     .catch((error) => {

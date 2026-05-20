@@ -938,14 +938,19 @@
           return;
         }
 
+        const useThirdPartyOptimize = Boolean(
+          modules.state.isThirdPartyApp(modules.state.state.currentApp) &&
+            modules.state.state.thirdPartySettings &&
+            modules.state.state.thirdPartySettings.enabled
+        );
         const apiKey = String(modules.state.state.settings.apiKey || "").trim();
         const aiOptimizeAppId = String(modules.state.state.settings.aiOptimizeAppId || modules.state.DEFAULT_AI_OPTIMIZE_APP_ID || "").trim();
-        if (!apiKey) {
+        if (!useThirdPartyOptimize && !apiKey) {
           setStatus("请先在设置页保存 RunningHub API Key。", "warn");
           renderModal();
           return;
         }
-        if (!aiOptimizeAppId) {
+        if (!useThirdPartyOptimize && !aiOptimizeAppId) {
           setStatus("当前未配置 AI优化应用 ID，请到设置页高级设置中填写。", "warn");
           renderModal();
           return;
@@ -983,6 +988,35 @@
         };
 
         try {
+          if (useThirdPartyOptimize) {
+            const grs = modules.state.state.thirdPartySettings.grs || {};
+            if (!String(grs.apiKey || "").trim()) throw new Error("请先在第三方支持中配置 GRS API Key。");
+            state.taskDetail = "正在使用 GRS 文本模型优化提示词...";
+            renderModal();
+            const result = await modules.runtime.callHost(
+              "thirdParty.grs.optimizePrompt",
+              [{
+                config: {
+                  apiUrl: grs.apiUrl,
+                  apiKey: grs.apiKey,
+                  chatModel: grs.chatModel
+                },
+                prompt: buildAiOptimizePromptText(),
+                timeout: modules.state.state.settings.timeout
+              }],
+              { timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000) }
+            );
+            const text = String((result && result.text) || "").trim();
+            if (!text) throw new Error("GRS 文本模型未返回有效提示词。");
+            state.resultText = text;
+            state.taskStatus = "success";
+            state.taskUpdatedAt = Date.now();
+            state.taskDetail = `GRS 文本模型已完成优化：${result && result.model ? result.model : "chat"}`;
+            setStatus("AI优化完成，可应用到当前提示词。", "success");
+            renderModal();
+            return;
+          }
+
           const parsedApp = await modules.runtime.callHost("runninghub.parseApp", [{
             appId: aiOptimizeAppId,
             apiKey,

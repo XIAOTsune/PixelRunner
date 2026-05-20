@@ -7,6 +7,14 @@ import {
   runAiOptimizeTask,
   submitRunningHubTask
 } from "./runninghub.js";
+import {
+  cancelThirdPartyGrsTask,
+  fetchThirdPartyGrsTaskStatus,
+  listThirdPartyGrsModels,
+  pollThirdPartyGrsTask,
+  runThirdPartyGrsPromptOptimize,
+  submitThirdPartyGrsTask
+} from "./third-party-grs.js";
 import { parseRunningHubApp } from "./runninghub-parser.js";
 import { openExternalUrl, openLocalPath, resolveTutorialPath } from "./shell.js";
 import {
@@ -74,6 +82,24 @@ async function handleBridgeRequest(message, webviewEl) {
         break;
       case "runninghub.parseApp":
         result = await parseRunningHubApp(message.args);
+        break;
+      case "thirdParty.grs.submitTask":
+        result = await submitThirdPartyGrsTask(message.args);
+        break;
+      case "thirdParty.grs.pollTask":
+        result = await pollThirdPartyGrsTask(message.args);
+        break;
+      case "thirdParty.grs.fetchTaskStatus":
+        result = await fetchThirdPartyGrsTaskStatus(message.args);
+        break;
+      case "thirdParty.grs.cancelTask":
+        result = await cancelThirdPartyGrsTask(message.args);
+        break;
+      case "thirdParty.grs.listModels":
+        result = await listThirdPartyGrsModels(message.args);
+        break;
+      case "thirdParty.grs.optimizePrompt":
+        result = await runThirdPartyGrsPromptOptimize(message.args);
         break;
       case "photoshop.getActiveDocumentInfo":
         result = await getPhotoshopDocumentInfo();
