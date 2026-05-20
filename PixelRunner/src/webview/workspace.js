@@ -4,6 +4,7 @@
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
+  const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
   const RUNNINGHUB_CALL_RECORD_URL = "https://www.runninghub.cn/call-api/call-record";
   const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   let runButtonCooldownUntil = 0;
@@ -709,6 +710,32 @@
       text.includes("does not exist") ||
       text.includes("unknown task") ||
       text.includes("unknown bridge method")
+    );
+  }
+
+  function isTransientTaskErrorMessage(message) {
+    const text = String(message || "").trim().toLowerCase();
+    if (!text) return false;
+    if (isPermanentTrackingErrorMessage(text)) return false;
+    return (
+      text.includes("abort") ||
+      text.includes("aborted") ||
+      text.includes("timeout") ||
+      text.includes("timed out") ||
+      text.includes("network") ||
+      text.includes("fetch failed") ||
+      text.includes("failed to fetch") ||
+      text.includes("load failed") ||
+      text.includes("request failed (http 408)") ||
+      text.includes("request failed (http 409)") ||
+      text.includes("request failed (http 425)") ||
+      text.includes("request failed (http 429)") ||
+      /request failed \(http 5\d\d\)/.test(text) ||
+      text.includes("econnreset") ||
+      text.includes("enotfound") ||
+      text.includes("etimedout") ||
+      text.includes("socket") ||
+      text.includes("temporarily unavailable")
     );
   }
 
@@ -1863,6 +1890,28 @@
     );
   }
 
+  function isAutoPlacementRetryableError(error) {
+    if (isAutoPlacementBlockedError(error)) return true;
+    const message = String((error && error.message) || error || "").toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes("failed to download result") ||
+      message.includes("download") ||
+      message.includes("timeout") ||
+      message.includes("timed out") ||
+      message.includes("network") ||
+      message.includes("fetch failed") ||
+      message.includes("failed to fetch") ||
+      message.includes("load failed") ||
+      /http (408|409|425|429|5\d\d)/.test(message) ||
+      message.includes("econnreset") ||
+      message.includes("enotfound") ||
+      message.includes("etimedout") ||
+      message.includes("socket") ||
+      message.includes("temporarily unavailable")
+    );
+  }
+
   function schedulePendingAutoPlacementRetry(delayMs = 4000) {
     if (autoPlacementRetryTimer || pendingAutoPlacements.size === 0) return;
     autoPlacementRetryTimer = window.setTimeout(() => {
@@ -1905,10 +1954,17 @@
           });
           modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
         } catch (error) {
-          if (isAutoPlacementBlockedError(error)) {
+          if (isAutoPlacementRetryableError(error) && Number(queued.attempts || 0) + 1 < AUTO_PLACEMENT_MAX_TEMP_FAILURES) {
+            const attempts = Number(queued.attempts || 0) + 1;
+            const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
             pendingAutoPlacements.set(taskId, {
               ...queued,
-              attempts: Number(queued.attempts || 0) + 1
+              attempts
+            });
+            upsertRunningTask({
+              taskId,
+              remoteTaskId: taskId,
+              detail: `任务已完成，返图暂未成功：${message}，稍后自动重试（${attempts}/${AUTO_PLACEMENT_MAX_TEMP_FAILURES}）。`
             });
             continue;
           }
@@ -1919,7 +1975,7 @@
             remoteTaskId: taskId,
             detail: `任务已完成，但自动贴回失败：${message}`
           });
-          modules.ui.logToWorkspace(`返图重试失败：${message}`, "warn");
+          modules.ui.logToWorkspace(`返图重试已停止：${message}`, "warn");
         }
       }
     } finally {
@@ -1942,13 +1998,16 @@
     try {
       response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
     } catch (error) {
-      if (isAutoPlacementBlockedError(error)) {
+      if (isAutoPlacementRetryableError(error)) {
         queueAutoPlacement(result);
+        const retryMessage = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
         return {
           ok: false,
           queued: true,
-          blocked: true,
-          message: "Photoshop 当前正在执行液化或其他模态操作，返图已暂停，待可执行时会自动继续。"
+          blocked: isAutoPlacementBlockedError(error),
+          message: isAutoPlacementBlockedError(error)
+            ? "Photoshop 当前正在执行液化或其他模态操作，返图已暂停，待可执行时会自动继续。"
+            : `返图暂未成功：${retryMessage}，稍后会自动重试。`
         };
       }
       throw error;
@@ -2142,6 +2201,21 @@
       const message = error && error.message ? error.message : String(error || "任务执行失败");
       const normalizedMessage = String(message).trim();
       const cancelled = /cancel/i.test(normalizedMessage);
+      if (!isThirdPartyTask && activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(normalizedMessage)) {
+        const retryDetail = `网络波动或状态查询暂不可用：${normalizedMessage}。已保留 taskId，并切换为后台追踪继续确认 RunningHub 结果。`;
+        upsertRunningTask({
+          taskId: activeTaskId,
+          remoteTaskId: activeRemoteTaskId,
+          appName: payload.appName,
+          status: "tracking",
+          detail: retryDetail,
+          errorMessage: "",
+          sourceDocument
+        });
+        modules.ui.logToWorkspace(`${retryDetail} 远端任务可能仍在运行。`, "warn");
+        startTaskStatusTracking(activeRemoteTaskId, payload, sourceDocument);
+        return;
+      }
       const failureLabel = getTaskFailureLabel({
         status: cancelled ? "cancelled" : "failed",
         errorMessage: normalizedMessage,
