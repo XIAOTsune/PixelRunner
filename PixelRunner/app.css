@@ -205,6 +205,17 @@ body.has-custom-theme-image .overlay-card {
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
 }
 
+body.has-glass-theme .workspace-input-card,
+body.has-glass-theme .workspace-run-card,
+body.has-custom-theme-image .workspace-input-card,
+body.has-custom-theme-image .workspace-run-card {
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 body.has-custom-theme-image .input-zone,
 body.has-custom-theme-image .field-input,
 body.has-custom-theme-image .workspace-app-meta,
@@ -902,6 +913,23 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 0 0 1px rgba(25, 36, 48, 0.5);
+}
+
+.workspace-input-card,
+.workspace-run-card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.workspace-input-card:hover,
+.workspace-run-card:hover {
+  transform: none;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .workspace-app-toolbar {
