@@ -2180,11 +2180,33 @@
     const quickEntryDeleteCancel = modules.runtime.getById("btnCancelQuickEntryDelete");
     const quickEntryDeleteConfirm = modules.runtime.getById("btnConfirmQuickEntryDelete");
     const quickEntryDeleteHint = modules.runtime.getById("quickEntryDeleteHint");
+    const quickEntryNoticeTitle = modules.runtime.getById("quickEntryNoticeTitle");
+    const quickEntryNoticeHint = modules.runtime.getById("quickEntryNoticeHint");
+    const quickEntryNoticeClose = modules.runtime.getById("quickEntryNoticeModalClose");
+    const quickEntryNoticeConfirm = modules.runtime.getById("btnConfirmQuickEntryNotice");
     const quickEntryDialogState = {
       nameMode: "create",
       targetEntryId: "",
       deleteEntryId: ""
     };
+
+    function getQuickEntryNoticeTitle(message) {
+      if (/未检测到 Photoshop 选区/.test(message)) return "运行前需要选区";
+      if (/请先打开 Photoshop 文档/.test(message)) return "需要打开文档";
+      return "快捷入口无法运行";
+    }
+
+    function openQuickEntryNoticeModal(message) {
+      const notice = String(message || "快捷入口无法运行，请检查当前 Photoshop 状态后重试。").trim();
+      if (quickEntryNoticeTitle) quickEntryNoticeTitle.textContent = getQuickEntryNoticeTitle(notice);
+      if (quickEntryNoticeHint) modules.runtime.setSummaryStatus(quickEntryNoticeHint, notice, "warn");
+      setModalOpen("quickEntryNoticeModal", true);
+      window.setTimeout(() => quickEntryNoticeConfirm && quickEntryNoticeConfirm.focus(), 0);
+    }
+
+    function closeQuickEntryNoticeModal() {
+      setModalOpen("quickEntryNoticeModal", false);
+    }
 
     function openQuickEntryNameModal() {
       collectFormValuesFromDom();
@@ -2377,7 +2399,7 @@
             await runQuickEntry(entryId);
           } catch (error) {
             const message = error && error.message ? error.message : String(error || "快捷入口运行失败");
-            if (message.includes("\n") && typeof global.alert === "function") global.alert(message);
+            openQuickEntryNoticeModal(message);
             modules.ui.logToWorkspace(`快捷入口运行失败：${message.replace(/\s+/g, " ")}`, "warn");
             updateRunButtonState();
           } finally {
@@ -2426,6 +2448,8 @@
         }
       });
     }
+    if (quickEntryNoticeClose) quickEntryNoticeClose.addEventListener("click", closeQuickEntryNoticeModal);
+    if (quickEntryNoticeConfirm) quickEntryNoticeConfirm.addEventListener("click", closeQuickEntryNoticeModal);
 
     if (runButton) {
       runButton.addEventListener("click", async () => {
@@ -2470,6 +2494,11 @@
 
       if (event.target && event.target.closest("#quickEntryDeleteBackdrop")) {
         closeQuickEntryDeleteModal();
+        return;
+      }
+
+      if (event.target && event.target.closest("#quickEntryNoticeBackdrop")) {
+        closeQuickEntryNoticeModal();
         return;
       }
 

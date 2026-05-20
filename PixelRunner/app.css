@@ -1053,6 +1053,18 @@ button {
   width: min(92vw, 420px);
 }
 
+.quick-entry-notice-card {
+  width: min(92vw, 460px);
+}
+
+.quick-entry-notice-hint {
+  white-space: pre-line;
+}
+
+.quick-entry-notice-actions {
+  justify-content: flex-end;
+}
+
 .workspace-section-head {
   display: flex;
   align-items: flex-end;
