@@ -328,12 +328,12 @@
 
   function getVisibleApps() {
     const state = modules.state.state;
-    const keyword = String(state.appManagerKeyword || "").trim().toLowerCase();
+    const keyword = String(state.appManagerKeyword || "").trim();
     const list = !keyword
       ? [...state.apps]
       : state.apps.filter((item) => {
-          const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`.toLowerCase();
-          return marker.includes(keyword);
+          const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`;
+          return modules.state.fuzzyMatchText(marker, keyword);
         });
 
     const sortMode = String(state.appManagerSort || "manual");
@@ -377,10 +377,10 @@
     const statsEl = runtime.getById("appPickerStats");
     if (!listEl) return;
 
-    const keyword = String(state.appPickerKeyword || "").trim().toLowerCase();
+    const keyword = String(state.appPickerKeyword || "").trim();
     const visibleApps = !keyword
       ? state.apps
-      : state.apps.filter((item) => `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)}`.toLowerCase().includes(keyword));
+      : state.apps.filter((item) => modules.state.fuzzyMatchText(`${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`, keyword));
 
     if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${state.apps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
     const quickEntryButton = `<button class="picker-item picker-item-special app-picker-special-card ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>先框选 Photoshop 区域，点击入口即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;

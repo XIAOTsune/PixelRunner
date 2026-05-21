@@ -255,6 +255,32 @@
     return aliases[compact] || text;
   }
 
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_\-·.。:：/\\|()[\]{}"'`~!！?？,，;；]+/g, "");
+  }
+
+  function fuzzyMatchText(target, query) {
+    const rawQuery = String(query || "").trim();
+    if (!rawQuery) return true;
+    const rawTarget = String(target || "").trim();
+    if (!rawTarget) return false;
+
+    const normalizedTarget = normalizeSearchText(rawTarget);
+    const normalizedQuery = normalizeSearchText(rawQuery);
+    if (!normalizedQuery) return true;
+    if (!normalizedTarget) return false;
+    if (normalizedTarget.includes(normalizedQuery)) return true;
+
+    let queryIndex = 0;
+    for (let index = 0; index < normalizedTarget.length && queryIndex < normalizedQuery.length; index += 1) {
+      if (normalizedTarget[index] === normalizedQuery[queryIndex]) queryIndex += 1;
+    }
+    return queryIndex === normalizedQuery.length;
+  }
+
   function isGrsNanoBananaModel(value) {
     return /^nano-banana(?:$|-)/i.test(normalizeGrsModelId(value));
   }
@@ -513,6 +539,8 @@
     normalizeThirdPartySettings,
     isThirdPartyApp,
     normalizeGrsModelId,
+    normalizeSearchText,
+    fuzzyMatchText,
     isGrsNanoBananaModel,
     isGrsGptImageModel,
     getThirdPartyModelCapabilities,

@@ -397,10 +397,10 @@
 
   function getVisibleTemplates() {
     const state = modules.state.state;
-    const keyword = String(state.templateManagerKeyword || "").trim().toLowerCase();
+    const keyword = String(state.templateManagerKeyword || "").trim();
     const list = !keyword
       ? [...state.templates]
-      : state.templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
+      : state.templates.filter((item) => modules.state.fuzzyMatchText(`${item.title || ""}\n${item.content || ""}`, keyword));
 
     const sortMode = String(state.templateManagerSort || "manual");
     if (sortMode === "manual") return list;
@@ -537,10 +537,10 @@
 
     const picker = modules.state.state.templatePicker;
     const templates = modules.state.state.templates;
-    const keyword = String(picker.keyword || "").trim().toLowerCase();
+    const keyword = String(picker.keyword || "").trim();
     const visibleTemplates = !keyword
       ? templates
-      : templates.filter((item) => `${item.title || ""}\n${item.content || ""}`.toLowerCase().includes(keyword));
+      : templates.filter((item) => modules.state.fuzzyMatchText(`${item.title || ""}\n${item.content || ""}`, keyword));
 
     if (statsEl) statsEl.textContent = `${visibleTemplates.length} / ${templates.length}`;
 
