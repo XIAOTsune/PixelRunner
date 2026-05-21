@@ -706,28 +706,36 @@
           <span class="field-label">搜索模板</span>
           <input id="templatePickerSearchInput" class="field-input" type="search" placeholder="输入标题或内容关键词筛选" />
         </label>
-        <div id="templatePickerCategoryTabs" class="template-category-tabs template-picker-category-tabs"></div>
-      </div>
-
-      <div class="dual-grid template-picker-controls">
-        <label class="field">
-          <span class="field-label">写入方式</span>
-          <select id="templatePickerApplyMode" class="field-input">
-            <option value="replace">替换当前字段内容</option>
-            <option value="append">追加到当前字段末尾</option>
-          </select>
-        </label>
-        <div class="field">
-          <span class="field-label">模板统计</span>
-          <div id="templatePickerStats" class="summary-strip">0 / 0</div>
+        <div class="template-picker-category-block">
+          <div id="templatePickerCategoryTabs" class="template-category-tabs template-picker-category-tabs"></div>
         </div>
       </div>
 
-      <div id="templatePickerSelectionInfo" class="summary-strip">已选择 0 / 5</div>
+      <div id="templatePickerStats" class="summary-strip template-picker-stats">默认分类 · 0 / 0 · 替换写入</div>
+      <div id="templatePickerSelectionInfo" class="summary-strip template-picker-selection-info">已选择 0 / 5</div>
       <div id="templatePickerList" class="picker-list template-preset-grid"></div>
 
       <div class="action-row">
         <button id="btnApplyTemplateSelection" class="primary-btn" type="button">应用模板</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="templateFormModal" class="overlay-modal">
+    <div id="templateFormBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card template-form-card">
+      <div class="card-head">
+        <div>
+          <p id="templateFormKicker" class="card-kicker">提示词预设</p>
+          <h3 id="templateFormTitle" class="card-title">编辑预设</h3>
+        </div>
+        <button id="templateFormClose" class="mini-btn" type="button">关闭</button>
+      </div>
+      <div id="templateFormMessage" class="summary-strip template-form-message" hidden></div>
+      <div id="templateFormBody" class="form-stack"></div>
+      <div class="action-row template-form-actions">
+        <button id="templateFormCancel" class="secondary-btn" type="button">取消</button>
+        <button id="templateFormSubmit" class="primary-btn" type="button">保存</button>
       </div>
     </section>
   </div>

@@ -1109,6 +1109,7 @@
     clearCurrentAppSelection,
     getAppPreviewImage,
     renderPickerAppInputsSummary,
-    openPickerConfirm
+    openPickerConfirm,
+    hydrateMissingAppPreviews
   };
 })(window);

@@ -1068,8 +1068,8 @@
     }
 
     if (resetTemplateButton) {
-      resetTemplateButton.addEventListener("click", () => {
-        modules.templates.fillTemplateEditor(null);
+      resetTemplateButton.addEventListener("click", async () => {
+        await modules.templates.fillTemplateEditor(null);
       });
     }
 

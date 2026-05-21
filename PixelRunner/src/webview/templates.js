@@ -2,6 +2,10 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const PROMPT_WARN_CHARS = 4000;
   const TEMPLATE_FILE_PREFIX = "pixelrunner_bundle";
+  const modalState = {
+    resolver: null,
+    action: null
+  };
 
   function getTemplateEditorDraft() {
     const runtime = modules.runtime;
@@ -21,9 +25,14 @@
     return getTemplateEditorDraft() !== String(modules.state.state.templateEditorSnapshot || "");
   }
 
-  function confirmDiscardTemplateChanges() {
+  async function confirmDiscardTemplateChanges() {
     if (!isTemplateEditorDirty()) return true;
-    return global.confirm("当前模板编辑区里有未保存修改，确定放弃这些内容吗？");
+    return showTemplateConfirmDialog({
+      title: "放弃未保存修改",
+      message: "当前模板编辑区里有未保存修改，确定放弃这些内容吗？",
+      submitLabel: "放弃修改",
+      tone: "warn"
+    });
   }
 
   function getTextLength(value) {
@@ -55,6 +64,119 @@
     if (!text) return "暂无内容预览";
     const preview = Array.from(text).slice(0, Math.max(1, Number(maxChars) || 48)).join("");
     return preview.length < text.length ? `${preview}...` : preview;
+  }
+
+  function getCategoryOptionsMarkup(selectedId) {
+    const activeId = String(selectedId || getDefaultCategoryId());
+    return (modules.state.state.templateCategories || [])
+      .map((category) => `<option value="${modules.runtime.escapeHtml(String(category.id))}" ${String(category.id) === activeId ? "selected" : ""}>${modules.runtime.escapeHtml(category.name)}</option>`)
+      .join("");
+  }
+
+  function setTemplateFormOpen(open) {
+    const modal = modules.runtime.getById("templateFormModal");
+    if (!modal) return;
+    modal.classList.toggle("is-open", Boolean(open));
+    document.body.classList.toggle("modal-open", Boolean(open) || Boolean(document.querySelector(".overlay-modal.is-open")));
+  }
+
+  function closeTemplateFormModal(result) {
+    const resolver = modalState.resolver;
+    modalState.resolver = null;
+    modalState.action = null;
+    setTemplateFormOpen(false);
+    if (resolver) resolver(result);
+  }
+
+  function configureTemplateFormModal(config = {}) {
+    const titleEl = modules.runtime.getById("templateFormTitle");
+    const kickerEl = modules.runtime.getById("templateFormKicker");
+    const messageEl = modules.runtime.getById("templateFormMessage");
+    const bodyEl = modules.runtime.getById("templateFormBody");
+    const submitEl = modules.runtime.getById("templateFormSubmit");
+    const cancelEl = modules.runtime.getById("templateFormCancel");
+    const cardEl = document.querySelector("#templateFormModal .template-form-card");
+
+    if (titleEl) titleEl.textContent = config.title || "提示词预设";
+    if (kickerEl) kickerEl.textContent = config.kicker || "工作台";
+    if (messageEl) {
+      const message = String(config.message || "").trim();
+      messageEl.hidden = !message;
+      messageEl.textContent = message;
+      messageEl.dataset.status = config.tone || "info";
+    }
+    if (bodyEl) bodyEl.innerHTML = config.bodyHtml || "";
+    if (submitEl) {
+      submitEl.textContent = config.submitLabel || "保存";
+      submitEl.dataset.tone = config.tone || "";
+    }
+    if (cancelEl) cancelEl.textContent = config.cancelLabel || "取消";
+    if (cardEl) cardEl.dataset.mode = config.mode || "form";
+  }
+
+  function showTemplateFormDialog(config = {}) {
+    if (modalState.resolver) closeTemplateFormModal(null);
+    configureTemplateFormModal(config);
+    modalState.action = typeof config.onSubmit === "function" ? config.onSubmit : null;
+    setTemplateFormOpen(true);
+    window.setTimeout(() => {
+      const focusTarget = modules.runtime.getById("templateFormBody")?.querySelector("input, textarea, select, button");
+      if (focusTarget && typeof focusTarget.focus === "function") focusTarget.focus();
+    }, 0);
+    return new Promise((resolve) => {
+      modalState.resolver = resolve;
+    });
+  }
+
+  function showTemplateConfirmDialog(config = {}) {
+    return showTemplateFormDialog({
+      ...config,
+      mode: "confirm",
+      bodyHtml: "",
+      onSubmit: () => true
+    });
+  }
+
+  function readTemplateFormValues() {
+    const body = modules.runtime.getById("templateFormBody");
+    return {
+      title: String(body?.querySelector("[data-template-form-field='title']")?.value || "").trim(),
+      content: String(body?.querySelector("[data-template-form-field='content']")?.value || ""),
+      categoryId: String(body?.querySelector("[data-template-form-field='categoryId']")?.value || getDefaultCategoryId()).trim() || getDefaultCategoryId(),
+      name: String(body?.querySelector("[data-template-form-field='name']")?.value || "").trim()
+    };
+  }
+
+  function buildPresetFormBody({ title = "", content = "", categoryId = getDefaultCategoryId() } = {}) {
+    return `
+      <label class="field">
+        <span class="field-label">预设名称</span>
+        <input class="field-input" type="text" data-template-form-field="title" value="${modules.runtime.escapeHtml(title)}" placeholder="例如：自然磨皮" />
+      </label>
+      <label class="field">
+        <span class="field-label">所属分类</span>
+        <select class="field-input" data-template-form-field="categoryId">${getCategoryOptionsMarkup(categoryId)}</select>
+      </label>
+      <label class="field">
+        <span class="field-label">提示词内容</span>
+        <textarea class="field-input field-textarea" rows="8" data-template-form-field="content" placeholder="输入提示词内容">${modules.runtime.escapeHtml(content)}</textarea>
+      </label>
+    `;
+  }
+
+  function buildNameFormBody({ label = "名称", value = "", placeholder = "" } = {}) {
+    return `
+      <label class="field">
+        <span class="field-label">${modules.runtime.escapeHtml(label)}</span>
+        <input class="field-input" type="text" data-template-form-field="name" value="${modules.runtime.escapeHtml(value)}" placeholder="${modules.runtime.escapeHtml(placeholder)}" />
+      </label>
+    `;
+  }
+
+  function buildActionMenuBody(actions = []) {
+    return `<div class="template-action-menu">${actions
+      .map((action) => `<button class="template-action-menu-item ${action.tone ? `is-${modules.runtime.escapeHtml(action.tone)}` : ""}" type="button" data-template-form-menu-action="${modules.runtime.escapeHtml(action.id)}"><span>${modules.runtime.escapeHtml(action.label)}</span>${action.hint ? `<small>${modules.runtime.escapeHtml(action.hint)}</small>` : ""}</button>`)
+      .join("")}</div>`;
   }
 
   function getDefaultCategoryId() {
@@ -108,11 +230,78 @@
       version: 2,
       exportedAt: new Date().toISOString(),
       name: "PixelRunner 资料包",
-      apps: Array.isArray(modules.state.state.apps) ? modules.state.state.apps : [],
+      apps: sanitizeAppsForBundle(modules.state.state.apps),
       templateCategories: Array.isArray(modules.state.state.templateCategories) ? modules.state.state.templateCategories : [],
-      templates: Array.isArray(templates) ? templates : [],
-      quickEntries: Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries : []
+      templates: sanitizeTemplatesForBundle(templates),
+      quickEntries: sanitizeQuickEntriesForBundle(modules.state.state.quickEntries)
     };
+  }
+
+  function sanitizeAppInputsForBundle(inputs) {
+    return (Array.isArray(inputs) ? inputs : []).map((input) => {
+      if (!input || typeof input !== "object") return input;
+      return sanitizePlainObjectForBundle(input);
+    });
+  }
+
+  function isSensitiveBundleKey(key) {
+    return /(?:api[_-]?key|apikey|token|access[_-]?token|secret|authorization|password|bearer|cookie|credential)/i.test(String(key || ""));
+  }
+
+  function sanitizePlainObjectForBundle(value) {
+    if (value == null) return value;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
+    if (Array.isArray(value)) return value.map(sanitizePlainObjectForBundle);
+    if (value && typeof value === "object") {
+      const out = {};
+      Object.keys(value).forEach((key) => {
+        if (isSensitiveBundleKey(key)) return;
+        out[key] = sanitizePlainObjectForBundle(value[key]);
+      });
+      return out;
+    }
+    return value;
+  }
+
+  function sanitizeAppsForBundle(apps) {
+    return modules.state.normalizeAppList(apps).map((app) => ({
+      id: app.id,
+      appId: app.appId,
+      name: app.name,
+      description: app.description,
+      previewImage: app.previewImage,
+      inputs: sanitizeAppInputsForBundle(app.inputs),
+      createdAt: app.createdAt,
+      updatedAt: app.updatedAt
+    }));
+  }
+
+  function sanitizeTemplatesForBundle(templates) {
+    return normalizeTemplateListWithFallback(templates).map((template) => ({
+      id: template.id,
+      title: template.title,
+      content: template.content,
+      categoryId: template.categoryId,
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt
+    }));
+  }
+
+  function sanitizeQuickEntriesForBundle(entries) {
+    const normalized = modules.quickEntries && typeof modules.quickEntries.normalizeQuickEntryList === "function"
+      ? modules.quickEntries.normalizeQuickEntryList(entries)
+      : Array.isArray(entries)
+        ? entries
+        : [];
+    return normalized.map((entry) => {
+      const cleanEntry = sanitizePlainObjectForBundle(entry);
+      if (cleanEntry && cleanEntry.inputValues && typeof cleanEntry.inputValues === "object") {
+        Object.keys(cleanEntry.inputValues).forEach((key) => {
+          if (isSensitiveBundleKey(key)) delete cleanEntry.inputValues[key];
+        });
+      }
+      return cleanEntry;
+    });
   }
 
   function buildTemplateExportFilename() {
@@ -127,8 +316,8 @@
     return String((template && template.title) || "").trim().toLowerCase();
   }
 
-  function fillTemplateEditor(template, options = {}) {
-    if (!options.force && !confirmDiscardTemplateChanges()) return false;
+  async function fillTemplateEditor(template, options = {}) {
+    if (!options.force && !(await confirmDiscardTemplateChanges())) return false;
     const runtime = modules.runtime;
     const item = template && typeof template === "object" ? template : null;
     modules.state.state.editingTemplateId = item ? String(item.id) : null;
@@ -271,18 +460,27 @@
   function renderTemplateCategoryTabs(targetId, activeId, options = {}) {
     const target = modules.runtime.getById(targetId);
     if (!target) return;
-    target.innerHTML = (modules.state.state.templateCategories || [])
+    const action = options.action || "select-template-category";
+    const allowInlineManage = Boolean(options.inlineManage);
+    const categoryMarkup = (modules.state.state.templateCategories || [])
       .map((category) => {
         const id = String(category.id);
-        return `<button class="template-category-tab ${String(activeId) === id ? "is-active" : ""}" type="button" data-action="${modules.runtime.escapeHtml(options.action || "select-template-category")}" data-template-category-id="${modules.runtime.escapeHtml(id)}"><span>${modules.runtime.escapeHtml(category.name)}</span><small>${modules.runtime.escapeHtml(String(getCategoryTemplateCount(id)))}</small></button>`;
+        const menu = allowInlineManage
+          ? `<span class="template-card-menu" data-action="open-picker-category-menu" data-template-category-id="${modules.runtime.escapeHtml(id)}" title="分类操作">•••</span>`
+          : "";
+        return `<button class="template-category-tab ${allowInlineManage ? "has-menu" : ""} ${String(activeId) === id ? "is-active" : ""}" type="button" data-action="${modules.runtime.escapeHtml(action)}" data-template-category-id="${modules.runtime.escapeHtml(id)}"><span>${modules.runtime.escapeHtml(category.name)}</span><small>${modules.runtime.escapeHtml(String(getCategoryTemplateCount(id)))}</small>${menu}</button>`;
       })
       .join("");
+    const createMarkup = allowInlineManage
+      ? `<button class="template-category-tab template-category-create" type="button" data-action="create-picker-template-category"><span>+ 分类</span></button>`
+      : "";
+    target.innerHTML = `${categoryMarkup}${createMarkup}`;
   }
 
   function renderTemplateCategoryControls() {
     syncActiveCategoryIds();
     renderTemplateCategoryTabs("templateCategoryTabs", getActiveManagerCategoryId(), { action: "select-template-category" });
-    renderTemplateCategoryTabs("templatePickerCategoryTabs", getActivePickerCategoryId(), { action: "select-picker-template-category" });
+    renderTemplateCategoryTabs("templatePickerCategoryTabs", getActivePickerCategoryId(), { action: "select-picker-template-category", inlineManage: true });
 
     const select = modules.runtime.getById("templateCategorySelect");
     if (select) {
@@ -294,7 +492,18 @@
   }
 
   async function createTemplateCategory() {
-    const name = String(global.prompt("新分类名称", "") || "").trim();
+    const result = await showTemplateFormDialog({
+      title: "新建分类",
+      message: "分类会显示在工作台预设弹窗顶部，用来快速筛选提示词。",
+      bodyHtml: buildNameFormBody({ label: "分类名称", placeholder: "例如：人像、场景、产品" }),
+      submitLabel: "创建分类",
+      onSubmit: () => {
+        const { name } = readTemplateFormValues();
+        if (!name) throw new Error("请填写分类名称");
+        return { name };
+      }
+    });
+    const name = String(result && result.name || "").trim();
     if (!name) return null;
     const category = modules.state.normalizeTemplateCategoryRecord({
       id: modules.runtime.createId("tplcat"),
@@ -308,11 +517,29 @@
     return category;
   }
 
+  async function createTemplateCategoryForPicker() {
+    const category = await createTemplateCategory();
+    if (!category) return null;
+    modules.state.state.templatePicker.categoryId = category.id;
+    renderTemplatePickerList();
+    return category;
+  }
+
   async function renameActiveTemplateCategory() {
     const activeId = getActiveManagerCategoryId();
     const category = getCategoryById(activeId);
     if (!category) return null;
-    const name = String(global.prompt("重命名分类", category.name) || "").trim();
+    const result = await showTemplateFormDialog({
+      title: "重命名分类",
+      bodyHtml: buildNameFormBody({ label: "分类名称", value: category.name }),
+      submitLabel: "保存分类",
+      onSubmit: () => {
+        const { name } = readTemplateFormValues();
+        if (!name) throw new Error("请填写分类名称");
+        return { name };
+      }
+    });
+    const name = String(result && result.name || "").trim();
     if (!name || name === category.name) return null;
     await saveTemplateCategoriesToStorage((modules.state.state.templateCategories || []).map((item) =>
       String(item.id) === activeId ? { ...item, name, updatedAt: Date.now() } : item
@@ -331,7 +558,13 @@
     const category = getCategoryById(activeId);
     if (!category) return false;
     const count = getCategoryTemplateCount(activeId);
-    if (!global.confirm(`确定删除分类“${category.name}”吗？其中 ${count} 条提示词会移动到默认分类。`)) return false;
+    const confirmed = await showTemplateConfirmDialog({
+      title: "删除分类",
+      message: `确定删除分类“${category.name}”吗？其中 ${count} 条提示词会移动到默认分类。`,
+      submitLabel: "删除分类",
+      tone: "warn"
+    });
+    if (!confirmed) return false;
     modules.state.state.templateManagerCategoryId = defaultId;
     modules.state.state.templatePicker.categoryId = defaultId;
     await saveTemplateCategoriesToStorage((modules.state.state.templateCategories || []).filter((item) => String(item.id) !== activeId));
@@ -340,6 +573,163 @@
     ));
     modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), `已删除分类：${category.name}，提示词已移到默认分类。`, "warn");
     return true;
+  }
+
+  async function deleteActivePickerTemplateCategory() {
+    const previousManagerCategoryId = getActiveManagerCategoryId();
+    modules.state.state.templateManagerCategoryId = getActivePickerCategoryId();
+    const deleted = await deleteActiveTemplateCategory();
+    modules.state.state.templateManagerCategoryId = previousManagerCategoryId;
+    if (deleted) {
+      modules.state.state.templatePicker.categoryId = getDefaultCategoryId();
+      modules.state.state.templatePicker.selectedIds = [];
+      renderTemplatePickerList();
+    }
+    return deleted;
+  }
+
+  function getPickerTargetFieldValue() {
+    const key = String(modules.state.state.templatePicker.targetKey || "").trim();
+    if (!key) return "";
+    return String(modules.state.state.formValues[key] || "");
+  }
+
+  async function saveCurrentFieldAsTemplateFromPicker() {
+    const content = getPickerTargetFieldValue();
+    if (!content.trim()) {
+      modules.runtime.setSummaryStatus(modules.runtime.getById("templatePickerSelectionInfo"), "当前提示词字段为空，不能保存为预设。", "warn");
+      return null;
+    }
+    const defaultTitle = Array.from(content.replace(/\s+/g, " ").trim()).slice(0, 18).join("") || "新提示词预设";
+    const result = await showTemplateFormDialog({
+      title: "新建预设",
+      message: "将当前工作台提示词字段保存为预设，之后可从分类中快速调用。",
+      bodyHtml: buildPresetFormBody({ title: defaultTitle, content, categoryId: getActivePickerCategoryId() }),
+      submitLabel: "保存预设",
+      onSubmit: () => {
+        const values = readTemplateFormValues();
+        if (!values.title) throw new Error("请填写预设名称");
+        if (!values.content.trim()) throw new Error("请填写提示词内容");
+        return values;
+      }
+    });
+    if (!result) return null;
+    const now = Date.now();
+    const template = modules.state.normalizeTemplateRecord({
+      id: modules.runtime.createId("tpl"),
+      title: result.title,
+      content: result.content,
+      categoryId: result.categoryId,
+      createdAt: now,
+      updatedAt: now
+    });
+    if (!template) return null;
+    await saveTemplatesToStorage([template, ...(modules.state.state.templates || [])]);
+    modules.state.state.templatePicker.categoryId = template.categoryId;
+    modules.state.state.templatePicker.selectedIds = [template.id];
+    modules.runtime.setSummaryStatus(modules.runtime.getById("templatePickerSelectionInfo"), `已保存预设：${template.title}`, "success");
+    return template;
+  }
+
+  async function deleteTemplateFromPicker(templateId) {
+    const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+    if (!target) return;
+    const confirmed = await showTemplateConfirmDialog({
+      title: "删除预设",
+      message: `确定删除预设“${target.title}”？这个操作不会影响当前工作台字段内容。`,
+      submitLabel: "删除预设",
+      tone: "warn"
+    });
+    if (!confirmed) return;
+    await deleteTemplateById(templateId);
+    modules.state.state.templatePicker.selectedIds = modules.state.state.templatePicker.selectedIds.filter((id) => String(id) !== String(templateId));
+    renderTemplatePickerList();
+    modules.runtime.setSummaryStatus(modules.runtime.getById("templatePickerSelectionInfo"), `已删除预设：${target.title}`, "warn");
+  }
+
+  async function editTemplateFromPicker(templateId) {
+    const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+    if (!target) return null;
+    const result = await showTemplateFormDialog({
+      title: "编辑预设",
+      message: "可以在这里修改名称、内容，并移动到其他分类。",
+      bodyHtml: buildPresetFormBody({ title: target.title || "", content: target.content || "", categoryId: target.categoryId || getActivePickerCategoryId() }),
+      submitLabel: "保存预设",
+      onSubmit: () => {
+        const values = readTemplateFormValues();
+        if (!values.title) throw new Error("请填写预设名称");
+        if (!values.content.trim()) throw new Error("请填写提示词内容");
+        return values;
+      }
+    });
+    if (!result) return null;
+    const templates = (modules.state.state.templates || []).map((template) =>
+      String(template.id) === String(templateId)
+        ? modules.state.normalizeTemplateRecord({
+            ...template,
+            title: result.title,
+            content: result.content,
+            categoryId: result.categoryId,
+            updatedAt: Date.now()
+          })
+        : template
+    ).filter(Boolean);
+    await saveTemplatesToStorage(templates);
+    modules.state.state.templatePicker.categoryId = result.categoryId;
+    modules.runtime.setSummaryStatus(modules.runtime.getById("templatePickerSelectionInfo"), `已保存预设：${result.title}`, "success");
+    return templates.find((item) => String(item.id) === String(templateId)) || null;
+  }
+
+  async function openPickerTemplateMenu(templateId) {
+    const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+    if (!target) return;
+    const action = await showTemplateFormDialog({
+      title: target.title || "预设操作",
+      message: "选择要对这个预设执行的操作。",
+      bodyHtml: buildActionMenuBody([
+        { id: "edit", label: "编辑预设", hint: "修改名称、内容或移动分类" },
+        { id: "delete", label: "删除预设", hint: "从本地预设库移除", tone: "danger" }
+      ]),
+      submitLabel: "关闭",
+      cancelLabel: "关闭",
+      onSubmit: () => null
+    });
+    if (action === "edit") {
+      await editTemplateFromPicker(templateId);
+      return;
+    }
+    if (action === "delete") {
+      await deleteTemplateFromPicker(templateId);
+    }
+  }
+
+  async function openPickerCategoryMenu(categoryId) {
+    const id = String(categoryId || "").trim();
+    const category = getCategoryById(id);
+    if (!category) return;
+    modules.state.state.templatePicker.categoryId = id;
+    const action = await showTemplateFormDialog({
+      title: category.name || "分类操作",
+      message: "选择要对这个分类执行的操作。",
+      bodyHtml: buildActionMenuBody([
+        { id: "rename", label: "重命名分类", hint: "只修改分类名称" },
+        { id: "delete", label: "删除分类", hint: "预设会移到默认分类", tone: "danger" }
+      ]),
+      submitLabel: "关闭",
+      cancelLabel: "关闭",
+      onSubmit: () => null
+    });
+    if (action === "rename") {
+      const previousManagerCategoryId = getActiveManagerCategoryId();
+      modules.state.state.templateManagerCategoryId = id;
+      await renameActiveTemplateCategory();
+      modules.state.state.templateManagerCategoryId = previousManagerCategoryId;
+      renderTemplatePickerList();
+      return;
+    }
+    if (action === "delete") {
+      await deleteActivePickerTemplateCategory();
+    }
   }
 
   function exportTemplatesToTextarea() {
@@ -492,7 +882,12 @@
         ? modules.quickEntries.mergeImportedQuickEntries(transfer.quickEntries)
         : { entries: modules.state.state.quickEntries, added: 0, replaced: 0 };
 
-    if (transfer.kind === "bundle") await modules.apps.saveAppsToStorage(mergedApps.apps);
+    if (transfer.kind === "bundle") {
+      await modules.apps.saveAppsToStorage(mergedApps.apps);
+      if (modules.apps && typeof modules.apps.hydrateMissingAppPreviews === "function") {
+        void modules.apps.hydrateMissingAppPreviews({ quiet: true });
+      }
+    }
     await saveTemplateCategoriesToStorage(mergedCategories);
     await saveTemplatesToStorage(mergedTemplates.templates);
     if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
@@ -649,7 +1044,7 @@
       mode,
       targetKey: String(config.targetKey || ""),
       maxSelection: mode === "single" ? 1 : Math.max(1, Math.min(10, Number(config.maxSelection) || 5)),
-      applyMode: config.applyMode === "append" ? "append" : "replace"
+      applyMode: "replace"
     };
   }
 
@@ -695,16 +1090,11 @@
     const infoEl = modules.runtime.getById("templatePickerSelectionInfo");
     const applyButton = modules.runtime.getById("btnApplyTemplateSelection");
     const searchInput = modules.runtime.getById("templatePickerSearchInput");
-    const applyModeInput = modules.runtime.getById("templatePickerApplyMode");
     const picker = modules.state.state.templatePicker;
 
     if (titleEl) titleEl.textContent = picker.mode === "single" ? "选择提示词模板" : "组合提示词模板";
     if (infoEl) infoEl.textContent = getPickerSelectionInfo();
     if (searchInput) searchInput.value = picker.keyword || "";
-    if (applyModeInput) {
-      applyModeInput.value = picker.applyMode || "replace";
-      applyModeInput.disabled = picker.mode === "single";
-    }
     if (applyButton) {
       applyButton.hidden = picker.mode === "single";
       applyButton.disabled = picker.selectedIds.length === 0;
@@ -725,27 +1115,21 @@
       ? categoryTemplates
       : categoryTemplates.filter((item) => modules.state.fuzzyMatchText(`${item.title || ""}\n${item.content || ""}`, keyword));
 
-    if (statsEl) statsEl.textContent = `${getCategoryName(activeCategoryId)} · ${visibleTemplates.length} / ${categoryTemplates.length}`;
-    renderTemplateCategoryTabs("templatePickerCategoryTabs", activeCategoryId, { action: "select-picker-template-category" });
+    if (statsEl) statsEl.textContent = `${getCategoryName(activeCategoryId)} · ${visibleTemplates.length} / ${categoryTemplates.length} · 替换写入`;
+    renderTemplateCategoryTabs("templatePickerCategoryTabs", activeCategoryId, { action: "select-picker-template-category", inlineManage: true });
 
-    if (templates.length === 0) {
-      listEl.innerHTML = `<div class="picker-empty"><strong>还没有可用模板</strong><p>先去设置页创建模板，再回到工作台选择。</p></div>`;
-      syncTemplatePickerUi();
-      return;
-    }
-
-    if (visibleTemplates.length === 0) {
-      listEl.innerHTML = `<div class="picker-empty"><strong>当前分类没有匹配模板</strong><p>切换分类或换个关键词再试试。</p></div>`;
-      syncTemplatePickerUi();
-      return;
-    }
-
-    listEl.innerHTML = visibleTemplates
+    const createCard = `<article class="picker-item template-preset-tile template-preset-create"><button class="template-preset-select" type="button" data-action="create-picker-template"><span class="picker-item-title">+ 新建预设</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(getCategoryName(activeCategoryId))}</span><span>保存当前字段内容</span></span></button></article>`;
+    const emptyCard =
+      visibleTemplates.length === 0
+        ? `<div class="picker-empty template-picker-inline-empty"><strong>${templates.length === 0 ? "还没有可用模板" : "当前分类没有匹配模板"}</strong><p>${templates.length === 0 ? "点击“新建预设”保存当前字段内容。" : "切换分类或换个关键词再试试。"}</p></div>`
+        : "";
+    const templateCards = visibleTemplates
       .map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
-        return `<button class="picker-item template-preset-tile is-draggable ${isSelected ? "active" : ""}" type="button" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 26))}</span></span></button>`;
+        return `<article class="picker-item template-preset-tile is-draggable ${isSelected ? "active" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}" title="${modules.runtime.escapeHtml(item.title)}"><button class="template-preset-select" type="button" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 20))}</span></span></button><button class="template-card-menu template-preset-menu" type="button" data-action="open-picker-template-menu" data-template-id="${modules.runtime.escapeHtml(String(item.id))}" title="预设操作">•••</button></article>`;
       })
       .join("");
+    listEl.innerHTML = `${createCard}${emptyCard}${templateCards}`;
 
     syncTemplatePickerUi();
   }
@@ -808,7 +1192,10 @@
     const pickerApplyButton = runtime.getById("btnApplyTemplateSelection");
     const pickerList = runtime.getById("templatePickerList");
     const pickerSearchInput = runtime.getById("templatePickerSearchInput");
-    const pickerApplyMode = runtime.getById("templatePickerApplyMode");
+    const formCloseButton = runtime.getById("templateFormClose");
+    const formCancelButton = runtime.getById("templateFormCancel");
+    const formSubmitButton = runtime.getById("templateFormSubmit");
+    const formBackdrop = runtime.getById("templateFormBackdrop");
     const managerSearchInput = runtime.getById("templateManagerSearchInput");
     const managerSortInput = runtime.getById("templateManagerSortInput");
     const managerCategorySelect = runtime.getById("templateCategorySelect");
@@ -847,9 +1234,9 @@
     }
 
     if (managerCategorySelect) {
-      managerCategorySelect.addEventListener("change", () => {
+      managerCategorySelect.addEventListener("change", async () => {
         modules.state.state.templateManagerCategoryId = managerCategorySelect.value || getDefaultCategoryId();
-        fillTemplateEditor(null, { force: true });
+        await fillTemplateEditor(null, { force: true });
         renderTemplateCategoryControls();
         renderSavedTemplatesList();
       });
@@ -858,7 +1245,7 @@
     if (addCategoryButton) {
       addCategoryButton.addEventListener("click", async () => {
         await createTemplateCategory();
-        fillTemplateEditor(null, { force: true });
+        await fillTemplateEditor(null, { force: true });
       });
     }
 
@@ -871,7 +1258,7 @@
     if (deleteCategoryButton) {
       deleteCategoryButton.addEventListener("click", async () => {
         await deleteActiveTemplateCategory();
-        fillTemplateEditor(null, { force: true });
+        await fillTemplateEditor(null, { force: true });
       });
     }
 
@@ -886,8 +1273,36 @@
     }
 
     if (resetButton) {
-      resetButton.addEventListener("click", () => fillTemplateEditor(null));
+      resetButton.addEventListener("click", async () => {
+        await fillTemplateEditor(null);
+      });
     }
+
+    if (formCloseButton) formCloseButton.addEventListener("click", () => closeTemplateFormModal(null));
+    if (formCancelButton) formCancelButton.addEventListener("click", () => closeTemplateFormModal(null));
+    if (formBackdrop) formBackdrop.addEventListener("click", () => closeTemplateFormModal(null));
+    if (formSubmitButton) {
+      formSubmitButton.addEventListener("click", async () => {
+        try {
+          const result = modalState.action ? await modalState.action() : true;
+          closeTemplateFormModal(result === undefined ? true : result);
+        } catch (error) {
+          const messageEl = runtime.getById("templateFormMessage");
+          if (messageEl) {
+            messageEl.hidden = false;
+            messageEl.textContent = error.message || "操作失败";
+            messageEl.dataset.status = "error";
+          }
+        }
+      });
+    }
+
+    document.addEventListener("click", (event) => {
+      const menuAction = event.target && event.target.closest("[data-template-form-menu-action]");
+      if (!menuAction) return;
+      event.preventDefault();
+      closeTemplateFormModal(menuAction.getAttribute("data-template-form-menu-action") || "");
+    });
 
     if (exportButton) {
       exportButton.addEventListener("click", async () => {
@@ -922,9 +1337,15 @@
       if (actionTarget) {
         const action = actionTarget.getAttribute("data-action");
         const templateId = actionTarget.getAttribute("data-template-id");
+        if (action === "open-picker-template-menu") {
+          event.preventDefault();
+          event.stopPropagation();
+          await openPickerTemplateMenu(templateId);
+          return;
+        }
         if (action === "edit-template") {
           const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
-          fillTemplateEditor(target || null);
+          await fillTemplateEditor(target || null);
           return;
         }
         if (action === "delete-template") {
@@ -935,10 +1356,32 @@
 
       if (event.target && event.target.closest("#templatePickerBackdrop")) closeTemplatePicker();
 
+      const pickerCreateTemplateTarget = event.target && event.target.closest("[data-action='create-picker-template']");
+      if (pickerCreateTemplateTarget) {
+        event.preventDefault();
+        await saveCurrentFieldAsTemplateFromPicker();
+        return;
+      }
+
+      const pickerCreateCategoryTarget = event.target && event.target.closest("[data-action='create-picker-template-category']");
+      if (pickerCreateCategoryTarget) {
+        event.preventDefault();
+        await createTemplateCategoryForPicker();
+        return;
+      }
+
+      const pickerCategoryMenuTarget = event.target && event.target.closest("[data-action='open-picker-category-menu'][data-template-category-id]");
+      if (pickerCategoryMenuTarget) {
+        event.preventDefault();
+        event.stopPropagation();
+        await openPickerCategoryMenu(pickerCategoryMenuTarget.getAttribute("data-template-category-id"));
+        return;
+      }
+
       const managerCategoryTarget = event.target && event.target.closest("[data-action='select-template-category'][data-template-category-id]");
       if (managerCategoryTarget) {
         modules.state.state.templateManagerCategoryId = managerCategoryTarget.getAttribute("data-template-category-id") || getDefaultCategoryId();
-        fillTemplateEditor(null, { force: true });
+        await fillTemplateEditor(null, { force: true });
         renderTemplateCategoryControls();
         renderSavedTemplatesList();
         return;
@@ -957,6 +1400,7 @@
 
     if (pickerList) {
       pickerList.addEventListener("click", (event) => {
+        if (event.target && event.target.closest("[data-action]")) return;
         const item = event.target && event.target.closest("[data-template-id]");
         if (!item) return;
         const templateId = item.getAttribute("data-template-id");
@@ -984,18 +1428,11 @@
       });
     }
 
-    if (pickerApplyMode) {
-      pickerApplyMode.addEventListener("change", () => {
-        modules.state.state.templatePicker.applyMode = pickerApplyMode.value === "append" ? "append" : "replace";
-        syncTemplatePickerUi();
-      });
-    }
-
     if (pickerApplyButton) {
       pickerApplyButton.addEventListener("click", () => {
         try {
           const picker = modules.state.state.templatePicker;
-          applyTemplatesToField(picker.targetKey, picker.selectedIds, { applyMode: picker.applyMode });
+          applyTemplatesToField(picker.targetKey, picker.selectedIds, { applyMode: "replace" });
           closeTemplatePicker();
         } catch (error) {
           modules.ui.logToWorkspace(error.message, "warn");
@@ -1003,7 +1440,7 @@
       });
     }
 
-    fillTemplateEditor(null, { force: true });
+    void fillTemplateEditor(null, { force: true });
     updateTemplateLengthHint();
   }
 
