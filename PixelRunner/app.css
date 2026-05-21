@@ -3501,13 +3501,21 @@ button {
   min-width: 0;
 }
 
+.template-category-tab-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 .template-category-tab {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
+  flex: 0 0 auto;
   min-width: 58px;
+  max-width: 156px;
   min-height: 30px;
   padding: 5px 9px;
   border-radius: 10px;
@@ -3533,15 +3541,21 @@ button {
 }
 
 .template-category-tab span {
-  overflow: hidden;
-  max-width: 118px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: block;
+  overflow: visible;
+  max-width: 108px;
+  min-width: 0;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 11px;
   font-weight: 800;
+  line-height: 1.16;
 }
 
 .template-category-tab small {
+  flex: 0 0 auto;
   min-width: 16px;
   color: var(--muted);
   font-size: 9px;
@@ -3569,11 +3583,10 @@ button {
 }
 
 .template-picker-category-tabs {
-  flex-wrap: nowrap;
-  align-content: center;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 1px 2px 4px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow: visible;
+  padding: 1px 2px 2px;
 }
 
 .template-picker-stats,
@@ -3587,33 +3600,36 @@ button {
 
 .template-preset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(142px, 1fr));
   align-content: start;
-  gap: 8px;
-  padding: 7px;
+  gap: 6px;
+  padding: 6px;
+  overflow-x: hidden;
 }
 
 .template-preset-tile {
   position: relative;
-  min-height: 76px;
+  min-height: 86px;
   padding: 0;
   border-width: 1px;
-  border-radius: 10px;
+  border-radius: 9px;
   box-shadow: none;
+  overflow: visible;
+  isolation: isolate;
 }
 
 .template-preset-select {
-  display: flex;
+  display: grid;
+  grid-template-rows: minmax(32px, 1fr) auto;
   width: 100%;
-  min-height: 74px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 5px;
-  padding: 9px 26px 7px 10px;
+  min-height: 84px;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 25px 8px 10px;
   border: 0;
   background: transparent;
   color: inherit;
+  overflow: hidden;
   text-align: left;
 }
 
@@ -3628,27 +3644,33 @@ button {
 }
 
 .template-preset-tile .picker-item-title {
+  align-self: start;
   width: 100%;
   white-space: normal;
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
-  line-height: 1.16;
+  line-height: 1.15;
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .template-preset-tile .picker-item-meta {
-  margin-top: auto;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(10px, auto));
   gap: 2px;
   width: 100%;
-  font-size: 8px;
-  line-height: 1.25;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.22;
 }
 
 .template-preset-tile .picker-item-meta span {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3656,13 +3678,13 @@ button {
 
 .template-card-menu {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 5px;
+  right: 5px;
   display: inline-grid;
   place-items: center;
-  width: 24px;
-  height: 22px;
-  border-radius: 8px;
+  width: 21px;
+  height: 19px;
+  border-radius: 7px;
   border: 1px solid rgba(156, 176, 196, 0.32);
   background: rgba(8, 12, 18, 0.52);
   color: var(--text-strong);
@@ -3671,6 +3693,7 @@ button {
   line-height: 1;
   opacity: 0;
   cursor: pointer;
+  z-index: 4;
   transition:
     opacity 150ms ease,
     transform 150ms ease,
@@ -3691,6 +3714,9 @@ button {
 }
 
 .template-preset-tile:hover .template-card-menu,
+.template-preset-tile.has-open-menu .template-card-menu,
+.template-category-tab-wrap.has-open-menu .template-card-menu,
+.template-category-tab-wrap:hover .template-card-menu,
 .template-category-tab:hover .template-card-menu,
 .template-card-menu:focus-visible {
   opacity: 1;
@@ -3701,8 +3727,52 @@ button {
   background: rgba(var(--control-rgb), 0.84);
 }
 
+.template-inline-menu {
+  position: absolute;
+  top: 27px;
+  right: 4px;
+  z-index: 12;
+  display: flex;
+  width: max-content;
+  min-width: 94px;
+  max-width: min(150px, calc(100vw - 24px));
+  flex-direction: column;
+  gap: 0;
+  padding: 7px 0;
+  border: 1px solid rgba(156, 176, 196, 0.45);
+  border-radius: 8px;
+  background: rgba(11, 12, 13, 0.96);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.template-category-tab-wrap .template-inline-menu {
+  top: 28px;
+}
+
+.template-inline-menu-item {
+  min-height: 30px;
+  padding: 5px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.template-inline-menu-item:hover {
+  background: rgba(var(--control-rgb), 0.34);
+}
+
+.template-inline-menu-item.is-danger {
+  color: #ff7f8f;
+}
+
 .template-picker-inline-empty {
-  min-height: 76px;
+  min-height: 86px;
   border-style: dashed;
 }
 

@@ -179,6 +179,32 @@
       .join("")}</div>`;
   }
 
+  function getPickerInlineMenu() {
+    const picker = modules.state.state.templatePicker || {};
+    const menu = picker.inlineMenu || {};
+    return {
+      type: String(menu.type || ""),
+      id: String(menu.id || "")
+    };
+  }
+
+  function setPickerInlineMenu(type, id) {
+    const picker = modules.state.state.templatePicker || {};
+    picker.inlineMenu = type && id ? { type: String(type), id: String(id) } : null;
+    modules.state.state.templatePicker = picker;
+  }
+
+  function isPickerInlineMenuOpen(type, id) {
+    const menu = getPickerInlineMenu();
+    return menu.type === String(type || "") && menu.id === String(id || "");
+  }
+
+  function buildInlineActionMenu(actions = [], contextAttrs = "") {
+    return `<div class="template-inline-menu" role="menu">${actions
+      .map((action) => `<button class="template-inline-menu-item ${action.tone ? `is-${modules.runtime.escapeHtml(action.tone)}` : ""}" type="button" role="menuitem" data-template-inline-action="${modules.runtime.escapeHtml(action.id)}" ${contextAttrs}>${modules.runtime.escapeHtml(action.label)}</button>`)
+      .join("")}</div>`;
+  }
+
   function getDefaultCategoryId() {
     return modules.state.DEFAULT_TEMPLATE_CATEGORY_ID || "default";
   }
@@ -465,10 +491,20 @@
     const categoryMarkup = (modules.state.state.templateCategories || [])
       .map((category) => {
         const id = String(category.id);
-        const menu = allowInlineManage
-          ? `<span class="template-card-menu" data-action="open-picker-category-menu" data-template-category-id="${modules.runtime.escapeHtml(id)}" title="分类操作">•••</span>`
+        const escapedId = modules.runtime.escapeHtml(id);
+        const tab = `<button class="template-category-tab ${allowInlineManage ? "has-menu" : ""} ${String(activeId) === id ? "is-active" : ""}" type="button" data-action="${modules.runtime.escapeHtml(action)}" data-template-category-id="${escapedId}"><span>${modules.runtime.escapeHtml(category.name)}</span><small>${modules.runtime.escapeHtml(String(getCategoryTemplateCount(id)))}</small></button>`;
+        if (!allowInlineManage) return tab;
+        const isMenuOpen = isPickerInlineMenuOpen("category", id);
+        const menu = isMenuOpen
+          ? buildInlineActionMenu(
+              [
+                { id: "rename-category", label: "重命名分类" },
+                { id: "delete-category", label: "删除分类", tone: "danger" }
+              ],
+              `data-template-category-id="${escapedId}"`
+            )
           : "";
-        return `<button class="template-category-tab ${allowInlineManage ? "has-menu" : ""} ${String(activeId) === id ? "is-active" : ""}" type="button" data-action="${modules.runtime.escapeHtml(action)}" data-template-category-id="${modules.runtime.escapeHtml(id)}"><span>${modules.runtime.escapeHtml(category.name)}</span><small>${modules.runtime.escapeHtml(String(getCategoryTemplateCount(id)))}</small>${menu}</button>`;
+        return `<span class="template-category-tab-wrap ${isMenuOpen ? "has-open-menu" : ""}">${tab}<button class="template-card-menu template-category-menu" type="button" data-action="open-picker-category-menu" data-template-category-id="${escapedId}" title="分类操作" aria-label="分类操作">•••</button>${menu}</span>`;
       })
       .join("");
     const createMarkup = allowInlineManage
@@ -683,24 +719,8 @@
   async function openPickerTemplateMenu(templateId) {
     const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
     if (!target) return;
-    const action = await showTemplateFormDialog({
-      title: target.title || "预设操作",
-      message: "选择要对这个预设执行的操作。",
-      bodyHtml: buildActionMenuBody([
-        { id: "edit", label: "编辑预设", hint: "修改名称、内容或移动分类" },
-        { id: "delete", label: "删除预设", hint: "从本地预设库移除", tone: "danger" }
-      ]),
-      submitLabel: "关闭",
-      cancelLabel: "关闭",
-      onSubmit: () => null
-    });
-    if (action === "edit") {
-      await editTemplateFromPicker(templateId);
-      return;
-    }
-    if (action === "delete") {
-      await deleteTemplateFromPicker(templateId);
-    }
+    setPickerInlineMenu(isPickerInlineMenuOpen("template", templateId) ? "" : "template", templateId);
+    renderTemplatePickerList();
   }
 
   async function openPickerCategoryMenu(categoryId) {
@@ -708,28 +728,38 @@
     const category = getCategoryById(id);
     if (!category) return;
     modules.state.state.templatePicker.categoryId = id;
-    const action = await showTemplateFormDialog({
-      title: category.name || "分类操作",
-      message: "选择要对这个分类执行的操作。",
-      bodyHtml: buildActionMenuBody([
-        { id: "rename", label: "重命名分类", hint: "只修改分类名称" },
-        { id: "delete", label: "删除分类", hint: "预设会移到默认分类", tone: "danger" }
-      ]),
-      submitLabel: "关闭",
-      cancelLabel: "关闭",
-      onSubmit: () => null
-    });
-    if (action === "rename") {
+    setPickerInlineMenu(isPickerInlineMenuOpen("category", id) ? "" : "category", id);
+    renderTemplatePickerList();
+  }
+
+  async function handlePickerInlineMenuAction(action, target) {
+    const templateId = target && target.getAttribute("data-template-id");
+    const categoryId = target && target.getAttribute("data-template-category-id");
+    setPickerInlineMenu("", "");
+    if (action === "edit-template" && templateId) {
+      renderTemplatePickerList();
+      await editTemplateFromPicker(templateId);
+      return;
+    }
+    if (action === "delete-template" && templateId) {
+      renderTemplatePickerList();
+      await deleteTemplateFromPicker(templateId);
+      return;
+    }
+    if (action === "rename-category" && categoryId) {
       const previousManagerCategoryId = getActiveManagerCategoryId();
-      modules.state.state.templateManagerCategoryId = id;
+      modules.state.state.templateManagerCategoryId = categoryId;
       await renameActiveTemplateCategory();
       modules.state.state.templateManagerCategoryId = previousManagerCategoryId;
       renderTemplatePickerList();
       return;
     }
-    if (action === "delete") {
+    if (action === "delete-category" && categoryId) {
+      modules.state.state.templatePicker.categoryId = categoryId;
       await deleteActivePickerTemplateCategory();
+      return;
     }
+    renderTemplatePickerList();
   }
 
   function exportTemplatesToTextarea() {
@@ -1126,7 +1156,18 @@
     const templateCards = visibleTemplates
       .map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
-        return `<article class="picker-item template-preset-tile is-draggable ${isSelected ? "active" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}" title="${modules.runtime.escapeHtml(item.title)}"><button class="template-preset-select" type="button" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 20))}</span></span></button><button class="template-card-menu template-preset-menu" type="button" data-action="open-picker-template-menu" data-template-id="${modules.runtime.escapeHtml(String(item.id))}" title="预设操作">•••</button></article>`;
+        const escapedId = modules.runtime.escapeHtml(String(item.id));
+        const isMenuOpen = isPickerInlineMenuOpen("template", item.id);
+        const menu = isMenuOpen
+          ? buildInlineActionMenu(
+              [
+                { id: "edit-template", label: "编辑预设" },
+                { id: "delete-template", label: "删除预设", tone: "danger" }
+              ],
+              `data-template-id="${escapedId}"`
+            )
+          : "";
+        return `<article class="picker-item template-preset-tile is-draggable ${isSelected ? "active" : ""} ${isMenuOpen ? "has-open-menu" : ""}" draggable="true" data-template-id="${escapedId}" title="${modules.runtime.escapeHtml(item.title)}"><button class="template-preset-select" type="button" data-template-id="${escapedId}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 20))}</span></span></button><button class="template-card-menu template-preset-menu" type="button" data-action="open-picker-template-menu" data-template-id="${escapedId}" title="预设操作" aria-label="预设操作">•••</button>${menu}</article>`;
       })
       .join("");
     listEl.innerHTML = `${createCard}${emptyCard}${templateCards}`;
@@ -1333,6 +1374,14 @@
     }
 
     document.addEventListener("click", async (event) => {
+      const inlineMenuAction = event.target && event.target.closest("[data-template-inline-action]");
+      if (inlineMenuAction) {
+        event.preventDefault();
+        event.stopPropagation();
+        await handlePickerInlineMenuAction(inlineMenuAction.getAttribute("data-template-inline-action") || "", inlineMenuAction);
+        return;
+      }
+
       const actionTarget = event.target && event.target.closest("[data-action][data-template-id]");
       if (actionTarget) {
         const action = actionTarget.getAttribute("data-action");
@@ -1351,6 +1400,14 @@
         if (action === "delete-template") {
           await deleteTemplateById(templateId);
           return;
+        }
+      }
+
+      if (event.target && !event.target.closest(".template-inline-menu, .template-card-menu")) {
+        const menu = getPickerInlineMenu();
+        if (menu.type || menu.id) {
+          setPickerInlineMenu("", "");
+          renderTemplatePickerList();
         }
       }
 
