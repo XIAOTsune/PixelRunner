@@ -1,6 +1,16 @@
 const API_BASE_URL = "https://www.runninghub.cn";
 const PARSE_ENDPOINT = "/api/webapp/apiCallDemo";
 const PARSE_FALLBACKS = ["/uc/openapi/app", "/uc/openapi/community/app", "/uc/openapi/workflow"];
+const APP_META_FALLBACKS = [
+  "/api/webapp/detail",
+  "/api/webapp/getDetail",
+  "/api/webapp/info",
+  "/api/webapp/getInfo",
+  "/api/webapp/query",
+  "/api/webapp/get",
+  "/uc/openapi/app",
+  "/uc/openapi/community/app"
+];
 const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 
 function normalizeAppId(rawValue) {
@@ -104,17 +114,33 @@ function buildParseUrl(pathname, queryParams) {
 }
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(url, options);
-  const text = await response.text();
-  let result = null;
-
+  const timeoutMs = Math.max(3000, Number(options.timeoutMs) || 10000);
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => {
+        try {
+          controller.abort();
+        } catch (_) {}
+      }, timeoutMs)
+    : null;
   try {
-    result = text ? JSON.parse(text) : null;
-  } catch (_) {
-    result = { rawText: text };
-  }
+    const response = await fetch(url, {
+      ...options,
+      signal: controller ? controller.signal : options.signal
+    });
+    const text = await response.text();
+    let result = null;
 
-  return { ok: response.ok, status: response.status, result };
+    try {
+      result = text ? JSON.parse(text) : null;
+    } catch (_) {
+      result = { rawText: text };
+    }
+
+    return { ok: response.ok, status: response.status, result };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function normalizeFieldToken(text) {
@@ -661,11 +687,13 @@ function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set
     const key = normalizeFieldToken(parentKey);
     const looksLikeImageKey = /thumb|thumbnail|preview|cover|image|img|icon|avatar|poster|banner/.test(key);
     const looksLikeImageUrl = /^(https?:|data:image|plugin:|file:)/i.test(text) && /(\.(png|jpe?g|webp|gif|svg)(\?|#|$)|image|img|cover|thumb|preview|cdn|oss|cos|media|file)/i.test(text);
-    const looksLikeImagePath = /^(\.{0,2}\/|[a-z]:\\|[^<>:"|?*]+\.(png|jpe?g|webp|gif|svg)(\?|#|$))/i.test(text);
-    if (text && (looksLikeImageUrl || (looksLikeImageKey && looksLikeImagePath)) && !seen.has(text)) {
-      seen.add(text);
+    const looksLikeImagePath = /^(\.{0,2}\/|\/|[a-z]:\\|[^<>:"|?*]+\.(png|jpe?g|webp|gif|svg)(\?|#|$))/i.test(text);
+    let candidateValue = text;
+    if (/^\//.test(text)) candidateValue = `${API_BASE_URL}${text}`;
+    if (text && (looksLikeImageUrl || (looksLikeImageKey && looksLikeImagePath)) && !seen.has(candidateValue)) {
+      seen.add(candidateValue);
       const weights = { thumbnail: 60, cover: 56, preview: 54, imageurl: 48, icon: 32 };
-      bucket.push({ value: text, score: (weights[key] || (looksLikeImageKey ? 36 : 24)) - depth });
+      bucket.push({ value: candidateValue, score: (weights[key] || (looksLikeImageKey ? 36 : 24)) - depth });
     }
 
     const parsed = parseJsonFromEscapedText(text);
@@ -691,6 +719,30 @@ function resolveBestPreviewImage(data) {
   const candidates = collectImageUrlCandidates(data, 0, [], new Set(), "");
   candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
   return candidates[0] && candidates[0].value ? candidates[0].value : "";
+}
+
+function mergeParsedAppMeta(base, meta) {
+  const next = base && typeof base === "object" ? { ...base } : {};
+  const source = meta && typeof meta === "object" ? meta : {};
+  if (!String(next.previewImage || "").trim()) {
+    next.previewImage = String(source.previewImage || "").trim();
+  }
+  if ((!String(next.name || "").trim() || next.name === "未命名应用") && String(source.name || "").trim()) {
+    next.name = String(source.name || "").trim();
+  }
+  if (!String(next.description || "").trim() && String(source.description || "").trim()) {
+    next.description = String(source.description || "").trim();
+  }
+  return next;
+}
+
+function buildAppMetaFromResult(result) {
+  if (!result || typeof result !== "object") return { name: "", description: "", previewImage: "" };
+  return {
+    name: resolveBestAppName(result),
+    description: String(result.description || result.desc || result.summary || "").trim(),
+    previewImage: resolveBestPreviewImage(result)
+  };
 }
 
 function extractNodeInfoListFromText(rawText) {
@@ -851,6 +903,52 @@ function buildFallbackUrls(endpoint, normalizedId) {
   return urls;
 }
 
+async function fetchRunningHubAppMeta(apiKey, normalizedId) {
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  };
+  const queryVariants = [
+    { webappId: normalizedId },
+    { webAppId: normalizedId },
+    { appId: normalizedId },
+    { id: normalizedId },
+    { apiKey, webappId: normalizedId },
+    { apiKey, webAppId: normalizedId },
+    { apiKey, appId: normalizedId }
+  ];
+  const postVariants = [
+    { apiKey, webappId: normalizedId },
+    { apiKey, webAppId: normalizedId },
+    { apiKey, appId: normalizedId },
+    { apiKey, id: normalizedId }
+  ];
+
+  for (const endpoint of APP_META_FALLBACKS) {
+    for (const query of queryVariants) {
+      try {
+        const { result } = await fetchJson(buildParseUrl(endpoint, query), { method: "GET", headers });
+        const meta = buildAppMetaFromResult(result);
+        if (meta.previewImage) return meta;
+      } catch (_) {}
+    }
+
+    for (const body of postVariants) {
+      try {
+        const { result } = await fetchJson(`${API_BASE_URL}${endpoint}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body)
+        });
+        const meta = buildAppMetaFromResult(result);
+        if (meta.previewImage) return meta;
+      } catch (_) {}
+    }
+  }
+
+  return { name: "", description: "", previewImage: "" };
+}
+
 function buildDebugRecord(endpoint, appId, result, best) {
   const payload = best && best.payload ? best.payload : { inputs: [] };
   const source = best && best.source ? best.source : null;
@@ -881,6 +979,24 @@ function resolveMessage(result, fallback) {
   return String((result && (result.message || result.msg || result.error)) || fallback);
 }
 
+export async function fetchRunningHubAppPreview(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const apiKey = String(payload.apiKey || "").trim();
+  const normalizedId = normalizeAppId(payload.appId);
+
+  if (!normalizedId) throw new Error("请先输入有效的应用 ID 或 URL");
+  if (!apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
+
+  const meta = await fetchRunningHubAppMeta(apiKey, normalizedId);
+  return {
+    ok: Boolean(meta && meta.previewImage),
+    appId: normalizedId,
+    name: (meta && meta.name) || "",
+    description: (meta && meta.description) || "",
+    previewImage: (meta && meta.previewImage) || ""
+  };
+}
+
 export async function parseRunningHubApp(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
@@ -899,6 +1015,21 @@ export async function parseRunningHubApp(args = []) {
 
   const reasons = [];
   let lastDebugRecord = null;
+  const appMetaPromise = fetchRunningHubAppMeta(apiKey, normalizedId).catch(() => ({ name: "", description: "", previewImage: "" }));
+
+  const buildReturnPayload = async (parsed) => {
+    const meta = await appMetaPromise;
+    const merged = mergeParsedAppMeta(parsed, meta);
+    return {
+      ok: true,
+      appId: normalizedId,
+      name: preferredName || merged.name || "未命名应用",
+      description: merged.description || "",
+      previewImage: merged.previewImage || "",
+      inputs: Array.isArray(merged.inputs) ? merged.inputs : [],
+      source: "remote-parse"
+    };
+  };
 
   const tryHandleResult = (endpoint, result) => {
     const candidates = collectSourceCandidatesFromValue(result, 0, [], new Set());
@@ -936,13 +1067,13 @@ export async function parseRunningHubApp(args = []) {
       const { ok, status, result } = await fetchJson(buildParseUrl(PARSE_ENDPOINT, query), { method: "GET", headers });
       const parsed = tryHandleResult(PARSE_ENDPOINT, result);
       if (parsed) {
-        return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", previewImage: parsed.previewImage || "", inputs: parsed.inputs, source: "remote-parse" };
+        return buildReturnPayload(parsed);
       }
       reasons.push(`apiCallDemo(GET): ${resolveMessage(result, `HTTP ${status}`)}`);
       if (ok && result && (result.code === 0 || result.success === true)) {
         const retry = tryHandleResult(PARSE_ENDPOINT, result);
         if (retry) {
-          return { ok: true, appId: normalizedId, name: retry.name, description: retry.description || "", previewImage: retry.previewImage || "", inputs: retry.inputs, source: "remote-parse" };
+          return buildReturnPayload(retry);
         }
       }
     } catch (error) {
@@ -965,7 +1096,7 @@ export async function parseRunningHubApp(args = []) {
       });
       const parsed = tryHandleResult(PARSE_ENDPOINT, result);
       if (parsed) {
-        return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", previewImage: parsed.previewImage || "", inputs: parsed.inputs, source: "remote-parse" };
+        return buildReturnPayload(parsed);
       }
       reasons.push(`apiCallDemo(POST): ${resolveMessage(result, `HTTP ${status}`)}`);
     } catch (error) {
@@ -979,13 +1110,13 @@ export async function parseRunningHubApp(args = []) {
         const { ok, status, result } = await fetchJson(url, { method: "GET", headers });
         const parsed = tryHandleResult(endpoint, result);
         if (parsed) {
-          return { ok: true, appId: normalizedId, name: parsed.name, description: parsed.description || "", previewImage: parsed.previewImage || "", inputs: parsed.inputs, source: "remote-parse" };
+          return buildReturnPayload(parsed);
         }
         reasons.push(`${endpoint}: ${resolveMessage(result, `HTTP ${status}`)}`);
         if (ok && result && (result.code === 0 || result.success === true)) {
           const retry = tryHandleResult(endpoint, result);
           if (retry) {
-            return { ok: true, appId: normalizedId, name: retry.name, description: retry.description || "", previewImage: retry.previewImage || "", inputs: retry.inputs, source: "remote-parse" };
+            return buildReturnPayload(retry);
           }
         }
       } catch (error) {

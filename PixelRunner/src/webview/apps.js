@@ -1,5 +1,6 @@
 (function initAppsModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
+  let appPreviewHydrationRunning = false;
 
   function normalizeAppId(rawValue) {
     const text = String(rawValue || "").trim();
@@ -87,6 +88,45 @@
   function getAppPreviewImage(app) {
     if (!app || typeof app !== "object") return "";
     return String(app.previewImage || app.thumbnail || app.preview || app.cover || app.coverUrl || app.image || app.imageUrl || app.icon || "").trim();
+  }
+
+  async function hydrateMissingAppPreviews(options = {}) {
+    const state = modules.state.state;
+    if (appPreviewHydrationRunning || !modules.runtime.isPluginRuntime()) return;
+    const apiKey = String(state.settings.apiKey || "").trim();
+    if (!apiKey) return;
+    const candidates = (Array.isArray(state.apps) ? state.apps : [])
+      .filter((app) => app && String(app.appId || "").trim() && !getAppPreviewImage(app))
+      .slice(0, 24);
+    if (candidates.length === 0) return;
+
+    appPreviewHydrationRunning = true;
+    let changed = false;
+    try {
+      for (const app of candidates) {
+        try {
+          const result = await modules.runtime.callHost(
+            "runninghub.fetchAppPreview",
+            [{ appId: app.appId, apiKey }],
+            { timeoutMs: 12000 }
+          );
+          const previewImage = getAppPreviewImage(result);
+          if (!previewImage) continue;
+          app.previewImage = previewImage;
+          if (!String(app.description || "").trim() && result && result.description) app.description = String(result.description).trim();
+          if ((!String(app.name || "").trim() || /^应用\s+\d+$/.test(String(app.name || ""))) && result && result.name) app.name = String(result.name).trim();
+          app.updatedAt = Date.now();
+          changed = true;
+        } catch (_) {}
+      }
+
+      if (changed) {
+        await saveAppsToStorage(state.apps, { preserveEmpty: true });
+        if (!options.quiet) modules.ui.logToWorkspace("已自动补全部分 RunningHub 应用封面。", "success");
+      }
+    } finally {
+      appPreviewHydrationRunning = false;
+    }
   }
 
   function renderAppThumb(app, extraClass = "") {
@@ -677,6 +717,7 @@
         renderAppPickerList();
         showAppPickerView("picker");
         modules.workspace.setModalOpen("appPickerModal", true);
+        void hydrateMissingAppPreviews({ quiet: true });
       });
     }
 
