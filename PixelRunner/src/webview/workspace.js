@@ -649,16 +649,44 @@
     };
   }
 
+  function mergeTaskChargePatch(task, chargePatch) {
+    if (!chargePatch || typeof chargePatch !== "object") return null;
+    const currentBalanceCharge = normalizeTaskChargeValue(task && (task.balanceCharge != null ? task.balanceCharge : task.charge));
+    const currentCoinsCharge = normalizeTaskChargeValue(task && task.coinsCharge);
+    const nextBalanceCharge = normalizeTaskChargeValue(chargePatch.balanceCharge != null ? chargePatch.balanceCharge : chargePatch.charge);
+    const nextCoinsCharge = normalizeTaskChargeValue(chargePatch.coinsCharge);
+    const balanceCharge =
+      nextBalanceCharge !== null && (currentBalanceCharge === null || nextBalanceCharge > currentBalanceCharge)
+        ? nextBalanceCharge
+        : currentBalanceCharge;
+    const coinsCharge =
+      nextCoinsCharge !== null && (currentCoinsCharge === null || nextCoinsCharge > currentCoinsCharge)
+        ? nextCoinsCharge
+        : currentCoinsCharge;
+
+    if (balanceCharge === null && coinsCharge === null) return null;
+    return {
+      charge: balanceCharge,
+      balanceCharge,
+      coinsCharge,
+      chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+    };
+  }
+
   async function refreshAccountAndPatchTaskCharge(taskId) {
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId || !modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return null;
     accountSettlementChain = accountSettlementChain
       .catch(() => null)
       .then(async () => {
-        const beforeAccount = getCurrentAccountSnapshot();
+        const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+        const beforeAccount =
+          task && task.accountSnapshot && typeof task.accountSnapshot === "object"
+            ? task.accountSnapshot
+            : getCurrentAccountSnapshot();
         const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
-        const chargePatch = buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot());
-        if (chargePatch) {
+        const chargePatch = mergeTaskChargePatch(task, buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot()));
+        if (chargePatch && task) {
           upsertRunningTask({
             taskId: normalizedTaskId,
             ...chargePatch
@@ -1430,11 +1458,7 @@
       sourceDocument,
       finishedAt: completedAt
     });
-    if (statusResult && (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null)) {
-      scheduleAccountSummaryRefresh();
-    } else {
-      await refreshAccountAndPatchTaskCharge(remoteTaskId);
-    }
+    await refreshAccountAndPatchTaskCharge(remoteTaskId);
     setLastResult({
       appName: payload.appName,
       sourceDocument,
@@ -1555,11 +1579,7 @@
             sourceDocument,
             finishedAt
           });
-          if (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null) {
-            scheduleAccountSummaryRefresh();
-          } else {
-            await refreshAccountAndPatchTaskCharge(remoteTaskId);
-          }
+          await refreshAccountAndPatchTaskCharge(remoteTaskId);
           modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
           return;
         }
@@ -2066,6 +2086,15 @@
     const tempTaskId = createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
+    let submissionAccountSnapshot = getCurrentAccountSnapshot();
+    if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
+      try {
+        const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
+        submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
+      } catch (_) {
+        submissionAccountSnapshot = getCurrentAccountSnapshot();
+      }
+    }
     upsertRunningTask({
       taskId: tempTaskId,
       remoteTaskId: "",
@@ -2073,7 +2102,7 @@
       appName: payload.appName,
       status: "submitting",
       detail: isThirdPartyTask ? "正在提交到 GRS..." : "正在提交到 RunningHub...",
-      accountSnapshot: getCurrentAccountSnapshot(),
+      accountSnapshot: submissionAccountSnapshot,
       sourceDocument,
       createdAt: Date.now(),
       submittedAt: Date.now()
@@ -2153,9 +2182,7 @@
           sourceDocument,
           finishedAt
         });
-        if (!isThirdPartyTask && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
-          scheduleAccountSummaryRefresh();
-        } else if (!isThirdPartyTask) {
+        if (!isThirdPartyTask) {
           await refreshAccountAndPatchTaskCharge(remoteTaskId);
         }
         modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
@@ -2177,9 +2204,7 @@
         sourceDocument,
         finishedAt: completedAt
       });
-      if (!isThirdPartyTask && pollResult && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
-        scheduleAccountSummaryRefresh();
-      } else if (!isThirdPartyTask) {
+      if (!isThirdPartyTask) {
         await refreshAccountAndPatchTaskCharge(remoteTaskId);
       }
       setLastResult({
