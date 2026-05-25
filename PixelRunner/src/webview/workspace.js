@@ -481,7 +481,8 @@
 
   function renderQuickModeMeta() {
     const count = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries.length : 0;
-    return `<div class="workspace-app-summary workspace-quick-summary"><div class="workspace-app-name">快捷入口</div><span class="workspace-quick-count">已保存 ${modules.runtime.escapeHtml(String(count))} 个</span></div>`;
+    const concurrencyLabel = formatConcurrencyLabel(getActiveRunningTasks().length, getMaxConcurrentTasks());
+    return `<div class="workspace-app-summary workspace-quick-summary"><div class="workspace-app-name">快捷入口</div><span class="workspace-quick-count">已保存 ${modules.runtime.escapeHtml(String(count))} 个 · 并行 ${modules.runtime.escapeHtml(concurrencyLabel)}</span></div>`;
   }
 
   function getRunningTasks() {
@@ -525,6 +526,10 @@
 
   function getMaxConcurrentTasks() {
     return Math.max(1, Number(modules.state.state.settings.maxConcurrentTasks) || modules.state.DEFAULT_SETTINGS.maxConcurrentTasks || 3);
+  }
+
+  function formatConcurrencyLabel(activeCount = getActiveRunningTasks().length, maxConcurrentTasks = getMaxConcurrentTasks()) {
+    return `${Math.max(0, Number(activeCount) || 0)}/${Math.max(1, Number(maxConcurrentTasks) || 1)}`;
   }
 
   function isRunCooldownActive() {
@@ -887,10 +892,32 @@
       }
     }
 
+    if (quickMode) {
+      const appPickerMeta = modules.runtime.getById("appPickerMeta");
+      if (appPickerMeta) appPickerMeta.innerHTML = renderQuickModeMeta();
+    }
+
     if (runningTaskList) {
       runningTaskList.hidden = false;
       runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : '<div class="running-task-empty">运行后的任务会显示在这里。</div>';
     }
+
+    document.querySelectorAll(".quick-entry-run-btn").forEach((button) => {
+      const isSubmitting = button.dataset.submitting === "true";
+      const concurrencyLabel = formatConcurrencyLabel(activeCount, maxConcurrentTasks);
+      button.disabled = isSubmitting || concurrencyReached || cooldownActive;
+      if (isSubmitting) {
+        button.textContent = `提交中 ${concurrencyLabel}`;
+      } else if (concurrencyReached) {
+        button.textContent = `并发已满 ${concurrencyLabel}`;
+      } else if (cooldownActive) {
+        button.textContent = `稍候 ${cooldownSeconds}s`;
+      } else if (activeCount > 0) {
+        button.textContent = `运行 ${concurrencyLabel}`;
+      } else {
+        button.textContent = "运行";
+      }
+    });
 
     if (modules.sound && typeof modules.sound.handleQueueState === "function") {
       modules.sound.handleQueueState(activeCount);
@@ -2468,7 +2495,8 @@
         if (!action || !entryId) return;
 
         if (action === "run-quick-entry") {
-          actionTarget.disabled = true;
+          actionTarget.dataset.submitting = "true";
+          updateRunButtonState();
           try {
             await runQuickEntry(entryId);
           } catch (error) {
@@ -2477,7 +2505,8 @@
             modules.ui.logToWorkspace(`快捷入口运行失败：${message.replace(/\s+/g, " ")}`, "warn");
             updateRunButtonState();
           } finally {
-            actionTarget.disabled = false;
+            delete actionTarget.dataset.submitting;
+            updateRunButtonState();
           }
           return;
         }

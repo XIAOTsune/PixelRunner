@@ -795,6 +795,23 @@
 
     bindAppManagerControls();
 
+    function prepareNewApiProfileDraft() {
+      modules.state.state.activeApiProfileId = "";
+      modules.state.state.settings.activeApiProfileId = "";
+      const keyInput = runtime.getById("settingsApiKeyInput");
+      const nameInput = runtime.getById("settingsApiProfileNameInput");
+      const select = runtime.getById("settingsApiProfileSelect");
+      const deleteButton = runtime.getById("btnDeleteApiProfile");
+      if (keyInput) keyInput.value = "";
+      if (nameInput) nameInput.value = `API ${modules.state.state.apiProfiles.length + 1}`;
+      if (select) select.value = "";
+      if (deleteButton) deleteButton.disabled = true;
+      runtime.getById("apiProfileList")?.querySelectorAll(".api-profile-chip.is-active").forEach((button) => {
+        button.classList.remove("is-active");
+      });
+      if (keyInput) keyInput.focus();
+    }
+
     async function persistApiProfileSelection(profile) {
       if (!profile) return;
       applyActiveApiProfile(profile);
@@ -811,7 +828,11 @@
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {
         const profile = modules.state.state.apiProfiles.find((item) => String(item.id) === String(apiProfileSelect.value));
-        if (!profile) return;
+        if (!profile) {
+          prepareNewApiProfileDraft();
+          renderSettingsStatus("已准备新增 API 档案，填写 Key 后点击保存设置。", "pending");
+          return;
+        }
         try {
           await persistApiProfileSelection(profile);
         } catch (error) {
@@ -836,15 +857,7 @@
 
     if (newApiProfileButton) {
       newApiProfileButton.addEventListener("click", () => {
-        modules.state.state.activeApiProfileId = "";
-        modules.state.state.settings.activeApiProfileId = "";
-        const keyInput = runtime.getById("settingsApiKeyInput");
-        const nameInput = runtime.getById("settingsApiProfileNameInput");
-        const select = runtime.getById("settingsApiProfileSelect");
-        if (keyInput) keyInput.value = "";
-        if (nameInput) nameInput.value = `API ${modules.state.state.apiProfiles.length + 1}`;
-        if (select) select.value = "";
-        if (keyInput) keyInput.focus();
+        prepareNewApiProfileDraft();
         renderSettingsStatus("已准备新增 API 档案，填写 Key 后点击保存设置。", "pending");
       });
     }
