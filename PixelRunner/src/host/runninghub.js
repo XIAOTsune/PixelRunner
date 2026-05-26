@@ -482,6 +482,31 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
+function isTransientHttpStatus(status) {
+  const code = Number(status) || 0;
+  return code === 0 || code === 408 || code === 409 || code === 425 || code === 429 || code >= 500;
+}
+
+function isTransientNetworkErrorMessage(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes("abort") ||
+    text.includes("aborted") ||
+    text.includes("timeout") ||
+    text.includes("timed out") ||
+    text.includes("network") ||
+    text.includes("fetch failed") ||
+    text.includes("failed to fetch") ||
+    text.includes("load failed") ||
+    text.includes("econnreset") ||
+    text.includes("enotfound") ||
+    text.includes("etimedout") ||
+    text.includes("socket") ||
+    text.includes("temporarily unavailable")
+  );
+}
+
 function collectCandidateValues(payload, predicate, results = [], seen = new Set(), depth = 0) {
   if (!payload || depth > 6) return results;
   if (typeof payload !== "object") return results;
@@ -615,13 +640,43 @@ function extractOutputUrl(payload) {
   }
 
   if (typeof payload === "object") {
-    const directKeys = ["fileUrl", "url", "downloadUrl", "download_url", "imageUrl", "resultUrl"];
+    const directKeys = [
+      "fileUrl",
+      "file_url",
+      "url",
+      "downloadUrl",
+      "download_url",
+      "imageUrl",
+      "image_url",
+      "resultUrl",
+      "result_url",
+      "outputUrl",
+      "output_url",
+      "originUrl",
+      "origin_url",
+      "ossUrl",
+      "oss_url"
+    ];
     for (const key of directKeys) {
       const value = payload[key];
       if (typeof value === "string" && /^https?:\/\//i.test(value)) return value;
     }
 
-    const nestedKeys = ["outputs", "data", "result", "list", "items", "nodeOutputs"];
+    const nestedKeys = [
+      "outputs",
+      "output",
+      "data",
+      "result",
+      "results",
+      "list",
+      "items",
+      "files",
+      "fileList",
+      "images",
+      "imageList",
+      "nodeOutputs",
+      "nodeOutputList"
+    ];
     for (const key of nestedKeys) {
       const url = extractOutputUrl(payload[key]);
       if (url) return url;
@@ -880,6 +935,15 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
       result = { rawText: text };
     }
     return { ok: response.ok, status: response.status, result };
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error || "Task status request failed").trim();
+    return {
+      ok: false,
+      status: 0,
+      result: { message },
+      errorMessage: message,
+      transientError: true
+    };
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -908,8 +972,12 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "") {
     coinsCharge,
     chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge),
     message,
-    stillRunning: isPendingStatus(status) || isPendingMessage(message),
+    stillRunning: isPendingStatus(status) || isPendingMessage(message) || Boolean(snapshot && snapshot.transientError),
     failed: isFailedStatus(status),
+    transientError:
+      Boolean(snapshot && snapshot.transientError) ||
+      Boolean(snapshot && !snapshot.ok && isTransientHttpStatus(snapshot.status)) ||
+      isTransientNetworkErrorMessage(message),
     raw: result || null
   };
 }
@@ -1063,11 +1131,23 @@ export async function pollRunningHubTask(args = []) {
           signal: localController ? localController.signal : undefined,
           timeoutMs: 30000
         });
+        if (localController && localController.signal.aborted) {
+          throw new Error("Task polling cancelled");
+        }
         const result = snapshot.result;
         if (!snapshot.ok) {
           const message =
             (result && (result.message || result.msg || result.error)) ||
             `Request failed (HTTP ${snapshot.status})`;
+          if (snapshot.transientError || isTransientHttpStatus(snapshot.status) || isTransientNetworkErrorMessage(message)) {
+            console.warn("[PixelRunner/RunningHub] transient task status request failed", {
+              taskId,
+              status: snapshot.status,
+              message
+            });
+            await sleep(pollIntervalMs);
+            continue;
+          }
           throw new Error(String(message));
         }
 
@@ -1106,7 +1186,11 @@ export async function pollRunningHubTask(args = []) {
         }
 
         if (!isPendingStatus(status) && !isPendingMessage(result && (result.message || result.msg))) {
-          throw new Error((result && (result.message || result.msg)) || "Unknown task status");
+          console.warn("[PixelRunner/RunningHub] task status not terminal yet", {
+            taskId,
+            status: status || "",
+            message: (result && (result.message || result.msg)) || "Unknown task status"
+          });
         }
       } catch (error) {
         if (localController && localController.signal.aborted) {
@@ -1123,6 +1207,9 @@ export async function pollRunningHubTask(args = []) {
       signal: localController ? localController.signal : undefined,
       timeoutMs: 30000
     });
+    if (localController && localController.signal.aborted) {
+      throw new Error("Task polling cancelled");
+    }
     const timeoutStatus = buildTaskStatusResponse(taskId, timeoutSnapshot, "Task polling timed out");
     if (timeoutStatus.outputUrl) {
       return {

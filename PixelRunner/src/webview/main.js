@@ -43,7 +43,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.4.7"
+        version: "2.5.0"
       });
     })
     .catch((error) => {

@@ -15,7 +15,7 @@ import {
   runThirdPartyGrsPromptOptimize,
   submitThirdPartyGrsTask
 } from "./third-party-grs.js";
-import { parseRunningHubApp } from "./runninghub-parser.js";
+import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
 import { openExternalUrl, openLocalPath, resolveTutorialPath } from "./shell.js";
 import {
   capturePhotoshopDocumentPreview,
@@ -82,6 +82,9 @@ async function handleBridgeRequest(message, webviewEl) {
         break;
       case "runninghub.parseApp":
         result = await parseRunningHubApp(message.args);
+        break;
+      case "runninghub.fetchAppPreview":
+        result = await fetchRunningHubAppPreview(message.args);
         break;
       case "thirdParty.grs.submitTask":
         result = await submitThirdPartyGrsTask(message.args);

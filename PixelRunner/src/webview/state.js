@@ -3,9 +3,11 @@
 
   const STORAGE_KEYS = {
     API_KEY: "rh_api_key",
+    API_PROFILES: "pixelrunner.runninghub.apiProfiles.v1",
     SETTINGS: "rh_settings",
     APPS: "rh_ai_apps_v2",
     PROMPT_TEMPLATES: "rh_prompt_templates",
+    PROMPT_TEMPLATE_CATEGORIES: "pixelrunner.promptTemplateCategories.v1",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
     CURRENT_APP_ID: "pixelrunner.current_app_id",
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
@@ -55,18 +57,30 @@
     glass: false
   };
 
+  const DEFAULT_TEMPLATE_CATEGORY_ID = "default";
+  const DEFAULT_TEMPLATE_CATEGORY_NAME = "默认分类";
+
   const state = {
     apps: [],
     currentApp: null,
     workspaceMode: "app",
     quickEntries: [],
     templates: [],
+    templateCategories: [],
     appPickerKeyword: "",
+    appPickerView: "picker",
+    appPickerEditingAppId: null,
+    appPickerEditorSnapshot: "",
+    appPickerPendingDeleteId: "",
+    appPickerConfirm: null,
     appManagerKeyword: "",
     appManagerSort: "manual",
     templateManagerKeyword: "",
     templateManagerSort: "manual",
+    templateManagerCategoryId: DEFAULT_TEMPLATE_CATEGORY_ID,
     settings: { ...DEFAULT_SETTINGS },
+    apiProfiles: [],
+    activeApiProfileId: "",
     thirdPartySettings: normalizeThirdPartySettings(DEFAULT_THIRD_PARTY_SETTINGS),
     settingsLoaded: false,
     accountSummary: {
@@ -86,6 +100,7 @@
       targetKey: "",
       selectedIds: [],
       keyword: "",
+      categoryId: DEFAULT_TEMPLATE_CATEGORY_ID,
       mode: "multiple",
       maxSelection: 5,
       applyMode: "replace"
@@ -147,8 +162,44 @@
       pollInterval,
       timeout,
       maxConcurrentTasks,
-      aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID
+      aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
+      activeApiProfileId: String(source.activeApiProfileId || "").trim()
     };
+  }
+
+  function normalizeApiProfileRecord(profile, index = 0) {
+    const source = profile && typeof profile === "object" ? profile : {};
+    const apiKey = String(source.apiKey || "").trim();
+    const name = String(source.name || source.title || `API ${index + 1}`).trim() || `API ${index + 1}`;
+    const id = String(source.id || "").trim() || modules.runtime.createId("api");
+    const now = Date.now();
+    return {
+      id,
+      name,
+      apiKey,
+      createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
+      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+    };
+  }
+
+  function normalizeApiProfileList(profiles) {
+    const seenIds = new Set();
+    const seenKeys = new Set();
+    return (Array.isArray(profiles) ? profiles : [])
+      .map((item, index) => normalizeApiProfileRecord(item, index))
+      .filter((item) => {
+        const key = item.apiKey.toLowerCase();
+        if (!item.apiKey || seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        if (seenIds.has(item.id)) item.id = modules.runtime.createId("api");
+        seenIds.add(item.id);
+        return true;
+      });
+  }
+
+  function getActiveApiProfile() {
+    const activeId = String(state.activeApiProfileId || state.settings.activeApiProfileId || "").trim();
+    return state.apiProfiles.find((item) => String(item.id) === activeId) || state.apiProfiles[0] || null;
   }
 
   function normalizeModelList(models, fallback) {
@@ -209,6 +260,32 @@
       nanobananaprovt: "nano-banana-pro-vt"
     };
     return aliases[compact] || text;
+  }
+
+  function normalizeSearchText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_\-·.。:：/\\|()[\]{}"'`~!！?？,，;；]+/g, "");
+  }
+
+  function fuzzyMatchText(target, query) {
+    const rawQuery = String(query || "").trim();
+    if (!rawQuery) return true;
+    const rawTarget = String(target || "").trim();
+    if (!rawTarget) return false;
+
+    const normalizedTarget = normalizeSearchText(rawTarget);
+    const normalizedQuery = normalizeSearchText(rawQuery);
+    if (!normalizedQuery) return true;
+    if (!normalizedTarget) return false;
+    if (normalizedTarget.includes(normalizedQuery)) return true;
+
+    let queryIndex = 0;
+    for (let index = 0; index < normalizedTarget.length && queryIndex < normalizedQuery.length; index += 1) {
+      if (normalizedTarget[index] === normalizedQuery[queryIndex]) queryIndex += 1;
+    }
+    return queryIndex === normalizedQuery.length;
   }
 
   function isGrsNanoBananaModel(value) {
@@ -338,12 +415,24 @@
     const id = String(source.id || "").trim() || runtime.createId("app");
     const fallbackName = `应用 ${index + 1}`;
     const name = String(source.name || source.title || fallbackName).trim() || fallbackName;
+    const previewImage = String(
+      source.previewImage ||
+      source.thumbnail ||
+      source.preview ||
+      source.cover ||
+      source.coverUrl ||
+      source.image ||
+      source.imageUrl ||
+      source.icon ||
+      ""
+    ).trim();
 
     return {
       id,
       appId,
       name,
       description: String(source.description || "").trim(),
+      previewImage,
       inputs: normalizeAppInputs(source.inputs),
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now
@@ -356,6 +445,7 @@
     const id = String(source.id || "").trim() || runtime.createId("tpl");
     const title = String(source.title || "").trim();
     const content = String(source.content == null ? "" : source.content);
+    const categoryId = String(source.categoryId || source.groupId || source.pageId || DEFAULT_TEMPLATE_CATEGORY_ID).trim() || DEFAULT_TEMPLATE_CATEGORY_ID;
     const now = Date.now();
     if (!title || !content.trim()) return null;
 
@@ -363,9 +453,56 @@
       id,
       title,
       content,
+      categoryId,
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
     };
+  }
+
+  function normalizeTemplateCategoryRecord(category, index = 0) {
+    const source = category && typeof category === "object" ? category : {};
+    const id = String(source.id || source.categoryId || source.key || "").trim() || (index === 0 ? DEFAULT_TEMPLATE_CATEGORY_ID : modules.runtime.createId("tplcat"));
+    const name = String(source.name || source.title || source.label || "").trim() || (id === DEFAULT_TEMPLATE_CATEGORY_ID ? DEFAULT_TEMPLATE_CATEGORY_NAME : `分类 ${index + 1}`);
+    const now = Date.now();
+    return {
+      id,
+      name,
+      createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
+      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+    };
+  }
+
+  function normalizeTemplateCategoryList(categories, templates = []) {
+    const seenIds = new Set();
+    const out = [];
+    const pushCategory = (category, index = out.length) => {
+      const item = normalizeTemplateCategoryRecord(category, index);
+      if (!item) return;
+      if (seenIds.has(item.id)) item.id = modules.runtime.createId("tplcat");
+      seenIds.add(item.id);
+      out.push(item);
+    };
+
+    pushCategory({ id: DEFAULT_TEMPLATE_CATEGORY_ID, name: DEFAULT_TEMPLATE_CATEGORY_NAME }, 0);
+    (Array.isArray(categories) ? categories : []).forEach((item, index) => {
+      const normalized = normalizeTemplateCategoryRecord(item, index + 1);
+      if (normalized.id === DEFAULT_TEMPLATE_CATEGORY_ID) {
+        out[0] = { ...out[0], ...normalized, id: DEFAULT_TEMPLATE_CATEGORY_ID, name: normalized.name || DEFAULT_TEMPLATE_CATEGORY_NAME };
+        return;
+      }
+      if (!seenIds.has(normalized.id)) {
+        seenIds.add(normalized.id);
+        out.push(normalized);
+      }
+    });
+
+    (Array.isArray(templates) ? templates : []).forEach((template) => {
+      const categoryId = String(template && template.categoryId || "").trim();
+      if (!categoryId || seenIds.has(categoryId)) return;
+      pushCategory({ id: categoryId, name: String(template.categoryName || template.group || template.page || "").trim() || "导入分类" }, out.length);
+    });
+
+    return out;
   }
 
   function normalizeTemplateList(templates) {
@@ -448,12 +585,19 @@
     DEFAULT_THIRD_PARTY_SETTINGS,
     THIRD_PARTY_APP_ID,
     DEFAULT_THEME,
+    DEFAULT_TEMPLATE_CATEGORY_ID,
+    DEFAULT_TEMPLATE_CATEGORY_NAME,
     state,
     normalizeTheme,
     normalizeSettings,
+    normalizeApiProfileRecord,
+    normalizeApiProfileList,
+    getActiveApiProfile,
     normalizeThirdPartySettings,
     isThirdPartyApp,
     normalizeGrsModelId,
+    normalizeSearchText,
+    fuzzyMatchText,
     isGrsNanoBananaModel,
     isGrsGptImageModel,
     getThirdPartyModelCapabilities,
@@ -463,6 +607,8 @@
     normalizeAppRecord,
     normalizeAppList,
     normalizeTemplateRecord,
+    normalizeTemplateCategoryRecord,
+    normalizeTemplateCategoryList,
     normalizeTemplateList,
     getAppInputCount,
     getAppDisplayName,

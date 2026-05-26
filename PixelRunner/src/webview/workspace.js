@@ -4,6 +4,7 @@
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
+  const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
   const RUNNINGHUB_CALL_RECORD_URL = "https://www.runninghub.cn/call-api/call-record";
   const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   let runButtonCooldownUntil = 0;
@@ -480,7 +481,8 @@
 
   function renderQuickModeMeta() {
     const count = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries.length : 0;
-    return `<div class="workspace-app-summary workspace-quick-summary"><div class="workspace-app-name">快捷入口</div><span class="workspace-quick-count">已保存 ${modules.runtime.escapeHtml(String(count))} 个</span></div>`;
+    const concurrencyLabel = formatConcurrencyLabel(getActiveRunningTasks().length, getMaxConcurrentTasks());
+    return `<div class="workspace-app-summary workspace-quick-summary"><div class="workspace-app-name">快捷入口</div><span class="workspace-quick-count">已保存 ${modules.runtime.escapeHtml(String(count))} 个 · 并行 ${modules.runtime.escapeHtml(concurrencyLabel)}</span></div>`;
   }
 
   function getRunningTasks() {
@@ -524,6 +526,10 @@
 
   function getMaxConcurrentTasks() {
     return Math.max(1, Number(modules.state.state.settings.maxConcurrentTasks) || modules.state.DEFAULT_SETTINGS.maxConcurrentTasks || 3);
+  }
+
+  function formatConcurrencyLabel(activeCount = getActiveRunningTasks().length, maxConcurrentTasks = getMaxConcurrentTasks()) {
+    return `${Math.max(0, Number(activeCount) || 0)}/${Math.max(1, Number(maxConcurrentTasks) || 1)}`;
   }
 
   function isRunCooldownActive() {
@@ -643,16 +649,44 @@
     };
   }
 
+  function mergeTaskChargePatch(task, chargePatch) {
+    if (!chargePatch || typeof chargePatch !== "object") return null;
+    const currentBalanceCharge = normalizeTaskChargeValue(task && (task.balanceCharge != null ? task.balanceCharge : task.charge));
+    const currentCoinsCharge = normalizeTaskChargeValue(task && task.coinsCharge);
+    const nextBalanceCharge = normalizeTaskChargeValue(chargePatch.balanceCharge != null ? chargePatch.balanceCharge : chargePatch.charge);
+    const nextCoinsCharge = normalizeTaskChargeValue(chargePatch.coinsCharge);
+    const balanceCharge =
+      nextBalanceCharge !== null && (currentBalanceCharge === null || nextBalanceCharge > currentBalanceCharge)
+        ? nextBalanceCharge
+        : currentBalanceCharge;
+    const coinsCharge =
+      nextCoinsCharge !== null && (currentCoinsCharge === null || nextCoinsCharge > currentCoinsCharge)
+        ? nextCoinsCharge
+        : currentCoinsCharge;
+
+    if (balanceCharge === null && coinsCharge === null) return null;
+    return {
+      charge: balanceCharge,
+      balanceCharge,
+      coinsCharge,
+      chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+    };
+  }
+
   async function refreshAccountAndPatchTaskCharge(taskId) {
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId || !modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return null;
     accountSettlementChain = accountSettlementChain
       .catch(() => null)
       .then(async () => {
-        const beforeAccount = getCurrentAccountSnapshot();
+        const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+        const beforeAccount =
+          task && task.accountSnapshot && typeof task.accountSnapshot === "object"
+            ? task.accountSnapshot
+            : getCurrentAccountSnapshot();
         const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
-        const chargePatch = buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot());
-        if (chargePatch) {
+        const chargePatch = mergeTaskChargePatch(task, buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot()));
+        if (chargePatch && task) {
           upsertRunningTask({
             taskId: normalizedTaskId,
             ...chargePatch
@@ -709,6 +743,32 @@
       text.includes("does not exist") ||
       text.includes("unknown task") ||
       text.includes("unknown bridge method")
+    );
+  }
+
+  function isTransientTaskErrorMessage(message) {
+    const text = String(message || "").trim().toLowerCase();
+    if (!text) return false;
+    if (isPermanentTrackingErrorMessage(text)) return false;
+    return (
+      text.includes("abort") ||
+      text.includes("aborted") ||
+      text.includes("timeout") ||
+      text.includes("timed out") ||
+      text.includes("network") ||
+      text.includes("fetch failed") ||
+      text.includes("failed to fetch") ||
+      text.includes("load failed") ||
+      text.includes("request failed (http 408)") ||
+      text.includes("request failed (http 409)") ||
+      text.includes("request failed (http 425)") ||
+      text.includes("request failed (http 429)") ||
+      /request failed \(http 5\d\d\)/.test(text) ||
+      text.includes("econnreset") ||
+      text.includes("enotfound") ||
+      text.includes("etimedout") ||
+      text.includes("socket") ||
+      text.includes("temporarily unavailable")
     );
   }
 
@@ -860,10 +920,32 @@
       }
     }
 
+    if (quickMode) {
+      const appPickerMeta = modules.runtime.getById("appPickerMeta");
+      if (appPickerMeta) appPickerMeta.innerHTML = renderQuickModeMeta();
+    }
+
     if (runningTaskList) {
       runningTaskList.hidden = false;
       runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : '<div class="running-task-empty">运行后的任务会显示在这里。</div>';
     }
+
+    document.querySelectorAll(".quick-entry-run-btn").forEach((button) => {
+      const isSubmitting = button.dataset.submitting === "true";
+      const concurrencyLabel = formatConcurrencyLabel(activeCount, maxConcurrentTasks);
+      button.disabled = isSubmitting || concurrencyReached || cooldownActive;
+      if (isSubmitting) {
+        button.textContent = `提交中 ${concurrencyLabel}`;
+      } else if (concurrencyReached) {
+        button.textContent = `并发已满 ${concurrencyLabel}`;
+      } else if (cooldownActive) {
+        button.textContent = `稍候 ${cooldownSeconds}s`;
+      } else if (activeCount > 0) {
+        button.textContent = `运行 ${concurrencyLabel}`;
+      } else {
+        button.textContent = "运行";
+      }
+    });
 
     if (modules.sound && typeof modules.sound.handleQueueState === "function") {
       modules.sound.handleQueueState(activeCount);
@@ -885,14 +967,15 @@
     if (input.type === "textarea" || input.type === "multiline" || isPromptField(input)) {
       const currentValue = String(value ?? "");
       const showAiOptimizeButton = isPrimaryPromptField(input);
+      const fieldId = `dynamic-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-") || "input"}`;
       const aiOptimizeAvailability =
         showAiOptimizeButton && modules.aiOptimize && typeof modules.aiOptimize.getAvailability === "function"
           ? modules.aiOptimize.getAvailability(key)
           : { available: false, reason: "" };
       return `
-        <label class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
+        <div class="field dynamic-field ${isPromptField(input) ? "prompt-field" : ""}">
           <span class="field-label">
-            <span>${label}${requiredMark}</span>
+            <label for="${runtime.escapeHtml(fieldId)}">${label}${requiredMark}</label>
             ${
               isPromptField(input)
                 ? `
@@ -908,9 +991,9 @@
                 : ""
             }
           </span>
-          <textarea class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
+          <textarea id="${runtime.escapeHtml(fieldId)}" class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
           ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
-        </label>
+        </div>
       `;
     }
 
@@ -1375,11 +1458,7 @@
       sourceDocument,
       finishedAt: completedAt
     });
-    if (statusResult && (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null)) {
-      scheduleAccountSummaryRefresh();
-    } else {
-      await refreshAccountAndPatchTaskCharge(remoteTaskId);
-    }
+    await refreshAccountAndPatchTaskCharge(remoteTaskId);
     setLastResult({
       appName: payload.appName,
       sourceDocument,
@@ -1500,11 +1579,7 @@
             sourceDocument,
             finishedAt
           });
-          if (statusResult.chargeDisplay || statusResult.balanceCharge != null || statusResult.coinsCharge != null) {
-            scheduleAccountSummaryRefresh();
-          } else {
-            await refreshAccountAndPatchTaskCharge(remoteTaskId);
-          }
+          await refreshAccountAndPatchTaskCharge(remoteTaskId);
           modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
           return;
         }
@@ -1862,6 +1937,28 @@
     );
   }
 
+  function isAutoPlacementRetryableError(error) {
+    if (isAutoPlacementBlockedError(error)) return true;
+    const message = String((error && error.message) || error || "").toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes("failed to download result") ||
+      message.includes("download") ||
+      message.includes("timeout") ||
+      message.includes("timed out") ||
+      message.includes("network") ||
+      message.includes("fetch failed") ||
+      message.includes("failed to fetch") ||
+      message.includes("load failed") ||
+      /http (408|409|425|429|5\d\d)/.test(message) ||
+      message.includes("econnreset") ||
+      message.includes("enotfound") ||
+      message.includes("etimedout") ||
+      message.includes("socket") ||
+      message.includes("temporarily unavailable")
+    );
+  }
+
   function schedulePendingAutoPlacementRetry(delayMs = 4000) {
     if (autoPlacementRetryTimer || pendingAutoPlacements.size === 0) return;
     autoPlacementRetryTimer = window.setTimeout(() => {
@@ -1904,10 +2001,17 @@
           });
           modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
         } catch (error) {
-          if (isAutoPlacementBlockedError(error)) {
+          if (isAutoPlacementRetryableError(error) && Number(queued.attempts || 0) + 1 < AUTO_PLACEMENT_MAX_TEMP_FAILURES) {
+            const attempts = Number(queued.attempts || 0) + 1;
+            const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
             pendingAutoPlacements.set(taskId, {
               ...queued,
-              attempts: Number(queued.attempts || 0) + 1
+              attempts
+            });
+            upsertRunningTask({
+              taskId,
+              remoteTaskId: taskId,
+              detail: `任务已完成，返图暂未成功：${message}，稍后自动重试（${attempts}/${AUTO_PLACEMENT_MAX_TEMP_FAILURES}）。`
             });
             continue;
           }
@@ -1918,7 +2022,7 @@
             remoteTaskId: taskId,
             detail: `任务已完成，但自动贴回失败：${message}`
           });
-          modules.ui.logToWorkspace(`返图重试失败：${message}`, "warn");
+          modules.ui.logToWorkspace(`返图重试已停止：${message}`, "warn");
         }
       }
     } finally {
@@ -1941,13 +2045,16 @@
     try {
       response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
     } catch (error) {
-      if (isAutoPlacementBlockedError(error)) {
+      if (isAutoPlacementRetryableError(error)) {
         queueAutoPlacement(result);
+        const retryMessage = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
         return {
           ok: false,
           queued: true,
-          blocked: true,
-          message: "Photoshop 当前正在执行液化或其他模态操作，返图已暂停，待可执行时会自动继续。"
+          blocked: isAutoPlacementBlockedError(error),
+          message: isAutoPlacementBlockedError(error)
+            ? "Photoshop 当前正在执行液化或其他模态操作，返图已暂停，待可执行时会自动继续。"
+            : `返图暂未成功：${retryMessage}，稍后会自动重试。`
         };
       }
       throw error;
@@ -1979,6 +2086,15 @@
     const tempTaskId = createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
+    let submissionAccountSnapshot = getCurrentAccountSnapshot();
+    if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
+      try {
+        const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
+        submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
+      } catch (_) {
+        submissionAccountSnapshot = getCurrentAccountSnapshot();
+      }
+    }
     upsertRunningTask({
       taskId: tempTaskId,
       remoteTaskId: "",
@@ -1986,7 +2102,7 @@
       appName: payload.appName,
       status: "submitting",
       detail: isThirdPartyTask ? "正在提交到 GRS..." : "正在提交到 RunningHub...",
-      accountSnapshot: getCurrentAccountSnapshot(),
+      accountSnapshot: submissionAccountSnapshot,
       sourceDocument,
       createdAt: Date.now(),
       submittedAt: Date.now()
@@ -2066,9 +2182,7 @@
           sourceDocument,
           finishedAt
         });
-        if (!isThirdPartyTask && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
-          scheduleAccountSummaryRefresh();
-        } else if (!isThirdPartyTask) {
+        if (!isThirdPartyTask) {
           await refreshAccountAndPatchTaskCharge(remoteTaskId);
         }
         modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
@@ -2090,9 +2204,7 @@
         sourceDocument,
         finishedAt: completedAt
       });
-      if (!isThirdPartyTask && pollResult && (pollResult.chargeDisplay || pollResult.balanceCharge != null || pollResult.coinsCharge != null)) {
-        scheduleAccountSummaryRefresh();
-      } else if (!isThirdPartyTask) {
+      if (!isThirdPartyTask) {
         await refreshAccountAndPatchTaskCharge(remoteTaskId);
       }
       setLastResult({
@@ -2141,6 +2253,21 @@
       const message = error && error.message ? error.message : String(error || "任务执行失败");
       const normalizedMessage = String(message).trim();
       const cancelled = /cancel/i.test(normalizedMessage);
+      if (!isThirdPartyTask && activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(normalizedMessage)) {
+        const retryDetail = `网络波动或状态查询暂不可用：${normalizedMessage}。已保留 taskId，并切换为后台追踪继续确认 RunningHub 结果。`;
+        upsertRunningTask({
+          taskId: activeTaskId,
+          remoteTaskId: activeRemoteTaskId,
+          appName: payload.appName,
+          status: "tracking",
+          detail: retryDetail,
+          errorMessage: "",
+          sourceDocument
+        });
+        modules.ui.logToWorkspace(`${retryDetail} 远端任务可能仍在运行。`, "warn");
+        startTaskStatusTracking(activeRemoteTaskId, payload, sourceDocument);
+        return;
+      }
       const failureLabel = getTaskFailureLabel({
         status: cancelled ? "cancelled" : "failed",
         errorMessage: normalizedMessage,
@@ -2179,11 +2306,33 @@
     const quickEntryDeleteCancel = modules.runtime.getById("btnCancelQuickEntryDelete");
     const quickEntryDeleteConfirm = modules.runtime.getById("btnConfirmQuickEntryDelete");
     const quickEntryDeleteHint = modules.runtime.getById("quickEntryDeleteHint");
+    const quickEntryNoticeTitle = modules.runtime.getById("quickEntryNoticeTitle");
+    const quickEntryNoticeHint = modules.runtime.getById("quickEntryNoticeHint");
+    const quickEntryNoticeClose = modules.runtime.getById("quickEntryNoticeModalClose");
+    const quickEntryNoticeConfirm = modules.runtime.getById("btnConfirmQuickEntryNotice");
     const quickEntryDialogState = {
       nameMode: "create",
       targetEntryId: "",
       deleteEntryId: ""
     };
+
+    function getQuickEntryNoticeTitle(message) {
+      if (/未检测到 Photoshop 选区/.test(message)) return "运行前需要选区";
+      if (/请先打开 Photoshop 文档/.test(message)) return "需要打开文档";
+      return "快捷入口无法运行";
+    }
+
+    function openQuickEntryNoticeModal(message) {
+      const notice = String(message || "快捷入口无法运行，请检查当前 Photoshop 状态后重试。").trim();
+      if (quickEntryNoticeTitle) quickEntryNoticeTitle.textContent = getQuickEntryNoticeTitle(notice);
+      if (quickEntryNoticeHint) modules.runtime.setSummaryStatus(quickEntryNoticeHint, notice, "warn");
+      setModalOpen("quickEntryNoticeModal", true);
+      window.setTimeout(() => quickEntryNoticeConfirm && quickEntryNoticeConfirm.focus(), 0);
+    }
+
+    function closeQuickEntryNoticeModal() {
+      setModalOpen("quickEntryNoticeModal", false);
+    }
 
     function openQuickEntryNameModal() {
       collectFormValuesFromDom();
@@ -2371,16 +2520,18 @@
         if (!action || !entryId) return;
 
         if (action === "run-quick-entry") {
-          actionTarget.disabled = true;
+          actionTarget.dataset.submitting = "true";
+          updateRunButtonState();
           try {
             await runQuickEntry(entryId);
           } catch (error) {
             const message = error && error.message ? error.message : String(error || "快捷入口运行失败");
-            if (message.includes("\n") && typeof global.alert === "function") global.alert(message);
+            openQuickEntryNoticeModal(message);
             modules.ui.logToWorkspace(`快捷入口运行失败：${message.replace(/\s+/g, " ")}`, "warn");
             updateRunButtonState();
           } finally {
-            actionTarget.disabled = false;
+            delete actionTarget.dataset.submitting;
+            updateRunButtonState();
           }
           return;
         }
@@ -2425,6 +2576,8 @@
         }
       });
     }
+    if (quickEntryNoticeClose) quickEntryNoticeClose.addEventListener("click", closeQuickEntryNoticeModal);
+    if (quickEntryNoticeConfirm) quickEntryNoticeConfirm.addEventListener("click", closeQuickEntryNoticeModal);
 
     if (runButton) {
       runButton.addEventListener("click", async () => {
@@ -2469,6 +2622,11 @@
 
       if (event.target && event.target.closest("#quickEntryDeleteBackdrop")) {
         closeQuickEntryDeleteModal();
+        return;
+      }
+
+      if (event.target && event.target.closest("#quickEntryNoticeBackdrop")) {
+        closeQuickEntryNoticeModal();
         return;
       }
 

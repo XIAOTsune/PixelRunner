@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.4.7</span>
+              <span class="version-text">v2.5.0</span>
             </div>
           </div>
         </div>
@@ -73,12 +73,6 @@
           </section>
 
           <section id="workspaceInputArea" class="surface-card workspace-input-card">
-            <div class="workspace-section-head">
-              <div class="workspace-section-title-group">
-                <div class="workspace-section-kicker">输入参数</div>
-              </div>
-            </div>
-
             <div id="imageInputContainer" class="input-zone input-zone-image" hidden></div>
 
             <div id="dynamicInputContainer" class="input-zone input-zone-form">
@@ -90,12 +84,6 @@
           </section>
 
           <section class="surface-card workspace-run-card">
-            <div class="workspace-section-head workspace-run-head">
-              <div class="workspace-section-title-group">
-                <div class="workspace-section-kicker">执行控制</div>
-                <h3 class="card-title workspace-section-title">提交任务</h3>
-              </div>
-            </div>
             <div class="action-row workspace-run-actions">
               <button id="btnRun" class="primary-btn workspace-run-btn" type="button" disabled>开始运行</button>
             </div>
@@ -112,7 +100,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.4.7 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.0 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -127,7 +115,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.4.7</span>
+            <span class="version-text">v2.5.0</span>
           </div>
         </div>
 
@@ -261,7 +249,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.4.7</span>
+          <span class="version-text">v2.5.0</span>
           </div>
         </div>
 
@@ -275,6 +263,16 @@
                 <span class="field-label">RunningHub API Key</span>
                 <input id="settingsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
               </label>
+              <label class="field">
+                <span class="field-label">API 档案名称</span>
+                <input id="settingsApiProfileNameInput" class="field-input" type="text" placeholder="例如：主账号、客户项目 A" />
+              </label>
+              <label class="field">
+                <span class="field-label">当前使用</span>
+                <select id="settingsApiProfileSelect" class="field-input">
+                  <option value="">尚未保存 API 档案</option>
+                </select>
+              </label>
               <div class="action-row">
                 <button id="btnResetSettings" class="secondary-btn api-visibility-btn" type="button" aria-label="显示 API Key" title="显示 API Key" aria-pressed="false">
                   <span class="api-visibility-icon" aria-hidden="true">
@@ -285,17 +283,35 @@
                     </svg>
                   </span>
                 </button>
+                <button id="btnNewApiProfile" class="secondary-btn" type="button">新增</button>
+                <button id="btnDeleteApiProfile" class="secondary-btn" type="button">删除</button>
                 <button id="btnSaveSettings" class="primary-btn" type="button">保存设置</button>
               </div>
+              <div id="apiProfileList" class="api-profile-list"></div>
               <div id="settingsStatusSummary" class="summary-strip">设置尚未加载</div>
             </div>
           </section>
 
-          <section class="surface-card settings-manage-card">
-            <div class="settings-section-head">
-              <span class="settings-section-checkbox"></span>
-              <h3 class="card-title">AI 应用管理</h3>
+          <section class="surface-card bundle-transfer-card">
+            <div class="card-head">
+              <div>
+                <h3 class="card-title">资料包导入导出</h3>
+                <p class="subtle-note">资料包会打包应用、提示词分类、提示词预设和快捷入口。导入旧版资料包时，旧提示词会自动进入“默认分类”。</p>
+              </div>
             </div>
+            <div class="bundle-guide">
+              <span>导出用于备份或分享当前配置</span>
+              <span>导入会按名称合并，已有内容优先覆盖更新</span>
+              <span>新版分类完全兼容旧模板 JSON</span>
+            </div>
+            <div class="action-row">
+              <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出资料包</button>
+              <button id="btnImportTemplatesJson" class="primary-btn" type="button">导入资料包</button>
+            </div>
+          </section>
+
+          <details class="surface-card settings-manage-card settings-collapsible app-management-collapsible">
+            <summary class="settings-collapse-summary">AI 应用管理（高级）</summary>
             <div class="form-stack">
               <label class="field">
                 <span class="field-label">应用 ID / URL</span>
@@ -311,6 +327,10 @@
               <label class="field is-hidden">
                 <span class="field-label">说明</span>
                 <textarea id="appEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
+              </label>
+              <label class="field">
+                <span class="field-label">预览图 URL / 路径</span>
+                <input id="appEditorPreviewImageInput" class="field-input" type="text" placeholder="可选：RunningHub 封面、图片 URL、plugin:/ 或 data:image" />
               </label>
               <label class="field is-hidden">
                 <span class="field-label">输入结构 JSON</span>
@@ -342,14 +362,23 @@
               <div id="savedAppsList" class="list-shell compact-list-shell"></div>
               <textarea id="appTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
             </div>
-          </section>
+          </details>
 
-          <section class="surface-card settings-manage-card">
-            <div class="settings-section-head">
-              <span class="settings-section-checkbox"></span>
-              <h3 class="card-title">提示词模板</h3>
-            </div>
+          <details class="surface-card settings-manage-card settings-collapsible" id="templateSettingsDetails">
+            <summary class="settings-collapse-summary">提示词模板</summary>
             <div class="form-stack">
+              <div class="template-category-manager">
+                <div id="templateCategoryTabs" class="template-category-tabs"></div>
+                <div class="action-row template-category-actions">
+                  <button id="btnAddTemplateCategory" class="secondary-btn" type="button">新增分类</button>
+                  <button id="btnRenameTemplateCategory" class="secondary-btn" type="button">改名</button>
+                  <button id="btnDeleteTemplateCategory" class="secondary-btn" type="button">删除</button>
+                </div>
+              </div>
+              <label class="field">
+                <span class="field-label">所属分类</span>
+                <select id="templateCategorySelect" class="field-input"></select>
+              </label>
               <label class="field">
                 <span class="field-label">模板标题</span>
                 <input id="templateTitleInput" class="field-input" type="text" placeholder="例如：高质量二次元" />
@@ -363,10 +392,6 @@
               <div class="action-row">
                 <button id="btnResetTemplateEditor" class="secondary-btn" type="button">创建模板</button>
                 <button id="btnSaveTemplate" class="primary-btn" type="button">保存模板</button>
-              </div>
-              <div class="action-row">
-                <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出资料包</button>
-                <button id="btnImportTemplatesJson" class="secondary-btn" type="button">导入资料包</button>
               </div>
               <div class="dual-grid">
                 <label class="field">
@@ -388,7 +413,7 @@
               <div id="savedTemplatesList" class="list-shell compact-list-shell"></div>
               <textarea id="templateTransferInput" class="field-input field-textarea is-hidden" rows="6" hidden></textarea>
             </div>
-          </section>
+          </details>
           <details class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">高级设置</summary>
             <div class="form-stack collapsible-body">
@@ -540,22 +565,68 @@
       <div class="card-head">
         <div>
           <p class="card-kicker">工作台</p>
-          <h3 id="appPickerTitle" class="card-title">选择已保存应用</h3>
+          <h3 id="appPickerTitle" class="card-title">选择与管理应用</h3>
         </div>
         <button id="appPickerModalClose" class="mini-btn" type="button">关闭</button>
       </div>
 
-      <label class="field">
-        <span class="field-label">搜索应用</span>
-        <input id="appPickerSearchInput" class="field-input" type="search" placeholder="输入应用名称或应用 ID 进行筛选" />
-      </label>
+      <div id="appPickerListView" class="app-picker-view">
+        <div class="picker-topbar">
+          <label class="field app-picker-search-field">
+            <span class="field-label">搜索应用</span>
+            <input id="appPickerSearchInput" class="field-input" type="search" placeholder="输入应用名称或应用 ID 进行筛选" />
+          </label>
+          <button id="btnAppPickerAddApp" class="secondary-btn" type="button">添加应用</button>
+        </div>
 
-      <div class="picker-toolbar">
-        <span class="picker-caption">已保存应用</span>
-        <span id="appPickerStats" class="picker-stats">0 / 0</span>
+        <div class="picker-toolbar">
+          <span class="picker-caption">已保存应用</span>
+          <span id="appPickerStats" class="picker-stats">0 / 0</span>
+        </div>
+
+        <div id="appPickerList" class="picker-list"></div>
       </div>
 
-      <div id="appPickerList" class="picker-list"></div>
+      <div id="appPickerEditorView" class="app-picker-view app-picker-editor-view" hidden>
+        <label class="field">
+          <span class="field-label">应用 ID / URL</span>
+          <input id="appPickerEditorAppIdInput" class="field-input" type="text" placeholder="例如：123456 或 RunningHub 应用链接" />
+        </label>
+        <div class="action-row">
+          <button id="btnParsePickerApp" class="secondary-btn" type="button">解析</button>
+        </div>
+        <label class="field">
+          <span class="field-label">应用名称</span>
+          <input id="appPickerEditorNameInput" class="field-input" type="text" placeholder="例如：SDXL 风格化" />
+        </label>
+        <label class="field app-picker-advanced-field" hidden>
+          <span class="field-label">说明</span>
+          <textarea id="appPickerEditorDescriptionInput" class="field-input field-textarea" rows="2"></textarea>
+        </label>
+        <label class="field app-picker-advanced-field" hidden>
+          <span class="field-label">预览图 URL / 路径</span>
+          <input id="appPickerEditorPreviewImageInput" class="field-input" type="text" placeholder="可选：RunningHub 封面、图片 URL、plugin:/ 或 data:image" />
+        </label>
+        <label class="field app-picker-advanced-field" hidden>
+          <span class="field-label">输入结构 JSON</span>
+          <textarea id="appPickerEditorInputsInput" class="field-input field-textarea" rows="7"></textarea>
+        </label>
+        <div id="appPickerEditorSchemaSummary" class="summary-strip app-picker-advanced-field" hidden>输入结构摘要</div>
+        <div id="appPickerEditorStatus" class="summary-strip">输入应用 ID 或链接后解析，确认名称后保存。</div>
+        <div class="action-row">
+          <button id="btnCancelPickerAppEditor" class="secondary-btn" type="button">取消</button>
+          <button id="btnSavePickerAppEditor" class="primary-btn" type="button">保存应用</button>
+        </div>
+      </div>
+
+      <div id="appPickerConfirmView" class="app-picker-view app-picker-confirm-view" hidden>
+        <h4 id="appPickerConfirmTitle" class="confirm-title">确认操作</h4>
+        <div id="appPickerConfirmMessage" class="summary-strip">确定继续吗？</div>
+        <div class="action-row">
+          <button id="btnCancelAppPickerConfirm" class="secondary-btn" type="button">取消</button>
+          <button id="btnConfirmAppPickerAction" class="primary-btn" type="button">确认</button>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -601,6 +672,24 @@
     </section>
   </div>
 
+  <div id="quickEntryNoticeModal" class="overlay-modal">
+    <div id="quickEntryNoticeBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card quick-entry-notice-card">
+      <div class="card-head">
+        <div>
+          <p id="quickEntryNoticeKicker" class="card-kicker">快捷入口</p>
+          <h3 id="quickEntryNoticeTitle" class="card-title">运行前需要选区</h3>
+        </div>
+        <button id="quickEntryNoticeModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div id="quickEntryNoticeHint" class="summary-strip quick-entry-notice-hint">请先在 Photoshop 中框选要处理的区域，再运行快捷入口。</div>
+      <div class="action-row quick-entry-notice-actions">
+        <button id="btnConfirmQuickEntryNotice" class="primary-btn" type="button">知道了</button>
+      </div>
+    </section>
+  </div>
+
   <div id="templatePickerModal" class="overlay-modal">
     <div id="templatePickerBackdrop" class="overlay-backdrop"></div>
     <section class="overlay-card resizable-overlay-card">
@@ -612,30 +701,41 @@
         <button id="templatePickerModalClose" class="mini-btn" type="button">关闭</button>
       </div>
 
-      <label class="field">
-        <span class="field-label">搜索模板</span>
-        <input id="templatePickerSearchInput" class="field-input" type="search" placeholder="输入标题或内容关键词筛选" />
-      </label>
-
-      <div class="dual-grid">
+      <div class="template-picker-topbar">
         <label class="field">
-          <span class="field-label">写入方式</span>
-          <select id="templatePickerApplyMode" class="field-input">
-            <option value="replace">替换当前字段内容</option>
-            <option value="append">追加到当前字段末尾</option>
-          </select>
+          <span class="field-label">搜索模板</span>
+          <input id="templatePickerSearchInput" class="field-input" type="search" placeholder="输入标题或内容关键词筛选" />
         </label>
-        <div class="field">
-          <span class="field-label">模板统计</span>
-          <div id="templatePickerStats" class="summary-strip">0 / 0</div>
+        <div class="template-picker-category-block">
+          <div id="templatePickerCategoryTabs" class="template-category-tabs template-picker-category-tabs"></div>
         </div>
       </div>
 
-      <div id="templatePickerSelectionInfo" class="summary-strip">已选择 0 / 5</div>
-      <div id="templatePickerList" class="picker-list"></div>
+      <div id="templatePickerStats" class="summary-strip template-picker-stats">默认分类 · 0 / 0 · 替换写入</div>
+      <div id="templatePickerSelectionInfo" class="summary-strip template-picker-selection-info">已选择 0 / 5</div>
+      <div id="templatePickerList" class="picker-list template-preset-grid"></div>
 
       <div class="action-row">
         <button id="btnApplyTemplateSelection" class="primary-btn" type="button">应用模板</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="templateFormModal" class="overlay-modal">
+    <div id="templateFormBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card template-form-card">
+      <div class="card-head">
+        <div>
+          <p id="templateFormKicker" class="card-kicker">提示词预设</p>
+          <h3 id="templateFormTitle" class="card-title">编辑预设</h3>
+        </div>
+        <button id="templateFormClose" class="mini-btn" type="button">关闭</button>
+      </div>
+      <div id="templateFormMessage" class="summary-strip template-form-message" hidden></div>
+      <div id="templateFormBody" class="form-stack"></div>
+      <div class="action-row template-form-actions">
+        <button id="templateFormCancel" class="secondary-btn" type="button">取消</button>
+        <button id="templateFormSubmit" class="primary-btn" type="button">保存</button>
       </div>
     </section>
   </div>
