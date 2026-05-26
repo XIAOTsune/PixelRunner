@@ -1185,11 +1185,14 @@ export async function placeImageFromUrl(payload) {
   }, { commandName: "Place PixelRunner Result" });
 
   const layerName = await renameActiveLayer(options.layerName);
+  const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+  const layerId = Number(activeLayer && activeLayer.id) || 0;
   const latestInfo = getDocumentInfo(app.activeDocument);
   return {
     ok: true,
     placed: true,
     documentId: Number(latestInfo.documentId) || 0,
+    layerId,
     layerName: layerName || null,
     document: latestInfo,
     targetBounds,

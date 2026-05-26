@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.5.0</span>
+              <span class="version-text">v2.5.1</span>
             </div>
           </div>
         </div>
@@ -100,7 +100,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.0 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.1 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -115,7 +115,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.5.0</span>
+            <span class="version-text">v2.5.1</span>
           </div>
         </div>
 
@@ -145,6 +145,21 @@
             <button id="btnOpenSpaceFxPanel" class="primary-btn space-fx-open-btn" type="button">打开空间特效</button>
           </div>
           <div id="spaceFxQuickHint" class="summary-strip">点击预览图放置特效中心，滚轮可放大预览，拖动可查看局部。</div>
+        </section>
+
+        <section class="surface-card tool-blend-match-card">
+          <div class="tool-blend-match-launcher">
+            <div class="tool-blend-match-summary-main">
+              <div class="tool-blend-match-header-line">
+                <h3 class="card-title">融合校色</h3>
+                <span id="blendMatchModeBadge" class="status-chip">均衡</span>
+              </div>
+              <p class="subtle-note">隐藏当前返图图层后采样原图参考，生成更匹配明度、色彩和边缘过渡的融合结果层。</p>
+            </div>
+            <button id="btnOpenBlendMatchPanel" class="primary-btn blend-match-open-btn" type="button">打开融合校色</button>
+          </div>
+          <div id="blendMatchQuickHint" class="summary-strip">模式 均衡 / 强度 70% / 羽化 12px</div>
+          <div id="blendMatchStatus" class="summary-strip">等待选择返图图层</div>
         </section>
 
         <div class="tool-group-grid">
@@ -249,7 +264,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.5.0</span>
+          <span class="version-text">v2.5.1</span>
           </div>
         </div>
 
@@ -1124,6 +1139,113 @@
       <div class="action-row freq-sep-actions">
         <button id="btnFreqSepCancel" class="secondary-btn" type="button">取消</button>
         <button id="btnFreqSepApply" class="primary-btn" type="button">创建高低频</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="blendMatchModal" class="overlay-modal">
+    <div id="blendMatchBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card blend-match-modal-card">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 class="card-title">融合校色</h3>
+        </div>
+        <button id="blendMatchModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="blend-match-status-panel">
+        <span id="blendMatchPanelStatus" class="status-chip">当前图层：使用 Photoshop 当前活动图层</span>
+        <p class="subtle-note">执行时会临时隐藏当前图层采样参考画面，完成或失败都会恢复图层状态。</p>
+      </div>
+
+      <div class="blend-match-preview-panel">
+        <div class="blend-match-preview-toolbar">
+          <span id="blendMatchPreviewState" class="status-chip">等待预览</span>
+          <button id="btnBlendMatchRefreshPreview" class="mini-btn" type="button">刷新边界预览</button>
+        </div>
+        <div class="blend-match-preview-frame">
+          <canvas id="blendMatchPreviewCanvas" aria-label="融合校色边界预览"></canvas>
+          <div id="blendMatchPreviewEmpty" class="blend-match-preview-empty">打开面板后刷新当前图层边界预览</div>
+        </div>
+        <div id="blendMatchPreviewMeta" class="blend-match-preview-meta">当前图层 / 隐藏返图参考 / 模拟融合边界</div>
+      </div>
+
+      <div class="blend-match-controls">
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">模式</span></span>
+          <select id="blendMatchModeInput" class="field-input">
+            <option value="natural">自然</option>
+            <option value="balanced" selected>均衡</option>
+            <option value="strong">强融合</option>
+            <option value="colorOnly">仅校色</option>
+            <option value="edgeOnly">仅边缘</option>
+          </select>
+        </label>
+
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">总强度</span><span id="blendMatchTotalValue">70</span></span>
+          <input id="blendMatchTotalInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="70" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">明度匹配</span><span id="blendMatchLuminanceValue">75</span></span>
+          <input id="blendMatchLuminanceInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="75" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">色偏匹配</span><span id="blendMatchColorValue">65</span></span>
+          <input id="blendMatchColorInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="65" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">饱和度匹配</span><span id="blendMatchSaturationValue">50</span></span>
+          <input id="blendMatchSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="50" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">对比匹配</span><span id="blendMatchContrastValue">45</span></span>
+          <input id="blendMatchContrastInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="45" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">羽化半径</span><span><span id="blendMatchFeatherValue">12</span> px</span></span>
+          <input id="blendMatchFeatherInput" class="field-input glow-strength-slider" type="range" min="0" max="64" step="1" value="12" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">最大对齐</span><span><span id="blendMatchAlignValue">8</span> px</span></span>
+          <input id="blendMatchAlignInput" class="field-input glow-strength-slider" type="range" min="1" max="24" step="1" value="8" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">最大缩放</span><span><span id="blendMatchScaleValue">2</span>%</span></span>
+          <input id="blendMatchScaleInput" class="field-input glow-strength-slider" type="range" min="0" max="4" step="0.5" value="2" />
+        </label>
+      </div>
+
+      <div class="blend-match-options">
+        <label class="freq-sep-check-field">
+          <input id="blendMatchBackupToggle" type="checkbox" checked />
+          <span>保留原返图图层作为隐藏备份</span>
+        </label>
+        <label class="freq-sep-check-field">
+          <input id="blendMatchAlignmentToggle" type="checkbox" />
+          <span>启用梯度小范围对齐</span>
+        </label>
+        <label class="freq-sep-check-field">
+          <input id="blendMatchScaleToggle" type="checkbox" />
+          <span>允许微缩放对齐</span>
+        </label>
+        <label class="freq-sep-check-field">
+          <input id="blendMatchLocalToggle" type="checkbox" />
+          <span>检测局部轻微变形</span>
+        </label>
+        <label class="freq-sep-check-field">
+          <input id="blendMatchAutoToggle" type="checkbox" />
+          <span>AI 返图自动贴回后立即融合校色</span>
+        </label>
+      </div>
+
+      <div class="summary-strip">预览在插件内用缩略图模拟边界融合；应用时会在 Photoshop 中执行一次完整动作。</div>
+
+      <div class="action-row blend-match-actions">
+        <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>
+        <button id="btnBlendMatchCancel" class="secondary-btn" type="button">取消</button>
+        <button id="btnBlendMatchApply" class="primary-btn" type="button">分析并融合</button>
       </div>
     </section>
   </div>

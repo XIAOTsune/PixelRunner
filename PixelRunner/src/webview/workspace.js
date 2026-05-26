@@ -1988,6 +1988,9 @@
         try {
           const placementPayload = buildAutoPlacementPayload(queued);
           const response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+          const fusionResponse = modules.blendMatch && typeof modules.blendMatch.applyAutoPlacementFusion === "function"
+            ? await modules.blendMatch.applyAutoPlacementFusion(response, queued)
+            : null;
           pendingAutoPlacements.delete(taskId);
           modules.state.state.lastResult.placedAt = Date.now();
           if (response && response.document) modules.state.state.currentDocumentInfo = response.document;
@@ -1996,7 +1999,7 @@
             remoteTaskId: taskId,
             detail:
               response && response.documentId
-                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}。`
+                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}。`
                 : "任务已完成，并已在 Photoshop 空闲后自动贴回。"
           });
           modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
@@ -2061,12 +2064,19 @@
     }
     modules.state.state.lastResult.placedAt = Date.now();
     if (response && response.document) modules.state.state.currentDocumentInfo = response.document;
+    const fusionResponse = modules.blendMatch && typeof modules.blendMatch.applyAutoPlacementFusion === "function"
+      ? await modules.blendMatch.applyAutoPlacementFusion(response, result)
+      : null;
+    if (fusionResponse && fusionResponse.document) modules.state.state.currentDocumentInfo = fusionResponse.document;
     const sourceDocument = result.sourceDocument;
     const placementSummary = sourceDocument && sourceDocument.selectionBounds
       ? `已按原选区 ${formatSelectionLabel(sourceDocument.selectionBounds)} 自动贴回`
       : "已自动贴回源文档";
-    modules.ui.logToWorkspace(`${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || placementPayload.layerName}`, "success");
-    return response;
+    modules.ui.logToWorkspace(`${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || placementPayload.layerName}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}`, "success");
+    return {
+      ...response,
+      blendMatch: fusionResponse || null
+    };
   }
 
   async function autoPlaceLastResult() {
@@ -2246,7 +2256,7 @@
         status: "succeeded",
         detail:
           placementResponse && placementResponse.documentId
-            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}。`
+            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}${placementResponse.blendMatch && placementResponse.blendMatch.ok ? "，融合校色完成" : ""}。`
             : "任务已完成，可在任务结果地址基础上手动继续处理。"
       });
     } catch (error) {

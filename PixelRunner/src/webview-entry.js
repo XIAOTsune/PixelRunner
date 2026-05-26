@@ -11,6 +11,7 @@ import "./webview/glow/compositor.js";
 import "./webview/glow/preview-engine.js";
 import "./webview/glow-cpu.js";
 import "./webview/space-fx.js";
+import "./webview/blend-match.js";
 import "./webview/ui.js";
 import "./webview/sound.js";
 import "./webview/quick-entries.js";

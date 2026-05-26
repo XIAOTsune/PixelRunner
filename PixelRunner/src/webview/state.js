@@ -14,6 +14,7 @@
     QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
     SOUND_ENABLED: "pixelrunner.sound_enabled",
     THEME: "pixelrunner.theme.v1",
+    BLEND_MATCH_SETTINGS: "pixelrunner.blendMatch.settings.v1",
     THIRD_PARTY_SETTINGS: "pixelrunner.thirdParty.settings.v1",
     THIRD_PARTY_GRS_API_KEY: "pixelrunner.thirdParty.grs.apiKey",
     THIRD_PARTY_LAST_SELECTION: "pixelrunner.thirdParty.lastSelection.v1"
