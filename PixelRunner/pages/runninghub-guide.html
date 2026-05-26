@@ -3,36 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>RunningHub 插件 - 新手详细教程</title>
+  <title>PixelRunner RunningHub 使用文档</title>
   <style>
     :root {
-      --bg: #071018;
-      --bg-soft: #0b1623;
-      --surface: rgba(13, 24, 38, 0.9);
-      --surface-strong: rgba(18, 31, 49, 0.96);
-      --surface-muted: rgba(255, 255, 255, 0.03);
-      --line: rgba(112, 157, 214, 0.18);
-      --line-strong: rgba(112, 157, 214, 0.28);
-      --text: #eef5ff;
-      --text-sub: #abc1dc;
-      --text-dim: #7d93ad;
-      --accent: #58a9ff;
-      --accent-strong: #88c3ff;
-      --accent-soft: rgba(88, 169, 255, 0.14);
-      --success: #8fdaa6;
-      --warning: #ffd27a;
-      --danger: #ff9d9d;
-      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
-      --radius-xl: 28px;
-      --radius-lg: 22px;
-      --radius-md: 16px;
-      --radius-sm: 12px;
-      --page-width: 1120px;
-      --motion-base: 520ms;
-      --motion-fast: 240ms;
-      --motion-slow: 880ms;
-      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --text: #152033;
+      --muted: #5b6678;
+      --subtle: #7b8798;
+      --line: #d9e1ec;
+      --line-strong: #bfccd9;
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-soft: #e8f0ff;
+      --green: #10805f;
+      --green-soft: #e6f6ef;
+      --amber: #a15c00;
+      --amber-soft: #fff3d8;
+      --red: #c2413d;
+      --red-soft: #fff0ee;
+      --shadow: 0 18px 45px rgba(15, 31, 56, 0.09);
+      --radius: 8px;
+      --radius-sm: 6px;
+      --content: 1180px;
+      --nav-width: 260px;
     }
 
     * {
@@ -47,27 +42,10 @@
       margin: 0;
       min-height: 100vh;
       color: var(--text);
-      font: 15px/1.7 "Segoe UI Variable", "Microsoft YaHei UI", "PingFang SC", sans-serif;
       background:
-        radial-gradient(circle at 10% 12%, rgba(88, 169, 255, 0.18), transparent 22%),
-        radial-gradient(circle at 88% 8%, rgba(143, 218, 166, 0.12), transparent 18%),
-        radial-gradient(circle at 50% 100%, rgba(255, 210, 122, 0.1), transparent 26%),
-        linear-gradient(180deg, #061019 0%, #08131e 42%, #071018 100%);
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-      background-size: 28px 28px;
-      mask-image: radial-gradient(circle at center, black 36%, transparent 92%);
-      pointer-events: none;
-      opacity: 0.35;
+        linear-gradient(180deg, rgba(37, 99, 235, 0.07), transparent 310px),
+        var(--bg);
+      font: 15px/1.75 "Segoe UI", "Microsoft YaHei UI", "PingFang SC", Arial, sans-serif;
     }
 
     a {
@@ -75,1499 +53,1124 @@
       text-decoration: none;
     }
 
-    .page {
-      width: min(var(--page-width), calc(100vw - 32px));
-      margin: 0 auto;
-      padding: 24px 0 48px;
-      position: relative;
-      z-index: 1;
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #eef2f7;
+      color: #0f172a;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      font-size: 0.92em;
     }
 
-    /* 新手步骤导航样式 */
-    .step-nav {
+    .skip-link {
+      position: absolute;
+      left: 12px;
+      top: -48px;
+      z-index: 20;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--primary);
+      color: #fff;
+      transition: top 160ms ease;
+    }
+
+    .skip-link:focus {
+      top: 12px;
+    }
+
+    .page {
+      width: min(var(--content), calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 22px;
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+
+    .hero-main,
+    .hero-aside,
+    .doc-card,
+    .side-nav,
+    .quick-help,
+    .notice,
+    .callout,
+    .check-item,
+    .issue-card,
+    .flow-step {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-main {
+      padding: 34px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--primary-dark);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 820px;
+      margin-bottom: 14px;
+      font-size: clamp(32px, 5vw, 52px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 18px;
+      line-height: 1.35;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 760px;
+      margin-bottom: 22px;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .hero-actions,
+    .inline-actions {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 24px;
-      padding: 16px;
-      border-radius: var(--radius-lg);
-      background: var(--surface);
-      border: 1px solid var(--line);
+      gap: 10px;
+      align-items: center;
     }
 
-    .step-nav-item {
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 9px 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .btn:hover,
+    .btn:focus-visible {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+      outline: none;
+    }
+
+    .btn.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn.primary:hover,
+    .btn.primary:focus-visible {
+      background: var(--primary-dark);
+    }
+
+    .icon {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .hero-aside {
+      padding: 22px;
+      background: linear-gradient(180deg, var(--surface), #f8fbff);
+    }
+
+    .status-list,
+    .plain-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .status-list li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--surface-soft);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      margin-top: 8px;
+      border-radius: 999px;
+      background: var(--primary);
+      box-shadow: 0 0 0 4px var(--primary-soft);
+      flex: 0 0 auto;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: var(--nav-width) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .side-nav {
+      position: sticky;
+      top: 18px;
+      padding: 14px;
+      box-shadow: none;
+    }
+
+    .side-nav-title {
+      margin: 0 0 10px;
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .side-nav a {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 16px;
+      min-height: 34px;
+      padding: 7px 9px;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      font-weight: 650;
+      transition: background 160ms ease, color 160ms ease;
+    }
+
+    .side-nav a:hover,
+    .side-nav a.active {
+      background: var(--primary-soft);
+      color: var(--primary-dark);
+    }
+
+    .content {
+      display: grid;
+      gap: 18px;
+      min-width: 0;
+    }
+
+    .doc-card {
+      padding: 26px;
+      scroll-margin-top: 18px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
       border-radius: 999px;
-      background: var(--surface-muted);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      color: var(--text-sub);
-      font-size: 13px;
-      transition: all var(--motion-fast) var(--ease-out);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
     }
 
-    .step-nav-item:hover {
-      background: var(--accent-soft);
-      border-color: rgba(88, 169, 255, 0.3);
-      color: var(--text);
+    .quick-grid,
+    .cards-grid,
+    .problem-grid {
+      display: grid;
+      gap: 12px;
     }
 
-    .step-nav-item.active {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      color: var(--accent-strong);
+    .quick-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
-    .step-nav-num {
+    .cards-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .problem-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .quick-help {
+      padding: 16px;
+      box-shadow: none;
+      transition: border-color 160ms ease, transform 160ms ease;
+    }
+
+    .quick-help:hover {
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+
+    .quick-help strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+
+    .quick-help span,
+    .muted {
+      color: var(--muted);
+    }
+
+    .flow {
+      display: grid;
+      gap: 12px;
+      counter-reset: step;
+    }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr);
+      gap: 14px;
+      padding: 16px;
+      box-shadow: none;
+      background: var(--surface);
+    }
+
+    .flow-step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      background: var(--primary-soft);
+      color: var(--primary-dark);
+      font-weight: 900;
+    }
+
+    .flow-step p:last-child,
+    .notice p:last-child,
+    .callout p:last-child,
+    .issue-card p:last-child,
+    .quick-help p:last-child {
+      margin-bottom: 0;
+    }
+
+    .plain-list {
+      display: grid;
+      gap: 8px;
+      margin: 10px 0 0;
+    }
+
+    .plain-list li {
+      position: relative;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .plain-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.78em;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--primary);
+    }
+
+    .notice,
+    .callout {
+      padding: 14px 16px;
+      box-shadow: none;
+    }
+
+    .notice {
+      margin: 14px 0;
+      background: var(--amber-soft);
+      border-color: #f2c66d;
+      color: #563300;
+    }
+
+    .notice.success {
+      background: var(--green-soft);
+      border-color: #9edcc4;
+      color: #083d2f;
+    }
+
+    .notice.danger {
+      background: var(--red-soft);
+      border-color: #f2b1ad;
+      color: #6f1d1a;
+    }
+
+    .callout {
+      background: var(--primary-soft);
+      border-color: #b8ccff;
+    }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .check-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 12px;
+      box-shadow: none;
+      background: var(--surface-soft);
+    }
+
+    .check-mark {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       width: 22px;
       height: 22px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.1);
-      font-size: 11px;
-      font-weight: 600;
+      background: var(--green-soft);
+      color: var(--green);
+      flex: 0 0 auto;
     }
 
-    .step-nav-item.active .step-nav-num {
-      background: var(--accent);
-      color: #fff;
-    }
-
-    .hero {
-      position: relative;
-      overflow: hidden;
-      padding: 30px;
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--line);
-      background:
-        linear-gradient(140deg, rgba(18, 31, 49, 0.95), rgba(8, 18, 30, 0.98)),
-        var(--surface);
-      box-shadow: var(--shadow);
-      isolation: isolate;
-    }
-
-    .hero::before,
-    .hero::after {
-      content: "";
-      position: absolute;
-      border-radius: 999px;
-      filter: blur(10px);
-      pointer-events: none;
-    }
-
-    .hero::before {
-      width: 260px;
-      height: 260px;
-      top: -90px;
-      right: -70px;
-      background: radial-gradient(circle, rgba(88, 169, 255, 0.34), transparent 70%);
-      animation: floatOrb var(--motion-slow) var(--ease-in-out) infinite alternate;
-    }
-
-    .hero::after {
-      width: 180px;
-      height: 180px;
-      left: -40px;
-      bottom: -50px;
-      background: radial-gradient(circle, rgba(143, 218, 166, 0.18), transparent 70%);
-      animation: floatOrb calc(var(--motion-slow) * 1.08) var(--ease-in-out) infinite alternate-reverse;
-    }
-
-    @keyframes floatOrb {
-      from { transform: translate(0, 0); }
-      to { transform: translate(12px, -8px); }
-    }
-
-    h1 {
-      margin: 0 0 12px;
-      font-size: clamp(34px, 5vw, 56px);
-      line-height: 0.96;
-      letter-spacing: -0.04em;
-    }
-
-    /* 步骤导航高亮动画 */
-    .step-nav-item {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .step-nav-item::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(88, 169, 255, 0.1), transparent);
-      transform: translateX(-100%);
-      transition: transform 0.6s ease;
-    }
-
-    .step-nav-item:hover::before {
-      transform: translateX(100%);
-    }
-
-    /* 步骤数字脉冲动画 */
-    @keyframes pulseNum {
-      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(88, 169, 255, 0.4); }
-      50% { transform: scale(1.05); box-shadow: 0 0 0 8px rgba(88, 169, 255, 0); }
-    }
-
-    .detail-step-num {
-      animation: pulseNum 2s ease-in-out infinite;
-    }
-
-    .detail-step:hover .detail-step-num {
-      animation: none;
-      transform: scale(1.1);
-      background: linear-gradient(145deg, rgba(88, 169, 255, 0.4), rgba(88, 169, 255, 0.2));
-    }
-
-    /* QQ群横幅样式 */
-    .qq-banner {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      padding: 16px 24px;
-      margin-bottom: 24px;
-      border-radius: var(--radius-lg);
-      background: linear-gradient(135deg, rgba(255, 150, 50, 0.15) 0%, rgba(255, 100, 100, 0.1) 50%, rgba(88, 169, 255, 0.15) 100%);
-      border: 1px solid rgba(255, 180, 100, 0.3);
-      box-shadow: 0 4px 20px rgba(255, 150, 50, 0.1);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .qq-banner::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-      animation: shimmer 3s ease-in-out infinite;
-    }
-
-    @keyframes shimmer {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(100%); }
-    }
-
-    .qq-banner-icon {
-      font-size: 28px;
-      animation: bounce 2s ease-in-out infinite;
-    }
-
-    @keyframes bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-4px); }
-    }
-
-    .qq-banner-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-
-    .qq-banner-text {
-      font-size: 14px;
-      color: var(--warning);
-    }
-
-    .qq-banner-num {
-      font-size: 24px;
-      font-weight: 700;
-      color: #fff;
-      text-shadow: 0 0 20px rgba(255, 150, 50, 0.5);
-      letter-spacing: 1px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      user-select: all;
-    }
-
-    .qq-banner-num:hover {
-      transform: scale(1.05);
-      text-shadow: 0 0 30px rgba(255, 150, 50, 0.8);
-    }
-
-    .qq-banner-btn {
-      padding: 8px 16px;
-      border-radius: 999px;
-      background: linear-gradient(145deg, rgba(88, 169, 255, 0.2), rgba(88, 169, 255, 0.1));
-      border: 1px solid rgba(88, 169, 255, 0.3);
-      color: var(--accent-strong);
-      font-size: 13px;
-      font-weight: 500;
-      transition: all 0.3s ease;
-      cursor: pointer;
-    }
-
-    .qq-banner-btn:hover {
-      background: linear-gradient(145deg, rgba(88, 169, 255, 0.3), rgba(88, 169, 255, 0.2));
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(88, 169, 255, 0.3);
-    }
-
-    /* 复制成功提示 */
-    .copy-toast {
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%) translateY(-100px);
-      padding: 12px 24px;
-      border-radius: 999px;
-      background: rgba(143, 218, 166, 0.95);
-      color: #0a1f15;
-      font-weight: 600;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-      z-index: 1000;
-      opacity: 0;
-      transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-    }
-
-    .copy-toast.show {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1;
-    }
-
-    /* 进度指示器 */
-    .progress-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--success));
-      z-index: 1000;
-      transition: width 0.1s linear;
-    }
-
-    /* 卡片入场动画 */
-    .section {
-      opacity: 0;
-      transform: translateY(20px);
-      animation: fadeInUp 0.6s ease forwards;
-    }
-
-    .section:nth-of-type(2) { animation-delay: 0.1s; }
-    .section:nth-of-type(3) { animation-delay: 0.2s; }
-    .section:nth-of-type(4) { animation-delay: 0.3s; }
-    .section:nth-of-type(5) { animation-delay: 0.4s; }
-    .section:nth-of-type(6) { animation-delay: 0.5s; }
-
-    @keyframes fadeInUp {
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    /* 交互细节卡片 */
-    .detail-step {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .detail-step::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-      transform: translateX(-100%);
-      transition: transform 0.8s ease;
-    }
-
-    .detail-step:hover::after {
-      transform: translateX(100%);
-    }
-
-    .detail-step-content h3 {
-      position: relative;
-      display: inline-block;
-    }
-
-    .detail-step-content h3::after {
-      content: '';
-      position: absolute;
-      bottom: -2px;
-      left: 0;
-      width: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent), transparent);
-      transition: width 0.4s ease;
-    }
-
-    .detail-step:hover .detail-step-content h3::after {
-      width: 100%;
-    }
-
-    /* 徽章闪烁效果 */
-    .section-badge {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .section-badge::after {
-      content: '';
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: linear-gradient(
-        45deg,
-        transparent 30%,
-        rgba(255, 255, 255, 0.1) 50%,
-        transparent 70%
-      );
-      animation: badgeShine 4s ease-in-out infinite;
-    }
-
-    @keyframes badgeShine {
-      0%, 100% { transform: translateX(-100%) rotate(45deg); }
-      50% { transform: translateX(100%) rotate(45deg); }
-    }
-
-    /* 提示框增强 */
-    .step-tip {
-      position: relative;
-      transition: all 0.3s ease;
-    }
-
-    .step-tip:hover {
-      transform: translateX(4px);
-      background: rgba(88, 169, 255, 0.12);
-    }
-
-    .step-tip-icon {
-      display: inline-block;
-      animation: wiggle 2s ease-in-out infinite;
-    }
-
-    @keyframes wiggle {
-      0%, 100% { transform: rotate(0deg); }
-      25% { transform: rotate(-5deg); }
-      75% { transform: rotate(5deg); }
-    }
-
-    /* 底部页脚增强 */
-    .footer {
-      position: relative;
-    }
-
-    .footer::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 60%;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
-    }
-
-    /* 滚动条美化 */
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.1);
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: rgba(88, 169, 255, 0.3);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(88, 169, 255, 0.5);
-    }
-
-    /* 响应式 QQ 横幅 */
-    @media (max-width: 640px) {
-      .qq-banner {
-        flex-direction: column;
-        text-align: center;
-        padding: 20px;
-      }
-
-      .qq-banner-num {
-        font-size: 20px;
-      }
-    }
-
-    /* 故障排查卡片悬停效果 */
-    .issue-item, .mini-item {
-      transition: all 0.3s ease;
-    }
-
-    .issue-item:hover, .mini-item:hover {
-      transform: translateX(6px);
-      background: rgba(88, 169, 255, 0.05);
-      border-color: rgba(88, 169, 255, 0.15);
-    }
-
-    /* 下一步链接增强 */
-    .next-step-link {
-      position: relative;
-      overflow: hidden;
-    }
-
-    .next-step-link:hover .arrow {
-      animation: arrowBounce 0.6s ease infinite;
-    }
-
-    @keyframes arrowBounce {
-      0%, 100% { transform: translateX(0); }
-      50% { transform: translateX(4px); }
-    }
-
-    /* Hero 区域标题动画 */
-    .hero h1 {
-      background: linear-gradient(90deg, var(--text) 0%, var(--accent-strong) 50%, var(--text) 100%);
-      background-size: 200% 100%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: gradientShift 4s ease-in-out infinite;
-    }
-
-    @keyframes gradientShift {
-      0%, 100% { background-position: 0% 50%; }
-      50% { background-position: 100% 50%; }
-    }
-
-    .hero-subtitle {
-      margin: 0;
-      max-width: 720px;
-      color: var(--text-sub);
-      font-size: 16px;
-      line-height: 1.72;
-    }
-
-    .section {
-      margin-top: 18px;
-      padding: 24px;
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--line);
-      background: var(--surface);
-      box-shadow: var(--shadow);
-      position: relative;
-      overflow: hidden;
-    }
-
-    .section::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 22%);
-      pointer-events: none;
-    }
-
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      gap: 18px;
-      align-items: flex-end;
-      margin-bottom: 18px;
-    }
-
-    .section-kicker {
-      margin: 0 0 6px;
-      color: var(--accent-strong);
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    .section-title {
-      margin: 0;
-      font-size: clamp(24px, 3vw, 34px);
-      line-height: 1.05;
-      letter-spacing: -0.03em;
-    }
-
-    .section-badge {
-      flex-shrink: 0;
-      padding: 9px 12px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--text-dim);
-      font-size: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    /* 详细步骤卡片样式 */
-    .detail-steps {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .detail-step {
-      display: grid;
-      grid-template-columns: 60px 1fr;
-      gap: 20px;
-      padding: 20px;
-      border-radius: var(--radius-lg);
-      background: var(--surface-strong);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      transition: all var(--motion-fast) var(--ease-out);
-    }
-
-    .detail-step:hover {
-      border-color: var(--line-strong);
-      transform: translateX(4px);
-    }
-
-    .detail-step-num {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 60px;
-      height: 60px;
-      border-radius: var(--radius-md);
-      background: linear-gradient(145deg, rgba(88, 169, 255, 0.25), rgba(88, 169, 255, 0.1));
-      border: 1px solid rgba(88, 169, 255, 0.2);
-      color: var(--accent-strong);
-      font-size: 24px;
-      font-weight: 700;
-    }
-
-    .detail-step-content h3 {
-      margin: 0 0 10px;
-      font-size: 20px;
-      line-height: 1.3;
-    }
-
-    .detail-step-content p {
-      margin: 0 0 12px;
-      color: var(--text-sub);
-      line-height: 1.7;
-    }
-
-    .step-tip {
-      padding: 12px 14px;
-      border-radius: var(--radius-sm);
-      background: rgba(88, 169, 255, 0.08);
-      border: 1px solid rgba(88, 169, 255, 0.15);
-      color: var(--text-sub);
-      font-size: 14px;
-    }
-
-    .step-tip strong {
-      color: var(--accent-strong);
-    }
-
-    .step-tip-icon {
-      margin-right: 6px;
-    }
-
-    .step-action {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 8px 14px;
-      margin-top: 10px;
-      border-radius: 999px;
-      background: var(--accent-soft);
-      border: 1px solid rgba(88, 169, 255, 0.2);
-      color: var(--accent-strong);
-      font-size: 13px;
-      font-weight: 500;
-      transition: all var(--motion-fast) var(--ease-out);
-    }
-
-    .step-action:hover {
-      background: rgba(88, 169, 255, 0.2);
-      border-color: var(--accent);
-    }
-
-    /* 重要提示框 */
-    .notice-box {
+    .issue-card {
       padding: 16px;
-      margin: 16px 0;
-      border-radius: var(--radius-md);
-      background: linear-gradient(145deg, rgba(255, 210, 122, 0.1), rgba(255, 210, 122, 0.03));
-      border: 1px solid rgba(255, 210, 122, 0.2);
+      box-shadow: none;
+      background: var(--surface-soft);
     }
 
-    .notice-box.success {
-      background: linear-gradient(145deg, rgba(143, 218, 166, 0.1), rgba(143, 218, 166, 0.03));
-      border-color: rgba(143, 218, 166, 0.2);
+    .issue-card[data-level="warn"] {
+      border-color: #f2c66d;
+      background: var(--amber-soft);
     }
 
-    .notice-box.danger {
-      background: linear-gradient(145deg, rgba(255, 157, 157, 0.1), rgba(255, 157, 157, 0.03));
-      border-color: rgba(255, 157, 157, 0.2);
+    .issue-card[data-level="error"] {
+      border-color: #f2b1ad;
+      background: var(--red-soft);
     }
 
-    .notice-box-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-      font-weight: 600;
-      font-size: 14px;
+    .issue-card[data-level="ok"] {
+      border-color: #9edcc4;
+      background: var(--green-soft);
     }
 
-    .notice-box.success .notice-box-title {
-      color: var(--success);
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
     }
 
-    .notice-box.danger .notice-box-title {
-      color: var(--danger);
+    table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
     }
 
-    .notice-box:not(.success):not(.danger) .notice-box-title {
-      color: var(--warning);
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
     }
 
-    /* 图片占位符 */
-    .image-placeholder {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 120px;
-      margin: 12px 0;
-      border-radius: var(--radius-md);
-      background: rgba(255, 255, 255, 0.03);
-      border: 2px dashed rgba(255, 255, 255, 0.1);
-      color: var(--text-dim);
+    th {
+      background: var(--surface-soft);
+      color: var(--text);
       font-size: 13px;
     }
 
-    /* 操作列表 */
-    .action-list {
-      margin: 12px 0;
-      padding-left: 20px;
+    tr:last-child td {
+      border-bottom: 0;
     }
 
-    .action-list li {
-      margin-bottom: 8px;
-      color: var(--text-sub);
-    }
-
-    .action-list strong {
-      color: var(--text);
-    }
-
-    /* 故障排查样式 */
-    .problem-grid {
-      display: grid;
-      grid-template-columns: 1.06fr 0.94fr;
-      gap: 14px;
-    }
-
-    .panel-card {
-      padding: 18px;
-      border-radius: var(--radius-lg);
-      background: var(--surface-strong);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .panel-card h3 {
-      margin: 0 0 12px;
-      font-size: 18px;
-    }
-
-    .issue-list,
-    .mini-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    .issue-item,
-    .mini-item {
-      padding: 14px 14px 14px 16px;
-      border-radius: var(--radius-md);
-      background: var(--surface-muted);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      position: relative;
-    }
-
-    .issue-item::before,
-    .mini-item::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 12px;
-      bottom: 12px;
-      width: 3px;
-      border-radius: 999px;
-      background: rgba(88, 169, 255, 0.24);
-    }
-
-    .issue-item strong,
-    .mini-item strong {
-      display: block;
-      margin-bottom: 4px;
-      color: var(--text);
-    }
-
-    .issue-item p,
-    .mini-item p {
-      margin: 0;
-      color: var(--text-sub);
-      font-size: 14px;
-    }
-
-    .issue-item.warn::before {
-      background: rgba(255, 210, 122, 0.56);
-    }
-
-    .issue-item.danger::before {
-      background: rgba(255, 157, 157, 0.62);
-    }
-
-    .issue-item.success::before {
-      background: rgba(143, 218, 166, 0.56);
-    }
-
-    /* 下一步导航 */
-    .next-steps {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 16px;
-    }
-
-    .next-step-link {
+    .kbd {
       display: inline-flex;
+      min-height: 24px;
       align-items: center;
-      gap: 8px;
-      padding: 12px 18px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--text-sub);
-      font-size: 14px;
-      transition: all var(--motion-fast) var(--ease-out);
-    }
-
-    .next-step-link:hover {
-      background: var(--accent-soft);
-      border-color: rgba(88, 169, 255, 0.3);
-      color: var(--text);
-      transform: translateY(-2px);
-    }
-
-    .next-step-link .arrow {
-      font-size: 16px;
+      padding: 1px 7px;
+      border: 1px solid var(--line-strong);
+      border-bottom-width: 2px;
+      border-radius: 5px;
+      background: #fff;
+      font-weight: 800;
+      font-size: 12px;
     }
 
     .footer {
-      margin-top: 32px;
-      padding: 20px;
+      margin-top: 18px;
+      padding: 18px 0;
+      color: var(--muted);
       text-align: center;
-      color: var(--text-dim);
-      font-size: 13px;
     }
 
-    @media (max-width: 768px) {
-      .detail-step {
+    .toast {
+      position: fixed;
+      left: 50%;
+      top: 18px;
+      z-index: 50;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: #10213a;
+      color: #fff;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translate(-50%, -16px);
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .progress {
+      position: fixed;
+      left: 0;
+      top: 0;
+      z-index: 40;
+      height: 3px;
+      width: 0;
+      background: var(--primary);
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .layout {
         grid-template-columns: 1fr;
       }
-      
-      .detail-step-num {
-        width: auto;
-        height: auto;
-        padding: 8px 16px;
+
+      .side-nav {
+        position: static;
       }
-      
+
+      .side-nav .nav-links {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+      }
+
+      .quick-grid,
       .problem-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 680px) {
+      .page {
+        width: min(100% - 20px, var(--content));
+        padding-top: 14px;
+      }
+
+      .hero-main,
+      .hero-aside,
+      .doc-card {
+        padding: 18px;
+      }
+
+      .section-head {
+        display: block;
+      }
+
+      .tag {
+        margin-top: 8px;
+      }
+
+      .quick-grid,
+      .cards-grid,
+      .problem-grid,
+      .checklist,
+      .side-nav .nav-links {
         grid-template-columns: 1fr;
+      }
+
+      .flow-step {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-step::before {
+        width: 32px;
+        height: 32px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        transition-duration: 1ms !important;
+        animation-duration: 1ms !important;
       }
     }
   </style>
 </head>
 <body>
-  <main class="page">
-    <!-- 新手步骤导航 -->
-    <nav class="step-nav">
-      <a href="#step1-get-apikey" class="step-nav-item">
-        <span class="step-nav-num">1</span>
-        获取 API Key
-      </a>
-      <a href="#step2-charge-wallet" class="step-nav-item">
-        <span class="step-nav-num">2</span>
-        充值钱包
-      </a>
-      <a href="#step3-save-apikey" class="step-nav-item">
-        <span class="step-nav-num">3</span>
-        保存 API Key
-      </a>
-      <a href="#step4-add-app" class="step-nav-item">
-        <span class="step-nav-num">4</span>
-        添加 AI 应用
-      </a>
-      <a href="#step5-create-template" class="step-nav-item">
-        <span class="step-nav-num">5</span>
-        创建提示词模板
-      </a>
-    </nav>
+  <div class="progress" id="progress"></div>
+  <a class="skip-link" href="#main">跳到正文</a>
+  <div class="toast" id="toast">已复制</div>
 
-    <!-- QQ交流群横幅 -->
-    <div class="qq-banner" id="qqBanner">
-      <span class="qq-banner-icon">👥</span>
-      <div class="qq-banner-content">
-        <span class="qq-banner-text">遇到问题了？加入我们的交流群，和其他用户一起交流</span>
-        <span class="qq-banner-num" id="qqNumber" onclick="copyQQ()">1078517474</span>
-      </div>
-      <button class="qq-banner-btn" onclick="copyQQ()">点击复制群号</button>
-    </div>
-
-    <!-- 复制成功提示 -->
-    <div class="copy-toast" id="copyToast">✓ 群号已复制到剪贴板</div>
-
-    <!-- 标题区 -->
-    <section class="hero">
-      <h1>RunningHub 插件新手教程</h1>
-      <p class="hero-subtitle">
-        这是一份专为新手准备的手把手教程。不管你是第一次接触 AI 修图插件，还是对 RunningHub 不太熟悉，都能跟着下面的 5 个步骤一步步完成配置，开始使用插件进行 AI 修图。
-      </p>
-      
-      <div class="notice-box success" style="margin-top: 20px;">
-        <div class="notice-box-title">
-          <span>💡</span> 开始之前
-        </div>
-        <p style="margin: 0; color: var(--text-sub); font-size: 14px;">
-          本教程使用的是<strong>企业共享 API Key</strong>，需要先在 RunningHub 网站注册账号，然后获取 API Key 并充值钱包余额即可使用。任务消耗的是钱包余额，非常适合新手入门。
+  <main class="page" id="main">
+    <header class="hero">
+      <section class="hero-main">
+        <p class="eyebrow">PixelRunner 本地帮助中心</p>
+        <h1>RunningHub 从第一次配置到保存查看，一页讲清楚</h1>
+        <p class="lead">
+          这份文档按真实使用顺序整理：先保存 API Key，再添加应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
         </p>
-      </div>
-    </section>
-
-    <!-- 第一步：获取 API Key -->
-    <section class="section" id="step1-get-apikey">
-      <div class="section-header">
-        <div>
-          <p class="section-kicker">Step 1</p>
-          <h2 class="section-title">获取企业共享 API Key</h2>
+        <div class="hero-actions">
+          <a class="btn primary" href="#first-run">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
+            按步骤开始
+          </a>
+          <a class="btn" href="#save-view">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M17 21v-8H7v8"></path><path d="M7 3v5h8"></path></svg>
+            保存和查看
+          </a>
+          <a class="btn" href="#troubleshooting">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="m10.29 3.86-8.04 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.75-3.14l-8.04-14a2 2 0 0 0-3.42 0Z"></path></svg>
+            运行失败排查
+          </a>
         </div>
-        <div class="section-badge">必备步骤</div>
-      </div>
+      </section>
 
-      <div class="detail-steps">
-        <div class="detail-step">
-          <div class="detail-step-num">1</div>
-          <div class="detail-step-content">
-            <h3>什么是企业共享 API Key？</h3>
-            <p>
-              企业共享 API Key 是你在 RunningHub 网站注册账号后获取的 API Key。使用这个 API Key <strong>需要先注册 RunningHub 账号</strong>。任务运行时消耗的是钱包余额，只要钱包有钱就可以持续使用。
-            </p>
-            <div class="notice-box">
-              <div class="notice-box-title">
-                <span>ℹ️</span> 与个人 API Key 的区别
-              </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                企业共享 API Key 也是你自己在 RunningHub 网站注册账号获取的，使用方式与个人 API Key 相同，主要区别在于企业共享账号可能有共享余额或其他企业级功能。
-              </p>
+      <aside class="hero-aside">
+        <h2>先确认这 4 件事</h2>
+        <ul class="status-list">
+          <li><span class="dot"></span><span><strong>RunningHub 账号</strong><br />需要能登录官网，并能拿到自己的 API Key。</span></li>
+          <li><span class="dot"></span><span><strong>钱包有余额</strong><br />任务消耗 RunningHub 钱包余额或 RH 币，余额不足会直接失败。</span></li>
+          <li><span class="dot"></span><span><strong>Photoshop 已打开文档</strong><br />需要捕获当前文档或选区时，必须先打开图像。</span></li>
+          <li><span class="dot"></span><span><strong>关闭代理加速器</strong><br />RunningHub 是国内服务，代理环境可能导致请求失败。</span></li>
+        </ul>
+      </aside>
+    </header>
+
+    <div class="layout">
+      <nav class="side-nav" aria-label="文档目录">
+        <p class="side-nav-title">目录</p>
+        <div class="nav-links">
+          <a href="#quick-answer">快速定位</a>
+          <a href="#first-run">首次配置</a>
+          <a href="#daily-use">日常运行</a>
+          <a href="#save-view">保存查看</a>
+          <a href="#templates">提示词模板</a>
+          <a href="#quick-entry">快捷入口</a>
+          <a href="#troubleshooting">常见失败</a>
+          <a href="#contact">继续求助</a>
+        </div>
+      </nav>
+
+      <div class="content">
+        <section class="doc-card" id="quick-answer">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Quick Find</p>
+              <h2>不知道该看哪？先点这里</h2>
+              <p class="muted">把用户最常遇到的问题放在最前面，后续遇到保存、查看、失败、返图异常时不用从头翻。</p>
             </div>
+            <span class="tag">新手优先</span>
           </div>
-        </div>
 
-        <div class="detail-step">
-          <div class="detail-step-num">2</div>
-          <div class="detail-step-content">
-            <h3>如何获取企业共享 API Key？</h3>
-            <p>你需要在 RunningHub 官网注册账号，然后在个人设置中找到 API Key。</p>
-            <ul class="action-list">
-              <li><strong>第一步：</strong>访问 RunningHub 网站，点击注册账号</li>
-              <li><strong>第二步：</strong>完成注册并登录你的账号</li>
-              <li><strong>第三步：</strong>在个人中心或设置页面找到 API Key 选项</li>
-              <li><strong>第四步：</strong>复制你的 API Key</li>
-            </ul>
-            <div class="step-tip">
-              <strong class="step-tip-icon">📋</strong>获取到的是一串类似 <code>rh_xxxxxxxxxxxxx</code> 这样的字符，这就是你的 API Key
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-step">
-          <div class="detail-step-num">3</div>
-          <div class="detail-step-content">
-            <h3>在插件中使用 API Key</h3>
-            <p>
-              将获取到的 API Key 粘贴到插件设置中即可。<strong>API Key 很长，直接复制避免手动输入出错</strong>。
-            </p>
-            <div class="notice-box danger">
-              <div class="notice-box-title">
-                <span>⚠️</span> 注意事项
-              </div>
-              <ul style="margin: 8px 0 0; padding-left: 16px; color: var(--text-sub); font-size: 13px;">
-                <li>API Key 注意不要泄露给陌生人</li>
-                <li>复制时注意不要多复制或少复制字符</li>
-                <li>插件会记住保存过的 API Key，不需要额外保存</li>
-                <li>如果 API Key 失效或过期，需要重新到 RunningHub 网站获取</li>
-              </ul>
-            </div>
-            <div class="next-steps">
-              <a href="#step2-charge-wallet" class="next-step-link">
-                下一步：充值钱包 <span class="arrow">→</span>
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 第二步：充值钱包 -->
-    <section class="section" id="step2-charge-wallet">
-      <div class="section-header">
-        <div>
-          <p class="section-kicker">Step 2</p>
-          <h2 class="section-title">充值钱包余额</h2>
-        </div>
-        <div class="section-badge">确保有钱</div>
-      </div>
-
-      <div class="detail-steps">
-        <div class="detail-step">
-          <div class="detail-step-num">1</div>
-          <div class="detail-step-content">
-            <h3>为什么要充值钱包？</h3>
-            <p>
-              使用企业共享 API Key 运行任务时，消耗的是<strong>钱包余额</strong>。每次 AI 修图任务会根据使用的应用和图片尺寸扣除一定的费用。如果钱包余额不足，任务会失败。
-            </p>
-            <div class="step-tip">
-              <strong class="step-tip-icon">💰</strong>钱包余额就像手机话费，用多少扣多少，只需要在使用前保证有钱就行
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-step">
-          <div class="detail-step-num">2</div>
-          <div class="detail-step-content">
-            <h3>如何充值钱包？</h3>
-            <p>在 RunningHub 官网的充值页面，可以直接使用支付宝或微信扫码充值。</p>
-            <a href="https://www.runninghub.cn" target="_blank" class="step-action">
-              前往 RunningHub 官网充值 →
+          <div class="quick-grid">
+            <a class="quick-help" href="#api-key">
+              <strong>API Key 怎么保存？</strong>
+              <span>设置页填写 Key、档案名称，点击保存设置。</span>
+            </a>
+            <a class="quick-help" href="#app-add">
+              <strong>怎么添加 AI 应用？</strong>
+              <span>工作台点切换，添加应用，输入应用 ID 或链接。</span>
+            </a>
+            <a class="quick-help" href="#result-view">
+              <strong>任务结果去哪看？</strong>
+              <span>看任务卡片、运行日志、Photoshop 自动贴回图层。</span>
+            </a>
+            <a class="quick-help" href="#backup">
+              <strong>配置怎么备份？</strong>
+              <span>设置页导出资料包，备份应用、模板、快捷入口。</span>
             </a>
           </div>
-        </div>
+        </section>
 
-        <div class="detail-step">
-          <div class="detail-step-num">3</div>
-          <div class="detail-step-content">
-            <h3>建议充值多少？</h3>
-            <p>一般任务消耗约 0.03-0.1 元/次，日常使用不需要保持太多余额：</p>
-            <ul class="action-list">
-              <li><strong>初次测试：</strong>10 元即可，够用蛮久</li>
-              <li><strong>日常使用：</strong>不需要保持大量余额，10 元够用一段时间</li>
-              <li><strong>大批量使用：</strong>可以考虑充值基础版及以上会员，享受更多优惠</li>
-            </ul>
-            <div class="notice-box success">
-              <div class="notice-box-title">
-                <span>✅</span> 小贴士
+        <section class="doc-card" id="first-run">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">First Run</p>
+              <h2>第一次使用：按这个顺序做</h2>
+              <p class="muted">第一次配置不要跳步。只要 API Key、余额、应用三件事通了，后面就是正常填参数运行。</p>
+            </div>
+            <span class="tag">约 5 分钟</span>
+          </div>
+
+          <div class="flow">
+            <article class="flow-step" id="api-key">
+              <div>
+                <h3>在 RunningHub 获取 API Key</h3>
+                <p>打开 RunningHub 官网，登录账号，在个人设置或开放接口相关页面找到 API Key。复制时注意不要多复制空格。</p>
+                <ul class="plain-list">
+                  <li>如果你刚注册账号，先确认账号能正常登录。</li>
+                  <li>如果 API Key 失效，回官网重新生成或复制新的 Key。</li>
+                  <li>API Key 属于敏感信息，不建议发到公开群聊或截图里。</li>
+                </ul>
+                <div class="inline-actions" style="margin-top: 12px;">
+                  <a class="btn" href="https://www.runninghub.cn" target="_blank" rel="noreferrer">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="m10 14 11-11"></path></svg>
+                    打开 RunningHub
+                  </a>
+                </div>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                建议先用少量金额测试插件能正常工作后，再考虑充值更多。新手最容易犯的错误是：钱包没余额就开始配置插件，结果发现任务一直运行失败。
-              </p>
-            </div>
-            <div class="next-steps">
-              <a href="#step3-save-apikey" class="next-step-link">
-                下一步：保存 API Key <span class="arrow">→</span>
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+            </article>
 
-    <!-- 第三步：保存 API Key -->
-    <section class="section" id="step3-save-apikey">
-      <div class="section-header">
-        <div>
-          <p class="section-kicker">Step 3</p>
-          <h2 class="section-title">在插件中保存 API Key</h2>
-        </div>
-        <div class="section-badge">配置插件</div>
-      </div>
-
-      <div class="detail-steps">
-        <div class="detail-step">
-          <div class="detail-step-num">1</div>
-          <div class="detail-step-content">
-            <h3>打开插件设置页面</h3>
-            <p>在 Photoshop 中打开 PixelRunner 插件面板，然后点击顶部的 <strong>"设置"</strong> 标签页进入设置页面。</p>
-            <div class="notice-box">
-              <div class="notice-box-title">
-                <span>ℹ️</span> 插件面板结构
+            <article class="flow-step">
+              <div>
+                <h3>充值或确认钱包余额</h3>
+                <p>任务会消耗 RunningHub 钱包余额或 RH 币。建议第一次运行前先在官网确认余额，避免插件里看起来提交了，但云端直接因为余额不足失败。</p>
+                <div class="notice">
+                  <strong>经验判断：</strong>如果一点击运行就很快失败，优先查余额和 API Key；如果等了很久才失败，再看应用拥挤、网络或内容审核。
+                </div>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                插件顶部有三个标签：<strong>RH 工作台</strong>、<strong>工具箱</strong>、<strong>设置</strong>。点击"设置"即可进入配置页面。
-              </p>
-            </div>
-          </div>
-        </div>
+            </article>
 
-        <div class="detail-step">
-          <div class="detail-step-num">2</div>
-          <div class="detail-step-content">
-            <h3>找到 API Key 输入框</h3>
-            <p>在设置页面中，找到 <strong>"RunningHub API Key"</strong> 输入框。界面上有一个"显示"按钮可以切换密码明文显示。</p>
-            <div class="step-tip">
-              <strong class="step-tip-icon">🔐</strong>输入框默认是隐藏密码状态的，点击"显示"按钮可以看到输入的内容
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-step">
-          <div class="detail-step-num">3</div>
-          <div class="detail-step-content">
-            <h3>粘贴并保存 API Key</h3>
-            <p>将之前获取的企业共享 API Key 粘贴到输入框中，然后点击 <strong>"保存设置"</strong> 按钮。</p>
-            <ul class="action-list">
-              <li>在输入框内 <strong>右键 → 粘贴</strong> 或使用 <strong>Ctrl+V</strong> 粘贴</li>
-              <li>注意不要多复制或少复制字符</li>
-              <li>点击 <strong>"保存设置"</strong> 按钮确认设置</li>
-            </ul>
-            <div class="notice-box danger">
-              <div class="notice-box-title">
-                <span>⚠️</span> 重要提示
+            <article class="flow-step">
+              <div>
+                <h3>在插件设置里保存 API Key</h3>
+                <p>回到 PixelRunner，打开 <span class="kbd">设置</span>。在 <strong>API 设置</strong> 中填写 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
+                <ul class="plain-list">
+                  <li>有多个账号时，可以用“新增”创建多个 API 档案，例如“主账号”“客户项目 A”。</li>
+                  <li>保存后，工作台右上角会尝试显示余额和 RH 币。</li>
+                  <li>看不到余额时，先确认 Key 是否正确，再确认网络是否能访问 RunningHub。</li>
+                </ul>
+                <div class="notice success">
+                  <strong>保存在哪里：</strong>插件会把 API 档案保存在 Photoshop 插件宿主的本地存储中。换电脑、重装插件、清理宿主数据后，需要重新导入资料包或重新填写。
+                </div>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                保存设置后，API Key 会存储在本地浏览器中。如果清除浏览器数据，可能需要重新输入。
-              </p>
-            </div>
-          </div>
-        </div>
+            </article>
 
-        <div class="detail-step">
-          <div class="detail-step-num">4</div>
-          <div class="detail-step-content">
-            <h3>验证 API Key 是否保存成功</h3>
-            <p>保存后，你可以：</p>
-            <ul class="action-list">
-              <li><strong>查看余额：</strong>保存成功后，工作台右上角会显示钱包余额</li>
-              <li><strong>尝试解析应用：</strong>可以在"应用 ID / URL"处输入一个应用 ID，点击"解析"测试</li>
-              <li><strong>观察状态：</strong>保存成功通常会有页面提示或无报错</li>
-            </ul>
-            <div class="notice-box success">
-              <div class="notice-box-title">
-                <span>✅</span> 恭喜！
+            <article class="flow-step" id="app-add">
+              <div>
+                <h3>添加第一个 RunningHub 应用</h3>
+                <p>进入 <span class="kbd">工作台</span>，在“选择应用”区域点击 <strong>切换</strong>，再点击弹窗里的 <strong>添加应用</strong>。把 RunningHub 应用 ID 或完整应用链接粘进去，点击 <strong>解析</strong>，确认名称后点击 <strong>保存应用</strong>。</p>
+                <ul class="plain-list">
+                  <li>应用 ID 可以是纯数字，也可以是 RunningHub 应用链接。</li>
+                  <li>解析成功后，应用会出现在“已保存应用”列表中。</li>
+                  <li>应用保存后会自动切换到工作台，表单会按该应用的输入项生成。</li>
+                </ul>
+                <div class="notice danger">
+                  <strong>解析失败先看三件事：</strong>API Key 是否已保存，应用 ID 是否复制错，当前网络是否走了代理或加速器。
+                </div>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                API Key 保存成功后，你已经完成了插件的基础配置。接下来可以添加 AI 应用了！
-              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="doc-card" id="daily-use">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Daily Workflow</p>
+              <h2>日常运行：从 Photoshop 到返图</h2>
+              <p class="muted">这部分对应你每天最常用的流程。核心是先选应用，再给图片字段捕获当前文档或选区，最后开始运行。</p>
             </div>
-            <div class="next-steps">
-              <a href="#step4-add-app" class="next-step-link">
-                下一步：添加 AI 应用 <span class="arrow">→</span>
-              </a>
+            <span class="tag">工作台</span>
+          </div>
+
+          <div class="cards-grid">
+            <article class="callout">
+              <h3>1. 先打开 Photoshop 文档</h3>
+              <p>需要处理哪张图，就先在 Photoshop 中打开它。如果只想处理局部，先用选区工具框选区域；插件会尽量按源文档或选区把结果自动贴回。</p>
+            </article>
+            <article class="callout">
+              <h3>2. 选择已保存应用</h3>
+              <p>工作台左上“选择应用”区域点击 <strong>切换</strong>。你可以搜索应用、添加应用、编辑应用，或拖动应用卡片调整顺序。</p>
+            </article>
+            <article class="callout">
+              <h3>3. 填写动态表单</h3>
+              <p>表单会根据应用结构显示图片、文本、数字、开关、选项等字段。必填项没填时，开始运行会被拦下并提示缺少哪些字段。</p>
+            </article>
+            <article class="callout">
+              <h3>4. 点击图片字段捕获</h3>
+              <p>图片输入字段通常可以点击捕获 Photoshop 当前文档或当前选区。捕获成功后，日志会显示“已捕获并写入字段”。</p>
+            </article>
+            <article class="callout">
+              <h3>5. 点击开始运行</h3>
+              <p>点击 <strong>开始运行</strong> 后，任务卡片会显示提交、运行、完成或失败状态。插件会按设置里的轮询间隔和超时时间等待 RunningHub 返回结果。</p>
+            </article>
+            <article class="callout" id="result-view">
+              <h3>6. 查看返图和日志</h3>
+              <p>任务完成后，插件会记录结果地址，并尝试自动贴回 Photoshop。若 Photoshop 正忙，插件会排队稍后重试；如果贴回失败，可以从运行日志或任务卡片里继续排查。</p>
+            </article>
+          </div>
+
+          <div class="checklist">
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>运行前检查</strong><br /><span class="muted">已保存 API Key、已选择应用、必填项已填、Photoshop 文档已打开。</span></span>
+            </div>
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>局部处理检查</strong><br /><span class="muted">先在 Photoshop 做选区，再捕获图片字段，返图会尽量按原选区贴回。</span></span>
+            </div>
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>并发检查</strong><br /><span class="muted">达到最大并发数时，需要等部分任务完成后再继续发送。</span></span>
+            </div>
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>网络检查</strong><br /><span class="muted">RunningHub 任务建议关闭代理、加速器或异常网络转发。</span></span>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <!-- 第四步：添加 AI 应用 -->
-    <section class="section" id="step4-add-app">
-      <div class="section-header">
-        <div>
-          <p class="section-kicker">Step 4</p>
-          <h2 class="section-title">添加 AI 应用</h2>
-        </div>
-        <div class="section-badge">选择工具</div>
-      </div>
-
-      <div class="detail-steps">
-        <div class="detail-step">
-          <div class="detail-step-num">1</div>
-          <div class="detail-step-content">
-            <h3>什么是 AI 应用？</h3>
-            <p>
-              AI 应用是 RunningHub 平台上开发好的 AI 修图工作流。每个应用有不同的功能，比如：
-            </p>
-            <ul class="action-list">
-              <li><strong>全能图片 Pro / 2：</strong>通用的 AI 修图功能</li>
-              <li><strong>局部重绘：</strong>只修改图片的特定区域</li>
-              <li><strong>换背景：</strong>一键替换图片背景</li>
-              <li><strong>高清修复：</strong>提升图片清晰度</li>
-              <li><strong>AI 磨皮：</strong>智能美颜，平滑肌肤纹理</li>
-              <li><strong>清除杂物：</strong>一键移除图片中的不需要的物体或水印</li>
-              <li><strong>厚涂风格：</strong>将照片转换为油画或厚涂艺术风格</li>
-              <li><strong>2D 转 3D：</strong>将平面图片转换为立体 3D 效果</li>
-              <li><strong>线稿上色：</strong>自动为黑白线稿添加颜色</li>
-              <li><strong>老照片修复：</strong>修复破损、褪色的老照片</li>
-            </ul>
-            <div class="step-tip">
-              <strong class="step-tip-icon">📱</strong>新手建议先从简单的应用开始，熟悉后再尝试更多功能
+        <section class="doc-card" id="save-view">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Save And Review</p>
+              <h2>保存、查看、备份分别在哪里</h2>
+              <p class="muted">用户最容易混淆的是“保存设置”“保存应用”“保存模板”“导出资料包”。这几个保存的是不同东西。</p>
             </div>
+            <span class="tag">重点查阅</span>
           </div>
-        </div>
 
-        <div class="detail-step">
-          <div class="detail-step-num">2</div>
-          <div class="detail-step-content">
-            <h3>获取 AI 应用代号</h3>
-            <p>群文件中有推荐的 AI 应用列表，里面包含了各个应用的<strong>代号</strong>或<strong>应用 ID</strong>。</p>
-            <ul class="action-list">
-              <li><strong>查看群文件：</strong>通常在群文件的 "AI 应用推荐" 或类似文件夹中</li>
-              <li><strong>复制代号：</strong>找到想要的应用，复制其代号（是一串字符或数字）</li>
-            </ul>
-            <div class="notice-box">
-              <div class="notice-box-title">
-                <span>📋</span> 应用代号示例
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>你想保存什么</th>
+                  <th>在哪里操作</th>
+                  <th>保存后怎么查看</th>
+                  <th>注意事项</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>RunningHub API Key</td>
+                  <td>设置 / API 设置 / 保存设置</td>
+                  <td>API 档案下拉框、API 档案标签、工作台余额</td>
+                  <td>本地存储。换电脑或清理数据后要重新填写。</td>
+                </tr>
+                <tr>
+                  <td>AI 应用</td>
+                  <td>工作台 / 切换 / 添加应用 / 保存应用，也可在设置的“AI 应用管理（高级）”里保存</td>
+                  <td>工作台“切换”弹窗的已保存应用列表，或设置页应用列表</td>
+                  <td>解析依赖 API Key 和网络。保存后不会影响 RunningHub 官网应用本身。</td>
+                </tr>
+                <tr>
+                  <td>提示词模板</td>
+                  <td>设置 / 提示词模板 / 保存模板，或工作台模板弹窗中新建预设</td>
+                  <td>工作台提示词字段的模板选择器、设置页模板列表</td>
+                  <td>建议按分类整理，标题写清用途，方便搜索。</td>
+                </tr>
+                <tr>
+                  <td>快捷入口</td>
+                  <td>工作台选好应用并填好非图片参数后，点击“快捷”</td>
+                  <td>工作台应用选择器中的“快捷入口”模式</td>
+                  <td>快捷入口运行时仍需要先在 Photoshop 中框选区域。</td>
+                </tr>
+                <tr id="backup">
+                  <td>整套配置备份</td>
+                  <td>设置 / 资料包导入导出 / 导出资料包</td>
+                  <td>导出的 JSON 文件可以再用“导入资料包”恢复</td>
+                  <td>用于换电脑、分享配置、恢复应用和模板最方便。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="notice success">
+            <strong>推荐备份习惯：</strong>每次整理完一批应用或提示词模板后，去设置页点一次 <strong>导出资料包</strong>。这比只记应用 ID 更稳，因为它会一起保存应用、提示词分类、提示词预设和快捷入口。
+          </div>
+        </section>
+
+        <section class="doc-card" id="templates">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Prompt Templates</p>
+              <h2>提示词模板：少重复输入，多复用</h2>
+              <p class="muted">如果同一套风格、修图要求、负面词经常用，就把它保存成模板。以后从工作台直接选择，比每次复制粘贴稳很多。</p>
+            </div>
+            <span class="tag">效率工具</span>
+          </div>
+
+          <div class="flow">
+            <article class="flow-step">
+              <div>
+                <h3>创建模板</h3>
+                <p>进入 <span class="kbd">设置</span>，展开 <strong>提示词模板</strong>。选择所属分类，填写模板标题和模板内容，点击 <strong>保存模板</strong>。</p>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                应用代号可能看起来像这样：<code>123456789</code> 或 <code>app_xxxxxxxx</code>，具体格式取决于应用类型。
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-step">
-          <div class="detail-step-num">3</div>
-          <div class="detail-step-content">
-            <h3>在插件中添加应用</h3>
-            <p>回到插件的设置页面，找到 <strong>"应用 ID / URL"</strong> 输入区域：</p>
-            <ul class="action-list">
-              <li>在设置页面找到 <strong>"应用 ID / URL"</strong> 输入框</li>
-              <li>将复制的应用代号粘贴到输入框中（如：<code>123456</code> 或 RunningHub 应用链接）</li>
-              <li>点击旁边的 <strong>"解析"</strong> 按钮</li>
-              <li>解析成功后，应用会自动保存到已保存应用列表中</li>
-            </ul>
-            <div class="step-tip">
-              <strong class="step-tip-icon">💡</strong>提示：应用 ID 可以是纯数字（如 123456），也可以是完整的 RunningHub 应用链接
-            </div>
-            <div class="notice-box">
-              <div class="notice-box-title">
-                <span>⚠️</span> 如果解析失败
+            </article>
+            <article class="flow-step">
+              <div>
+                <h3>在工作台使用模板</h3>
+                <p>当当前应用存在提示词字段时，工作台会提供模板选择入口。选择一个或多个模板后，点击应用模板写入当前字段。</p>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                请检查：1) API Key 是否已保存；2) 应用 ID 是否正确；3) 网络是否正常
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-step">
-          <div class="detail-step-num">4</div>
-          <div class="detail-step-content">
-            <h3>在工作台选择应用</h3>
-            <p>应用添加成功后，切换到插件的<strong>"RH 工作台"</strong>页面：</p>
-            <ul class="action-list">
-              <li>点击 <strong>"选择应用"</strong> 按钮打开应用选择器</li>
-              <li>在列表中找到并选择刚才添加的应用</li>
-              <li>选择后，页面会显示该应用需要的参数输入框</li>
-            <li>填写完参数后，点击 <strong>"运行"</strong> 按钮开始任务</li>
-            </ul>
-            <div class="notice-box success">
-              <div class="notice-box-title">
-                <span>✅</span> 应用添加成功
+            </article>
+            <article class="flow-step">
+              <div>
+                <h3>从当前字段保存为预设</h3>
+                <p>如果你在工作台临时写出了一段好用的提示词，可以在模板弹窗中新建预设，把当前字段内容保存下来。</p>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                现在你已经可以在工作台使用这个 AI 应用了！接下来学习如何创建提示词模板，让工作更高效。
-              </p>
-            </div>
-            <div class="next-steps">
-              <a href="#step5-create-template" class="next-step-link">
-                下一步：创建提示词模板 <span class="arrow">→</span>
-              </a>
-            </div>
+            </article>
           </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- 第五步：创建提示词模板 -->
-    <section class="section" id="step5-create-template">
-      <div class="section-header">
-        <div>
-          <p class="section-kicker">Step 5</p>
-          <h2 class="section-title">创建和使用提示词模板</h2>
-        </div>
-        <div class="section-badge">提升效率</div>
-      </div>
-
-      <div class="detail-steps">
-        <div class="detail-step">
-          <div class="detail-step-num">1</div>
-          <div class="detail-step-content">
-            <h3>什么是提示词模板？</h3>
-            <p>
-              提示词模板是<strong>预先写好的提示词内容</strong>，可以保存并在需要时快速加载。使用模板的好处：
-            </p>
-            <ul class="action-list">
-              <li><strong>复用：</strong>同样的提示词不需要每次重新输入</li>
-              <li><strong>批量处理：</strong>可以快速切换不同的提示词跑同一批图</li>
-              <li><strong>统一风格：</strong>确保多张图片使用相同的修图风格</li>
-            </ul>
-            <div class="step-tip">
-              <strong class="step-tip-icon">⚡</strong>如果你经常用同一种修图方式，强烈建议创建模板，能省很多时间
-            </div>
+          <div class="callout">
+            <h3>命名建议</h3>
+            <p>模板标题建议写成“用途 + 风格 + 版本”，比如 <code>人像精修-自然皮肤-v2</code>、<code>电商图-白底增强</code>。后期模板多了以后，搜索会轻松很多。</p>
           </div>
-        </div>
+        </section>
 
-        <div class="detail-step">
-          <div class="detail-step-num">2</div>
-          <div class="detail-step-content">
-            <h3>创建提示词模板</h3>
-            <p>在插件设置页面找到 <strong>"模板标题"</strong> 和 <strong>"模板内容"</strong> 输入区域：</p>
-            <ul class="action-list">
-              <li>找到 <strong>"模板标题"</strong> 输入框，给模板起一个名字（如 <em>"高质量二次元"</em>、<em>"清新风格"</em>）</li>
-              <li>在 <strong>"模板内容"</strong> 文本框中输入提示词内容</li>
-              <li>点击 <strong>"保存模板"</strong> 按钮完成创建</li>
-            </ul>
-            <div class="step-tip">
-              <strong class="step-tip-icon">📝</strong>提示：建议单条提示词控制在 4000 字符内，插件本地不会截断模板内容
+        <section class="doc-card" id="quick-entry">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Quick Entry</p>
+              <h2>快捷入口：把常用流程变成一键动作</h2>
+              <p class="muted">快捷入口会保存当前应用和全部非图片参数。适合固定风格、固定应用、每天重复跑的工作。</p>
             </div>
+            <span class="tag">高频工作</span>
           </div>
-        </div>
 
-        <div class="detail-step">
-          <div class="detail-step-num">3</div>
-          <div class="detail-step-content">
-            <h3>使用提示词模板</h3>
-            <p>在工作台填写提示词参数时，可以快速加载已保存的模板：</p>
-            <ul class="action-list">
-              <li>在提示词输入框中输入时，会显示提示"输入提示词或选择模板..."</li>
-              <li>点击输入框右侧的模板选择器（如果有）或在设置页面选择已保存的模板</li>
-              <li>模板内容会自动填充到输入框中</li>
-              <li>可以根据需要微调后点击 <strong>"运行"</strong> 提交任务</li>
-            </ul>
-            <div class="notice-box">
-              <div class="notice-box-title">
-                <span>💡</span> 模板选择器
+          <div class="cards-grid">
+            <article class="callout">
+              <h3>怎么创建</h3>
+              <p>在工作台选择应用，填好提示词、选项、强度等非图片参数，点击“选择应用”区域右侧的 <strong>快捷</strong>，输入名称并保存。</p>
+            </article>
+            <article class="callout">
+              <h3>怎么运行</h3>
+              <p>先在 Photoshop 中框选要处理的区域，再在应用选择器中切换到 <strong>快捷入口</strong>，点击对应入口运行。</p>
+            </article>
+            <article class="callout">
+              <h3>为什么要求选区</h3>
+              <p>快捷入口会自动捕获当前选区作为图片输入。如果没有打开文档或没有选区，插件会提示先打开文档或先框选区域。</p>
+            </article>
+            <article class="callout">
+              <h3>什么时候重建</h3>
+              <p>如果应用 ID 改了、字段结构变了、提示词参数大幅调整，建议重新保存快捷入口，避免引用旧字段。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="doc-card" id="troubleshooting">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Troubleshooting</p>
+              <h2>运行失败时按这个顺序排查</h2>
+              <p class="muted">不要一失败就重装插件。大部分问题可以从余额、Key、应用拥挤、图片内容、网络环境这几项定位。</p>
+            </div>
+            <span class="tag">故障恢复</span>
+          </div>
+
+          <div class="problem-grid">
+            <article class="issue-card" data-level="error">
+              <h3>余额不足</h3>
+              <p>工作台右上余额为空或过低时，先去 RunningHub 官网确认钱包。余额不足是最常见的失败原因之一。</p>
+            </article>
+            <article class="issue-card" data-level="error">
+              <h3>API Key 未保存或失效</h3>
+              <p>报错里出现 API Key missing、param apikey is required，回设置页重新粘贴 Key 并保存设置。</p>
+            </article>
+            <article class="issue-card" data-level="warn">
+              <h3>热门应用拥挤</h3>
+              <p>全能图片 Pro / 2 等热门应用在高峰时段可能排队、超时或偶发失败。可以稍后重试或换轻量应用。</p>
+            </article>
+            <article class="issue-card" data-level="warn">
+              <h3>图片内容被审核拦截</h3>
+              <p>如果参数没问题但任务稳定失败，尝试换一张图片。云端审核拦截通常不是插件本地能解决的。</p>
+            </article>
+            <article class="issue-card" data-level="warn">
+              <h3>代理、加速器或网络转发</h3>
+              <p>关闭代理、加速器、异常 DNS 或网络转发后重试。国内服务在代理环境下更容易请求失败。</p>
+            </article>
+            <article class="issue-card" data-level="ok">
+              <h3>Photoshop 正忙导致返图延迟</h3>
+              <p>如果任务已完成但没有马上贴回，可能是 Photoshop 正在液化、保存或其他模态操作。插件会尝试稍后自动重试。</p>
+            </article>
+          </div>
+
+          <div class="flow" style="margin-top: 14px;">
+            <article class="flow-step">
+              <div>
+                <h3>先看工作台任务卡片</h3>
+                <p>任务卡片会显示提交中、运行中、后台追踪、完成、失败、取消等状态。失败时先看卡片上的简短原因。</p>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                在工作台有模板模态框（templateModal），可以从中选择已保存的模板。设置页面也有已保存模板列表可以管理。
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div class="detail-step">
-          <div class="detail-step-num">4</div>
-          <div class="detail-step-content">
-            <h3>模板管理技巧</h3>
-            <p>管理提示词模板的一些技巧：</p>
-            <ul class="action-list">
-              <li><strong>分类命名：</strong>用有意义的名字命名模板，方便快速识别</li>
-              <li><strong>定期整理：</strong>删除不用的模板，保持列表简洁</li>
-              <li><strong>版本管理：</strong>如果提示词经常调整，可以创建多个版本</li>
-              <li><strong>一键导入导出：</strong>可以将模板导出为 JSON 文件分享给别人，或导入群文件中的 JSON 提示词组</li>
-            </ul>
-            <div class="notice-box">
-              <div class="notice-box-title">
-                <span>📦</span> 导入导出模板
+            </article>
+            <article class="flow-step">
+              <div>
+                <h3>再看运行日志</h3>
+                <p>工作台下方的运行日志会记录捕获、提交、任务 ID、结果地址、贴回状态等信息。排查时可以把关键日志复制给维护者。</p>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                在设置页面的模板列表中，可以导出当前所有模板为 JSON 文件。也可以导入别人分享的 JSON 提示词组，快速获取优质模板。群文件中有很多用户分享的现成模板可供导入使用。
-              </p>
-            </div>
-            <div class="notice-box success">
-              <div class="notice-box-title">
-                <span>🎉</span> 恭喜完成！
+            </article>
+            <article class="flow-step">
+              <div>
+                <h3>最后去 RunningHub 官网核对</h3>
+                <p>如果插件显示任务 ID，但本地等待超时，说明远端任务可能还在运行。可以去 RunningHub 的调用记录或任务记录里搜索任务状态。</p>
               </div>
-              <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-                到这里，你已经完成了插件的全部基础配置！现在可以：
-              </p>
-              <ul style="margin: 8px 0 0; padding-left: 16px; color: var(--text-sub); font-size: 13px;">
-                <li>在工作台选择 AI 应用</li>
-                <li>填写或上传需要修图的参数</li>
-                <li>使用提示词模板快速输入</li>
-                <li>点击运行开始 AI 修图任务</li>
-              </ul>
-            </div>
-            <div class="next-steps">
-              <a href="#run-failed" class="next-step-link">
-                查看常见问题 <span class="arrow">→</span>
-              </a>
-            </div>
+            </article>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <!-- 故障排查部分 -->
-    <section class="section" id="run-failed">
-      <div class="section-header">
-        <div>
-          <p class="section-kicker">Troubleshooting</p>
-          <h2 class="section-title">为什么运行失败？</h2>
-        </div>
-        <div class="section-badge">常见问题</div>
-      </div>
-
-      <div class="problem-grid">
-        <div class="panel-card">
-          <h3>最常见的 4 个原因</h3>
-          <div class="issue-list">
-            <div class="issue-item warn">
-              <strong>1. 热门应用使用人数较多，比较拥挤</strong>
-              <p>全能图片 Pro / 2 这类热门应用在高峰时段更容易排队、超时或者表现不稳定，所以偶发失败并不完全是插件问题。</p>
+        <section class="doc-card" id="contact">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Need Help</p>
+              <h2>仍然解决不了时，带这些信息求助</h2>
+              <p class="muted">信息越完整，越容易快速判断是 Key、余额、应用、网络、图片审核，还是插件贴回问题。</p>
             </div>
-            <div class="issue-item danger">
-              <strong>2. 钱包没有钱，请先查询余额</strong>
-              <p>这是最容易忽略、也最常见的原因之一。如果钱包余额不足，任务会直接失败。建议随时关注钱包余额。</p>
-            </div>
-            <div class="issue-item danger">
-              <strong>3. 图片涉及违规内容，未通过云端审核</strong>
-              <p>这类失败通常不是参数格式问题，而是内容在云端审核阶段被拦截了。尝试换一张图片。</p>
-            </div>
-            <div class="issue-item success">
-              <strong>4. 关闭梯子或加速器</strong>
-              <p>本插件使用国内网站服务器运行，梯子、加速器或某些网络代理环境有概率导致请求被屏蔽或行为异常。</p>
-            </div>
+            <span class="tag">QQ 1078517474</span>
           </div>
-        </div>
 
-        <aside class="panel-card">
-          <h3>建议排查顺序</h3>
-          <div class="mini-list">
-            <div class="mini-item">
-              <strong>先看余额</strong>
-              <p>这是最容易忽略、也最常见的原因之一。</p>
+          <div class="checklist">
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>任务 ID</strong><br /><span class="muted">如果日志里有“任务已提交”，请带上任务 ID。</span></span>
             </div>
-            <div class="mini-item">
-              <strong>再看应用拥挤程度</strong>
-              <p>尤其是全能图片 Pro / 2，热门时段容易挤。</p>
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>应用名称或应用 ID</strong><br /><span class="muted">说明你用的是哪个 RunningHub 应用。</span></span>
             </div>
-            <div class="mini-item">
-              <strong>然后检查图片内容</strong>
-              <p>如果内容可能踩审核规则，建议先换一张图再试。</p>
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>运行日志关键行</strong><br /><span class="muted">复制失败前后的几行日志，不要发 API Key。</span></span>
             </div>
-            <div class="mini-item">
-              <strong>最后排查网络环境</strong>
-              <p>把梯子、加速器、代理先关闭，再重新运行一次。</p>
+            <div class="check-item">
+              <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
+              <span><strong>当前网络和余额情况</strong><br /><span class="muted">说明是否开了代理，官网余额是否充足。</span></span>
             </div>
           </div>
 
-          <div class="notice-box" style="margin-top: 16px;">
-            <div class="notice-box-title">
-              <span>💡</span> 一个经验
-            </div>
-            <p style="margin: 0; color: var(--text-sub); font-size: 13px;">
-              如果你看到的是"偶发失败"而不是"稳定必现失败"，优先怀疑热门应用拥挤或网络代理环境，而不是先怀疑插件本身。
-            </p>
+          <div class="inline-actions" style="margin-top: 16px;">
+            <button class="btn primary" type="button" id="copyQq">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              复制 QQ 群号 1078517474
+            </button>
+            <a class="btn" href="#troubleshooting">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path></svg>
+              回到排查清单
+            </a>
           </div>
-        </aside>
+        </section>
       </div>
-    </section>
-
-    <div class="footer">
-      <div style="margin-bottom: 12px;">
-        <span style="font-size: 18px;">👥</span>
-        <strong>交流群：</strong>QQ 1078517474
-      </div>
-      <div>这是一份随插件一起打包的本地教程页。后续如果你愿意，还可以继续扩展成更完整的帮助中心或更新日志站点。</div>
     </div>
+
+    <footer class="footer">
+      <p>这是一份随 PixelRunner 一起打包的本地文档。教程按钮会打开本页，遇到问题时可以先按目录快速定位。</p>
+    </footer>
   </main>
 
   <script>
-    // 复制 QQ 群号功能
-    function copyQQ() {
-      const qqNum = '1078517474';
+    const progress = document.getElementById("progress");
+    const toast = document.getElementById("toast");
+    const navLinks = Array.from(document.querySelectorAll(".side-nav a"));
+    const sections = navLinks
+      .map((link) => document.querySelector(link.getAttribute("href")))
+      .filter(Boolean);
+
+    function updateProgress() {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const ratio = max > 0 ? window.scrollY / max : 0;
+      progress.style.width = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+    }
+
+    function updateActiveNav() {
+      let activeId = "";
+      for (const section of sections) {
+        if (window.scrollY >= section.offsetTop - 120) {
+          activeId = section.id;
+        }
+      }
+      navLinks.forEach((link) => {
+        link.classList.toggle("active", link.getAttribute("href") === `#${activeId}`);
+      });
+    }
+
+    async function copyText(text) {
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(qqNum).then(() => {
-          showToast();
-        });
-      } else {
-        // 降级方案
-        const textArea = document.createElement('textarea');
-        textArea.value = qqNum;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        try {
-          document.execCommand('copy');
-          showToast();
-        } catch (err) {
-          console.error('复制失败:', err);
-        }
-        document.body.removeChild(textArea);
+        await navigator.clipboard.writeText(text);
+        return;
       }
+      const input = document.createElement("textarea");
+      input.value = text;
+      input.setAttribute("readonly", "");
+      input.style.position = "fixed";
+      input.style.left = "-9999px";
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      input.remove();
     }
 
-    function showToast() {
-      const toast = document.getElementById('copyToast');
-      toast.classList.add('show');
-      setTimeout(() => {
-        toast.classList.remove('show');
-      }, 2000);
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      window.setTimeout(() => toast.classList.remove("show"), 1800);
     }
 
-    // 滚动进度条
-    function updateProgressBar() {
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
-      const scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      const progress = (scrollTop / scrollHeight) * 100;
-      let progressBar = document.querySelector('.progress-bar');
-      if (!progressBar) {
-        progressBar = document.createElement('div');
-        progressBar.className = 'progress-bar';
-        document.body.appendChild(progressBar);
+    document.getElementById("copyQq").addEventListener("click", async () => {
+      try {
+        await copyText("1078517474");
+        showToast("已复制 QQ 群号");
+      } catch (_) {
+        showToast("复制失败，请手动复制 1078517474");
       }
-      progressBar.style.width = progress + '%';
-    }
-
-    window.addEventListener('scroll', updateProgressBar, { passive: true });
-
-    // 导航链接平滑滚动
-    document.querySelectorAll('.step-nav-item').forEach(link => {
-      link.addEventListener('click', function(e) {
-        e.preventDefault();
-        const targetId = this.getAttribute('href');
-        const target = document.querySelector(targetId);
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      });
     });
 
-    // 下一步链接平滑滚动
-    document.querySelectorAll('.next-step-link').forEach(link => {
-      link.addEventListener('click', function(e) {
-        const href = this.getAttribute('href');
-        if (href && href.startsWith('#')) {
-          e.preventDefault();
-          const target = document.querySelector(href);
-          if (target) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }
-      });
-    });
+    window.addEventListener("scroll", () => {
+      updateProgress();
+      updateActiveNav();
+    }, { passive: true });
 
-    // 步骤导航高亮当前所在区域
-    const sections = document.querySelectorAll('.section[id]');
-    const navItems = document.querySelectorAll('.step-nav-item');
-
-    function highlightNav() {
-      let current = '';
-      sections.forEach(section => {
-        const sectionTop = section.offsetTop;
-        const sectionHeight = section.clientHeight;
-        if (scrollY >= sectionTop - 200) {
-          current = section.getAttribute('id');
-        }
-      });
-
-      navItems.forEach(item => {
-        item.classList.remove('active');
-        if (item.getAttribute('href') === '#' + current) {
-          item.classList.add('active');
-        }
-      });
-    }
-
-    window.addEventListener('scroll', highlightNav, { passive: true });
-    highlightNav();
-
-    // 初始化
-    updateProgressBar();
+    updateProgress();
+    updateActiveNav();
   </script>
 </body>
 </html>
