@@ -1,4 +1,5 @@
 import { getDocumentInfo, normalizeBounds } from "./document.js";
+import { ensureDeps } from "./deps.js";
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
   mode: "balanced",
@@ -18,6 +19,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
   localAlignmentEnabled: true,
   localMeshStrength: 0.58,
   localMeshMaxOffset: 6,
+  localMeshMaxEdge: 1536,
   previewMaxEdge: 512
 };
 
@@ -66,6 +68,7 @@ function getBlendMatchConfig(payload = {}) {
     localAlignmentEnabled: payload.localAlignmentEnabled !== false,
     localMeshStrength: clampNumber(payload.localMeshStrength, 0, 1, DEFAULT_BLEND_MATCH_CONFIG.localMeshStrength),
     localMeshMaxOffset: clampNumber(payload.localMeshMaxOffset, 1, 12, DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxOffset),
+    localMeshMaxEdge: clampNumber(payload.localMeshMaxEdge, 512, 2048, DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxEdge),
     previewMaxEdge: clampNumber(payload.previewMaxEdge, 256, 768, DEFAULT_BLEND_MATCH_CONFIG.previewMaxEdge)
   };
 }
@@ -95,6 +98,86 @@ function getSamplingTargetSize(bounds, maxEdge = 768) {
 
 function buildDataUrl(mimeType, base64) {
   return base64 ? `data:${mimeType};base64,${base64}` : "";
+}
+
+function concatUint8Arrays(parts) {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(totalLength);
+  let offset = 0;
+  parts.forEach((part) => {
+    out.set(part, offset);
+    offset += part.length;
+  });
+  return out;
+}
+
+async function deflateBytes(bytes) {
+  if (!bytes || !bytes.length || typeof CompressionStream !== "function") return null;
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+  const buffer = await new Response(stream).arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+const PNG_CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let index = 0; index < bytes.length; index += 1) {
+    c = PNG_CRC_TABLE[(c ^ bytes[index]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function asciiBytes(value) {
+  return Uint8Array.from(String(value).split("").map((char) => char.charCodeAt(0)));
+}
+
+function uint32Bytes(value) {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, value >>> 0);
+  return out;
+}
+
+function buildPngChunk(type, data = new Uint8Array()) {
+  const typeBytes = asciiBytes(type);
+  return concatUint8Arrays([uint32Bytes(data.length), typeBytes, data, uint32Bytes(crc32(concatUint8Arrays([typeBytes, data])))]);
+}
+
+async function encodeRgbaPng(width, height, rgba) {
+  const safeWidth = Math.max(1, Math.floor(Number(width) || 1));
+  const safeHeight = Math.max(1, Math.floor(Number(height) || 1));
+  if (!rgba || rgba.length < safeWidth * safeHeight * 4) return null;
+  const bytesPerLine = safeWidth * 4;
+  const scanlines = new Uint8Array((bytesPerLine + 1) * safeHeight);
+  for (let y = 0; y < safeHeight; y += 1) {
+    const rowOffset = y * (bytesPerLine + 1);
+    scanlines[rowOffset] = 0;
+    scanlines.set(rgba.subarray(y * bytesPerLine, (y + 1) * bytesPerLine), rowOffset + 1);
+  }
+  const compressed = await deflateBytes(scanlines);
+  if (!compressed) return null;
+  const ihdr = new Uint8Array(13);
+  const view = new DataView(ihdr.buffer);
+  view.setUint32(0, safeWidth >>> 0);
+  view.setUint32(4, safeHeight >>> 0);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return concatUint8Arrays([
+    Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    buildPngChunk("IHDR", ihdr),
+    buildPngChunk("IDAT", compressed),
+    buildPngChunk("IEND")
+  ]).buffer;
 }
 
 function extractEncodedBase64(encoded) {
@@ -318,6 +401,105 @@ async function transformLayerAlignment(action, layerId, alignment) {
     };
   }
   await action.batchPlay([descriptor], {});
+}
+
+async function transformLayerScale(action, layerId, scaleXPercent, scaleYPercent) {
+  await action.batchPlay([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _id: Number(layerId) }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    width: { _unit: "percentUnit", _value: scaleXPercent },
+    height: { _unit: "percentUnit", _value: scaleYPercent },
+    linked: false,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
+async function transformLayerOffset(action, layerId, dx, dy) {
+  await action.batchPlay([{
+    _obj: "transform",
+    _target: [{ _ref: "layer", _id: Number(layerId) }],
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    offset: {
+      _obj: "offset",
+      horizontal: { _unit: "pixelsUnit", _value: dx },
+      vertical: { _unit: "pixelsUnit", _value: dy }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
+function getBoundsSize(bounds) {
+  return {
+    width: Math.max(1, Number(bounds && bounds.right) - Number(bounds && bounds.left)),
+    height: Math.max(1, Number(bounds && bounds.bottom) - Number(bounds && bounds.top))
+  };
+}
+
+function getBoundsCenter(bounds) {
+  return {
+    x: (Number(bounds.left) + Number(bounds.right)) / 2,
+    y: (Number(bounds.top) + Number(bounds.bottom)) / 2
+  };
+}
+
+async function alignActiveLayerToBounds(app, action, targetBounds) {
+  const layer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+  const bounds = parseLayerBounds(layer && layer.bounds);
+  if (!layer || !bounds || !targetBounds) return false;
+  const currentSize = getBoundsSize(bounds);
+  const targetSize = getBoundsSize(targetBounds);
+  const scaleX = targetSize.width / currentSize.width;
+  const scaleY = targetSize.height / currentSize.height;
+  if (
+    Number.isFinite(scaleX) &&
+    Number.isFinite(scaleY) &&
+    scaleX > 0 &&
+    scaleY > 0 &&
+    (Math.abs(scaleX - 1) > 0.0001 || Math.abs(scaleY - 1) > 0.0001)
+  ) {
+    await transformLayerScale(action, layer.id, scaleX * 100, scaleY * 100);
+  }
+
+  const nextLayer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+  const nextBounds = parseLayerBounds(nextLayer && nextLayer.bounds);
+  if (!nextLayer || !nextBounds) return false;
+  const currentCenter = getBoundsCenter(nextBounds);
+  const targetCenter = getBoundsCenter(targetBounds);
+  const dx = targetCenter.x - currentCenter.x;
+  const dy = targetCenter.y - currentCenter.y;
+  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+    await transformLayerOffset(action, nextLayer.id, dx, dy);
+  }
+  return true;
+}
+
+async function placePngBufferAsLayer(app, action, storage, buffer, targetBounds, layerName) {
+  const fs = storage && storage.localFileSystem;
+  const formats = storage && storage.formats;
+  if (!fs || !formats || !(buffer instanceof ArrayBuffer)) return null;
+  const tempFolder = await fs.getTemporaryFolder();
+  const tempFile = await tempFolder.createFile("pixelrunner-blend-match-mesh.png", { overwrite: true });
+  await tempFile.write(buffer, { format: formats.binary });
+  const sessionToken = await fs.createSessionToken(tempFile);
+  await action.batchPlay([{
+    _obj: "placeEvent",
+    null: { _path: sessionToken, _kind: "local" },
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    offset: {
+      _obj: "offset",
+      horizontal: { _unit: "pixelsUnit", _value: 0 },
+      vertical: { _unit: "pixelsUnit", _value: 0 }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  await alignActiveLayerToBounds(app, action, targetBounds);
+  const layer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+  if (!layer) return null;
+  try {
+    layer.name = String(layerName || "PixelRunner 融合校色").slice(0, 240);
+  } catch (_) {}
+  return layer;
 }
 
 async function duplicateActiveLayer(action, layerName) {
@@ -765,6 +947,117 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
   };
 }
 
+function buildDenseMeshGrid(local, width, height, scaleX = 1, scaleY = 1) {
+  const rows = Math.max(1, Number(local && local.rows) || 1);
+  const cols = Math.max(1, Number(local && local.cols) || 1);
+  const tiles = Array.isArray(local && local.tiles) ? local.tiles : [];
+  const grid = Array.from({ length: rows }, () => Array.from({ length: cols }, () => null));
+  tiles.forEach((tile) => {
+    const row = Number(tile.row);
+    const col = Number(tile.col);
+    if (row >= 0 && row < rows && col >= 0 && col < cols) {
+      grid[row][col] = {
+        dx: (Number(tile.dx) || 0) * scaleX,
+        dy: (Number(tile.dy) || 0) * scaleY,
+        weight: Math.max(0.1, Number(tile.score) || 0.1)
+      };
+    }
+  });
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      if (grid[row][col]) continue;
+      let dx = 0;
+      let dy = 0;
+      let weight = 0;
+      tiles.forEach((tile) => {
+        const distance = Math.hypot(Number(tile.row) - row, Number(tile.col) - col);
+        const tileWeight = (Math.max(0.1, Number(tile.score) || 0.1)) / Math.max(0.75, distance * distance);
+        dx += (Number(tile.dx) || 0) * scaleX * tileWeight;
+        dy += (Number(tile.dy) || 0) * scaleY * tileWeight;
+        weight += tileWeight;
+      });
+      grid[row][col] = weight > 0 ? { dx: dx / weight, dy: dy / weight, weight } : { dx: 0, dy: 0, weight: 0 };
+    }
+  }
+  return { rows, cols, grid, width, height };
+}
+
+function interpolateMeshOffset(mesh, x, y) {
+  const cols = mesh.cols;
+  const rows = mesh.rows;
+  if (cols <= 1 || rows <= 1) return mesh.grid[0][0] || { dx: 0, dy: 0 };
+  const gx = Math.max(0, Math.min(cols - 1, (x / Math.max(1, mesh.width - 1)) * (cols - 1)));
+  const gy = Math.max(0, Math.min(rows - 1, (y / Math.max(1, mesh.height - 1)) * (rows - 1)));
+  const x0 = Math.max(0, Math.min(cols - 1, Math.floor(gx)));
+  const y0 = Math.max(0, Math.min(rows - 1, Math.floor(gy)));
+  const x1 = Math.max(0, Math.min(cols - 1, x0 + 1));
+  const y1 = Math.max(0, Math.min(rows - 1, y0 + 1));
+  const tx = gx - x0;
+  const ty = gy - y0;
+  const a = mesh.grid[y0][x0];
+  const b = mesh.grid[y0][x1];
+  const c = mesh.grid[y1][x0];
+  const d = mesh.grid[y1][x1];
+  const topDx = a.dx * (1 - tx) + b.dx * tx;
+  const topDy = a.dy * (1 - tx) + b.dy * tx;
+  const bottomDx = c.dx * (1 - tx) + d.dx * tx;
+  const bottomDy = c.dy * (1 - tx) + d.dy * tx;
+  return {
+    dx: topDx * (1 - ty) + bottomDx * ty,
+    dy: topDy * (1 - ty) + bottomDy * ty
+  };
+}
+
+function sampleRgbaBilinear(data, width, height, x, y, out, offset) {
+  const sx = Math.max(0, Math.min(width - 1, x));
+  const sy = Math.max(0, Math.min(height - 1, y));
+  const x0 = Math.floor(sx);
+  const y0 = Math.floor(sy);
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+  const tx = sx - x0;
+  const ty = sy - y0;
+  const i00 = (y0 * width + x0) * 4;
+  const i10 = (y0 * width + x1) * 4;
+  const i01 = (y1 * width + x0) * 4;
+  const i11 = (y1 * width + x1) * 4;
+  for (let channel = 0; channel < 4; channel += 1) {
+    const top = data[i00 + channel] * (1 - tx) + data[i10 + channel] * tx;
+    const bottom = data[i01 + channel] * (1 - tx) + data[i11 + channel] * tx;
+    out[offset + channel] = Math.max(0, Math.min(255, Math.round(top * (1 - ty) + bottom * ty)));
+  }
+}
+
+function warpSampleWithLocalMesh(sample, local, alignmentSample) {
+  if (!sample || !sample.data || !local || !local.applied) return null;
+  const width = Math.max(1, Number(sample.width) || 1);
+  const height = Math.max(1, Number(sample.height) || 1);
+  const sourceWidth = Math.max(1, Number(alignmentSample && alignmentSample.width) || width);
+  const sourceHeight = Math.max(1, Number(alignmentSample && alignmentSample.height) || height);
+  const mesh = buildDenseMeshGrid(local, width, height, width / sourceWidth, height / sourceHeight);
+  const strength = Math.max(0, Math.min(1, Number(local.strength) || DEFAULT_BLEND_MATCH_CONFIG.localMeshStrength));
+  const out = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const flow = interpolateMeshOffset(mesh, x, y);
+      const sampleX = x + flow.dx * strength;
+      const sampleY = y + flow.dy * strength;
+      sampleRgbaBilinear(sample.data, width, height, sampleX, sampleY, out, offset);
+    }
+  }
+  return {
+    width,
+    height,
+    data: out,
+    strength,
+    validTiles: Number(local.validTiles) || 0,
+    totalTiles: Number(local.totalTiles) || 0,
+    maxDistance: Number(local.maxDistance) || 0
+  };
+}
+
 function estimateTileOffsets(sourceGrad, refGrad, width, height, sampleOffset, stride, config = {}) {
   const tiles = [];
   const profile = buildLocalMeshProfile(width, height, config);
@@ -1012,9 +1305,33 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     }
 
     await selectLayerById(action, sourceLayerId);
-    await duplicateActiveLayer(action, resultLayerName);
-    const resultLayer = getActiveLayer(app);
-    const resultLayerId = getLayerId(resultLayer);
+    let resultLayer = null;
+    let resultLayerId = 0;
+    let meshApplied = false;
+
+    if (alignment.localDeformation) {
+      try {
+        const { storage } = await ensureDeps();
+        const meshSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
+        const warped = warpSampleWithLocalMesh(meshSample, alignment.local, sourceSample);
+        const pngBuffer = warped ? await encodeRgbaPng(warped.width, warped.height, warped.data) : null;
+        if (!pngBuffer) throw new Error("局部网格 PNG 编码不可用。");
+        resultLayer = await placePngBufferAsLayer(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+        resultLayerId = getLayerId(resultLayer);
+        if (!(resultLayerId > 0)) throw new Error("局部网格结果层置入失败。");
+        meshApplied = true;
+        logs.push(`[融合校色] 已生成局部网格变形结果层：${warped.width}x${warped.height}，有效分块 ${warped.validTiles}/${warped.totalTiles}，最大局部偏移 ${warped.maxDistance.toFixed(2)}px。`);
+      } catch (error) {
+        logs.push(`[融合校色] 局部网格变形未应用：${error.message || "未知错误"}。已回退为普通结果层。`);
+        await selectLayerById(action, sourceLayerId);
+      }
+    }
+
+    if (!meshApplied) {
+      await duplicateActiveLayer(action, resultLayerName);
+      resultLayer = getActiveLayer(app);
+      resultLayerId = getLayerId(resultLayer);
+    }
     if (!(resultLayerId > 0)) throw new Error("融合校色结果层创建失败。");
     logs.push(`[融合校色] 已创建结果层：${resultLayerName}。`);
 
