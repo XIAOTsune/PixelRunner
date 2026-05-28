@@ -4,21 +4,34 @@
   const DEFAULT_SETTINGS = {
     autoEnabled: false,
     mode: "balanced",
+    totalStrength: 78,
+    luminanceStrength: 82,
+    colorStrength: 76,
+    saturationStrength: 62,
+    contrastStrength: 58,
+    featherRadius: 16,
+    createBackupLayer: true,
+    alignmentEnabled: true,
+    alignmentMaxOffset: 12,
+    alignmentScaleEnabled: true,
+    alignmentMaxScale: 2.5,
+    alignmentMaxRotation: 1.75,
+    alignmentMaxStretch: 2.5,
+    localAlignmentEnabled: true,
+    previewMaxEdge: 512
+  };
+  const LEGACY_DEFAULT_SETTINGS = {
+    mode: "balanced",
     totalStrength: 70,
     luminanceStrength: 75,
     colorStrength: 65,
     saturationStrength: 50,
     contrastStrength: 45,
     featherRadius: 12,
-    createBackupLayer: true,
-    alignmentEnabled: true,
     alignmentMaxOffset: 8,
-    alignmentScaleEnabled: true,
     alignmentMaxScale: 2,
     alignmentMaxRotation: 1.5,
-    alignmentMaxStretch: 2,
-    localAlignmentEnabled: true,
-    previewMaxEdge: 512
+    alignmentMaxStretch: 2
   };
 
   const MODE_LABELS = {
@@ -85,7 +98,14 @@
   async function loadSettings() {
     try {
       const raw = await modules.runtime.storageGetItem(getStorageKey());
-      localState.settings = normalizeSettings(modules.runtime.readJsonText(raw, DEFAULT_SETTINGS));
+      const parsed = modules.runtime.readJsonText(raw, DEFAULT_SETTINGS);
+      const shouldUpgradeDefaults = parsed && typeof parsed === "object" && Object.keys(LEGACY_DEFAULT_SETTINGS).every((key) => {
+        return String(parsed[key]) === String(LEGACY_DEFAULT_SETTINGS[key]);
+      });
+      localState.settings = shouldUpgradeDefaults
+        ? normalizeSettings({ ...DEFAULT_SETTINGS, autoEnabled: Boolean(parsed.autoEnabled) })
+        : normalizeSettings(parsed);
+      if (shouldUpgradeDefaults) void persistSettings();
     } catch (_) {
       localState.settings = { ...DEFAULT_SETTINGS };
     }
@@ -194,7 +214,7 @@
     renderSettings();
     void persistSettings();
     if (modules.ui && modules.ui.logToWorkspace) {
-      modules.ui.logToWorkspace("融合校色参数已重置为 MVP 默认值。", "info");
+      modules.ui.logToWorkspace("融合校色参数已重置为中等偏上默认值。", "info");
     }
   }
 
@@ -478,9 +498,12 @@
       };
       setPreviewState("实时预览");
       const alignment = result.alignment;
+      const localMeta = alignment && alignment.local && alignment.local.enabled
+        ? ` / 网格 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}${alignment.localDeformation ? " 已启用" : " 已跳过"}`
+        : "";
       setText("blendMatchPreviewMeta", alignment && alignment.applied
-        ? `左融合前 / 右融合后 / dx ${alignment.dx}px / dy ${alignment.dy}px / X ${Number(alignment.scaleXPercent || alignment.scalePercent || 100).toFixed(2)}% / Y ${Number(alignment.scaleYPercent || alignment.scalePercent || 100).toFixed(2)}% / 旋转 ${Number(alignment.rotation || 0).toFixed(2)}° / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${alignment.localDeformation ? " / 局部变形" : ""}`
-        : "左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围");
+        ? `左融合前 / 右融合后 / dx ${alignment.dx}px / dy ${alignment.dy}px / X ${Number(alignment.scaleXPercent || alignment.scalePercent || 100).toFixed(2)}% / Y ${Number(alignment.scaleYPercent || alignment.scalePercent || 100).toFixed(2)}% / 旋转 ${Number(alignment.rotation || 0).toFixed(2)}° / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${localMeta}`
+        : `左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围${localMeta}`);
       drawPreviewCanvas();
     } catch (error) {
       setPreviewState("预览失败");

@@ -2,20 +2,22 @@ import { getDocumentInfo, normalizeBounds } from "./document.js";
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
   mode: "balanced",
-  totalStrength: 70,
-  luminanceStrength: 75,
-  colorStrength: 65,
-  saturationStrength: 50,
-  contrastStrength: 45,
-  featherRadius: 12,
+  totalStrength: 78,
+  luminanceStrength: 82,
+  colorStrength: 76,
+  saturationStrength: 62,
+  contrastStrength: 58,
+  featherRadius: 16,
   createBackupLayer: true,
   alignmentEnabled: true,
-  alignmentMaxOffset: 8,
+  alignmentMaxOffset: 12,
   alignmentScaleEnabled: true,
-  alignmentMaxScale: 2,
-  alignmentMaxRotation: 1.5,
-  alignmentMaxStretch: 2,
+  alignmentMaxScale: 2.5,
+  alignmentMaxRotation: 1.75,
+  alignmentMaxStretch: 2.5,
   localAlignmentEnabled: true,
+  localMeshStrength: 0.58,
+  localMeshMaxOffset: 6,
   previewMaxEdge: 512
 };
 
@@ -62,6 +64,8 @@ function getBlendMatchConfig(payload = {}) {
     alignmentMaxRotation: clampNumber(payload.alignmentMaxRotation, 0, 3, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxRotation),
     alignmentMaxStretch: clampNumber(payload.alignmentMaxStretch, 0, 4, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxStretch),
     localAlignmentEnabled: payload.localAlignmentEnabled !== false,
+    localMeshStrength: clampNumber(payload.localMeshStrength, 0, 1, DEFAULT_BLEND_MATCH_CONFIG.localMeshStrength),
+    localMeshMaxOffset: clampNumber(payload.localMeshMaxOffset, 1, 12, DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxOffset),
     previewMaxEdge: clampNumber(payload.previewMaxEdge, 256, 768, DEFAULT_BLEND_MATCH_CONFIG.previewMaxEdge)
   };
 }
@@ -617,33 +621,170 @@ function refineAffineAlignment(sourceGrad, refGrad, width, height, base, baseSec
   };
 }
 
-function estimateTileOffsets(sourceGrad, refGrad, width, height, sampleOffset, stride) {
-  const tiles = [];
-  const cols = 3;
-  const rows = 3;
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      const region = {
-        left: Math.floor((width * col) / cols),
-        right: Math.floor((width * (col + 1)) / cols),
-        top: Math.floor((height * row) / rows),
-        bottom: Math.floor((height * (row + 1)) / rows)
-      };
-      let best = { dx: 0, dy: 0, score: -1 };
-      for (let dy = -sampleOffset; dy <= sampleOffset; dy += 1) {
-        for (let dx = -sampleOffset; dx <= sampleOffset; dx += 1) {
-          const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, 1, stride, region);
-          if (score > best.score) best = { dx, dy, score };
-        }
-      }
-      if (best.score > 0.18) tiles.push({ ...best, row, col });
+function buildLocalMeshProfile(width, height, config) {
+  const shortEdge = Math.min(width, height);
+  const mode = String(config && config.mode || "balanced");
+  const baseGrid = shortEdge < 220 ? 4 : shortEdge > 520 || mode === "strong" ? 7 : 5;
+  return {
+    cols: baseGrid,
+    rows: baseGrid,
+    overlap: mode === "natural" ? 0.22 : mode === "strong" ? 0.34 : 0.28,
+    strength: Math.max(0.25, Math.min(0.72, Number(config && config.localMeshStrength) || DEFAULT_BLEND_MATCH_CONFIG.localMeshStrength)),
+    maxOffset: Math.max(2, Math.min(12, Number(config && config.localMeshMaxOffset) || DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxOffset))
+  };
+}
+
+function sampleGradientEnergy(grad, width, height, region, stride) {
+  const left = Math.max(1, Math.floor(region.left));
+  const right = Math.min(width - 1, Math.ceil(region.right));
+  const top = Math.max(1, Math.floor(region.top));
+  const bottom = Math.min(height - 1, Math.ceil(region.bottom));
+  const step = Math.max(1, Number(stride) || 1);
+  let sum = 0;
+  let count = 0;
+  for (let y = top; y < bottom; y += step) {
+    for (let x = left; x < right; x += step) {
+      sum += Number(grad[y * width + x]) || 0;
+      count += 1;
     }
   }
-  if (!tiles.length) return { tiles, spread: 0, meanDx: 0, meanDy: 0 };
+  return count ? sum / count : 0;
+}
+
+function smoothTileOffsets(tiles, rows, cols, passes = 2) {
+  const grid = Array.from({ length: rows }, () => Array.from({ length: cols }, () => null));
+  tiles.forEach((tile) => {
+    if (tile.row >= 0 && tile.row < rows && tile.col >= 0 && tile.col < cols) {
+      grid[tile.row][tile.col] = { ...tile };
+    }
+  });
+
+  for (let pass = 0; pass < passes; pass += 1) {
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const tile = grid[row][col];
+        if (!tile) continue;
+        let weight = 1.8;
+        let dx = tile.dx * weight;
+        let dy = tile.dy * weight;
+        for (let oy = -1; oy <= 1; oy += 1) {
+          for (let ox = -1; ox <= 1; ox += 1) {
+            if (!ox && !oy) continue;
+            const neighbor = grid[row + oy] && grid[row + oy][col + ox];
+            if (!neighbor) continue;
+            const neighborWeight = ox && oy ? 0.42 : 0.68;
+            dx += neighbor.dx * neighborWeight;
+            dy += neighbor.dy * neighborWeight;
+            weight += neighborWeight;
+          }
+        }
+        tile.smoothedDx = dx / Math.max(0.001, weight);
+        tile.smoothedDy = dy / Math.max(0.001, weight);
+      }
+    }
+    tiles.forEach((tile) => {
+      tile.dx = Number.isFinite(tile.smoothedDx) ? tile.smoothedDx : tile.dx;
+      tile.dy = Number.isFinite(tile.smoothedDy) ? tile.smoothedDy : tile.dy;
+    });
+  }
+  return tiles;
+}
+
+function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
+  if (!tiles.length) {
+    return {
+      enabled: true,
+      applied: false,
+      rows,
+      cols,
+      strength,
+      maxOffset,
+      validTiles: 0,
+      totalTiles: rows * cols,
+      spread: 0,
+      meanDx: 0,
+      meanDy: 0,
+      maxDistance: 0,
+      reason: "no-reliable-tiles",
+      tiles: []
+    };
+  }
   const meanDx = tiles.reduce((sum, tile) => sum + tile.dx, 0) / tiles.length;
   const meanDy = tiles.reduce((sum, tile) => sum + tile.dy, 0) / tiles.length;
   const spread = tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx - meanDx, tile.dy - meanDy), 0) / tiles.length;
-  return { tiles, spread, meanDx, meanDy };
+  const maxDistance = tiles.reduce((max, tile) => Math.max(max, Math.hypot(tile.dx, tile.dy)), 0);
+  const coverage = tiles.length / Math.max(1, rows * cols);
+  const applied = tiles.length >= Math.max(4, Math.round(rows * cols * 0.34)) && spread >= 0.85 && maxDistance >= 1;
+  return {
+    enabled: true,
+    applied,
+    rows,
+    cols,
+    strength,
+    maxOffset,
+    validTiles: tiles.length,
+    totalTiles: rows * cols,
+    coverage,
+    spread,
+    meanDx,
+    meanDy,
+    maxDistance,
+    reason: applied ? "local-gradient-mesh" : coverage < 0.34 ? "low-coverage" : "low-local-spread",
+    tiles: tiles.map((tile) => ({
+      row: tile.row,
+      col: tile.col,
+      dx: Number(tile.dx.toFixed(2)),
+      dy: Number(tile.dy.toFixed(2)),
+      score: Number(tile.score.toFixed(3)),
+      scoreGap: Number(tile.scoreGap.toFixed(3)),
+      textureEnergy: Number(tile.textureEnergy.toFixed(2))
+    }))
+  };
+}
+
+function estimateTileOffsets(sourceGrad, refGrad, width, height, sampleOffset, stride, config = {}) {
+  const tiles = [];
+  const profile = buildLocalMeshProfile(width, height, config);
+  const cols = profile.cols;
+  const rows = profile.rows;
+  const searchOffset = Math.max(1, Math.min(profile.maxOffset, sampleOffset));
+  const minTileScore = 0.21;
+  const minScoreGap = 0.01;
+  const minTextureEnergy = 6;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const tileWidth = width / cols;
+      const tileHeight = height / rows;
+      const padX = tileWidth * profile.overlap;
+      const padY = tileHeight * profile.overlap;
+      const region = {
+        left: Math.max(0, Math.floor((width * col) / cols - padX)),
+        right: Math.min(width, Math.ceil((width * (col + 1)) / cols + padX)),
+        top: Math.max(0, Math.floor((height * row) / rows - padY)),
+        bottom: Math.min(height, Math.ceil((height * (row + 1)) / rows + padY))
+      };
+      const textureEnergy = sampleGradientEnergy(refGrad, width, height, region, Math.max(1, stride));
+      if (textureEnergy < minTextureEnergy) continue;
+      let best = { dx: 0, dy: 0, score: -1 };
+      let second = -1;
+      for (let dy = -searchOffset; dy <= searchOffset; dy += 1) {
+        for (let dx = -searchOffset; dx <= searchOffset; dx += 1) {
+          const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, 1, stride, region);
+          if (score > best.score) {
+            second = best.score;
+            best = { dx, dy, score };
+          } else if (score > second) {
+            second = score;
+          }
+        }
+      }
+      const scoreGap = best.score - Math.max(0, second);
+      if (best.score > minTileScore && scoreGap > minScoreGap) {
+        tiles.push({ ...best, row, col, scoreGap, textureEnergy });
+      }
+    }
+  }
+  return buildLocalMeshSummary(smoothTileOffsets(tiles, rows, cols, 2), rows, cols, profile.strength, profile.maxOffset);
 }
 
 function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOffset) {
@@ -678,17 +819,28 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   });
   const affineBest = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
   const local = config.localAlignmentEnabled
-    ? estimateTileOffsets(sourceGrad, refGrad, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride))
-    : { tiles: [], spread: 0, meanDx: 0, meanDy: 0 };
-  const localDeformation = local.tiles.length >= 4 && local.spread >= 1.4;
+    ? estimateTileOffsets(sourceGrad, refGrad, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), config)
+    : { enabled: false, applied: false, tiles: [], spread: 0, meanDx: 0, meanDy: 0, validTiles: 0, totalTiles: 0, reason: "disabled" };
+  const localDeformation = Boolean(local.applied);
+  const localDampen = localDeformation ? Math.max(0.12, Math.min(0.38, local.strength * 0.5)) : 0;
+  const effectiveBest = localDeformation
+    ? {
+        ...affineBest,
+        dx: affineBest.dx * (1 - localDampen * 0.25) + local.meanDx * localDampen * 0.25,
+        dy: affineBest.dy * (1 - localDampen * 0.25) + local.meanDy * localDampen * 0.25,
+        scaleX: 1 + (affineBest.scaleX - 1) * (1 - localDampen),
+        scaleY: 1 + (affineBest.scaleY - 1) * (1 - localDampen),
+        rotation: affineBest.rotation * (1 - localDampen)
+      }
+    : affineBest;
   const comparisonScore = Math.max(0, affineBest.secondScore, second);
   const confidence = Math.max(0, Math.min(1, (affineBest.score - comparisonScore) * 3 + Math.max(0, affineBest.score - 0.22)));
-  const docDx = -affineBest.dx * sourceSample.scaleX;
-  const docDy = -affineBest.dy * sourceSample.scaleY;
-  const scaleXPercent = Number((affineBest.scaleX * 100).toFixed(3));
-  const scaleYPercent = Number((affineBest.scaleY * 100).toFixed(3));
-  const scalePercent = Number((((affineBest.scaleX + affineBest.scaleY) / 2) * 100).toFixed(3));
-  const rotation = Number((Number(affineBest.rotation) || 0).toFixed(3));
+  const docDx = -effectiveBest.dx * sourceSample.scaleX;
+  const docDy = -effectiveBest.dy * sourceSample.scaleY;
+  const scaleXPercent = Number((effectiveBest.scaleX * 100).toFixed(3));
+  const scaleYPercent = Number((effectiveBest.scaleY * 100).toFixed(3));
+  const scalePercent = Number((((effectiveBest.scaleX + effectiveBest.scaleY) / 2) * 100).toFixed(3));
+  const rotation = Number((Number(effectiveBest.rotation) || 0).toFixed(3));
   const significant =
     Math.abs(docDx) >= 0.35 ||
     Math.abs(docDy) >= 0.35 ||
@@ -706,12 +858,17 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       rotation: 0,
       confidence,
       score: affineBest.score,
-      sampleDx: affineBest.dx,
-      sampleDy: affineBest.dy,
-      sampleScale: (affineBest.scaleX + affineBest.scaleY) / 2,
-      sampleScaleX: affineBest.scaleX,
-      sampleScaleY: affineBest.scaleY,
-      sampleRotation: affineBest.rotation,
+      sampleDx: effectiveBest.dx,
+      sampleDy: effectiveBest.dy,
+      sampleScale: (effectiveBest.scaleX + effectiveBest.scaleY) / 2,
+      sampleScaleX: effectiveBest.scaleX,
+      sampleScaleY: effectiveBest.scaleY,
+      sampleRotation: effectiveBest.rotation,
+      rawSampleDx: affineBest.dx,
+      rawSampleDy: affineBest.dy,
+      rawSampleScaleX: affineBest.scaleX,
+      rawSampleScaleY: affineBest.scaleY,
+      rawSampleRotation: affineBest.rotation,
       local,
       localDeformation,
       reason: significant ? "low-confidence" : "already-aligned"
@@ -727,12 +884,17 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     rotation,
     confidence,
     score: affineBest.score,
-    sampleDx: affineBest.dx,
-    sampleDy: affineBest.dy,
-    sampleScale: (affineBest.scaleX + affineBest.scaleY) / 2,
-    sampleScaleX: affineBest.scaleX,
-    sampleScaleY: affineBest.scaleY,
-    sampleRotation: affineBest.rotation,
+    sampleDx: effectiveBest.dx,
+    sampleDy: effectiveBest.dy,
+    sampleScale: (effectiveBest.scaleX + effectiveBest.scaleY) / 2,
+    sampleScaleX: effectiveBest.scaleX,
+    sampleScaleY: effectiveBest.scaleY,
+    sampleRotation: effectiveBest.rotation,
+    rawSampleDx: affineBest.dx,
+    rawSampleDy: affineBest.dy,
+    rawSampleScaleX: affineBest.scaleX,
+    rawSampleScaleY: affineBest.scaleY,
+    rawSampleRotation: affineBest.rotation,
     local,
     localDeformation,
     reason: Math.abs(rotation) >= 0.03 || Math.abs(scaleXPercent - scaleYPercent) >= 0.08 ? "gradient-ncc-affine" : scalePercent === 100 ? "gradient-ncc" : "gradient-ncc-scale"
@@ -809,7 +971,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         logs.push(`[融合校色] 梯度对齐已跳过：${alignment.reason}，confidence ${Number(alignment.confidence || 0).toFixed(2)}。`);
       }
       if (alignment.localDeformation) {
-        logs.push(`[融合校色] 局部对齐检测到轻微变形：${alignment.local.tiles.length} 个分块，偏移离散度 ${alignment.local.spread.toFixed(2)}px；已保守使用全局变换并依赖边缘融合过渡。`);
+        logs.push(`[融合校色] 局部网格对齐：${alignment.local.validTiles}/${alignment.local.totalTiles} 个分块有效，最大局部偏移 ${alignment.local.maxDistance.toFixed(2)}px，离散度 ${alignment.local.spread.toFixed(2)}px，强度 ${Math.round(alignment.local.strength * 100)}%；已用于约束全局对齐并交给边缘融合过渡。`);
+      } else if (alignment.local && alignment.local.enabled) {
+        logs.push(`[融合校色] 局部网格对齐已跳过：${alignment.local.reason}，有效分块 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}。`);
       }
     }
 
