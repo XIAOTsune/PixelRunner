@@ -1579,6 +1579,12 @@ button {
   padding-inline: 14px;
 }
 
+.blend-match-auto-field {
+  min-height: 30px;
+  border-color: rgba(126, 200, 154, 0.4);
+  background: rgba(9, 25, 21, 0.28);
+}
+
 .overlay-card.blend-match-modal-card {
   width: min(94vw, 640px);
 }
@@ -1603,16 +1609,30 @@ button {
   gap: 8px;
 }
 
+.blend-match-preview-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .blend-match-preview-frame {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 260px;
+  height: clamp(260px, 38vh, 520px);
   aspect-ratio: 16 / 9;
   border-radius: 10px;
   border: 1px solid rgba(147, 197, 153, 0.34);
   background: rgba(8, 14, 18, 0.42);
   overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.blend-match-preview-frame.is-panning {
+  cursor: grabbing;
 }
 
 #blendMatchPreviewCanvas {
@@ -1620,6 +1640,46 @@ button {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.blend-match-preview-split {
+  position: absolute;
+  inset: auto 14px 12px 14px;
+  z-index: 3;
+  width: calc(100% - 28px);
+  accent-color: #63d67b;
+}
+
+.blend-match-preview-split:not(.is-active) {
+  display: none;
+}
+
+.blend-match-preview-tools {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(147, 197, 153, 0.56);
+  background: rgba(8, 15, 23, 0.86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.blend-match-preview-tool-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .blend-match-preview-empty {

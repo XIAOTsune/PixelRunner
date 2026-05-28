@@ -9,11 +9,13 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
   contrastStrength: 45,
   featherRadius: 12,
   createBackupLayer: true,
-  alignmentEnabled: false,
+  alignmentEnabled: true,
   alignmentMaxOffset: 8,
-  alignmentScaleEnabled: false,
+  alignmentScaleEnabled: true,
   alignmentMaxScale: 2,
-  localAlignmentEnabled: false,
+  alignmentMaxRotation: 1.5,
+  alignmentMaxStretch: 2,
+  localAlignmentEnabled: true,
   previewMaxEdge: 512
 };
 
@@ -53,11 +55,13 @@ function getBlendMatchConfig(payload = {}) {
     contrastStrength: edgeOnly || colorOnly ? 0 : clampNumber(payload.contrastStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.contrastStrength) * modeBoost,
     featherRadius: clampNumber(payload.featherRadius, 0, 64, DEFAULT_BLEND_MATCH_CONFIG.featherRadius),
     createBackupLayer: payload.createBackupLayer !== false,
-    alignmentEnabled: payload.alignmentEnabled === true,
+    alignmentEnabled: payload.alignmentEnabled !== false,
     alignmentMaxOffset: clampNumber(payload.alignmentMaxOffset, 1, 24, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset),
-    alignmentScaleEnabled: payload.alignmentScaleEnabled === true,
+    alignmentScaleEnabled: payload.alignmentScaleEnabled !== false,
     alignmentMaxScale: clampNumber(payload.alignmentMaxScale, 0, 4, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxScale),
-    localAlignmentEnabled: payload.localAlignmentEnabled === true,
+    alignmentMaxRotation: clampNumber(payload.alignmentMaxRotation, 0, 3, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxRotation),
+    alignmentMaxStretch: clampNumber(payload.alignmentMaxStretch, 0, 4, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxStretch),
+    localAlignmentEnabled: payload.localAlignmentEnabled !== false,
     previewMaxEdge: clampNumber(payload.previewMaxEdge, 256, 768, DEFAULT_BLEND_MATCH_CONFIG.previewMaxEdge)
   };
 }
@@ -282,28 +286,33 @@ async function selectLayerById(action, layerId) {
   }], {});
 }
 
-async function transformLayerOffset(action, layerId, dx, dy) {
-  await action.batchPlay([{
+async function transformLayerAlignment(action, layerId, alignment) {
+  const scaleX = Number(alignment && alignment.scaleXPercent) || Number(alignment && alignment.scalePercent) || 100;
+  const scaleY = Number(alignment && alignment.scaleYPercent) || Number(alignment && alignment.scalePercent) || 100;
+  const rotation = Number(alignment && alignment.rotation) || 0;
+  const dx = Number(alignment && alignment.dx) || 0;
+  const dy = Number(alignment && alignment.dy) || 0;
+  const descriptor = {
     _obj: "transform",
     _target: [{ _ref: "layer", _id: Number(layerId) }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-    offset: {
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" }
+  };
+  if (Math.abs(scaleX - 100) >= 0.08 || Math.abs(scaleY - 100) >= 0.08) {
+    descriptor.width = { _unit: "percentUnit", _value: scaleX };
+    descriptor.height = { _unit: "percentUnit", _value: scaleY };
+    descriptor.linked = Math.abs(scaleX - scaleY) < 0.001;
+  }
+  if (Math.abs(rotation) >= 0.03) {
+    descriptor.angle = { _unit: "angleUnit", _value: rotation };
+  }
+  if (Math.abs(dx) >= 0.01 || Math.abs(dy) >= 0.01) {
+    descriptor.offset = {
       _obj: "offset",
       horizontal: { _unit: "pixelsUnit", _value: dx },
       vertical: { _unit: "pixelsUnit", _value: dy }
-    }
-  }], {});
-}
-
-async function transformLayerScale(action, layerId, scalePercent) {
-  await action.batchPlay([{
-    _obj: "transform",
-    _target: [{ _ref: "layer", _id: Number(layerId) }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-    width: { _unit: "percentUnit", _value: scalePercent },
-    height: { _unit: "percentUnit", _value: scalePercent },
-    linked: true
-  }], {});
+    };
+  }
+  await action.batchPlay([descriptor], {});
 }
 
 async function duplicateActiveLayer(action, layerName) {
@@ -356,45 +365,76 @@ async function applyColorBalance(action, correction) {
   }], {});
 }
 
-async function makeMaskFromActiveLayerTransparency(action) {
+async function setSelectionFromActiveLayerTransparency(action) {
   await action.batchPlay([
     {
       _obj: "set",
       _target: [{ _ref: "channel", _property: "selection" }],
       to: { _ref: "channel", _enum: "channel", _value: "transparencyEnum" }
-    },
+    }
+  ], {});
+}
+
+async function clearSelection(action) {
+  await action.batchPlay([{
+    _obj: "set",
+    _target: [{ _ref: "channel", _property: "selection" }],
+    to: { _enum: "ordinal", _value: "none" }
+  }], {});
+}
+
+async function makeMaskFromCurrentSelection(action) {
+  await action.batchPlay([
     {
       _obj: "make",
       new: { _class: "channel" },
       at: { _ref: "channel", _enum: "channel", _value: "mask" },
       using: { _enum: "userMaskEnabled", _value: "revealSelection" }
-    },
-    {
-      _obj: "set",
-      _target: [{ _ref: "channel", _property: "selection" }],
-      to: { _enum: "ordinal", _value: "none" }
     }
   ], {});
 }
 
-async function featherActiveLayerMask(action, radius) {
+async function contractSelection(action, radius) {
+  await action.batchPlay([{
+    _obj: "contract",
+    by: { _unit: "pixelsUnit", _value: radius },
+    selectionModifyEffectAtCanvasBounds: false
+  }], {});
+}
+
+async function featherSelection(action, radius) {
+  await action.batchPlay([{
+    _obj: "feather",
+    radius: { _unit: "pixelsUnit", _value: radius }
+  }], {});
+}
+
+async function makeInwardFeatherMaskFromActiveLayerTransparency(action, radius) {
   if (!(radius > 0)) return false;
-  await action.batchPlay([
-    {
-      _obj: "select",
-      _target: [{ _ref: "channel", _enum: "channel", _value: "mask" }],
-      makeVisible: false
-    },
-    {
-      _obj: "gaussianBlur",
-      radius: { _unit: "pixelsUnit", _value: radius }
-    },
-    {
-      _obj: "select",
-      _target: [{ _ref: "channel", _enum: "channel", _value: "RGB" }],
-      makeVisible: false
+  const baseRadius = Math.max(1, Math.round(Number(radius) || 0));
+  const candidates = Array.from(new Set([
+    baseRadius,
+    Math.max(1, Math.round(baseRadius * 0.65)),
+    Math.max(1, Math.round(baseRadius * 0.35))
+  ])).filter((value) => value > 0);
+
+  let lastError = null;
+  for (const insetRadius of candidates) {
+    try {
+      await setSelectionFromActiveLayerTransparency(action);
+      await contractSelection(action, insetRadius);
+      await featherSelection(action, insetRadius);
+      await makeMaskFromCurrentSelection(action);
+      await clearSelection(action);
+      return { applied: true, insetRadius };
+    } catch (error) {
+      lastError = error;
+      try {
+        await clearSelection(action);
+      } catch (_) {}
     }
-  ], {});
+  }
+  if (lastError) throw lastError;
   return true;
 }
 
@@ -404,9 +444,9 @@ async function applyFeatherBestEffort(action, radius, logs) {
     return false;
   }
   try {
-    await makeMaskFromActiveLayerTransparency(action);
-    await featherActiveLayerMask(action, radius);
-    logs.push(`[融合校色] 已基于当前图层透明度创建并羽化蒙版：${radius}px。`);
+    const result = await makeInwardFeatherMaskFromActiveLayerTransparency(action, radius);
+    const insetRadius = result && result.insetRadius ? result.insetRadius : radius;
+    logs.push(`[融合校色] 已基于当前图层透明度创建向内羽化蒙版：羽化 ${insetRadius}px。`);
     return true;
   } catch (error) {
     logs.push(`[融合校色] 蒙版羽化未完成：${error.message || "Photoshop 未接受蒙版命令"}。已保留校色结果层。`);
@@ -458,6 +498,16 @@ function sampleNearest(buffer, width, height, x, y) {
 }
 
 function scoreTransform(source, reference, width, height, dx, dy, scale, stride, region = null) {
+  return scoreAffineTransform(source, reference, width, height, {
+    dx,
+    dy,
+    scaleX: scale,
+    scaleY: scale,
+    rotation: 0
+  }, stride, region);
+}
+
+function scoreAffineTransform(source, reference, width, height, transform, stride, region = null) {
   let sumA = 0;
   let sumB = 0;
   let sumAA = 0;
@@ -466,7 +516,13 @@ function scoreTransform(source, reference, width, height, dx, dy, scale, stride,
   let count = 0;
   const cx = width / 2;
   const cy = height / 2;
-  const safeScale = Math.max(0.92, Math.min(1.08, Number(scale) || 1));
+  const scaleX = Math.max(0.92, Math.min(1.08, Number(transform && transform.scaleX) || 1));
+  const scaleY = Math.max(0.92, Math.min(1.08, Number(transform && transform.scaleY) || 1));
+  const rotation = ((Number(transform && transform.rotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(-rotation);
+  const sin = Math.sin(-rotation);
+  const dx = Number(transform && transform.dx) || 0;
+  const dy = Number(transform && transform.dy) || 0;
   const startX = Math.max(1, region ? region.left : 1);
   const endX = Math.min(width - 1, region ? region.right : width - 1);
   const startY = Math.max(1, region ? region.top : 1);
@@ -474,8 +530,10 @@ function scoreTransform(source, reference, width, height, dx, dy, scale, stride,
   for (let y = startY; y < endY; y += stride) {
     const refRow = y * width;
     for (let x = startX; x < endX; x += stride) {
-      const sourceX = cx + (x - cx) / safeScale + dx;
-      const sourceY = cy + (y - cy) / safeScale + dy;
+      const localX = x - cx;
+      const localY = y - cy;
+      const sourceX = cx + ((localX * cos - localY * sin) / scaleX) + dx;
+      const sourceY = cy + ((localX * sin + localY * cos) / scaleY) + dy;
       if (sourceX < 1 || sourceX >= width - 1 || sourceY < 1 || sourceY >= height - 1) continue;
       const a = sampleNearest(source, width, height, sourceX, sourceY);
       const b = reference[refRow + x];
@@ -507,6 +565,56 @@ function buildScaleCandidates(maxScalePercent, enabled) {
     }
   });
   return out.sort((a, b) => Math.abs(a - 1) - Math.abs(b - 1));
+}
+
+function buildSymmetricCandidates(maxValue, enabled, unit = 1) {
+  if (!enabled || !(maxValue > 0)) return [0];
+  const max = Math.max(0, Number(maxValue) || 0);
+  const half = max / 2;
+  const raw = [0, -half, half, -max, max]
+    .map((value) => Math.round(value / unit) * unit)
+    .filter((value, index, list) => Math.abs(value) > 0.0001 || index === list.indexOf(0));
+  return Array.from(new Set(raw)).sort((a, b) => Math.abs(a) - Math.abs(b));
+}
+
+function refineAffineAlignment(sourceGrad, refGrad, width, height, base, baseSecondScore, config, sampleOffset, stride) {
+  const rotationCandidates = buildSymmetricCandidates(config.alignmentMaxRotation, true, 0.25);
+  const maxStretch = Math.max(0, Number(config.alignmentMaxStretch) || 0);
+  const stretchCandidates = config.alignmentScaleEnabled && maxStretch > 0 ? [0, -maxStretch, maxStretch] : [0];
+  const offsetWindow = Math.max(1, Math.min(2, Math.round(sampleOffset / 5)));
+  const refineStride = Math.max(stride, Math.floor(stride * 1.5));
+  let best = {
+    dx: base.dx,
+    dy: base.dy,
+    scaleX: base.scale,
+    scaleY: base.scale,
+    rotation: 0,
+    score: base.score
+  };
+  let second = Number(baseSecondScore) || -1;
+  for (let dy = base.dy - offsetWindow; dy <= base.dy + offsetWindow; dy += 1) {
+    for (let dx = base.dx - offsetWindow; dx <= base.dx + offsetWindow; dx += 1) {
+      rotationCandidates.forEach((rotation) => {
+        stretchCandidates.forEach((stretchX) => {
+          stretchCandidates.forEach((stretchY) => {
+            const scaleX = Math.max(0.92, Math.min(1.08, base.scale * (1 + stretchX / 100)));
+            const scaleY = Math.max(0.92, Math.min(1.08, base.scale * (1 + stretchY / 100)));
+            const score = scoreAffineTransform(sourceGrad, refGrad, width, height, { dx, dy, scaleX, scaleY, rotation }, refineStride);
+            if (score > best.score) {
+              second = best.score;
+              best = { dx, dy, scaleX, scaleY, rotation, score };
+            } else if (score > second) {
+              second = score;
+            }
+          });
+        });
+      });
+    }
+  }
+  return {
+    ...best,
+    secondScore: second
+  };
 }
 
 function estimateTileOffsets(sourceGrad, refGrad, width, height, sampleOffset, stride) {
@@ -544,7 +652,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   }
   const config = typeof configOrMaxOffset === "object"
     ? configOrMaxOffset
-    : { alignmentMaxOffset: configOrMaxOffset, alignmentScaleEnabled: false, alignmentMaxScale: 0, localAlignmentEnabled: false };
+    : { alignmentMaxOffset: configOrMaxOffset, alignmentScaleEnabled: false, alignmentMaxScale: 0, alignmentMaxRotation: 0, alignmentMaxStretch: 0, localAlignmentEnabled: false };
   const width = sourceSample.width;
   const height = sourceSample.height;
   if (width < 32 || height < 32) return { applied: false, dx: 0, dy: 0, confidence: 0, reason: "too-small" };
@@ -568,26 +676,42 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       }
     }
   });
+  const affineBest = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
   const local = config.localAlignmentEnabled
     ? estimateTileOffsets(sourceGrad, refGrad, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride))
     : { tiles: [], spread: 0, meanDx: 0, meanDy: 0 };
   const localDeformation = local.tiles.length >= 4 && local.spread >= 1.4;
-  const confidence = Math.max(0, Math.min(1, (best.score - Math.max(0, second)) * 3 + Math.max(0, best.score - 0.22)));
-  const docDx = -best.dx * sourceSample.scaleX;
-  const docDy = -best.dy * sourceSample.scaleY;
-  const scalePercent = Number((best.scale * 100).toFixed(3));
-  const significant = Math.abs(docDx) >= 0.35 || Math.abs(docDy) >= 0.35 || Math.abs(scalePercent - 100) >= 0.08;
+  const comparisonScore = Math.max(0, affineBest.secondScore, second);
+  const confidence = Math.max(0, Math.min(1, (affineBest.score - comparisonScore) * 3 + Math.max(0, affineBest.score - 0.22)));
+  const docDx = -affineBest.dx * sourceSample.scaleX;
+  const docDy = -affineBest.dy * sourceSample.scaleY;
+  const scaleXPercent = Number((affineBest.scaleX * 100).toFixed(3));
+  const scaleYPercent = Number((affineBest.scaleY * 100).toFixed(3));
+  const scalePercent = Number((((affineBest.scaleX + affineBest.scaleY) / 2) * 100).toFixed(3));
+  const rotation = Number((Number(affineBest.rotation) || 0).toFixed(3));
+  const significant =
+    Math.abs(docDx) >= 0.35 ||
+    Math.abs(docDy) >= 0.35 ||
+    Math.abs(scaleXPercent - 100) >= 0.08 ||
+    Math.abs(scaleYPercent - 100) >= 0.08 ||
+    Math.abs(rotation) >= 0.03;
   if (confidence < 0.18 || !significant) {
     return {
       applied: false,
       dx: 0,
       dy: 0,
       scalePercent: 100,
+      scaleXPercent: 100,
+      scaleYPercent: 100,
+      rotation: 0,
       confidence,
-      score: best.score,
-      sampleDx: best.dx,
-      sampleDy: best.dy,
-      sampleScale: best.scale,
+      score: affineBest.score,
+      sampleDx: affineBest.dx,
+      sampleDy: affineBest.dy,
+      sampleScale: (affineBest.scaleX + affineBest.scaleY) / 2,
+      sampleScaleX: affineBest.scaleX,
+      sampleScaleY: affineBest.scaleY,
+      sampleRotation: affineBest.rotation,
       local,
       localDeformation,
       reason: significant ? "low-confidence" : "already-aligned"
@@ -598,14 +722,20 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     dx: Number(docDx.toFixed(2)),
     dy: Number(docDy.toFixed(2)),
     scalePercent,
+    scaleXPercent,
+    scaleYPercent,
+    rotation,
     confidence,
-    score: best.score,
-    sampleDx: best.dx,
-    sampleDy: best.dy,
-    sampleScale: best.scale,
+    score: affineBest.score,
+    sampleDx: affineBest.dx,
+    sampleDy: affineBest.dy,
+    sampleScale: (affineBest.scaleX + affineBest.scaleY) / 2,
+    sampleScaleX: affineBest.scaleX,
+    sampleScaleY: affineBest.scaleY,
+    sampleRotation: affineBest.rotation,
     local,
     localDeformation,
-    reason: best.scale === 1 ? "gradient-ncc" : "gradient-ncc-scale"
+    reason: Math.abs(rotation) >= 0.03 || Math.abs(scaleXPercent - scaleYPercent) >= 0.08 ? "gradient-ncc-affine" : scalePercent === 100 ? "gradient-ncc" : "gradient-ncc-scale"
   };
 }
 
@@ -674,7 +804,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
     if (config.alignmentEnabled) {
       if (alignment.applied) {
-        logs.push(`[融合校色] 梯度对齐：dx ${alignment.dx}px, dy ${alignment.dy}px, scale ${Number(alignment.scalePercent || 100).toFixed(2)}%, confidence ${alignment.confidence.toFixed(2)}。`);
+        logs.push(`[融合校色] 梯度对齐：dx ${alignment.dx}px, dy ${alignment.dy}px, scaleX ${Number(alignment.scaleXPercent || 100).toFixed(2)}%, scaleY ${Number(alignment.scaleYPercent || 100).toFixed(2)}%, rotate ${Number(alignment.rotation || 0).toFixed(2)}°, confidence ${alignment.confidence.toFixed(2)}。`);
       } else {
         logs.push(`[融合校色] 梯度对齐已跳过：${alignment.reason}，confidence ${Number(alignment.confidence || 0).toFixed(2)}。`);
       }
@@ -701,10 +831,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     }
 
     if (alignment.applied) {
-      if (Math.abs(Number(alignment.scalePercent || 100) - 100) >= 0.08) {
-        await transformLayerScale(action, resultLayerId, alignment.scalePercent);
-      }
-      await transformLayerOffset(action, resultLayerId, alignment.dx, alignment.dy);
+      await transformLayerAlignment(action, resultLayerId, alignment);
       await selectLayerById(action, resultLayerId);
     }
 

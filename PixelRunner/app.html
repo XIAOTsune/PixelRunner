@@ -159,6 +159,10 @@
             <button id="btnOpenBlendMatchPanel" class="primary-btn blend-match-open-btn" type="button">打开融合校色</button>
           </div>
           <div id="blendMatchQuickHint" class="summary-strip">模式 均衡 / 强度 70% / 羽化 12px</div>
+          <label class="freq-sep-check-field blend-match-auto-field">
+            <input id="blendMatchAutoToggle" type="checkbox" />
+            <span>AI 返图后立即融合校色</span>
+          </label>
           <div id="blendMatchStatus" class="summary-strip">等待选择返图图层</div>
         </section>
 
@@ -1162,13 +1166,21 @@
       <div class="blend-match-preview-panel">
         <div class="blend-match-preview-toolbar">
           <span id="blendMatchPreviewState" class="status-chip">等待预览</span>
-          <button id="btnBlendMatchRefreshPreview" class="mini-btn" type="button">刷新边界预览</button>
+          <div class="blend-match-preview-toolbar-actions">
+            <button id="btnBlendMatchRefreshPreview" class="mini-btn" type="button">刷新预览</button>
+          </div>
         </div>
-        <div class="blend-match-preview-frame">
+        <div id="blendMatchPreviewFrame" class="blend-match-preview-frame">
           <canvas id="blendMatchPreviewCanvas" aria-label="融合校色边界预览"></canvas>
+          <input id="blendMatchPreviewSplitInput" class="blend-match-preview-split" type="range" min="0" max="100" step="1" value="50" aria-label="融合前后对比位置" />
+          <div class="blend-match-preview-tools" aria-label="预览缩放工具">
+            <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="out" title="缩小预览">−</button>
+            <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="reset" title="重置预览">⟲</button>
+            <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="in" title="放大预览">+</button>
+          </div>
           <div id="blendMatchPreviewEmpty" class="blend-match-preview-empty">打开面板后刷新当前图层边界预览</div>
         </div>
-        <div id="blendMatchPreviewMeta" class="blend-match-preview-meta">当前图层 / 隐藏返图参考 / 模拟融合边界</div>
+        <div id="blendMatchPreviewMeta" class="blend-match-preview-meta">左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围</div>
       </div>
 
       <div class="blend-match-controls">
@@ -1215,6 +1227,14 @@
           <span class="glow-param-line"><span class="field-label">最大缩放</span><span><span id="blendMatchScaleValue">2</span>%</span></span>
           <input id="blendMatchScaleInput" class="field-input glow-strength-slider" type="range" min="0" max="4" step="0.5" value="2" />
         </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">最大旋转</span><span><span id="blendMatchRotationValue">1.5</span>°</span></span>
+          <input id="blendMatchRotationInput" class="field-input glow-strength-slider" type="range" min="0" max="3" step="0.25" value="1.5" />
+        </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">最大拉伸</span><span><span id="blendMatchStretchValue">2</span>%</span></span>
+          <input id="blendMatchStretchInput" class="field-input glow-strength-slider" type="range" min="0" max="4" step="0.5" value="2" />
+        </label>
       </div>
 
       <div class="blend-match-options">
@@ -1223,20 +1243,16 @@
           <span>保留原返图图层作为隐藏备份</span>
         </label>
         <label class="freq-sep-check-field">
-          <input id="blendMatchAlignmentToggle" type="checkbox" />
+          <input id="blendMatchAlignmentToggle" type="checkbox" checked />
           <span>启用梯度小范围对齐</span>
         </label>
         <label class="freq-sep-check-field">
-          <input id="blendMatchScaleToggle" type="checkbox" />
+          <input id="blendMatchScaleToggle" type="checkbox" checked />
           <span>允许微缩放对齐</span>
         </label>
         <label class="freq-sep-check-field">
-          <input id="blendMatchLocalToggle" type="checkbox" />
+          <input id="blendMatchLocalToggle" type="checkbox" checked />
           <span>检测局部轻微变形</span>
-        </label>
-        <label class="freq-sep-check-field">
-          <input id="blendMatchAutoToggle" type="checkbox" />
-          <span>AI 返图自动贴回后立即融合校色</span>
         </label>
       </div>
 

@@ -11,11 +11,13 @@
     contrastStrength: 45,
     featherRadius: 12,
     createBackupLayer: true,
-    alignmentEnabled: false,
+    alignmentEnabled: true,
     alignmentMaxOffset: 8,
-    alignmentScaleEnabled: false,
+    alignmentScaleEnabled: true,
     alignmentMaxScale: 2,
-    localAlignmentEnabled: false,
+    alignmentMaxRotation: 1.5,
+    alignmentMaxStretch: 2,
+    localAlignmentEnabled: true,
     previewMaxEdge: 512
   };
 
@@ -32,7 +34,14 @@
     busy: false,
     previewBusy: false,
     preview: null,
-    previewRenderTimer: 0
+    previewRenderTimer: 0,
+    previewView: {
+      scale: 1,
+      x: 0,
+      y: 0,
+      split: 0.5,
+      isPanning: false
+    }
   };
 
   function clampNumber(value, min, max, fallback) {
@@ -58,11 +67,13 @@
       contrastStrength: edgeOnly || colorOnly ? 0 : clampNumber(source.contrastStrength, 0, 100, DEFAULT_SETTINGS.contrastStrength),
       featherRadius: clampNumber(source.featherRadius, 0, 64, DEFAULT_SETTINGS.featherRadius),
       createBackupLayer: source.createBackupLayer !== false,
-      alignmentEnabled: Boolean(source.alignmentEnabled),
+      alignmentEnabled: source.alignmentEnabled !== false,
       alignmentMaxOffset: clampNumber(source.alignmentMaxOffset, 1, 24, DEFAULT_SETTINGS.alignmentMaxOffset),
-      alignmentScaleEnabled: Boolean(source.alignmentScaleEnabled),
+      alignmentScaleEnabled: source.alignmentScaleEnabled !== false,
       alignmentMaxScale: Math.max(0, Math.min(4, Number(source.alignmentMaxScale ?? DEFAULT_SETTINGS.alignmentMaxScale) || DEFAULT_SETTINGS.alignmentMaxScale)),
-      localAlignmentEnabled: Boolean(source.localAlignmentEnabled),
+      alignmentMaxRotation: Math.max(0, Math.min(3, Number(source.alignmentMaxRotation ?? DEFAULT_SETTINGS.alignmentMaxRotation) || DEFAULT_SETTINGS.alignmentMaxRotation)),
+      alignmentMaxStretch: Math.max(0, Math.min(4, Number(source.alignmentMaxStretch ?? DEFAULT_SETTINGS.alignmentMaxStretch) || DEFAULT_SETTINGS.alignmentMaxStretch)),
+      localAlignmentEnabled: source.localAlignmentEnabled !== false,
       previewMaxEdge: clampNumber(source.previewMaxEdge, 256, 768, DEFAULT_SETTINGS.previewMaxEdge)
     };
   }
@@ -120,6 +131,8 @@
     setText("blendMatchFeatherValue", settings.featherRadius);
     setText("blendMatchAlignValue", settings.alignmentMaxOffset);
     setText("blendMatchScaleValue", settings.alignmentMaxScale);
+    setText("blendMatchRotationValue", settings.alignmentMaxRotation);
+    setText("blendMatchStretchValue", settings.alignmentMaxStretch);
     setValue("blendMatchModeInput", settings.mode);
     setValue("blendMatchTotalInput", settings.totalStrength);
     setValue("blendMatchLuminanceInput", settings.luminanceStrength);
@@ -129,6 +142,8 @@
     setValue("blendMatchFeatherInput", settings.featherRadius);
     setValue("blendMatchAlignInput", settings.alignmentMaxOffset);
     setValue("blendMatchScaleInput", settings.alignmentMaxScale);
+    setValue("blendMatchRotationInput", settings.alignmentMaxRotation);
+    setValue("blendMatchStretchInput", settings.alignmentMaxStretch);
     setChecked("blendMatchBackupToggle", settings.createBackupLayer);
     setChecked("blendMatchAlignmentToggle", settings.alignmentEnabled);
     setChecked("blendMatchScaleToggle", settings.alignmentScaleEnabled);
@@ -148,6 +163,8 @@
       featherRadius: getById("blendMatchFeatherInput") && getById("blendMatchFeatherInput").value,
       alignmentMaxOffset: getById("blendMatchAlignInput") && getById("blendMatchAlignInput").value,
       alignmentMaxScale: getById("blendMatchScaleInput") && getById("blendMatchScaleInput").value,
+      alignmentMaxRotation: getById("blendMatchRotationInput") && getById("blendMatchRotationInput").value,
+      alignmentMaxStretch: getById("blendMatchStretchInput") && getById("blendMatchStretchInput").value,
       createBackupLayer: !getById("blendMatchBackupToggle") || getById("blendMatchBackupToggle").checked,
       alignmentEnabled: Boolean(getById("blendMatchAlignmentToggle") && getById("blendMatchAlignmentToggle").checked),
       alignmentScaleEnabled: Boolean(getById("blendMatchScaleToggle") && getById("blendMatchScaleToggle").checked),
@@ -253,6 +270,91 @@
     return out;
   }
 
+  function erodeMask(mask, width, height, radius) {
+    const r = Math.max(1, Math.min(18, Math.round(radius)));
+    const out = new Float32Array(mask.length);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        let minValue = 1;
+        for (let yy = Math.max(0, y - r); yy <= Math.min(height - 1, y + r); yy += 1) {
+          for (let xx = Math.max(0, x - r); xx <= Math.min(width - 1, x + r); xx += 1) {
+            minValue = Math.min(minValue, mask[yy * width + xx]);
+          }
+        }
+        out[y * width + x] = minValue;
+      }
+    }
+    return out;
+  }
+
+  function findMaskEdge(mask, width, height, index, threshold) {
+    if (mask[index] <= threshold) return false;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    const left = x > 0 ? mask[index - 1] : 0;
+    const right = x < width - 1 ? mask[index + 1] : 0;
+    const top = y > 0 ? mask[index - width] : 0;
+    const bottom = y < height - 1 ? mask[index + width] : 0;
+    return left <= threshold || right <= threshold || top <= threshold || bottom <= threshold;
+  }
+
+  function clampPreviewView() {
+    const canvas = getById("blendMatchPreviewCanvas");
+    const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
+    if (!canvas || !frame) return;
+    const view = localState.previewView;
+    const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
+    view.scale = scale;
+    const rect = frame.getBoundingClientRect ? frame.getBoundingClientRect() : { width: 0, height: 0 };
+    const viewportWidth = Number(rect.width) || 0;
+    const viewportHeight = Number(rect.height) || 0;
+    const contentWidth = Number(canvas.width) || viewportWidth || 1;
+    const contentHeight = Number(canvas.height) || viewportHeight || 1;
+    const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
+    const renderedWidth = contentWidth * fitScale * scale;
+    const renderedHeight = contentHeight * fitScale * scale;
+    const maxX = Math.max(0, (renderedWidth - viewportWidth) / 2);
+    const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
+    view.x = Math.max(-maxX, Math.min(maxX, Number(view.x) || 0));
+    view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
+  }
+
+  function applyPreviewTransform() {
+    const canvas = getById("blendMatchPreviewCanvas");
+    if (!canvas) return;
+    clampPreviewView();
+    const view = localState.previewView;
+    canvas.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+  }
+
+  function resetPreviewTransform() {
+    localState.previewView.scale = 1;
+    localState.previewView.x = 0;
+    localState.previewView.y = 0;
+    applyPreviewTransform();
+  }
+
+  function zoomPreview(nextScale, anchorX, anchorY) {
+    const frame = getById("blendMatchPreviewFrame");
+    if (!frame) return;
+    const view = localState.previewView;
+    const previousScale = Math.max(0.35, Number(view.scale) || 1);
+    const scale = Math.max(0.35, Math.min(8, Number(nextScale) || 1));
+    const rect = frame.getBoundingClientRect();
+    const localX = Number(anchorX) - rect.left - rect.width / 2;
+    const localY = Number(anchorY) - rect.top - rect.height / 2;
+    if (Math.abs(scale - previousScale) >= 0.001) {
+      view.x = (view.x - localX) * (scale / previousScale) + localX;
+      view.y = (view.y - localY) * (scale / previousScale) + localY;
+    }
+    view.scale = scale;
+    if (scale <= 1.001) {
+      view.x = 0;
+      view.y = 0;
+    }
+    applyPreviewTransform();
+  }
+
   function drawPreviewCanvas() {
     const canvas = getById("blendMatchPreviewCanvas");
     const frame = canvas && canvas.closest(".blend-match-preview-frame");
@@ -260,10 +362,11 @@
     if (!canvas || !preview || !preview.sourceImage || !preview.referenceImage) return;
     const width = Math.max(1, preview.width);
     const height = Math.max(1, preview.height);
-    const gap = 8;
-    const labelHeight = 22;
-    canvas.width = width * 3 + gap * 2;
-    canvas.height = height + labelHeight;
+    const splitInput = getById("blendMatchPreviewSplitInput");
+    const split = Math.max(0.02, Math.min(0.98, Number(splitInput && splitInput.value) / 100 || localState.previewView.split || 0.5));
+    localState.previewView.split = split;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -280,7 +383,8 @@
     };
     const source = makeData(preview.sourceImage);
     const reference = makeData(preview.referenceImage);
-    const result = ctx.createImageData(width, height);
+    const display = ctx.createImageData(width, height);
+    const after = ctx.createImageData(width, height);
     const mask = new Float32Array(width * height);
     for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
       const diff = (
@@ -291,24 +395,56 @@
       mask[p] = Math.max(0, Math.min(1, (diff - 8) / 42));
     }
     const featherScale = Math.max(1, Math.max(preview.boundsWidth || width, preview.boundsHeight || height) / Math.max(width, height));
-    const blurred = boxBlurMask(mask, width, height, Math.max(1, localState.settings.featherRadius / featherScale));
+    const featherRadius = Math.max(1, localState.settings.featherRadius / featherScale);
+    const inwardMask = erodeMask(mask, width, height, featherRadius);
+    const inwardHasContent = inwardMask.some ? inwardMask.some((value) => value > 0.04) : Array.from(inwardMask).some((value) => value > 0.04);
+    const baseMask = inwardHasContent ? inwardMask : mask;
+    const blurred = boxBlurMask(baseMask, width, height, featherRadius);
+    const splitX = Math.round(width * split);
     for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
       const corrected = applyPreviewCorrection(source.data[i], source.data[i + 1], source.data[i + 2], preview.corrections);
       const alpha = Math.max(0, Math.min(1, blurred[p]));
-      result.data[i] = clampByte(reference.data[i] * (1 - alpha) + corrected[0] * alpha);
-      result.data[i + 1] = clampByte(reference.data[i + 1] * (1 - alpha) + corrected[1] * alpha);
-      result.data[i + 2] = clampByte(reference.data[i + 2] * (1 - alpha) + corrected[2] * alpha);
-      result.data[i + 3] = 255;
+      after.data[i] = clampByte(reference.data[i] * (1 - alpha) + corrected[0] * alpha);
+      after.data[i + 1] = clampByte(reference.data[i + 1] * (1 - alpha) + corrected[1] * alpha);
+      after.data[i + 2] = clampByte(reference.data[i + 2] * (1 - alpha) + corrected[2] * alpha);
+      after.data[i + 3] = 255;
+      const x = p % width;
+      const useAfter = x >= splitX;
+      display.data[i] = useAfter ? after.data[i] : source.data[i];
+      display.data[i + 1] = useAfter ? after.data[i + 1] : source.data[i + 1];
+      display.data[i + 2] = useAfter ? after.data[i + 2] : source.data[i + 2];
+      display.data[i + 3] = 255;
+      const band = alpha > 0.08 && alpha < 0.92 ? Math.min(0.34, 0.08 + Math.sin(alpha * Math.PI) * 0.22) : 0;
+      if (band > 0) {
+        display.data[i] = clampByte(display.data[i] * (1 - band) + 80 * band);
+        display.data[i + 1] = clampByte(display.data[i + 1] * (1 - band) + 226 * band);
+        display.data[i + 2] = clampByte(display.data[i + 2] * (1 - band) + 140 * band);
+      }
+      if (findMaskEdge(mask, width, height, p, 0.18)) {
+        display.data[i] = 80;
+        display.data[i + 1] = 232;
+        display.data[i + 2] = 232;
+      }
     }
-    ctx.drawImage(preview.sourceImage, 0, labelHeight, width, height);
-    ctx.drawImage(preview.referenceImage, width + gap, labelHeight, width, height);
-    ctx.putImageData(result, width * 2 + gap * 2, labelHeight);
-    ctx.fillStyle = "rgba(255,255,255,0.86)";
-    ctx.font = "12px sans-serif";
-    ctx.fillText("当前", 8, 15);
-    ctx.fillText("参考", width + gap + 8, 15);
-    ctx.fillText("边界融合预览", width * 2 + gap * 2 + 8, 15);
+    ctx.putImageData(display, 0, 0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = Math.max(1, Math.round(width / 420));
+    ctx.beginPath();
+    ctx.moveTo(splitX + 0.5, 0);
+    ctx.lineTo(splitX + 0.5, height);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(5, 12, 16, 0.68)";
+    ctx.fillRect(8, 8, 74, 22);
+    ctx.fillRect(Math.max(8, width - 82), 8, 74, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = `${Math.max(11, Math.round(width / 62))}px sans-serif`;
+    ctx.fillText("融合前", 16, 24);
+    ctx.fillText("融合后", Math.max(16, width - 74), 24);
+    ctx.restore();
     frame && frame.classList.add("has-preview");
+    if (splitInput) splitInput.classList.add("is-active");
+    applyPreviewTransform();
   }
 
   function schedulePreviewRender() {
@@ -343,8 +479,8 @@
       setPreviewState("实时预览");
       const alignment = result.alignment;
       setText("blendMatchPreviewMeta", alignment && alignment.applied
-        ? `梯度对齐建议 dx ${alignment.dx}px / dy ${alignment.dy}px / scale ${Number(alignment.scalePercent || 100).toFixed(2)}% / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${alignment.localDeformation ? " / 局部变形" : ""}`
-        : "当前图层 / 隐藏返图参考 / 模拟融合边界");
+        ? `左融合前 / 右融合后 / dx ${alignment.dx}px / dy ${alignment.dy}px / X ${Number(alignment.scaleXPercent || alignment.scalePercent || 100).toFixed(2)}% / Y ${Number(alignment.scaleYPercent || alignment.scalePercent || 100).toFixed(2)}% / 旋转 ${Number(alignment.rotation || 0).toFixed(2)}° / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${alignment.localDeformation ? " / 局部变形" : ""}`
+        : "左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围");
       drawPreviewCanvas();
     } catch (error) {
       setPreviewState("预览失败");
@@ -439,6 +575,8 @@
       "blendMatchFeatherInput",
       "blendMatchAlignInput",
       "blendMatchScaleInput",
+      "blendMatchRotationInput",
+      "blendMatchStretchInput",
       "blendMatchBackupToggle",
       "blendMatchAlignmentToggle",
       "blendMatchScaleToggle",
@@ -449,6 +587,77 @@
       if (!input) return;
       input.addEventListener("input", readSettingsFromInputs);
       input.addEventListener("change", readSettingsFromInputs);
+    });
+
+    const splitInput = getById("blendMatchPreviewSplitInput");
+    if (splitInput) {
+      splitInput.addEventListener("input", () => {
+        localState.previewView.split = Math.max(0.02, Math.min(0.98, Number(splitInput.value) / 100 || 0.5));
+        schedulePreviewRender();
+      });
+      splitInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+    }
+
+    const previewFrame = getById("blendMatchPreviewFrame");
+    if (previewFrame) {
+      previewFrame.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const direction = event.deltaY > 0 ? -1 : 1;
+        const factor = direction > 0 ? 1.18 : 1 / 1.18;
+        zoomPreview(localState.previewView.scale * factor, event.clientX, event.clientY);
+      }, { passive: false });
+
+      previewFrame.addEventListener("pointerdown", (event) => {
+        if (event.button != null && event.button !== 0) return;
+        if ((Number(localState.previewView.scale) || 1) <= 1.001) return;
+        event.preventDefault();
+        localState.previewView.isPanning = true;
+        localState.previewView.startX = event.clientX;
+        localState.previewView.startY = event.clientY;
+        localState.previewView.startPanX = localState.previewView.x;
+        localState.previewView.startPanY = localState.previewView.y;
+        previewFrame.classList.add("is-panning");
+      });
+
+      const movePan = (event) => {
+        if (!localState.previewView.isPanning) return;
+        event.preventDefault();
+        localState.previewView.x = localState.previewView.startPanX + event.clientX - localState.previewView.startX;
+        localState.previewView.y = localState.previewView.startPanY + event.clientY - localState.previewView.startY;
+        applyPreviewTransform();
+      };
+
+      const endPan = (event) => {
+        if (!localState.previewView.isPanning) return;
+        event.preventDefault();
+        localState.previewView.isPanning = false;
+        previewFrame.classList.remove("is-panning");
+      };
+      window.addEventListener("pointermove", movePan, { passive: false });
+      window.addEventListener("pointerup", endPan, { passive: false });
+      window.addEventListener("pointercancel", endPan, { passive: false });
+      window.addEventListener("blur", () => {
+        localState.previewView.isPanning = false;
+        previewFrame.classList.remove("is-panning");
+      });
+      previewFrame.addEventListener("dblclick", resetPreviewTransform);
+    }
+
+    document.querySelectorAll("[data-blend-match-zoom]").forEach((button) => {
+      button.addEventListener("pointerdown", (event) => event.stopPropagation());
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const action = String(button.getAttribute("data-blend-match-zoom") || "");
+        if (action === "reset") {
+          resetPreviewTransform();
+          return;
+        }
+        const frame = getById("blendMatchPreviewFrame");
+        if (!frame) return;
+        const rect = frame.getBoundingClientRect();
+        const factor = action === "in" ? 1.25 : 1 / 1.25;
+        zoomPreview(localState.previewView.scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      });
     });
   }
 
