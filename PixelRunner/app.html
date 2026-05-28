@@ -1200,20 +1200,12 @@
           <input id="blendMatchTotalInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="78" />
         </label>
         <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">明度匹配</span><span id="blendMatchLuminanceValue">82</span></span>
-          <input id="blendMatchLuminanceInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="82" />
+          <span class="glow-param-line"><span class="field-label">明暗匹配</span><span id="blendMatchToneValue">78</span></span>
+          <input id="blendMatchToneInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="78" />
         </label>
         <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">色偏匹配</span><span id="blendMatchColorValue">76</span></span>
-          <input id="blendMatchColorInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="76" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">饱和度匹配</span><span id="blendMatchSaturationValue">62</span></span>
-          <input id="blendMatchSaturationInput" class="field-input glow-strength-slider" type="range" min="-100" max="100" step="1" value="62" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">对比匹配</span><span id="blendMatchContrastValue">58</span></span>
-          <input id="blendMatchContrastInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="58" />
+          <span class="glow-param-line"><span class="field-label">色彩匹配</span><span id="blendMatchColorMatchValue">76</span></span>
+          <input id="blendMatchColorMatchInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="76" />
         </label>
         <label class="field blend-match-field">
           <span class="glow-param-line"><span class="field-label">羽化半径</span><span><span id="blendMatchFeatherValue">16</span> px</span></span>
@@ -1224,16 +1216,8 @@
           <input id="blendMatchAlignInput" class="field-input glow-strength-slider" type="range" min="1" max="24" step="1" value="12" />
         </label>
         <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">最大缩放</span><span><span id="blendMatchScaleValue">2.5</span>%</span></span>
-          <input id="blendMatchScaleInput" class="field-input glow-strength-slider" type="range" min="0" max="4" step="0.5" value="2.5" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">最大旋转</span><span><span id="blendMatchRotationValue">1.75</span>°</span></span>
-          <input id="blendMatchRotationInput" class="field-input glow-strength-slider" type="range" min="0" max="3" step="0.25" value="1.75" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">最大拉伸</span><span><span id="blendMatchStretchValue">2.5</span>%</span></span>
-          <input id="blendMatchStretchInput" class="field-input glow-strength-slider" type="range" min="0" max="4" step="0.5" value="2.5" />
+          <span class="glow-param-line"><span class="field-label">形变余量</span><span id="blendMatchAlignmentFlexValue">63</span></span>
+          <input id="blendMatchAlignmentFlexInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="63" />
         </label>
       </div>
 
@@ -1244,19 +1228,11 @@
         </label>
         <label class="freq-sep-check-field">
           <input id="blendMatchAlignmentToggle" type="checkbox" checked />
-          <span>启用梯度小范围对齐</span>
-        </label>
-        <label class="freq-sep-check-field">
-          <input id="blendMatchScaleToggle" type="checkbox" checked />
-          <span>允许微缩放对齐</span>
-        </label>
-        <label class="freq-sep-check-field">
-          <input id="blendMatchLocalToggle" type="checkbox" checked />
-          <span>启用局部网格对齐</span>
+          <span>启用像素对齐</span>
         </label>
       </div>
 
-      <div class="summary-strip">预览在插件内用缩略图模拟边界融合；应用时会在 Photoshop 中执行一次完整动作。</div>
+      <div class="summary-strip">预览在插件内用缩略图模拟边界融合；应用时会生成像素级融合结果层，并保留一个可调羽化蒙版。</div>
 
       <div class="action-row blend-match-actions">
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>

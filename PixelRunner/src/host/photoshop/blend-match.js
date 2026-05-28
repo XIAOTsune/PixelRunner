@@ -396,6 +396,361 @@ function buildCorrections(sourceStats, referenceStats, config) {
   };
 }
 
+function clampByte(value) {
+  return Math.max(0, Math.min(255, Math.round(Number(value) || 0)));
+}
+
+function lerp(a, b, t) {
+  return a * (1 - t) + b * t;
+}
+
+function getSamplePixelCount(sample) {
+  return Math.max(1, (Number(sample && sample.width) || 1) * (Number(sample && sample.height) || 1));
+}
+
+function copyRgba(data) {
+  const out = new Uint8Array(data.length);
+  out.set(data);
+  return out;
+}
+
+function boxBlurFloat(input, width, height, radius) {
+  const r = Math.max(0, Math.round(Number(radius) || 0));
+  if (r <= 0) {
+    const copy = new Float32Array(input.length);
+    copy.set(input);
+    return copy;
+  }
+  const temp = new Float32Array(input.length);
+  const out = new Float32Array(input.length);
+  const diameter = r * 2 + 1;
+
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+    let acc = 0;
+    for (let x = -r; x <= r; x += 1) {
+      acc += input[row + Math.max(0, Math.min(width - 1, x))];
+    }
+    for (let x = 0; x < width; x += 1) {
+      temp[row + x] = acc / diameter;
+      acc -= input[row + Math.max(0, x - r)];
+      acc += input[row + Math.min(width - 1, x + r + 1)];
+    }
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    let acc = 0;
+    for (let y = -r; y <= r; y += 1) {
+      acc += temp[Math.max(0, Math.min(height - 1, y)) * width + x];
+    }
+    for (let y = 0; y < height; y += 1) {
+      out[y * width + x] = acc / diameter;
+      acc -= temp[Math.max(0, y - r) * width + x];
+      acc += temp[Math.min(height - 1, y + r + 1) * width + x];
+    }
+  }
+
+  return out;
+}
+
+function buildYuvChannels(data, width, height) {
+  const length = width * height;
+  const y = new Float32Array(length);
+  const u = new Float32Array(length);
+  const v = new Float32Array(length);
+  const alpha = new Float32Array(length);
+  const saturation = new Float32Array(length);
+  for (let pixel = 0, index = 0; pixel < length; pixel += 1, index += 4) {
+    const r = Number(data[index]) || 0;
+    const g = Number(data[index + 1]) || 0;
+    const b = Number(data[index + 2]) || 0;
+    const a = Math.max(0, Math.min(1, (Number(data[index + 3]) || 0) / 255));
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    y[pixel] = luma;
+    u[pixel] = b - luma;
+    v[pixel] = r - luma;
+    alpha[pixel] = a;
+    saturation[pixel] = max <= 0 ? 0 : (max - min) / max;
+  }
+  return { y, u, v, alpha, saturation };
+}
+
+function buildBlendWeights(sourceChannels, referenceChannels, width, height) {
+  const length = width * height;
+  const weights = new Float32Array(length);
+  const sourceGrad = buildSobelMagnitude(sourceChannels.y, width, height);
+  const refGrad = buildSobelMagnitude(referenceChannels.y, width, height);
+  for (let i = 0; i < length; i += 1) {
+    const alpha = Math.max(0, Math.min(1, sourceChannels.alpha[i]));
+    if (alpha <= 0.02) {
+      weights[i] = 0;
+      continue;
+    }
+    const luma = sourceChannels.y[i];
+    const midtone = 1 - Math.min(1, Math.abs(luma - 128) / 150);
+    const sat = Math.max(sourceChannels.saturation[i], referenceChannels.saturation[i]);
+    const texture = Math.min(1, Math.max(sourceGrad[i], refGrad[i]) / 42);
+    weights[i] = alpha * (0.32 + midtone * 0.32 + Math.min(1, sat * 2.2) * 0.24 + texture * 0.28);
+  }
+  return weights;
+}
+
+function weightedStats(values, weights) {
+  let sum = 0;
+  let sumSq = 0;
+  let weight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    const w = weights ? Number(weights[i]) || 0 : 1;
+    if (w <= 0) continue;
+    const value = Number(values[i]) || 0;
+    sum += value * w;
+    sumSq += value * value * w;
+    weight += w;
+  }
+  if (weight <= 0) return { mean: 0, std: 1, weight: 0 };
+  const mean = sum / weight;
+  return {
+    mean,
+    std: Math.sqrt(Math.max(0.0001, sumSq / weight - mean * mean)),
+    weight
+  };
+}
+
+function transformChannelStats(source, reference, weights, amount, options = {}) {
+  const sourceStats = weightedStats(source, weights);
+  const referenceStats = weightedStats(reference, weights);
+  const stdRatio = sourceStats.std > 0.01 ? Math.max(0.45, Math.min(2.25, referenceStats.std / sourceStats.std)) : 1;
+  const meanDelta = Math.max(-options.maxMeanDelta || -255, Math.min(options.maxMeanDelta || 255, referenceStats.mean - sourceStats.mean));
+  const ratioDelta = Math.max(-options.maxStdDelta || -1.2, Math.min(options.maxStdDelta || 1.2, stdRatio - 1));
+  return {
+    sourceMean: sourceStats.mean,
+    referenceMean: referenceStats.mean,
+    sourceStd: sourceStats.std,
+    referenceStd: referenceStats.std,
+    meanDelta,
+    stdRatio,
+    amount,
+    apply(value) {
+      return sourceStats.mean + (value - sourceStats.mean) * (1 + ratioDelta * amount) + meanDelta * amount;
+    }
+  };
+}
+
+function yuvToRgb(y, u, v) {
+  const r = y + v;
+  const b = y + u;
+  const g = (y - 0.299 * r - 0.114 * b) / 0.587;
+  return [r, g, b];
+}
+
+function applySaturationToRgb(r, g, b, factor) {
+  const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return [
+    y + (r - y) * factor,
+    y + (g - y) * factor,
+    y + (b - y) * factor
+  ];
+}
+
+function buildEdgeBlendMask(sourceChannels, width, height, radius, amount) {
+  const length = width * height;
+  const mask = new Float32Array(length);
+  const r = Math.max(1, Math.round(Number(radius) || 0));
+  const maxAmount = Math.max(0, Math.min(0.5, Number(amount) || 0));
+  if (maxAmount <= 0) return mask;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
+      const alpha = sourceChannels.alpha[i];
+      if (alpha <= 0.02) continue;
+      const borderDistance = Math.min(x, y, width - 1 - x, height - 1 - y);
+      let edge = Math.max(0, 1 - borderDistance / r);
+      if (alpha < 0.98) edge = Math.max(edge, 1 - alpha);
+      mask[i] = Math.min(maxAmount, edge * edge * maxAmount);
+    }
+  }
+  return mask;
+}
+
+function applyGlobalAndLocalWarp(sample, alignment, alignmentSample) {
+  if (!sample || !sample.data) return null;
+  const width = Math.max(1, Number(sample.width) || 1);
+  const height = Math.max(1, Number(sample.height) || 1);
+  const out = new Uint8Array(width * height * 4);
+  const hasGlobal = Boolean(alignment && alignment.applied);
+  const local = alignment && alignment.local && alignment.local.applied ? alignment.local : null;
+  const sourceWidth = Math.max(1, Number(alignmentSample && alignmentSample.width) || width);
+  const sourceHeight = Math.max(1, Number(alignmentSample && alignmentSample.height) || height);
+  const dxScale = width / sourceWidth;
+  const dyScale = height / sourceHeight;
+  const cx = width / 2;
+  const cy = height / 2;
+  const scaleX = Math.max(0.92, Math.min(1.08, Number(alignment && alignment.sampleScaleX) || 1));
+  const scaleY = Math.max(0.92, Math.min(1.08, Number(alignment && alignment.sampleScaleY) || 1));
+  const rotation = ((Number(alignment && alignment.sampleRotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(-rotation);
+  const sin = Math.sin(-rotation);
+  const globalDx = (Number(alignment && alignment.sampleDx) || 0) * dxScale;
+  const globalDy = (Number(alignment && alignment.sampleDy) || 0) * dyScale;
+  const mesh = local ? buildDenseMeshGrid(local, width, height, dxScale, dyScale) : null;
+  const localStrength = local ? Math.max(0, Math.min(1, Number(local.strength) || DEFAULT_BLEND_MATCH_CONFIG.localMeshStrength)) : 0;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      let sampleX = x;
+      let sampleY = y;
+      if (hasGlobal) {
+        const localX = x - cx;
+        const localY = y - cy;
+        sampleX = cx + ((localX * cos - localY * sin) / scaleX) + globalDx;
+        sampleY = cy + ((localX * sin + localY * cos) / scaleY) + globalDy;
+      }
+      if (mesh) {
+        const flow = interpolateMeshOffset(mesh, x, y);
+        sampleX += flow.dx * localStrength;
+        sampleY += flow.dy * localStrength;
+      }
+      sampleRgbaBilinear(sample.data, width, height, sampleX, sampleY, out, offset);
+    }
+  }
+
+  return {
+    width,
+    height,
+    data: out,
+    globalApplied: hasGlobal,
+    localApplied: Boolean(local),
+    localStrength,
+    validTiles: Number(local && local.validTiles) || 0,
+    totalTiles: Number(local && local.totalTiles) || 0,
+    maxDistance: Number(local && local.maxDistance) || 0
+  };
+}
+
+function processBlendMatchPixels(sourceSample, referenceSample, config, alignment, alignmentSample) {
+  if (!sourceSample || !referenceSample || !sourceSample.data || !referenceSample.data) {
+    throw new Error("像素样本不完整。");
+  }
+  const width = Math.max(1, Number(sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample.height) || 1);
+  if (width !== Number(referenceSample.width) || height !== Number(referenceSample.height)) {
+    throw new Error("source/reference 像素尺寸不一致。");
+  }
+
+  const warped = applyGlobalAndLocalWarp(sourceSample, alignment, alignmentSample || sourceSample);
+  const sourceData = warped && warped.data ? warped.data : copyRgba(sourceSample.data);
+  const sourceChannels = buildYuvChannels(sourceData, width, height);
+  const referenceChannels = buildYuvChannels(referenceSample.data, width, height);
+  const weights = buildBlendWeights(sourceChannels, referenceChannels, width, height);
+  const total = Math.max(0, Math.min(1, Number(config.totalStrength) / 100 || 0));
+  const luminanceAmount = total * Math.max(0, Math.min(1.25, Number(config.luminanceStrength) / 100 || 0));
+  const colorAmount = total * Math.max(0, Math.min(1.35, Number(config.colorStrength) / 100 || 0));
+  const contrastAmount = total * Math.max(0, Math.min(1.25, Number(config.contrastStrength) / 100 || 0));
+  const saturationAmount = total * Math.max(-1, Math.min(1.25, Number(config.saturationStrength) / 100 || 0));
+  const longEdge = Math.max(width, height);
+  const lowRadius = Math.max(7, Math.min(48, Math.round(longEdge / 36)));
+  const midRadius = Math.max(2, Math.min(16, Math.round(longEdge / 130)));
+  const edgeRadius = Math.max(2, Math.min(80, Math.round((Number(config.featherRadius) || 0) / Math.max(sourceSample.scaleX || 1, sourceSample.scaleY || 1))));
+
+  const srcLowY = boxBlurFloat(sourceChannels.y, width, height, lowRadius);
+  const refLowY = boxBlurFloat(referenceChannels.y, width, height, lowRadius);
+  const srcMidBaseY = boxBlurFloat(sourceChannels.y, width, height, midRadius);
+  const refMidBaseY = boxBlurFloat(referenceChannels.y, width, height, midRadius);
+  const srcLowU = boxBlurFloat(sourceChannels.u, width, height, lowRadius);
+  const refLowU = boxBlurFloat(referenceChannels.u, width, height, lowRadius);
+  const srcLowV = boxBlurFloat(sourceChannels.v, width, height, lowRadius);
+  const refLowV = boxBlurFloat(referenceChannels.v, width, height, lowRadius);
+  const srcMidBaseU = boxBlurFloat(sourceChannels.u, width, height, midRadius);
+  const refMidBaseU = boxBlurFloat(referenceChannels.u, width, height, midRadius);
+  const srcMidBaseV = boxBlurFloat(sourceChannels.v, width, height, midRadius);
+  const refMidBaseV = boxBlurFloat(referenceChannels.v, width, height, midRadius);
+
+  const length = getSamplePixelCount(sourceSample);
+  const srcMidY = new Float32Array(length);
+  const refMidY = new Float32Array(length);
+  const srcMidU = new Float32Array(length);
+  const refMidU = new Float32Array(length);
+  const srcMidV = new Float32Array(length);
+  const refMidV = new Float32Array(length);
+  for (let i = 0; i < length; i += 1) {
+    srcMidY[i] = srcMidBaseY[i] - srcLowY[i];
+    refMidY[i] = refMidBaseY[i] - refLowY[i];
+    srcMidU[i] = srcMidBaseU[i] - srcLowU[i];
+    refMidU[i] = refMidBaseU[i] - refLowU[i];
+    srcMidV[i] = srcMidBaseV[i] - srcLowV[i];
+    refMidV[i] = refMidBaseV[i] - refLowV[i];
+  }
+
+  const lowYAdjust = transformChannelStats(srcLowY, refLowY, weights, luminanceAmount * 0.86 + contrastAmount * 0.16, { maxMeanDelta: 42, maxStdDelta: 0.38 });
+  const midYAdjust = transformChannelStats(srcMidY, refMidY, weights, contrastAmount * 0.72 + luminanceAmount * 0.18, { maxMeanDelta: 10, maxStdDelta: 0.52 });
+  const lowUAdjust = transformChannelStats(srcLowU, refLowU, weights, colorAmount * 0.96, { maxMeanDelta: 34, maxStdDelta: 0.45 });
+  const lowVAdjust = transformChannelStats(srcLowV, refLowV, weights, colorAmount * 0.96, { maxMeanDelta: 34, maxStdDelta: 0.45 });
+  const midUAdjust = transformChannelStats(srcMidU, refMidU, weights, colorAmount * 0.56, { maxMeanDelta: 12, maxStdDelta: 0.35 });
+  const midVAdjust = transformChannelStats(srcMidV, refMidV, weights, colorAmount * 0.56, { maxMeanDelta: 12, maxStdDelta: 0.35 });
+  const sourceSatStats = weightedStats(sourceChannels.saturation, weights);
+  const referenceSatStats = weightedStats(referenceChannels.saturation, weights);
+  const saturationFactor = Math.max(0.58, Math.min(1.55, 1 + (referenceSatStats.mean - sourceSatStats.mean) * 1.55 * saturationAmount));
+  const edgeBlend = buildEdgeBlendMask(sourceChannels, width, height, edgeRadius, total * 0.34);
+  const out = new Uint8Array(width * height * 4);
+
+  for (let i = 0, index = 0; i < length; i += 1, index += 4) {
+    const alpha = sourceData[index + 3];
+    if (alpha <= 0) {
+      out[index] = 0;
+      out[index + 1] = 0;
+      out[index + 2] = 0;
+      out[index + 3] = 0;
+      continue;
+    }
+    const highY = sourceChannels.y[i] - srcMidBaseY[i];
+    const highU = sourceChannels.u[i] - srcMidBaseU[i];
+    const highV = sourceChannels.v[i] - srcMidBaseV[i];
+    const y = lowYAdjust.apply(srcLowY[i]) + midYAdjust.apply(srcMidY[i]) + highY * (1 + contrastAmount * 0.08);
+    const u = lowUAdjust.apply(srcLowU[i]) + midUAdjust.apply(srcMidU[i]) + highU * (1 - colorAmount * 0.08);
+    const v = lowVAdjust.apply(srcLowV[i]) + midVAdjust.apply(srcMidV[i]) + highV * (1 - colorAmount * 0.08);
+    let [r, g, b] = yuvToRgb(y, u, v);
+    [r, g, b] = applySaturationToRgb(r, g, b, saturationFactor);
+    const edge = edgeBlend[i];
+    if (edge > 0) {
+      r = lerp(r, referenceSample.data[index], edge);
+      g = lerp(g, referenceSample.data[index + 1], edge);
+      b = lerp(b, referenceSample.data[index + 2], edge);
+    }
+    out[index] = clampByte(r);
+    out[index + 1] = clampByte(g);
+    out[index + 2] = clampByte(b);
+    out[index + 3] = alpha;
+  }
+
+  return {
+    width,
+    height,
+    data: out,
+    alignment: {
+      globalApplied: Boolean(warped && warped.globalApplied),
+      localApplied: Boolean(warped && warped.localApplied),
+      validTiles: Number(warped && warped.validTiles) || 0,
+      totalTiles: Number(warped && warped.totalTiles) || 0,
+      maxDistance: Number(warped && warped.maxDistance) || 0,
+      localStrength: Number(warped && warped.localStrength) || 0
+    },
+    color: {
+      lowRadius,
+      midRadius,
+      edgeRadius,
+      luminanceDelta: Number((lowYAdjust.referenceMean - lowYAdjust.sourceMean).toFixed(2)),
+      chromaUDelta: Number((lowUAdjust.referenceMean - lowUAdjust.sourceMean).toFixed(2)),
+      chromaVDelta: Number((lowVAdjust.referenceMean - lowVAdjust.sourceMean).toFixed(2)),
+      luminanceStdRatio: Number(lowYAdjust.stdRatio.toFixed(3)),
+      saturationFactor: Number(saturationFactor.toFixed(3)),
+      weightedPixels: Math.round(weightedStats(sourceChannels.y, weights).weight)
+    }
+  };
+}
+
 async function setLayerVisible(action, layerId, visible) {
   await action.batchPlay([{
     _obj: visible ? "show" : "hide",
@@ -716,6 +1071,30 @@ function buildSobelMagnitude(luma, width, height) {
   return out;
 }
 
+function buildSobelField(luma, width, height) {
+  const length = width * height;
+  const gxOut = new Float32Array(length);
+  const gyOut = new Float32Array(length);
+  const mag = new Float32Array(length);
+  for (let y = 1; y < height - 1; y += 1) {
+    const row = y * width;
+    for (let x = 1; x < width - 1; x += 1) {
+      const i = row + x;
+      const gx =
+        -luma[i - width - 1] + luma[i - width + 1] -
+        2 * luma[i - 1] + 2 * luma[i + 1] -
+        luma[i + width - 1] + luma[i + width + 1];
+      const gy =
+        -luma[i - width - 1] - 2 * luma[i - width] - luma[i - width + 1] +
+        luma[i + width - 1] + 2 * luma[i + width] + luma[i + width + 1];
+      gxOut[i] = gx;
+      gyOut[i] = gy;
+      mag[i] = Math.sqrt(gx * gx + gy * gy);
+    }
+  }
+  return { gx: gxOut, gy: gyOut, mag };
+}
+
 function sampleNearest(buffer, width, height, x, y) {
   const ix = Math.max(0, Math.min(width - 1, Math.round(x)));
   const iy = Math.max(0, Math.min(height - 1, Math.round(y)));
@@ -777,6 +1156,71 @@ function scoreAffineTransform(source, reference, width, height, transform, strid
   const denomB = sumBB - (sumB * sumB) / count;
   const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
   return numerator / denom;
+}
+
+function scoreGradientFieldOffset(sourceField, referenceField, width, height, dx, dy, stride, region = null) {
+  let sumA = 0;
+  let sumB = 0;
+  let sumAA = 0;
+  let sumBB = 0;
+  let sumAB = 0;
+  let directionSum = 0;
+  let overlapSum = 0;
+  let weightSum = 0;
+  let count = 0;
+  const startX = Math.max(1, region ? region.left : 1);
+  const endX = Math.min(width - 1, region ? region.right : width - 1);
+  const startY = Math.max(1, region ? region.top : 1);
+  const endY = Math.min(height - 1, region ? region.bottom : height - 1);
+  const step = Math.max(1, Number(stride) || 1);
+  for (let y = startY; y < endY; y += step) {
+    const sourceY = y + dy;
+    if (sourceY < 1 || sourceY >= height - 1) continue;
+    const refRow = y * width;
+    const sourceRow = Math.round(sourceY) * width;
+    for (let x = startX; x < endX; x += step) {
+      const sourceX = x + dx;
+      if (sourceX < 1 || sourceX >= width - 1) continue;
+      const refIndex = refRow + x;
+      const sourceIndex = sourceRow + Math.round(sourceX);
+      const a = sourceField.mag[sourceIndex];
+      const b = referenceField.mag[refIndex];
+      if (a < 6 && b < 6) continue;
+      const edgeWeight = Math.min(2.4, Math.max(a, b) / 18) * (0.35 + Math.min(a, b) / Math.max(1, Math.max(a, b)) * 0.65);
+      sumA += a * edgeWeight;
+      sumB += b * edgeWeight;
+      sumAA += a * a * edgeWeight;
+      sumBB += b * b * edgeWeight;
+      sumAB += a * b * edgeWeight;
+      const sourceMag = Math.max(0.001, a);
+      const refMag = Math.max(0.001, b);
+      const cos = (
+        sourceField.gx[sourceIndex] * referenceField.gx[refIndex] +
+        sourceField.gy[sourceIndex] * referenceField.gy[refIndex]
+      ) / Math.max(0.001, sourceMag * refMag);
+      directionSum += Math.max(-1, Math.min(1, cos)) * edgeWeight;
+      overlapSum += (Math.min(a, b) / Math.max(1, Math.max(a, b))) * edgeWeight;
+      weightSum += edgeWeight;
+      count += 1;
+    }
+  }
+  if (count < 36 || weightSum <= 0) {
+    return { score: -1, ncc: -1, direction: 0, overlap: 0, count };
+  }
+  const numerator = sumAB - (sumA * sumB) / weightSum;
+  const denomA = sumAA - (sumA * sumA) / weightSum;
+  const denomB = sumBB - (sumB * sumB) / weightSum;
+  const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
+  const ncc = numerator / denom;
+  const direction = directionSum / weightSum;
+  const overlap = overlapSum / weightSum;
+  return {
+    score: ncc * 0.62 + direction * 0.28 + overlap * 0.1,
+    ncc,
+    direction,
+    overlap,
+    count
+  };
 }
 
 function buildScaleCandidates(maxScalePercent, enabled) {
@@ -959,6 +1403,7 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
   const meanDistance = tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx, tile.dy), 0) / tiles.length;
   const meanAbsDx = tiles.reduce((sum, tile) => sum + Math.abs(tile.dx), 0) / tiles.length;
   const meanAbsDy = tiles.reduce((sum, tile) => sum + Math.abs(tile.dy), 0) / tiles.length;
+  const meanDirectionAgreement = tiles.reduce((sum, tile) => sum + (Number(tile.directionAgreement) || 0), 0) / tiles.length;
   const coverage = tiles.length / Math.max(1, rows * cols);
   const enoughCoverage = tiles.length >= Math.max(4, Math.round(rows * cols * 0.34));
   const enoughMotion = maxDistance >= 0.55 || meanDistance >= 0.35 || meanAbsDx >= 0.32 || meanAbsDy >= 0.32;
@@ -980,6 +1425,7 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
     meanDistance,
     meanAbsDx,
     meanAbsDy,
+    meanDirectionAgreement,
     maxDistance,
     reason: applied ? "local-gradient-mesh" : coverage < 0.34 ? "low-coverage" : !enoughMotion ? "low-local-motion" : "low-local-spread",
     tiles: tiles.map((tile) => ({
@@ -988,6 +1434,7 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
       dx: Number(tile.dx.toFixed(2)),
       dy: Number(tile.dy.toFixed(2)),
       score: Number(tile.score.toFixed(3)),
+      directionAgreement: Number((Number(tile.directionAgreement) || 0).toFixed(3)),
       scoreGap: Number(tile.scoreGap.toFixed(3)),
       textureEnergy: Number(tile.textureEnergy.toFixed(2))
     }))
@@ -1105,15 +1552,15 @@ function warpSampleWithLocalMesh(sample, local, alignmentSample) {
   };
 }
 
-function estimateTileOffsets(sourceGrad, refGrad, width, height, sampleOffset, stride, config = {}) {
+function estimateTileOffsets(sourceField, refField, width, height, sampleOffset, stride, config = {}) {
   const tiles = [];
   const profile = buildLocalMeshProfile(width, height, config);
   const cols = profile.cols;
   const rows = profile.rows;
   const searchOffset = Math.max(1, Math.min(profile.maxOffset, sampleOffset));
-  const minTileScore = 0.21;
-  const minScoreGap = 0.01;
-  const minTextureEnergy = 6;
+  const minTileScore = 0.18;
+  const minScoreGap = 0.004;
+  const minTextureEnergy = 4.5;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
       const tileWidth = width / cols;
@@ -1126,23 +1573,31 @@ function estimateTileOffsets(sourceGrad, refGrad, width, height, sampleOffset, s
         top: Math.max(0, Math.floor((height * row) / rows - padY)),
         bottom: Math.min(height, Math.ceil((height * (row + 1)) / rows + padY))
       };
-      const textureEnergy = sampleGradientEnergy(refGrad, width, height, region, Math.max(1, stride));
+      const textureEnergy = sampleGradientEnergy(refField.mag, width, height, region, Math.max(1, stride));
       if (textureEnergy < minTextureEnergy) continue;
-      let best = { dx: 0, dy: 0, score: -1 };
+      let best = { dx: 0, dy: 0, score: -1, directionAgreement: 0 };
       let second = -1;
       for (let dy = -searchOffset; dy <= searchOffset; dy += 1) {
         for (let dx = -searchOffset; dx <= searchOffset; dx += 1) {
-          const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, 1, stride, region);
-          if (score > best.score) {
+          const scored = scoreGradientFieldOffset(sourceField, refField, width, height, dx, dy, stride, region);
+          const score = scored.score;
+          const distance = Math.hypot(dx, dy);
+          const bestDistance = Math.hypot(best.dx, best.dy);
+          const beatsBest =
+            score > best.score + 0.00001 ||
+            (Math.abs(score - best.score) <= 0.00001 && distance > bestDistance && scored.direction > best.directionAgreement + 0.02);
+          if (beatsBest) {
             second = best.score;
-            best = { dx, dy, score };
+            best = { dx, dy, score, directionAgreement: scored.direction, overlap: scored.overlap, ncc: scored.ncc };
           } else if (score > second) {
             second = score;
           }
         }
       }
       const scoreGap = best.score - Math.max(0, second);
-      if (best.score > minTileScore && scoreGap > minScoreGap) {
+      const nonZeroMotion = Math.hypot(best.dx, best.dy) >= 0.75;
+      const directionOk = best.directionAgreement > 0.18;
+      if (best.score > minTileScore && directionOk && (scoreGap > minScoreGap || (nonZeroMotion && best.score > minTileScore + 0.06))) {
         tiles.push({ ...best, row, col, scoreGap, textureEnergy });
       }
     }
@@ -1161,8 +1616,10 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const height = sourceSample.height;
   if (width < 32 || height < 32) return { applied: false, dx: 0, dy: 0, confidence: 0, reason: "too-small" };
   const sampleOffset = Math.max(1, Math.min(24, Math.round(Number(config.alignmentMaxOffset) / Math.max(sourceSample.scaleX, sourceSample.scaleY))));
-  const sourceGrad = buildSobelMagnitude(buildLuma(sourceSample.data, width, height), width, height);
-  const refGrad = buildSobelMagnitude(buildLuma(referenceSample.data, width, height), width, height);
+  const sourceField = buildSobelField(buildLuma(sourceSample.data, width, height), width, height);
+  const refField = buildSobelField(buildLuma(referenceSample.data, width, height), width, height);
+  const sourceGrad = sourceField.mag;
+  const refGrad = refField.mag;
   const stride = Math.max(1, Math.floor(Math.max(width, height) / 180));
   const scaleCandidates = buildScaleCandidates(config.alignmentMaxScale, config.alignmentScaleEnabled);
   let best = { dx: 0, dy: 0, scale: 1, score: -1 };
@@ -1182,7 +1639,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   });
   const affineBest = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
   const local = config.localAlignmentEnabled
-    ? estimateTileOffsets(sourceGrad, refGrad, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), config)
+    ? estimateTileOffsets(sourceField, refField, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), config)
     : { enabled: false, applied: false, tiles: [], spread: 0, meanDx: 0, meanDy: 0, validTiles: 0, totalTiles: 0, reason: "disabled" };
   const localDeformation = Boolean(local.applied);
   const localDampen = localDeformation ? Math.max(0.12, Math.min(0.38, local.strength * 0.5)) : 0;
@@ -1345,36 +1802,57 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         logs.push(`[融合校色] 梯度对齐已跳过：${alignment.reason}，confidence ${Number(alignment.confidence || 0).toFixed(2)}。`);
       }
       if (alignment.localDeformation) {
-        logs.push(`[融合校色] 局部网格对齐：${alignment.local.validTiles}/${alignment.local.totalTiles} 个分块有效，最大局部偏移 ${alignment.local.maxDistance.toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，离散度 ${alignment.local.spread.toFixed(2)}px，强度 ${Math.round(alignment.local.strength * 100)}%。`);
+        logs.push(`[融合校色] 局部网格对齐：${alignment.local.validTiles}/${alignment.local.totalTiles} 个分块有效，最大局部偏移 ${alignment.local.maxDistance.toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(alignment.local.meanDirectionAgreement || 0).toFixed(2)}，离散度 ${alignment.local.spread.toFixed(2)}px，强度 ${Math.round(alignment.local.strength * 100)}%。`);
       } else if (alignment.local && alignment.local.enabled) {
-        logs.push(`[融合校色] 局部网格对齐已跳过：${alignment.local.reason}，有效分块 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}，最大偏移 ${Number(alignment.local.maxDistance || 0).toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，离散度 ${Number(alignment.local.spread || 0).toFixed(2)}px。`);
+        logs.push(`[融合校色] 局部网格对齐已跳过：${alignment.local.reason}，有效分块 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}，最大偏移 ${Number(alignment.local.maxDistance || 0).toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(alignment.local.meanDirectionAgreement || 0).toFixed(2)}，离散度 ${Number(alignment.local.spread || 0).toFixed(2)}px。`);
       }
     }
 
+    const corrections = buildCorrections(sourceStats, referenceStats, config);
     await selectLayerById(action, sourceLayerId);
     let resultLayer = null;
     let resultLayerId = 0;
-    let meshApplied = false;
+    let pixelPipelineUsed = false;
+    let pixelResult = null;
 
-    if (alignment.localDeformation) {
-      try {
-        const { storage } = await ensureDeps();
-        const meshSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
-        const warped = warpSampleWithLocalMesh(meshSample, alignment.local, sourceSample);
-        const pngBuffer = warped ? await encodeRgbaPng(warped.width, warped.height, warped.data) : null;
-        if (!pngBuffer) throw new Error("局部网格 PNG 编码不可用。");
-        resultLayer = await placePngBufferAsLayer(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
-        resultLayerId = getLayerId(resultLayer);
-        if (!(resultLayerId > 0)) throw new Error("局部网格结果层置入失败。");
-        meshApplied = true;
-        logs.push(`[融合校色] 已生成局部网格变形结果层：${warped.width}x${warped.height}，有效分块 ${warped.validTiles}/${warped.totalTiles}，最大局部偏移 ${warped.maxDistance.toFixed(2)}px。`);
-      } catch (error) {
-        logs.push(`[融合校色] 局部网格变形未应用：${error.message || "未知错误"}。已回退为普通结果层。`);
-        await selectLayerById(action, sourceLayerId);
+    try {
+      const { storage } = await ensureDeps();
+      const processingTargetSize = getSamplingTargetSize(sourceBounds, config.localMeshMaxEdge);
+      let processingSourceSample = sourceSample;
+      let processingReferenceSample = referenceSample;
+      if (processingTargetSize.width !== sourceSample.width || processingTargetSize.height !== sourceSample.height) {
+        let processingRestoredVisibility = false;
+        try {
+          processingSourceSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
+          await setLayerVisible(action, sourceLayerId, false);
+          processingReferenceSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
+          await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+          processingRestoredVisibility = true;
+          logs.push(`[融合校色] 像素处理采样：${processingSourceSample.width}x${processingSourceSample.height}。`);
+        } finally {
+          if (!processingRestoredVisibility) {
+            try {
+              await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+            } catch (_) {}
+          }
+        }
+      } else {
+        logs.push(`[融合校色] 像素处理复用分析采样：${processingSourceSample.width}x${processingSourceSample.height}。`);
       }
-    }
 
-    if (!meshApplied) {
+      pixelResult = processBlendMatchPixels(processingSourceSample, processingReferenceSample, config, alignment, sourceSample);
+      const pngBuffer = await encodeRgbaPng(pixelResult.width, pixelResult.height, pixelResult.data);
+      if (!pngBuffer) throw new Error("像素结果 PNG 编码不可用。");
+      resultLayer = await placePngBufferAsLayer(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+      resultLayerId = getLayerId(resultLayer);
+      if (!(resultLayerId > 0)) throw new Error("像素结果层置入失败。");
+      pixelPipelineUsed = true;
+      logs.push(`[融合校色] 像素网格对齐：全局 ${pixelResult.alignment.globalApplied ? "启用" : "跳过"}，局部 ${pixelResult.alignment.localApplied ? "启用" : "跳过"}，有效分块 ${pixelResult.alignment.validTiles}/${pixelResult.alignment.totalTiles}，最大偏移 ${Number(pixelResult.alignment.maxDistance || 0).toFixed(2)}px。`);
+      logs.push(`[融合校色] 像素校色：亮度 ${pixelResult.color.luminanceDelta >= 0 ? "+" : ""}${pixelResult.color.luminanceDelta}，色度 U ${pixelResult.color.chromaUDelta >= 0 ? "+" : ""}${pixelResult.color.chromaUDelta} / V ${pixelResult.color.chromaVDelta >= 0 ? "+" : ""}${pixelResult.color.chromaVDelta}，饱和系数 ${pixelResult.color.saturationFactor.toFixed(2)}，多尺度 ${pixelResult.color.lowRadius}px/${pixelResult.color.midRadius}px。`);
+      logs.push(`[融合校色] 像素边缘融合：边缘半径 ${pixelResult.color.edgeRadius}px，已保护透明像素并输出 PNG 结果层。`);
+    } catch (error) {
+      logs.push(`[融合校色] 像素级处理未完成：${error.message || "未知错误"}。已回退为旧版普通融合结果。`);
+      await selectLayerById(action, sourceLayerId);
       await duplicateActiveLayer(action, resultLayerName);
       resultLayer = getActiveLayer(app);
       resultLayerId = getLayerId(resultLayer);
@@ -1392,20 +1870,22 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       await selectLayerById(action, resultLayerId);
     }
 
-    if (alignment.applied) {
+    if (!pixelPipelineUsed && alignment.applied) {
       await transformLayerAlignment(action, resultLayerId, alignment);
       await selectLayerById(action, resultLayerId);
       logs.push("[融合校色] 已向 Photoshop 提交对齐变换。");
     }
 
-    const corrections = buildCorrections(sourceStats, referenceStats, config);
-    logs.push(`[融合校色] 明度 ${corrections.brightness >= 0 ? "+" : ""}${corrections.brightness} / 对比 ${corrections.contrast >= 0 ? "+" : ""}${corrections.contrast} / 饱和 ${corrections.saturation >= 0 ? "+" : ""}${corrections.saturation}。`);
-    logs.push(`[融合校色] 色偏校正：R ${corrections.colorBalance.cyanRed >= 0 ? "+" : ""}${corrections.colorBalance.cyanRed} / G ${corrections.colorBalance.magentaGreen >= 0 ? "+" : ""}${corrections.colorBalance.magentaGreen} / B ${corrections.colorBalance.yellowBlue >= 0 ? "+" : ""}${corrections.colorBalance.yellowBlue}。`);
-
-    await applyBrightnessContrast(action, corrections.brightness, corrections.contrast);
-    await applyColorBalance(action, corrections.colorBalance);
-    await applyHueSaturation(action, corrections.saturation);
-    logs.push(`[融合校色] 已应用基础明度、对比、色偏和饱和度匹配，总强度 ${config.totalStrength}% 已写入校正量。`);
+    if (pixelPipelineUsed) {
+      logs.push(`[融合校色] 已使用插件内像素级校色/对齐结果；Photoshop 阶段不再叠加亮度、色彩平衡或饱和度调整命令。`);
+    } else {
+      logs.push(`[融合校色] 明度 ${corrections.brightness >= 0 ? "+" : ""}${corrections.brightness} / 对比 ${corrections.contrast >= 0 ? "+" : ""}${corrections.contrast} / 饱和 ${corrections.saturation >= 0 ? "+" : ""}${corrections.saturation}。`);
+      logs.push(`[融合校色] 色偏校正：R ${corrections.colorBalance.cyanRed >= 0 ? "+" : ""}${corrections.colorBalance.cyanRed} / G ${corrections.colorBalance.magentaGreen >= 0 ? "+" : ""}${corrections.colorBalance.magentaGreen} / B ${corrections.colorBalance.yellowBlue >= 0 ? "+" : ""}${corrections.colorBalance.yellowBlue}。`);
+      await applyBrightnessContrast(action, corrections.brightness, corrections.contrast);
+      await applyColorBalance(action, corrections.colorBalance);
+      await applyHueSaturation(action, corrections.saturation);
+      logs.push(`[融合校色] 已应用旧版基础明度、对比、色偏和饱和度匹配，总强度 ${config.totalStrength}% 已写入校正量。`);
+    }
 
     const featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
     await selectLayerById(action, resultLayerId);
@@ -1427,6 +1907,13 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       },
       corrections,
       alignment,
+      pixelPipeline: {
+        used: pixelPipelineUsed,
+        width: pixelResult ? pixelResult.width : 0,
+        height: pixelResult ? pixelResult.height : 0,
+        color: pixelResult ? pixelResult.color : null,
+        alignment: pixelResult ? pixelResult.alignment : null
+      },
       featherApplied
     };
   }, {

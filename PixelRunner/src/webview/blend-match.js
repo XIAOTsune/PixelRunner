@@ -5,6 +5,8 @@
     autoEnabled: false,
     mode: "balanced",
     totalStrength: 78,
+    toneStrength: 78,
+    colorMatchStrength: 76,
     luminanceStrength: 82,
     colorStrength: 76,
     saturationStrength: 62,
@@ -14,6 +16,7 @@
     alignmentEnabled: true,
     alignmentMaxOffset: 12,
     alignmentScaleEnabled: true,
+    alignmentFlex: 63,
     alignmentMaxScale: 2.5,
     alignmentMaxRotation: 1.75,
     alignmentMaxStretch: 2.5,
@@ -70,24 +73,73 @@
       : DEFAULT_SETTINGS.mode;
     const edgeOnly = mode === "edgeOnly";
     const colorOnly = mode === "colorOnly";
+    const toneStrength = edgeOnly || colorOnly
+      ? 0
+      : clampNumber(
+          source.toneStrength ?? source.luminanceStrength,
+          0,
+          100,
+          DEFAULT_SETTINGS.toneStrength
+        );
+    const colorMatchStrength = edgeOnly
+      ? 0
+      : clampNumber(
+          source.colorMatchStrength ?? source.colorStrength,
+          0,
+          100,
+          DEFAULT_SETTINGS.colorMatchStrength
+        );
+    const alignmentFlex = clampNumber(
+      source.alignmentFlex ?? ((Number(source.alignmentMaxScale) || DEFAULT_SETTINGS.alignmentMaxScale) / 4) * 100,
+      0,
+      100,
+      DEFAULT_SETTINGS.alignmentFlex
+    );
+    const detailed = deriveDetailedSettings({
+      toneStrength,
+      colorMatchStrength,
+      alignmentFlex,
+      alignmentEnabled: source.alignmentEnabled !== false
+    });
     return {
       autoEnabled: Boolean(source.autoEnabled),
       mode,
       totalStrength: clampNumber(source.totalStrength, 0, 100, DEFAULT_SETTINGS.totalStrength),
-      luminanceStrength: edgeOnly || colorOnly ? 0 : clampNumber(source.luminanceStrength, 0, 100, DEFAULT_SETTINGS.luminanceStrength),
-      colorStrength: edgeOnly ? 0 : clampNumber(source.colorStrength, 0, 100, DEFAULT_SETTINGS.colorStrength),
-      saturationStrength: edgeOnly ? 0 : clampNumber(source.saturationStrength, -100, 100, DEFAULT_SETTINGS.saturationStrength),
-      contrastStrength: edgeOnly || colorOnly ? 0 : clampNumber(source.contrastStrength, 0, 100, DEFAULT_SETTINGS.contrastStrength),
+      toneStrength,
+      colorMatchStrength,
+      luminanceStrength: detailed.luminanceStrength,
+      colorStrength: detailed.colorStrength,
+      saturationStrength: detailed.saturationStrength,
+      contrastStrength: detailed.contrastStrength,
       featherRadius: clampNumber(source.featherRadius, 0, 64, DEFAULT_SETTINGS.featherRadius),
       createBackupLayer: source.createBackupLayer !== false,
       alignmentEnabled: source.alignmentEnabled !== false,
       alignmentMaxOffset: clampNumber(source.alignmentMaxOffset, 1, 24, DEFAULT_SETTINGS.alignmentMaxOffset),
-      alignmentScaleEnabled: source.alignmentScaleEnabled !== false,
-      alignmentMaxScale: Math.max(0, Math.min(4, Number(source.alignmentMaxScale ?? DEFAULT_SETTINGS.alignmentMaxScale) || DEFAULT_SETTINGS.alignmentMaxScale)),
-      alignmentMaxRotation: Math.max(0, Math.min(3, Number(source.alignmentMaxRotation ?? DEFAULT_SETTINGS.alignmentMaxRotation) || DEFAULT_SETTINGS.alignmentMaxRotation)),
-      alignmentMaxStretch: Math.max(0, Math.min(4, Number(source.alignmentMaxStretch ?? DEFAULT_SETTINGS.alignmentMaxStretch) || DEFAULT_SETTINGS.alignmentMaxStretch)),
-      localAlignmentEnabled: source.localAlignmentEnabled !== false,
+      alignmentScaleEnabled: detailed.alignmentScaleEnabled,
+      alignmentFlex,
+      alignmentMaxScale: detailed.alignmentMaxScale,
+      alignmentMaxRotation: detailed.alignmentMaxRotation,
+      alignmentMaxStretch: detailed.alignmentMaxStretch,
+      localAlignmentEnabled: detailed.localAlignmentEnabled,
       previewMaxEdge: clampNumber(source.previewMaxEdge, 256, 768, DEFAULT_SETTINGS.previewMaxEdge)
+    };
+  }
+
+  function deriveDetailedSettings(settings) {
+    const tone = clampNumber(settings && settings.toneStrength, 0, 100, DEFAULT_SETTINGS.toneStrength);
+    const color = clampNumber(settings && settings.colorMatchStrength, 0, 100, DEFAULT_SETTINGS.colorMatchStrength);
+    const flex = clampNumber(settings && settings.alignmentFlex, 0, 100, DEFAULT_SETTINGS.alignmentFlex);
+    const alignmentEnabled = !settings || settings.alignmentEnabled !== false;
+    return {
+      luminanceStrength: tone <= 0 ? 0 : clampNumber(tone + 4, 0, 100, DEFAULT_SETTINGS.luminanceStrength),
+      contrastStrength: tone <= 0 ? 0 : clampNumber(tone * 0.74, 0, 100, DEFAULT_SETTINGS.contrastStrength),
+      colorStrength: color <= 0 ? 0 : color,
+      saturationStrength: color <= 0 ? 0 : clampNumber(color * 0.82, -100, 100, DEFAULT_SETTINGS.saturationStrength),
+      alignmentScaleEnabled: alignmentEnabled && flex > 0,
+      localAlignmentEnabled: alignmentEnabled,
+      alignmentMaxScale: Math.max(0, Math.min(4, Number((flex * 0.04).toFixed(2)))),
+      alignmentMaxRotation: Math.max(0, Math.min(3, Number((flex * 0.0278).toFixed(2)))),
+      alignmentMaxStretch: Math.max(0, Math.min(4, Number((flex * 0.04).toFixed(2))))
     };
   }
 
@@ -144,30 +196,20 @@
     setText("blendMatchStatus", localState.busy ? "正在执行融合校色" : "等待选择返图图层");
     setText("blendMatchQuickHint", `模式 ${modeLabel} / 强度 ${settings.totalStrength}% / 羽化 ${settings.featherRadius}px`);
     setText("blendMatchTotalValue", settings.totalStrength);
-    setText("blendMatchLuminanceValue", settings.luminanceStrength);
-    setText("blendMatchColorValue", settings.colorStrength);
-    setText("blendMatchSaturationValue", settings.saturationStrength);
-    setText("blendMatchContrastValue", settings.contrastStrength);
+    setText("blendMatchToneValue", settings.toneStrength);
+    setText("blendMatchColorMatchValue", settings.colorMatchStrength);
     setText("blendMatchFeatherValue", settings.featherRadius);
     setText("blendMatchAlignValue", settings.alignmentMaxOffset);
-    setText("blendMatchScaleValue", settings.alignmentMaxScale);
-    setText("blendMatchRotationValue", settings.alignmentMaxRotation);
-    setText("blendMatchStretchValue", settings.alignmentMaxStretch);
+    setText("blendMatchAlignmentFlexValue", settings.alignmentFlex);
     setValue("blendMatchModeInput", settings.mode);
     setValue("blendMatchTotalInput", settings.totalStrength);
-    setValue("blendMatchLuminanceInput", settings.luminanceStrength);
-    setValue("blendMatchColorInput", settings.colorStrength);
-    setValue("blendMatchSaturationInput", settings.saturationStrength);
-    setValue("blendMatchContrastInput", settings.contrastStrength);
+    setValue("blendMatchToneInput", settings.toneStrength);
+    setValue("blendMatchColorMatchInput", settings.colorMatchStrength);
     setValue("blendMatchFeatherInput", settings.featherRadius);
     setValue("blendMatchAlignInput", settings.alignmentMaxOffset);
-    setValue("blendMatchScaleInput", settings.alignmentMaxScale);
-    setValue("blendMatchRotationInput", settings.alignmentMaxRotation);
-    setValue("blendMatchStretchInput", settings.alignmentMaxStretch);
+    setValue("blendMatchAlignmentFlexInput", settings.alignmentFlex);
     setChecked("blendMatchBackupToggle", settings.createBackupLayer);
     setChecked("blendMatchAlignmentToggle", settings.alignmentEnabled);
-    setChecked("blendMatchScaleToggle", settings.alignmentScaleEnabled);
-    setChecked("blendMatchLocalToggle", settings.localAlignmentEnabled);
     setChecked("blendMatchAutoToggle", settings.autoEnabled);
   }
 
@@ -176,19 +218,13 @@
       ...localState.settings,
       mode: String((getById("blendMatchModeInput") && getById("blendMatchModeInput").value) || localState.settings.mode),
       totalStrength: getById("blendMatchTotalInput") && getById("blendMatchTotalInput").value,
-      luminanceStrength: getById("blendMatchLuminanceInput") && getById("blendMatchLuminanceInput").value,
-      colorStrength: getById("blendMatchColorInput") && getById("blendMatchColorInput").value,
-      saturationStrength: getById("blendMatchSaturationInput") && getById("blendMatchSaturationInput").value,
-      contrastStrength: getById("blendMatchContrastInput") && getById("blendMatchContrastInput").value,
+      toneStrength: getById("blendMatchToneInput") && getById("blendMatchToneInput").value,
+      colorMatchStrength: getById("blendMatchColorMatchInput") && getById("blendMatchColorMatchInput").value,
       featherRadius: getById("blendMatchFeatherInput") && getById("blendMatchFeatherInput").value,
       alignmentMaxOffset: getById("blendMatchAlignInput") && getById("blendMatchAlignInput").value,
-      alignmentMaxScale: getById("blendMatchScaleInput") && getById("blendMatchScaleInput").value,
-      alignmentMaxRotation: getById("blendMatchRotationInput") && getById("blendMatchRotationInput").value,
-      alignmentMaxStretch: getById("blendMatchStretchInput") && getById("blendMatchStretchInput").value,
+      alignmentFlex: getById("blendMatchAlignmentFlexInput") && getById("blendMatchAlignmentFlexInput").value,
       createBackupLayer: !getById("blendMatchBackupToggle") || getById("blendMatchBackupToggle").checked,
       alignmentEnabled: Boolean(getById("blendMatchAlignmentToggle") && getById("blendMatchAlignmentToggle").checked),
-      alignmentScaleEnabled: Boolean(getById("blendMatchScaleToggle") && getById("blendMatchScaleToggle").checked),
-      localAlignmentEnabled: Boolean(getById("blendMatchLocalToggle") && getById("blendMatchLocalToggle").checked),
       autoEnabled: Boolean(getById("blendMatchAutoToggle") && getById("blendMatchAutoToggle").checked)
     });
     renderSettings();
@@ -220,9 +256,11 @@
 
   function buildPayload() {
     readSettingsFromInputs();
+    const detailed = deriveDetailedSettings(localState.settings);
     return {
       action: "blendMatch",
-      ...localState.settings
+      ...localState.settings,
+      ...detailed
     };
   }
 
@@ -591,19 +629,13 @@
     [
       "blendMatchModeInput",
       "blendMatchTotalInput",
-      "blendMatchLuminanceInput",
-      "blendMatchColorInput",
-      "blendMatchSaturationInput",
-      "blendMatchContrastInput",
+      "blendMatchToneInput",
+      "blendMatchColorMatchInput",
       "blendMatchFeatherInput",
       "blendMatchAlignInput",
-      "blendMatchScaleInput",
-      "blendMatchRotationInput",
-      "blendMatchStretchInput",
+      "blendMatchAlignmentFlexInput",
       "blendMatchBackupToggle",
       "blendMatchAlignmentToggle",
-      "blendMatchScaleToggle",
-      "blendMatchLocalToggle",
       "blendMatchAutoToggle"
     ].forEach((id) => {
       const input = getById(id);
