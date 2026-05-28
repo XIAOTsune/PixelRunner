@@ -909,6 +909,33 @@ function weightedStats(values, weights) {
   };
 }
 
+function smoothstep(edge0, edge1, value) {
+  const t = Math.max(0, Math.min(1, (Number(value) - edge0) / Math.max(0.0001, edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+function weightedStatsWhere(values, weights, predicate) {
+  let sum = 0;
+  let sumSq = 0;
+  let weight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    if (predicate && !predicate(i)) continue;
+    const w = weights ? Number(weights[i]) || 0 : 1;
+    if (w <= 0) continue;
+    const value = Number(values[i]) || 0;
+    sum += value * w;
+    sumSq += value * value * w;
+    weight += w;
+  }
+  if (weight <= 0) return { mean: 0, std: 1, weight: 0 };
+  const mean = sum / weight;
+  return {
+    mean,
+    std: Math.sqrt(Math.max(0.0001, sumSq / weight - mean * mean)),
+    weight
+  };
+}
+
 function transformChannelStats(source, reference, weights, amount, options = {}) {
   const sourceStats = weightedStats(source, weights);
   const referenceStats = weightedStats(reference, weights);
@@ -1174,11 +1201,21 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
       const y0 = 0.299 * r + 0.587 * g + 0.114 * b;
       const u0 = b - y0;
       const v0 = r - y0;
-      const y = profile.sourceYMean + (y0 - profile.sourceYMean) * profile.yScale + profile.yDelta;
-      const u = u0 * profile.chromaScale + profile.uDelta;
-      const v = v0 * profile.chromaScale + profile.vDelta;
+      const shadowWeight = 1 - smoothstep(42, 118, y0);
+      const highlightWeight = smoothstep(172, 238, y0);
+      const midWeight = Math.max(0, 1 - Math.max(shadowWeight, highlightWeight));
+      let toneDelta =
+        (Number(profile.shadowDelta) || 0) * shadowWeight +
+        (Number(profile.midDelta) || 0) * midWeight +
+        (Number(profile.highlightDelta) || 0) * highlightWeight;
+      if (y0 > 218 && toneDelta > 0) toneDelta *= 0.35;
+      if (y0 < 32 && toneDelta < 0) toneDelta *= 0.35;
+      const y = y0 + toneDelta;
+      const chromaProtect = 0.52 + midWeight * 0.48;
+      const u = u0 * (1 + (profile.chromaScale - 1) * chromaProtect) + profile.uDelta * chromaProtect;
+      const v = v0 * (1 + (profile.chromaScale - 1) * chromaProtect) + profile.vDelta * chromaProtect;
       [r, g, b] = yuvToRgb(y, u, v);
-      [r, g, b] = applySaturationToRgb(r, g, b, profile.saturationFactor);
+      [r, g, b] = applySaturationToRgb(r, g, b, 1 + (profile.saturationFactor - 1) * chromaProtect);
     } else {
       r += brightness + (Number(balance.cyanRed) || 0) * colorScale;
       g += brightness + (Number(balance.magentaGreen) || 0) * colorScale;
@@ -1200,9 +1237,9 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
     scaleY: sourceSample.scaleY,
     data: out,
     color: {
-      method: profile ? "yuv-stat-profile" : "legacy-correction-profile",
-      brightness: profile ? Number(profile.yDelta.toFixed(2)) : Number(brightness.toFixed(2)),
-      contrast: profile ? Number(((profile.yScale - 1) * 100).toFixed(2)) : Number(contrast.toFixed(2)),
+      method: profile ? "protected-tone-chroma-profile" : "legacy-correction-profile",
+      brightness: profile ? Number(profile.midDelta.toFixed(2)) : Number(brightness.toFixed(2)),
+      contrast: profile ? 0 : Number(contrast.toFixed(2)),
       saturation: profile ? Number(((profile.saturationFactor - 1) * 100).toFixed(2)) : Number(saturation.toFixed(2)),
       colorBalance: profile
         ? {
@@ -1229,31 +1266,40 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const sourceChannels = buildYuvChannels(alignedSource.data, width, height);
   const referenceChannels = buildYuvChannels(referenceSample.data, width, height);
   const weights = buildBlendWeights(sourceChannels, referenceChannels, width, height);
-  const sourceY = weightedStats(sourceChannels.y, weights);
-  const referenceY = weightedStats(referenceChannels.y, weights);
-  const sourceU = weightedStats(sourceChannels.u, weights);
-  const referenceU = weightedStats(referenceChannels.u, weights);
-  const sourceV = weightedStats(sourceChannels.v, weights);
-  const referenceV = weightedStats(referenceChannels.v, weights);
-  const sourceSat = weightedStats(sourceChannels.saturation, weights);
-  const referenceSat = weightedStats(referenceChannels.saturation, weights);
   const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
-  const luminanceAmount = total * Math.max(0, Math.min(1.35, Number(config && config.luminanceStrength) / 100 || 0));
-  const contrastAmount = total * Math.max(0, Math.min(1.3, Number(config && config.contrastStrength) / 100 || 0));
-  const colorAmount = total * Math.max(0, Math.min(1.4, Number(config && config.colorStrength) / 100 || 0));
-  const saturationAmount = total * Math.max(-1, Math.min(1.3, Number(config && config.saturationStrength) / 100 || 0));
-  const rawYDelta = referenceY.mean - sourceY.mean;
-  const rawYScale = sourceY.std > 0.01 ? referenceY.std / sourceY.std : 1;
-  const yDelta = Math.max(-68, Math.min(68, rawYDelta * Math.min(1.08, luminanceAmount * 1.18)));
-  const yScale = Math.max(0.62, Math.min(1.62, 1 + (rawYScale - 1) * Math.min(1, contrastAmount * 1.12 + luminanceAmount * 0.18)));
-  const uDelta = Math.max(-54, Math.min(54, (referenceU.mean - sourceU.mean) * Math.min(1.1, colorAmount * 1.12)));
-  const vDelta = Math.max(-54, Math.min(54, (referenceV.mean - sourceV.mean) * Math.min(1.1, colorAmount * 1.12)));
-  const saturationFactor = Math.max(0.52, Math.min(1.72, 1 + (referenceSat.mean - sourceSat.mean) * 1.85 * saturationAmount));
-  const chromaScale = Math.max(0.78, Math.min(1.22, 1 + ((referenceU.std + referenceV.std) / Math.max(0.01, sourceU.std + sourceV.std) - 1) * colorAmount * 0.28));
+  const luminanceAmount = total * Math.max(0, Math.min(1.15, Number(config && config.luminanceStrength) / 100 || 0));
+  const colorAmount = total * Math.max(0, Math.min(1.2, Number(config && config.colorStrength) / 100 || 0));
+  const saturationAmount = total * Math.max(-1, Math.min(1.05, Number(config && config.saturationStrength) / 100 || 0));
+  const validMid = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] >= 42 && sourceChannels.y[i] <= 218 && referenceChannels.y[i] >= 32 && referenceChannels.y[i] <= 232;
+  const validShadow = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] < 106 && sourceChannels.y[i] >= 18;
+  const validHighlight = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] > 154 && sourceChannels.y[i] <= 245;
+  const sourceY = weightedStatsWhere(sourceChannels.y, weights, validMid);
+  const referenceY = weightedStatsWhere(referenceChannels.y, weights, validMid);
+  const sourceShadowY = weightedStatsWhere(sourceChannels.y, weights, validShadow);
+  const referenceShadowY = weightedStatsWhere(referenceChannels.y, weights, validShadow);
+  const sourceHighlightY = weightedStatsWhere(sourceChannels.y, weights, validHighlight);
+  const referenceHighlightY = weightedStatsWhere(referenceChannels.y, weights, validHighlight);
+  const sourceU = weightedStatsWhere(sourceChannels.u, weights, validMid);
+  const referenceU = weightedStatsWhere(referenceChannels.u, weights, validMid);
+  const sourceV = weightedStatsWhere(sourceChannels.v, weights, validMid);
+  const referenceV = weightedStatsWhere(referenceChannels.v, weights, validMid);
+  const sourceSat = weightedStatsWhere(sourceChannels.saturation, weights, validMid);
+  const referenceSat = weightedStatsWhere(referenceChannels.saturation, weights, validMid);
+  const toneStrength = Math.min(0.72, luminanceAmount * 0.82);
+  const colorStrength = Math.min(0.82, colorAmount * 0.86);
+  const midDelta = Math.max(-34, Math.min(34, (referenceY.mean - sourceY.mean) * toneStrength));
+  const shadowRawDelta = referenceShadowY.weight > 16 ? referenceShadowY.mean - sourceShadowY.mean : referenceY.mean - sourceY.mean;
+  const highlightRawDelta = referenceHighlightY.weight > 16 ? referenceHighlightY.mean - sourceHighlightY.mean : referenceY.mean - sourceY.mean;
+  const shadowDelta = Math.max(-18, Math.min(18, (shadowRawDelta * 0.45 + (referenceY.mean - sourceY.mean) * 0.2) * toneStrength));
+  const highlightDelta = Math.max(-18, Math.min(18, (highlightRawDelta * 0.42 + (referenceY.mean - sourceY.mean) * 0.18) * toneStrength));
+  const uDelta = Math.max(-34, Math.min(34, (referenceU.mean - sourceU.mean) * colorStrength));
+  const vDelta = Math.max(-34, Math.min(34, (referenceV.mean - sourceV.mean) * colorStrength));
+  const saturationFactor = Math.max(0.9, Math.min(1.1, 1 + (referenceSat.mean - sourceSat.mean) * 1.05 * saturationAmount));
+  const chromaScale = 1;
   return {
-    sourceYMean: sourceY.mean,
-    yDelta,
-    yScale,
+    midDelta,
+    shadowDelta,
+    highlightDelta,
     uDelta,
     vDelta,
     chromaScale,
@@ -1262,6 +1308,10 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
     raw: {
       sourceY,
       referenceY,
+      sourceShadowY,
+      referenceShadowY,
+      sourceHighlightY,
+      referenceHighlightY,
       sourceU,
       referenceU,
       sourceV,
