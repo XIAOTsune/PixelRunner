@@ -10,7 +10,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
   contrastStrength: 58,
   featherRadius: 16,
   createBackupLayer: true,
-  pixelPipelineEnabled: false,
+  pixelPipelineEnabled: true,
   alignmentEnabled: true,
   alignmentMaxOffset: 12,
   alignmentScaleEnabled: true,
@@ -60,7 +60,7 @@ function getBlendMatchConfig(payload = {}) {
     contrastStrength: edgeOnly || colorOnly ? 0 : clampNumber(payload.contrastStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.contrastStrength) * modeBoost,
     featherRadius: clampNumber(payload.featherRadius, 0, 64, DEFAULT_BLEND_MATCH_CONFIG.featherRadius),
     createBackupLayer: payload.createBackupLayer !== false,
-    pixelPipelineEnabled: payload.pixelPipelineEnabled === true || payload.pixelCorrectionEnabled === true,
+    pixelPipelineEnabled: payload.pixelPipelineEnabled !== false && payload.pixelCorrectionEnabled !== false,
     alignmentEnabled: payload.alignmentEnabled !== false,
     alignmentMaxOffset: clampNumber(payload.alignmentMaxOffset, 1, 24, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset),
     alignmentScaleEnabled: payload.alignmentScaleEnabled !== false,
@@ -100,6 +100,17 @@ function getSamplingTargetSize(bounds, maxEdge = 768) {
 
 function buildDataUrl(mimeType, base64) {
   return base64 ? `data:${mimeType};base64,${base64}` : "";
+}
+
+function arrayBufferToBase64(buffer) {
+  if (!(buffer instanceof ArrayBuffer) || buffer.byteLength === 0) return "";
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function concatUint8Arrays(parts) {
@@ -472,14 +483,19 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
     if (!data || data.length < 4) throw new Error("Photoshop 未返回可读取的像素数据。");
     const copy = normalizeImageDataToRgba(pixels && pixels.imageData, data, targetSize.width, targetSize.height);
     let base64 = "";
+    let mimeType = "image/jpeg";
     if (encode && typeof imaging.encodeImageData === "function") {
-      const encoded = await imaging.encodeImageData({
-        imageData: pixels.imageData,
-        base64: true,
-        format: "jpeg",
-        quality: 78
-      });
-      base64 = extractEncodedBase64(encoded);
+      try {
+        const encoded = await imaging.encodeImageData({
+          imageData: pixels.imageData,
+          base64: true,
+          format: "jpeg",
+          quality: 78
+        });
+        base64 = extractEncodedBase64(encoded);
+      } catch (_) {
+        base64 = "";
+      }
     }
     let stats = null;
     try {
@@ -503,6 +519,11 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
         statsError: error.message || "empty-stats"
       };
     }
+    if (encode && !base64) {
+      const pngBuffer = await encodeRgbaPng(targetSize.width, targetSize.height, copy);
+      base64 = arrayBufferToBase64(pngBuffer);
+      mimeType = "image/png";
+    }
     return {
       width: targetSize.width,
       height: targetSize.height,
@@ -513,7 +534,8 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
       sourcePixelFormat: String((pixels && pixels.imageData && pixels.imageData.pixelFormat) || ""),
       stats,
       base64,
-      dataUrl: buildDataUrl("image/jpeg", base64)
+      mimeType,
+      dataUrl: buildDataUrl(mimeType, base64)
     };
   } finally {
     try {
@@ -1117,6 +1139,122 @@ function processBlendMatchPixels(sourceSample, referenceSample, config, alignmen
       saturationFactor: Number(saturationFactor.toFixed(3)),
       weightedPixels: Math.round(weightedStats(sourceChannels.y, weights).weight)
     }
+  };
+}
+
+function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, options = {}) {
+  if (!sourceSample || !sourceSample.data) throw new Error("内部融合缺少 source 像素。");
+  const width = Math.max(1, Number(sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample.height) || 1);
+  const sourceData = sourceSample.data;
+  const out = new Uint8Array(sourceData.length);
+  const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
+  const brightness = (Number(corrections && corrections.brightness) || 0) * (0.72 + total * 0.28);
+  const contrast = Number(corrections && corrections.contrast) || 0;
+  const saturation = Number(corrections && corrections.saturation) || 0;
+  const balance = corrections && corrections.colorBalance ? corrections.colorBalance : {};
+  const colorScale = 0.85 + total * 0.15;
+  const contrastFactor = (259 * (contrast + 255)) / Math.max(1, 255 * (259 - contrast));
+  const saturationFactor = Math.max(0.45, Math.min(1.75, 1 + saturation / 100));
+  const forceOpaque = options.forceOpaque === true;
+  for (let index = 0; index < sourceData.length; index += 4) {
+    const alpha = sourceData[index + 3];
+    if (alpha <= 0) {
+      out[index] = 0;
+      out[index + 1] = 0;
+      out[index + 2] = 0;
+      out[index + 3] = 0;
+      continue;
+    }
+    let r = sourceData[index] + brightness + (Number(balance.cyanRed) || 0) * colorScale;
+    let g = sourceData[index + 1] + brightness + (Number(balance.magentaGreen) || 0) * colorScale;
+    let b = sourceData[index + 2] + brightness + (Number(balance.yellowBlue) || 0) * colorScale;
+    r = contrastFactor * (r - 128) + 128;
+    g = contrastFactor * (g - 128) + 128;
+    b = contrastFactor * (b - 128) + 128;
+    [r, g, b] = applySaturationToRgb(r, g, b, saturationFactor);
+    out[index] = clampByte(r);
+    out[index + 1] = clampByte(g);
+    out[index + 2] = clampByte(b);
+    out[index + 3] = forceOpaque ? 255 : alpha;
+  }
+  return {
+    width,
+    height,
+    scaleX: sourceSample.scaleX,
+    scaleY: sourceSample.scaleY,
+    data: out,
+    color: {
+      brightness: Number(brightness.toFixed(2)),
+      contrast: Number(contrast.toFixed(2)),
+      saturation: Number(saturation.toFixed(2)),
+      colorBalance: {
+        cyanRed: Number(((Number(balance.cyanRed) || 0) * colorScale).toFixed(2)),
+        magentaGreen: Number(((Number(balance.magentaGreen) || 0) * colorScale).toFixed(2)),
+        yellowBlue: Number(((Number(balance.yellowBlue) || 0) * colorScale).toFixed(2))
+      }
+    }
+  };
+}
+
+async function createInternalBlendMatchResult({
+  app,
+  action,
+  imaging,
+  document,
+  storage,
+  sourceLayerId,
+  sourceBounds,
+  resultLayerName,
+  alignment,
+  alignmentSample,
+  config,
+  corrections,
+  fullDocumentTarget,
+  logs
+}) {
+  const outputLongEdge = Math.max(
+    Math.max(1, Math.ceil(Number(sourceBounds.right) - Number(sourceBounds.left))),
+    Math.max(1, Math.ceil(Number(sourceBounds.bottom) - Number(sourceBounds.top)))
+  );
+  logs.push(`[融合校色] 插件内部融合：重新捕获原尺寸 source ${outputLongEdge}px 长边，避免 Photoshop 调整命令和低清输出。`);
+  const sourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, outputLongEdge);
+  logs.push(`[融合校色] 插件内部 source：${sourceSample.width}x${sourceSample.height}，channels ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""} -> RGBA。`);
+  const alpha = getAlphaStats(sourceSample.data);
+  const forceOpaque = fullDocumentTarget && alpha.opaqueRatio > 0.995 && alpha.transparentRatio < 0.001;
+  const warped = applyGlobalAndLocalWarp(sourceSample, alignment, alignmentSample || sourceSample) || {
+    width: sourceSample.width,
+    height: sourceSample.height,
+    data: copyRgba(sourceSample.data),
+    globalApplied: false,
+    localApplied: false,
+    validTiles: 0,
+    totalTiles: 0,
+    maxDistance: 0
+  };
+  const corrected = applyInternalColorCorrectionsToRgba(warped, config, corrections, { forceOpaque });
+  const pngBuffer = await encodeRgbaPng(corrected.width, corrected.height, corrected.data);
+  if (!pngBuffer) throw new Error("内部融合 PNG 编码失败。");
+  await activateDocument(app, action, Number(document.id));
+  const placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+  logs.push(`[融合校色] 插件内部融合结果已置入并栅格化：${resultLayerName}。`);
+  logs.push(`[融合校色] 插件内部像素对齐：全局 ${warped.globalApplied ? "启用" : "跳过"}，局部 ${warped.localApplied ? "启用" : "跳过"}，有效分块 ${warped.validTiles || 0}/${warped.totalTiles || 0}，最大偏移 ${formatFixed(warped.maxDistance, 2)}px。`);
+  logs.push(`[融合校色] 插件内部颜色匹配：亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}，色偏 R ${corrected.color.colorBalance.cyanRed >= 0 ? "+" : ""}${corrected.color.colorBalance.cyanRed} / G ${corrected.color.colorBalance.magentaGreen >= 0 ? "+" : ""}${corrected.color.colorBalance.magentaGreen} / B ${corrected.color.colorBalance.yellowBlue >= 0 ? "+" : ""}${corrected.color.colorBalance.yellowBlue}。`);
+  return {
+    layer: placed.layer,
+    layerId: placed.layerId,
+    width: corrected.width,
+    height: corrected.height,
+    color: corrected.color,
+    alignment: {
+      globalApplied: Boolean(warped.globalApplied),
+      localApplied: Boolean(warped.localApplied),
+      validTiles: Number(warped.validTiles) || 0,
+      totalTiles: Number(warped.totalTiles) || 0,
+      maxDistance: Number(warped.maxDistance) || 0,
+      localStrength: Number(warped.localStrength) || 0
+    },
+    forceOpaque
   };
 }
 
@@ -3429,31 +3567,6 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       sourceWasVisible = sourceLayer.visible !== false;
     } catch (_) {}
 
-    if (config.pixelPipelineEnabled) {
-      const pixelAlignmentAttempt = await runPixelAlignmentV2Flow({
-        photoshop,
-        app,
-        action,
-        imaging,
-        document,
-        logs,
-        sourceLayerId,
-        sourceLayerName,
-        sourceBounds,
-        sourceWasVisible,
-        config
-      });
-      if (!pixelAlignmentAttempt || pixelAlignmentAttempt.skipped !== true) {
-        return pixelAlignmentAttempt;
-      }
-      logs.push("[融合校色] 实验像素级对齐未生成结果，继续回到快速融合路径。");
-      await activateDocument(app, action, Number(document.id));
-      await selectLayerById(action, sourceLayerId);
-      try {
-        await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-      } catch (_) {}
-    }
-
     let sourceSample = null;
     let referenceSample = null;
     let restoredVisibility = false;
@@ -3513,15 +3626,44 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     await selectLayerById(action, sourceLayerId);
     let resultLayer = null;
     let resultLayerId = 0;
-    let pixelPipelineUsed = false;
     let pixelResult = null;
 
-    logs.push(config.pixelPipelineEnabled
-      ? "[融合校色] 实验像素级对齐未生成可用结果：使用快速融合路径。"
-      : "[融合校色] 实验像素级对齐已关闭：使用快速融合路径。");
-    await duplicateActiveLayer(action, resultLayerName);
-    resultLayer = getActiveLayer(app);
-    resultLayerId = getLayerId(resultLayer);
+    try {
+      const { storage } = await ensureDeps();
+      pixelResult = await createInternalBlendMatchResult({
+        app,
+        action,
+        imaging,
+        document,
+        storage,
+        sourceLayerId,
+        sourceBounds,
+        resultLayerName,
+        alignment,
+        alignmentSample: sourceSample,
+        config,
+        corrections,
+        fullDocumentTarget,
+        logs
+      });
+      resultLayer = pixelResult.layer;
+      resultLayerId = pixelResult.layerId;
+    } catch (error) {
+      logs.push(`[融合校色] 插件内部融合未完成：${error.message || "未知错误"}。已回退为复制返图图层，不执行 Photoshop 颜色调整。`);
+      await activateDocument(app, action, Number(document.id));
+      await selectLayerById(action, sourceLayerId);
+      await duplicateActiveLayer(action, resultLayerName);
+      resultLayer = getActiveLayer(app);
+      resultLayerId = getLayerId(resultLayer);
+      pixelResult = {
+        width: 0,
+        height: 0,
+        color: null,
+        alignment: null,
+        forceOpaque: false,
+        fallbackCopy: true
+      };
+    }
     if (!(resultLayerId > 0)) throw new Error("融合校色结果层创建失败。");
     logs.push(`[融合校色] 已创建结果层：${resultLayerName}。`);
 
@@ -3535,25 +3677,10 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       await selectLayerById(action, resultLayerId);
     }
 
-    if (!pixelPipelineUsed && alignment.applied) {
-      await transformLayerAlignment(action, resultLayerId, alignment);
-      await selectLayerById(action, resultLayerId);
-      logs.push("[融合校色] 已向 Photoshop 提交对齐变换。");
-    }
-
-    if (pixelPipelineUsed) {
-      logs.push(`[融合校色] 已使用插件内像素级校色/对齐结果；Photoshop 阶段不再叠加亮度、色彩平衡或饱和度调整命令。`);
-    } else {
-      logs.push(`[融合校色] 明度 ${corrections.brightness >= 0 ? "+" : ""}${corrections.brightness} / 对比 ${corrections.contrast >= 0 ? "+" : ""}${corrections.contrast} / 饱和 ${corrections.saturation >= 0 ? "+" : ""}${corrections.saturation}。`);
-      logs.push(`[融合校色] 色偏校正：R ${corrections.colorBalance.cyanRed >= 0 ? "+" : ""}${corrections.colorBalance.cyanRed} / G ${corrections.colorBalance.magentaGreen >= 0 ? "+" : ""}${corrections.colorBalance.magentaGreen} / B ${corrections.colorBalance.yellowBlue >= 0 ? "+" : ""}${corrections.colorBalance.yellowBlue}。`);
-      await applyBrightnessContrast(action, corrections.brightness, corrections.contrast);
-      await applyColorBalance(action, corrections.colorBalance);
-      await applyHueSaturation(action, corrections.saturation);
-      logs.push(`[融合校色] 已应用旧版基础明度、对比、色偏和饱和度匹配，总强度 ${config.totalStrength}% 已写入校正量。`);
-    }
+    logs.push("[融合校色] 已使用插件内部颜色匹配和像素对齐；Photoshop 阶段不再叠加亮度、色彩平衡或饱和度调整命令。");
 
     let featherApplied = false;
-    if (pixelPipelineUsed && fullDocumentTarget && pixelResult && pixelResult.forceOpaque) {
+    if (fullDocumentTarget && pixelResult && pixelResult.forceOpaque) {
       logs.push("[融合校色] 当前结果覆盖整张画布且无透明边缘，已跳过向内羽化蒙版。");
     } else {
       featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
@@ -3578,7 +3705,8 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       corrections,
       alignment,
       pixelPipeline: {
-        used: pixelPipelineUsed,
+        used: true,
+        version: "internal-unified",
         width: pixelResult ? pixelResult.width : 0,
         height: pixelResult ? pixelResult.height : 0,
         color: pixelResult ? pixelResult.color : null,

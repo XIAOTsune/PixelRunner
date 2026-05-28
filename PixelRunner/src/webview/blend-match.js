@@ -13,7 +13,7 @@
     contrastStrength: 58,
     featherRadius: 16,
     createBackupLayer: true,
-    pixelPipelineEnabled: false,
+    pixelPipelineEnabled: true,
     alignmentEnabled: true,
     alignmentMaxOffset: 12,
     alignmentScaleEnabled: true,
@@ -114,7 +114,7 @@
       contrastStrength: detailed.contrastStrength,
       featherRadius: clampNumber(source.featherRadius, 0, 64, DEFAULT_SETTINGS.featherRadius),
       createBackupLayer: source.createBackupLayer !== false,
-      pixelPipelineEnabled: source.pixelPipelineEnabled === true || source.pixelCorrectionEnabled === true,
+      pixelPipelineEnabled: true,
       alignmentEnabled: source.alignmentEnabled !== false,
       alignmentMaxOffset: clampNumber(source.alignmentMaxOffset, 1, 24, DEFAULT_SETTINGS.alignmentMaxOffset),
       alignmentScaleEnabled: detailed.alignmentScaleEnabled,
@@ -211,7 +211,6 @@
     setValue("blendMatchAlignInput", settings.alignmentMaxOffset);
     setValue("blendMatchAlignmentFlexInput", settings.alignmentFlex);
     setChecked("blendMatchBackupToggle", settings.createBackupLayer);
-    setChecked("blendMatchPixelPipelineToggle", settings.pixelPipelineEnabled);
     setChecked("blendMatchAlignmentToggle", settings.alignmentEnabled);
     setChecked("blendMatchAutoToggle", settings.autoEnabled);
   }
@@ -227,7 +226,7 @@
       alignmentMaxOffset: getById("blendMatchAlignInput") && getById("blendMatchAlignInput").value,
       alignmentFlex: getById("blendMatchAlignmentFlexInput") && getById("blendMatchAlignmentFlexInput").value,
       createBackupLayer: !getById("blendMatchBackupToggle") || getById("blendMatchBackupToggle").checked,
-      pixelPipelineEnabled: Boolean(getById("blendMatchPixelPipelineToggle") && getById("blendMatchPixelPipelineToggle").checked),
+      pixelPipelineEnabled: true,
       alignmentEnabled: Boolean(getById("blendMatchAlignmentToggle") && getById("blendMatchAlignmentToggle").checked),
       autoEnabled: Boolean(getById("blendMatchAutoToggle") && getById("blendMatchAutoToggle").checked)
     });
@@ -573,8 +572,8 @@
       const logs = Array.isArray(result && result.logs) ? result.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
       if (result && result.skipped) {
-        modules.ui.logToWorkspace(result.message || "实验像素级对齐已跳过，未生成结果层。", "warn");
-        setText("blendMatchPanelStatus", result.message || "实验像素级对齐已跳过");
+        modules.ui.logToWorkspace(result.message || "融合校色已跳过，未生成结果层。", "warn");
+        setText("blendMatchPanelStatus", result.message || "融合校色已跳过");
       } else {
         modules.ui.logToWorkspace(result && result.message ? result.message : "融合校色完成。", "success");
         setText("blendMatchPanelStatus", result && result.layerName ? `结果图层：${result.layerName}` : "融合校色已完成");
@@ -647,7 +646,6 @@
       "blendMatchAlignInput",
       "blendMatchAlignmentFlexInput",
       "blendMatchBackupToggle",
-      "blendMatchPixelPipelineToggle",
       "blendMatchAlignmentToggle",
       "blendMatchAutoToggle"
     ].forEach((id) => {

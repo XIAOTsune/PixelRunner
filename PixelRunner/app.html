@@ -1227,16 +1227,12 @@
           <span>保留原返图图层作为隐藏备份</span>
         </label>
         <label class="freq-sep-check-field">
-          <input id="blendMatchPixelPipelineToggle" type="checkbox" />
-          <span>启用实验像素级对齐（较慢）</span>
-        </label>
-        <label class="freq-sep-check-field">
           <input id="blendMatchAlignmentToggle" type="checkbox" checked />
           <span>启用快速对齐</span>
         </label>
       </div>
 
-      <div class="summary-strip">默认使用快速融合路径；开启实验像素级对齐后，验证通过会生成独立对齐结果层，未通过则回到快速融合。</div>
+      <div class="summary-strip">默认使用插件内部融合路径；颜色匹配和快速对齐在插件内完成，Photoshop 仅保留可编辑羽化蒙版。</div>
 
       <div class="action-row blend-match-actions">
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>
