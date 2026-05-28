@@ -13,6 +13,7 @@
     contrastStrength: 58,
     featherRadius: 16,
     createBackupLayer: true,
+    pixelPipelineEnabled: false,
     alignmentEnabled: true,
     alignmentMaxOffset: 12,
     alignmentScaleEnabled: true,
@@ -113,6 +114,7 @@
       contrastStrength: detailed.contrastStrength,
       featherRadius: clampNumber(source.featherRadius, 0, 64, DEFAULT_SETTINGS.featherRadius),
       createBackupLayer: source.createBackupLayer !== false,
+      pixelPipelineEnabled: source.pixelPipelineEnabled === true || source.pixelCorrectionEnabled === true,
       alignmentEnabled: source.alignmentEnabled !== false,
       alignmentMaxOffset: clampNumber(source.alignmentMaxOffset, 1, 24, DEFAULT_SETTINGS.alignmentMaxOffset),
       alignmentScaleEnabled: detailed.alignmentScaleEnabled,
@@ -209,6 +211,7 @@
     setValue("blendMatchAlignInput", settings.alignmentMaxOffset);
     setValue("blendMatchAlignmentFlexInput", settings.alignmentFlex);
     setChecked("blendMatchBackupToggle", settings.createBackupLayer);
+    setChecked("blendMatchPixelPipelineToggle", settings.pixelPipelineEnabled);
     setChecked("blendMatchAlignmentToggle", settings.alignmentEnabled);
     setChecked("blendMatchAutoToggle", settings.autoEnabled);
   }
@@ -224,6 +227,7 @@
       alignmentMaxOffset: getById("blendMatchAlignInput") && getById("blendMatchAlignInput").value,
       alignmentFlex: getById("blendMatchAlignmentFlexInput") && getById("blendMatchAlignmentFlexInput").value,
       createBackupLayer: !getById("blendMatchBackupToggle") || getById("blendMatchBackupToggle").checked,
+      pixelPipelineEnabled: Boolean(getById("blendMatchPixelPipelineToggle") && getById("blendMatchPixelPipelineToggle").checked),
       alignmentEnabled: Boolean(getById("blendMatchAlignmentToggle") && getById("blendMatchAlignmentToggle").checked),
       autoEnabled: Boolean(getById("blendMatchAutoToggle") && getById("blendMatchAutoToggle").checked)
     });
@@ -635,6 +639,7 @@
       "blendMatchAlignInput",
       "blendMatchAlignmentFlexInput",
       "blendMatchBackupToggle",
+      "blendMatchPixelPipelineToggle",
       "blendMatchAlignmentToggle",
       "blendMatchAutoToggle"
     ].forEach((id) => {

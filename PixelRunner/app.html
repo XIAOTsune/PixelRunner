@@ -1227,12 +1227,16 @@
           <span>保留原返图图层作为隐藏备份</span>
         </label>
         <label class="freq-sep-check-field">
+          <input id="blendMatchPixelPipelineToggle" type="checkbox" />
+          <span>启用实验像素级校正（较慢）</span>
+        </label>
+        <label class="freq-sep-check-field">
           <input id="blendMatchAlignmentToggle" type="checkbox" checked />
           <span>启用像素对齐</span>
         </label>
       </div>
 
-      <div class="summary-strip">预览在插件内用缩略图模拟边界融合；应用时会生成像素级融合结果层，并保留一个可调羽化蒙版。</div>
+      <div class="summary-strip">默认使用快速融合路径；开启实验像素级校正后，会额外生成像素处理结果层，处理时间更长。</div>
 
       <div class="action-row blend-match-actions">
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>

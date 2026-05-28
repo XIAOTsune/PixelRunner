@@ -1,4 +1,4 @@
-import { getDocumentInfo, normalizeBounds } from "./document.js";
+import { activateDocument, getDocumentInfo, normalizeBounds } from "./document.js";
 import { ensureDeps } from "./deps.js";
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
@@ -10,6 +10,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
   contrastStrength: 58,
   featherRadius: 16,
   createBackupLayer: true,
+  pixelPipelineEnabled: false,
   alignmentEnabled: true,
   alignmentMaxOffset: 12,
   alignmentScaleEnabled: true,
@@ -59,6 +60,7 @@ function getBlendMatchConfig(payload = {}) {
     contrastStrength: edgeOnly || colorOnly ? 0 : clampNumber(payload.contrastStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.contrastStrength) * modeBoost,
     featherRadius: clampNumber(payload.featherRadius, 0, 64, DEFAULT_BLEND_MATCH_CONFIG.featherRadius),
     createBackupLayer: payload.createBackupLayer !== false,
+    pixelPipelineEnabled: payload.pixelPipelineEnabled === true || payload.pixelCorrectionEnabled === true,
     alignmentEnabled: payload.alignmentEnabled !== false,
     alignmentMaxOffset: clampNumber(payload.alignmentMaxOffset, 1, 24, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset),
     alignmentScaleEnabled: payload.alignmentScaleEnabled !== false,
@@ -112,10 +114,55 @@ function concatUint8Arrays(parts) {
 }
 
 async function deflateBytes(bytes) {
-  if (!bytes || !bytes.length || typeof CompressionStream !== "function") return null;
-  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
-  const buffer = await new Response(stream).arrayBuffer();
-  return new Uint8Array(buffer);
+  if (!bytes || !bytes.length) return null;
+  if (typeof CompressionStream === "function") {
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"));
+      const buffer = await new Response(stream).arrayBuffer();
+      return new Uint8Array(buffer);
+    } catch (_) {}
+  }
+  return buildStoredZlibStream(bytes);
+}
+
+function adler32(bytes) {
+  let a = 1;
+  let b = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    a = (a + bytes[index]) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+function buildStoredZlibStream(bytes) {
+  if (!bytes || !bytes.length) return null;
+  const blockSize = 0xffff;
+  const blockCount = Math.ceil(bytes.length / blockSize);
+  const out = new Uint8Array(2 + blockCount * 5 + bytes.length + 4);
+  let offset = 0;
+  out[offset++] = 0x78;
+  out[offset++] = 0x01;
+  for (let block = 0; block < blockCount; block += 1) {
+    const start = block * blockSize;
+    const chunk = bytes.subarray(start, Math.min(bytes.length, start + blockSize));
+    const finalBlock = block === blockCount - 1;
+    const len = chunk.length;
+    const nlen = (~len) & 0xffff;
+    out[offset++] = finalBlock ? 0x01 : 0x00;
+    out[offset++] = len & 0xff;
+    out[offset++] = (len >>> 8) & 0xff;
+    out[offset++] = nlen & 0xff;
+    out[offset++] = (nlen >>> 8) & 0xff;
+    out.set(chunk, offset);
+    offset += len;
+  }
+  const checksum = adler32(bytes);
+  out[offset++] = (checksum >>> 24) & 0xff;
+  out[offset++] = (checksum >>> 16) & 0xff;
+  out[offset++] = (checksum >>> 8) & 0xff;
+  out[offset++] = checksum & 0xff;
+  return out;
 }
 
 const PNG_CRC_TABLE = (() => {
@@ -178,6 +225,82 @@ async function encodeRgbaPng(width, height, rgba) {
     buildPngChunk("IDAT", compressed),
     buildPngChunk("IEND")
   ]).buffer;
+}
+
+function isFullDocumentBounds(bounds, docInfo, tolerance = 1) {
+  if (!bounds || !docInfo) return false;
+  const width = Math.max(1, Number(docInfo.width) || 1);
+  const height = Math.max(1, Number(docInfo.height) || 1);
+  return (
+    Math.abs(Number(bounds.left) || 0) <= tolerance &&
+    Math.abs(Number(bounds.top) || 0) <= tolerance &&
+    Math.abs((Number(bounds.right) || 0) - width) <= tolerance &&
+    Math.abs((Number(bounds.bottom) || 0) - height) <= tolerance
+  );
+}
+
+function getDocumentPixelSize(doc) {
+  return {
+    width: Math.max(1, Number(doc && doc.width && (doc.width._value ?? doc.width.value ?? doc.width)) || 1),
+    height: Math.max(1, Number(doc && doc.height && (doc.height._value ?? doc.height.value ?? doc.height)) || 1)
+  };
+}
+
+function getDocumentResolutionValue(doc) {
+  const raw = doc && doc.resolution;
+  const parsed = Number(raw && (raw._value ?? raw.value ?? raw));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 72;
+}
+
+async function createTransparentTempDocument(app, action, name, size, resolution) {
+  const width = Math.max(1, Math.floor(Number(size && size.width) || 1));
+  const height = Math.max(1, Math.floor(Number(size && size.height) || 1));
+  const safeResolution = Math.max(1, Number(resolution) || 72);
+  if (app && app.documents && typeof app.documents.add === "function") {
+    try {
+      const doc = await app.documents.add({
+        width,
+        height,
+        resolution: safeResolution,
+        name,
+        mode: "RGBColorMode",
+        fill: "transparent"
+      });
+      if (doc) return doc;
+    } catch (_) {}
+  }
+  await action.batchPlay([{
+    _obj: "make",
+    new: { _class: "document" },
+    using: {
+      _obj: "document",
+      name,
+      mode: { _class: "RGBColorMode" },
+      width: { _unit: "pixelsUnit", _value: width },
+      height: { _unit: "pixelsUnit", _value: height },
+      resolution: { _unit: "densityUnit", _value: safeResolution },
+      pixelScaleFactor: 1,
+      fill: { _enum: "fill", _value: "transparent" }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  const doc = app && app.activeDocument ? app.activeDocument : null;
+  if (!doc) throw new Error("无法创建融合校色临时文档。");
+  return doc;
+}
+
+async function closeDocumentWithoutSaving(action, docRef) {
+  if (!docRef) return;
+  if (typeof docRef.closeWithoutSaving === "function") {
+    await docRef.closeWithoutSaving();
+    return;
+  }
+  await action.batchPlay([{
+    _obj: "close",
+    _target: [{ _ref: "document", _id: Number(docRef.id) }],
+    saving: { _enum: "yesNo", _value: "no" },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
 }
 
 function extractEncodedBase64(encoded) {
@@ -266,6 +389,43 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
     try {
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
     } catch (_) {}
+  }
+}
+
+async function captureIsolatedLayerSample(imaging, app, action, originalDocument, sourceLayerId, bounds, maxEdge = 512) {
+  const docSize = getDocumentPixelSize(originalDocument);
+  const resolution = getDocumentResolutionValue(originalDocument);
+  const originalDocumentId = Number(originalDocument && originalDocument.id) || 0;
+  let tempDoc = null;
+  try {
+    tempDoc = await createTransparentTempDocument(
+      app,
+      action,
+      "PixelRunner Blend Match Source Temp",
+      docSize,
+      resolution
+    );
+    await activateDocument(app, action, originalDocumentId);
+    await selectLayerById(action, sourceLayerId);
+    const sourceLayer = getActiveLayer(app);
+    if (!sourceLayer || typeof sourceLayer.duplicate !== "function") {
+      throw new Error("当前返图图层无法复制到临时文档。");
+    }
+    await sourceLayer.duplicate(tempDoc);
+    await activateDocument(app, action, Number(tempDoc.id));
+    return await captureCompositeSample(imaging, tempDoc, bounds, maxEdge, false);
+  } finally {
+    try {
+      await activateDocument(app, action, originalDocumentId);
+    } catch (_) {}
+    if (tempDoc) {
+      try {
+        await closeDocumentWithoutSaving(action, tempDoc);
+      } catch (_) {}
+      try {
+        await activateDocument(app, action, originalDocumentId);
+      } catch (_) {}
+    }
   }
 }
 
@@ -412,6 +572,29 @@ function copyRgba(data) {
   const out = new Uint8Array(data.length);
   out.set(data);
   return out;
+}
+
+function getAlphaStats(data) {
+  const length = Math.floor((data && data.length ? data.length : 0) / 4);
+  if (!length) return { count: 0, opaqueRatio: 0, transparentRatio: 1, minAlpha: 0, maxAlpha: 0 };
+  let opaque = 0;
+  let transparent = 0;
+  let minAlpha = 255;
+  let maxAlpha = 0;
+  for (let index = 3; index < data.length; index += 4) {
+    const alpha = Number(data[index]) || 0;
+    if (alpha >= 250) opaque += 1;
+    if (alpha <= 4) transparent += 1;
+    minAlpha = Math.min(minAlpha, alpha);
+    maxAlpha = Math.max(maxAlpha, alpha);
+  }
+  return {
+    count: length,
+    opaqueRatio: opaque / length,
+    transparentRatio: transparent / length,
+    minAlpha,
+    maxAlpha
+  };
 }
 
 function boxBlurFloat(input, width, height, radius) {
@@ -630,7 +813,7 @@ function applyGlobalAndLocalWarp(sample, alignment, alignmentSample) {
   };
 }
 
-function processBlendMatchPixels(sourceSample, referenceSample, config, alignment, alignmentSample) {
+function processBlendMatchPixels(sourceSample, referenceSample, config, alignment, alignmentSample, options = {}) {
   if (!sourceSample || !referenceSample || !sourceSample.data || !referenceSample.data) {
     throw new Error("像素样本不完整。");
   }
@@ -722,7 +905,7 @@ function processBlendMatchPixels(sourceSample, referenceSample, config, alignmen
     out[index] = clampByte(r);
     out[index + 1] = clampByte(g);
     out[index + 2] = clampByte(b);
-    out[index + 3] = alpha;
+    out[index + 3] = options.forceOpaque === true ? 255 : alpha;
   }
 
   return {
@@ -836,9 +1019,89 @@ function getBoundsCenter(bounds) {
   };
 }
 
+function toPixelNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (value && typeof value === "object") {
+    const nested = value._value ?? value.value;
+    const parsed = Number(nested);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseTransformPoint(point) {
+  if (Array.isArray(point) && point.length >= 2) {
+    const x = toPixelNumber(point[0]);
+    const y = toPixelNumber(point[1]);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+  if (point && typeof point === "object") {
+    const x = toPixelNumber(point.x ?? point.horizontal ?? point.left);
+    const y = toPixelNumber(point.y ?? point.vertical ?? point.top);
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+  }
+  return null;
+}
+
+function parseTransformBounds(transform) {
+  if (!transform) return null;
+  let points = [];
+  if (Array.isArray(transform)) {
+    if (transform.length >= 8 && transform.every((item) => toPixelNumber(item) !== null)) {
+      points = [
+        { x: toPixelNumber(transform[0]), y: toPixelNumber(transform[1]) },
+        { x: toPixelNumber(transform[2]), y: toPixelNumber(transform[3]) },
+        { x: toPixelNumber(transform[4]), y: toPixelNumber(transform[5]) },
+        { x: toPixelNumber(transform[6]), y: toPixelNumber(transform[7]) }
+      ];
+    } else {
+      points = transform.map(parseTransformPoint).filter(Boolean);
+    }
+  } else if (typeof transform === "object") {
+    points = [
+      transform.topLeft,
+      transform.topRight,
+      transform.bottomRight,
+      transform.bottomLeft,
+      transform.quadTopLeft,
+      transform.quadTopRight,
+      transform.quadBottomRight,
+      transform.quadBottomLeft
+    ].map(parseTransformPoint).filter(Boolean);
+  }
+  if (points.length < 2) return null;
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const left = Math.min(...xs);
+  const top = Math.min(...ys);
+  const right = Math.max(...xs);
+  const bottom = Math.max(...ys);
+  return right > left && bottom > top ? { left, top, right, bottom } : null;
+}
+
+async function getActivePlacedLayerTransformBounds(action) {
+  if (!action || typeof action.batchPlay !== "function") return null;
+  try {
+    const result = await action.batchPlay([{
+      _obj: "get",
+      _target: [
+        { _property: "smartObjectMore" },
+        { _ref: "layer", _enum: "ordinal", _value: "targetEnum" }
+      ],
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    const smartObjectMore = result && result[0] && result[0].smartObjectMore;
+    return parseTransformBounds(smartObjectMore && (smartObjectMore.transform || smartObjectMore.nonAffineTransform));
+  } catch (_) {
+    return null;
+  }
+}
+
 async function alignActiveLayerToBounds(app, action, targetBounds) {
   const layer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
-  const bounds = parseLayerBounds(layer && layer.bounds);
+  const transformBounds = await getActivePlacedLayerTransformBounds(action);
+  const bounds = transformBounds || parseLayerBounds(layer && layer.bounds);
   if (!layer || !bounds || !targetBounds) return false;
   const currentSize = getBoundsSize(bounds);
   const targetSize = getBoundsSize(targetBounds);
@@ -893,6 +1156,19 @@ async function placePngBufferAsLayer(app, action, storage, buffer, targetBounds,
     layer.name = String(layerName || "PixelRunner 融合校色").slice(0, 240);
   } catch (_) {}
   return layer;
+}
+
+async function rasterizeActiveLayerBestEffort(action) {
+  try {
+    await action.batchPlay([{
+      _obj: "rasterizeLayer",
+      _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 async function duplicateActiveLayer(action, layerName) {
@@ -1101,6 +1377,24 @@ function sampleNearest(buffer, width, height, x, y) {
   return buffer[iy * width + ix];
 }
 
+function sampleFloatBilinear(buffer, width, height, x, y) {
+  const sx = Math.max(0, Math.min(width - 1, x));
+  const sy = Math.max(0, Math.min(height - 1, y));
+  const x0 = Math.floor(sx);
+  const y0 = Math.floor(sy);
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+  const tx = sx - x0;
+  const ty = sy - y0;
+  const i00 = y0 * width + x0;
+  const i10 = y0 * width + x1;
+  const i01 = y1 * width + x0;
+  const i11 = y1 * width + x1;
+  const top = buffer[i00] * (1 - tx) + buffer[i10] * tx;
+  const bottom = buffer[i01] * (1 - tx) + buffer[i11] * tx;
+  return top * (1 - ty) + bottom * ty;
+}
+
 function scoreTransform(source, reference, width, height, dx, dy, scale, stride, region = null) {
   return scoreAffineTransform(source, reference, width, height, {
     dx,
@@ -1177,13 +1471,11 @@ function scoreGradientFieldOffset(sourceField, referenceField, width, height, dx
     const sourceY = y + dy;
     if (sourceY < 1 || sourceY >= height - 1) continue;
     const refRow = y * width;
-    const sourceRow = Math.round(sourceY) * width;
     for (let x = startX; x < endX; x += step) {
       const sourceX = x + dx;
       if (sourceX < 1 || sourceX >= width - 1) continue;
       const refIndex = refRow + x;
-      const sourceIndex = sourceRow + Math.round(sourceX);
-      const a = sourceField.mag[sourceIndex];
+      const a = sampleFloatBilinear(sourceField.mag, width, height, sourceX, sourceY);
       const b = referenceField.mag[refIndex];
       if (a < 6 && b < 6) continue;
       const edgeWeight = Math.min(2.4, Math.max(a, b) / 18) * (0.35 + Math.min(a, b) / Math.max(1, Math.max(a, b)) * 0.65);
@@ -1194,9 +1486,11 @@ function scoreGradientFieldOffset(sourceField, referenceField, width, height, dx
       sumAB += a * b * edgeWeight;
       const sourceMag = Math.max(0.001, a);
       const refMag = Math.max(0.001, b);
+      const sourceGx = sampleFloatBilinear(sourceField.gx, width, height, sourceX, sourceY);
+      const sourceGy = sampleFloatBilinear(sourceField.gy, width, height, sourceX, sourceY);
       const cos = (
-        sourceField.gx[sourceIndex] * referenceField.gx[refIndex] +
-        sourceField.gy[sourceIndex] * referenceField.gy[refIndex]
+        sourceGx * referenceField.gx[refIndex] +
+        sourceGy * referenceField.gy[refIndex]
       ) / Math.max(0.001, sourceMag * refMag);
       directionSum += Math.max(-1, Math.min(1, cos)) * edgeWeight;
       overlapSum += (Math.min(a, b) / Math.max(1, Math.max(a, b))) * edgeWeight;
@@ -1594,6 +1888,28 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
           }
         }
       }
+      const refineCandidates = [];
+      for (let refineDy = best.dy - 1; refineDy <= best.dy + 1.001; refineDy += 0.5) {
+        for (let refineDx = best.dx - 1; refineDx <= best.dx + 1.001; refineDx += 0.5) {
+          if (Math.abs(refineDx) > searchOffset || Math.abs(refineDy) > searchOffset) continue;
+          refineCandidates.push([Number(refineDx.toFixed(2)), Number(refineDy.toFixed(2))]);
+        }
+      }
+      refineCandidates.forEach(([dx, dy]) => {
+        const scored = scoreGradientFieldOffset(sourceField, refField, width, height, dx, dy, Math.max(1, Math.floor(stride * 0.75)), region);
+        const score = scored.score;
+        const distance = Math.hypot(dx, dy);
+        const bestDistance = Math.hypot(best.dx, best.dy);
+        if (
+          score > best.score + 0.00001 ||
+          (Math.abs(score - best.score) <= 0.00001 && distance > bestDistance && scored.direction > best.directionAgreement + 0.02)
+        ) {
+          second = Math.max(second, best.score);
+          best = { dx, dy, score, directionAgreement: scored.direction, overlap: scored.overlap, ncc: scored.ncc };
+        } else if (score > second && (Math.abs(dx - best.dx) > 0.001 || Math.abs(dy - best.dy) > 0.001)) {
+          second = score;
+        }
+      });
       const scoreGap = best.score - Math.max(0, second);
       const nonZeroMotion = Math.hypot(best.dx, best.dy) >= 0.75;
       const directionOk = best.directionAgreement > 0.18;
@@ -1745,6 +2061,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     const sourceLayerName = getLayerName(sourceLayer);
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
+    const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
     const resultLayerName = `PixelRunner 融合校色 - ${sourceLayerName}`.slice(0, 240);
     logs.push(`[融合校色] 开始分析图层：${sourceLayerName}。`);
     logs.push(`[融合校色] 处理区域：${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}。`);
@@ -1759,8 +2076,22 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let restoredVisibility = false;
 
     try {
-      sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-      logs.push("[融合校色] 已采样当前返图可见状态。");
+      if (config.pixelPipelineEnabled) {
+        try {
+          sourceSample = await captureIsolatedLayerSample(imaging, app, action, document, sourceLayerId, sourceBounds, 768);
+          logs.push("[融合校色] 已采样当前返图图层自身像素。");
+        } catch (error) {
+          logs.push(`[融合校色] 返图图层隔离采样失败：${error.message || "未知错误"}。已临时回退为可见状态采样。`);
+          await activateDocument(app, action, Number(document.id));
+          await selectLayerById(action, sourceLayerId);
+          sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+          sourceSample.compositeFallback = true;
+        }
+      } else {
+        sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+        logs.push("[融合校色] 已采样当前返图可见状态。");
+      }
+      await selectLayerById(action, sourceLayerId);
 
       await setLayerVisible(action, sourceLayerId, false);
       logs.push("[融合校色] 已临时隐藏当前返图图层，开始捕获隐藏后的可见合成参考。");
@@ -1815,7 +2146,13 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let pixelPipelineUsed = false;
     let pixelResult = null;
 
-    try {
+    if (!config.pixelPipelineEnabled) {
+      logs.push("[融合校色] 像素级校正已关闭：使用快速融合路径。");
+      await duplicateActiveLayer(action, resultLayerName);
+      resultLayer = getActiveLayer(app);
+      resultLayerId = getLayerId(resultLayer);
+    } else {
+      try {
       const { storage } = await ensureDeps();
       const processingTargetSize = getSamplingTargetSize(sourceBounds, config.localMeshMaxEdge);
       let processingSourceSample = sourceSample;
@@ -1823,7 +2160,8 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       if (processingTargetSize.width !== sourceSample.width || processingTargetSize.height !== sourceSample.height) {
         let processingRestoredVisibility = false;
         try {
-          processingSourceSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
+          processingSourceSample = await captureIsolatedLayerSample(imaging, app, action, document, sourceLayerId, sourceBounds, config.localMeshMaxEdge);
+          await selectLayerById(action, sourceLayerId);
           await setLayerVisible(action, sourceLayerId, false);
           processingReferenceSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
           await setLayerVisible(action, sourceLayerId, sourceWasVisible);
@@ -1840,22 +2178,49 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         logs.push(`[融合校色] 像素处理复用分析采样：${processingSourceSample.width}x${processingSourceSample.height}。`);
       }
 
-      pixelResult = processBlendMatchPixels(processingSourceSample, processingReferenceSample, config, alignment, sourceSample);
+      const pixelAlignment = config.alignmentEnabled
+        ? estimateGradientAlignment(processingSourceSample, processingReferenceSample, config)
+        : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+      if (config.alignmentEnabled) {
+        if (pixelAlignment.applied) {
+          logs.push(`[融合校色] 像素级重估对齐：dx ${pixelAlignment.dx}px, dy ${pixelAlignment.dy}px, scaleX ${Number(pixelAlignment.scaleXPercent || 100).toFixed(2)}%, scaleY ${Number(pixelAlignment.scaleYPercent || 100).toFixed(2)}%, rotate ${Number(pixelAlignment.rotation || 0).toFixed(2)}°, confidence ${Number(pixelAlignment.confidence || 0).toFixed(2)}。`);
+        } else {
+          logs.push(`[融合校色] 像素级重估对齐已跳过：${pixelAlignment.reason}，confidence ${Number(pixelAlignment.confidence || 0).toFixed(2)}。`);
+        }
+        if (pixelAlignment.localDeformation) {
+          logs.push(`[融合校色] 像素级局部网格：${pixelAlignment.local.validTiles}/${pixelAlignment.local.totalTiles} 个分块有效，最大局部偏移 ${pixelAlignment.local.maxDistance.toFixed(2)}px，平均偏移 ${Number(pixelAlignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(pixelAlignment.local.meanDirectionAgreement || 0).toFixed(2)}。`);
+        } else if (pixelAlignment.local && pixelAlignment.local.enabled) {
+          logs.push(`[融合校色] 像素级局部网格已跳过：${pixelAlignment.local.reason}，有效分块 ${pixelAlignment.local.validTiles || 0}/${pixelAlignment.local.totalTiles || 0}，最大偏移 ${Number(pixelAlignment.local.maxDistance || 0).toFixed(2)}px，平均偏移 ${Number(pixelAlignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(pixelAlignment.local.meanDirectionAgreement || 0).toFixed(2)}。`);
+        }
+      }
+
+      const processingAlpha = getAlphaStats(processingSourceSample.data);
+      const forceOpaque = fullDocumentTarget && processingAlpha.opaqueRatio > 0.995 && processingAlpha.transparentRatio < 0.001;
+      logs.push(`[融合校色] 返图透明度：不透明 ${Math.round(processingAlpha.opaqueRatio * 100)}%，透明 ${Math.round(processingAlpha.transparentRatio * 100)}%，${forceOpaque ? "按整画布不透明输出" : "保留原透明度"}。`);
+      pixelResult = processBlendMatchPixels(processingSourceSample, processingReferenceSample, config, pixelAlignment, processingSourceSample, { forceOpaque });
+      pixelResult.sourceAlpha = processingAlpha;
+      pixelResult.forceOpaque = forceOpaque;
       const pngBuffer = await encodeRgbaPng(pixelResult.width, pixelResult.height, pixelResult.data);
       if (!pngBuffer) throw new Error("像素结果 PNG 编码不可用。");
       resultLayer = await placePngBufferAsLayer(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+      const rasterized = await rasterizeActiveLayerBestEffort(action);
+      if (rasterized) {
+        resultLayer = getActiveLayer(app);
+      }
       resultLayerId = getLayerId(resultLayer);
       if (!(resultLayerId > 0)) throw new Error("像素结果层置入失败。");
       pixelPipelineUsed = true;
+      logs.push(`[融合校色] 像素结果已置入${rasterized ? "并栅格化为普通图层" : "为置入图层"}。`);
       logs.push(`[融合校色] 像素网格对齐：全局 ${pixelResult.alignment.globalApplied ? "启用" : "跳过"}，局部 ${pixelResult.alignment.localApplied ? "启用" : "跳过"}，有效分块 ${pixelResult.alignment.validTiles}/${pixelResult.alignment.totalTiles}，最大偏移 ${Number(pixelResult.alignment.maxDistance || 0).toFixed(2)}px。`);
       logs.push(`[融合校色] 像素校色：亮度 ${pixelResult.color.luminanceDelta >= 0 ? "+" : ""}${pixelResult.color.luminanceDelta}，色度 U ${pixelResult.color.chromaUDelta >= 0 ? "+" : ""}${pixelResult.color.chromaUDelta} / V ${pixelResult.color.chromaVDelta >= 0 ? "+" : ""}${pixelResult.color.chromaVDelta}，饱和系数 ${pixelResult.color.saturationFactor.toFixed(2)}，多尺度 ${pixelResult.color.lowRadius}px/${pixelResult.color.midRadius}px。`);
       logs.push(`[融合校色] 像素边缘融合：边缘半径 ${pixelResult.color.edgeRadius}px，已保护透明像素并输出 PNG 结果层。`);
-    } catch (error) {
-      logs.push(`[融合校色] 像素级处理未完成：${error.message || "未知错误"}。已回退为旧版普通融合结果。`);
-      await selectLayerById(action, sourceLayerId);
-      await duplicateActiveLayer(action, resultLayerName);
-      resultLayer = getActiveLayer(app);
-      resultLayerId = getLayerId(resultLayer);
+      } catch (error) {
+        logs.push(`[融合校色] 像素级处理未完成：${error.message || "未知错误"}。已回退为旧版普通融合结果。`);
+        await selectLayerById(action, sourceLayerId);
+        await duplicateActiveLayer(action, resultLayerName);
+        resultLayer = getActiveLayer(app);
+        resultLayerId = getLayerId(resultLayer);
+      }
     }
     if (!(resultLayerId > 0)) throw new Error("融合校色结果层创建失败。");
     logs.push(`[融合校色] 已创建结果层：${resultLayerName}。`);
@@ -1887,7 +2252,12 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       logs.push(`[融合校色] 已应用旧版基础明度、对比、色偏和饱和度匹配，总强度 ${config.totalStrength}% 已写入校正量。`);
     }
 
-    const featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
+    let featherApplied = false;
+    if (pixelPipelineUsed && fullDocumentTarget && pixelResult && pixelResult.forceOpaque) {
+      logs.push("[融合校色] 当前结果覆盖整张画布且无透明边缘，已跳过向内羽化蒙版。");
+    } else {
+      featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
+    }
     await selectLayerById(action, resultLayerId);
 
     return {
