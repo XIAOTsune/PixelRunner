@@ -341,25 +341,21 @@ function branchContainsLayerId(layer, targetLayerId) {
   return listChildLayers(layer).some((child) => branchContainsLayerId(child, targetLayerId));
 }
 
-async function setLayerObjectVisible(layer, visible) {
-  if (!layer) return;
-  try {
-    layer.visible = Boolean(visible);
-  } catch (_) {}
-}
-
-async function setOnlyLayerVisibleInDocument(docRef, targetLayerId) {
+async function setOnlyLayerVisibleInDocument(action, docRef, targetLayerId) {
   const targetId = Number(targetLayerId) || 0;
   if (!(targetId > 0)) throw new Error("隔离采样缺少临时 source 图层 ID。");
   const visit = async (layer) => {
+    const layerId = Number(layer && layer.id) || 0;
+    if (!(layerId > 0)) return;
     const containsTarget = branchContainsLayerId(layer, targetId);
-    await setLayerObjectVisible(layer, containsTarget);
+    await setLayerVisible(action, layerId, containsTarget);
     const children = listChildLayers(layer);
     for (const child of children) {
       if (containsTarget) {
         await visit(child);
       } else {
-        await setLayerObjectVisible(child, false);
+        const childId = Number(child && child.id) || 0;
+        if (childId > 0) await setLayerVisible(action, childId, false);
       }
     }
   };
@@ -390,10 +386,53 @@ async function getImageDataBytes(imageData) {
   if (!imageData) return null;
   if (imageData.data) return imageData.data;
   if (typeof imageData.getData === "function") {
+    try {
+      const data = await imageData.getData({ chunky: true });
+      if (data) return data;
+    } catch (_) {}
     const data = await imageData.getData();
     if (data) return data;
   }
   return null;
+}
+
+function normalizeImageDataToRgba(imageData, data, width, height) {
+  const safeWidth = Math.max(1, Number(width) || Number(imageData && imageData.width) || 1);
+  const safeHeight = Math.max(1, Number(height) || Number(imageData && imageData.height) || 1);
+  const pixelCount = safeWidth * safeHeight;
+  const components = Math.max(1, Number(imageData && imageData.components) || Math.floor((data && data.length ? data.length : 0) / Math.max(1, pixelCount)) || 4);
+  const pixelFormat = String((imageData && imageData.pixelFormat) || (components === 4 ? "RGBA" : components === 3 ? "RGB" : components === 2 ? "GrayscaleAlpha" : "Grayscale"));
+  const out = new Uint8Array(pixelCount * 4);
+  if (!data || data.length < pixelCount * components) return out;
+
+  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+    const sourceIndex = pixel * components;
+    const targetIndex = pixel * 4;
+    if (pixelFormat === "RGBA" || components >= 4) {
+      out[targetIndex] = data[sourceIndex];
+      out[targetIndex + 1] = data[sourceIndex + 1];
+      out[targetIndex + 2] = data[sourceIndex + 2];
+      out[targetIndex + 3] = data[sourceIndex + 3];
+    } else if (pixelFormat === "RGB" || components === 3) {
+      out[targetIndex] = data[sourceIndex];
+      out[targetIndex + 1] = data[sourceIndex + 1];
+      out[targetIndex + 2] = data[sourceIndex + 2];
+      out[targetIndex + 3] = 255;
+    } else if (pixelFormat === "GrayscaleAlpha" || components === 2) {
+      const gray = data[sourceIndex];
+      out[targetIndex] = gray;
+      out[targetIndex + 1] = gray;
+      out[targetIndex + 2] = gray;
+      out[targetIndex + 3] = data[sourceIndex + 1];
+    } else {
+      const gray = data[sourceIndex];
+      out[targetIndex] = gray;
+      out[targetIndex + 1] = gray;
+      out[targetIndex + 2] = gray;
+      out[targetIndex + 3] = 255;
+    }
+  }
+  return out;
 }
 
 async function sampleCompositeStats(imaging, doc, bounds) {
@@ -405,11 +444,12 @@ async function sampleCompositeStats(imaging, doc, bounds) {
       sourceBounds: bounds,
       targetSize,
       componentSize: 8,
-      applyAlpha: true
+      applyAlpha: false
     });
     const data = await getImageDataBytes(pixels && pixels.imageData);
     if (!data || data.length < 4) throw new Error("Photoshop 未返回可读取的像素数据。");
-    return buildStatsFromRgba(data);
+    const rgba = normalizeImageDataToRgba(pixels && pixels.imageData, data, targetSize.width, targetSize.height);
+    return buildStatsFromRgba(rgba);
   } finally {
     try {
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
@@ -426,12 +466,11 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
       sourceBounds: bounds,
       targetSize,
       componentSize: 8,
-      applyAlpha: true
+      applyAlpha: false
     });
     const data = await getImageDataBytes(pixels && pixels.imageData);
     if (!data || data.length < 4) throw new Error("Photoshop 未返回可读取的像素数据。");
-    const copy = new Uint8Array(data.length);
-    copy.set(data);
+    const copy = normalizeImageDataToRgba(pixels && pixels.imageData, data, targetSize.width, targetSize.height);
     let base64 = "";
     if (encode && typeof imaging.encodeImageData === "function") {
       const encoded = await imaging.encodeImageData({
@@ -470,6 +509,8 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
       scaleX: (Math.max(1, Number(bounds.right) - Number(bounds.left))) / Math.max(1, targetSize.width),
       scaleY: (Math.max(1, Number(bounds.bottom) - Number(bounds.top))) / Math.max(1, targetSize.height),
       data: copy,
+      sourceComponents: Number(pixels && pixels.imageData && pixels.imageData.components) || Math.floor(data.length / Math.max(1, targetSize.width * targetSize.height)) || 0,
+      sourcePixelFormat: String((pixels && pixels.imageData && pixels.imageData.pixelFormat) || ""),
       stats,
       base64,
       dataUrl: buildDataUrl("image/jpeg", base64)
@@ -531,7 +572,7 @@ async function captureIsolatedSourceSampleV2(imaging, app, action, originalDocum
     if (!(tempSourceLayerId > 0)) {
       throw new Error("隔离文档未保留活动 source 图层。");
     }
-    await setOnlyLayerVisibleInDocument(tempDoc, tempSourceLayerId);
+    await setOnlyLayerVisibleInDocument(action, tempDoc, tempSourceLayerId);
     await selectLayerById(action, tempSourceLayerId);
     const sample = await captureCompositeSample(imaging, tempDoc, bounds, maxEdge, false, true);
     sample.captureMethod = "document-duplicate-hide-others";
@@ -3079,6 +3120,7 @@ async function runPixelAlignmentV2Flow({
     Math.abs((Number(sourceSample.scaleX) || 1) - (Number(referenceSample.scaleX) || 1)) < 0.0001 &&
     Math.abs((Number(sourceSample.scaleY) || 1) - (Number(referenceSample.scaleY) || 1)) < 0.0001;
   logs.push(`[融合校色] v2 capture size：source ${sourceSample.width}x${sourceSample.height} / reference ${referenceSample.width}x${referenceSample.height} / scale ${formatFixed(sourceSample.scaleX, 3)}x${formatFixed(sourceSample.scaleY, 3)}。`);
+  logs.push(`[融合校色] v2 capture channels：source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""} -> RGBA，reference ${referenceSample.sourceComponents || 0}${referenceSample.sourcePixelFormat ? `/${referenceSample.sourcePixelFormat}` : ""} -> RGBA。`);
   if (!sameSize || !sameScale) {
     return buildSkippedPixelAlignmentResult({
       app,
@@ -3268,7 +3310,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     } catch (_) {}
 
     if (config.pixelPipelineEnabled) {
-      return runPixelAlignmentV2Flow({
+      const pixelAlignmentAttempt = await runPixelAlignmentV2Flow({
         photoshop,
         app,
         action,
@@ -3281,6 +3323,15 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         sourceWasVisible,
         config
       });
+      if (!pixelAlignmentAttempt || pixelAlignmentAttempt.skipped !== true) {
+        return pixelAlignmentAttempt;
+      }
+      logs.push("[融合校色] 实验像素级对齐未生成结果，继续回到快速融合路径。");
+      await activateDocument(app, action, Number(document.id));
+      await selectLayerById(action, sourceLayerId);
+      try {
+        await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+      } catch (_) {}
     }
 
     let sourceSample = null;
@@ -3345,7 +3396,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let pixelPipelineUsed = false;
     let pixelResult = null;
 
-    logs.push("[融合校色] 实验像素级对齐已关闭：使用快速融合路径。");
+    logs.push(config.pixelPipelineEnabled
+      ? "[融合校色] 实验像素级对齐未生成可用结果：使用快速融合路径。"
+      : "[融合校色] 实验像素级对齐已关闭：使用快速融合路径。");
     await duplicateActiveLayer(action, resultLayerName);
     resultLayer = getActiveLayer(app);
     resultLayerId = getLayerId(resultLayer);
