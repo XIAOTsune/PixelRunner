@@ -299,7 +299,8 @@ async function transformLayerAlignment(action, layerId, alignment) {
   const descriptor = {
     _obj: "transform",
     _target: [{ _ref: "layer", _id: Number(layerId) }],
-    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" }
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    _options: { dialogOptions: "dontDisplay" }
   };
   if (Math.abs(scaleX - 100) >= 0.08 || Math.abs(scaleY - 100) >= 0.08) {
     descriptor.width = { _unit: "percentUnit", _value: scaleX };
@@ -562,31 +563,55 @@ function buildScaleCandidates(maxScalePercent, enabled) {
   if (!enabled || !(maxScalePercent > 0)) return [1];
   const maxScale = Math.max(0, Math.min(4, Number(maxScalePercent) || 0));
   const out = [1];
-  const steps = maxScale <= 1 ? [maxScale] : [maxScale / 2, maxScale];
-  steps.forEach((step) => {
-    if (step > 0.05) {
-      out.push(1 - step / 100, 1 + step / 100);
-    }
-  });
+  const unit = maxScale <= 1.25 ? 0.25 : 0.5;
+  for (let step = unit; step <= maxScale + 0.001; step += unit) {
+    out.push(1 - step / 100, 1 + step / 100);
+  }
+  if (Math.abs(maxScale % unit) > 0.001) {
+    out.push(1 - maxScale / 100, 1 + maxScale / 100);
+  }
   return out.sort((a, b) => Math.abs(a - 1) - Math.abs(b - 1));
 }
 
 function buildSymmetricCandidates(maxValue, enabled, unit = 1) {
   if (!enabled || !(maxValue > 0)) return [0];
   const max = Math.max(0, Number(maxValue) || 0);
-  const half = max / 2;
-  const raw = [0, -half, half, -max, max]
-    .map((value) => Math.round(value / unit) * unit)
-    .filter((value, index, list) => Math.abs(value) > 0.0001 || index === list.indexOf(0));
+  const step = Math.max(0.05, Number(unit) || 1);
+  const raw = [0];
+  for (let value = step; value <= max + 0.001; value += step) {
+    raw.push(-value, value);
+  }
+  if (Math.abs(max % step) > 0.001) raw.push(-max, max);
   return Array.from(new Set(raw)).sort((a, b) => Math.abs(a) - Math.abs(b));
+}
+
+function buildStretchPairs(maxStretch, enabled) {
+  if (!enabled || !(maxStretch > 0)) return [[0, 0]];
+  const values = buildSymmetricCandidates(maxStretch, true, maxStretch <= 1.5 ? 0.25 : 0.5);
+  const pairs = [[0, 0]];
+  const addPair = (x, y) => {
+    const key = `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;
+    if (!pairs.some((pair) => `${Number(pair[0]).toFixed(3)},${Number(pair[1]).toFixed(3)}` === key)) {
+      pairs.push([x, y]);
+    }
+  };
+  values.forEach((value) => {
+    if (Math.abs(value) < 0.0001) return;
+    addPair(0, value);
+    addPair(value, 0);
+    addPair(value, value);
+    addPair(value, -value);
+    addPair(-value, value);
+  });
+  return pairs.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
 }
 
 function refineAffineAlignment(sourceGrad, refGrad, width, height, base, baseSecondScore, config, sampleOffset, stride) {
   const rotationCandidates = buildSymmetricCandidates(config.alignmentMaxRotation, true, 0.25);
   const maxStretch = Math.max(0, Number(config.alignmentMaxStretch) || 0);
-  const stretchCandidates = config.alignmentScaleEnabled && maxStretch > 0 ? [0, -maxStretch, maxStretch] : [0];
+  const stretchPairs = buildStretchPairs(maxStretch, config.alignmentScaleEnabled);
   const offsetWindow = Math.max(1, Math.min(2, Math.round(sampleOffset / 5)));
-  const refineStride = Math.max(stride, Math.floor(stride * 1.5));
+  const refineStride = Math.max(1, stride);
   let best = {
     dx: base.dx,
     dy: base.dy,
@@ -599,18 +624,16 @@ function refineAffineAlignment(sourceGrad, refGrad, width, height, base, baseSec
   for (let dy = base.dy - offsetWindow; dy <= base.dy + offsetWindow; dy += 1) {
     for (let dx = base.dx - offsetWindow; dx <= base.dx + offsetWindow; dx += 1) {
       rotationCandidates.forEach((rotation) => {
-        stretchCandidates.forEach((stretchX) => {
-          stretchCandidates.forEach((stretchY) => {
-            const scaleX = Math.max(0.92, Math.min(1.08, base.scale * (1 + stretchX / 100)));
-            const scaleY = Math.max(0.92, Math.min(1.08, base.scale * (1 + stretchY / 100)));
-            const score = scoreAffineTransform(sourceGrad, refGrad, width, height, { dx, dy, scaleX, scaleY, rotation }, refineStride);
-            if (score > best.score) {
-              second = best.score;
-              best = { dx, dy, scaleX, scaleY, rotation, score };
-            } else if (score > second) {
-              second = score;
-            }
-          });
+        stretchPairs.forEach(([stretchX, stretchY]) => {
+          const scaleX = Math.max(0.92, Math.min(1.08, base.scale * (1 + stretchX / 100)));
+          const scaleY = Math.max(0.92, Math.min(1.08, base.scale * (1 + stretchY / 100)));
+          const score = scoreAffineTransform(sourceGrad, refGrad, width, height, { dx, dy, scaleX, scaleY, rotation }, refineStride);
+          if (score > best.score) {
+            second = best.score;
+            best = { dx, dy, scaleX, scaleY, rotation, score };
+          } else if (score > second) {
+            second = score;
+          }
         });
       });
     }
@@ -828,9 +851,9 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
         ...affineBest,
         dx: affineBest.dx * (1 - localDampen * 0.25) + local.meanDx * localDampen * 0.25,
         dy: affineBest.dy * (1 - localDampen * 0.25) + local.meanDy * localDampen * 0.25,
-        scaleX: 1 + (affineBest.scaleX - 1) * (1 - localDampen),
-        scaleY: 1 + (affineBest.scaleY - 1) * (1 - localDampen),
-        rotation: affineBest.rotation * (1 - localDampen)
+        scaleX: affineBest.scaleX,
+        scaleY: affineBest.scaleY,
+        rotation: affineBest.rotation * (1 - localDampen * 0.5)
       }
     : affineBest;
   const comparisonScore = Math.max(0, affineBest.secondScore, second);
@@ -967,6 +990,17 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     if (config.alignmentEnabled) {
       if (alignment.applied) {
         logs.push(`[融合校色] 梯度对齐：dx ${alignment.dx}px, dy ${alignment.dy}px, scaleX ${Number(alignment.scaleXPercent || 100).toFixed(2)}%, scaleY ${Number(alignment.scaleYPercent || 100).toFixed(2)}%, rotate ${Number(alignment.rotation || 0).toFixed(2)}°, confidence ${alignment.confidence.toFixed(2)}。`);
+        const rawScaleX = Number(alignment.rawSampleScaleX) * 100;
+        const rawScaleY = Number(alignment.rawSampleScaleY) * 100;
+        const rawRotation = Number(alignment.rawSampleRotation) || 0;
+        if (
+          Number.isFinite(rawScaleX) &&
+          (Math.abs(rawScaleX - Number(alignment.scaleXPercent || 100)) >= 0.03 ||
+            Math.abs(rawScaleY - Number(alignment.scaleYPercent || 100)) >= 0.03 ||
+            Math.abs(rawRotation - Number(alignment.rotation || 0)) >= 0.03)
+        ) {
+          logs.push(`[融合校色] 对齐原始搜索：scaleX ${rawScaleX.toFixed(2)}%, scaleY ${rawScaleY.toFixed(2)}%, rotate ${rawRotation.toFixed(2)}°；最终应用已按局部网格稳定性约束。`);
+        }
       } else {
         logs.push(`[融合校色] 梯度对齐已跳过：${alignment.reason}，confidence ${Number(alignment.confidence || 0).toFixed(2)}。`);
       }
@@ -997,6 +1031,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     if (alignment.applied) {
       await transformLayerAlignment(action, resultLayerId, alignment);
       await selectLayerById(action, resultLayerId);
+      logs.push("[融合校色] 已向 Photoshop 提交对齐变换。");
     }
 
     const corrections = buildCorrections(sourceStats, referenceStats, config);
