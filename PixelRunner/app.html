@@ -1228,15 +1228,15 @@
         </label>
         <label class="freq-sep-check-field">
           <input id="blendMatchPixelPipelineToggle" type="checkbox" />
-          <span>启用实验像素级校正（较慢）</span>
+          <span>启用实验像素级对齐（较慢）</span>
         </label>
         <label class="freq-sep-check-field">
           <input id="blendMatchAlignmentToggle" type="checkbox" checked />
-          <span>启用像素对齐</span>
+          <span>启用快速对齐</span>
         </label>
       </div>
 
-      <div class="summary-strip">默认使用快速融合路径；开启实验像素级校正后，会额外生成像素处理结果层，处理时间更长。</div>
+      <div class="summary-strip">默认使用快速融合路径；开启实验像素级对齐后，只在验证通过时生成独立对齐结果层。</div>
 
       <div class="action-row blend-match-actions">
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>

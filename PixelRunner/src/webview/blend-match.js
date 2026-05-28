@@ -572,9 +572,14 @@
       const result = await modules.runtime.callHost("photoshop.runToolAction", [buildPayload()], { timeoutMs: 90000 });
       const logs = Array.isArray(result && result.logs) ? result.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
-      modules.ui.logToWorkspace(result && result.message ? result.message : "融合校色完成。", "success");
-      setText("blendMatchPanelStatus", result && result.layerName ? `结果图层：${result.layerName}` : "融合校色已完成");
-      closePanel();
+      if (result && result.skipped) {
+        modules.ui.logToWorkspace(result.message || "实验像素级对齐已跳过，未生成结果层。", "warn");
+        setText("blendMatchPanelStatus", result.message || "实验像素级对齐已跳过");
+      } else {
+        modules.ui.logToWorkspace(result && result.message ? result.message : "融合校色完成。", "success");
+        setText("blendMatchPanelStatus", result && result.layerName ? `结果图层：${result.layerName}` : "融合校色已完成");
+        closePanel();
+      }
     } catch (error) {
       modules.ui.logToWorkspace(`[融合校色] 执行失败：${error.message}`, "error");
       setText("blendMatchPanelStatus", `执行失败：${error.message}`);
@@ -600,7 +605,10 @@
       const fusion = await modules.runtime.callHost("photoshop.runToolAction", [payload], { timeoutMs: 90000 });
       const logs = Array.isArray(fusion && fusion.logs) ? fusion.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
-      modules.ui.logToWorkspace(fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。", "success");
+      modules.ui.logToWorkspace(
+        fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。",
+        fusion && fusion.skipped ? "warn" : "success"
+      );
       return fusion;
     } catch (error) {
       modules.ui.logToWorkspace(`[融合校色] 自动融合失败，已保留原返图：${error.message}`, "warn");

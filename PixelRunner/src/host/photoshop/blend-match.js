@@ -303,6 +303,73 @@ async function closeDocumentWithoutSaving(action, docRef) {
   }], {});
 }
 
+async function duplicateDocumentForIsolation(app, action, docRef, name) {
+  if (!docRef) throw new Error("原 Photoshop 文档不可用，无法创建隔离采样临时文档。");
+  if (typeof docRef.duplicate === "function") {
+    const duplicated = await docRef.duplicate(name, false);
+    if (duplicated) return duplicated;
+  }
+  await activateDocument(app, action, Number(docRef.id));
+  await action.batchPlay([{
+    _obj: "duplicate",
+    _target: [{ _ref: "document", _id: Number(docRef.id) }],
+    name,
+    merged: false,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  const duplicated = app && app.activeDocument ? app.activeDocument : null;
+  if (!duplicated) throw new Error("Photoshop 未返回隔离采样临时文档。");
+  return duplicated;
+}
+
+function listChildLayers(layerOrDocument) {
+  const layers = layerOrDocument && layerOrDocument.layers;
+  if (!layers) return [];
+  if (Array.isArray(layers)) return layers;
+  if (typeof layers.length === "number") return Array.from(layers);
+  if (typeof layers.forEach === "function") {
+    const out = [];
+    layers.forEach((item) => out.push(item));
+    return out;
+  }
+  return [];
+}
+
+function branchContainsLayerId(layer, targetLayerId) {
+  if (!layer) return false;
+  if (Number(layer.id) === Number(targetLayerId)) return true;
+  return listChildLayers(layer).some((child) => branchContainsLayerId(child, targetLayerId));
+}
+
+async function setLayerObjectVisible(layer, visible) {
+  if (!layer) return;
+  try {
+    layer.visible = Boolean(visible);
+  } catch (_) {}
+}
+
+async function setOnlyLayerVisibleInDocument(docRef, targetLayerId) {
+  const targetId = Number(targetLayerId) || 0;
+  if (!(targetId > 0)) throw new Error("隔离采样缺少临时 source 图层 ID。");
+  const visit = async (layer) => {
+    const containsTarget = branchContainsLayerId(layer, targetId);
+    await setLayerObjectVisible(layer, containsTarget);
+    const children = listChildLayers(layer);
+    for (const child of children) {
+      if (containsTarget) {
+        await visit(child);
+      } else {
+        await setLayerObjectVisible(child, false);
+      }
+    }
+  };
+  const roots = listChildLayers(docRef);
+  if (!roots.length) throw new Error("隔离采样临时文档没有可枚举图层。");
+  for (const layer of roots) {
+    await visit(layer);
+  }
+}
+
 function extractEncodedBase64(encoded) {
   const value = typeof encoded === "string" ? encoded : String((encoded && (encoded.base64 || encoded.data)) || "");
   const commaIndex = value.indexOf(",");
@@ -350,7 +417,7 @@ async function sampleCompositeStats(imaging, doc, bounds) {
   }
 }
 
-async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encode = false) {
+async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encode = false, allowEmptyStats = false) {
   const targetSize = getSamplingTargetSize(bounds, maxEdge);
   let pixels = null;
   try {
@@ -375,13 +442,35 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
       });
       base64 = extractEncodedBase64(encoded);
     }
+    let stats = null;
+    try {
+      stats = buildStatsFromRgba(copy);
+    } catch (error) {
+      if (!allowEmptyStats) throw error;
+      stats = {
+        count: 0,
+        meanR: 0,
+        meanG: 0,
+        meanB: 0,
+        weightedMeanR: 0,
+        weightedMeanG: 0,
+        weightedMeanB: 0,
+        weightedMeanLuma: 0,
+        weightedMeanSat: 0,
+        meanLuma: 0,
+        stdLuma: 0,
+        meanSat: 0,
+        detailEnergy: 0,
+        statsError: error.message || "empty-stats"
+      };
+    }
     return {
       width: targetSize.width,
       height: targetSize.height,
       scaleX: (Math.max(1, Number(bounds.right) - Number(bounds.left))) / Math.max(1, targetSize.width),
       scaleY: (Math.max(1, Number(bounds.bottom) - Number(bounds.top))) / Math.max(1, targetSize.height),
       data: copy,
-      stats: buildStatsFromRgba(copy),
+      stats,
       base64,
       dataUrl: buildDataUrl("image/jpeg", base64)
     };
@@ -424,6 +513,62 @@ async function captureIsolatedLayerSample(imaging, app, action, originalDocument
       } catch (_) {}
       try {
         await activateDocument(app, action, originalDocumentId);
+      } catch (_) {}
+    }
+  }
+}
+
+async function captureIsolatedSourceSampleV2(imaging, app, action, originalDocument, sourceLayerId, bounds, maxEdge = 1536) {
+  const originalDocumentId = Number(originalDocument && originalDocument.id) || 0;
+  let tempDoc = null;
+  try {
+    await activateDocument(app, action, originalDocumentId);
+    await selectLayerById(action, sourceLayerId);
+    tempDoc = await duplicateDocumentForIsolation(app, action, originalDocument, "PixelRunner Pixel Align Source Isolation");
+    await activateDocument(app, action, Number(tempDoc.id));
+    const tempSourceLayer = getActiveLayer(app);
+    const tempSourceLayerId = getLayerId(tempSourceLayer);
+    if (!(tempSourceLayerId > 0)) {
+      throw new Error("隔离文档未保留活动 source 图层。");
+    }
+    await setOnlyLayerVisibleInDocument(tempDoc, tempSourceLayerId);
+    await selectLayerById(action, tempSourceLayerId);
+    const sample = await captureCompositeSample(imaging, tempDoc, bounds, maxEdge, false, true);
+    sample.captureMethod = "document-duplicate-hide-others";
+    sample.tempLayerId = tempSourceLayerId;
+    return sample;
+  } finally {
+    try {
+      await activateDocument(app, action, originalDocumentId);
+    } catch (_) {}
+    if (tempDoc) {
+      try {
+        await closeDocumentWithoutSaving(action, tempDoc);
+      } catch (_) {}
+      try {
+        await activateDocument(app, action, originalDocumentId);
+      } catch (_) {}
+    }
+  }
+}
+
+async function captureReferenceSample(imaging, app, action, originalDocument, sourceLayerId, bounds, maxEdge, sourceWasVisible) {
+  const originalDocumentId = Number(originalDocument && originalDocument.id) || 0;
+  let restoredVisibility = false;
+  try {
+    await activateDocument(app, action, originalDocumentId);
+    await selectLayerById(action, sourceLayerId);
+    await setLayerVisible(action, sourceLayerId, false);
+    const sample = await captureCompositeSample(imaging, originalDocument, bounds, maxEdge, false, true);
+    sample.captureMethod = "original-document-source-hidden-composite";
+    await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+    restoredVisibility = true;
+    return sample;
+  } finally {
+    if (!restoredVisibility) {
+      try {
+        await activateDocument(app, action, originalDocumentId);
+        await setLayerVisible(action, sourceLayerId, sourceWasVisible);
       } catch (_) {}
     }
   }
@@ -1158,6 +1303,21 @@ async function placePngBufferAsLayer(app, action, storage, buffer, targetBounds,
   return layer;
 }
 
+async function deleteLayerByIdBestEffort(action, layerId) {
+  const id = Number(layerId) || 0;
+  if (!(id > 0)) return false;
+  try {
+    await action.batchPlay([{
+      _obj: "delete",
+      _target: [{ _ref: "layer", _id: id }],
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 async function rasterizeActiveLayerBestEffort(action) {
   try {
     await action.batchPlay([{
@@ -1177,6 +1337,29 @@ async function duplicateActiveLayer(action, layerName) {
     _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
     name: layerName
   }], {});
+}
+
+async function placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName) {
+  let placedLayer = null;
+  let placedLayerId = 0;
+  try {
+    placedLayer = await placePngBufferAsLayer(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+    placedLayerId = getLayerId(placedLayer);
+    if (!(placedLayerId > 0)) throw new Error("像素对齐 PNG 置入失败。");
+    const rasterized = await rasterizeActiveLayerBestEffort(action);
+    if (!rasterized) throw new Error("像素对齐结果栅格化失败。");
+    placedLayer = getActiveLayer(app);
+    placedLayerId = getLayerId(placedLayer);
+    if (!(placedLayerId > 0)) throw new Error("像素对齐结果层不可用。");
+    try {
+      placedLayer.name = resultLayerName;
+    } catch (_) {}
+    return { layer: placedLayer, layerId: placedLayerId, rasterized };
+  } catch (error) {
+    const activeLayerId = getLayerId(getActiveLayer(app));
+    await deleteLayerByIdBestEffort(action, placedLayerId || activeLayerId);
+    throw error;
+  }
 }
 
 async function applyBrightnessContrast(action, brightness, contrast) {
@@ -1514,6 +1697,702 @@ function scoreGradientFieldOffset(sourceField, referenceField, width, height, dx
     direction,
     overlap,
     count
+  };
+}
+
+function getRgbDiagnostics(data) {
+  let count = 0;
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  let sumL = 0;
+  let sumLSq = 0;
+  const length = Math.floor((data && data.length ? data.length : 0) / 4) * 4;
+  const step = Math.max(4, Math.floor(length / (4 * 220000)) * 4);
+  for (let index = 0; index < length; index += step) {
+    const alpha = Number(data[index + 3]) || 0;
+    if (alpha <= 4) continue;
+    const r = Number(data[index]) || 0;
+    const g = Number(data[index + 1]) || 0;
+    const b = Number(data[index + 2]) || 0;
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    sumR += r;
+    sumG += g;
+    sumB += b;
+    sumL += luma;
+    sumLSq += luma * luma;
+    count += 1;
+  }
+  if (!count) return { count: 0, meanR: 0, meanG: 0, meanB: 0, meanLuma: 0, varianceLuma: 0, stdLuma: 0 };
+  const meanLuma = sumL / count;
+  const varianceLuma = Math.max(0, sumLSq / count - meanLuma * meanLuma);
+  return {
+    count,
+    meanR: sumR / count,
+    meanG: sumG / count,
+    meanB: sumB / count,
+    meanLuma,
+    varianceLuma,
+    stdLuma: Math.sqrt(varianceLuma)
+  };
+}
+
+function getBorderBlackRatio(data, width, height) {
+  const border = Math.max(1, Math.round(Math.min(width, height) * 0.025));
+  let count = 0;
+  let black = 0;
+  for (let y = 0; y < height; y += 1) {
+    const inBorderY = y < border || y >= height - border;
+    for (let x = 0; x < width; x += 1) {
+      if (!inBorderY && x >= border && x < width - border) continue;
+      const index = (y * width + x) * 4;
+      const alpha = Number(data[index + 3]) || 0;
+      if (alpha <= 4) continue;
+      const luma = 0.2126 * data[index] + 0.7152 * data[index + 1] + 0.0722 * data[index + 2];
+      count += 1;
+      if (luma <= 3) black += 1;
+    }
+  }
+  return count ? black / count : 0;
+}
+
+function getRepeatedPatternScore(data, width, height) {
+  const periods = [
+    { dx: Math.floor(width / 2), dy: 0 },
+    { dx: Math.floor(width / 3), dy: 0 },
+    { dx: 0, dy: Math.floor(height / 2) }
+  ].filter((period) => Math.abs(period.dx) >= 8 || Math.abs(period.dy) >= 8);
+  let best = 0;
+  const step = Math.max(1, Math.floor(Math.max(width, height) / 180));
+  periods.forEach((period) => {
+    let diffSum = 0;
+    let count = 0;
+    const maxY = period.dy ? height - period.dy : height;
+    const maxX = period.dx ? width - period.dx : width;
+    for (let y = 0; y < maxY; y += step) {
+      for (let x = 0; x < maxX; x += step) {
+        const a = (y * width + x) * 4;
+        const b = ((y + period.dy) * width + x + period.dx) * 4;
+        const alphaA = Number(data[a + 3]) || 0;
+        const alphaB = Number(data[b + 3]) || 0;
+        if (alphaA <= 32 || alphaB <= 32) continue;
+        diffSum += (
+          Math.abs(data[a] - data[b]) +
+          Math.abs(data[a + 1] - data[b + 1]) +
+          Math.abs(data[a + 2] - data[b + 2])
+        ) / 3;
+        count += 1;
+      }
+    }
+    if (count >= 64) {
+      const meanDiff = diffSum / count;
+      best = Math.max(best, 1 - Math.min(1, meanDiff / 36));
+    }
+  });
+  return Math.max(0, Math.min(1, best));
+}
+
+function meanGradientEnergy(field, mask = null) {
+  const mag = field && field.mag;
+  if (!mag || !mag.length) return 0;
+  let sum = 0;
+  let weight = 0;
+  const step = Math.max(1, Math.floor(mag.length / 260000));
+  for (let index = 0; index < mag.length; index += step) {
+    const w = mask ? Number(mask[index]) || 0 : 1;
+    if (w <= 0) continue;
+    sum += mag[index] * w;
+    weight += w;
+  }
+  return weight > 0 ? sum / weight : 0;
+}
+
+function buildCaptureDiagnostics(sample) {
+  const width = Math.max(1, Number(sample && sample.width) || 1);
+  const height = Math.max(1, Number(sample && sample.height) || 1);
+  const data = sample && sample.data ? sample.data : new Uint8Array();
+  const alpha = getAlphaStats(data);
+  const rgb = getRgbDiagnostics(data);
+  const luma = buildLuma(data, width, height);
+  const field = buildSobelField(luma, width, height);
+  const gradientEnergy = meanGradientEnergy(field);
+  const borderBlackRatio = getBorderBlackRatio(data, width, height);
+  const repeatedPatternScore = getRepeatedPatternScore(data, width, height);
+  const reasons = [];
+  if (alpha.maxAlpha <= 4 || alpha.transparentRatio > 0.995) reasons.push("source-all-transparent");
+  if (rgb.count <= 24) reasons.push("source-too-few-visible-pixels");
+  if (rgb.meanLuma <= 2 && rgb.stdLuma <= 1.5) reasons.push("source-nearly-black");
+  if (gradientEnergy <= 0.8 && rgb.stdLuma <= 2.5) reasons.push("source-low-texture");
+  if (borderBlackRatio > 0.45 && alpha.transparentRatio < 0.05) reasons.push("source-black-border-suspicious");
+  if (repeatedPatternScore > 0.975 && alpha.opaqueRatio > 0.35 && gradientEnergy < 3) reasons.push("source-repeated-pattern-suspicious");
+  return {
+    width,
+    height,
+    alpha,
+    rgb,
+    gradientEnergy,
+    borderBlackRatio,
+    repeatedPatternScore,
+    suspicious: reasons.length > 0,
+    reasons,
+    field
+  };
+}
+
+function buildAlignmentMask(sourceSample, referenceSample) {
+  const width = Math.max(1, Number(sourceSample && sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample && sourceSample.height) || 1);
+  const sourceLuma = buildLuma(sourceSample.data, width, height);
+  const referenceLuma = buildLuma(referenceSample.data, width, height);
+  const sourceField = buildSobelField(sourceLuma, width, height);
+  const referenceField = buildSobelField(referenceLuma, width, height);
+  const length = width * height;
+  const alpha = new Float32Array(length);
+  const mask = new Float32Array(length);
+  let edgeSum = 0;
+  let alphaCount = 0;
+  for (let pixel = 0, index = 3; pixel < length; pixel += 1, index += 4) {
+    const a = Math.max(0, Math.min(1, (Number(sourceSample.data[index]) || 0) / 255));
+    alpha[pixel] = a;
+    if (a > 0.08) {
+      edgeSum += Math.max(sourceField.mag[pixel], referenceField.mag[pixel]);
+      alphaCount += 1;
+    }
+  }
+  const meanEdge = alphaCount ? edgeSum / alphaCount : 0;
+  const minEdge = Math.max(5, meanEdge * 0.7);
+  const border = Math.max(1, Math.round(Math.min(width, height) * 0.012));
+  let covered = 0;
+  let totalWeight = 0;
+  let edgeEnergy = 0;
+  let diffEnergy = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      if (x <= border || y <= border || x >= width - border - 1 || y >= height - border - 1) continue;
+      const pixel = y * width + x;
+      const a = alpha[pixel];
+      if (a <= 0.06) continue;
+      const sourceIndex = pixel * 4;
+      const diff = (
+        Math.abs(sourceSample.data[sourceIndex] - referenceSample.data[sourceIndex]) +
+        Math.abs(sourceSample.data[sourceIndex + 1] - referenceSample.data[sourceIndex + 1]) +
+        Math.abs(sourceSample.data[sourceIndex + 2] - referenceSample.data[sourceIndex + 2])
+      ) / 3;
+      const edge = Math.max(sourceField.mag[pixel], referenceField.mag[pixel]);
+      const alphaEdge = Math.max(
+        Math.abs(alpha[pixel] - alpha[pixel - 1]),
+        Math.abs(alpha[pixel] - alpha[pixel + 1]),
+        Math.abs(alpha[pixel] - alpha[pixel - width]),
+        Math.abs(alpha[pixel] - alpha[pixel + width])
+      );
+      if (edge < minEdge && diff < 10 && alphaEdge < 0.18) continue;
+      const edgeWeight = Math.min(1.8, edge / Math.max(1, minEdge * 1.6));
+      const diffWeight = Math.min(1.2, diff / 42);
+      const alphaEdgeWeight = Math.min(1.4, alphaEdge * 3.2);
+      const weight = a * (0.16 + edgeWeight * 0.62 + diffWeight * 0.24 + alphaEdgeWeight * 0.54);
+      if (weight <= 0.04) continue;
+      mask[pixel] = weight;
+      covered += 1;
+      totalWeight += weight;
+      edgeEnergy += edge * weight;
+      diffEnergy += diff * weight;
+    }
+  }
+  return {
+    width,
+    height,
+    mask,
+    sourceField,
+    referenceField,
+    coverage: covered / Math.max(1, length),
+    coveredPixels: covered,
+    totalWeight,
+    meanEdgeEnergy: totalWeight > 0 ? edgeEnergy / totalWeight : 0,
+    meanDiffEnergy: totalWeight > 0 ? diffEnergy / totalWeight : 0,
+    reason: covered < Math.max(128, length * 0.006) ? "roi-too-small" : "ok"
+  };
+}
+
+function scoreMaskedOffset(sourceField, referenceField, mask, width, height, dx, dy, stride, region = null) {
+  let sumA = 0;
+  let sumB = 0;
+  let sumAA = 0;
+  let sumBB = 0;
+  let sumAB = 0;
+  let directionSum = 0;
+  let overlapSum = 0;
+  let weightSum = 0;
+  let count = 0;
+  const startX = Math.max(1, region ? Math.floor(region.left) : 1);
+  const endX = Math.min(width - 1, region ? Math.ceil(region.right) : width - 1);
+  const startY = Math.max(1, region ? Math.floor(region.top) : 1);
+  const endY = Math.min(height - 1, region ? Math.ceil(region.bottom) : height - 1);
+  const step = Math.max(1, Number(stride) || 1);
+  for (let y = startY; y < endY; y += step) {
+    const sourceY = y + dy;
+    if (sourceY < 1 || sourceY >= height - 1) continue;
+    for (let x = startX; x < endX; x += step) {
+      const sourceX = x + dx;
+      if (sourceX < 1 || sourceX >= width - 1) continue;
+      const refIndex = y * width + x;
+      const maskWeight = Number(mask && mask[refIndex]) || 0;
+      if (maskWeight <= 0) continue;
+      const a = sampleFloatBilinear(sourceField.mag, width, height, sourceX, sourceY);
+      const b = referenceField.mag[refIndex];
+      if (a < 3 && b < 3) continue;
+      const edgeWeight = maskWeight * Math.min(2.8, Math.max(a, b) / 16) * (0.35 + Math.min(a, b) / Math.max(1, Math.max(a, b)) * 0.65);
+      sumA += a * edgeWeight;
+      sumB += b * edgeWeight;
+      sumAA += a * a * edgeWeight;
+      sumBB += b * b * edgeWeight;
+      sumAB += a * b * edgeWeight;
+      const sourceMag = Math.max(0.001, a);
+      const refMag = Math.max(0.001, b);
+      const sourceGx = sampleFloatBilinear(sourceField.gx, width, height, sourceX, sourceY);
+      const sourceGy = sampleFloatBilinear(sourceField.gy, width, height, sourceX, sourceY);
+      const cos = (
+        sourceGx * referenceField.gx[refIndex] +
+        sourceGy * referenceField.gy[refIndex]
+      ) / Math.max(0.001, sourceMag * refMag);
+      directionSum += Math.max(-1, Math.min(1, cos)) * edgeWeight;
+      overlapSum += (Math.min(a, b) / Math.max(1, Math.max(a, b))) * edgeWeight;
+      weightSum += edgeWeight;
+      count += 1;
+    }
+  }
+  if (count < 32 || weightSum <= 0) return { score: -1, ncc: -1, direction: 0, overlap: 0, count, weight: weightSum };
+  const numerator = sumAB - (sumA * sumB) / weightSum;
+  const denomA = sumAA - (sumA * sumA) / weightSum;
+  const denomB = sumBB - (sumB * sumB) / weightSum;
+  const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
+  const ncc = numerator / denom;
+  const direction = directionSum / weightSum;
+  const overlap = overlapSum / weightSum;
+  return {
+    score: ncc * 0.62 + direction * 0.26 + overlap * 0.12,
+    ncc,
+    direction,
+    overlap,
+    count,
+    weight: weightSum
+  };
+}
+
+function estimateGlobalOffset(maskInfo, config) {
+  const width = maskInfo.width;
+  const height = maskInfo.height;
+  const maxOffset = Math.max(1, Math.min(24, Math.round(Number(config && config.sampleMaxOffset) || 8)));
+  const stride = Math.max(1, Math.floor(Math.max(width, height) / 240));
+  let best = { dx: 0, dy: 0, score: -1, ncc: -1, direction: 0, overlap: 0, count: 0 };
+  let second = -1;
+  for (let dy = -maxOffset; dy <= maxOffset; dy += 1) {
+    for (let dx = -maxOffset; dx <= maxOffset; dx += 1) {
+      const scored = scoreMaskedOffset(maskInfo.sourceField, maskInfo.referenceField, maskInfo.mask, width, height, dx, dy, stride);
+      if (scored.score > best.score) {
+        second = best.score;
+        best = { dx, dy, ...scored };
+      } else if (scored.score > second) {
+        second = scored.score;
+      }
+    }
+  }
+  const refine = [];
+  for (let dy = best.dy - 1; dy <= best.dy + 1.001; dy += 0.5) {
+    for (let dx = best.dx - 1; dx <= best.dx + 1.001; dx += 0.5) {
+      if (Math.abs(dx) > maxOffset || Math.abs(dy) > maxOffset) continue;
+      refine.push([Number(dx.toFixed(2)), Number(dy.toFixed(2))]);
+    }
+  }
+  refine.forEach(([dx, dy]) => {
+    const scored = scoreMaskedOffset(maskInfo.sourceField, maskInfo.referenceField, maskInfo.mask, width, height, dx, dy, Math.max(1, Math.floor(stride * 0.75)));
+    if (scored.score > best.score) {
+      second = Math.max(second, best.score);
+      best = { dx, dy, ...scored };
+    } else if (scored.score > second && (Math.abs(dx - best.dx) > 0.001 || Math.abs(dy - best.dy) > 0.001)) {
+      second = scored.score;
+    }
+  });
+  const scoreGap = best.score - Math.max(-1, second);
+  const reliable = best.count >= 80 && best.score > 0.12 && scoreGap > 0.004;
+  return {
+    ...best,
+    maxOffset,
+    stride,
+    scoreGap,
+    reliable,
+    reason: reliable ? "global-gradient-roi" : best.count < 80 ? "insufficient-roi-samples" : best.score <= 0.12 ? "low-global-score" : "ambiguous-global-offset"
+  };
+}
+
+function regionMaskStats(maskInfo, region, stride) {
+  const width = maskInfo.width;
+  const height = maskInfo.height;
+  let covered = 0;
+  let total = 0;
+  let weight = 0;
+  let edge = 0;
+  const step = Math.max(1, Number(stride) || 1);
+  for (let y = Math.max(1, Math.floor(region.top)); y < Math.min(height - 1, Math.ceil(region.bottom)); y += step) {
+    for (let x = Math.max(1, Math.floor(region.left)); x < Math.min(width - 1, Math.ceil(region.right)); x += step) {
+      const index = y * width + x;
+      const w = Number(maskInfo.mask[index]) || 0;
+      total += 1;
+      if (w > 0) {
+        covered += 1;
+        weight += w;
+        edge += Math.max(maskInfo.sourceField.mag[index], maskInfo.referenceField.mag[index]) * w;
+      }
+    }
+  }
+  return {
+    coverage: total ? covered / total : 0,
+    weight,
+    edgeEnergy: weight > 0 ? edge / weight : 0
+  };
+}
+
+function estimateTileMotion(maskInfo, globalMotion, config) {
+  const width = maskInfo.width;
+  const height = maskInfo.height;
+  const shortEdge = Math.min(width, height);
+  const cols = shortEdge < 260 ? 5 : 7;
+  const rows = shortEdge < 260 ? 4 : 5;
+  const totalTiles = cols * rows;
+  const searchOffset = Math.max(1, Math.min(12, Math.round(Number(config && config.sampleMaxOffset) || Number(globalMotion && globalMotion.maxOffset) || 8)));
+  const stride = Math.max(1, Math.floor(Math.max(width, height) / 260));
+  const tiles = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const tileWidth = width / cols;
+      const tileHeight = height / rows;
+      const region = {
+        left: Math.max(1, Math.floor(col * tileWidth - tileWidth * 0.18)),
+        right: Math.min(width - 1, Math.ceil((col + 1) * tileWidth + tileWidth * 0.18)),
+        top: Math.max(1, Math.floor(row * tileHeight - tileHeight * 0.18)),
+        bottom: Math.min(height - 1, Math.ceil((row + 1) * tileHeight + tileHeight * 0.18))
+      };
+      const stats = regionMaskStats(maskInfo, region, Math.max(1, stride));
+      if (stats.coverage < 0.018 || stats.edgeEnergy < 5 || stats.weight < 8) continue;
+      let best = { dx: 0, dy: 0, score: -1, ncc: -1, direction: 0, overlap: 0, count: 0 };
+      let second = -1;
+      for (let dy = -searchOffset; dy <= searchOffset; dy += 1) {
+        for (let dx = -searchOffset; dx <= searchOffset; dx += 1) {
+          const scored = scoreMaskedOffset(maskInfo.sourceField, maskInfo.referenceField, maskInfo.mask, width, height, dx, dy, stride, region);
+          const score = scored.score;
+          if (score > best.score) {
+            second = best.score;
+            best = { dx, dy, ...scored };
+          } else if (score > second) {
+            second = score;
+          }
+        }
+      }
+      const scoreGap = best.score - Math.max(-1, second);
+      const displacement = Math.hypot(best.dx, best.dy);
+      if (best.score > 0.14 && best.direction > 0.08 && best.count >= 24 && (scoreGap > 0.004 || displacement >= 0.75)) {
+        tiles.push({
+          row,
+          col,
+          x: (region.left + region.right) / 2,
+          y: (region.top + region.bottom) / 2,
+          dx: best.dx,
+          dy: best.dy,
+          score: best.score,
+          ncc: best.ncc,
+          direction: best.direction,
+          overlap: best.overlap,
+          count: best.count,
+          scoreGap,
+          coverage: stats.coverage,
+          edgeEnergy: stats.edgeEnergy,
+          weight: Math.max(0.1, best.score) * Math.max(1, stats.weight)
+        });
+      }
+    }
+  }
+  const validTiles = tiles.length;
+  const meanDx = validTiles ? tiles.reduce((sum, tile) => sum + tile.dx, 0) / validTiles : 0;
+  const meanDy = validTiles ? tiles.reduce((sum, tile) => sum + tile.dy, 0) / validTiles : 0;
+  const meanDistance = validTiles ? tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx, tile.dy), 0) / validTiles : 0;
+  const maxDistance = validTiles ? tiles.reduce((max, tile) => Math.max(max, Math.hypot(tile.dx, tile.dy)), 0) : 0;
+  const spread = validTiles ? tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx - meanDx, tile.dy - meanDy), 0) / validTiles : 0;
+  const coverage = validTiles / Math.max(1, totalTiles);
+  const reliable = validTiles >= Math.max(4, Math.round(totalTiles * 0.22)) && maxDistance <= searchOffset + 0.25 && (meanDistance >= 0.25 || spread >= 0.22);
+  return {
+    enabled: true,
+    rows,
+    cols,
+    totalTiles,
+    validTiles,
+    coverage,
+    meanDx,
+    meanDy,
+    meanDistance,
+    maxDistance,
+    spread,
+    reliable,
+    reason: reliable ? "tile-gradient-roi" : validTiles < Math.max(4, Math.round(totalTiles * 0.22)) ? "low-tile-coverage" : "low-local-motion",
+    tiles
+  };
+}
+
+function solve3x3(matrix, vector) {
+  const a = matrix.map((row, index) => row.concat([vector[index]]));
+  for (let col = 0; col < 3; col += 1) {
+    let pivot = col;
+    for (let row = col + 1; row < 3; row += 1) {
+      if (Math.abs(a[row][col]) > Math.abs(a[pivot][col])) pivot = row;
+    }
+    if (Math.abs(a[pivot][col]) < 1e-8) return null;
+    if (pivot !== col) {
+      const temp = a[col];
+      a[col] = a[pivot];
+      a[pivot] = temp;
+    }
+    const divisor = a[col][col];
+    for (let item = col; item < 4; item += 1) a[col][item] /= divisor;
+    for (let row = 0; row < 3; row += 1) {
+      if (row === col) continue;
+      const factor = a[row][col];
+      for (let item = col; item < 4; item += 1) a[row][item] -= factor * a[col][item];
+    }
+  }
+  return [a[0][3], a[1][3], a[2][3]];
+}
+
+function fitQuadraticDy(tiles, width, globalMotion) {
+  const matrix = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0]
+  ];
+  const vector = [0, 0, 0];
+  const add = (xNorm, dy, weight) => {
+    const basis = [1, xNorm, xNorm * xNorm];
+    for (let row = 0; row < 3; row += 1) {
+      vector[row] += basis[row] * dy * weight;
+      for (let col = 0; col < 3; col += 1) matrix[row][col] += basis[row] * basis[col] * weight;
+    }
+  };
+  tiles.forEach((tile) => {
+    const xNorm = ((Number(tile.x) || 0) / Math.max(1, width - 1)) * 2 - 1;
+    add(xNorm, Number(tile.dy) || 0, Math.max(0.1, Number(tile.weight) || 1));
+  });
+  add(0, Number(globalMotion && globalMotion.dy) || 0, Math.max(3, tiles.length * 0.38));
+  const solved = solve3x3(matrix, vector);
+  return solved || [Number(globalMotion && globalMotion.dy) || 0, 0, 0];
+}
+
+function fitVerticalWarpModel(maskInfo, globalMotion, tileMotion, config) {
+  const maxOffset = Math.max(1, Math.min(24, Number(config && config.sampleMaxOffset) || Number(globalMotion && globalMotion.maxOffset) || 8));
+  const tiles = tileMotion && tileMotion.reliable ? tileMotion.tiles : [];
+  const useTiles = tiles.length >= Math.max(4, Math.round((tileMotion && tileMotion.totalTiles || 1) * 0.22));
+  const dxValues = useTiles ? tiles : [];
+  let dx = Number(globalMotion && globalMotion.dx) || 0;
+  if (dxValues.length) {
+    const totalWeight = dxValues.reduce((sum, tile) => sum + Math.max(0.1, Number(tile.weight) || 1), 0);
+    const tileDx = dxValues.reduce((sum, tile) => sum + (Number(tile.dx) || 0) * Math.max(0.1, Number(tile.weight) || 1), 0) / Math.max(0.1, totalWeight);
+    dx = dx * 0.45 + tileDx * 0.55;
+  }
+  dx = Math.max(-maxOffset, Math.min(maxOffset, dx));
+  const coefficients = useTiles
+    ? fitQuadraticDy(tiles, maskInfo.width, globalMotion)
+    : [Number(globalMotion && globalMotion.dy) || 0, 0, 0];
+  const limited = coefficients.map((value) => Math.max(-maxOffset, Math.min(maxOffset, Number(value) || 0)));
+  const model = {
+    type: useTiles ? "quadratic-y-by-x" : "global-translation",
+    dx,
+    dyCoefficients: limited,
+    maxOffset,
+    sourceWidth: maskInfo.width,
+    sourceHeight: maskInfo.height,
+    validTiles: tileMotion ? tileMotion.validTiles : 0,
+    totalTiles: tileMotion ? tileMotion.totalTiles : 0,
+    global: globalMotion,
+    tileMotion
+  };
+  model.maxDisplacement = getModelMaxDisplacement(model);
+  model.smoothness = getModelSmoothness(model);
+  model.reliable = Boolean((globalMotion && globalMotion.reliable) || useTiles) && model.maxDisplacement <= maxOffset + 0.1 && model.smoothness <= Math.max(2.5, maxOffset * 0.7);
+  model.reason = model.reliable ? model.type : model.maxDisplacement > maxOffset + 0.1 ? "motion-exceeds-limit" : "unreliable-motion";
+  return model;
+}
+
+function getModelDyAt(model, x) {
+  const width = Math.max(1, Number(model && model.sourceWidth) || 1);
+  const xNorm = (Math.max(0, Math.min(width - 1, x)) / Math.max(1, width - 1)) * 2 - 1;
+  const c = model && model.dyCoefficients ? model.dyCoefficients : [0, 0, 0];
+  return (Number(c[0]) || 0) + (Number(c[1]) || 0) * xNorm + (Number(c[2]) || 0) * xNorm * xNorm;
+}
+
+function getModelDisplacement(model, x, y) {
+  return {
+    dx: Number(model && model.dx) || 0,
+    dy: getModelDyAt(model, x, y)
+  };
+}
+
+function getModelMaxDisplacement(model) {
+  const width = Math.max(1, Number(model && model.sourceWidth) || 1);
+  const samples = [0, width * 0.25, width * 0.5, width * 0.75, width - 1];
+  return samples.reduce((max, x) => {
+    const flow = getModelDisplacement(model, x, 0);
+    return Math.max(max, Math.hypot(flow.dx, flow.dy));
+  }, 0);
+}
+
+function getModelSmoothness(model) {
+  const width = Math.max(1, Number(model && model.sourceWidth) || 1);
+  let previous = getModelDyAt(model, 0);
+  let maxDelta = 0;
+  for (let i = 1; i <= 12; i += 1) {
+    const dy = getModelDyAt(model, (width - 1) * (i / 12));
+    maxDelta = Math.max(maxDelta, Math.abs(dy - previous));
+    previous = dy;
+  }
+  return maxDelta;
+}
+
+function scoreDisplacementModel(maskInfo, model, stride) {
+  const width = maskInfo.width;
+  const height = maskInfo.height;
+  let sumA = 0;
+  let sumB = 0;
+  let sumAA = 0;
+  let sumBB = 0;
+  let sumAB = 0;
+  let directionSum = 0;
+  let overlapSum = 0;
+  let weightSum = 0;
+  let count = 0;
+  const step = Math.max(1, Number(stride) || 1);
+  for (let y = 1; y < height - 1; y += step) {
+    for (let x = 1; x < width - 1; x += step) {
+      const refIndex = y * width + x;
+      const maskWeight = Number(maskInfo.mask[refIndex]) || 0;
+      if (maskWeight <= 0) continue;
+      const flow = model ? getModelDisplacement(model, x, y) : { dx: 0, dy: 0 };
+      const sourceX = x + flow.dx;
+      const sourceY = y + flow.dy;
+      if (sourceX < 1 || sourceX >= width - 1 || sourceY < 1 || sourceY >= height - 1) continue;
+      const a = sampleFloatBilinear(maskInfo.sourceField.mag, width, height, sourceX, sourceY);
+      const b = maskInfo.referenceField.mag[refIndex];
+      if (a < 3 && b < 3) continue;
+      const edgeWeight = maskWeight * Math.min(2.8, Math.max(a, b) / 16);
+      sumA += a * edgeWeight;
+      sumB += b * edgeWeight;
+      sumAA += a * a * edgeWeight;
+      sumBB += b * b * edgeWeight;
+      sumAB += a * b * edgeWeight;
+      const sourceMag = Math.max(0.001, a);
+      const refMag = Math.max(0.001, b);
+      const sourceGx = sampleFloatBilinear(maskInfo.sourceField.gx, width, height, sourceX, sourceY);
+      const sourceGy = sampleFloatBilinear(maskInfo.sourceField.gy, width, height, sourceX, sourceY);
+      const cos = (
+        sourceGx * maskInfo.referenceField.gx[refIndex] +
+        sourceGy * maskInfo.referenceField.gy[refIndex]
+      ) / Math.max(0.001, sourceMag * refMag);
+      directionSum += Math.max(-1, Math.min(1, cos)) * edgeWeight;
+      overlapSum += (Math.min(a, b) / Math.max(1, Math.max(a, b))) * edgeWeight;
+      weightSum += edgeWeight;
+      count += 1;
+    }
+  }
+  if (count < 48 || weightSum <= 0) return { score: -1, ncc: -1, direction: 0, overlap: 0, count };
+  const numerator = sumAB - (sumA * sumB) / weightSum;
+  const denomA = sumAA - (sumA * sumA) / weightSum;
+  const denomB = sumBB - (sumB * sumB) / weightSum;
+  const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
+  const ncc = numerator / denom;
+  const direction = directionSum / weightSum;
+  const overlap = overlapSum / weightSum;
+  return {
+    score: ncc * 0.62 + direction * 0.26 + overlap * 0.12,
+    ncc,
+    direction,
+    overlap,
+    count
+  };
+}
+
+function validateWarpImprovement(maskInfo, model) {
+  if (!model || !model.reliable) {
+    return { applied: false, reason: model && model.reason ? model.reason : "unreliable-motion", before: null, after: null, improvement: 0 };
+  }
+  const stride = Math.max(1, Math.floor(Math.max(maskInfo.width, maskInfo.height) / 300));
+  const before = scoreDisplacementModel(maskInfo, null, stride);
+  const after = scoreDisplacementModel(maskInfo, model, stride);
+  const improvement = after.score - before.score;
+  const enoughTiles = model.type !== "quadratic-y-by-x" || model.validTiles >= Math.max(4, Math.round(model.totalTiles * 0.22));
+  if (before.count < 64 || after.count < 64) return { applied: false, reason: "insufficient-validation-samples", before, after, improvement };
+  if (!enoughTiles) return { applied: false, reason: "unreliable-motion", before, after, improvement };
+  if (model.maxDisplacement > model.maxOffset + 0.1) return { applied: false, reason: "motion-exceeds-limit", before, after, improvement };
+  if (model.smoothness > Math.max(2.5, model.maxOffset * 0.7)) return { applied: false, reason: "warp-not-smooth", before, after, improvement };
+  if (improvement < 0.012 || after.score < before.score * 1.01) return { applied: false, reason: "score-improvement-too-low", before, after, improvement };
+  if (after.direction < Math.max(0.04, before.direction - 0.03)) return { applied: false, reason: "direction-agreement-regressed", before, after, improvement };
+  return { applied: true, reason: "score-improved", before, after, improvement };
+}
+
+function sampleRgbaBilinearTransparent(data, width, height, x, y, out, offset) {
+  if (x < 0 || x > width - 1 || y < 0 || y > height - 1) {
+    out[offset] = 0;
+    out[offset + 1] = 0;
+    out[offset + 2] = 0;
+    out[offset + 3] = 0;
+    return;
+  }
+  sampleRgbaBilinear(data, width, height, x, y, out, offset);
+}
+
+function warpRgbaWithDisplacement(sourceSample, model) {
+  const width = Math.max(1, Number(sourceSample && sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample && sourceSample.height) || 1);
+  const out = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const flow = getModelDisplacement(model, x, y);
+      sampleRgbaBilinearTransparent(sourceSample.data, width, height, x + flow.dx, y + flow.dy, out, offset);
+    }
+  }
+  return {
+    width,
+    height,
+    scaleX: sourceSample.scaleX,
+    scaleY: sourceSample.scaleY,
+    data: out,
+    model
+  };
+}
+
+function buildPixelAlignmentV2(sourceSample, referenceSample, config) {
+  if (!sourceSample || !referenceSample || !sourceSample.data || !referenceSample.data) {
+    return { applied: false, reason: "missing-samples" };
+  }
+  if (sourceSample.width !== referenceSample.width || sourceSample.height !== referenceSample.height) {
+    return { applied: false, reason: "sample-size-mismatch" };
+  }
+  const scale = Math.max(Number(sourceSample.scaleX) || 1, Number(sourceSample.scaleY) || 1);
+  const sampleMaxOffset = Math.max(1, Math.min(24, Math.round((Number(config.alignmentMaxOffset) || 12) / scale)));
+  const maskInfo = buildAlignmentMask(sourceSample, referenceSample);
+  if (maskInfo.reason !== "ok") {
+    return { applied: false, reason: maskInfo.reason, mask: maskInfo };
+  }
+  const globalMotion = estimateGlobalOffset(maskInfo, { ...config, sampleMaxOffset });
+  const tileMotion = estimateTileMotion(maskInfo, globalMotion, { ...config, sampleMaxOffset });
+  const model = fitVerticalWarpModel(maskInfo, globalMotion, tileMotion, { ...config, sampleMaxOffset });
+  const validation = validateWarpImprovement(maskInfo, model);
+  if (!validation.applied) {
+    return { applied: false, reason: validation.reason, mask: maskInfo, globalMotion, tileMotion, model, validation };
+  }
+  return {
+    applied: true,
+    reason: "pixel-align-v2",
+    mask: maskInfo,
+    globalMotion,
+    tileMotion,
+    model,
+    validation
   };
 }
 
@@ -2037,6 +2916,323 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   };
 }
 
+function formatFixed(value, digits = 2) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed.toFixed(digits) : (0).toFixed(digits);
+}
+
+function formatRatioPercent(value) {
+  return `${Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * 100)}%`;
+}
+
+function sanitizeCaptureDiagnostics(diagnostics) {
+  if (!diagnostics) return null;
+  const { field, ...safe } = diagnostics;
+  return safe;
+}
+
+function sanitizeMaskInfo(maskInfo) {
+  if (!maskInfo) return null;
+  return {
+    width: maskInfo.width,
+    height: maskInfo.height,
+    coverage: maskInfo.coverage,
+    coveredPixels: maskInfo.coveredPixels,
+    totalWeight: maskInfo.totalWeight,
+    meanEdgeEnergy: maskInfo.meanEdgeEnergy,
+    meanDiffEnergy: maskInfo.meanDiffEnergy,
+    reason: maskInfo.reason
+  };
+}
+
+function sanitizeAlignmentV2(alignment) {
+  if (!alignment) return null;
+  return {
+    applied: Boolean(alignment.applied),
+    reason: alignment.reason,
+    mask: sanitizeMaskInfo(alignment.mask),
+    globalMotion: alignment.globalMotion || null,
+    tileMotion: alignment.tileMotion ? {
+      ...alignment.tileMotion,
+      tiles: Array.isArray(alignment.tileMotion.tiles)
+        ? alignment.tileMotion.tiles.slice(0, 64).map((tile) => ({
+            row: tile.row,
+            col: tile.col,
+            x: Number((Number(tile.x) || 0).toFixed(1)),
+            y: Number((Number(tile.y) || 0).toFixed(1)),
+            dx: Number((Number(tile.dx) || 0).toFixed(2)),
+            dy: Number((Number(tile.dy) || 0).toFixed(2)),
+            score: Number((Number(tile.score) || 0).toFixed(4)),
+            direction: Number((Number(tile.direction) || 0).toFixed(4)),
+            scoreGap: Number((Number(tile.scoreGap) || 0).toFixed(4)),
+            coverage: Number((Number(tile.coverage) || 0).toFixed(4)),
+            edgeEnergy: Number((Number(tile.edgeEnergy) || 0).toFixed(2))
+          }))
+        : []
+    } : null,
+    model: alignment.model ? {
+      type: alignment.model.type,
+      dx: alignment.model.dx,
+      dyCoefficients: alignment.model.dyCoefficients,
+      maxOffset: alignment.model.maxOffset,
+      maxDisplacement: alignment.model.maxDisplacement,
+      smoothness: alignment.model.smoothness,
+      validTiles: alignment.model.validTiles,
+      totalTiles: alignment.model.totalTiles,
+      reliable: alignment.model.reliable,
+      reason: alignment.model.reason
+    } : null,
+    validation: alignment.validation || null
+  };
+}
+
+function buildSkippedPixelAlignmentResult({
+  app,
+  sourceLayerName,
+  sourceLayerId,
+  sourceBounds,
+  config,
+  logs,
+  reason,
+  sourceStats = null,
+  referenceStats = null,
+  diagnostics = null,
+  alignmentV2 = null
+}) {
+  logs.push(`[融合校色] 实验像素级对齐未应用：${reason}。未生成像素结果层，原返图保持不变。`);
+  return {
+    ok: true,
+    skipped: true,
+    action: "blendMatch",
+    document: getDocumentInfo(app.activeDocument),
+    message: `实验像素级对齐已跳过：${reason}`,
+    logs,
+    layerId: 0,
+    sourceLayerId,
+    layerName: null,
+    bounds: sourceBounds,
+    config,
+    stats: {
+      source: sourceStats,
+      reference: referenceStats
+    },
+    corrections: null,
+    alignment: {
+      applied: false,
+      reason
+    },
+    pixelPipeline: {
+      used: false,
+      skipped: true,
+      reason,
+      diagnostics: diagnostics ? {
+        source: sanitizeCaptureDiagnostics(diagnostics.source),
+        reference: sanitizeCaptureDiagnostics(diagnostics.reference)
+      } : null,
+      alignment: sanitizeAlignmentV2(alignmentV2)
+    },
+    featherApplied: false
+  };
+}
+
+async function runPixelAlignmentV2Flow({
+  photoshop,
+  app,
+  action,
+  imaging,
+  document,
+  logs,
+  sourceLayerId,
+  sourceLayerName,
+  sourceBounds,
+  sourceWasVisible,
+  config
+}) {
+  const resultLayerName = `PixelRunner 像素对齐 - ${sourceLayerName}`.slice(0, 240);
+  const maxEdge = Math.max(512, Math.min(2048, Number(config.localMeshMaxEdge) || DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxEdge));
+  let sourceSample = null;
+  let referenceSample = null;
+  let sourceDiagnostics = null;
+  let referenceDiagnostics = null;
+  let alignmentV2 = null;
+
+  try {
+    logs.push("[融合校色] 实验像素级对齐 v2 已启用：仅执行 source RGBA 对齐，不做像素校色、边缘融合或羽化蒙版。");
+    sourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, maxEdge);
+    logs.push(`[融合校色] v2 source capture method：${sourceSample.captureMethod || "unknown"}。`);
+    referenceSample = await captureReferenceSample(imaging, app, action, document, sourceLayerId, sourceBounds, maxEdge, sourceWasVisible);
+    logs.push(`[融合校色] v2 reference capture method：${referenceSample.captureMethod || "unknown"}。`);
+  } catch (error) {
+    return buildSkippedPixelAlignmentResult({
+      app,
+      sourceLayerName,
+      sourceLayerId,
+      sourceBounds,
+      config,
+      logs,
+      reason: `bad-capture/${error.message || "unknown"}`
+    });
+  }
+
+  const sameSize = sourceSample.width === referenceSample.width && sourceSample.height === referenceSample.height;
+  const sameScale =
+    Math.abs((Number(sourceSample.scaleX) || 1) - (Number(referenceSample.scaleX) || 1)) < 0.0001 &&
+    Math.abs((Number(sourceSample.scaleY) || 1) - (Number(referenceSample.scaleY) || 1)) < 0.0001;
+  logs.push(`[融合校色] v2 capture size：source ${sourceSample.width}x${sourceSample.height} / reference ${referenceSample.width}x${referenceSample.height} / scale ${formatFixed(sourceSample.scaleX, 3)}x${formatFixed(sourceSample.scaleY, 3)}。`);
+  if (!sameSize || !sameScale) {
+    return buildSkippedPixelAlignmentResult({
+      app,
+      sourceLayerName,
+      sourceLayerId,
+      sourceBounds,
+      config,
+      logs,
+      reason: "capture-size-mismatch",
+      sourceStats: sourceSample.stats,
+      referenceStats: referenceSample.stats
+    });
+  }
+
+  sourceDiagnostics = buildCaptureDiagnostics(sourceSample);
+  referenceDiagnostics = buildCaptureDiagnostics(referenceSample);
+  logs.push(`[融合校色] v2 source alpha：不透明 ${formatRatioPercent(sourceDiagnostics.alpha.opaqueRatio)}，透明 ${formatRatioPercent(sourceDiagnostics.alpha.transparentRatio)}，min/max ${sourceDiagnostics.alpha.minAlpha}/${sourceDiagnostics.alpha.maxAlpha}。`);
+  logs.push(`[融合校色] v2 source RGB：mean ${formatFixed(sourceDiagnostics.rgb.meanR, 1)}/${formatFixed(sourceDiagnostics.rgb.meanG, 1)}/${formatFixed(sourceDiagnostics.rgb.meanB, 1)}，luma 方差 ${formatFixed(sourceDiagnostics.rgb.varianceLuma, 2)}。`);
+  logs.push(`[融合校色] v2 gradient energy：source ${formatFixed(sourceDiagnostics.gradientEnergy, 2)} / reference ${formatFixed(referenceDiagnostics.gradientEnergy, 2)}。`);
+  logs.push(`[融合校色] v2 source 异常检测：黑边 ${formatRatioPercent(sourceDiagnostics.borderBlackRatio)}，重复图案 ${formatRatioPercent(sourceDiagnostics.repeatedPatternScore)}${sourceDiagnostics.suspicious ? `，命中 ${sourceDiagnostics.reasons.join(", ")}` : "，未命中明显异常"}。`);
+
+  if (sourceDiagnostics.suspicious) {
+    return buildSkippedPixelAlignmentResult({
+      app,
+      sourceLayerName,
+      sourceLayerId,
+      sourceBounds,
+      config,
+      logs,
+      reason: `bad-capture/${sourceDiagnostics.reasons.join("+")}`,
+      sourceStats: sourceSample.stats,
+      referenceStats: referenceSample.stats,
+      diagnostics: { source: sourceDiagnostics, reference: referenceDiagnostics }
+    });
+  }
+
+  alignmentV2 = buildPixelAlignmentV2(sourceSample, referenceSample, config);
+  const mask = alignmentV2.mask || {};
+  logs.push(`[融合校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，diff ${formatFixed(mask.meanDiffEnergy, 2)}。`);
+  if (alignmentV2.globalMotion) {
+    const g = alignmentV2.globalMotion;
+    logs.push(`[融合校色] v2 global motion：dx ${formatFixed(g.dx, 2)}px，dy ${formatFixed(g.dy, 2)}px，score ${formatFixed(g.score, 3)}，gap ${formatFixed(g.scoreGap, 3)}，${g.reliable ? "可靠" : `跳过 ${g.reason}`}。`);
+  }
+  if (alignmentV2.tileMotion) {
+    const t = alignmentV2.tileMotion;
+    logs.push(`[融合校色] v2 tile motion：有效 ${t.validTiles}/${t.totalTiles}，最大 ${formatFixed(t.maxDistance, 2)}px，平均 ${formatFixed(t.meanDistance, 2)}px，离散 ${formatFixed(t.spread, 2)}px，${t.reliable ? "可靠" : `跳过 ${t.reason}`}。`);
+  }
+  if (alignmentV2.model) {
+    const m = alignmentV2.model;
+    const c = m.dyCoefficients || [0, 0, 0];
+    logs.push(`[融合校色] v2 warp model：${m.type}，dx ${formatFixed(m.dx, 2)}px，dy(x) ${formatFixed(c[0], 2)} + ${formatFixed(c[1], 2)}x + ${formatFixed(c[2], 2)}x^2，最大位移 ${formatFixed(m.maxDisplacement, 2)}px，平滑度 ${formatFixed(m.smoothness, 2)}。`);
+  }
+  if (alignmentV2.validation) {
+    const v = alignmentV2.validation;
+    logs.push(`[融合校色] v2 before/after：score ${formatFixed(v.before && v.before.score, 4)} -> ${formatFixed(v.after && v.after.score, 4)}，NCC ${formatFixed(v.before && v.before.ncc, 4)} -> ${formatFixed(v.after && v.after.ncc, 4)}，方向 ${formatFixed(v.before && v.before.direction, 4)} -> ${formatFixed(v.after && v.after.direction, 4)}，edge overlap ${formatFixed(v.before && v.before.overlap, 4)} -> ${formatFixed(v.after && v.after.overlap, 4)}。`);
+  }
+
+  if (!alignmentV2.applied) {
+    return buildSkippedPixelAlignmentResult({
+      app,
+      sourceLayerName,
+      sourceLayerId,
+      sourceBounds,
+      config,
+      logs,
+      reason: alignmentV2.reason || "unreliable-motion",
+      sourceStats: sourceSample.stats,
+      referenceStats: referenceSample.stats,
+      diagnostics: { source: sourceDiagnostics, reference: referenceDiagnostics },
+      alignmentV2
+    });
+  }
+
+  let placed = null;
+  try {
+    const { storage } = await ensureDeps();
+    const warped = warpRgbaWithDisplacement(sourceSample, alignmentV2.model);
+    const warpedDiagnostics = buildCaptureDiagnostics(warped);
+    if (warpedDiagnostics.alpha.maxAlpha <= 4 || warpedDiagnostics.alpha.transparentRatio - sourceDiagnostics.alpha.transparentRatio > 0.18) {
+      throw new Error("warped-alpha-invalid");
+    }
+    const pngBuffer = await encodeRgbaPng(warped.width, warped.height, warped.data);
+    if (!pngBuffer) throw new Error("像素对齐 PNG 编码失败。");
+    await activateDocument(app, action, Number(document.id));
+    placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+    logs.push(`[融合校色] v2 像素对齐结果已置入并栅格化：${resultLayerName}。`);
+  } catch (error) {
+    return buildSkippedPixelAlignmentResult({
+      app,
+      sourceLayerName,
+      sourceLayerId,
+      sourceBounds,
+      config,
+      logs,
+      reason: `output-failed/${error.message || "unknown"}`,
+      sourceStats: sourceSample.stats,
+      referenceStats: referenceSample.stats,
+      diagnostics: { source: sourceDiagnostics, reference: referenceDiagnostics },
+      alignmentV2
+    });
+  }
+
+  if (config.createBackupLayer) {
+    try {
+      await setLayerVisible(action, sourceLayerId, false);
+      logs.push("[融合校色] v2 对齐成功后，原返图图层已隐藏保留为备份。");
+    } catch (error) {
+      logs.push(`[融合校色] 原图层备份隐藏失败：${error.message || "未知错误"}。`);
+    }
+  } else {
+    logs.push("[融合校色] v2 对齐成功，按设置保留原返图图层可见性。");
+  }
+  await selectLayerById(action, placed.layerId);
+  logs.push("[融合校色] v2 已跳过像素校色、Photoshop 调整命令、边缘融合和羽化蒙版。");
+
+  return {
+    ok: true,
+    action: "blendMatch",
+    document: getDocumentInfo(app.activeDocument),
+    message: `像素对齐完成：${sourceLayerName} -> ${resultLayerName}`,
+    logs,
+    layerId: placed.layerId,
+    sourceLayerId,
+    layerName: resultLayerName,
+    bounds: sourceBounds,
+    config,
+    stats: {
+      source: sourceSample.stats,
+      reference: referenceSample.stats
+    },
+    corrections: null,
+    alignment: {
+      applied: true,
+      reason: "pixel-align-v2",
+      dx: Number((-(Number(alignmentV2.model.dx) || 0) * (Number(sourceSample.scaleX) || 1)).toFixed(2)),
+      dy: Number((-(Number(alignmentV2.model.dyCoefficients && alignmentV2.model.dyCoefficients[0]) || 0) * (Number(sourceSample.scaleY) || 1)).toFixed(2)),
+      confidence: Math.max(0, Math.min(1, Number(alignmentV2.validation && alignmentV2.validation.improvement) * 12))
+    },
+    pixelPipeline: {
+      used: true,
+      version: 2,
+      width: sourceSample.width,
+      height: sourceSample.height,
+      color: null,
+      diagnostics: {
+        source: sanitizeCaptureDiagnostics(sourceDiagnostics),
+        reference: sanitizeCaptureDiagnostics(referenceDiagnostics)
+      },
+      alignment: sanitizeAlignmentV2(alignmentV2)
+    },
+    featherApplied: false
+  };
+}
+
 export async function blendMatchActiveLayer(payload = {}, context) {
   const { photoshop, app, document } = context;
   const core = photoshop.core;
@@ -2071,26 +3267,29 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       sourceWasVisible = sourceLayer.visible !== false;
     } catch (_) {}
 
+    if (config.pixelPipelineEnabled) {
+      return runPixelAlignmentV2Flow({
+        photoshop,
+        app,
+        action,
+        imaging,
+        document,
+        logs,
+        sourceLayerId,
+        sourceLayerName,
+        sourceBounds,
+        sourceWasVisible,
+        config
+      });
+    }
+
     let sourceSample = null;
     let referenceSample = null;
     let restoredVisibility = false;
 
     try {
-      if (config.pixelPipelineEnabled) {
-        try {
-          sourceSample = await captureIsolatedLayerSample(imaging, app, action, document, sourceLayerId, sourceBounds, 768);
-          logs.push("[融合校色] 已采样当前返图图层自身像素。");
-        } catch (error) {
-          logs.push(`[融合校色] 返图图层隔离采样失败：${error.message || "未知错误"}。已临时回退为可见状态采样。`);
-          await activateDocument(app, action, Number(document.id));
-          await selectLayerById(action, sourceLayerId);
-          sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-          sourceSample.compositeFallback = true;
-        }
-      } else {
-        sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-        logs.push("[融合校色] 已采样当前返图可见状态。");
-      }
+      sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+      logs.push("[融合校色] 已采样当前返图可见状态。");
       await selectLayerById(action, sourceLayerId);
 
       await setLayerVisible(action, sourceLayerId, false);
@@ -2146,82 +3345,10 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let pixelPipelineUsed = false;
     let pixelResult = null;
 
-    if (!config.pixelPipelineEnabled) {
-      logs.push("[融合校色] 像素级校正已关闭：使用快速融合路径。");
-      await duplicateActiveLayer(action, resultLayerName);
-      resultLayer = getActiveLayer(app);
-      resultLayerId = getLayerId(resultLayer);
-    } else {
-      try {
-      const { storage } = await ensureDeps();
-      const processingTargetSize = getSamplingTargetSize(sourceBounds, config.localMeshMaxEdge);
-      let processingSourceSample = sourceSample;
-      let processingReferenceSample = referenceSample;
-      if (processingTargetSize.width !== sourceSample.width || processingTargetSize.height !== sourceSample.height) {
-        let processingRestoredVisibility = false;
-        try {
-          processingSourceSample = await captureIsolatedLayerSample(imaging, app, action, document, sourceLayerId, sourceBounds, config.localMeshMaxEdge);
-          await selectLayerById(action, sourceLayerId);
-          await setLayerVisible(action, sourceLayerId, false);
-          processingReferenceSample = await captureCompositeSample(imaging, document, sourceBounds, config.localMeshMaxEdge, false);
-          await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-          processingRestoredVisibility = true;
-          logs.push(`[融合校色] 像素处理采样：${processingSourceSample.width}x${processingSourceSample.height}。`);
-        } finally {
-          if (!processingRestoredVisibility) {
-            try {
-              await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-            } catch (_) {}
-          }
-        }
-      } else {
-        logs.push(`[融合校色] 像素处理复用分析采样：${processingSourceSample.width}x${processingSourceSample.height}。`);
-      }
-
-      const pixelAlignment = config.alignmentEnabled
-        ? estimateGradientAlignment(processingSourceSample, processingReferenceSample, config)
-        : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
-      if (config.alignmentEnabled) {
-        if (pixelAlignment.applied) {
-          logs.push(`[融合校色] 像素级重估对齐：dx ${pixelAlignment.dx}px, dy ${pixelAlignment.dy}px, scaleX ${Number(pixelAlignment.scaleXPercent || 100).toFixed(2)}%, scaleY ${Number(pixelAlignment.scaleYPercent || 100).toFixed(2)}%, rotate ${Number(pixelAlignment.rotation || 0).toFixed(2)}°, confidence ${Number(pixelAlignment.confidence || 0).toFixed(2)}。`);
-        } else {
-          logs.push(`[融合校色] 像素级重估对齐已跳过：${pixelAlignment.reason}，confidence ${Number(pixelAlignment.confidence || 0).toFixed(2)}。`);
-        }
-        if (pixelAlignment.localDeformation) {
-          logs.push(`[融合校色] 像素级局部网格：${pixelAlignment.local.validTiles}/${pixelAlignment.local.totalTiles} 个分块有效，最大局部偏移 ${pixelAlignment.local.maxDistance.toFixed(2)}px，平均偏移 ${Number(pixelAlignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(pixelAlignment.local.meanDirectionAgreement || 0).toFixed(2)}。`);
-        } else if (pixelAlignment.local && pixelAlignment.local.enabled) {
-          logs.push(`[融合校色] 像素级局部网格已跳过：${pixelAlignment.local.reason}，有效分块 ${pixelAlignment.local.validTiles || 0}/${pixelAlignment.local.totalTiles || 0}，最大偏移 ${Number(pixelAlignment.local.maxDistance || 0).toFixed(2)}px，平均偏移 ${Number(pixelAlignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(pixelAlignment.local.meanDirectionAgreement || 0).toFixed(2)}。`);
-        }
-      }
-
-      const processingAlpha = getAlphaStats(processingSourceSample.data);
-      const forceOpaque = fullDocumentTarget && processingAlpha.opaqueRatio > 0.995 && processingAlpha.transparentRatio < 0.001;
-      logs.push(`[融合校色] 返图透明度：不透明 ${Math.round(processingAlpha.opaqueRatio * 100)}%，透明 ${Math.round(processingAlpha.transparentRatio * 100)}%，${forceOpaque ? "按整画布不透明输出" : "保留原透明度"}。`);
-      pixelResult = processBlendMatchPixels(processingSourceSample, processingReferenceSample, config, pixelAlignment, processingSourceSample, { forceOpaque });
-      pixelResult.sourceAlpha = processingAlpha;
-      pixelResult.forceOpaque = forceOpaque;
-      const pngBuffer = await encodeRgbaPng(pixelResult.width, pixelResult.height, pixelResult.data);
-      if (!pngBuffer) throw new Error("像素结果 PNG 编码不可用。");
-      resultLayer = await placePngBufferAsLayer(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
-      const rasterized = await rasterizeActiveLayerBestEffort(action);
-      if (rasterized) {
-        resultLayer = getActiveLayer(app);
-      }
-      resultLayerId = getLayerId(resultLayer);
-      if (!(resultLayerId > 0)) throw new Error("像素结果层置入失败。");
-      pixelPipelineUsed = true;
-      logs.push(`[融合校色] 像素结果已置入${rasterized ? "并栅格化为普通图层" : "为置入图层"}。`);
-      logs.push(`[融合校色] 像素网格对齐：全局 ${pixelResult.alignment.globalApplied ? "启用" : "跳过"}，局部 ${pixelResult.alignment.localApplied ? "启用" : "跳过"}，有效分块 ${pixelResult.alignment.validTiles}/${pixelResult.alignment.totalTiles}，最大偏移 ${Number(pixelResult.alignment.maxDistance || 0).toFixed(2)}px。`);
-      logs.push(`[融合校色] 像素校色：亮度 ${pixelResult.color.luminanceDelta >= 0 ? "+" : ""}${pixelResult.color.luminanceDelta}，色度 U ${pixelResult.color.chromaUDelta >= 0 ? "+" : ""}${pixelResult.color.chromaUDelta} / V ${pixelResult.color.chromaVDelta >= 0 ? "+" : ""}${pixelResult.color.chromaVDelta}，饱和系数 ${pixelResult.color.saturationFactor.toFixed(2)}，多尺度 ${pixelResult.color.lowRadius}px/${pixelResult.color.midRadius}px。`);
-      logs.push(`[融合校色] 像素边缘融合：边缘半径 ${pixelResult.color.edgeRadius}px，已保护透明像素并输出 PNG 结果层。`);
-      } catch (error) {
-        logs.push(`[融合校色] 像素级处理未完成：${error.message || "未知错误"}。已回退为旧版普通融合结果。`);
-        await selectLayerById(action, sourceLayerId);
-        await duplicateActiveLayer(action, resultLayerName);
-        resultLayer = getActiveLayer(app);
-        resultLayerId = getLayerId(resultLayer);
-      }
-    }
+    logs.push("[融合校色] 实验像素级对齐已关闭：使用快速融合路径。");
+    await duplicateActiveLayer(action, resultLayerName);
+    resultLayer = getActiveLayer(app);
+    resultLayerId = getLayerId(resultLayer);
     if (!(resultLayerId > 0)) throw new Error("融合校色结果层创建失败。");
     logs.push(`[融合校色] 已创建结果层：${resultLayerName}。`);
 
