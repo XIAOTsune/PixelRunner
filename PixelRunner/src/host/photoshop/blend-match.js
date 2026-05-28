@@ -271,6 +271,7 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
 
 function buildStatsFromRgba(data) {
   const sums = { r: 0, g: 0, b: 0, luma: 0, sat: 0, detail: 0, count: 0 };
+  const weighted = { r: 0, g: 0, b: 0, luma: 0, sat: 0, weight: 0 };
   const lumas = [];
   const length = Math.floor(data.length / 4) * 4;
   const step = Math.max(4, Math.floor(length / (4 * 180000)) * 4);
@@ -290,7 +291,18 @@ function buildStatsFromRgba(data) {
     sums.b += b;
     sums.luma += luma;
     sums.sat += sat;
-    if (previousLuma >= 0) sums.detail += Math.abs(luma - previousLuma);
+    const localDetail = previousLuma >= 0 ? Math.abs(luma - previousLuma) : 0;
+    if (previousLuma >= 0) sums.detail += localDetail;
+    const midtoneWeight = 1 - Math.min(1, Math.abs(luma - 128) / 150);
+    const chromaWeight = Math.min(1.8, sat * 2.4);
+    const detailWeight = Math.min(1.2, localDetail / 24);
+    const pixelWeight = 0.28 + midtoneWeight * 0.42 + chromaWeight * 0.58 + detailWeight * 0.28;
+    weighted.r += r * pixelWeight;
+    weighted.g += g * pixelWeight;
+    weighted.b += b * pixelWeight;
+    weighted.luma += luma * pixelWeight;
+    weighted.sat += sat * pixelWeight;
+    weighted.weight += pixelWeight;
     previousLuma = luma;
     sums.count += 1;
     lumas.push(luma);
@@ -311,6 +323,11 @@ function buildStatsFromRgba(data) {
     meanR: sums.r / sums.count,
     meanG: sums.g / sums.count,
     meanB: sums.b / sums.count,
+    weightedMeanR: weighted.weight > 0 ? weighted.r / weighted.weight : sums.r / sums.count,
+    weightedMeanG: weighted.weight > 0 ? weighted.g / weighted.weight : sums.g / sums.count,
+    weightedMeanB: weighted.weight > 0 ? weighted.b / weighted.weight : sums.b / sums.count,
+    weightedMeanLuma: weighted.weight > 0 ? weighted.luma / weighted.weight : meanLuma,
+    weightedMeanSat: weighted.weight > 0 ? weighted.sat / weighted.weight : sums.sat / sums.count,
     meanLuma,
     stdLuma: Math.sqrt(variance),
     meanSat: sums.sat / sums.count,
@@ -324,7 +341,11 @@ function buildCorrections(sourceStats, referenceStats, config) {
   const contrastAmount = total * (config.contrastStrength / 100);
   const colorAmount = total * (config.colorStrength / 100);
   const saturationAmount = total * (config.saturationStrength / 100);
-  const lumaDelta = referenceStats.meanLuma - sourceStats.meanLuma;
+  const sourceLuma = Number(sourceStats.weightedMeanLuma) || sourceStats.meanLuma;
+  const referenceLuma = Number(referenceStats.weightedMeanLuma) || referenceStats.meanLuma;
+  const sourceSat = Number(sourceStats.weightedMeanSat) || sourceStats.meanSat;
+  const referenceSat = Number(referenceStats.weightedMeanSat) || referenceStats.meanSat;
+  const lumaDelta = referenceLuma - sourceLuma;
   const stdRatio = sourceStats.stdLuma > 1 ? referenceStats.stdLuma / sourceStats.stdLuma : 1;
   const detailRatio = sourceStats.detailEnergy > 0.5 ? referenceStats.detailEnergy / sourceStats.detailEnergy : 1;
   const rgbDelta = {
@@ -332,28 +353,45 @@ function buildCorrections(sourceStats, referenceStats, config) {
     g: referenceStats.meanG - sourceStats.meanG,
     b: referenceStats.meanB - sourceStats.meanB
   };
-  const avgDelta = (rgbDelta.r + rgbDelta.g + rgbDelta.b) / 3;
+  const weightedRgbDelta = {
+    r: (Number(referenceStats.weightedMeanR) || referenceStats.meanR) - (Number(sourceStats.weightedMeanR) || sourceStats.meanR),
+    g: (Number(referenceStats.weightedMeanG) || referenceStats.meanG) - (Number(sourceStats.weightedMeanG) || sourceStats.meanG),
+    b: (Number(referenceStats.weightedMeanB) || referenceStats.meanB) - (Number(sourceStats.weightedMeanB) || sourceStats.meanB)
+  };
+  const avgDelta = (weightedRgbDelta.r + weightedRgbDelta.g + weightedRgbDelta.b) / 3;
   const colorBias = {
-    r: rgbDelta.r - avgDelta,
-    g: rgbDelta.g - avgDelta,
-    b: rgbDelta.b - avgDelta
+    r: weightedRgbDelta.r - avgDelta,
+    g: weightedRgbDelta.g - avgDelta,
+    b: weightedRgbDelta.b - avgDelta
+  };
+  const directColorBias = {
+    r: weightedRgbDelta.r - lumaDelta * 0.36,
+    g: weightedRgbDelta.g - lumaDelta * 0.36,
+    b: weightedRgbDelta.b - lumaDelta * 0.36
+  };
+  const finalColorBias = {
+    r: colorBias.r * 0.68 + directColorBias.r * 0.32,
+    g: colorBias.g * 0.68 + directColorBias.g * 0.32,
+    b: colorBias.b * 0.68 + directColorBias.b * 0.32
   };
 
   return {
-    brightness: clampNumber(Math.round(lumaDelta * 0.72 * luminanceAmount), -45, 45, 0),
+    brightness: clampNumber(Math.round(lumaDelta * 0.78 * luminanceAmount), -45, 45, 0),
     contrast: clampNumber(Math.round((((stdRatio - 1) * 0.72) + ((detailRatio - 1) * 0.28)) * 86 * contrastAmount), -35, 35, 0),
-    saturation: clampNumber(Math.round((referenceStats.meanSat - sourceStats.meanSat) * 145 * saturationAmount), -35, 35, 0),
+    saturation: clampNumber(Math.round((referenceSat - sourceSat) * 170 * saturationAmount), -35, 35, 0),
     colorBalance: {
-      cyanRed: clampNumber(Math.round(colorBias.r * 0.42 * colorAmount), -24, 24, 0),
-      magentaGreen: clampNumber(Math.round(colorBias.g * 0.42 * colorAmount), -24, 24, 0),
-      yellowBlue: clampNumber(Math.round(colorBias.b * 0.42 * colorAmount), -24, 24, 0)
+      cyanRed: clampNumber(Math.round(finalColorBias.r * 0.72 * colorAmount), -32, 32, 0),
+      magentaGreen: clampNumber(Math.round(finalColorBias.g * 0.72 * colorAmount), -32, 32, 0),
+      yellowBlue: clampNumber(Math.round(finalColorBias.b * 0.72 * colorAmount), -32, 32, 0)
     },
     raw: {
       lumaDelta,
       stdRatio,
       detailRatio,
-      saturationDelta: referenceStats.meanSat - sourceStats.meanSat,
-      rgbDelta
+      saturationDelta: referenceSat - sourceSat,
+      rgbDelta,
+      weightedRgbDelta,
+      colorBias: finalColorBias
     }
   };
 }
@@ -918,8 +956,14 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
   const meanDy = tiles.reduce((sum, tile) => sum + tile.dy, 0) / tiles.length;
   const spread = tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx - meanDx, tile.dy - meanDy), 0) / tiles.length;
   const maxDistance = tiles.reduce((max, tile) => Math.max(max, Math.hypot(tile.dx, tile.dy)), 0);
+  const meanDistance = tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx, tile.dy), 0) / tiles.length;
+  const meanAbsDx = tiles.reduce((sum, tile) => sum + Math.abs(tile.dx), 0) / tiles.length;
+  const meanAbsDy = tiles.reduce((sum, tile) => sum + Math.abs(tile.dy), 0) / tiles.length;
   const coverage = tiles.length / Math.max(1, rows * cols);
-  const applied = tiles.length >= Math.max(4, Math.round(rows * cols * 0.34)) && spread >= 0.85 && maxDistance >= 1;
+  const enoughCoverage = tiles.length >= Math.max(4, Math.round(rows * cols * 0.34));
+  const enoughMotion = maxDistance >= 0.55 || meanDistance >= 0.35 || meanAbsDx >= 0.32 || meanAbsDy >= 0.32;
+  const enoughLocalShape = spread >= 0.28 || maxDistance >= 0.8 || meanDistance >= 0.42;
+  const applied = enoughCoverage && enoughMotion && enoughLocalShape;
   return {
     enabled: true,
     applied,
@@ -933,8 +977,11 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
     spread,
     meanDx,
     meanDy,
+    meanDistance,
+    meanAbsDx,
+    meanAbsDy,
     maxDistance,
-    reason: applied ? "local-gradient-mesh" : coverage < 0.34 ? "low-coverage" : "low-local-spread",
+    reason: applied ? "local-gradient-mesh" : coverage < 0.34 ? "low-coverage" : !enoughMotion ? "low-local-motion" : "low-local-spread",
     tiles: tiles.map((tile) => ({
       row: tile.row,
       col: tile.col,
@@ -1298,9 +1345,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         logs.push(`[融合校色] 梯度对齐已跳过：${alignment.reason}，confidence ${Number(alignment.confidence || 0).toFixed(2)}。`);
       }
       if (alignment.localDeformation) {
-        logs.push(`[融合校色] 局部网格对齐：${alignment.local.validTiles}/${alignment.local.totalTiles} 个分块有效，最大局部偏移 ${alignment.local.maxDistance.toFixed(2)}px，离散度 ${alignment.local.spread.toFixed(2)}px，强度 ${Math.round(alignment.local.strength * 100)}%；已用于约束全局对齐并交给边缘融合过渡。`);
+        logs.push(`[融合校色] 局部网格对齐：${alignment.local.validTiles}/${alignment.local.totalTiles} 个分块有效，最大局部偏移 ${alignment.local.maxDistance.toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，离散度 ${alignment.local.spread.toFixed(2)}px，强度 ${Math.round(alignment.local.strength * 100)}%。`);
       } else if (alignment.local && alignment.local.enabled) {
-        logs.push(`[融合校色] 局部网格对齐已跳过：${alignment.local.reason}，有效分块 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}。`);
+        logs.push(`[融合校色] 局部网格对齐已跳过：${alignment.local.reason}，有效分块 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}，最大偏移 ${Number(alignment.local.maxDistance || 0).toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，离散度 ${Number(alignment.local.spread || 0).toFixed(2)}px。`);
       }
     }
 
