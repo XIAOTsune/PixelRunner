@@ -1148,6 +1148,7 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
   const height = Math.max(1, Number(sourceSample.height) || 1);
   const sourceData = sourceSample.data;
   const out = new Uint8Array(sourceData.length);
+  const profile = options.colorProfile || null;
   const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
   const brightness = (Number(corrections && corrections.brightness) || 0) * (0.72 + total * 0.28);
   const contrast = Number(corrections && corrections.contrast) || 0;
@@ -1166,13 +1167,27 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
       out[index + 3] = 0;
       continue;
     }
-    let r = sourceData[index] + brightness + (Number(balance.cyanRed) || 0) * colorScale;
-    let g = sourceData[index + 1] + brightness + (Number(balance.magentaGreen) || 0) * colorScale;
-    let b = sourceData[index + 2] + brightness + (Number(balance.yellowBlue) || 0) * colorScale;
-    r = contrastFactor * (r - 128) + 128;
-    g = contrastFactor * (g - 128) + 128;
-    b = contrastFactor * (b - 128) + 128;
-    [r, g, b] = applySaturationToRgb(r, g, b, saturationFactor);
+    let r = sourceData[index];
+    let g = sourceData[index + 1];
+    let b = sourceData[index + 2];
+    if (profile) {
+      const y0 = 0.299 * r + 0.587 * g + 0.114 * b;
+      const u0 = b - y0;
+      const v0 = r - y0;
+      const y = profile.sourceYMean + (y0 - profile.sourceYMean) * profile.yScale + profile.yDelta;
+      const u = u0 * profile.chromaScale + profile.uDelta;
+      const v = v0 * profile.chromaScale + profile.vDelta;
+      [r, g, b] = yuvToRgb(y, u, v);
+      [r, g, b] = applySaturationToRgb(r, g, b, profile.saturationFactor);
+    } else {
+      r += brightness + (Number(balance.cyanRed) || 0) * colorScale;
+      g += brightness + (Number(balance.magentaGreen) || 0) * colorScale;
+      b += brightness + (Number(balance.yellowBlue) || 0) * colorScale;
+      r = contrastFactor * (r - 128) + 128;
+      g = contrastFactor * (g - 128) + 128;
+      b = contrastFactor * (b - 128) + 128;
+      [r, g, b] = applySaturationToRgb(r, g, b, saturationFactor);
+    }
     out[index] = clampByte(r);
     out[index + 1] = clampByte(g);
     out[index + 2] = clampByte(b);
@@ -1185,14 +1200,74 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
     scaleY: sourceSample.scaleY,
     data: out,
     color: {
-      brightness: Number(brightness.toFixed(2)),
-      contrast: Number(contrast.toFixed(2)),
-      saturation: Number(saturation.toFixed(2)),
-      colorBalance: {
-        cyanRed: Number(((Number(balance.cyanRed) || 0) * colorScale).toFixed(2)),
-        magentaGreen: Number(((Number(balance.magentaGreen) || 0) * colorScale).toFixed(2)),
-        yellowBlue: Number(((Number(balance.yellowBlue) || 0) * colorScale).toFixed(2))
-      }
+      method: profile ? "yuv-stat-profile" : "legacy-correction-profile",
+      brightness: profile ? Number(profile.yDelta.toFixed(2)) : Number(brightness.toFixed(2)),
+      contrast: profile ? Number(((profile.yScale - 1) * 100).toFixed(2)) : Number(contrast.toFixed(2)),
+      saturation: profile ? Number(((profile.saturationFactor - 1) * 100).toFixed(2)) : Number(saturation.toFixed(2)),
+      colorBalance: profile
+        ? {
+            cyanRed: Number(profile.vDelta.toFixed(2)),
+            magentaGreen: 0,
+            yellowBlue: Number(profile.uDelta.toFixed(2))
+          }
+        : {
+            cyanRed: Number(((Number(balance.cyanRed) || 0) * colorScale).toFixed(2)),
+            magentaGreen: Number(((Number(balance.magentaGreen) || 0) * colorScale).toFixed(2)),
+            yellowBlue: Number(((Number(balance.yellowBlue) || 0) * colorScale).toFixed(2))
+          }
+    }
+  };
+}
+
+function buildInternalColorProfile(sourceSample, referenceSample, config, alignment) {
+  if (!sourceSample || !referenceSample || !sourceSample.data || !referenceSample.data || sourceSample.width !== referenceSample.width || sourceSample.height !== referenceSample.height) {
+    return null;
+  }
+  const alignedSource = applyGlobalAndLocalWarp(sourceSample, alignment, sourceSample) || sourceSample;
+  const width = Math.max(1, Number(sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample.height) || 1);
+  const sourceChannels = buildYuvChannels(alignedSource.data, width, height);
+  const referenceChannels = buildYuvChannels(referenceSample.data, width, height);
+  const weights = buildBlendWeights(sourceChannels, referenceChannels, width, height);
+  const sourceY = weightedStats(sourceChannels.y, weights);
+  const referenceY = weightedStats(referenceChannels.y, weights);
+  const sourceU = weightedStats(sourceChannels.u, weights);
+  const referenceU = weightedStats(referenceChannels.u, weights);
+  const sourceV = weightedStats(sourceChannels.v, weights);
+  const referenceV = weightedStats(referenceChannels.v, weights);
+  const sourceSat = weightedStats(sourceChannels.saturation, weights);
+  const referenceSat = weightedStats(referenceChannels.saturation, weights);
+  const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
+  const luminanceAmount = total * Math.max(0, Math.min(1.35, Number(config && config.luminanceStrength) / 100 || 0));
+  const contrastAmount = total * Math.max(0, Math.min(1.3, Number(config && config.contrastStrength) / 100 || 0));
+  const colorAmount = total * Math.max(0, Math.min(1.4, Number(config && config.colorStrength) / 100 || 0));
+  const saturationAmount = total * Math.max(-1, Math.min(1.3, Number(config && config.saturationStrength) / 100 || 0));
+  const rawYDelta = referenceY.mean - sourceY.mean;
+  const rawYScale = sourceY.std > 0.01 ? referenceY.std / sourceY.std : 1;
+  const yDelta = Math.max(-68, Math.min(68, rawYDelta * Math.min(1.08, luminanceAmount * 1.18)));
+  const yScale = Math.max(0.62, Math.min(1.62, 1 + (rawYScale - 1) * Math.min(1, contrastAmount * 1.12 + luminanceAmount * 0.18)));
+  const uDelta = Math.max(-54, Math.min(54, (referenceU.mean - sourceU.mean) * Math.min(1.1, colorAmount * 1.12)));
+  const vDelta = Math.max(-54, Math.min(54, (referenceV.mean - sourceV.mean) * Math.min(1.1, colorAmount * 1.12)));
+  const saturationFactor = Math.max(0.52, Math.min(1.72, 1 + (referenceSat.mean - sourceSat.mean) * 1.85 * saturationAmount));
+  const chromaScale = Math.max(0.78, Math.min(1.22, 1 + ((referenceU.std + referenceV.std) / Math.max(0.01, sourceU.std + sourceV.std) - 1) * colorAmount * 0.28));
+  return {
+    sourceYMean: sourceY.mean,
+    yDelta,
+    yScale,
+    uDelta,
+    vDelta,
+    chromaScale,
+    saturationFactor,
+    weight: sourceY.weight,
+    raw: {
+      sourceY,
+      referenceY,
+      sourceU,
+      referenceU,
+      sourceV,
+      referenceV,
+      sourceSat,
+      referenceSat
     }
   };
 }
@@ -1210,6 +1285,7 @@ async function createInternalBlendMatchResult({
   alignmentSample,
   config,
   corrections,
+  referenceSample,
   fullDocumentTarget,
   logs
 }) {
@@ -1217,11 +1293,11 @@ async function createInternalBlendMatchResult({
     Math.max(1, Math.ceil(Number(sourceBounds.right) - Number(sourceBounds.left))),
     Math.max(1, Math.ceil(Number(sourceBounds.bottom) - Number(sourceBounds.top)))
   );
-  logs.push(`[融合校色] 插件内部融合：重新捕获原尺寸 source ${outputLongEdge}px 长边，避免 Photoshop 调整命令和低清输出。`);
   const sourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, outputLongEdge);
-  logs.push(`[融合校色] 插件内部 source：${sourceSample.width}x${sourceSample.height}，channels ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""} -> RGBA。`);
+  logs.push(`[融合校色] 内部处理：预览 ${alignmentSample.width}x${alignmentSample.height}，输出 ${sourceSample.width}x${sourceSample.height}，source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""}->RGBA。`);
   const alpha = getAlphaStats(sourceSample.data);
   const forceOpaque = fullDocumentTarget && alpha.opaqueRatio > 0.995 && alpha.transparentRatio < 0.001;
+  const colorProfile = buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
   const warped = applyGlobalAndLocalWarp(sourceSample, alignment, alignmentSample || sourceSample) || {
     width: sourceSample.width,
     height: sourceSample.height,
@@ -1232,14 +1308,12 @@ async function createInternalBlendMatchResult({
     totalTiles: 0,
     maxDistance: 0
   };
-  const corrected = applyInternalColorCorrectionsToRgba(warped, config, corrections, { forceOpaque });
+  const corrected = applyInternalColorCorrectionsToRgba(warped, config, corrections, { forceOpaque, colorProfile });
   const pngBuffer = await encodeRgbaPng(corrected.width, corrected.height, corrected.data);
   if (!pngBuffer) throw new Error("内部融合 PNG 编码失败。");
   await activateDocument(app, action, Number(document.id));
   const placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
-  logs.push(`[融合校色] 插件内部融合结果已置入并栅格化：${resultLayerName}。`);
-  logs.push(`[融合校色] 插件内部像素对齐：全局 ${warped.globalApplied ? "启用" : "跳过"}，局部 ${warped.localApplied ? "启用" : "跳过"}，有效分块 ${warped.validTiles || 0}/${warped.totalTiles || 0}，最大偏移 ${formatFixed(warped.maxDistance, 2)}px。`);
-  logs.push(`[融合校色] 插件内部颜色匹配：亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}，色偏 R ${corrected.color.colorBalance.cyanRed >= 0 ? "+" : ""}${corrected.color.colorBalance.cyanRed} / G ${corrected.color.colorBalance.magentaGreen >= 0 ? "+" : ""}${corrected.color.colorBalance.magentaGreen} / B ${corrected.color.colorBalance.yellowBlue >= 0 ? "+" : ""}${corrected.color.colorBalance.yellowBlue}。`);
+  logs.push(`[融合校色] 内部融合：对齐 ${warped.globalApplied ? "全局" : "无全局"}/${warped.localApplied ? `局部 ${warped.validTiles || 0}/${warped.totalTiles || 0}` : "无局部"}，颜色 ${corrected.color.method}，亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}%，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}%。`);
   return {
     layer: placed.layer,
     layerId: placed.layerId,
@@ -3560,7 +3634,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
     const resultLayerName = `PixelRunner 融合校色 - ${sourceLayerName}`.slice(0, 240);
     logs.push(`[融合校色] 开始分析图层：${sourceLayerName}。`);
-    logs.push(`[融合校色] 处理区域：${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}。`);
+    logs.push(`[融合校色] 区域 ${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}；内部颜色匹配与快速对齐。`);
 
     let sourceWasVisible = true;
     try {
@@ -3573,17 +3647,14 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     try {
       sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-      logs.push("[融合校色] 已采样当前返图可见状态。");
       await selectLayerById(action, sourceLayerId);
 
       await setLayerVisible(action, sourceLayerId, false);
-      logs.push("[融合校色] 已临时隐藏当前返图图层，开始捕获隐藏后的可见合成参考。");
       referenceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-      logs.push("[融合校色] 参考图已捕获：隐藏返图后的用户可见画面。");
 
       await setLayerVisible(action, sourceLayerId, sourceWasVisible);
       restoredVisibility = true;
-      logs.push("[融合校色] 已恢复返图图层可见性。");
+      logs.push(`[融合校色] 采样完成：source/reference ${sourceSample.width}x${sourceSample.height}。`);
     } finally {
       if (!restoredVisibility) {
         try {
@@ -3600,25 +3671,12 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
     if (config.alignmentEnabled) {
       if (alignment.applied) {
-        logs.push(`[融合校色] 梯度对齐：dx ${alignment.dx}px, dy ${alignment.dy}px, scaleX ${Number(alignment.scaleXPercent || 100).toFixed(2)}%, scaleY ${Number(alignment.scaleYPercent || 100).toFixed(2)}%, rotate ${Number(alignment.rotation || 0).toFixed(2)}°, confidence ${alignment.confidence.toFixed(2)}。`);
-        const rawScaleX = Number(alignment.rawSampleScaleX) * 100;
-        const rawScaleY = Number(alignment.rawSampleScaleY) * 100;
-        const rawRotation = Number(alignment.rawSampleRotation) || 0;
-        if (
-          Number.isFinite(rawScaleX) &&
-          (Math.abs(rawScaleX - Number(alignment.scaleXPercent || 100)) >= 0.03 ||
-            Math.abs(rawScaleY - Number(alignment.scaleYPercent || 100)) >= 0.03 ||
-            Math.abs(rawRotation - Number(alignment.rotation || 0)) >= 0.03)
-        ) {
-          logs.push(`[融合校色] 对齐原始搜索：scaleX ${rawScaleX.toFixed(2)}%, scaleY ${rawScaleY.toFixed(2)}%, rotate ${rawRotation.toFixed(2)}°；最终应用已按局部网格稳定性约束。`);
-        }
+        logs.push(`[融合校色] 快速对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
       } else {
-        logs.push(`[融合校色] 梯度对齐已跳过：${alignment.reason}，confidence ${Number(alignment.confidence || 0).toFixed(2)}。`);
+        logs.push(`[融合校色] 快速对齐跳过：${alignment.reason}。`);
       }
       if (alignment.localDeformation) {
-        logs.push(`[融合校色] 局部网格对齐：${alignment.local.validTiles}/${alignment.local.totalTiles} 个分块有效，最大局部偏移 ${alignment.local.maxDistance.toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(alignment.local.meanDirectionAgreement || 0).toFixed(2)}，离散度 ${alignment.local.spread.toFixed(2)}px，强度 ${Math.round(alignment.local.strength * 100)}%。`);
-      } else if (alignment.local && alignment.local.enabled) {
-        logs.push(`[融合校色] 局部网格对齐已跳过：${alignment.local.reason}，有效分块 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}，最大偏移 ${Number(alignment.local.maxDistance || 0).toFixed(2)}px，平均偏移 ${Number(alignment.local.meanDistance || 0).toFixed(2)}px，方向一致性 ${Number(alignment.local.meanDirectionAgreement || 0).toFixed(2)}，离散度 ${Number(alignment.local.spread || 0).toFixed(2)}px。`);
+        logs.push(`[融合校色] 局部对齐：${alignment.local.validTiles}/${alignment.local.totalTiles}，最大 ${alignment.local.maxDistance.toFixed(2)}px。`);
       }
     }
 
@@ -3643,6 +3701,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         alignmentSample: sourceSample,
         config,
         corrections,
+        referenceSample,
         fullDocumentTarget,
         logs
       });
@@ -3665,7 +3724,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       };
     }
     if (!(resultLayerId > 0)) throw new Error("融合校色结果层创建失败。");
-    logs.push(`[融合校色] 已创建结果层：${resultLayerName}。`);
+    logs.push(`[融合校色] 结果层：${resultLayerName}。`);
 
     if (config.createBackupLayer) {
       try {
@@ -3677,11 +3736,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       await selectLayerById(action, resultLayerId);
     }
 
-    logs.push("[融合校色] 已使用插件内部颜色匹配和像素对齐；Photoshop 阶段不再叠加亮度、色彩平衡或饱和度调整命令。");
-
     let featherApplied = false;
     if (fullDocumentTarget && pixelResult && pixelResult.forceOpaque) {
-      logs.push("[融合校色] 当前结果覆盖整张画布且无透明边缘，已跳过向内羽化蒙版。");
+      logs.push("[融合校色] 整画布不透明，跳过羽化蒙版。");
     } else {
       featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
     }
