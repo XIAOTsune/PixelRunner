@@ -2224,6 +2224,55 @@ function fitQuadraticDy(tiles, width, globalMotion) {
   return solved || [Number(globalMotion && globalMotion.dy) || 0, 0, 0];
 }
 
+function weightedMedian(items, fallback = 0) {
+  const values = items
+    .map((item) => ({ value: Number(item.value), weight: Math.max(0.001, Number(item.weight) || 1) }))
+    .filter((item) => Number.isFinite(item.value) && item.weight > 0)
+    .sort((a, b) => a.value - b.value);
+  if (!values.length) return fallback;
+  const total = values.reduce((sum, item) => sum + item.weight, 0);
+  let acc = 0;
+  for (const item of values) {
+    acc += item.weight;
+    if (acc >= total * 0.5) return item.value;
+  }
+  return values[values.length - 1].value;
+}
+
+function fitPiecewiseVerticalControls(tiles, width, globalMotion, maxOffset) {
+  const globalDy = Number(globalMotion && globalMotion.dy) || 0;
+  const bands = [
+    { x: 0, xNorm: -1, min: -1.01, max: -0.18 },
+    { x: Math.max(0, (width - 1) * 0.5), xNorm: 0, min: -0.42, max: 0.42 },
+    { x: Math.max(0, width - 1), xNorm: 1, min: 0.18, max: 1.01 }
+  ];
+  const controls = bands.map((band) => {
+    const bandTiles = tiles.filter((tile) => {
+      const xNorm = ((Number(tile.x) || 0) / Math.max(1, width - 1)) * 2 - 1;
+      return xNorm >= band.min && xNorm <= band.max;
+    });
+    const values = bandTiles.map((tile) => ({
+      value: Number(tile.dy) || 0,
+      weight: Math.max(0.1, Number(tile.weight) || 1) * (0.65 + Math.min(2.5, Math.hypot(Number(tile.dx) || 0, Number(tile.dy) || 0)) * 0.18)
+    }));
+    if (Math.abs(band.xNorm) < 0.001) {
+      values.push({ value: globalDy, weight: Math.max(1.4, bandTiles.length * 0.18) });
+    }
+    const dy = weightedMedian(values, globalDy);
+    return {
+      x: band.x,
+      xNorm: band.xNorm,
+      dy: Math.max(-maxOffset, Math.min(maxOffset, dy)),
+      count: bandTiles.length
+    };
+  });
+
+  if (controls[1].count <= 0) {
+    controls[1].dy = Math.max(-maxOffset, Math.min(maxOffset, globalDy));
+  }
+  return controls;
+}
+
 function fitVerticalWarpModel(maskInfo, globalMotion, tileMotion, config) {
   const maxOffset = Math.max(1, Math.min(24, Number(config && config.sampleMaxOffset) || Number(globalMotion && globalMotion.maxOffset) || 8));
   const tiles = tileMotion && tileMotion.reliable ? tileMotion.tiles : [];
@@ -2236,14 +2285,17 @@ function fitVerticalWarpModel(maskInfo, globalMotion, tileMotion, config) {
     dx = dx * 0.45 + tileDx * 0.55;
   }
   dx = Math.max(-maxOffset, Math.min(maxOffset, dx));
-  const coefficients = useTiles
+  const usePiecewise = useTiles && ((Number(tileMotion && tileMotion.maxDistance) || 0) >= 1.15 || (Number(tileMotion && tileMotion.spread) || 0) >= 0.65);
+  const controls = usePiecewise ? fitPiecewiseVerticalControls(tiles, maskInfo.width, globalMotion, maxOffset) : null;
+  const coefficients = !usePiecewise && useTiles
     ? fitQuadraticDy(tiles, maskInfo.width, globalMotion)
     : [Number(globalMotion && globalMotion.dy) || 0, 0, 0];
   const limited = coefficients.map((value) => Math.max(-maxOffset, Math.min(maxOffset, Number(value) || 0)));
   const model = {
-    type: useTiles ? "quadratic-y-by-x" : "global-translation",
+    type: usePiecewise ? "piecewise-y-by-x" : useTiles ? "quadratic-y-by-x" : "global-translation",
     dx,
     dyCoefficients: limited,
+    yControls: controls,
     maxOffset,
     sourceWidth: maskInfo.width,
     sourceHeight: maskInfo.height,
@@ -2261,6 +2313,22 @@ function fitVerticalWarpModel(maskInfo, globalMotion, tileMotion, config) {
 
 function getModelDyAt(model, x) {
   const width = Math.max(1, Number(model && model.sourceWidth) || 1);
+  if (model && model.type === "piecewise-y-by-x" && Array.isArray(model.yControls) && model.yControls.length >= 2) {
+    const controls = model.yControls.slice().sort((a, b) => Number(a.x) - Number(b.x));
+    const sx = Math.max(0, Math.min(width - 1, x));
+    if (sx <= Number(controls[0].x)) return Number(controls[0].dy) || 0;
+    for (let index = 0; index < controls.length - 1; index += 1) {
+      const left = controls[index];
+      const right = controls[index + 1];
+      const lx = Number(left.x) || 0;
+      const rx = Number(right.x) || lx + 1;
+      if (sx <= rx || index === controls.length - 2) {
+        const t = Math.max(0, Math.min(1, (sx - lx) / Math.max(1, rx - lx)));
+        return (Number(left.dy) || 0) * (1 - t) + (Number(right.dy) || 0) * t;
+      }
+    }
+    return Number(controls[controls.length - 1].dy) || 0;
+  }
   const xNorm = (Math.max(0, Math.min(width - 1, x)) / Math.max(1, width - 1)) * 2 - 1;
   const c = model && model.dyCoefficients ? model.dyCoefficients : [0, 0, 0];
   return (Number(c[0]) || 0) + (Number(c[1]) || 0) * xNorm + (Number(c[2]) || 0) * xNorm * xNorm;
@@ -2364,7 +2432,7 @@ function validateWarpImprovement(maskInfo, model) {
   const before = scoreDisplacementModel(maskInfo, null, stride);
   const after = scoreDisplacementModel(maskInfo, model, stride);
   const improvement = after.score - before.score;
-  const enoughTiles = model.type !== "quadratic-y-by-x" || model.validTiles >= Math.max(4, Math.round(model.totalTiles * 0.22));
+  const enoughTiles = (model.type !== "quadratic-y-by-x" && model.type !== "piecewise-y-by-x") || model.validTiles >= Math.max(4, Math.round(model.totalTiles * 0.22));
   if (before.count < 64 || after.count < 64) return { applied: false, reason: "insufficient-validation-samples", before, after, improvement };
   if (!enoughTiles) return { applied: false, reason: "unreliable-motion", before, after, improvement };
   if (model.maxDisplacement > model.maxOffset + 0.1) return { applied: false, reason: "motion-exceeds-limit", before, after, improvement };
@@ -2385,15 +2453,20 @@ function sampleRgbaBilinearTransparent(data, width, height, x, y, out, offset) {
   sampleRgbaBilinear(data, width, height, x, y, out, offset);
 }
 
-function warpRgbaWithDisplacement(sourceSample, model) {
+function warpRgbaWithDisplacement(sourceSample, model, options = {}) {
   const width = Math.max(1, Number(sourceSample && sourceSample.width) || 1);
   const height = Math.max(1, Number(sourceSample && sourceSample.height) || 1);
   const out = new Uint8Array(width * height * 4);
+  const clampEdges = options.clampEdges === true;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4;
       const flow = getModelDisplacement(model, x, y);
-      sampleRgbaBilinearTransparent(sourceSample.data, width, height, x + flow.dx, y + flow.dy, out, offset);
+      if (clampEdges) {
+        sampleRgbaBilinear(sourceSample.data, width, height, x + flow.dx, y + flow.dy, out, offset);
+      } else {
+        sampleRgbaBilinearTransparent(sourceSample.data, width, height, x + flow.dx, y + flow.dy, out, offset);
+      }
     }
   }
   return {
@@ -2435,6 +2508,35 @@ function buildPixelAlignmentV2(sourceSample, referenceSample, config) {
     model,
     validation
   };
+}
+
+function scaleDisplacementModel(model, fromSample, toSample) {
+  const fromWidth = Math.max(1, Number(fromSample && fromSample.width) || Number(model && model.sourceWidth) || 1);
+  const fromHeight = Math.max(1, Number(fromSample && fromSample.height) || Number(model && model.sourceHeight) || 1);
+  const toWidth = Math.max(1, Number(toSample && toSample.width) || fromWidth);
+  const toHeight = Math.max(1, Number(toSample && toSample.height) || fromHeight);
+  const scaleX = toWidth / fromWidth;
+  const scaleY = toHeight / fromHeight;
+  const scaled = {
+    ...model,
+    dx: (Number(model && model.dx) || 0) * scaleX,
+    dyCoefficients: Array.isArray(model && model.dyCoefficients)
+      ? model.dyCoefficients.map((value) => (Number(value) || 0) * scaleY)
+      : [0, 0, 0],
+    yControls: Array.isArray(model && model.yControls)
+      ? model.yControls.map((control) => ({
+          ...control,
+          x: (Number(control.x) || 0) * scaleX,
+          dy: (Number(control.dy) || 0) * scaleY
+        }))
+      : null,
+    maxOffset: (Number(model && model.maxOffset) || 0) * Math.max(scaleX, scaleY),
+    sourceWidth: toWidth,
+    sourceHeight: toHeight
+  };
+  scaled.maxDisplacement = getModelMaxDisplacement(scaled);
+  scaled.smoothness = getModelSmoothness(scaled);
+  return scaled;
 }
 
 function buildScaleCandidates(maxScalePercent, enabled) {
@@ -3015,6 +3117,7 @@ function sanitizeAlignmentV2(alignment) {
       type: alignment.model.type,
       dx: alignment.model.dx,
       dyCoefficients: alignment.model.dyCoefficients,
+      yControls: alignment.model.yControls,
       maxOffset: alignment.model.maxOffset,
       maxDisplacement: alignment.model.maxDisplacement,
       smoothness: alignment.model.smoothness,
@@ -3171,7 +3274,10 @@ async function runPixelAlignmentV2Flow({
   if (alignmentV2.model) {
     const m = alignmentV2.model;
     const c = m.dyCoefficients || [0, 0, 0];
-    logs.push(`[融合校色] v2 warp model：${m.type}，dx ${formatFixed(m.dx, 2)}px，dy(x) ${formatFixed(c[0], 2)} + ${formatFixed(c[1], 2)}x + ${formatFixed(c[2], 2)}x^2，最大位移 ${formatFixed(m.maxDisplacement, 2)}px，平滑度 ${formatFixed(m.smoothness, 2)}。`);
+    const controlText = Array.isArray(m.yControls) && m.yControls.length
+      ? `，controls ${m.yControls.map((control) => `${formatFixed(control.xNorm, 1)}:${formatFixed(control.dy, 2)}`).join(" / ")}`
+      : "";
+    logs.push(`[融合校色] v2 warp model：${m.type}，dx ${formatFixed(m.dx, 2)}px，dy(x) ${formatFixed(c[0], 2)} + ${formatFixed(c[1], 2)}x + ${formatFixed(c[2], 2)}x^2${controlText}，最大位移 ${formatFixed(m.maxDisplacement, 2)}px，平滑度 ${formatFixed(m.smoothness, 2)}。`);
   }
   if (alignmentV2.validation) {
     const v = alignmentV2.validation;
@@ -3195,11 +3301,25 @@ async function runPixelAlignmentV2Flow({
   }
 
   let placed = null;
+  let outputSampleSize = { width: sourceSample.width, height: sourceSample.height };
   try {
     const { storage } = await ensureDeps();
-    const warped = warpRgbaWithDisplacement(sourceSample, alignmentV2.model);
-    const warpedDiagnostics = buildCaptureDiagnostics(warped);
-    if (warpedDiagnostics.alpha.maxAlpha <= 4 || warpedDiagnostics.alpha.transparentRatio - sourceDiagnostics.alpha.transparentRatio > 0.18) {
+    const outputLongEdge = Math.max(
+      Math.max(1, Math.ceil(Number(sourceBounds.right) - Number(sourceBounds.left))),
+      Math.max(1, Math.ceil(Number(sourceBounds.bottom) - Number(sourceBounds.top)))
+    );
+    logs.push(`[融合校色] v2 输出阶段：重新捕获原尺寸 source，长边 ${outputLongEdge}px，避免预览采样放大造成画质损失。`);
+    const outputSourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, outputLongEdge);
+    outputSampleSize = { width: outputSourceSample.width, height: outputSourceSample.height };
+    logs.push(`[融合校色] v2 output capture：${outputSourceSample.width}x${outputSourceSample.height}，channels ${outputSourceSample.sourceComponents || 0}${outputSourceSample.sourcePixelFormat ? `/${outputSourceSample.sourcePixelFormat}` : ""} -> RGBA。`);
+    const outputModel = scaleDisplacementModel(alignmentV2.model, sourceSample, outputSourceSample);
+    logs.push(`[融合校色] v2 output warp：模型缩放到原尺寸，最大位移 ${formatFixed(outputModel.maxDisplacement, 2)}px。`);
+    const outputAlpha = getAlphaStats(outputSourceSample.data);
+    const fullDocumentTarget = isFullDocumentBounds(sourceBounds, getDocumentInfo(document));
+    const clampEdges = fullDocumentTarget && outputAlpha.opaqueRatio > 0.995 && outputAlpha.transparentRatio < 0.001;
+    const warped = warpRgbaWithDisplacement(outputSourceSample, outputModel, { clampEdges });
+    const warpedAlpha = getAlphaStats(warped.data);
+    if (warpedAlpha.maxAlpha <= 4 || warpedAlpha.transparentRatio - outputAlpha.transparentRatio > 0.18) {
       throw new Error("warped-alpha-invalid");
     }
     const pngBuffer = await encodeRgbaPng(warped.width, warped.height, warped.data);
@@ -3262,8 +3382,8 @@ async function runPixelAlignmentV2Flow({
     pixelPipeline: {
       used: true,
       version: 2,
-      width: sourceSample.width,
-      height: sourceSample.height,
+      width: outputSampleSize.width,
+      height: outputSampleSize.height,
       color: null,
       diagnostics: {
         source: sanitizeCaptureDiagnostics(sourceDiagnostics),
