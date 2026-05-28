@@ -888,6 +888,55 @@ function buildBlendWeights(sourceChannels, referenceChannels, width, height) {
   return weights;
 }
 
+function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height) {
+  const length = width * height;
+  const weights = new Float32Array(length);
+  const sourceGrad = buildSobelMagnitude(sourceChannels.y, width, height);
+  const refGrad = buildSobelMagnitude(referenceChannels.y, width, height);
+  const centerX = (width - 1) / 2;
+  const centerY = (height - 1) / 2;
+  const maxDistance = Math.max(1, Math.hypot(centerX, centerY));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const i = y * width + x;
+      const alpha = Math.max(0, Math.min(1, sourceChannels.alpha[i]));
+      if (alpha <= 0.04) {
+        weights[i] = 0;
+        continue;
+      }
+      const sourceY = sourceChannels.y[i];
+      const refY = referenceChannels.y[i];
+      const diffY = Math.abs(sourceY - refY);
+      const diffChroma = Math.hypot(sourceChannels.u[i] - referenceChannels.u[i], sourceChannels.v[i] - referenceChannels.v[i]);
+      const sourceEdge = sourceGrad[i];
+      const refEdge = refGrad[i];
+      const edge = Math.max(sourceEdge, refEdge);
+      const edgeAgreement = Math.min(sourceEdge, refEdge) / Math.max(1, edge);
+      const midtone = 1 - Math.min(1, Math.abs(sourceY - 132) / 132);
+      const saturation = Math.max(sourceChannels.saturation[i], referenceChannels.saturation[i]);
+      const distance = Math.hypot(x - centerX, y - centerY) / maxDistance;
+      const centerBias = 1 - Math.min(1, distance * 0.82);
+      const differenceCue = Math.min(1, (diffY * 0.72 + diffChroma * 0.45) / 48);
+      const edgeCue = Math.min(1, edge / 42) * (0.45 + edgeAgreement * 0.55);
+      const colorCue = Math.min(1, saturation * 2.4);
+      const highlightPenalty = smoothstep(222, 252, Math.max(sourceY, refY)) * 0.68;
+      const shadowPenalty = (1 - smoothstep(12, 38, Math.min(sourceY, refY))) * 0.62;
+      const flatBackgroundPenalty = edge < 6 && diffY < 7 && diffChroma < 7 ? 0.58 : 0;
+      let weight = alpha * (
+        0.08 +
+        differenceCue * 0.42 +
+        edgeCue * 0.36 +
+        colorCue * 0.18 +
+        midtone * 0.24 +
+        centerBias * 0.16
+      );
+      weight *= 1 - Math.min(0.82, highlightPenalty + shadowPenalty + flatBackgroundPenalty);
+      weights[i] = Math.max(0, weight);
+    }
+  }
+  return weights;
+}
+
 function weightedStats(values, weights) {
   let sum = 0;
   let sumSq = 0;
@@ -1265,7 +1314,7 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const height = Math.max(1, Number(sourceSample.height) || 1);
   const sourceChannels = buildYuvChannels(alignedSource.data, width, height);
   const referenceChannels = buildYuvChannels(referenceSample.data, width, height);
-  const weights = buildBlendWeights(sourceChannels, referenceChannels, width, height);
+  const weights = buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height);
   const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
   const luminanceAmount = total * Math.max(0, Math.min(1.15, Number(config && config.luminanceStrength) / 100 || 0));
   const colorAmount = total * Math.max(0, Math.min(1.2, Number(config && config.colorStrength) / 100 || 0));
@@ -1304,6 +1353,7 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
     vDelta,
     chromaScale,
     saturationFactor,
+    subjectWeight: sourceY.weight,
     weight: sourceY.weight,
     raw: {
       sourceY,
@@ -1363,7 +1413,7 @@ async function createInternalBlendMatchResult({
   if (!pngBuffer) throw new Error("内部融合 PNG 编码失败。");
   await activateDocument(app, action, Number(document.id));
   const placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
-  logs.push(`[融合校色] 内部融合：对齐 ${warped.globalApplied ? "全局" : "无全局"}/${warped.localApplied ? `局部 ${warped.validTiles || 0}/${warped.totalTiles || 0}` : "无局部"}，颜色 ${corrected.color.method}，亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}%，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}%。`);
+  logs.push(`[融合校色] 内部融合：对齐 ${warped.globalApplied ? "全局" : "无全局"}/${warped.localApplied ? `局部 ${warped.validTiles || 0}/${warped.totalTiles || 0}` : "无局部"}，颜色 ${corrected.color.method}${colorProfile ? `，主体权重 ${Math.round(colorProfile.subjectWeight || 0)}` : ""}，亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}%，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}%。`);
   return {
     layer: placed.layer,
     layerId: placed.layerId,
