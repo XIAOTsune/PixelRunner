@@ -48,12 +48,12 @@ function getLayerId(layer) {
 
 function isUnsupportedBitsPerChannel(docInfo) {
   const bits = String(docInfo && (docInfo.bitsPerChannel || docInfo.bitsPerChannelLabel) || "").trim().toUpperCase();
-  return bits === "SIXTEEN" || bits === "16 位" || bits === "16BIT" || bits === "16-BIT" || bits === "16";
+  return bits === "THIRTYTWO" || bits === "32 位" || bits === "32BIT" || bits === "32-BIT" || bits === "32" || bits === "ONE" || bits === "1 位" || bits === "1";
 }
 
 function buildUnsupportedBitsError(docInfo) {
   const bitsLabel = String(docInfo && docInfo.bitsPerChannelLabel) || "当前位深";
-  return new Error(`融合校色仅支持 8 位文档，当前文档为 ${bitsLabel}，请切换到 8 位后再使用。`);
+  return new Error(`融合校色支持 8 位和 16 位 RGB 文档，当前文档为 ${bitsLabel}，请切换到 8 位或 16 位后再使用。`);
 }
 
 function getBlendMatchConfig(payload = {}) {
@@ -405,48 +405,114 @@ async function getPixelsWithFallback(imaging, options) {
 
 async function getImageDataBytes(imageData) {
   if (!imageData) return null;
-  if (imageData.data) return imageData.data;
   if (typeof imageData.getData === "function") {
+    try {
+      const data = await imageData.getData({ chunky: true, fullRange: true });
+      if (data) return data;
+    } catch (_) {}
     try {
       const data = await imageData.getData({ chunky: true });
       if (data) return data;
     } catch (_) {}
-    const data = await imageData.getData();
-    if (data) return data;
+    try {
+      const data = await imageData.getData();
+      if (data) return data;
+    } catch (_) {}
   }
+  if (imageData.data) return imageData.data;
   return null;
+}
+
+function getImageDataLength(data) {
+  if (!data) return 0;
+  if (typeof data.length === "number") return data.length;
+  if (typeof data.byteLength === "number") return data.byteLength;
+  return 0;
+}
+
+function getImageDataComponentSize(imageData, data) {
+  const candidates = [
+    imageData && imageData.componentSize,
+    imageData && imageData.bitsPerComponent,
+    imageData && imageData.bitsPerChannel,
+    imageData && imageData.depth
+  ];
+  for (const value of candidates) {
+    const parsed = Number(value && (value._value ?? value.value ?? value));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  if (data instanceof Uint16Array || data instanceof Int16Array) return 16;
+  if (data instanceof Float32Array || data instanceof Float64Array) return 32;
+  if (data instanceof Uint8Array || data instanceof Uint8ClampedArray || data instanceof Int8Array) return 8;
+  return 8;
+}
+
+function getImageDataComponents(imageData, data, pixelCount) {
+  const declared = Number(imageData && imageData.components);
+  if (Number.isFinite(declared) && declared > 0) return Math.max(1, Math.floor(declared));
+  const length = getImageDataLength(data);
+  if (!length || !pixelCount) return 4;
+  const componentSize = getImageDataComponentSize(imageData, data);
+  if (data instanceof ArrayBuffer) {
+    return Math.max(1, Math.floor(length / Math.max(1, Math.ceil(componentSize / 8)) / Math.max(1, pixelCount)));
+  }
+  return Math.max(1, Math.floor(length / Math.max(1, pixelCount)));
+}
+
+function getImageDataValueReader(imageData, data) {
+  if (!data) return () => 0;
+  const componentSize = getImageDataComponentSize(imageData, data);
+  const maxValue = componentSize > 8 ? Math.pow(2, Math.min(16, componentSize)) - 1 : 255;
+  let source = data;
+  if (data instanceof ArrayBuffer) {
+    source = componentSize > 8 ? new Uint16Array(data) : new Uint8Array(data);
+  }
+  if (source instanceof Float32Array || source instanceof Float64Array) {
+    return (index) => {
+      const value = Number(source[index]) || 0;
+      return Math.max(0, Math.min(255, Math.round((value <= 1 ? value * 255 : value))));
+    };
+  }
+  if (componentSize > 8 || source instanceof Uint16Array || source instanceof Int16Array) {
+    return (index) => {
+      const value = Number(source[index]) || 0;
+      return Math.max(0, Math.min(255, Math.round(value * 255 / maxValue)));
+    };
+  }
+  return (index) => Math.max(0, Math.min(255, Number(source[index]) || 0));
 }
 
 function normalizeImageDataToRgba(imageData, data, width, height) {
   const safeWidth = Math.max(1, Number(width) || Number(imageData && imageData.width) || 1);
   const safeHeight = Math.max(1, Number(height) || Number(imageData && imageData.height) || 1);
   const pixelCount = safeWidth * safeHeight;
-  const components = Math.max(1, Number(imageData && imageData.components) || Math.floor((data && data.length ? data.length : 0) / Math.max(1, pixelCount)) || 4);
+  const components = getImageDataComponents(imageData, data, pixelCount);
   const pixelFormat = String((imageData && imageData.pixelFormat) || (components === 4 ? "RGBA" : components === 3 ? "RGB" : components === 2 ? "GrayscaleAlpha" : "Grayscale"));
   const out = new Uint8Array(pixelCount * 4);
-  if (!data || data.length < pixelCount * components) return out;
+  if (!data || getImageDataLength(data) < pixelCount * components) return out;
+  const readValue = getImageDataValueReader(imageData, data);
 
   for (let pixel = 0; pixel < pixelCount; pixel += 1) {
     const sourceIndex = pixel * components;
     const targetIndex = pixel * 4;
     if (pixelFormat === "RGBA" || components >= 4) {
-      out[targetIndex] = data[sourceIndex];
-      out[targetIndex + 1] = data[sourceIndex + 1];
-      out[targetIndex + 2] = data[sourceIndex + 2];
-      out[targetIndex + 3] = data[sourceIndex + 3];
+      out[targetIndex] = readValue(sourceIndex);
+      out[targetIndex + 1] = readValue(sourceIndex + 1);
+      out[targetIndex + 2] = readValue(sourceIndex + 2);
+      out[targetIndex + 3] = readValue(sourceIndex + 3);
     } else if (pixelFormat === "RGB" || components === 3) {
-      out[targetIndex] = data[sourceIndex];
-      out[targetIndex + 1] = data[sourceIndex + 1];
-      out[targetIndex + 2] = data[sourceIndex + 2];
+      out[targetIndex] = readValue(sourceIndex);
+      out[targetIndex + 1] = readValue(sourceIndex + 1);
+      out[targetIndex + 2] = readValue(sourceIndex + 2);
       out[targetIndex + 3] = 255;
     } else if (pixelFormat === "GrayscaleAlpha" || components === 2) {
-      const gray = data[sourceIndex];
+      const gray = readValue(sourceIndex);
       out[targetIndex] = gray;
       out[targetIndex + 1] = gray;
       out[targetIndex + 2] = gray;
-      out[targetIndex + 3] = data[sourceIndex + 1];
+      out[targetIndex + 3] = readValue(sourceIndex + 1);
     } else {
-      const gray = data[sourceIndex];
+      const gray = readValue(sourceIndex);
       out[targetIndex] = gray;
       out[targetIndex + 1] = gray;
       out[targetIndex + 2] = gray;
