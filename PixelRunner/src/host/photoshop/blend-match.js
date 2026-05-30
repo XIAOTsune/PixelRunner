@@ -46,6 +46,16 @@ function getLayerId(layer) {
   return Number(layer && layer.id) || 0;
 }
 
+function isUnsupportedBitsPerChannel(docInfo) {
+  const bits = String(docInfo && (docInfo.bitsPerChannel || docInfo.bitsPerChannelLabel) || "").trim().toUpperCase();
+  return bits === "SIXTEEN" || bits === "16 位" || bits === "16BIT" || bits === "16-BIT" || bits === "16";
+}
+
+function buildUnsupportedBitsError(docInfo) {
+  const bitsLabel = String(docInfo && docInfo.bitsPerChannelLabel) || "当前位深";
+  return new Error(`融合校色仅支持 8 位文档，当前文档为 ${bitsLabel}，请切换到 8 位后再使用。`);
+}
+
 function getBlendMatchConfig(payload = {}) {
   const mode = String(payload.mode || DEFAULT_BLEND_MATCH_CONFIG.mode).trim() || DEFAULT_BLEND_MATCH_CONFIG.mode;
   const modeBoost = mode === "strong" ? 1.16 : mode === "natural" ? 0.82 : 1;
@@ -3721,6 +3731,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
   return core.executeAsModal(async () => {
     const logs = [];
     const docInfo = getDocumentInfo(document);
+    if (isUnsupportedBitsPerChannel(docInfo)) {
+      throw buildUnsupportedBitsError(docInfo);
+    }
     const requestedLayerId = Number(payload.layerId || payload.targetLayerId) || 0;
     if (requestedLayerId > 0) {
       await selectLayerById(action, requestedLayerId);
@@ -3889,6 +3902,9 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
   return core.executeAsModal(async () => {
     const logs = [];
     const docInfo = getDocumentInfo(document);
+    if (isUnsupportedBitsPerChannel(docInfo)) {
+      throw buildUnsupportedBitsError(docInfo);
+    }
     const requestedLayerId = Number(payload.layerId || payload.targetLayerId) || 0;
     if (requestedLayerId > 0) {
       await selectLayerById(action, requestedLayerId);

@@ -271,6 +271,11 @@
     setText("blendMatchPreviewState", message);
   }
 
+  function is16BitErrorMessage(message) {
+    const text = String(message || "");
+    return text.includes("仅支持 8 位文档") || text.includes("16 位");
+  }
+
   function loadImage(src) {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -547,8 +552,9 @@
         : `左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围${localMeta}`);
       drawPreviewCanvas();
     } catch (error) {
-      setPreviewState("预览失败");
-      setText("blendMatchPreviewMeta", error.message || "预览刷新失败");
+      const message = error && error.message ? error.message : "预览刷新失败";
+      setPreviewState(is16BitErrorMessage(message) ? "不支持 16 位" : "预览失败");
+      setText("blendMatchPreviewMeta", message);
     } finally {
       localState.previewBusy = false;
     }
@@ -580,8 +586,9 @@
         closePanel();
       }
     } catch (error) {
-      modules.ui.logToWorkspace(`[融合校色] 执行失败：${error.message}`, "error");
-      setText("blendMatchPanelStatus", `执行失败：${error.message}`);
+      const message = error && error.message ? error.message : "执行失败";
+      modules.ui.logToWorkspace(`[融合校色] 执行失败：${message}`, "error");
+      setText("blendMatchPanelStatus", is16BitErrorMessage(message) ? "当前文档为 16 位，请切换到 8 位后再使用" : `执行失败：${message}`);
     } finally {
       localState.busy = false;
       if (applyButton) applyButton.disabled = false;
