@@ -499,6 +499,7 @@
   function isTaskCancellable(task) {
     if (!task || typeof task !== "object") return false;
     if (isTaskTerminalStatus(task.status)) return false;
+    if (["placing", "downloading"].includes(String(task.status || "").trim().toLowerCase())) return false;
     return Boolean(String(task.remoteTaskId || task.taskId || "").trim()) && String(task.status || "").trim().toLowerCase() !== "submitting";
   }
 
@@ -570,6 +571,8 @@
     if (normalized === "queued") return "排队中";
     if (normalized === "tracking") return "追踪中";
     if (normalized === "remote-running") return "云端运行中";
+    if (normalized === "downloading") return "下载中";
+    if (normalized === "placing") return "回贴中";
     if (normalized === "timeout") return "等待超时";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "已完成";
     if (normalized === "failed" || normalized === "error") return "失败";
@@ -587,6 +590,8 @@
     if (normalized === "queued") return "任务排队中，尚未开始执行。";
     if (normalized === "tracking") return "本地等待已超时，插件正在后台追踪云端状态。";
     if (normalized === "remote-running") return "云端仍在运行，本地已切换为后台追踪。";
+    if (normalized === "downloading") return "任务已完成，正在下载结果图。";
+    if (normalized === "placing") return "任务已完成，正在下载结果并贴回 Photoshop。";
     if (normalized === "timeout") return "本地等待超时，尚未确认云端最终状态。";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "任务已完成。";
     if (normalized === "failed" || normalized === "error") return task.errorMessage || "任务执行失败。";
@@ -725,6 +730,23 @@
     return "";
   }
 
+  function getTaskFallbackTitle(task, index = 0) {
+    if (task && typeof task === "object") {
+      const appName = String(task.appName || "").trim();
+      if (appName) return appName;
+      const normalized = String(task.status || "").trim().toLowerCase();
+      if (normalized === "placing") return "回贴中";
+      if (normalized === "downloading") return "下载中";
+      if (normalized === "submitting") return "提交中";
+      if (normalized === "submitted" || normalized === "queued") return "排队中";
+      if (normalized === "tracking" || normalized === "remote-running") return "追踪中";
+      if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "已完成";
+      if (normalized === "failed" || normalized === "error") return "失败";
+      if (normalized === "cancelled" || normalized === "canceled") return "已取消";
+    }
+    return `运行中 ${Math.max(1, Number(index) + 1 || 1)}`;
+  }
+
   function isPermanentTrackingErrorMessage(message) {
     const text = String(message || "").trim().toLowerCase();
     if (!text) return false;
@@ -818,7 +840,7 @@
     if (!Array.isArray(tasks) || tasks.length === 0) return "";
     return sortRunningTasks(tasks)
       .map((task, index) => {
-        const appName = modules.runtime.escapeHtml(task.appName || `任务 ${index + 1}`);
+        const appName = modules.runtime.escapeHtml(getTaskFallbackTitle(task, index));
         const taskId = String(task.remoteTaskId || task.taskId || "").trim();
         const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "等待分配任务 ID";
         const statusLabel = getTaskStatusLabel(task.status || "running");
@@ -1339,7 +1361,7 @@
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
       appName: String(patch.appName || "").trim(),
-      status: String(patch.status || "running").trim() || "running",
+      status: hasOwn("status") ? String(patch.status || "running").trim() || "running" : undefined,
       detail: String(patch.detail || "").trim(),
       errorMessage: String(patch.errorMessage || "").trim(),
       charge: hasOwn("charge") ? normalizeTaskChargeValue(patch.charge) : undefined,
@@ -1368,6 +1390,8 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        appName: nextTask.appName || current.appName || "",
+        status: nextTask.status || current.status || "running",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
@@ -1380,7 +1404,10 @@
           Number(nextTask.placementDocumentId) > 0 ? Number(nextTask.placementDocumentId) : Number(current.placementDocumentId) || 0
       };
     } else {
-      list.unshift(nextTask);
+      list.unshift({
+        ...nextTask,
+        status: nextTask.status || "running"
+      });
     }
 
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
@@ -1448,7 +1475,7 @@
       taskId: remoteTaskId,
       remoteTaskId,
       appName: payload.appName,
-      status: "succeeded",
+      status: "placing",
       detail: "后台追踪确认任务已完成，结果已返回。",
       charge: statusResult && statusResult.charge,
       balanceCharge: statusResult && statusResult.balanceCharge,
@@ -1479,7 +1506,7 @@
             taskId: remoteTaskId,
             remoteTaskId,
             appName: payload.appName,
-            status: "succeeded",
+            status: "placing",
             detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
           });
           return;
@@ -2204,7 +2231,7 @@
         taskId: remoteTaskId,
         remoteTaskId,
         appName: payload.appName,
-        status: "succeeded",
+        status: "placing",
         detail: "任务已完成，结果已返回。",
         charge: pollResult && pollResult.charge,
         balanceCharge: pollResult && pollResult.balanceCharge,
@@ -2237,7 +2264,7 @@
             taskId: remoteTaskId,
             remoteTaskId,
             appName: payload.appName,
-            status: "succeeded",
+            status: "placing",
             detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
           });
           return;
