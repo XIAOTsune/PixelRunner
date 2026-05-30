@@ -1646,6 +1646,10 @@ button {
   will-change: transform;
 }
 
+.blend-match-preview-frame.is-panning #blendMatchPreviewCanvas {
+  transition: none;
+}
+
 .blend-match-preview-split {
   position: absolute;
   inset: auto 14px 12px 14px;

@@ -10,6 +10,7 @@ import "./webview/glow/gpu/webgl-compositor.js";
 import "./webview/glow/compositor.js";
 import "./webview/glow/preview-engine.js";
 import "./webview/glow-cpu.js";
+import "./webview/blend-match/gpu/webgl-blend-preview.js";
 import "./webview/space-fx.js";
 import "./webview/blend-match.js";
 import "./webview/ui.js";

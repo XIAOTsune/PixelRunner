@@ -51,13 +51,25 @@
     busy: false,
     previewBusy: false,
     preview: null,
+    previewRenderer: null,
+    previewRenderMode: "cpu",
+    previewAssets: null,
+    previewCache: null,
     previewRenderTimer: 0,
+    previewTransformTimer: 0,
+    previewRenderQueued: false,
+    previewFrameMetrics: null,
     previewView: {
       scale: 1,
       x: 0,
       y: 0,
       split: 0.5,
-      isPanning: false
+      isPanning: false,
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      startPanX: 0,
+      startPanY: 0
     }
   };
 
@@ -250,6 +262,7 @@
 
   function resetSettings() {
     localState.settings = { ...DEFAULT_SETTINGS };
+    localState.previewCache = null;
     renderSettings();
     void persistSettings();
     if (modules.ui && modules.ui.logToWorkspace) {
@@ -274,6 +287,31 @@
   function is16BitErrorMessage(message) {
     const text = String(message || "");
     return text.includes("仅支持 8 位文档") || text.includes("16 位");
+  }
+
+  function ensurePreviewRenderer() {
+    if (localState.previewRenderer) return localState.previewRenderer;
+    if (!modules.blendMatchWebglPreview || typeof modules.blendMatchWebglPreview.createRenderer !== "function") return null;
+    try {
+      localState.previewRenderer = modules.blendMatchWebglPreview.createRenderer();
+      localState.previewRenderMode = "webgl2";
+      return localState.previewRenderer;
+    } catch (error) {
+      localState.previewRenderer = null;
+      localState.previewRenderMode = "cpu";
+      console.warn("[PixelRunner] BlendMatch WebGL preview unavailable, using CPU fallback:", error);
+      return null;
+    }
+  }
+
+  function disposePreviewRenderer() {
+    if (localState.previewRenderer && typeof localState.previewRenderer.dispose === "function") {
+      try {
+        localState.previewRenderer.dispose();
+      } catch (_) {}
+    }
+    localState.previewRenderer = null;
+    localState.previewRenderMode = "cpu";
   }
 
   function loadImage(src) {
@@ -308,6 +346,358 @@
       clampByte(luma + (ng - luma) * satFactor),
       clampByte(luma + (nb - luma) * satFactor)
     ];
+  }
+
+  function createCanvas(width, height) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(width));
+    canvas.height = Math.max(1, Math.floor(height));
+    return canvas;
+  }
+
+  function imageDataToCanvas(imageData) {
+    const canvas = createCanvas(imageData.width, imageData.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return canvas;
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function getPreviewSplit() {
+    const splitInput = getById("blendMatchPreviewSplitInput");
+    return Math.max(0.02, Math.min(0.98, Number(splitInput && splitInput.value) / 100 || localState.previewView.split || 0.5));
+  }
+
+  function getPreviewCorrectionKey(corrections) {
+    const balance = corrections && corrections.colorBalance ? corrections.colorBalance : {};
+    return [
+      Number(corrections && corrections.brightness) || 0,
+      Number(corrections && corrections.contrast) || 0,
+      Number(corrections && corrections.saturation) || 0,
+      Number(balance.cyanRed) || 0,
+      Number(balance.magentaGreen) || 0,
+      Number(balance.yellowBlue) || 0
+    ].join("|");
+  }
+
+  function buildPreviewAssetKey(preview, settings) {
+    return [
+      preview && preview.sourceDataUrl ? preview.sourceDataUrl.length : 0,
+      preview && preview.referenceDataUrl ? preview.referenceDataUrl.length : 0,
+      preview && preview.width ? preview.width : 0,
+      preview && preview.height ? preview.height : 0,
+      getPreviewCorrectionKey(preview && preview.corrections),
+      Number(settings && settings.featherRadius) || 0
+    ].join("|");
+  }
+
+  function getMaskThresholdFactor() {
+    return { offset: 8, scale: 42, edge: 0.18 };
+  }
+
+  function buildPreviewAssets(preview) {
+    if (!preview || !preview.sourceImage || !preview.referenceImage) return null;
+    const width = Math.max(1, preview.width);
+    const height = Math.max(1, preview.height);
+    const sourceCanvas = createCanvas(width, height);
+    const referenceCanvas = createCanvas(width, height);
+    const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
+    const referenceCtx = referenceCanvas.getContext("2d", { willReadFrequently: true });
+    if (!sourceCtx || !referenceCtx) return null;
+    sourceCtx.drawImage(preview.sourceImage, 0, 0, width, height);
+    referenceCtx.drawImage(preview.referenceImage, 0, 0, width, height);
+    const source = sourceCtx.getImageData(0, 0, width, height);
+    const reference = referenceCtx.getImageData(0, 0, width, height);
+    const threshold = getMaskThresholdFactor();
+    const mask = new Float32Array(width * height);
+    for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
+      const diff = (
+        Math.abs(source.data[i] - reference.data[i]) +
+        Math.abs(source.data[i + 1] - reference.data[i + 1]) +
+        Math.abs(source.data[i + 2] - reference.data[i + 2])
+      ) / 3;
+      mask[p] = clamp01((diff - threshold.offset) / threshold.scale);
+    }
+    const key = `${width}x${height}|${preview.sourceDataUrl ? preview.sourceDataUrl.length : 0}|${preview.referenceDataUrl ? preview.referenceDataUrl.length : 0}`;
+    return {
+      key,
+      width,
+      height,
+      sourceImageData: source,
+      referenceImageData: reference,
+      sourceCanvas: imageDataToCanvas(source),
+      referenceCanvas: imageDataToCanvas(reference),
+      mask,
+      maskKey: key
+    };
+  }
+
+  function computeErodedMask(mask, width, height, radius) {
+    const r = Math.max(1, Math.min(18, Math.round(radius)));
+    if (r <= 1) return mask;
+    const horizontal = new Float32Array(mask.length);
+    const vertical = new Float32Array(mask.length);
+    const out = new Float32Array(mask.length);
+    const windowSize = r * 2 + 1;
+    for (let y = 0; y < height; y += 1) {
+      const row = y * width;
+      for (let x = 0; x < width; x += 1) {
+        let minValue = 1;
+        for (let xx = -r; xx <= r; xx += 1) {
+          const sx = Math.max(0, Math.min(width - 1, x + xx));
+          minValue = Math.min(minValue, mask[row + sx]);
+        }
+        horizontal[row + x] = minValue;
+      }
+    }
+    for (let x = 0; x < width; x += 1) {
+      for (let y = 0; y < height; y += 1) {
+        let minValue = 1;
+        for (let yy = -r; yy <= r; yy += 1) {
+          const sy = Math.max(0, Math.min(height - 1, y + yy));
+          minValue = Math.min(minValue, horizontal[sy * width + x]);
+        }
+        vertical[y * width + x] = minValue;
+      }
+    }
+    out.set(vertical);
+    return out;
+  }
+
+  function computeBlurMask(mask, width, height, radius) {
+    const r = Math.max(1, Math.min(18, Math.round(radius)));
+    if (r <= 1) return mask;
+    const temp = new Float32Array(mask.length);
+    const out = new Float32Array(mask.length);
+    for (let y = 0; y < height; y += 1) {
+      let acc = 0;
+      for (let x = -r; x <= r; x += 1) acc += mask[y * width + Math.max(0, Math.min(width - 1, x))];
+      for (let x = 0; x < width; x += 1) {
+        temp[y * width + x] = acc / (r * 2 + 1);
+        acc -= mask[y * width + Math.max(0, x - r)];
+        acc += mask[y * width + Math.min(width - 1, x + r + 1)];
+      }
+    }
+    for (let x = 0; x < width; x += 1) {
+      let acc = 0;
+      for (let y = -r; y <= r; y += 1) acc += temp[Math.max(0, Math.min(height - 1, y)) * width + x];
+      for (let y = 0; y < height; y += 1) {
+        out[y * width + x] = acc / (r * 2 + 1);
+        acc -= temp[Math.max(0, y - r) * width + x];
+        acc += temp[Math.min(height - 1, y + r + 1) * width + x];
+      }
+    }
+    return out;
+  }
+
+  function computeInwardMask(mask, width, height, radius) {
+    return computeErodedMask(mask, width, height, radius);
+  }
+
+  function buildCpuPreviewCache(preview, settings) {
+    const assets = localState.previewAssets && localState.previewAssets.key === buildPreviewAssetKey(preview, settings)
+      ? localState.previewAssets
+      : null;
+    const nextAssets = assets || buildPreviewAssets(preview);
+    if (!nextAssets) return null;
+    const featherScale = Math.max(1, Math.max(preview.boundsWidth || nextAssets.width, preview.boundsHeight || nextAssets.height) / Math.max(nextAssets.width, nextAssets.height));
+    const featherRadius = Math.max(1, Number(settings && settings.featherRadius) || 1);
+    const scaledRadius = Math.max(1, featherRadius / featherScale);
+    const inwardMask = computeInwardMask(nextAssets.mask, nextAssets.width, nextAssets.height, scaledRadius);
+    const inwardHasContent = inwardMask.some ? inwardMask.some((value) => value > 0.04) : Array.from(inwardMask).some((value) => value > 0.04);
+    const baseMask = inwardHasContent ? inwardMask : nextAssets.mask;
+    const blurred = computeBlurMask(baseMask, nextAssets.width, nextAssets.height, scaledRadius);
+    const sourceDisplay = createCanvas(nextAssets.width, nextAssets.height);
+    const afterDisplay = createCanvas(nextAssets.width, nextAssets.height);
+    const sourceCtx = sourceDisplay.getContext("2d");
+    const afterCtx = afterDisplay.getContext("2d");
+    if (!sourceCtx || !afterCtx) return null;
+    sourceCtx.putImageData(nextAssets.sourceImageData, 0, 0);
+    const afterImage = sourceCtx.createImageData(nextAssets.width, nextAssets.height);
+    for (let i = 0, p = 0; i < nextAssets.sourceImageData.data.length; i += 4, p += 1) {
+      const corrected = applyPreviewCorrection(
+        nextAssets.sourceImageData.data[i],
+        nextAssets.sourceImageData.data[i + 1],
+        nextAssets.sourceImageData.data[i + 2],
+        preview.corrections
+      );
+      const alpha = clamp01(blurred[p]);
+      afterImage.data[i] = clampByte(nextAssets.referenceImageData.data[i] * (1 - alpha) + corrected[0] * alpha);
+      afterImage.data[i + 1] = clampByte(nextAssets.referenceImageData.data[i + 1] * (1 - alpha) + corrected[1] * alpha);
+      afterImage.data[i + 2] = clampByte(nextAssets.referenceImageData.data[i + 2] * (1 - alpha) + corrected[2] * alpha);
+      afterImage.data[i + 3] = 255;
+    }
+    afterCtx.putImageData(afterImage, 0, 0);
+    return {
+      key: buildPreviewAssetKey(preview, settings),
+      width: nextAssets.width,
+      height: nextAssets.height,
+      sourceCanvas: sourceDisplay,
+      afterCanvas: afterDisplay,
+      sourceImageData: nextAssets.sourceImageData,
+      referenceImageData: nextAssets.referenceImageData,
+      mask: nextAssets.mask,
+      baseMask,
+      blurred,
+      split: getPreviewSplit()
+    };
+  }
+
+  function renderCpuPreviewCache(cache, split) {
+    if (!cache || !cache.sourceImageData || !cache.referenceImageData) return false;
+    const canvas = getById("blendMatchPreviewCanvas");
+    const frame = canvas && canvas.closest(".blend-match-preview-frame");
+    if (!canvas || !frame) return false;
+    const width = Math.max(1, cache.width);
+    const height = Math.max(1, cache.height);
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    const display = ctx.createImageData(width, height);
+    const source = cache.sourceImageData.data;
+    const reference = cache.referenceImageData.data;
+    const blurred = cache.blurred;
+    const mask = cache.mask;
+    const splitX = Math.round(width * clamp01(split));
+    for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
+      const corrected = applyPreviewCorrection(source[i], source[i + 1], source[i + 2], localState.preview && localState.preview.corrections);
+      const alpha = Math.max(0, Math.min(1, blurred[p] || 0));
+      const afterR = clampByte(reference[i] * (1 - alpha) + corrected[0] * alpha);
+      const afterG = clampByte(reference[i + 1] * (1 - alpha) + corrected[1] * alpha);
+      const afterB = clampByte(reference[i + 2] * (1 - alpha) + corrected[2] * alpha);
+      const x = p % width;
+      const useAfter = x >= splitX;
+      display.data[i] = useAfter ? afterR : source[i];
+      display.data[i + 1] = useAfter ? afterG : source[i + 1];
+      display.data[i + 2] = useAfter ? afterB : source[i + 2];
+      display.data[i + 3] = 255;
+      const band = alpha > 0.08 && alpha < 0.92 ? Math.min(0.34, 0.08 + Math.sin(alpha * Math.PI) * 0.22) : 0;
+      if (band > 0) {
+        display.data[i] = clampByte(display.data[i] * (1 - band) + 80 * band);
+        display.data[i + 1] = clampByte(display.data[i + 1] * (1 - band) + 226 * band);
+        display.data[i + 2] = clampByte(display.data[i + 2] * (1 - band) + 140 * band);
+      }
+      if (findMaskEdge(mask, width, height, p, 0.18)) {
+        display.data[i] = 80;
+        display.data[i + 1] = 232;
+        display.data[i + 2] = 232;
+      }
+    }
+    ctx.putImageData(display, 0, 0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = Math.max(1, Math.round(width / 420));
+    ctx.beginPath();
+    ctx.moveTo(splitX + 0.5, 0);
+    ctx.lineTo(splitX + 0.5, height);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(5, 12, 16, 0.68)";
+    ctx.fillRect(8, 8, 74, 22);
+    ctx.fillRect(Math.max(8, width - 82), 8, 74, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = `${Math.max(11, Math.round(width / 62))}px sans-serif`;
+    ctx.fillText("融合前", 16, 24);
+    ctx.fillText("融合后", Math.max(16, width - 74), 24);
+    ctx.restore();
+    frame.classList.add("has-preview");
+    const splitInput = getById("blendMatchPreviewSplitInput");
+    if (splitInput) splitInput.classList.add("is-active");
+    return true;
+  }
+
+  function renderGpuPreview(split) {
+    const renderer = ensurePreviewRenderer();
+    const preview = localState.preview;
+    const cache = localState.previewCache;
+    if (!renderer || !preview || !cache) return false;
+    try {
+      renderer.configure({
+        width: cache.width,
+        height: cache.height,
+        sourceImage: preview.sourceImage,
+        referenceImage: preview.referenceImage,
+        brightness: preview.corrections ? preview.corrections.brightness : 0,
+        contrast: preview.corrections ? preview.corrections.contrast : 0,
+        saturation: preview.corrections ? preview.corrections.saturation : 0,
+        colorBalance: preview.corrections && preview.corrections.colorBalance
+          ? [
+              Number(preview.corrections.colorBalance.cyanRed) || 0,
+              Number(preview.corrections.colorBalance.magentaGreen) || 0,
+              Number(preview.corrections.colorBalance.yellowBlue) || 0
+            ]
+          : [0, 0, 0],
+        featherMix: 1,
+        featherRadius: localState.settings.featherRadius,
+        split
+      });
+      renderer.render();
+      const canvas = getById("blendMatchPreviewCanvas");
+      const frame = canvas && canvas.closest(".blend-match-preview-frame");
+      if (!canvas || !frame) return false;
+      if (canvas.width !== cache.width) canvas.width = cache.width;
+      if (canvas.height !== cache.height) canvas.height = cache.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      renderer.presentTo(canvas);
+      frame.classList.add("has-preview");
+      const splitInput = getById("blendMatchPreviewSplitInput");
+      if (splitInput) splitInput.classList.add("is-active");
+      return true;
+    } catch (error) {
+      console.warn("[PixelRunner] BlendMatch WebGL preview failed, falling back to CPU:", error);
+      disposePreviewRenderer();
+      return false;
+    }
+  }
+
+  function applyPreviewTransform() {
+    const canvas = getById("blendMatchPreviewCanvas");
+    if (!canvas) return;
+    const view = localState.previewView;
+    canvas.style.transform = `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`;
+  }
+
+  function queuePreviewTransform() {
+    if (localState.previewTransformTimer) return;
+    localState.previewTransformTimer = window.requestAnimationFrame(() => {
+      localState.previewTransformTimer = 0;
+      applyPreviewTransform();
+    });
+  }
+
+  function clampPreviewView({ clampToBounds = true } = {}) {
+    const canvas = getById("blendMatchPreviewCanvas");
+    const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
+    if (!canvas || !frame) return;
+    const view = localState.previewView;
+    const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
+    view.scale = scale;
+    if (!clampToBounds) return;
+    const metrics = localState.previewFrameMetrics || (frame.getBoundingClientRect ? frame.getBoundingClientRect() : { width: 0, height: 0 });
+    const viewportWidth = Number(metrics.width) || 0;
+    const viewportHeight = Number(metrics.height) || 0;
+    const contentWidth = Number(canvas.width) || viewportWidth || 1;
+    const contentHeight = Number(canvas.height) || viewportHeight || 1;
+    const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
+    const renderedWidth = contentWidth * fitScale * scale;
+    const renderedHeight = contentHeight * fitScale * scale;
+    const maxX = Math.max(0, (renderedWidth - viewportWidth) / 2);
+    const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
+    view.x = Math.max(-maxX, Math.min(maxX, Number(view.x) || 0));
+    view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
+  }
+
+  function syncPreviewFrameMetrics() {
+    const frame = getById("blendMatchPreviewFrame");
+    if (!frame || typeof frame.getBoundingClientRect !== "function") return null;
+    localState.previewFrameMetrics = frame.getBoundingClientRect();
+    return localState.previewFrameMetrics;
   }
 
   function boxBlurMask(mask, width, height, radius) {
@@ -364,35 +754,6 @@
     return left <= threshold || right <= threshold || top <= threshold || bottom <= threshold;
   }
 
-  function clampPreviewView() {
-    const canvas = getById("blendMatchPreviewCanvas");
-    const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
-    if (!canvas || !frame) return;
-    const view = localState.previewView;
-    const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
-    view.scale = scale;
-    const rect = frame.getBoundingClientRect ? frame.getBoundingClientRect() : { width: 0, height: 0 };
-    const viewportWidth = Number(rect.width) || 0;
-    const viewportHeight = Number(rect.height) || 0;
-    const contentWidth = Number(canvas.width) || viewportWidth || 1;
-    const contentHeight = Number(canvas.height) || viewportHeight || 1;
-    const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
-    const renderedWidth = contentWidth * fitScale * scale;
-    const renderedHeight = contentHeight * fitScale * scale;
-    const maxX = Math.max(0, (renderedWidth - viewportWidth) / 2);
-    const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
-    view.x = Math.max(-maxX, Math.min(maxX, Number(view.x) || 0));
-    view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
-  }
-
-  function applyPreviewTransform() {
-    const canvas = getById("blendMatchPreviewCanvas");
-    if (!canvas) return;
-    clampPreviewView();
-    const view = localState.previewView;
-    canvas.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
-  }
-
   function resetPreviewTransform() {
     localState.previewView.scale = 1;
     localState.previewView.x = 0;
@@ -406,7 +767,7 @@
     const view = localState.previewView;
     const previousScale = Math.max(0.35, Number(view.scale) || 1);
     const scale = Math.max(0.35, Math.min(8, Number(nextScale) || 1));
-    const rect = frame.getBoundingClientRect();
+    const rect = localState.previewFrameMetrics || frame.getBoundingClientRect();
     const localX = Number(anchorX) - rect.left - rect.width / 2;
     const localY = Number(anchorY) - rect.top - rect.height / 2;
     if (Math.abs(scale - previousScale) >= 0.001) {
@@ -418,108 +779,56 @@
       view.x = 0;
       view.y = 0;
     }
-    applyPreviewTransform();
+    clampPreviewView();
+    queuePreviewTransform();
   }
 
   function drawPreviewCanvas() {
-    const canvas = getById("blendMatchPreviewCanvas");
-    const frame = canvas && canvas.closest(".blend-match-preview-frame");
     const preview = localState.preview;
-    if (!canvas || !preview || !preview.sourceImage || !preview.referenceImage) return;
-    const width = Math.max(1, preview.width);
-    const height = Math.max(1, preview.height);
-    const splitInput = getById("blendMatchPreviewSplitInput");
-    const split = Math.max(0.02, Math.min(0.98, Number(splitInput && splitInput.value) / 100 || localState.previewView.split || 0.5));
+    if (!preview || !preview.sourceImage || !preview.referenceImage) return;
+    const split = getPreviewSplit();
     localState.previewView.split = split;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#080e12";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const cacheKey = buildPreviewAssetKey(preview, localState.settings);
+    const assetKey = `${Math.max(1, preview.width)}x${Math.max(1, preview.height)}|${preview.sourceDataUrl ? preview.sourceDataUrl.length : 0}|${preview.referenceDataUrl ? preview.referenceDataUrl.length : 0}`;
 
-    const makeData = (image) => {
-      const off = document.createElement("canvas");
-      off.width = width;
-      off.height = height;
-      const offCtx = off.getContext("2d");
-      offCtx.drawImage(image, 0, 0, width, height);
-      return offCtx.getImageData(0, 0, width, height);
-    };
-    const source = makeData(preview.sourceImage);
-    const reference = makeData(preview.referenceImage);
-    const display = ctx.createImageData(width, height);
-    const after = ctx.createImageData(width, height);
-    const mask = new Float32Array(width * height);
-    for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
-      const diff = (
-        Math.abs(source.data[i] - reference.data[i]) +
-        Math.abs(source.data[i + 1] - reference.data[i + 1]) +
-        Math.abs(source.data[i + 2] - reference.data[i + 2])
-      ) / 3;
-      mask[p] = Math.max(0, Math.min(1, (diff - 8) / 42));
+    if (!localState.previewAssets || localState.previewAssets.key !== assetKey) {
+      localState.previewAssets = buildPreviewAssets(preview);
     }
-    const featherScale = Math.max(1, Math.max(preview.boundsWidth || width, preview.boundsHeight || height) / Math.max(width, height));
-    const featherRadius = Math.max(1, localState.settings.featherRadius / featherScale);
-    const inwardMask = erodeMask(mask, width, height, featherRadius);
-    const inwardHasContent = inwardMask.some ? inwardMask.some((value) => value > 0.04) : Array.from(inwardMask).some((value) => value > 0.04);
-    const baseMask = inwardHasContent ? inwardMask : mask;
-    const blurred = boxBlurMask(baseMask, width, height, featherRadius);
-    const splitX = Math.round(width * split);
-    for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
-      const corrected = applyPreviewCorrection(source.data[i], source.data[i + 1], source.data[i + 2], preview.corrections);
-      const alpha = Math.max(0, Math.min(1, blurred[p]));
-      after.data[i] = clampByte(reference.data[i] * (1 - alpha) + corrected[0] * alpha);
-      after.data[i + 1] = clampByte(reference.data[i + 1] * (1 - alpha) + corrected[1] * alpha);
-      after.data[i + 2] = clampByte(reference.data[i + 2] * (1 - alpha) + corrected[2] * alpha);
-      after.data[i + 3] = 255;
-      const x = p % width;
-      const useAfter = x >= splitX;
-      display.data[i] = useAfter ? after.data[i] : source.data[i];
-      display.data[i + 1] = useAfter ? after.data[i + 1] : source.data[i + 1];
-      display.data[i + 2] = useAfter ? after.data[i + 2] : source.data[i + 2];
-      display.data[i + 3] = 255;
-      const band = alpha > 0.08 && alpha < 0.92 ? Math.min(0.34, 0.08 + Math.sin(alpha * Math.PI) * 0.22) : 0;
-      if (band > 0) {
-        display.data[i] = clampByte(display.data[i] * (1 - band) + 80 * band);
-        display.data[i + 1] = clampByte(display.data[i + 1] * (1 - band) + 226 * band);
-        display.data[i + 2] = clampByte(display.data[i + 2] * (1 - band) + 140 * band);
-      }
-      if (findMaskEdge(mask, width, height, p, 0.18)) {
-        display.data[i] = 80;
-        display.data[i + 1] = 232;
-        display.data[i + 2] = 232;
-      }
+    if (!localState.previewAssets) return;
+
+    if (!localState.previewCache || localState.previewCache.key !== cacheKey) {
+      localState.previewCache = buildCpuPreviewCache(preview, localState.settings);
     }
-    ctx.putImageData(display, 0, 0);
-    ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.9)";
-    ctx.lineWidth = Math.max(1, Math.round(width / 420));
-    ctx.beginPath();
-    ctx.moveTo(splitX + 0.5, 0);
-    ctx.lineTo(splitX + 0.5, height);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(5, 12, 16, 0.68)";
-    ctx.fillRect(8, 8, 74, 22);
-    ctx.fillRect(Math.max(8, width - 82), 8, 74, 22);
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.font = `${Math.max(11, Math.round(width / 62))}px sans-serif`;
-    ctx.fillText("融合前", 16, 24);
-    ctx.fillText("融合后", Math.max(16, width - 74), 24);
-    ctx.restore();
-    frame && frame.classList.add("has-preview");
-    if (splitInput) splitInput.classList.add("is-active");
+    if (!localState.previewCache) return;
+
+    const rendered = renderGpuPreview(split) || renderCpuPreviewCache(localState.previewCache, split);
+    if (!rendered) {
+      setPreviewState("预览失败");
+      return;
+    }
+    localState.previewRenderMode = localState.previewRenderer ? "webgl2" : "cpu";
     applyPreviewTransform();
   }
 
-  function schedulePreviewRender() {
+  function schedulePreviewRender(options = {}) {
     if (!localState.preview) return;
-    if (localState.previewRenderTimer) window.cancelAnimationFrame(localState.previewRenderTimer);
-    localState.previewRenderTimer = window.requestAnimationFrame(() => {
+    const immediate = options && options.immediate === true;
+    if (localState.previewRenderTimer) {
+      window.clearTimeout(localState.previewRenderTimer);
+      window.cancelAnimationFrame(localState.previewRenderTimer);
+      localState.previewRenderTimer = 0;
+    }
+    if (immediate) {
+      localState.previewRenderTimer = window.requestAnimationFrame(() => {
+        localState.previewRenderTimer = 0;
+        drawPreviewCanvas();
+      });
+      return;
+    }
+    localState.previewRenderTimer = window.setTimeout(() => {
       localState.previewRenderTimer = 0;
       drawPreviewCanvas();
-    });
+    }, 96);
   }
 
   async function refreshPreview() {
@@ -666,7 +975,7 @@
     if (splitInput) {
       splitInput.addEventListener("input", () => {
         localState.previewView.split = Math.max(0.02, Math.min(0.98, Number(splitInput.value) / 100 || 0.5));
-        schedulePreviewRender();
+        schedulePreviewRender({ immediate: true });
       });
       splitInput.addEventListener("pointerdown", (event) => event.stopPropagation());
     }
@@ -677,43 +986,67 @@
         event.preventDefault();
         const direction = event.deltaY > 0 ? -1 : 1;
         const factor = direction > 0 ? 1.18 : 1 / 1.18;
+        syncPreviewFrameMetrics();
         zoomPreview(localState.previewView.scale * factor, event.clientX, event.clientY);
       }, { passive: false });
 
       previewFrame.addEventListener("pointerdown", (event) => {
         if (event.button != null && event.button !== 0) return;
+        if (event.target && typeof event.target.closest === "function" && event.target.closest(".blend-match-preview-tools, .blend-match-preview-split")) return;
+        syncPreviewFrameMetrics();
         if ((Number(localState.previewView.scale) || 1) <= 1.001) return;
         event.preventDefault();
         localState.previewView.isPanning = true;
+        localState.previewView.pointerId = event.pointerId;
         localState.previewView.startX = event.clientX;
         localState.previewView.startY = event.clientY;
         localState.previewView.startPanX = localState.previewView.x;
         localState.previewView.startPanY = localState.previewView.y;
         previewFrame.classList.add("is-panning");
+        if (typeof previewFrame.setPointerCapture === "function" && event.pointerId != null) {
+          try {
+            previewFrame.setPointerCapture(event.pointerId);
+          } catch (_) {}
+        }
       });
 
       const movePan = (event) => {
         if (!localState.previewView.isPanning) return;
+        if (localState.previewView.pointerId != null && event.pointerId != null && event.pointerId !== localState.previewView.pointerId) return;
         event.preventDefault();
         localState.previewView.x = localState.previewView.startPanX + event.clientX - localState.previewView.startX;
         localState.previewView.y = localState.previewView.startPanY + event.clientY - localState.previewView.startY;
-        applyPreviewTransform();
+        queuePreviewTransform();
       };
 
       const endPan = (event) => {
         if (!localState.previewView.isPanning) return;
+        if (localState.previewView.pointerId != null && event.pointerId != null && event.pointerId !== localState.previewView.pointerId) return;
         event.preventDefault();
         localState.previewView.isPanning = false;
+        const pointerId = localState.previewView.pointerId;
+        localState.previewView.pointerId = null;
         previewFrame.classList.remove("is-panning");
+        if (typeof previewFrame.releasePointerCapture === "function" && pointerId != null) {
+          try {
+            previewFrame.releasePointerCapture(pointerId);
+          } catch (_) {}
+        }
+        clampPreviewView();
+        queuePreviewTransform();
       };
       window.addEventListener("pointermove", movePan, { passive: false });
       window.addEventListener("pointerup", endPan, { passive: false });
       window.addEventListener("pointercancel", endPan, { passive: false });
       window.addEventListener("blur", () => {
         localState.previewView.isPanning = false;
+        localState.previewView.pointerId = null;
         previewFrame.classList.remove("is-panning");
       });
-      previewFrame.addEventListener("dblclick", resetPreviewTransform);
+      previewFrame.addEventListener("dblclick", (event) => {
+        if (event.target && typeof event.target.closest === "function" && event.target.closest(".blend-match-preview-tools, .blend-match-preview-split")) return;
+        resetPreviewTransform();
+      });
     }
 
     document.querySelectorAll("[data-blend-match-zoom]").forEach((button) => {
