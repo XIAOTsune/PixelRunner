@@ -56,16 +56,13 @@
     previewAssets: null,
     previewCache: null,
     previewRenderTimer: 0,
-    previewTransformTimer: 0,
     previewRenderQueued: false,
-    previewFrameMetrics: null,
     previewView: {
       scale: 1,
       x: 0,
       y: 0,
       split: 0.5,
       isPanning: false,
-      pointerId: null,
       startX: 0,
       startY: 0,
       startPanX: 0,
@@ -659,29 +656,23 @@
   function applyPreviewTransform() {
     const canvas = getById("blendMatchPreviewCanvas");
     if (!canvas) return;
+    clampPreviewView();
     const view = localState.previewView;
-    canvas.style.transform = `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`;
+    canvas.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
   }
 
-  function queuePreviewTransform() {
-    if (localState.previewTransformTimer) return;
-    localState.previewTransformTimer = window.requestAnimationFrame(() => {
-      localState.previewTransformTimer = 0;
-      applyPreviewTransform();
-    });
-  }
-
-  function clampPreviewView({ clampToBounds = true } = {}) {
+  function clampPreviewView() {
     const canvas = getById("blendMatchPreviewCanvas");
     const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
     if (!canvas || !frame) return;
     const view = localState.previewView;
     const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
     view.scale = scale;
-    if (!clampToBounds) return;
-    const metrics = localState.previewFrameMetrics || (frame.getBoundingClientRect ? frame.getBoundingClientRect() : { width: 0, height: 0 });
-    const viewportWidth = Number(metrics.width) || 0;
-    const viewportHeight = Number(metrics.height) || 0;
+    const frameRect = frame.getBoundingClientRect
+      ? frame.getBoundingClientRect()
+      : { width: 0, height: 0 };
+    const viewportWidth = Number(frameRect.width) || 0;
+    const viewportHeight = Number(frameRect.height) || 0;
     const contentWidth = Number(canvas.width) || viewportWidth || 1;
     const contentHeight = Number(canvas.height) || viewportHeight || 1;
     const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
@@ -691,13 +682,6 @@
     const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
     view.x = Math.max(-maxX, Math.min(maxX, Number(view.x) || 0));
     view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
-  }
-
-  function syncPreviewFrameMetrics() {
-    const frame = getById("blendMatchPreviewFrame");
-    if (!frame || typeof frame.getBoundingClientRect !== "function") return null;
-    localState.previewFrameMetrics = frame.getBoundingClientRect();
-    return localState.previewFrameMetrics;
   }
 
   function boxBlurMask(mask, width, height, radius) {
@@ -767,7 +751,7 @@
     const view = localState.previewView;
     const previousScale = Math.max(0.35, Number(view.scale) || 1);
     const scale = Math.max(0.35, Math.min(8, Number(nextScale) || 1));
-    const rect = localState.previewFrameMetrics || frame.getBoundingClientRect();
+    const rect = frame.getBoundingClientRect();
     const localX = Number(anchorX) - rect.left - rect.width / 2;
     const localY = Number(anchorY) - rect.top - rect.height / 2;
     if (Math.abs(scale - previousScale) >= 0.001) {
@@ -779,8 +763,7 @@
       view.x = 0;
       view.y = 0;
     }
-    clampPreviewView();
-    queuePreviewTransform();
+    applyPreviewTransform();
   }
 
   function drawPreviewCanvas() {
@@ -986,61 +969,42 @@
         event.preventDefault();
         const direction = event.deltaY > 0 ? -1 : 1;
         const factor = direction > 0 ? 1.18 : 1 / 1.18;
-        syncPreviewFrameMetrics();
         zoomPreview(localState.previewView.scale * factor, event.clientX, event.clientY);
       }, { passive: false });
 
       previewFrame.addEventListener("pointerdown", (event) => {
         if (event.button != null && event.button !== 0) return;
         if (event.target && typeof event.target.closest === "function" && event.target.closest(".blend-match-preview-tools, .blend-match-preview-split")) return;
-        syncPreviewFrameMetrics();
         if ((Number(localState.previewView.scale) || 1) <= 1.001) return;
         event.preventDefault();
         localState.previewView.isPanning = true;
-        localState.previewView.pointerId = event.pointerId;
         localState.previewView.startX = event.clientX;
         localState.previewView.startY = event.clientY;
         localState.previewView.startPanX = localState.previewView.x;
         localState.previewView.startPanY = localState.previewView.y;
         previewFrame.classList.add("is-panning");
-        if (typeof previewFrame.setPointerCapture === "function" && event.pointerId != null) {
-          try {
-            previewFrame.setPointerCapture(event.pointerId);
-          } catch (_) {}
-        }
       });
 
       const movePan = (event) => {
         if (!localState.previewView.isPanning) return;
-        if (localState.previewView.pointerId != null && event.pointerId != null && event.pointerId !== localState.previewView.pointerId) return;
         event.preventDefault();
         localState.previewView.x = localState.previewView.startPanX + event.clientX - localState.previewView.startX;
         localState.previewView.y = localState.previewView.startPanY + event.clientY - localState.previewView.startY;
-        queuePreviewTransform();
+        applyPreviewTransform();
       };
 
       const endPan = (event) => {
         if (!localState.previewView.isPanning) return;
-        if (localState.previewView.pointerId != null && event.pointerId != null && event.pointerId !== localState.previewView.pointerId) return;
         event.preventDefault();
         localState.previewView.isPanning = false;
-        const pointerId = localState.previewView.pointerId;
-        localState.previewView.pointerId = null;
         previewFrame.classList.remove("is-panning");
-        if (typeof previewFrame.releasePointerCapture === "function" && pointerId != null) {
-          try {
-            previewFrame.releasePointerCapture(pointerId);
-          } catch (_) {}
-        }
-        clampPreviewView();
-        queuePreviewTransform();
+        applyPreviewTransform();
       };
       window.addEventListener("pointermove", movePan, { passive: false });
       window.addEventListener("pointerup", endPan, { passive: false });
       window.addEventListener("pointercancel", endPan, { passive: false });
       window.addEventListener("blur", () => {
         localState.previewView.isPanning = false;
-        localState.previewView.pointerId = null;
         previewFrame.classList.remove("is-panning");
       });
       previewFrame.addEventListener("dblclick", (event) => {
