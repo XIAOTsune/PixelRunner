@@ -30,6 +30,48 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function getNowMs() {
+  return typeof performance !== "undefined" && performance && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function formatMs(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? `${Math.round(parsed)}ms` : "0ms";
+}
+
+function createTimingRecorder() {
+  const startedAt = getNowMs();
+  let lastMark = startedAt;
+  const entries = [];
+  return {
+    mark(label, details = null) {
+      const now = getNowMs();
+      const entry = {
+        label: String(label || ""),
+        ms: Number((now - lastMark).toFixed(1)),
+        totalMs: Number((now - startedAt).toFixed(1))
+      };
+      if (details && typeof details === "object") entry.details = details;
+      entries.push(entry);
+      lastMark = now;
+      return entry;
+    },
+    totalMs() {
+      return Number((getNowMs() - startedAt).toFixed(1));
+    },
+    entries() {
+      return entries.slice();
+    },
+    logTo(logs, prefix = "[融合校色] 耗时") {
+      if (!Array.isArray(logs) || !entries.length) return;
+      const segments = entries.map((entry) => `${entry.label} ${formatMs(entry.ms)}`);
+      logs.push(`${prefix}：${segments.join(" / ")} / 总计 ${formatMs(this.totalMs())}。`);
+    }
+  };
+}
+
 function parseLayerBounds(bounds) {
   return normalizeBounds(bounds);
 }
@@ -1121,9 +1163,10 @@ function applyGlobalAndLocalWarp(sample, alignment, alignmentSample) {
   if (!sample || !sample.data) return null;
   const width = Math.max(1, Number(sample.width) || 1);
   const height = Math.max(1, Number(sample.height) || 1);
-  const out = new Uint8Array(width * height * 4);
   const hasGlobal = Boolean(alignment && alignment.applied);
   const local = alignment && alignment.local && alignment.local.applied ? alignment.local : null;
+  if (!hasGlobal && !local) return null;
+  const out = new Uint8Array(width * height * 4);
   const sourceWidth = Math.max(1, Number(alignmentSample && alignmentSample.width) || width);
   const sourceHeight = Math.max(1, Number(alignmentSample && alignmentSample.height) || height);
   const dxScale = width / sourceWidth;
@@ -1463,17 +1506,20 @@ async function createInternalBlendMatchResult({
   corrections,
   referenceSample,
   fullDocumentTarget,
-  logs
+  logs,
+  timing
 }) {
   const outputLongEdge = Math.max(
     Math.max(1, Math.ceil(Number(sourceBounds.right) - Number(sourceBounds.left))),
     Math.max(1, Math.ceil(Number(sourceBounds.bottom) - Number(sourceBounds.top)))
   );
   const sourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, outputLongEdge);
+  if (timing) timing.mark("隔离输出采样", { width: sourceSample.width, height: sourceSample.height });
   logs.push(`[融合校色] 内部处理：预览 ${alignmentSample.width}x${alignmentSample.height}，输出 ${sourceSample.width}x${sourceSample.height}，source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""}->RGBA。`);
   const alpha = getAlphaStats(sourceSample.data);
   const forceOpaque = fullDocumentTarget && alpha.opaqueRatio > 0.995 && alpha.transparentRatio < 0.001;
   const colorProfile = buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
+  if (timing) timing.mark("颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
   const warped = applyGlobalAndLocalWarp(sourceSample, alignment, alignmentSample || sourceSample) || {
     width: sourceSample.width,
     height: sourceSample.height,
@@ -1484,11 +1530,15 @@ async function createInternalBlendMatchResult({
     totalTiles: 0,
     maxDistance: 0
   };
+  if (timing) timing.mark(warped.globalApplied || warped.localApplied ? "原尺寸变形" : "跳过变形");
   const corrected = applyInternalColorCorrectionsToRgba(warped, config, corrections, { forceOpaque, colorProfile });
+  if (timing) timing.mark("原尺寸校色");
   const pngBuffer = await encodeRgbaPng(corrected.width, corrected.height, corrected.data);
   if (!pngBuffer) throw new Error("内部融合 PNG 编码失败。");
+  if (timing) timing.mark("PNG 编码", { bytes: pngBuffer.byteLength || 0 });
   await activateDocument(app, action, Number(document.id));
   const placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
+  if (timing) timing.mark("置入结果层");
   logs.push(`[融合校色] 内部融合：对齐 ${warped.globalApplied ? "全局" : "无全局"}/${warped.localApplied ? `局部 ${warped.validTiles || 0}/${warped.totalTiles || 0}` : "无局部"}，颜色 ${corrected.color.method}${colorProfile ? `，主体权重 ${Math.round(colorProfile.subjectWeight || 0)}` : ""}，亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}%，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}%。`);
   return {
     layer: placed.layer,
@@ -3364,9 +3414,31 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     }
   });
   const affineBest = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
-  const local = config.localAlignmentEnabled
+  const comparisonScore = Math.max(0, affineBest.secondScore, second);
+  const confidence = Math.max(0, Math.min(1, (affineBest.score - comparisonScore) * 3 + Math.max(0, affineBest.score - 0.22)));
+  const affineScaleXPercent = Number((affineBest.scaleX * 100).toFixed(3));
+  const affineScaleYPercent = Number((affineBest.scaleY * 100).toFixed(3));
+  const affineRotation = Number((Number(affineBest.rotation) || 0).toFixed(3));
+  const globalIsConfident =
+    confidence >= 0.46 &&
+    affineBest.score >= 0.28 &&
+    affineBest.score - comparisonScore >= 0.035;
+  const globalMotionIsSimple =
+    Math.abs(affineScaleXPercent - affineScaleYPercent) < 0.12 &&
+    Math.abs(affineRotation) < 0.08;
+  const local = config.localAlignmentEnabled && !(globalIsConfident && globalMotionIsSimple)
     ? estimateTileOffsets(sourceField, refField, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), config)
-    : { enabled: false, applied: false, tiles: [], spread: 0, meanDx: 0, meanDy: 0, validTiles: 0, totalTiles: 0, reason: "disabled" };
+    : {
+        enabled: Boolean(config.localAlignmentEnabled),
+        applied: false,
+        tiles: [],
+        spread: 0,
+        meanDx: 0,
+        meanDy: 0,
+        validTiles: 0,
+        totalTiles: 0,
+        reason: config.localAlignmentEnabled ? "global-confidence-fast-path" : "disabled"
+      };
   const localDeformation = Boolean(local.applied);
   const localDampen = localDeformation ? Math.max(0.12, Math.min(0.38, local.strength * 0.5)) : 0;
   const effectiveBest = localDeformation
@@ -3379,8 +3451,6 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
         rotation: affineBest.rotation * (1 - localDampen * 0.5)
       }
     : affineBest;
-  const comparisonScore = Math.max(0, affineBest.secondScore, second);
-  const confidence = Math.max(0, Math.min(1, (affineBest.score - comparisonScore) * 3 + Math.max(0, affineBest.score - 0.22)));
   const docDx = -effectiveBest.dx * sourceSample.scaleX;
   const docDy = -effectiveBest.dy * sourceSample.scaleY;
   const scaleXPercent = Number((effectiveBest.scaleX * 100).toFixed(3));
@@ -3796,6 +3866,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
   return core.executeAsModal(async () => {
     const logs = [];
+    const timing = createTimingRecorder();
     const docInfo = getDocumentInfo(document);
     if (isUnsupportedBitsPerChannel(docInfo)) {
       throw buildUnsupportedBitsError(docInfo);
@@ -3826,12 +3897,15 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     try {
       sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+      timing.mark("source 采样", { width: sourceSample.width, height: sourceSample.height });
       await selectLayerById(action, sourceLayerId);
 
       await setLayerVisible(action, sourceLayerId, false);
       referenceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+      timing.mark("reference 采样", { width: referenceSample.width, height: referenceSample.height });
 
       await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+      timing.mark("恢复图层");
       restoredVisibility = true;
       logs.push(`[融合校色] 采样完成：source/reference ${sourceSample.width}x${sourceSample.height}。`);
     } finally {
@@ -3848,6 +3922,11 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     const alignment = config.alignmentEnabled
       ? estimateGradientAlignment(sourceSample, referenceSample, config)
       : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+    timing.mark("快速对齐", {
+      applied: Boolean(alignment.applied),
+      confidence: Number((Number(alignment.confidence) || 0).toFixed(3)),
+      reason: alignment.reason || ""
+    });
     if (config.alignmentEnabled) {
       if (alignment.applied) {
         logs.push(`[融合校色] 快速对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
@@ -3860,6 +3939,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     }
 
     const corrections = buildCorrections(sourceStats, referenceStats, config);
+    timing.mark("颜色统计");
     await selectLayerById(action, sourceLayerId);
     let resultLayer = null;
     let resultLayerId = 0;
@@ -3867,6 +3947,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     try {
       const { storage } = await ensureDeps();
+      timing.mark("加载依赖");
       pixelResult = await createInternalBlendMatchResult({
         app,
         action,
@@ -3882,7 +3963,8 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         corrections,
         referenceSample,
         fullDocumentTarget,
-        logs
+        logs,
+        timing
       });
       resultLayer = pixelResult.layer;
       resultLayerId = pixelResult.layerId;
@@ -3891,6 +3973,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       await activateDocument(app, action, Number(document.id));
       await selectLayerById(action, sourceLayerId);
       await duplicateActiveLayer(action, resultLayerName);
+      timing.mark("fallback 复制图层");
       resultLayer = getActiveLayer(app);
       resultLayerId = getLayerId(resultLayer);
       pixelResult = {
@@ -3908,6 +3991,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     if (config.createBackupLayer) {
       try {
         await setLayerVisible(action, sourceLayerId, false);
+        timing.mark("隐藏备份层");
         logs.push("[融合校色] 原返图图层已隐藏保留为备份。");
       } catch (error) {
         logs.push(`[融合校色] 原图层备份隐藏失败：${error.message || "未知错误"}。`);
@@ -3918,10 +4002,14 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let featherApplied = false;
     if (fullDocumentTarget && pixelResult && pixelResult.forceOpaque) {
       logs.push("[融合校色] 整画布不透明，跳过羽化蒙版。");
+      timing.mark("跳过羽化蒙版");
     } else {
       featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
+      timing.mark("羽化蒙版", { applied: featherApplied });
     }
     await selectLayerById(action, resultLayerId);
+    timing.mark("选择结果层");
+    timing.logTo(logs);
 
     return {
       ok: true,
@@ -3946,7 +4034,8 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         width: pixelResult ? pixelResult.width : 0,
         height: pixelResult ? pixelResult.height : 0,
         color: pixelResult ? pixelResult.color : null,
-        alignment: pixelResult ? pixelResult.alignment : null
+        alignment: pixelResult ? pixelResult.alignment : null,
+        timings: timing.entries()
       },
       featherApplied
     };
