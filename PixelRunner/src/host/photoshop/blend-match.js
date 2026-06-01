@@ -2179,6 +2179,88 @@ function scoreGradientFieldOffset(sourceField, referenceField, width, height, dx
   };
 }
 
+function scoreGradientFieldWarp(sourceField, referenceField, width, height, transform, local, stride, region = null) {
+  let sumA = 0;
+  let sumB = 0;
+  let sumAA = 0;
+  let sumBB = 0;
+  let sumAB = 0;
+  let directionSum = 0;
+  let overlapSum = 0;
+  let weightSum = 0;
+  let count = 0;
+  const cx = width / 2;
+  const cy = height / 2;
+  const scaleX = Math.max(0.92, Math.min(1.08, Number(transform && transform.scaleX) || 1));
+  const scaleY = Math.max(0.92, Math.min(1.08, Number(transform && transform.scaleY) || 1));
+  const rotation = ((Number(transform && transform.rotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(-rotation);
+  const sin = Math.sin(-rotation);
+  const dx = Number(transform && transform.dx) || 0;
+  const dy = Number(transform && transform.dy) || 0;
+  const mesh = local && local.applied ? buildDenseMeshGrid(local, width, height) : null;
+  const localStrength = mesh ? Math.max(0, Math.min(1, Number(local.strength) || DEFAULT_BLEND_MATCH_CONFIG.localMeshStrength)) : 0;
+  const startX = Math.max(1, region ? region.left : 1);
+  const endX = Math.min(width - 1, region ? region.right : width - 1);
+  const startY = Math.max(1, region ? region.top : 1);
+  const endY = Math.min(height - 1, region ? region.bottom : height - 1);
+  const step = Math.max(1, Number(stride) || 1);
+  for (let y = startY; y < endY; y += step) {
+    const refRow = y * width;
+    for (let x = startX; x < endX; x += step) {
+      const localX = x - cx;
+      const localY = y - cy;
+      let sourceX = cx + ((localX * cos - localY * sin) / scaleX) + dx;
+      let sourceY = cy + ((localX * sin + localY * cos) / scaleY) + dy;
+      if (mesh) {
+        const flow = interpolateMeshOffset(mesh, x, y);
+        sourceX += flow.dx * localStrength;
+        sourceY += flow.dy * localStrength;
+      }
+      if (sourceX < 1 || sourceX >= width - 1 || sourceY < 1 || sourceY >= height - 1) continue;
+      const refIndex = refRow + x;
+      const a = sampleFloatBilinear(sourceField.mag, width, height, sourceX, sourceY);
+      const b = referenceField.mag[refIndex];
+      if (a < 6 && b < 6) continue;
+      const edgeWeight = Math.min(2.4, Math.max(a, b) / 18) * (0.35 + Math.min(a, b) / Math.max(1, Math.max(a, b)) * 0.65);
+      sumA += a * edgeWeight;
+      sumB += b * edgeWeight;
+      sumAA += a * a * edgeWeight;
+      sumBB += b * b * edgeWeight;
+      sumAB += a * b * edgeWeight;
+      const sourceMag = Math.max(0.001, a);
+      const refMag = Math.max(0.001, b);
+      const sourceGx = sampleFloatBilinear(sourceField.gx, width, height, sourceX, sourceY);
+      const sourceGy = sampleFloatBilinear(sourceField.gy, width, height, sourceX, sourceY);
+      const cosAngle = (
+        sourceGx * referenceField.gx[refIndex] +
+        sourceGy * referenceField.gy[refIndex]
+      ) / Math.max(0.001, sourceMag * refMag);
+      directionSum += Math.max(-1, Math.min(1, cosAngle)) * edgeWeight;
+      overlapSum += (Math.min(a, b) / Math.max(1, Math.max(a, b))) * edgeWeight;
+      weightSum += edgeWeight;
+      count += 1;
+    }
+  }
+  if (count < 64 || weightSum <= 0) {
+    return { score: -1, ncc: -1, direction: 0, overlap: 0, count };
+  }
+  const numerator = sumAB - (sumA * sumB) / weightSum;
+  const denomA = sumAA - (sumA * sumA) / weightSum;
+  const denomB = sumBB - (sumB * sumB) / weightSum;
+  const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
+  const ncc = numerator / denom;
+  const direction = directionSum / weightSum;
+  const overlap = overlapSum / weightSum;
+  return {
+    score: ncc * 0.62 + direction * 0.28 + overlap * 0.1,
+    ncc,
+    direction,
+    overlap,
+    count
+  };
+}
+
 function getRgbDiagnostics(data) {
   let count = 0;
   let sumR = 0;
@@ -3195,6 +3277,89 @@ function buildLocalMeshSummary(tiles, rows, cols, strength, maxOffset) {
   };
 }
 
+function roundMetric(value, digits = 4) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Number(parsed.toFixed(digits)) : 0;
+}
+
+function rejectLocalMesh(local, validation, reason = "local-validation-rejected") {
+  return {
+    ...local,
+    applied: false,
+    rejected: true,
+    reason,
+    validation
+  };
+}
+
+function validateLocalMeshImprovement(sourceField, refField, width, height, affineBest, local, stride, context = {}) {
+  if (!local || !local.applied) return local;
+  const validationStride = Math.max(1, Math.floor((Number(stride) || 1) * 1.35));
+  const globalScore = scoreGradientFieldWarp(sourceField, refField, width, height, affineBest, null, validationStride);
+  const localScore = scoreGradientFieldWarp(sourceField, refField, width, height, affineBest, local, validationStride);
+  const scoreGain = localScore.score - globalScore.score;
+  const nccGain = localScore.ncc - globalScore.ncc;
+  const directionGain = localScore.direction - globalScore.direction;
+  const complexity = Math.max(0, (Number(local.spread) || 0) * 0.55 + (Number(local.maxDistance) || 0) * 0.18);
+  const maxDistance = Number(local.maxDistance) || 0;
+  const confidence = Number(context.confidence) || 0;
+  const globalScoreGap = Number(context.globalScoreGap) || 0;
+  const alreadyAligned = Boolean(context.alreadyAligned);
+  const lowConfidence = confidence < 0.28 || globalScoreGap < 0.012;
+  const minGain = alreadyAligned
+    ? 0.028
+    : lowConfidence
+      ? 0.024
+      : maxDistance > 3.2 || complexity > 0.95
+        ? 0.018
+        : 0.012;
+  const minNccGain = lowConfidence || maxDistance > 3.2 ? 0.006 : -0.002;
+  const directionFloor = lowConfidence ? -0.012 : -0.03;
+  const complexityPenalty = scoreGain < minGain * 1.45 && (maxDistance > 4.5 || complexity > 1.25);
+  const validation = {
+    globalScore: roundMetric(globalScore.score),
+    localScore: roundMetric(localScore.score),
+    scoreGain: roundMetric(scoreGain),
+    globalNcc: roundMetric(globalScore.ncc),
+    localNcc: roundMetric(localScore.ncc),
+    nccGain: roundMetric(nccGain),
+    directionGain: roundMetric(directionGain),
+    minGain: roundMetric(minGain),
+    minNccGain: roundMetric(minNccGain),
+    complexity: roundMetric(complexity),
+    maxDistance: roundMetric(maxDistance, 2),
+    lowConfidence,
+    alreadyAligned,
+    globalCount: globalScore.count,
+    localCount: localScore.count,
+    accepted: false
+  };
+  const enoughSamples = localScore.count >= 64 && globalScore.count >= 64;
+  const accepted =
+    enoughSamples &&
+    scoreGain >= minGain &&
+    nccGain >= minNccGain &&
+    directionGain >= directionFloor &&
+    !complexityPenalty;
+  validation.accepted = accepted;
+  validation.reason = accepted
+    ? "local-validation-accepted"
+    : !enoughSamples
+      ? "insufficient-validation-samples"
+      : scoreGain < minGain
+        ? "insufficient-score-gain"
+        : nccGain < minNccGain
+          ? "ncc-regression"
+          : directionGain < directionFloor
+            ? "direction-regression"
+            : "complexity-penalty";
+  if (!accepted) return rejectLocalMesh(local, validation);
+  return {
+    ...local,
+    validation
+  };
+}
+
 function buildDenseMeshGrid(local, width, height, scaleX = 1, scaleY = 1) {
   const rows = Math.max(1, Number(local && local.rows) || 1);
   const cols = Math.max(1, Number(local && local.cols) || 1);
@@ -3312,9 +3477,12 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
   const cols = profile.cols;
   const rows = profile.rows;
   const searchOffset = Math.max(1, Math.min(profile.maxOffset, sampleOffset));
-  const minTileScore = 0.18;
-  const minScoreGap = 0.004;
-  const minTextureEnergy = 4.5;
+  const conservative = config.localConservativeMode === true;
+  const lowGlobalConfidence = config.localLowGlobalConfidence === true;
+  const minTileScore = conservative ? 0.235 : lowGlobalConfidence ? 0.215 : 0.18;
+  const minScoreGap = conservative ? 0.014 : lowGlobalConfidence ? 0.01 : 0.004;
+  const minTextureEnergy = conservative ? 7.5 : lowGlobalConfidence ? 6.2 : 4.5;
+  const minDirectionAgreement = conservative ? 0.28 : lowGlobalConfidence ? 0.24 : 0.18;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
       const tileWidth = width / cols;
@@ -3372,8 +3540,8 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
       });
       const scoreGap = best.score - Math.max(0, second);
       const nonZeroMotion = Math.hypot(best.dx, best.dy) >= 0.75;
-      const directionOk = best.directionAgreement > 0.18;
-      if (best.score > minTileScore && directionOk && (scoreGap > minScoreGap || (nonZeroMotion && best.score > minTileScore + 0.06))) {
+      const directionOk = best.directionAgreement > minDirectionAgreement;
+      if (best.score > minTileScore && directionOk && (scoreGap > minScoreGap || (!conservative && nonZeroMotion && best.score > minTileScore + 0.06))) {
         tiles.push({ ...best, row, col, scoreGap, textureEnergy });
       }
     }
@@ -3416,9 +3584,17 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const affineBest = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
   const comparisonScore = Math.max(0, affineBest.secondScore, second);
   const confidence = Math.max(0, Math.min(1, (affineBest.score - comparisonScore) * 3 + Math.max(0, affineBest.score - 0.22)));
+  const affineDocDx = -affineBest.dx * sourceSample.scaleX;
+  const affineDocDy = -affineBest.dy * sourceSample.scaleY;
   const affineScaleXPercent = Number((affineBest.scaleX * 100).toFixed(3));
   const affineScaleYPercent = Number((affineBest.scaleY * 100).toFixed(3));
   const affineRotation = Number((Number(affineBest.rotation) || 0).toFixed(3));
+  const affineSignificant =
+    Math.abs(affineDocDx) >= 0.35 ||
+    Math.abs(affineDocDy) >= 0.35 ||
+    Math.abs(affineScaleXPercent - 100) >= 0.08 ||
+    Math.abs(affineScaleYPercent - 100) >= 0.08 ||
+    Math.abs(affineRotation) >= 0.03;
   const globalIsConfident =
     confidence >= 0.46 &&
     affineBest.score >= 0.28 &&
@@ -3426,8 +3602,13 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const globalMotionIsSimple =
     Math.abs(affineScaleXPercent - affineScaleYPercent) < 0.12 &&
     Math.abs(affineRotation) < 0.08;
-  const local = config.localAlignmentEnabled && !(globalIsConfident && globalMotionIsSimple)
-    ? estimateTileOffsets(sourceField, refField, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), config)
+  const localGuardConfig = {
+    ...config,
+    localConservativeMode: !affineSignificant || confidence < 0.28,
+    localLowGlobalConfidence: confidence < 0.34 || affineBest.score - comparisonScore < 0.018
+  };
+  const estimatedLocal = config.localAlignmentEnabled && !(globalIsConfident && globalMotionIsSimple)
+    ? estimateTileOffsets(sourceField, refField, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), localGuardConfig)
     : {
         enabled: Boolean(config.localAlignmentEnabled),
         applied: false,
@@ -3439,6 +3620,11 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
         totalTiles: 0,
         reason: config.localAlignmentEnabled ? "global-confidence-fast-path" : "disabled"
       };
+  const local = validateLocalMeshImprovement(sourceField, refField, width, height, affineBest, estimatedLocal, Math.max(1, stride), {
+    confidence,
+    globalScoreGap: affineBest.score - comparisonScore,
+    alreadyAligned: !affineSignificant
+  });
   const localDeformation = Boolean(local.applied);
   const localDampen = localDeformation ? Math.max(0.12, Math.min(0.38, local.strength * 0.5)) : 0;
   const effectiveBest = localDeformation
@@ -3925,7 +4111,10 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     timing.mark("快速对齐", {
       applied: Boolean(alignment.applied),
       confidence: Number((Number(alignment.confidence) || 0).toFixed(3)),
-      reason: alignment.reason || ""
+      reason: alignment.reason || "",
+      localApplied: Boolean(alignment.localDeformation),
+      localRejected: Boolean(alignment.local && alignment.local.rejected),
+      localReason: alignment.local && alignment.local.reason || ""
     });
     if (config.alignmentEnabled) {
       if (alignment.applied) {
@@ -3934,7 +4123,14 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         logs.push(`[融合校色] 快速对齐跳过：${alignment.reason}。`);
       }
       if (alignment.localDeformation) {
-        logs.push(`[融合校色] 局部对齐：${alignment.local.validTiles}/${alignment.local.totalTiles}，最大 ${alignment.local.maxDistance.toFixed(2)}px。`);
+        const validation = alignment.local && alignment.local.validation;
+        const validationText = validation
+          ? `，验证提升 ${formatFixed(validation.scoreGain, 4)}（全局 ${formatFixed(validation.globalScore, 4)} -> 局部 ${formatFixed(validation.localScore, 4)}）`
+          : "";
+        logs.push(`[融合校色] 局部对齐：${alignment.local.validTiles}/${alignment.local.totalTiles}，最大 ${alignment.local.maxDistance.toFixed(2)}px${validationText}。`);
+      } else if (alignment.local && alignment.local.rejected) {
+        const validation = alignment.local.validation || {};
+        logs.push(`[融合校色] 局部对齐验证回退：${validation.reason || alignment.local.reason}，提升 ${formatFixed(validation.scoreGain, 4)}，要求 ${formatFixed(validation.minGain, 4)}；保留全局对齐。`);
       }
     }
 
