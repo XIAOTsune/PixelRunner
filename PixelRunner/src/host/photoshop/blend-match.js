@@ -3209,6 +3209,37 @@ function buildStretchPairs(maxStretch, enabled) {
   return pairs.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
 }
 
+function refineTranslationAlignment(sourceGrad, refGrad, width, height, base, baseSecondScore, sampleOffset, stride) {
+  const offsetWindow = Math.max(1, Math.min(2, Math.round(sampleOffset / 5)));
+  const refineStride = Math.max(1, stride);
+  const baseDx = Number(base && base.dx) || 0;
+  const baseDy = Number(base && base.dy) || 0;
+  let best = {
+    dx: baseDx,
+    dy: baseDy,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    score: Number(base && base.score) || -1
+  };
+  let second = Number(baseSecondScore) || -1;
+  for (let dy = baseDy - offsetWindow; dy <= baseDy + offsetWindow; dy += 1) {
+    for (let dx = baseDx - offsetWindow; dx <= baseDx + offsetWindow; dx += 1) {
+      const score = scoreAffineTransform(sourceGrad, refGrad, width, height, { dx, dy, scaleX: 1, scaleY: 1, rotation: 0 }, refineStride);
+      if (score > best.score) {
+        second = best.score;
+        best = { dx, dy, scaleX: 1, scaleY: 1, rotation: 0, score };
+      } else if (score > second) {
+        second = score;
+      }
+    }
+  }
+  return {
+    ...best,
+    secondScore: second
+  };
+}
+
 function refineAffineAlignment(sourceGrad, refGrad, width, height, base, baseSecondScore, config, sampleOffset, stride) {
   const rotationCandidates = buildSymmetricCandidates(config.alignmentMaxRotation, true, 0.25);
   const maxStretch = Math.max(0, Number(config.alignmentMaxStretch) || 0);
@@ -3244,6 +3275,45 @@ function refineAffineAlignment(sourceGrad, refGrad, width, height, base, baseSec
   return {
     ...best,
     secondScore: second
+  };
+}
+
+function selectConservativeAlignmentModel(translationBest, affineBest) {
+  const safeTranslation = translationBest && Number.isFinite(Number(translationBest.score))
+    ? translationBest
+    : { dx: 0, dy: 0, scaleX: 1, scaleY: 1, rotation: 0, score: -1, secondScore: -1 };
+  const safeAffine = affineBest && Number.isFinite(Number(affineBest.score))
+    ? affineBest
+    : safeTranslation;
+  const scaleDelta = Math.max(Math.abs((Number(safeAffine.scaleX) || 1) - 1), Math.abs((Number(safeAffine.scaleY) || 1) - 1));
+  const stretchDelta = Math.abs((Number(safeAffine.scaleX) || 1) - (Number(safeAffine.scaleY) || 1));
+  const rotationDelta = Math.abs(Number(safeAffine.rotation) || 0);
+  const affineComplexity = scaleDelta * 100 + stretchDelta * 80 + rotationDelta * 0.55;
+  const affineGain = Number(safeAffine.score) - Number(safeTranslation.score);
+  const translationIsUsable = Number(safeTranslation.score) >= 0.18;
+  const minAffineGain = translationIsUsable
+    ? 0.012 + Math.min(0.028, affineComplexity * 0.006)
+    : 0.006;
+  const affineHasMeaningfulTransform =
+    scaleDelta >= 0.0012 ||
+    stretchDelta >= 0.001 ||
+    rotationDelta >= 0.035;
+  const preferTranslation =
+    translationIsUsable &&
+    affineHasMeaningfulTransform &&
+    affineGain < minAffineGain;
+  return {
+    best: preferTranslation ? safeTranslation : safeAffine,
+    rejectedAffine: preferTranslation,
+    reason: preferTranslation ? "translation-preferred-over-weak-affine" : "affine-accepted",
+    translationScore: Number(safeTranslation.score) || -1,
+    affineScore: Number(safeAffine.score) || -1,
+    affineGain,
+    minAffineGain,
+    scaleDelta,
+    stretchDelta,
+    rotationDelta,
+    affineComplexity
   };
 }
 
@@ -3587,6 +3657,9 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
   const minScoreGap = conservative ? 0.014 : lowGlobalConfidence ? 0.01 : 0.004;
   const minTextureEnergy = conservative ? 7.5 : lowGlobalConfidence ? 6.2 : 4.5;
   const minDirectionAgreement = conservative ? 0.28 : lowGlobalConfidence ? 0.24 : 0.18;
+  const baseDx = Number(config.baseDx) || 0;
+  const baseDy = Number(config.baseDy) || 0;
+  const residualMode = config.localResidualMode !== false;
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
       const tileWidth = width / cols;
@@ -3605,7 +3678,7 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
       let second = -1;
       for (let dy = -searchOffset; dy <= searchOffset; dy += 1) {
         for (let dx = -searchOffset; dx <= searchOffset; dx += 1) {
-          const scored = scoreGradientFieldOffset(sourceField, refField, width, height, dx, dy, stride, region);
+          const scored = scoreGradientFieldOffset(sourceField, refField, width, height, baseDx + dx, baseDy + dy, stride, region);
           const score = scored.score;
           const distance = Math.hypot(dx, dy);
           const bestDistance = Math.hypot(best.dx, best.dy);
@@ -3628,7 +3701,7 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
         }
       }
       refineCandidates.forEach(([dx, dy]) => {
-        const scored = scoreGradientFieldOffset(sourceField, refField, width, height, dx, dy, Math.max(1, Math.floor(stride * 0.75)), region);
+        const scored = scoreGradientFieldOffset(sourceField, refField, width, height, baseDx + dx, baseDy + dy, Math.max(1, Math.floor(stride * 0.75)), region);
         const score = scored.score;
         const distance = Math.hypot(dx, dy);
         const bestDistance = Math.hypot(best.dx, best.dy);
@@ -3646,11 +3719,16 @@ function estimateTileOffsets(sourceField, refField, width, height, sampleOffset,
       const nonZeroMotion = Math.hypot(best.dx, best.dy) >= 0.75;
       const directionOk = best.directionAgreement > minDirectionAgreement;
       if (best.score > minTileScore && directionOk && (scoreGap > minScoreGap || (!conservative && nonZeroMotion && best.score > minTileScore + 0.06))) {
-        tiles.push({ ...best, row, col, scoreGap, textureEnergy });
+        tiles.push({ ...best, row, col, scoreGap, textureEnergy, residual: residualMode });
       }
     }
   }
-  return buildLocalMeshSummary(smoothTileOffsets(tiles, rows, cols, 2), rows, cols, profile.strength, profile.maxOffset);
+  return {
+    ...buildLocalMeshSummary(smoothTileOffsets(tiles, rows, cols, 2), rows, cols, profile.strength, profile.maxOffset),
+    residualMode,
+    baseDx,
+    baseDy
+  };
 }
 
 function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOffset) {
@@ -3672,10 +3750,20 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const scaleCandidates = buildScaleCandidates(config.alignmentMaxScale, config.alignmentScaleEnabled);
   let best = { dx: 0, dy: 0, scale: 1, score: -1 };
   let second = -1;
+  let translationBase = { dx: 0, dy: 0, scale: 1, score: -1 };
+  let translationSecond = -1;
   scaleCandidates.forEach((scale) => {
     for (let dy = -sampleOffset; dy <= sampleOffset; dy += 1) {
       for (let dx = -sampleOffset; dx <= sampleOffset; dx += 1) {
         const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, scale, stride);
+        if (Math.abs(scale - 1) < 0.000001) {
+          if (score > translationBase.score) {
+            translationSecond = translationBase.score;
+            translationBase = { dx, dy, scale: 1, score };
+          } else if (score > translationSecond) {
+            translationSecond = score;
+          }
+        }
         if (score > best.score) {
           second = best.score;
           best = { dx, dy, scale, score };
@@ -3685,8 +3773,19 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       }
     }
   });
-  const affineBest = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
-  const comparisonScore = Math.max(0, affineBest.secondScore, second);
+  const translationSeed = {
+    dx: translationBase.dx,
+    dy: translationBase.dy,
+    scale: 1,
+    score: translationBase.score
+  };
+  const translationBest = refineTranslationAlignment(sourceGrad, refGrad, width, height, translationSeed, translationSecond, sampleOffset, stride);
+  const affineCandidate = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
+  const modelChoice = selectConservativeAlignmentModel(translationBest, affineCandidate);
+  const affineBest = modelChoice.best;
+  const comparisonScore = modelChoice.rejectedAffine
+    ? Math.max(0, translationBest.secondScore)
+    : Math.max(0, affineBest.secondScore, second, translationBest.score);
   const confidence = Math.max(0, Math.min(1, (affineBest.score - comparisonScore) * 3 + Math.max(0, affineBest.score - 0.22)));
   const affineDocDx = -affineBest.dx * sourceSample.scaleX;
   const affineDocDy = -affineBest.dy * sourceSample.scaleY;
@@ -3709,7 +3808,10 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const localGuardConfig = {
     ...config,
     localConservativeMode: !affineSignificant || confidence < 0.28,
-    localLowGlobalConfidence: confidence < 0.34 || affineBest.score - comparisonScore < 0.018
+    localLowGlobalConfidence: confidence < 0.34 || affineBest.score - comparisonScore < 0.018,
+    localResidualMode: true,
+    baseDx: affineBest.dx,
+    baseDy: affineBest.dy
   };
   const estimatedLocal = config.localAlignmentEnabled && !(globalIsConfident && globalMotionIsSimple)
     ? estimateTileOffsets(sourceField, refField, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), localGuardConfig)
@@ -3731,17 +3833,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     previewFastAlignment: config.previewFastAlignment === true
   });
   const localDeformation = Boolean(local.applied);
-  const localDampen = localDeformation ? Math.max(0.12, Math.min(0.38, local.strength * 0.5)) : 0;
-  const effectiveBest = localDeformation
-    ? {
-        ...affineBest,
-        dx: affineBest.dx * (1 - localDampen * 0.25) + local.meanDx * localDampen * 0.25,
-        dy: affineBest.dy * (1 - localDampen * 0.25) + local.meanDy * localDampen * 0.25,
-        scaleX: affineBest.scaleX,
-        scaleY: affineBest.scaleY,
-        rotation: affineBest.rotation * (1 - localDampen * 0.5)
-      }
-    : affineBest;
+  const effectiveBest = affineBest;
   const docDx = -effectiveBest.dx * sourceSample.scaleX;
   const docDy = -effectiveBest.dy * sourceSample.scaleY;
   const scaleXPercent = Number((effectiveBest.scaleX * 100).toFixed(3));
@@ -3776,6 +3868,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       rawSampleScaleX: affineBest.scaleX,
       rawSampleScaleY: affineBest.scaleY,
       rawSampleRotation: affineBest.rotation,
+      modelChoice,
       local,
       localDeformation,
       reason: significant ? "low-confidence" : "already-aligned"
@@ -3802,6 +3895,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     rawSampleScaleX: affineBest.scaleX,
     rawSampleScaleY: affineBest.scaleY,
     rawSampleRotation: affineBest.rotation,
+    modelChoice,
     local,
     localDeformation,
     reason: Math.abs(rotation) >= 0.03 || Math.abs(scaleXPercent - scaleYPercent) >= 0.08 ? "gradient-ncc-affine" : scalePercent === 100 ? "gradient-ncc" : "gradient-ncc-scale"
@@ -4241,6 +4335,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         logs.push(`[融合校色] 快速对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
       } else {
         logs.push(`[融合校色] 快速对齐跳过：${alignment.reason}。`);
+      }
+      if (alignment.modelChoice && alignment.modelChoice.rejectedAffine) {
+        logs.push(`[融合校色] 对齐模型：纯平移优先，已拒绝弱仿射缩放/旋转；平移分 ${formatFixed(alignment.modelChoice.translationScore, 4)}，仿射分 ${formatFixed(alignment.modelChoice.affineScore, 4)}，增益 ${formatFixed(alignment.modelChoice.affineGain, 4)}，要求 ${formatFixed(alignment.modelChoice.minAffineGain, 4)}。`);
       }
       if (alignment.localDeformation) {
         const validation = alignment.local && alignment.local.validation;
