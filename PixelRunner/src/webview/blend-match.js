@@ -684,6 +684,29 @@
     view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
   }
 
+  function getPreviewPanBounds() {
+    const canvas = getById("blendMatchPreviewCanvas");
+    const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
+    if (!canvas || !frame || !frame.getBoundingClientRect) return { maxX: 0, maxY: 0 };
+    const view = localState.previewView;
+    const rect = frame.getBoundingClientRect();
+    const viewportWidth = Number(rect.width) || 0;
+    const viewportHeight = Number(rect.height) || 0;
+    const contentWidth = Number(canvas.width) || viewportWidth || 1;
+    const contentHeight = Number(canvas.height) || viewportHeight || 1;
+    const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
+    const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
+    return {
+      maxX: Math.max(0, (contentWidth * fitScale * scale - viewportWidth) / 2),
+      maxY: Math.max(0, (contentHeight * fitScale * scale - viewportHeight) / 2)
+    };
+  }
+
+  function canPanPreview() {
+    const bounds = getPreviewPanBounds();
+    return bounds.maxX > 0.5 || bounds.maxY > 0.5;
+  }
+
   function boxBlurMask(mask, width, height, radius) {
     const r = Math.max(1, Math.min(18, Math.round(radius)));
     if (r <= 1) return mask;
@@ -975,9 +998,15 @@
       previewFrame.addEventListener("pointerdown", (event) => {
         if (event.button != null && event.button !== 0) return;
         if (event.target && typeof event.target.closest === "function" && event.target.closest(".blend-match-preview-tools, .blend-match-preview-split")) return;
-        if ((Number(localState.previewView.scale) || 1) <= 1.001) return;
+        if (!canPanPreview()) return;
         event.preventDefault();
+        if (typeof previewFrame.setPointerCapture === "function" && event.pointerId != null) {
+          try {
+            previewFrame.setPointerCapture(event.pointerId);
+          } catch (_) {}
+        }
         localState.previewView.isPanning = true;
+        localState.previewView.pointerId = event.pointerId;
         localState.previewView.startX = event.clientX;
         localState.previewView.startY = event.clientY;
         localState.previewView.startPanX = localState.previewView.x;
@@ -987,6 +1016,7 @@
 
       const movePan = (event) => {
         if (!localState.previewView.isPanning) return;
+        if (localState.previewView.pointerId != null && event.pointerId != null && event.pointerId !== localState.previewView.pointerId) return;
         event.preventDefault();
         localState.previewView.x = localState.previewView.startPanX + event.clientX - localState.previewView.startX;
         localState.previewView.y = localState.previewView.startPanY + event.clientY - localState.previewView.startY;
@@ -995,16 +1025,27 @@
 
       const endPan = (event) => {
         if (!localState.previewView.isPanning) return;
+        if (localState.previewView.pointerId != null && event.pointerId != null && event.pointerId !== localState.previewView.pointerId) return;
         event.preventDefault();
+        if (typeof previewFrame.releasePointerCapture === "function" && event.pointerId != null) {
+          try {
+            previewFrame.releasePointerCapture(event.pointerId);
+          } catch (_) {}
+        }
         localState.previewView.isPanning = false;
+        localState.previewView.pointerId = null;
         previewFrame.classList.remove("is-panning");
         applyPreviewTransform();
       };
+      previewFrame.addEventListener("pointermove", movePan, { passive: false });
+      previewFrame.addEventListener("pointerup", endPan, { passive: false });
+      previewFrame.addEventListener("pointercancel", endPan, { passive: false });
       window.addEventListener("pointermove", movePan, { passive: false });
       window.addEventListener("pointerup", endPan, { passive: false });
       window.addEventListener("pointercancel", endPan, { passive: false });
       window.addEventListener("blur", () => {
         localState.previewView.isPanning = false;
+        localState.previewView.pointerId = null;
         previewFrame.classList.remove("is-panning");
       });
       previewFrame.addEventListener("dblclick", (event) => {

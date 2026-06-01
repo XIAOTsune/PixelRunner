@@ -1,18 +1,18 @@
 # PixelRunner Code Flat Pack for Gemini
 
 Generated from: `C:\Users\TSUNE\Desktop\PixelRunner重构\PixelRunner`
-Generated at: `2026-05-29 10:31:23 +08:00`
+Generated at: `2026-05-31 23:48:20 +08:00`
 
-Included files: `61`
-Approx included bytes: `1443537`
+Included files: `63`
+Approx included bytes: `1495918`
 
 Scope: current PixelRunner source tree plus top-level README/LICENSE/plans.
 Excluded: release snapshots, dependency folders, build/cache folders, lock files, binary/media/font/archive files, and generated space-fx atlas assets.
 
 ## File Index
 
-- `PixelRunner\app.css` (106430 bytes)
-- `PixelRunner\app.html` (69843 bytes)
+- `PixelRunner\app.css` (106518 bytes)
+- `PixelRunner\app.html` (69840 bytes)
 - `PixelRunner\assets\space-fx\README.md` (821 bytes)
 - `PixelRunner\docs\当前状态.md` (6337 bytes)
 - `PixelRunner\docs\辉光重构2技术方案.md` (22670 bytes)
@@ -35,27 +35,28 @@ Excluded: release snapshots, dependency folders, build/cache folders, lock files
 - `PixelRunner\src\host\main.js` (6626 bytes)
 - `PixelRunner\src\host\photoshop-bridge.js` (2037 bytes)
 - `PixelRunner\src\host\photoshop.js` (405 bytes)
-- `PixelRunner\src\host\photoshop\blend-match.js` (162869 bytes)
+- `PixelRunner\src\host\photoshop\blend-match.js` (166347 bytes)
 - `PixelRunner\src\host\photoshop\commands.js` (5598 bytes)
 - `PixelRunner\src\host\photoshop\deps.js` (1444 bytes)
-- `PixelRunner\src\host\photoshop\document.js` (5096 bytes)
+- `PixelRunner\src\host\photoshop\document.js` (6037 bytes)
 - `PixelRunner\src\host\photoshop\service.js` (44947 bytes)
 - `PixelRunner\src\host\photoshop\tool-actions.js` (69786 bytes)
 - `PixelRunner\src\host\runninghub-parser.js` (44089 bytes)
 - `PixelRunner\src\host\runninghub.js` (45684 bytes)
 - `PixelRunner\src\host\shell.js` (4427 bytes)
 - `PixelRunner\src\host\third-party-grs.js` (29655 bytes)
-- `PixelRunner\src\webview-entry.js` (854 bytes)
+- `PixelRunner\src\webview-entry.js` (907 bytes)
 - `PixelRunner\src\webview\ai-optimize.js` (47985 bytes)
 - `PixelRunner\src\webview\apps.js` (54262 bytes)
-- `PixelRunner\src\webview\blend-match.js` (31426 bytes)
+- `PixelRunner\src\webview\blend-match.js` (43977 bytes)
+- `PixelRunner\src\webview\blend-match\gpu\webgl-blend-preview.js` (22133 bytes)
 - `PixelRunner\src\webview\glow-cpu.js` (1063 bytes)
 - `PixelRunner\src\webview\glow\compositor.js` (11710 bytes)
 - `PixelRunner\src\webview\glow\gpu\capabilities.js` (2338 bytes)
 - `PixelRunner\src\webview\glow\gpu\webgl-compositor.js` (27774 bytes)
 - `PixelRunner\src\webview\glow\gpu\webgl-pyramid-blur.js` (18265 bytes)
 - `PixelRunner\src\webview\glow\gpu\webgl-source-mask.js` (22371 bytes)
-- `PixelRunner\src\webview\glow\presets.js` (10452 bytes)
+- `PixelRunner\src\webview\glow\presets.js` (10722 bytes)
 - `PixelRunner\src\webview\glow\preview-engine.js` (15960 bytes)
 - `PixelRunner\src\webview\glow\pyramid-blur.js` (8794 bytes)
 - `PixelRunner\src\webview\glow\source-mask.js` (11876 bytes)
@@ -68,10 +69,11 @@ Excluded: release snapshots, dependency folders, build/cache folders, lock files
 - `PixelRunner\src\webview\state.js` (22514 bytes)
 - `PixelRunner\src\webview\templates.js` (72870 bytes)
 - `PixelRunner\src\webview\ui.js` (64305 bytes)
-- `PixelRunner\src\webview\workspace.js` (128609 bytes)
+- `PixelRunner\src\webview\workspace.js` (130141 bytes)
 - `PixelRunner\style.css` (1415 bytes)
 - `plans\add-blend-color-match-tool.md` (21871 bytes)
 - `README.md` (12897 bytes)
+- `LICENSE` (11338 bytes)
 
 ## Files
 
@@ -1726,6 +1728,10 @@ button {
   transition: transform 120ms ease-out;
   pointer-events: none;
   will-change: transform;
+}
+
+.blend-match-preview-frame.is-panning #blendMatchPreviewCanvas {
+  transition: none;
 }
 
 .blend-match-preview-split {
@@ -6508,7 +6514,7 @@ button {
 
 ### `PixelRunner\assets\space-fx\README.md`
 
-```markdown
+````markdown
 # Space FX Built-In Assets
 
 This folder contains optional runtime assets for the Space FX panel.
@@ -6523,18 +6529,18 @@ This folder contains optional runtime assets for the Space FX panel.
 
 From the plugin root:
 
-``\`powershell
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts/build-space-fx-assets.ps1 -Source "E:\ps素材\波动纹理及流体.jpg"
-``\`
+```
 
 The script downsizes the source sheet, converts black to alpha, detects smoke islands, and writes the atlas plus frame metadata to `assets/space-fx/generated/`.
-```
+````
 
 ---
 
 ### `PixelRunner\docs\当前状态.md`
 
-```markdown
+````markdown
 # PixelRunner 当前状态与下一步交接
 
 更新时间：2026-04-19
@@ -6674,9 +6680,9 @@ PixelRunner 当前项目目录已整理为 `PixelRunner`，插件开发版本已
 
 `index.html` 当前仍有：
 
-``\`html
+```html
 uxpAllowInspector="true"
-``\`
+```
 
 开发期可以保留，但正式 release 建议关闭，或让打包脚本按 test/release 自动切换。
 
@@ -6720,17 +6726,17 @@ uxpAllowInspector="true"
 - 不直接修改 `release`
 - 改源码后执行：
 
-``\`bash
+```bash
 npm.cmd run build
 npm.cmd run package:test
-``\`
+```
 
 正式发包时执行：
 
-``\`bash
+```bash
 npm.cmd run build
 npm.cmd run package:release
-``\`
+```
 
 ## 建议下一步顺序
 
@@ -6756,13 +6762,13 @@ npm.cmd run package:release
 - 不要回到 `legacy/root-src`。
 - 不要只修 `dist` 或 `release`。
 - 不要在 AI 优化没稳定前继续堆新功能。
-```
+````
 
 ---
 
 ### `PixelRunner\docs\辉光重构2技术方案.md`
 
-```markdown
+````markdown
 # PixelRunner 辉光重构2技术方案
 
 更新时间：2026-05-13
@@ -6773,13 +6779,13 @@ npm.cmd run package:release
 
 本轮重构目标是把辉光从“模糊后的原图局部”改成“干净的光能层”：
 
-``\`text
+```text
 旧逻辑：
 原图颜色 * source mask -> 多尺度模糊 -> 复杂保护合成 -> Screen
 
 新逻辑：
 sRGB 转线性光 -> emission source 提取 -> 多尺度 bloom -> 简洁 tone map -> 输出 Glow 光能层 -> Photoshop Screen
-``\`
+```
 
 最关键的验收标准：单独查看 `Glow` 图层时，它应该像黑底上的光源和柔和光晕，而不是一张被压暗、描边、模糊过的人像。
 
@@ -6789,9 +6795,9 @@ sRGB 转线性光 -> emission source 提取 -> 多尺度 bloom -> 简洁 tone ma
 
 当前 `source-mask.js` / `webgl-source-mask.js` 的本质是：
 
-``\`text
+```text
 sourceLayer = originalColor * softMask
-``\`
+```
 
 只要 `sourceMask` 有少量授权，原图颜色和纹理就会进入辉光层。之后 pyramid blur 会把这些非光源内容扩散开，最终形成灰雾。
 
@@ -6804,9 +6810,9 @@ sourceLayer = originalColor * softMask
 
 正确方向：
 
-``\`text
+```text
 sourceLayer = emissionColor * emissionEnergy
-``\`
+```
 
 其中 `emissionEnergy` 只来自高光、近过曝区域、强反射和很少量受亮度约束的 rim source。
 
@@ -6818,11 +6824,11 @@ sourceLayer = emissionColor * emissionEnergy
 
 后续原则：
 
-``\`text
+```text
 普通边缘不能发光。
 亮边缘可以少量发光。
 近过曝/高反射区域才是主要光源。
-``\`
+```
 
 ### 3. sRGB 空间做 bloom 会让光变灰
 
@@ -6838,13 +6844,13 @@ sRGB 空间做 threshold、blur、screen 会导致：
 
 重构方向：
 
-``\`text
+```text
 输入 sRGB -> linear
 linear 空间提取 emission
 linear float 空间做 pyramid blur
 linear 空间做 intensity / tone map
 输出 Glow PNG 前转回 sRGB
-``\`
+```
 
 ### 4. Composite 阶段承担了过多职责
 
@@ -6852,11 +6858,11 @@ linear 空间做 intensity / tone map
 
 新的职责划分：
 
-``\`text
+```text
 source 阶段：决定什么能发光，负责保护皮肤、白衣、暗部、普通纹理。
 blur 阶段：决定光怎么扩散。
 composite 阶段：只做强度、颜色、tone map 和输出。
-``\`
+```
 
 如果 source 足够干净，composite 可以明显简化。
 
@@ -6884,7 +6890,7 @@ composite 阶段：只做强度、颜色、tone map 和输出。
 
 ## 目标管线
 
-``\`text
+```text
 capture full document
   -> resize/process max dimension 1000
   -> buildEmissionSource
@@ -6907,7 +6913,7 @@ capture full document
       - alpha 255
   -> buildScreenPreview(base, glowLayer)
   -> Photoshop place glowLayerDataUrl with Screen
-``\`
+```
 
 ## Emission Source 设计
 
@@ -6915,7 +6921,7 @@ capture full document
 
 建议在 CPU/GPU 中保持一致的指标：
 
-``\`text
+```text
 linearR, linearG, linearB
 linearLuma
 linearPeak = max(linearR, linearG, linearB)
@@ -6925,16 +6931,16 @@ localMeanLuma
 localMeanPeak
 contrast = max(linearLuma - localMeanLuma, 0)
 specular = max(linearPeak - localMeanPeak, 0)
-``\`
+```
 
 ### Bright pass
 
 亮度主通道必须是主光源：
 
-``\`text
+```text
 brightness = max(linearLuma * 0.45 + linearPeak * 0.55, linearPeak * 0.86)
 brightPass = softKneeThreshold(brightness, threshold, knee)
-``\`
+```
 
 注意：threshold UI 仍可沿用 0-100，但内部映射应基于 linear brightness 重新标定。
 
@@ -6942,11 +6948,11 @@ brightPass = softKneeThreshold(brightness, threshold, knee)
 
 高反射和近过曝区域应该被保留：
 
-``\`text
+```text
 specularPass =
   smoothstep(specularLow, specularHigh, specular) *
   smoothstep(0.45, 0.92, brightness)
-``\`
+```
 
 `specularPass` 只能补充高光，不应该让普通暗边缘发光。
 
@@ -6954,18 +6960,18 @@ specularPass =
 
 边缘光只能作为很窄、很弱的补充：
 
-``\`text
+```text
 rimPass =
   smoothstep(contrastLow, contrastHigh, contrast) *
   smoothstep(0.58, 0.95, brightness) *
   rimAmount
-``\`
+```
 
 初始建议：
 
-``\`text
+```text
 rimAmount = 0.08 ~ 0.18
-``\`
+```
 
 不要再让普通 contrast 大面积进入 source。
 
@@ -6973,26 +6979,26 @@ rimAmount = 0.08 ~ 0.18
 
 保护仍然重要，但应该主要作用在 source 阶段：
 
-``\`text
+```text
 whiteFlatProtect：抑制低对比、低饱和的大面积白衣/白墙。
 skinProtect：抑制肤色中间调。
 darkProtect：禁止暗部和暗边缘成为光源。
 nearClipException：真正接近 clipping 的白色高光可以突破一部分 whiteFlatProtect。
-``\`
+```
 
 建议：
 
-``\`text
+```text
 protection = whiteFlat * whiteProtect + skinLike * skinProtect + dark * darkProtect
 highlightException = smoothstep(0.88, 1.0, linearPeak)
 effectiveProtect = protection * (1 - highlightException * 0.55)
-``\`
+```
 
 ### Emission energy
 
 初版公式建议：
 
-``\`text
+```text
 emissionEnergy =
   brightPass * 0.9 +
   specularPass * 0.35 +
@@ -7000,27 +7006,27 @@ emissionEnergy =
 
 emissionEnergy *= 1 - effectiveProtect * 0.85
 emissionEnergy = max(emissionEnergy - lowEnergyCutoff, 0)
-``\`
+```
 
 `lowEnergyCutoff` 非常关键，可以避免 Glow 图层出现大片 0.03-0.12 的灰雾。
 
 初始建议：
 
-``\`text
+```text
 lowEnergyCutoff = 0.015 ~ 0.035
-``\`
+```
 
 ### Emission color
 
 不要直接使用原图颜色。建议根据光能和饱和度混合成发光色：
 
-``\`text
+```text
 whiteEnergyColor = vec3(linearPeak)
 sourceColor = linearRGB
 chromaKeep = clamp(0.16 + saturation * 0.48 - brightPass * 0.18, 0.08, 0.58)
 emissionColor = mix(whiteEnergyColor, sourceColor, chromaKeep)
 emissionLayer = emissionColor * emissionEnergy
-``\`
+```
 
 效果：
 
@@ -7034,10 +7040,10 @@ emissionLayer = emissionColor * emissionEnergy
 
 目标是用现有 pyramid 实现双频 bloom：
 
-``\`text
+```text
 near mips：核心、贴高光、清晰亮边。
 far mips：柔和外扩、空气感。
-``\`
+```
 
 原则：
 
@@ -7050,13 +7056,13 @@ far mips：柔和外扩、空气感。
 
 重构后 `renderGlowLayer` 应尽量简单：
 
-``\`text
+```text
 glowLinear = blurredEmission * intensity
 glowLinear = applySaturationAndTint(glowLinear)
 glowLinear = softShoulder(glowLinear, shoulder)
 glowSrgb = linearToSrgb(glowLinear)
 alpha = 255
-``\`
+```
 
 可以保留：
 
@@ -7079,13 +7085,13 @@ alpha = 255
 
 建议新增或复用 debug 面板，显示：
 
-``\`text
+```text
 Emission Source
 Source Mask
 Protect Mask
 Glow Layer
 Final Screen Preview
-``\`
+```
 
 其中 `Emission Source` 是最重要的新诊断图。
 
@@ -7106,12 +7112,12 @@ Final Screen Preview
 
 修改范围：
 
-``\`text
+```text
 src/webview/glow/source-mask.js
 src/webview/glow/gpu/webgl-source-mask.js
 可选：preview-engine.js debug 输出字段
 可选：ui.js debug 显示
-``\`
+```
 
 目标：
 
@@ -7129,14 +7135,14 @@ src/webview/glow/gpu/webgl-source-mask.js
 
 修改范围：
 
-``\`text
+```text
 source-mask.js
 webgl-source-mask.js
 pyramid-blur.js
 webgl-pyramid-blur.js
 compositor.js
 webgl-compositor.js
-``\`
+```
 
 目标：
 
@@ -7148,11 +7154,11 @@ webgl-compositor.js
 
 修改范围：
 
-``\`text
+```text
 presets.js
 pyramid-blur.js
 webgl-pyramid-blur.js
-``\`
+```
 
 目标：
 
@@ -7165,11 +7171,11 @@ webgl-pyramid-blur.js
 
 修改范围：
 
-``\`text
+```text
 compositor.js
 webgl-compositor.js
 preview-engine.js
-``\`
+```
 
 目标：
 
@@ -7181,28 +7187,28 @@ preview-engine.js
 
 每次修改后运行：
 
-``\`text
+```text
 npm run build
 npm run check:dist
 npm run package:release
-``\`
+```
 
 release 包路径：
 
-``\`text
+```text
 PixelRunner/release/PixelRunnerV2.4.5
-``\`
+```
 
 人工验收建议：
 
-``\`text
+```text
 1. 单独查看 Glow 图层。
 2. 查看 Glow Lab 预览。
 3. 应用到 Photoshop 后用 Screen 混合查看。
 4. 分别测试强度 10 / 30 / 70 / 100。
 5. 分别测试扩散 80 / 180 / 320。
 6. 检查白衣、皮肤、背景人物是否被误刷亮。
-``\`
+```
 
 ## 风险
 
@@ -7215,10 +7221,10 @@ PixelRunner/release/PixelRunnerV2.4.5
 
 第一优先级不是继续调 `haloBoost`、`coreSuppression` 或 `colorProtect`，而是重定义 source layer：
 
-``\`text
+```text
 从 originalColor * softMask
 改为 emissionColor * emissionEnergy
-``\`
+```
 
 这一步完成前，blur 和 compositor 的任何调参都只是补救，无法从根上解决灰雾和脏轮廓问题。
 
@@ -7228,7 +7234,7 @@ PixelRunner/release/PixelRunnerV2.4.5
 
 本轮截图集中在同一张人像/舞台图上，主要观察 `辉光` 风格下的以下参数组合：
 
-``\`text
+```text
 组 A：
 强度 0
 扩散 146
@@ -7268,7 +7274,7 @@ PixelRunner/release/PixelRunnerV2.4.5
 曝光 0
 颜色 关
 色散 关
-``\`
+```
 
 ### 观察结论
 
@@ -7286,38 +7292,38 @@ PixelRunner/release/PixelRunnerV2.4.5
 
 可能绕过路径：
 
-``\`text
+```text
 brightPass 虽受 threshold 影响
 specularPass / rimPass / contrastScore 仍可能补充 source
 nearClip exception 仍可能让白衣/手套突破 protection
 whiteFlatProtect 对有褶皱的白色服装不够强
 compositor 端 sourceAnchor / glowAnchor 又把已有低能 halo 放大
-``\`
+```
 
 高阈值期望语义：
 
-``\`text
+```text
 阈值 0.8~1.0：
 只允许接近 clipping 的小面积高光、强 specular、高亮反光成为 source。
 白裙、普通手臂亮面、白手套暗部褶皱不应整片进入 source。
-``\`
+```
 
 当前实际表现更像：
 
-``\`text
+```text
 阈值 0.95：
 仍然把大面积高亮白布/皮肤亮面当作 source。
-``\`
+```
 
 #### 2. 强度不是“光能增长”，而是在放大已经固定的大面积 source/halo
 
 组 B 到组 C 的变化尤其明显：
 
-``\`text
+```text
 强度 31 -> 强度 71
 扩散 146 不变
 阈值 0.95 不变
-``\`
+```
 
 视觉变化不是“高光核心更亮、halo 更厚”，而是：
 
@@ -7330,7 +7336,7 @@ compositor 端 sourceAnchor / glowAnchor 又把已有低能 halo 放大
 
 理想强度曲线应满足：
 
-``\`text
+```text
 强度 0：
 完全无 glow。
 
@@ -7345,24 +7351,24 @@ source 范围不应突然扩大。
 强度 80~100：
 允许过量，但过量应集中在真实高光附近。
 不能把完整人物主体刷成白块。
-``\`
+```
 
 当前表现更接近：
 
-``\`text
+```text
 source/halo 形状先固定
 strength 只是把固定形状整体抬亮
-``\`
+```
 
 #### 3. 扩散和强度耦合不合理：大扩散低强度仍然产生全身雾化
 
 组 D：
 
-``\`text
+```text
 强度 23
 扩散 312
 阈值 0.95
-``\`
+```
 
 按预期，大扩散应该扩大远场 halo，但在强度较低且阈值极高时，应该只围绕少数高光产生淡 halo。
 
@@ -7376,21 +7382,21 @@ strength 只是把固定形状整体抬亮
 
 扩散的正确职责：
 
-``\`text
+```text
 扩散只决定光传播半径和多尺度分配。
 扩散不应该决定“什么可以发光”。
 扩散更不应该把人物主体变成发光体。
-``\`
+```
 
 #### 4. 低阈值下颜色和主体保护进一步恶化
 
 组 E：
 
-``\`text
+```text
 强度 52
 扩散 69
 阈值 0.04
-``\`
+```
 
 这组低阈值下出现：
 
@@ -7401,31 +7407,31 @@ strength 只是把固定形状整体抬亮
 
 说明低阈值确实会放大 source，但 source 保护不足。尤其低阈值不能简单等价于“整张亮部都可发光”，仍应有：
 
-``\`text
+```text
 亮度 gate
 local contrast/specular gate
 skin/cloth protection
 low-energy cutoff
 color-preserving emission
-``\`
+```
 
 #### 5. 当前 Glow 仍有“主体刷白”倾向，核心问题回到 source 纯度
 
 这些截图共同说明，当前最主要的问题仍然不是 intensity 数值，也不是单纯 haloBoost 大小，而是：
 
-``\`text
+```text
 source 仍然把大面积白衣、手臂、皮肤亮面、白裙褶皱授权为 emission。
-``\`
+```
 
 一旦 source 脏了，后面的 blur/pyramid/compositor 调参只能在两种坏结果之间摆动：
 
-``\`text
+```text
 调弱：
 辉光不明显，像浅雾。
 
 调强：
 人物主体整片发白，像白色遮罩。
-``\`
+```
 
 因此下一轮不应优先继续调 `intensity` 或 `haloBoost`，而应先重新验证 `sourceMask / emissionSource / Glow layer` 单独视图。
 
@@ -7437,55 +7443,55 @@ source 仍然把大面积白衣、手臂、皮肤亮面、白裙褶皱授权为 
 
 建议下一步检查：
 
-``\`text
+```text
 src/webview/glow/source-mask.js
 src/webview/glow/gpu/webgl-source-mask.js
-``\`
+```
 
 重点检查：
 
-``\`text
+```text
 brightPass 是否随 threshold 明显收窄
 specularPass 是否在高阈值下仍过宽
 rimPass 是否绕过 threshold
 nearClip exception 是否过度放行白衣/手套
 whiteFlat / neutralClothReject 是否对有褶皱白布失效
 lowEnergyCutoff 是否太低导致大面积低能 source 保留
-``\`
+```
 
 高阈值期望公式方向：
 
-``\`text
+```text
 thresholdGate = smoothstep(thresholdLow, thresholdHigh, brightness)
 
 specularPass *= thresholdGate 或至少 *= smoothstep(thresholdLow * 0.8, thresholdHigh, brightness)
 rimPass *= thresholdGate * rimAmount
 nearClipException 只允许 peak 接近 1 且 specular/contrast 足够时突破 protection
-``\`
+```
 
 #### 判断 2：strength 不应该改变 source 面积，也不应该把 core 推成白遮罩
 
 强度应该主要控制：
 
-``\`text
+```text
 光能 intensity
 halo visibility
 tone map shoulder
 过量上限
-``\`
+```
 
 强度不应该：
 
-``\`text
+```text
 扩大 source mask
 降低 protection
 让白衣/皮肤进入 emission
 让 core 区域直接 clamp 到白
-``\`
+```
 
 下一轮应检查：
 
-``\`text
+```text
 composite.intensity
 composite.coreCeiling
 composite.coreSuppression
@@ -7493,7 +7499,7 @@ composite.haloBoost
 composite.haloMix
 softShoulder
 splitCoreAndHalo
-``\`
+```
 
 但这些只能在 source 干净后调，否则会继续放大错误 source。
 
@@ -7501,25 +7507,25 @@ splitCoreAndHalo
 
 组 D 说明大扩散会把人物主体雾化。下一轮应检查：
 
-``\`text
+```text
 pyramid mip weights 是否过多保留低能大面积 source
 far mips 是否在 source 脏时形成全身 veil
 compositor 是否用 base/source/halo mask 再次塑形
-``\`
+```
 
 扩散正确行为：
 
-``\`text
+```text
 小扩散：核心贴近高光。
 中扩散：高光周围柔和 bloom。
 大扩散：少量真实高光向外扩散。
-``\`
+```
 
 错误行为：
 
-``\`text
+```text
 大扩散：主体整块发雾。
-``\`
+```
 
 ### 下一轮优先排查顺序
 
@@ -7527,13 +7533,13 @@ compositor 是否用 base/source/halo mask 再次塑形
 
 必须分别查看：
 
-``\`text
+```text
 Emission Source / sourceLayer
 sourceMask / emissionEnergy
 protectMask
 Glow layer 单独视图
 Final Screen Preview
-``\`
+```
 
 如果 `Emission Source` 中已经能看到大面积白裙、手臂、脸部、完整人物轮廓，则后续 compositor 不应继续调参，应回到 source。
 
@@ -7541,89 +7547,89 @@ Final Screen Preview
 
 固定：
 
-``\`text
+```text
 阈值 0.95
 扩散 146
 强度 31 / 71
-``\`
+```
 
 合格表现：
 
-``\`text
+```text
 只有头饰白球、手套最亮点、强反光边缘有辉光。
 手臂、脸、白裙主体不应大面积发光。
 强度从 31 到 71 只增强这些真实高光和周围 halo。
-``\`
+```
 
 不合格表现：
 
-``\`text
+```text
 手臂和裙摆变成白色光团。
 人物主体被整片雾化。
-``\`
+```
 
 #### 3. 低阈值验收用例
 
 固定：
 
-``\`text
+```text
 阈值 0.04
 扩散 69
 强度 52
-``\`
+```
 
 合格表现：
 
-``\`text
+```text
 辉光范围比高阈值更宽。
 彩色反光更明显。
 但脸部、白衣和皮肤层次仍保留。
-``\`
+```
 
 不合格表现：
 
-``\`text
+```text
 人物主体像被白色半透明层盖住。
 彩色反光被白雾吞掉。
-``\`
+```
 
 #### 4. 大扩散验收用例
 
 固定：
 
-``\`text
+```text
 阈值 0.95
 扩散 312
 强度 23
-``\`
+```
 
 合格表现：
 
-``\`text
+```text
 只有少数真实高光产生较远、较淡 halo。
 人物主体不应整体变雾。
-``\`
+```
 
 不合格表现：
 
-``\`text
+```text
 全身白雾。
 背景和人物边界被低能 halo 洗平。
-``\`
+```
 
 ### 当前结论
 
 从本轮截图看，当前算法仍未达到“干净光能层”的目标。最可能的根因排序：
 
-``\`text
+```text
 1. source extraction 仍然过宽，尤其高阈值下白衣/手臂/白裙仍进入 source。
 2. specular/rim/nearClip exception 绕过 threshold 或 protection。
 3. compositor 强度仍会把固定 source/halo 形状整体抬亮。
 4. 大扩散会放大 source 低能尾部，形成主体 veil。
-``\`
+```
 
 下一轮应优先回到 `source-mask.js` 和 `webgl-source-mask.js`，用上述截图参数作为验收基准，先让高阈值下的 `Emission Source` 足够干净，再重新标定 strength/radius/compositor。
-```
+````
 
 ---
 
@@ -10115,6 +10121,16 @@ function getLayerId(layer) {
   return Number(layer && layer.id) || 0;
 }
 
+function isUnsupportedBitsPerChannel(docInfo) {
+  const bits = String(docInfo && (docInfo.bitsPerChannel || docInfo.bitsPerChannelLabel) || "").trim().toUpperCase();
+  return bits === "THIRTYTWO" || bits === "32 位" || bits === "32BIT" || bits === "32-BIT" || bits === "32" || bits === "ONE" || bits === "1 位" || bits === "1";
+}
+
+function buildUnsupportedBitsError(docInfo) {
+  const bitsLabel = String(docInfo && docInfo.bitsPerChannelLabel) || "当前位深";
+  return new Error(`融合校色支持 8 位和 16 位 RGB 文档，当前文档为 ${bitsLabel}，请切换到 8 位或 16 位后再使用。`);
+}
+
 function getBlendMatchConfig(payload = {}) {
   const mode = String(payload.mode || DEFAULT_BLEND_MATCH_CONFIG.mode).trim() || DEFAULT_BLEND_MATCH_CONFIG.mode;
   const modeBoost = mode === "strong" ? 1.16 : mode === "natural" ? 0.82 : 1;
@@ -10464,48 +10480,114 @@ async function getPixelsWithFallback(imaging, options) {
 
 async function getImageDataBytes(imageData) {
   if (!imageData) return null;
-  if (imageData.data) return imageData.data;
   if (typeof imageData.getData === "function") {
+    try {
+      const data = await imageData.getData({ chunky: true, fullRange: true });
+      if (data) return data;
+    } catch (_) {}
     try {
       const data = await imageData.getData({ chunky: true });
       if (data) return data;
     } catch (_) {}
-    const data = await imageData.getData();
-    if (data) return data;
+    try {
+      const data = await imageData.getData();
+      if (data) return data;
+    } catch (_) {}
   }
+  if (imageData.data) return imageData.data;
   return null;
+}
+
+function getImageDataLength(data) {
+  if (!data) return 0;
+  if (typeof data.length === "number") return data.length;
+  if (typeof data.byteLength === "number") return data.byteLength;
+  return 0;
+}
+
+function getImageDataComponentSize(imageData, data) {
+  const candidates = [
+    imageData && imageData.componentSize,
+    imageData && imageData.bitsPerComponent,
+    imageData && imageData.bitsPerChannel,
+    imageData && imageData.depth
+  ];
+  for (const value of candidates) {
+    const parsed = Number(value && (value._value ?? value.value ?? value));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  if (data instanceof Uint16Array || data instanceof Int16Array) return 16;
+  if (data instanceof Float32Array || data instanceof Float64Array) return 32;
+  if (data instanceof Uint8Array || data instanceof Uint8ClampedArray || data instanceof Int8Array) return 8;
+  return 8;
+}
+
+function getImageDataComponents(imageData, data, pixelCount) {
+  const declared = Number(imageData && imageData.components);
+  if (Number.isFinite(declared) && declared > 0) return Math.max(1, Math.floor(declared));
+  const length = getImageDataLength(data);
+  if (!length || !pixelCount) return 4;
+  const componentSize = getImageDataComponentSize(imageData, data);
+  if (data instanceof ArrayBuffer) {
+    return Math.max(1, Math.floor(length / Math.max(1, Math.ceil(componentSize / 8)) / Math.max(1, pixelCount)));
+  }
+  return Math.max(1, Math.floor(length / Math.max(1, pixelCount)));
+}
+
+function getImageDataValueReader(imageData, data) {
+  if (!data) return () => 0;
+  const componentSize = getImageDataComponentSize(imageData, data);
+  const maxValue = componentSize > 8 ? Math.pow(2, Math.min(16, componentSize)) - 1 : 255;
+  let source = data;
+  if (data instanceof ArrayBuffer) {
+    source = componentSize > 8 ? new Uint16Array(data) : new Uint8Array(data);
+  }
+  if (source instanceof Float32Array || source instanceof Float64Array) {
+    return (index) => {
+      const value = Number(source[index]) || 0;
+      return Math.max(0, Math.min(255, Math.round((value <= 1 ? value * 255 : value))));
+    };
+  }
+  if (componentSize > 8 || source instanceof Uint16Array || source instanceof Int16Array) {
+    return (index) => {
+      const value = Number(source[index]) || 0;
+      return Math.max(0, Math.min(255, Math.round(value * 255 / maxValue)));
+    };
+  }
+  return (index) => Math.max(0, Math.min(255, Number(source[index]) || 0));
 }
 
 function normalizeImageDataToRgba(imageData, data, width, height) {
   const safeWidth = Math.max(1, Number(width) || Number(imageData && imageData.width) || 1);
   const safeHeight = Math.max(1, Number(height) || Number(imageData && imageData.height) || 1);
   const pixelCount = safeWidth * safeHeight;
-  const components = Math.max(1, Number(imageData && imageData.components) || Math.floor((data && data.length ? data.length : 0) / Math.max(1, pixelCount)) || 4);
+  const components = getImageDataComponents(imageData, data, pixelCount);
   const pixelFormat = String((imageData && imageData.pixelFormat) || (components === 4 ? "RGBA" : components === 3 ? "RGB" : components === 2 ? "GrayscaleAlpha" : "Grayscale"));
   const out = new Uint8Array(pixelCount * 4);
-  if (!data || data.length < pixelCount * components) return out;
+  if (!data || getImageDataLength(data) < pixelCount * components) return out;
+  const readValue = getImageDataValueReader(imageData, data);
 
   for (let pixel = 0; pixel < pixelCount; pixel += 1) {
     const sourceIndex = pixel * components;
     const targetIndex = pixel * 4;
     if (pixelFormat === "RGBA" || components >= 4) {
-      out[targetIndex] = data[sourceIndex];
-      out[targetIndex + 1] = data[sourceIndex + 1];
-      out[targetIndex + 2] = data[sourceIndex + 2];
-      out[targetIndex + 3] = data[sourceIndex + 3];
+      out[targetIndex] = readValue(sourceIndex);
+      out[targetIndex + 1] = readValue(sourceIndex + 1);
+      out[targetIndex + 2] = readValue(sourceIndex + 2);
+      out[targetIndex + 3] = readValue(sourceIndex + 3);
     } else if (pixelFormat === "RGB" || components === 3) {
-      out[targetIndex] = data[sourceIndex];
-      out[targetIndex + 1] = data[sourceIndex + 1];
-      out[targetIndex + 2] = data[sourceIndex + 2];
+      out[targetIndex] = readValue(sourceIndex);
+      out[targetIndex + 1] = readValue(sourceIndex + 1);
+      out[targetIndex + 2] = readValue(sourceIndex + 2);
       out[targetIndex + 3] = 255;
     } else if (pixelFormat === "GrayscaleAlpha" || components === 2) {
-      const gray = data[sourceIndex];
+      const gray = readValue(sourceIndex);
       out[targetIndex] = gray;
       out[targetIndex + 1] = gray;
       out[targetIndex + 2] = gray;
-      out[targetIndex + 3] = data[sourceIndex + 1];
+      out[targetIndex + 3] = readValue(sourceIndex + 1);
     } else {
-      const gray = data[sourceIndex];
+      const gray = readValue(sourceIndex);
       out[targetIndex] = gray;
       out[targetIndex + 1] = gray;
       out[targetIndex + 2] = gray;
@@ -13790,6 +13872,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
   return core.executeAsModal(async () => {
     const logs = [];
     const docInfo = getDocumentInfo(document);
+    if (isUnsupportedBitsPerChannel(docInfo)) {
+      throw buildUnsupportedBitsError(docInfo);
+    }
     const requestedLayerId = Number(payload.layerId || payload.targetLayerId) || 0;
     if (requestedLayerId > 0) {
       await selectLayerById(action, requestedLayerId);
@@ -13958,6 +14043,9 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
   return core.executeAsModal(async () => {
     const logs = [];
     const docInfo = getDocumentInfo(document);
+    if (isUnsupportedBitsPerChannel(docInfo)) {
+      throw buildUnsupportedBitsError(docInfo);
+    }
     const requestedLayerId = Number(payload.layerId || payload.targetLayerId) || 0;
     if (requestedLayerId > 0) {
       await selectLayerById(action, requestedLayerId);
@@ -14282,6 +14370,26 @@ export function toNumberValue(value) {
   return Number.isFinite(result) ? result : null;
 }
 
+export function normalizeBitsPerChannel(value) {
+  const text = String(value == null ? "" : value).trim();
+  if (!text) return "";
+  const normalized = text.toUpperCase();
+  if (normalized === "8" || normalized === "EIGHT") return "EIGHT";
+  if (normalized === "16" || normalized === "SIXTEEN") return "SIXTEEN";
+  if (normalized === "32" || normalized === "THIRTYTWO") return "THIRTYTWO";
+  if (normalized === "1" || normalized === "ONE") return "ONE";
+  return normalized;
+}
+
+export function getBitsPerChannelLabel(value) {
+  const normalized = normalizeBitsPerChannel(value);
+  if (normalized === "EIGHT") return "8 位";
+  if (normalized === "SIXTEEN") return "16 位";
+  if (normalized === "THIRTYTWO") return "32 位";
+  if (normalized === "ONE") return "1 位";
+  return String(value == null ? "" : value).trim();
+}
+
 export function getDocumentInfo(doc) {
   if (!doc) {
     return {
@@ -14298,6 +14406,8 @@ export function getDocumentInfo(doc) {
     width: toNumberValue(doc.width),
     height: toNumberValue(doc.height),
     resolution: toNumberValue(doc.resolution),
+    bitsPerChannel: normalizeBitsPerChannel(doc.bitsPerChannel),
+    bitsPerChannelLabel: getBitsPerChannelLabel(doc.bitsPerChannel),
     selectionBounds: getSelectionBounds(doc)
   };
 }
@@ -20805,6 +20915,7 @@ import "./webview/glow/gpu/webgl-compositor.js";
 import "./webview/glow/compositor.js";
 import "./webview/glow/preview-engine.js";
 import "./webview/glow-cpu.js";
+import "./webview/blend-match/gpu/webgl-blend-preview.js";
 import "./webview/space-fx.js";
 import "./webview/blend-match.js";
 import "./webview/ui.js";
@@ -23140,13 +23251,22 @@ import "./webview/main.js";
     busy: false,
     previewBusy: false,
     preview: null,
+    previewRenderer: null,
+    previewRenderMode: "cpu",
+    previewAssets: null,
+    previewCache: null,
     previewRenderTimer: 0,
+    previewRenderQueued: false,
     previewView: {
       scale: 1,
       x: 0,
       y: 0,
       split: 0.5,
-      isPanning: false
+      isPanning: false,
+      startX: 0,
+      startY: 0,
+      startPanX: 0,
+      startPanY: 0
     }
   };
 
@@ -23339,6 +23459,7 @@ import "./webview/main.js";
 
   function resetSettings() {
     localState.settings = { ...DEFAULT_SETTINGS };
+    localState.previewCache = null;
     renderSettings();
     void persistSettings();
     if (modules.ui && modules.ui.logToWorkspace) {
@@ -23358,6 +23479,36 @@ import "./webview/main.js";
 
   function setPreviewState(message) {
     setText("blendMatchPreviewState", message);
+  }
+
+  function is16BitErrorMessage(message) {
+    const text = String(message || "");
+    return text.includes("仅支持 8 位文档") || text.includes("16 位");
+  }
+
+  function ensurePreviewRenderer() {
+    if (localState.previewRenderer) return localState.previewRenderer;
+    if (!modules.blendMatchWebglPreview || typeof modules.blendMatchWebglPreview.createRenderer !== "function") return null;
+    try {
+      localState.previewRenderer = modules.blendMatchWebglPreview.createRenderer();
+      localState.previewRenderMode = "webgl2";
+      return localState.previewRenderer;
+    } catch (error) {
+      localState.previewRenderer = null;
+      localState.previewRenderMode = "cpu";
+      console.warn("[PixelRunner] BlendMatch WebGL preview unavailable, using CPU fallback:", error);
+      return null;
+    }
+  }
+
+  function disposePreviewRenderer() {
+    if (localState.previewRenderer && typeof localState.previewRenderer.dispose === "function") {
+      try {
+        localState.previewRenderer.dispose();
+      } catch (_) {}
+    }
+    localState.previewRenderer = null;
+    localState.previewRenderMode = "cpu";
   }
 
   function loadImage(src) {
@@ -23392,6 +23543,345 @@ import "./webview/main.js";
       clampByte(luma + (ng - luma) * satFactor),
       clampByte(luma + (nb - luma) * satFactor)
     ];
+  }
+
+  function createCanvas(width, height) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.floor(width));
+    canvas.height = Math.max(1, Math.floor(height));
+    return canvas;
+  }
+
+  function imageDataToCanvas(imageData) {
+    const canvas = createCanvas(imageData.width, imageData.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return canvas;
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function getPreviewSplit() {
+    const splitInput = getById("blendMatchPreviewSplitInput");
+    return Math.max(0.02, Math.min(0.98, Number(splitInput && splitInput.value) / 100 || localState.previewView.split || 0.5));
+  }
+
+  function getPreviewCorrectionKey(corrections) {
+    const balance = corrections && corrections.colorBalance ? corrections.colorBalance : {};
+    return [
+      Number(corrections && corrections.brightness) || 0,
+      Number(corrections && corrections.contrast) || 0,
+      Number(corrections && corrections.saturation) || 0,
+      Number(balance.cyanRed) || 0,
+      Number(balance.magentaGreen) || 0,
+      Number(balance.yellowBlue) || 0
+    ].join("|");
+  }
+
+  function buildPreviewAssetKey(preview, settings) {
+    return [
+      preview && preview.sourceDataUrl ? preview.sourceDataUrl.length : 0,
+      preview && preview.referenceDataUrl ? preview.referenceDataUrl.length : 0,
+      preview && preview.width ? preview.width : 0,
+      preview && preview.height ? preview.height : 0,
+      getPreviewCorrectionKey(preview && preview.corrections),
+      Number(settings && settings.featherRadius) || 0
+    ].join("|");
+  }
+
+  function getMaskThresholdFactor() {
+    return { offset: 8, scale: 42, edge: 0.18 };
+  }
+
+  function buildPreviewAssets(preview) {
+    if (!preview || !preview.sourceImage || !preview.referenceImage) return null;
+    const width = Math.max(1, preview.width);
+    const height = Math.max(1, preview.height);
+    const sourceCanvas = createCanvas(width, height);
+    const referenceCanvas = createCanvas(width, height);
+    const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
+    const referenceCtx = referenceCanvas.getContext("2d", { willReadFrequently: true });
+    if (!sourceCtx || !referenceCtx) return null;
+    sourceCtx.drawImage(preview.sourceImage, 0, 0, width, height);
+    referenceCtx.drawImage(preview.referenceImage, 0, 0, width, height);
+    const source = sourceCtx.getImageData(0, 0, width, height);
+    const reference = referenceCtx.getImageData(0, 0, width, height);
+    const threshold = getMaskThresholdFactor();
+    const mask = new Float32Array(width * height);
+    for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
+      const diff = (
+        Math.abs(source.data[i] - reference.data[i]) +
+        Math.abs(source.data[i + 1] - reference.data[i + 1]) +
+        Math.abs(source.data[i + 2] - reference.data[i + 2])
+      ) / 3;
+      mask[p] = clamp01((diff - threshold.offset) / threshold.scale);
+    }
+    const key = `${width}x${height}|${preview.sourceDataUrl ? preview.sourceDataUrl.length : 0}|${preview.referenceDataUrl ? preview.referenceDataUrl.length : 0}`;
+    return {
+      key,
+      width,
+      height,
+      sourceImageData: source,
+      referenceImageData: reference,
+      sourceCanvas: imageDataToCanvas(source),
+      referenceCanvas: imageDataToCanvas(reference),
+      mask,
+      maskKey: key
+    };
+  }
+
+  function computeErodedMask(mask, width, height, radius) {
+    const r = Math.max(1, Math.min(18, Math.round(radius)));
+    if (r <= 1) return mask;
+    const horizontal = new Float32Array(mask.length);
+    const vertical = new Float32Array(mask.length);
+    const out = new Float32Array(mask.length);
+    const windowSize = r * 2 + 1;
+    for (let y = 0; y < height; y += 1) {
+      const row = y * width;
+      for (let x = 0; x < width; x += 1) {
+        let minValue = 1;
+        for (let xx = -r; xx <= r; xx += 1) {
+          const sx = Math.max(0, Math.min(width - 1, x + xx));
+          minValue = Math.min(minValue, mask[row + sx]);
+        }
+        horizontal[row + x] = minValue;
+      }
+    }
+    for (let x = 0; x < width; x += 1) {
+      for (let y = 0; y < height; y += 1) {
+        let minValue = 1;
+        for (let yy = -r; yy <= r; yy += 1) {
+          const sy = Math.max(0, Math.min(height - 1, y + yy));
+          minValue = Math.min(minValue, horizontal[sy * width + x]);
+        }
+        vertical[y * width + x] = minValue;
+      }
+    }
+    out.set(vertical);
+    return out;
+  }
+
+  function computeBlurMask(mask, width, height, radius) {
+    const r = Math.max(1, Math.min(18, Math.round(radius)));
+    if (r <= 1) return mask;
+    const temp = new Float32Array(mask.length);
+    const out = new Float32Array(mask.length);
+    for (let y = 0; y < height; y += 1) {
+      let acc = 0;
+      for (let x = -r; x <= r; x += 1) acc += mask[y * width + Math.max(0, Math.min(width - 1, x))];
+      for (let x = 0; x < width; x += 1) {
+        temp[y * width + x] = acc / (r * 2 + 1);
+        acc -= mask[y * width + Math.max(0, x - r)];
+        acc += mask[y * width + Math.min(width - 1, x + r + 1)];
+      }
+    }
+    for (let x = 0; x < width; x += 1) {
+      let acc = 0;
+      for (let y = -r; y <= r; y += 1) acc += temp[Math.max(0, Math.min(height - 1, y)) * width + x];
+      for (let y = 0; y < height; y += 1) {
+        out[y * width + x] = acc / (r * 2 + 1);
+        acc -= temp[Math.max(0, y - r) * width + x];
+        acc += temp[Math.min(height - 1, y + r + 1) * width + x];
+      }
+    }
+    return out;
+  }
+
+  function computeInwardMask(mask, width, height, radius) {
+    return computeErodedMask(mask, width, height, radius);
+  }
+
+  function buildCpuPreviewCache(preview, settings) {
+    const assets = localState.previewAssets && localState.previewAssets.key === buildPreviewAssetKey(preview, settings)
+      ? localState.previewAssets
+      : null;
+    const nextAssets = assets || buildPreviewAssets(preview);
+    if (!nextAssets) return null;
+    const featherScale = Math.max(1, Math.max(preview.boundsWidth || nextAssets.width, preview.boundsHeight || nextAssets.height) / Math.max(nextAssets.width, nextAssets.height));
+    const featherRadius = Math.max(1, Number(settings && settings.featherRadius) || 1);
+    const scaledRadius = Math.max(1, featherRadius / featherScale);
+    const inwardMask = computeInwardMask(nextAssets.mask, nextAssets.width, nextAssets.height, scaledRadius);
+    const inwardHasContent = inwardMask.some ? inwardMask.some((value) => value > 0.04) : Array.from(inwardMask).some((value) => value > 0.04);
+    const baseMask = inwardHasContent ? inwardMask : nextAssets.mask;
+    const blurred = computeBlurMask(baseMask, nextAssets.width, nextAssets.height, scaledRadius);
+    const sourceDisplay = createCanvas(nextAssets.width, nextAssets.height);
+    const afterDisplay = createCanvas(nextAssets.width, nextAssets.height);
+    const sourceCtx = sourceDisplay.getContext("2d");
+    const afterCtx = afterDisplay.getContext("2d");
+    if (!sourceCtx || !afterCtx) return null;
+    sourceCtx.putImageData(nextAssets.sourceImageData, 0, 0);
+    const afterImage = sourceCtx.createImageData(nextAssets.width, nextAssets.height);
+    for (let i = 0, p = 0; i < nextAssets.sourceImageData.data.length; i += 4, p += 1) {
+      const corrected = applyPreviewCorrection(
+        nextAssets.sourceImageData.data[i],
+        nextAssets.sourceImageData.data[i + 1],
+        nextAssets.sourceImageData.data[i + 2],
+        preview.corrections
+      );
+      const alpha = clamp01(blurred[p]);
+      afterImage.data[i] = clampByte(nextAssets.referenceImageData.data[i] * (1 - alpha) + corrected[0] * alpha);
+      afterImage.data[i + 1] = clampByte(nextAssets.referenceImageData.data[i + 1] * (1 - alpha) + corrected[1] * alpha);
+      afterImage.data[i + 2] = clampByte(nextAssets.referenceImageData.data[i + 2] * (1 - alpha) + corrected[2] * alpha);
+      afterImage.data[i + 3] = 255;
+    }
+    afterCtx.putImageData(afterImage, 0, 0);
+    return {
+      key: buildPreviewAssetKey(preview, settings),
+      width: nextAssets.width,
+      height: nextAssets.height,
+      sourceCanvas: sourceDisplay,
+      afterCanvas: afterDisplay,
+      sourceImageData: nextAssets.sourceImageData,
+      referenceImageData: nextAssets.referenceImageData,
+      mask: nextAssets.mask,
+      baseMask,
+      blurred,
+      split: getPreviewSplit()
+    };
+  }
+
+  function renderCpuPreviewCache(cache, split) {
+    if (!cache || !cache.sourceImageData || !cache.referenceImageData) return false;
+    const canvas = getById("blendMatchPreviewCanvas");
+    const frame = canvas && canvas.closest(".blend-match-preview-frame");
+    if (!canvas || !frame) return false;
+    const width = Math.max(1, cache.width);
+    const height = Math.max(1, cache.height);
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return false;
+    const display = ctx.createImageData(width, height);
+    const source = cache.sourceImageData.data;
+    const reference = cache.referenceImageData.data;
+    const blurred = cache.blurred;
+    const mask = cache.mask;
+    const splitX = Math.round(width * clamp01(split));
+    for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
+      const corrected = applyPreviewCorrection(source[i], source[i + 1], source[i + 2], localState.preview && localState.preview.corrections);
+      const alpha = Math.max(0, Math.min(1, blurred[p] || 0));
+      const afterR = clampByte(reference[i] * (1 - alpha) + corrected[0] * alpha);
+      const afterG = clampByte(reference[i + 1] * (1 - alpha) + corrected[1] * alpha);
+      const afterB = clampByte(reference[i + 2] * (1 - alpha) + corrected[2] * alpha);
+      const x = p % width;
+      const useAfter = x >= splitX;
+      display.data[i] = useAfter ? afterR : source[i];
+      display.data[i + 1] = useAfter ? afterG : source[i + 1];
+      display.data[i + 2] = useAfter ? afterB : source[i + 2];
+      display.data[i + 3] = 255;
+      const band = alpha > 0.08 && alpha < 0.92 ? Math.min(0.34, 0.08 + Math.sin(alpha * Math.PI) * 0.22) : 0;
+      if (band > 0) {
+        display.data[i] = clampByte(display.data[i] * (1 - band) + 80 * band);
+        display.data[i + 1] = clampByte(display.data[i + 1] * (1 - band) + 226 * band);
+        display.data[i + 2] = clampByte(display.data[i + 2] * (1 - band) + 140 * band);
+      }
+      if (findMaskEdge(mask, width, height, p, 0.18)) {
+        display.data[i] = 80;
+        display.data[i + 1] = 232;
+        display.data[i + 2] = 232;
+      }
+    }
+    ctx.putImageData(display, 0, 0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = Math.max(1, Math.round(width / 420));
+    ctx.beginPath();
+    ctx.moveTo(splitX + 0.5, 0);
+    ctx.lineTo(splitX + 0.5, height);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(5, 12, 16, 0.68)";
+    ctx.fillRect(8, 8, 74, 22);
+    ctx.fillRect(Math.max(8, width - 82), 8, 74, 22);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = `${Math.max(11, Math.round(width / 62))}px sans-serif`;
+    ctx.fillText("融合前", 16, 24);
+    ctx.fillText("融合后", Math.max(16, width - 74), 24);
+    ctx.restore();
+    frame.classList.add("has-preview");
+    const splitInput = getById("blendMatchPreviewSplitInput");
+    if (splitInput) splitInput.classList.add("is-active");
+    return true;
+  }
+
+  function renderGpuPreview(split) {
+    const renderer = ensurePreviewRenderer();
+    const preview = localState.preview;
+    const cache = localState.previewCache;
+    if (!renderer || !preview || !cache) return false;
+    try {
+      renderer.configure({
+        width: cache.width,
+        height: cache.height,
+        sourceImage: preview.sourceImage,
+        referenceImage: preview.referenceImage,
+        brightness: preview.corrections ? preview.corrections.brightness : 0,
+        contrast: preview.corrections ? preview.corrections.contrast : 0,
+        saturation: preview.corrections ? preview.corrections.saturation : 0,
+        colorBalance: preview.corrections && preview.corrections.colorBalance
+          ? [
+              Number(preview.corrections.colorBalance.cyanRed) || 0,
+              Number(preview.corrections.colorBalance.magentaGreen) || 0,
+              Number(preview.corrections.colorBalance.yellowBlue) || 0
+            ]
+          : [0, 0, 0],
+        featherMix: 1,
+        featherRadius: localState.settings.featherRadius,
+        split
+      });
+      renderer.render();
+      const canvas = getById("blendMatchPreviewCanvas");
+      const frame = canvas && canvas.closest(".blend-match-preview-frame");
+      if (!canvas || !frame) return false;
+      if (canvas.width !== cache.width) canvas.width = cache.width;
+      if (canvas.height !== cache.height) canvas.height = cache.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return false;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      renderer.presentTo(canvas);
+      frame.classList.add("has-preview");
+      const splitInput = getById("blendMatchPreviewSplitInput");
+      if (splitInput) splitInput.classList.add("is-active");
+      return true;
+    } catch (error) {
+      console.warn("[PixelRunner] BlendMatch WebGL preview failed, falling back to CPU:", error);
+      disposePreviewRenderer();
+      return false;
+    }
+  }
+
+  function applyPreviewTransform() {
+    const canvas = getById("blendMatchPreviewCanvas");
+    if (!canvas) return;
+    clampPreviewView();
+    const view = localState.previewView;
+    canvas.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+  }
+
+  function clampPreviewView() {
+    const canvas = getById("blendMatchPreviewCanvas");
+    const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
+    if (!canvas || !frame) return;
+    const view = localState.previewView;
+    const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
+    view.scale = scale;
+    const frameRect = frame.getBoundingClientRect
+      ? frame.getBoundingClientRect()
+      : { width: 0, height: 0 };
+    const viewportWidth = Number(frameRect.width) || 0;
+    const viewportHeight = Number(frameRect.height) || 0;
+    const contentWidth = Number(canvas.width) || viewportWidth || 1;
+    const contentHeight = Number(canvas.height) || viewportHeight || 1;
+    const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
+    const renderedWidth = contentWidth * fitScale * scale;
+    const renderedHeight = contentHeight * fitScale * scale;
+    const maxX = Math.max(0, (renderedWidth - viewportWidth) / 2);
+    const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
+    view.x = Math.max(-maxX, Math.min(maxX, Number(view.x) || 0));
+    view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
   }
 
   function boxBlurMask(mask, width, height, radius) {
@@ -23448,35 +23938,6 @@ import "./webview/main.js";
     return left <= threshold || right <= threshold || top <= threshold || bottom <= threshold;
   }
 
-  function clampPreviewView() {
-    const canvas = getById("blendMatchPreviewCanvas");
-    const frame = getById("blendMatchPreviewFrame") || (canvas && canvas.closest(".blend-match-preview-frame"));
-    if (!canvas || !frame) return;
-    const view = localState.previewView;
-    const scale = Math.max(0.35, Math.min(8, Number(view.scale) || 1));
-    view.scale = scale;
-    const rect = frame.getBoundingClientRect ? frame.getBoundingClientRect() : { width: 0, height: 0 };
-    const viewportWidth = Number(rect.width) || 0;
-    const viewportHeight = Number(rect.height) || 0;
-    const contentWidth = Number(canvas.width) || viewportWidth || 1;
-    const contentHeight = Number(canvas.height) || viewportHeight || 1;
-    const fitScale = Math.min(viewportWidth / contentWidth || 1, viewportHeight / contentHeight || 1);
-    const renderedWidth = contentWidth * fitScale * scale;
-    const renderedHeight = contentHeight * fitScale * scale;
-    const maxX = Math.max(0, (renderedWidth - viewportWidth) / 2);
-    const maxY = Math.max(0, (renderedHeight - viewportHeight) / 2);
-    view.x = Math.max(-maxX, Math.min(maxX, Number(view.x) || 0));
-    view.y = Math.max(-maxY, Math.min(maxY, Number(view.y) || 0));
-  }
-
-  function applyPreviewTransform() {
-    const canvas = getById("blendMatchPreviewCanvas");
-    if (!canvas) return;
-    clampPreviewView();
-    const view = localState.previewView;
-    canvas.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
-  }
-
   function resetPreviewTransform() {
     localState.previewView.scale = 1;
     localState.previewView.x = 0;
@@ -23506,104 +23967,51 @@ import "./webview/main.js";
   }
 
   function drawPreviewCanvas() {
-    const canvas = getById("blendMatchPreviewCanvas");
-    const frame = canvas && canvas.closest(".blend-match-preview-frame");
     const preview = localState.preview;
-    if (!canvas || !preview || !preview.sourceImage || !preview.referenceImage) return;
-    const width = Math.max(1, preview.width);
-    const height = Math.max(1, preview.height);
-    const splitInput = getById("blendMatchPreviewSplitInput");
-    const split = Math.max(0.02, Math.min(0.98, Number(splitInput && splitInput.value) / 100 || localState.previewView.split || 0.5));
+    if (!preview || !preview.sourceImage || !preview.referenceImage) return;
+    const split = getPreviewSplit();
     localState.previewView.split = split;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#080e12";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const cacheKey = buildPreviewAssetKey(preview, localState.settings);
+    const assetKey = `${Math.max(1, preview.width)}x${Math.max(1, preview.height)}|${preview.sourceDataUrl ? preview.sourceDataUrl.length : 0}|${preview.referenceDataUrl ? preview.referenceDataUrl.length : 0}`;
 
-    const makeData = (image) => {
-      const off = document.createElement("canvas");
-      off.width = width;
-      off.height = height;
-      const offCtx = off.getContext("2d");
-      offCtx.drawImage(image, 0, 0, width, height);
-      return offCtx.getImageData(0, 0, width, height);
-    };
-    const source = makeData(preview.sourceImage);
-    const reference = makeData(preview.referenceImage);
-    const display = ctx.createImageData(width, height);
-    const after = ctx.createImageData(width, height);
-    const mask = new Float32Array(width * height);
-    for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
-      const diff = (
-        Math.abs(source.data[i] - reference.data[i]) +
-        Math.abs(source.data[i + 1] - reference.data[i + 1]) +
-        Math.abs(source.data[i + 2] - reference.data[i + 2])
-      ) / 3;
-      mask[p] = Math.max(0, Math.min(1, (diff - 8) / 42));
+    if (!localState.previewAssets || localState.previewAssets.key !== assetKey) {
+      localState.previewAssets = buildPreviewAssets(preview);
     }
-    const featherScale = Math.max(1, Math.max(preview.boundsWidth || width, preview.boundsHeight || height) / Math.max(width, height));
-    const featherRadius = Math.max(1, localState.settings.featherRadius / featherScale);
-    const inwardMask = erodeMask(mask, width, height, featherRadius);
-    const inwardHasContent = inwardMask.some ? inwardMask.some((value) => value > 0.04) : Array.from(inwardMask).some((value) => value > 0.04);
-    const baseMask = inwardHasContent ? inwardMask : mask;
-    const blurred = boxBlurMask(baseMask, width, height, featherRadius);
-    const splitX = Math.round(width * split);
-    for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
-      const corrected = applyPreviewCorrection(source.data[i], source.data[i + 1], source.data[i + 2], preview.corrections);
-      const alpha = Math.max(0, Math.min(1, blurred[p]));
-      after.data[i] = clampByte(reference.data[i] * (1 - alpha) + corrected[0] * alpha);
-      after.data[i + 1] = clampByte(reference.data[i + 1] * (1 - alpha) + corrected[1] * alpha);
-      after.data[i + 2] = clampByte(reference.data[i + 2] * (1 - alpha) + corrected[2] * alpha);
-      after.data[i + 3] = 255;
-      const x = p % width;
-      const useAfter = x >= splitX;
-      display.data[i] = useAfter ? after.data[i] : source.data[i];
-      display.data[i + 1] = useAfter ? after.data[i + 1] : source.data[i + 1];
-      display.data[i + 2] = useAfter ? after.data[i + 2] : source.data[i + 2];
-      display.data[i + 3] = 255;
-      const band = alpha > 0.08 && alpha < 0.92 ? Math.min(0.34, 0.08 + Math.sin(alpha * Math.PI) * 0.22) : 0;
-      if (band > 0) {
-        display.data[i] = clampByte(display.data[i] * (1 - band) + 80 * band);
-        display.data[i + 1] = clampByte(display.data[i + 1] * (1 - band) + 226 * band);
-        display.data[i + 2] = clampByte(display.data[i + 2] * (1 - band) + 140 * band);
-      }
-      if (findMaskEdge(mask, width, height, p, 0.18)) {
-        display.data[i] = 80;
-        display.data[i + 1] = 232;
-        display.data[i + 2] = 232;
-      }
+    if (!localState.previewAssets) return;
+
+    if (!localState.previewCache || localState.previewCache.key !== cacheKey) {
+      localState.previewCache = buildCpuPreviewCache(preview, localState.settings);
     }
-    ctx.putImageData(display, 0, 0);
-    ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.9)";
-    ctx.lineWidth = Math.max(1, Math.round(width / 420));
-    ctx.beginPath();
-    ctx.moveTo(splitX + 0.5, 0);
-    ctx.lineTo(splitX + 0.5, height);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(5, 12, 16, 0.68)";
-    ctx.fillRect(8, 8, 74, 22);
-    ctx.fillRect(Math.max(8, width - 82), 8, 74, 22);
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.font = `${Math.max(11, Math.round(width / 62))}px sans-serif`;
-    ctx.fillText("融合前", 16, 24);
-    ctx.fillText("融合后", Math.max(16, width - 74), 24);
-    ctx.restore();
-    frame && frame.classList.add("has-preview");
-    if (splitInput) splitInput.classList.add("is-active");
+    if (!localState.previewCache) return;
+
+    const rendered = renderGpuPreview(split) || renderCpuPreviewCache(localState.previewCache, split);
+    if (!rendered) {
+      setPreviewState("预览失败");
+      return;
+    }
+    localState.previewRenderMode = localState.previewRenderer ? "webgl2" : "cpu";
     applyPreviewTransform();
   }
 
-  function schedulePreviewRender() {
+  function schedulePreviewRender(options = {}) {
     if (!localState.preview) return;
-    if (localState.previewRenderTimer) window.cancelAnimationFrame(localState.previewRenderTimer);
-    localState.previewRenderTimer = window.requestAnimationFrame(() => {
+    const immediate = options && options.immediate === true;
+    if (localState.previewRenderTimer) {
+      window.clearTimeout(localState.previewRenderTimer);
+      window.cancelAnimationFrame(localState.previewRenderTimer);
+      localState.previewRenderTimer = 0;
+    }
+    if (immediate) {
+      localState.previewRenderTimer = window.requestAnimationFrame(() => {
+        localState.previewRenderTimer = 0;
+        drawPreviewCanvas();
+      });
+      return;
+    }
+    localState.previewRenderTimer = window.setTimeout(() => {
       localState.previewRenderTimer = 0;
       drawPreviewCanvas();
-    });
+    }, 96);
   }
 
   async function refreshPreview() {
@@ -23636,8 +24044,9 @@ import "./webview/main.js";
         : `左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围${localMeta}`);
       drawPreviewCanvas();
     } catch (error) {
-      setPreviewState("预览失败");
-      setText("blendMatchPreviewMeta", error.message || "预览刷新失败");
+      const message = error && error.message ? error.message : "预览刷新失败";
+      setPreviewState(is16BitErrorMessage(message) ? "不支持 16 位" : "预览失败");
+      setText("blendMatchPreviewMeta", message);
     } finally {
       localState.previewBusy = false;
     }
@@ -23669,8 +24078,9 @@ import "./webview/main.js";
         closePanel();
       }
     } catch (error) {
-      modules.ui.logToWorkspace(`[融合校色] 执行失败：${error.message}`, "error");
-      setText("blendMatchPanelStatus", `执行失败：${error.message}`);
+      const message = error && error.message ? error.message : "执行失败";
+      modules.ui.logToWorkspace(`[融合校色] 执行失败：${message}`, "error");
+      setText("blendMatchPanelStatus", is16BitErrorMessage(message) ? "当前文档为 16 位，请切换到 8 位后再使用" : `执行失败：${message}`);
     } finally {
       localState.busy = false;
       if (applyButton) applyButton.disabled = false;
@@ -23748,7 +24158,7 @@ import "./webview/main.js";
     if (splitInput) {
       splitInput.addEventListener("input", () => {
         localState.previewView.split = Math.max(0.02, Math.min(0.98, Number(splitInput.value) / 100 || 0.5));
-        schedulePreviewRender();
+        schedulePreviewRender({ immediate: true });
       });
       splitInput.addEventListener("pointerdown", (event) => event.stopPropagation());
     }
@@ -23764,6 +24174,7 @@ import "./webview/main.js";
 
       previewFrame.addEventListener("pointerdown", (event) => {
         if (event.button != null && event.button !== 0) return;
+        if (event.target && typeof event.target.closest === "function" && event.target.closest(".blend-match-preview-tools, .blend-match-preview-split")) return;
         if ((Number(localState.previewView.scale) || 1) <= 1.001) return;
         event.preventDefault();
         localState.previewView.isPanning = true;
@@ -23787,6 +24198,7 @@ import "./webview/main.js";
         event.preventDefault();
         localState.previewView.isPanning = false;
         previewFrame.classList.remove("is-panning");
+        applyPreviewTransform();
       };
       window.addEventListener("pointermove", movePan, { passive: false });
       window.addEventListener("pointerup", endPan, { passive: false });
@@ -23795,7 +24207,10 @@ import "./webview/main.js";
         localState.previewView.isPanning = false;
         previewFrame.classList.remove("is-panning");
       });
-      previewFrame.addEventListener("dblclick", resetPreviewTransform);
+      previewFrame.addEventListener("dblclick", (event) => {
+        if (event.target && typeof event.target.closest === "function" && event.target.closest(".blend-match-preview-tools, .blend-match-preview-split")) return;
+        resetPreviewTransform();
+      });
     }
 
     document.querySelectorAll("[data-blend-match-zoom]").forEach((button) => {
@@ -23821,6 +24236,544 @@ import "./webview/main.js";
     bindBlendMatchActions,
     applyAutoPlacementFusion,
     getSettings: () => ({ ...localState.settings })
+  };
+})(window);
+```
+
+---
+
+### `PixelRunner\src\webview\blend-match\gpu\webgl-blend-preview.js`
+
+```javascript
+(function initBlendMatchWebglPreviewModule(global) {
+  const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
+
+  const VERTEX_SHADER = `#version 300 es
+    layout(location = 0) in vec2 aPosition;
+    out vec2 vUv;
+    void main() {
+      vUv = aPosition * 0.5 + 0.5;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  `;
+
+  const MASK_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uSource;
+    uniform sampler2D uReference;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      vec3 source = texture(uSource, vUv).rgb;
+      vec3 reference = texture(uReference, vUv).rgb;
+      float diff = (abs(source.r - reference.r) + abs(source.g - reference.g) + abs(source.b - reference.b)) / 3.0;
+      outColor = vec4(clamp((diff - 0.03137255) / 0.16470588, 0.0, 1.0), 0.0, 0.0, 1.0);
+    }
+  `;
+
+  const BLUR_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uSource;
+    uniform vec2 uTexel;
+    uniform vec2 uDirection;
+    uniform int uRadius;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      float sum = 0.0;
+      float count = 0.0;
+      for (int i = -18; i <= 18; i++) {
+        if (abs(i) <= uRadius) {
+          sum += texture(uSource, vUv + uDirection * vec2(float(i)) * uTexel).r;
+          count += 1.0;
+        }
+      }
+      outColor = vec4(sum / max(count, 1.0), 0.0, 0.0, 1.0);
+    }
+  `;
+
+  const CORRECT_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uSource;
+    uniform sampler2D uReference;
+    uniform sampler2D uMask;
+    uniform vec2 uTexel;
+    uniform float uBrightness;
+    uniform float uContrast;
+    uniform float uSaturation;
+    uniform vec3 uColorBalance;
+    uniform float uFeatherMix;
+    in vec2 vUv;
+    out vec4 outColor;
+
+    float clamp01(float value) {
+      return clamp(value, 0.0, 1.0);
+    }
+
+    vec3 applyCorrection(vec3 color) {
+      color += (vec3(uBrightness) + uColorBalance) / 255.0;
+      float contrast = clamp(uContrast, -254.0, 254.0);
+      float contrastFactor = (259.0 * (contrast + 255.0)) / max(1.0, 255.0 * (259.0 - contrast));
+      color = contrastFactor * (color * 255.0 - 128.0) + 128.0;
+      float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+      float saturationFactor = 1.0 + uSaturation / 100.0;
+      return vec3(
+        clamp01((luma + (color.r - luma) * saturationFactor) / 255.0),
+        clamp01((luma + (color.g - luma) * saturationFactor) / 255.0),
+        clamp01((luma + (color.b - luma) * saturationFactor) / 255.0)
+      );
+    }
+
+    void main() {
+      vec3 source = texture(uSource, vUv).rgb;
+      vec3 reference = texture(uReference, vUv).rgb;
+      float alpha = texture(uMask, vUv).r;
+      vec3 corrected = applyCorrection(source);
+      vec3 color = mix(reference, corrected, alpha * uFeatherMix);
+      outColor = vec4(color, 1.0);
+    }
+  `;
+
+  const DISPLAY_SHADER = `#version 300 es
+    precision highp float;
+    uniform sampler2D uSource;
+    uniform sampler2D uAfter;
+    uniform sampler2D uMask;
+    uniform sampler2D uBlur;
+    uniform vec2 uTexel;
+    uniform float uSplit;
+    in vec2 vUv;
+    out vec4 outColor;
+
+    void main() {
+      vec3 source = texture(uSource, vUv).rgb;
+      vec3 after = texture(uAfter, vUv).rgb;
+      vec3 color = mix(source, after, step(uSplit, vUv.x));
+
+      float blurValue = texture(uBlur, vUv).r;
+      if (blurValue > 0.08 && blurValue < 0.92) {
+        float feather = min(0.34, 0.08 + sin(blurValue * 3.14159265) * 0.22);
+        color = mix(color, vec3(80.0 / 255.0, 226.0 / 255.0, 140.0 / 255.0), feather);
+      }
+
+      float mask = texture(uMask, vUv).r;
+      float left = texture(uMask, vUv + vec2(-uTexel.x, 0.0)).r;
+      float right = texture(uMask, vUv + vec2(uTexel.x, 0.0)).r;
+      float top = texture(uMask, vUv + vec2(0.0, -uTexel.y)).r;
+      float bottom = texture(uMask, vUv + vec2(0.0, uTexel.y)).r;
+      if (mask > 0.18 && (left <= 0.18 || right <= 0.18 || top <= 0.18 || bottom <= 0.18)) {
+        color = vec3(80.0 / 255.0, 232.0 / 255.0, 232.0 / 255.0);
+      }
+
+      outColor = vec4(color, 1.0);
+    }
+  `;
+
+  const FULLSCREEN_TRIANGLE = new Float32Array([
+    -1, -1,
+     3, -1,
+    -1,  3
+  ]);
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function compileShader(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const message = gl.getShaderInfoLog(shader) || "Unknown shader compile error";
+      gl.deleteShader(shader);
+      throw new Error(message);
+    }
+    return shader;
+  }
+
+  function createProgram(gl, fragmentSource) {
+    const vertex = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+    const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+    const program = gl.createProgram();
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const message = gl.getProgramInfoLog(program) || "Unknown program link error";
+      gl.deleteProgram(program);
+      throw new Error(message);
+    }
+    return program;
+  }
+
+  function createTexture(gl, width, height) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    return texture;
+  }
+
+  function createTarget(gl, width, height) {
+    const texture = createTexture(gl, width, height);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      throw new Error("WebGL2 framebuffer is incomplete");
+    }
+    return { width, height, texture, framebuffer };
+  }
+
+  function destroyTarget(gl, target) {
+    if (!target) return;
+    if (target.texture) gl.deleteTexture(target.texture);
+    if (target.framebuffer) gl.deleteFramebuffer(target.framebuffer);
+  }
+
+  function queryLocations(gl, program, names) {
+    const out = {};
+    names.forEach((name) => {
+      out[name] = gl.getUniformLocation(program, name);
+    });
+    return out;
+  }
+
+  function uploadImageTexture(gl, texture, image) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  }
+
+  class BlendMatchWebglPreviewRenderer {
+    constructor() {
+      this.canvas = document.createElement("canvas");
+      this.canvas.width = 1;
+      this.canvas.height = 1;
+      this.gl = modules.glowGpuCapabilities && typeof modules.glowGpuCapabilities.getWebgl2Context === "function"
+        ? modules.glowGpuCapabilities.getWebgl2Context(this.canvas)
+        : null;
+      if (!this.gl) {
+        throw new Error("WebGL2 is unavailable");
+      }
+      this.gl.disable(this.gl.DEPTH_TEST);
+      this.gl.disable(this.gl.CULL_FACE);
+      this.gl.disable(this.gl.BLEND);
+      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
+      this.gl.pixelStorei(this.gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      this.gl.clearColor(0, 0, 0, 1);
+      this.gl.viewport(0, 0, 1, 1);
+      this.programs = {
+        mask: createProgram(this.gl, MASK_SHADER),
+        blur: createProgram(this.gl, BLUR_SHADER),
+        correct: createProgram(this.gl, CORRECT_SHADER),
+        display: createProgram(this.gl, DISPLAY_SHADER)
+      };
+      this.locations = {
+        mask: queryLocations(this.gl, this.programs.mask, ["uSource", "uReference"]),
+        blur: queryLocations(this.gl, this.programs.blur, ["uSource", "uTexel", "uDirection", "uRadius"]),
+        correct: queryLocations(this.gl, this.programs.correct, ["uSource", "uReference", "uMask", "uTexel", "uBrightness", "uContrast", "uSaturation", "uColorBalance", "uFeatherMix"]),
+        display: queryLocations(this.gl, this.programs.display, ["uSource", "uAfter", "uMask", "uBlur", "uTexel", "uSplit"])
+      };
+      this.vertexBuffer = this.gl.createBuffer();
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, FULLSCREEN_TRIANGLE, this.gl.STATIC_DRAW);
+      this.vao = this.gl.createVertexArray();
+      this.gl.bindVertexArray(this.vao);
+      this.gl.enableVertexAttribArray(0);
+      this.gl.vertexAttribPointer(0, 2, this.gl.FLOAT, false, 0, 0);
+      this.gl.bindVertexArray(null);
+
+      this.sourceTexture = null;
+      this.referenceTexture = null;
+      this.maskTarget = null;
+      this.blurTargetA = null;
+      this.blurTargetB = null;
+      this.afterTarget = null;
+      this.size = { width: 0, height: 0 };
+      this.cacheKey = "";
+      this.textureKey = "";
+      this.pipelineDirty = true;
+      this.lastRenderSummary = null;
+    }
+
+    ensureSize(width, height) {
+      const safeWidth = Math.max(1, Math.floor(Number(width) || 1));
+      const safeHeight = Math.max(1, Math.floor(Number(height) || 1));
+      if (this.size.width === safeWidth && this.size.height === safeHeight) return;
+      this.size = { width: safeWidth, height: safeHeight };
+      this.canvas.width = safeWidth;
+      this.canvas.height = safeHeight;
+      this.gl.viewport(0, 0, safeWidth, safeHeight);
+      destroyTarget(this.gl, this.maskTarget);
+      destroyTarget(this.gl, this.blurTargetA);
+      destroyTarget(this.gl, this.blurTargetB);
+      destroyTarget(this.gl, this.afterTarget);
+      this.maskTarget = createTarget(this.gl, safeWidth, safeHeight);
+      this.blurTargetA = createTarget(this.gl, safeWidth, safeHeight);
+      this.blurTargetB = createTarget(this.gl, safeWidth, safeHeight);
+      this.afterTarget = createTarget(this.gl, safeWidth, safeHeight);
+      this.pipelineDirty = true;
+    }
+
+    uploadImages(sourceImage, referenceImage) {
+      if (!this.sourceTexture) {
+        this.sourceTexture = this.gl.createTexture();
+      }
+      if (!this.referenceTexture) {
+        this.referenceTexture = this.gl.createTexture();
+      }
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.sourceTexture);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+      uploadImageTexture(this.gl, this.sourceTexture, sourceImage);
+
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.referenceTexture);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+      uploadImageTexture(this.gl, this.referenceTexture, referenceImage);
+    }
+
+    applyUniforms(programKey, bindings) {
+      const gl = this.gl;
+      gl.useProgram(this.programs[programKey]);
+      const locations = this.locations[programKey];
+      if (bindings.uSourceTexture !== undefined) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, bindings.uSourceTexture);
+      }
+      if (bindings.uReferenceTexture !== undefined) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, bindings.uReferenceTexture);
+      }
+      if (bindings.uMaskTexture !== undefined) {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, bindings.uMaskTexture);
+      }
+      if (bindings.uBlurTexture !== undefined) {
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, bindings.uBlurTexture);
+      }
+      if (bindings.uAfterTexture !== undefined) {
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, bindings.uAfterTexture);
+      }
+      if (locations.uSource) gl.uniform1i(locations.uSource, 0);
+      if (locations.uReference) gl.uniform1i(locations.uReference, 1);
+      if (locations.uMask) gl.uniform1i(locations.uMask, 2);
+      if (locations.uBlur) gl.uniform1i(locations.uBlur, 3);
+      if (locations.uAfter) gl.uniform1i(locations.uAfter, 4);
+      if (locations.uTexel && bindings.texel) gl.uniform2f(locations.uTexel, bindings.texel[0], bindings.texel[1]);
+      if (locations.uDirection && bindings.direction) gl.uniform2f(locations.uDirection, bindings.direction[0], bindings.direction[1]);
+      if (locations.uRadius) gl.uniform1i(locations.uRadius, Math.max(1, Math.min(18, Math.round(bindings.radius || 1))));
+      if (locations.uBrightness) gl.uniform1f(locations.uBrightness, Number(bindings.brightness) || 0);
+      if (locations.uContrast) gl.uniform1f(locations.uContrast, Number(bindings.contrast) || 0);
+      if (locations.uSaturation) gl.uniform1f(locations.uSaturation, Number(bindings.saturation) || 0);
+      if (locations.uColorBalance) {
+        const balance = bindings.colorBalance || [0, 0, 0];
+        gl.uniform3f(locations.uColorBalance, Number(balance[0]) || 0, Number(balance[1]) || 0, Number(balance[2]) || 0);
+      }
+      if (locations.uFeatherMix) gl.uniform1f(locations.uFeatherMix, clamp(Number(bindings.featherMix) || 1, 0, 1));
+      if (locations.uSplit) gl.uniform1f(locations.uSplit, clamp(Number(bindings.split) || 0.5, 0.0, 1.0));
+    }
+
+    renderMask() {
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.maskTarget.framebuffer);
+      this.gl.viewport(0, 0, this.size.width, this.size.height);
+      this.gl.useProgram(this.programs.mask);
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.sourceTexture);
+      this.gl.activeTexture(this.gl.TEXTURE1);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, this.referenceTexture);
+      this.gl.uniform1i(this.locations.mask.uSource, 0);
+      this.gl.uniform1i(this.locations.mask.uReference, 1);
+      this.gl.bindVertexArray(this.vao);
+      this.gl.drawArrays(this.gl.TRIANGLES, 0, 3);
+      this.gl.bindVertexArray(null);
+    }
+
+    renderBlur(radius) {
+      const safeRadius = Math.max(1, Math.min(18, Math.round(Number(radius) || 1)));
+      const texelX = 1 / Math.max(1, this.size.width);
+      const texelY = 1 / Math.max(1, this.size.height);
+      const gl = this.gl;
+      const locations = this.locations.blur;
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurTargetA.framebuffer);
+      gl.viewport(0, 0, this.size.width, this.size.height);
+      gl.useProgram(this.programs.blur);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.maskTarget.texture);
+      gl.uniform1i(locations.uSource, 0);
+      gl.uniform2f(locations.uTexel, texelX, texelY);
+      gl.uniform2f(locations.uDirection, 1.0, 0.0);
+      gl.uniform1i(locations.uRadius, safeRadius);
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.blurTargetB.framebuffer);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.blurTargetA.texture);
+      gl.uniform1i(locations.uSource, 0);
+      gl.uniform2f(locations.uDirection, 0.0, 1.0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+    }
+
+    renderAfter(bindings) {
+      const gl = this.gl;
+      const locations = this.locations.correct;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.afterTarget.framebuffer);
+      gl.viewport(0, 0, this.size.width, this.size.height);
+      gl.useProgram(this.programs.correct);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.referenceTexture);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.blurTargetB.texture);
+      gl.uniform1i(locations.uSource, 0);
+      gl.uniform1i(locations.uReference, 1);
+      gl.uniform1i(locations.uMask, 2);
+      gl.uniform2f(locations.uTexel, 1 / Math.max(1, this.size.width), 1 / Math.max(1, this.size.height));
+      gl.uniform1f(locations.uBrightness, Number(bindings.brightness) || 0);
+      gl.uniform1f(locations.uContrast, Number(bindings.contrast) || 0);
+      gl.uniform1f(locations.uSaturation, Number(bindings.saturation) || 0);
+      const balance = bindings.colorBalance || [0, 0, 0];
+      gl.uniform3f(locations.uColorBalance, Number(balance[0]) || 0, Number(balance[1]) || 0, Number(balance[2]) || 0);
+      gl.uniform1f(locations.uFeatherMix, clamp(Number(bindings.featherMix) || 1, 0, 1));
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+    }
+
+    renderDisplay(split) {
+      const gl = this.gl;
+      const locations = this.locations.display;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.size.width, this.size.height);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(this.programs.display);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.afterTarget.texture);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.maskTarget.texture);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.blurTargetB.texture);
+      gl.uniform1i(locations.uSource, 0);
+      gl.uniform1i(locations.uAfter, 1);
+      gl.uniform1i(locations.uMask, 2);
+      gl.uniform1i(locations.uBlur, 3);
+      gl.uniform2f(locations.uTexel, 1 / Math.max(1, this.size.width), 1 / Math.max(1, this.size.height));
+      gl.uniform1f(locations.uSplit, clamp(Number(split) || 0.5, 0, 1));
+      gl.bindVertexArray(this.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindVertexArray(null);
+    }
+
+    configure(config = {}) {
+      const width = Math.max(1, Math.floor(Number(config.width) || 1));
+      const height = Math.max(1, Math.floor(Number(config.height) || 1));
+      const sourceImage = config.sourceImage || null;
+      const referenceImage = config.referenceImage || null;
+      if (!sourceImage || !referenceImage) {
+        throw new Error("BlendMatch WebGL preview is missing images");
+      }
+      this.ensureSize(width, height);
+      const textureKey = [
+        String(sourceImage.src || sourceImage.currentSrc || ""),
+        String(referenceImage.src || referenceImage.currentSrc || "")
+      ].join("|");
+      const nextKey = [
+        width,
+        height,
+        textureKey,
+        Number(config.brightness) || 0,
+        Number(config.contrast) || 0,
+        Number(config.saturation) || 0,
+        ...(Array.isArray(config.colorBalance) ? config.colorBalance : [0, 0, 0]),
+        Number(config.featherRadius) || 0
+      ].join("|");
+      if (this.textureKey !== textureKey) {
+        this.uploadImages(sourceImage, referenceImage);
+        this.textureKey = textureKey;
+      }
+      this.pipelineDirty = this.pipelineDirty || this.cacheKey !== nextKey;
+      this.cacheKey = nextKey;
+      this.pendingConfig = {
+        brightness: Number(config.brightness) || 0,
+        contrast: Number(config.contrast) || 0,
+        saturation: Number(config.saturation) || 0,
+        colorBalance: Array.isArray(config.colorBalance) ? config.colorBalance.slice(0, 3) : [0, 0, 0],
+        featherMix: Number(config.featherMix) || 1,
+        featherRadius: Number(config.featherRadius) || 1
+      };
+      this.pendingSplit = clamp(Number(config.split) || 0.5, 0, 1);
+    }
+
+    render() {
+      if (!this.sourceTexture || !this.referenceTexture) {
+        throw new Error("BlendMatch WebGL preview is not configured");
+      }
+      if (this.pipelineDirty) {
+        this.renderMask();
+        this.renderBlur(this.pendingConfig.featherRadius);
+        this.renderAfter(this.pendingConfig);
+        this.pipelineDirty = false;
+      }
+      this.renderDisplay(this.pendingSplit);
+      this.lastRenderSummary = {
+        backend: "webgl2",
+        width: this.size.width,
+        height: this.size.height
+      };
+      return this.lastRenderSummary;
+    }
+
+    presentTo(targetCanvas) {
+      if (!targetCanvas || typeof targetCanvas.getContext !== "function") return;
+      const ctx = targetCanvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas 2D is unavailable for BlendMatch preview presentation");
+      ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      ctx.drawImage(this.canvas, 0, 0, targetCanvas.width, targetCanvas.height);
+    }
+
+    dispose() {
+      const gl = this.gl;
+      destroyTarget(gl, this.maskTarget);
+      destroyTarget(gl, this.blurTargetA);
+      destroyTarget(gl, this.blurTargetB);
+      destroyTarget(gl, this.afterTarget);
+      this.maskTarget = null;
+      this.blurTargetA = null;
+      this.blurTargetB = null;
+      this.afterTarget = null;
+      if (this.sourceTexture) gl.deleteTexture(this.sourceTexture);
+      if (this.referenceTexture) gl.deleteTexture(this.referenceTexture);
+      if (this.vertexBuffer) gl.deleteBuffer(this.vertexBuffer);
+      if (this.vao) gl.deleteVertexArray(this.vao);
+      Object.values(this.programs).forEach((program) => gl.deleteProgram(program));
+      this.sourceTexture = null;
+      this.referenceTexture = null;
+    }
+  }
+
+  modules.blendMatchWebglPreview = {
+    createRenderer() {
+      return new BlendMatchWebglPreviewRenderer();
+    }
   };
 })(window);
 ```
@@ -25934,7 +26887,8 @@ import "./webview/main.js";
     const thresholdRatio = threshold / 100;
     // Lower UI threshold is the precision end: fewer, more clipping-like highlights are allowed to emit.
     const thresholdSelectivity = 1 - thresholdRatio;
-    const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.45);
+    const thresholdFineSelectivity = Math.pow(thresholdSelectivity, 1.35);
+    const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.78);
     const thresholdOpen = thresholdRatio;
     const thresholdKneeOpen = Math.pow(thresholdRatio, 1.22);
     const exposureRatio = brightnessBias / 100;
@@ -25943,12 +26897,12 @@ import "./webview/main.js";
     // Lens-scatter proxy: halo footprint follows area growth (~r^2 trend in normalized domain).
     const lensArea = Math.pow(radiusRatio, 2);
     // Strength should add optical energy without turning the extracted source into a white matte.
-    const strengthDrive = Math.pow(strengthRatio, 0.62);
+    const strengthDrive = Math.pow(strengthRatio, 1.22);
     // Radius should mostly move energy outward into halo instead of boosting local white.
     const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
     const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
     // Physical mapping: strength=0 should produce zero emitted glow energy.
-    const strengthEnergyBoost = strengthDrive * 13.5;
+    const strengthEnergyBoost = strengthDrive * 12.2;
     // Chromatic slider should become visible earlier (especially in 12~45 range).
     const chromaticRatio = Math.pow(chromatic / 100, 0.88);
     const diffusionT = Math.max(0, Math.min(1, spreadRatio));
@@ -25983,13 +26937,13 @@ import "./webview/main.js";
       source: {
         // thresholdHigh is the soft-knee center; thresholdLow is only the lower support for specular/rim gates.
         thresholdLow: clamp(
-          0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
-            (0.045 + thresholdOpen * 0.13 + spreadRatio * 0.02) * 0.65,
-          0.06,
-          0.92,
+          0.16 + thresholdPrecision * 0.8 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
+            (0.034 + thresholdOpen * 0.12 + spreadRatio * 0.018) * (0.35 + thresholdRatio * 0.3),
+          0.08,
+          0.965,
           0.42
         ),
-        thresholdHigh: clamp(0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.96, 0.58),
+        thresholdHigh: clamp(0.16 + thresholdPrecision * 0.81 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.985, 0.58),
         thresholdKnee: clamp(
           0.022 + thresholdKneeOpen * 0.12 + legacyRadiusRatio * 0.01 + spreadRatio * 0.014 + Math.max(0, exposureRatio) * 0.018,
           0.025,
@@ -26000,10 +26954,10 @@ import "./webview/main.js";
         sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
         haloMaskRadius: Math.max(10, Math.min(20, Math.round(10 + legacyRadiusRatio * 7 + wideRadiusRatio * 3))),
         contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
-        contrastHigh: clamp(0.052 + thresholdSelectivity * 0.06 - exposureRatio * 0.018, 0.032, 0.13, 0.068),
-        specularLow: 0.06,
-        specularHigh: 0.28,
-        lowEnergyCutoff: 0.038,
+        contrastHigh: clamp(0.052 + thresholdFineSelectivity * 0.078 - exposureRatio * 0.018, 0.032, 0.15, 0.068),
+        specularLow: clamp(0.06 + thresholdFineSelectivity * 0.05, 0.06, 0.12, 0.06),
+        specularHigh: clamp(0.28 + thresholdFineSelectivity * 0.16, 0.28, 0.48, 0.28),
+        lowEnergyCutoff: clamp(0.038 + thresholdFineSelectivity * 0.032, 0.038, 0.078, 0.038),
         chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.24 + Math.max(0, exposureRatio) * 0.03, 0, 0.68, preset.chromaBoost),
         whiteProtect: preset.whiteProtect,
         skinProtect: preset.skinProtect,
@@ -26036,8 +26990,8 @@ import "./webview/main.js";
         // Split glow into core vs halo at composite stage (strength-gated).
         coreSuppression: clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
         coreCeiling: clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
-        haloBoost: clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 0.58), 0, 3.4, 0),
-        haloMix: clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 0.62), 0, 0.82, 0),
+        haloBoost: clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
+        haloMix: clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
         energyFloor: 0,
         energyFloorSoftness: 0.001
       },
@@ -34930,6 +35884,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function isTaskCancellable(task) {
     if (!task || typeof task !== "object") return false;
     if (isTaskTerminalStatus(task.status)) return false;
+    if (["placing", "downloading"].includes(String(task.status || "").trim().toLowerCase())) return false;
     return Boolean(String(task.remoteTaskId || task.taskId || "").trim()) && String(task.status || "").trim().toLowerCase() !== "submitting";
   }
 
@@ -35001,6 +35956,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (normalized === "queued") return "排队中";
     if (normalized === "tracking") return "追踪中";
     if (normalized === "remote-running") return "云端运行中";
+    if (normalized === "downloading") return "下载中";
+    if (normalized === "placing") return "回贴中";
     if (normalized === "timeout") return "等待超时";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "已完成";
     if (normalized === "failed" || normalized === "error") return "失败";
@@ -35018,6 +35975,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (normalized === "queued") return "任务排队中，尚未开始执行。";
     if (normalized === "tracking") return "本地等待已超时，插件正在后台追踪云端状态。";
     if (normalized === "remote-running") return "云端仍在运行，本地已切换为后台追踪。";
+    if (normalized === "downloading") return "任务已完成，正在下载结果图。";
+    if (normalized === "placing") return "任务已完成，正在下载结果并贴回 Photoshop。";
     if (normalized === "timeout") return "本地等待超时，尚未确认云端最终状态。";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "任务已完成。";
     if (normalized === "failed" || normalized === "error") return task.errorMessage || "任务执行失败。";
@@ -35156,6 +36115,23 @@ document.addEventListener("DOMContentLoaded", () => {
     return "";
   }
 
+  function getTaskFallbackTitle(task, index = 0) {
+    if (task && typeof task === "object") {
+      const appName = String(task.appName || "").trim();
+      if (appName) return appName;
+      const normalized = String(task.status || "").trim().toLowerCase();
+      if (normalized === "placing") return "回贴中";
+      if (normalized === "downloading") return "下载中";
+      if (normalized === "submitting") return "提交中";
+      if (normalized === "submitted" || normalized === "queued") return "排队中";
+      if (normalized === "tracking" || normalized === "remote-running") return "追踪中";
+      if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "已完成";
+      if (normalized === "failed" || normalized === "error") return "失败";
+      if (normalized === "cancelled" || normalized === "canceled") return "已取消";
+    }
+    return `运行中 ${Math.max(1, Number(index) + 1 || 1)}`;
+  }
+
   function isPermanentTrackingErrorMessage(message) {
     const text = String(message || "").trim().toLowerCase();
     if (!text) return false;
@@ -35249,7 +36225,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!Array.isArray(tasks) || tasks.length === 0) return "";
     return sortRunningTasks(tasks)
       .map((task, index) => {
-        const appName = modules.runtime.escapeHtml(task.appName || `任务 ${index + 1}`);
+        const appName = modules.runtime.escapeHtml(getTaskFallbackTitle(task, index));
         const taskId = String(task.remoteTaskId || task.taskId || "").trim();
         const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "等待分配任务 ID";
         const statusLabel = getTaskStatusLabel(task.status || "running");
@@ -35770,7 +36746,7 @@ document.addEventListener("DOMContentLoaded", () => {
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
       appName: String(patch.appName || "").trim(),
-      status: String(patch.status || "running").trim() || "running",
+      status: hasOwn("status") ? String(patch.status || "running").trim() || "running" : undefined,
       detail: String(patch.detail || "").trim(),
       errorMessage: String(patch.errorMessage || "").trim(),
       charge: hasOwn("charge") ? normalizeTaskChargeValue(patch.charge) : undefined,
@@ -35799,6 +36775,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        appName: nextTask.appName || current.appName || "",
+        status: nextTask.status || current.status || "running",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
@@ -35811,7 +36789,10 @@ document.addEventListener("DOMContentLoaded", () => {
           Number(nextTask.placementDocumentId) > 0 ? Number(nextTask.placementDocumentId) : Number(current.placementDocumentId) || 0
       };
     } else {
-      list.unshift(nextTask);
+      list.unshift({
+        ...nextTask,
+        status: nextTask.status || "running"
+      });
     }
 
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
@@ -35879,7 +36860,7 @@ document.addEventListener("DOMContentLoaded", () => {
       taskId: remoteTaskId,
       remoteTaskId,
       appName: payload.appName,
-      status: "succeeded",
+      status: "placing",
       detail: "后台追踪确认任务已完成，结果已返回。",
       charge: statusResult && statusResult.charge,
       balanceCharge: statusResult && statusResult.balanceCharge,
@@ -35910,7 +36891,7 @@ document.addEventListener("DOMContentLoaded", () => {
             taskId: remoteTaskId,
             remoteTaskId,
             appName: payload.appName,
-            status: "succeeded",
+            status: "placing",
             detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
           });
           return;
@@ -36635,7 +37616,7 @@ document.addEventListener("DOMContentLoaded", () => {
         taskId: remoteTaskId,
         remoteTaskId,
         appName: payload.appName,
-        status: "succeeded",
+        status: "placing",
         detail: "任务已完成，结果已返回。",
         charge: pollResult && pollResult.charge,
         balanceCharge: pollResult && pollResult.balanceCharge,
@@ -36668,7 +37649,7 @@ document.addEventListener("DOMContentLoaded", () => {
             taskId: remoteTaskId,
             remoteTaskId,
             appName: payload.appName,
-            status: "succeeded",
+            status: "placing",
             detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
           });
           return;
@@ -37247,7 +38228,7 @@ body {
 
 ### `plans\add-blend-color-match-tool.md`
 
-```markdown
+````markdown
 # 融合校色功能规划
 
 ## 背景判断
@@ -37268,15 +38249,15 @@ PixelRunner 现在已经具备 RunningHub/第三方 API 任务提交、自动返
 
 功能名称：
 
-``\`text
+```text
 融合校色
-``\`
+```
 
 一句话定位：
 
-``\`text
+```text
 让 AI 返图图层自动匹配原图的明度、色彩和边缘过渡，并在必要时进行小范围对齐。
-``\`
+```
 
 它不是通用调色滤镜，也不是 Camera Raw 替代品。它的核心对象是“当前选中的 AI 返图图层”和“除去该返图后用户实际可见的原始画面”。
 
@@ -37351,7 +38332,7 @@ PixelRunner 现在已经具备 RunningHub/第三方 API 任务提交、自动返
 
 新增本地设置建议：
 
-``\`js
+```js
 blendMatch: {
   autoEnabled: false,
   mode: "balanced",
@@ -37367,28 +38348,28 @@ blendMatch: {
   createBackupLayer: false,
   applyToAutoPlacedResults: true
 }
-``\`
+```
 
 需要持久化到 `state.STORAGE_KEYS`，例如：
 
-``\`text
+```text
 pixelrunner.blendMatch.settings.v1
-``\`
+```
 
 ## UI 设计
 
 工具箱主卡片：
 
-``\`text
+```text
 融合校色        [自动：开/关]
 让 AI 返图匹配原图明度、颜色和边缘过渡。
 [打开面板]
 状态：等待选择返图图层
-``\`
+```
 
 面板结构：
 
-``\`text
+```text
 融合校色
 
 状态
@@ -37430,7 +38411,7 @@ pixelrunner.blendMatch.settings.v1
 - 分析预览
 - 应用融合
 - 重置
-``\`
+```
 
 第一版可以不做复杂实时预览，先做“分析并应用”。如果要做预览，建议只在缩略图上预览，避免滑块拖动时处理大图导致卡顿。
 
@@ -37470,11 +38451,11 @@ pixelrunner.blendMatch.settings.v1
 
 区域需要扩展两个采样圈：
 
-``\`text
+```text
 innerRegion：返图主体区域
 edgeRegion：返图边缘附近区域
 contextRegion：返图外侧周围原图区域
-``\`
+```
 
 校色主要比较 `innerRegion` 和参考图同位置像素；边缘融合主要比较 `edgeRegion` 与 `contextRegion`。
 
@@ -37493,9 +38474,9 @@ contextRegion：返图外侧周围原图区域
 
 建议在近似线性空间或至少 gamma-aware 处理：
 
-``\`text
+```text
 srgb -> linear -> 统计/校正 -> srgb
-``\`
+```
 
 MVP 可先用 sRGB 近似，但文档中要保留后续升级空间。
 
@@ -37509,24 +38490,24 @@ MVP 可先用 sRGB 近似，但文档中要保留后续升级空间。
 
 基础公式：
 
-``\`text
+```text
 normalized = (srcLuma - srcMean) / srcStd
 matchedLuma = normalized * refStd + refMean
-``\`
+```
 
 颜色偏移：
 
-``\`text
+```text
 deltaR = refMeanR - srcMeanR
 deltaG = refMeanG - srcMeanG
 deltaB = refMeanB - srcMeanB
-``\`
+```
 
 最终不要 100% 套用，必须按用户强度混合：
 
-``\`text
+```text
 final = original * (1 - amount) + corrected * amount
-``\`
+```
 
 防止过度校正：
 
@@ -37539,24 +38520,24 @@ final = original * (1 - amount) + corrected * amount
 
 为了避免单一全局统计导致皮肤、天空、暗部一起偏，可以引入三段权重：
 
-``\`text
+```text
 shadowWeight
 midtoneWeight
 highlightWeight
-``\`
+```
 
 根据亮度 smoothstep 生成，分别计算暗部/中灰/高光的参考差值。
 
 第一版可以先只做全局匹配；第二版再加入三段匹配。文档和数据结构应提前预留：
 
-``\`js
+```js
 toneRanges: {
   enabled: false,
   shadowStrength: 50,
   midtoneStrength: 70,
   highlightStrength: 55
 }
-``\`
+```
 
 ### 5. 小范围对齐
 
@@ -37580,10 +38561,10 @@ toneRanges: {
 
 缩放搜索：
 
-``\`text
+```text
 scale candidates: 98%, 99%, 100%, 101%, 102%
 offset candidates: -8px..8px
-``\`
+```
 
 为了性能，缩略图长边建议限制在 512 或 768。
 
@@ -37613,10 +38594,10 @@ offset candidates: -8px..8px
 
 在返图边缘附近进行局部混合：
 
-``\`text
+```text
 edgeWeight = distanceToMaskEdge / featherRadius
 finalPixel = correctedResult * edgeWeight + referencePixel * (1 - edgeWeight)
-``\`
+```
 
 注意：
 
@@ -37635,12 +38616,12 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 
 参数：
 
-``\`text
+```text
 颗粒匹配：开/关
 颗粒强度：0-100
 高光保护：0-100
 彩色颗粒：0-100
-``\`
+```
 
 默认关闭，避免破坏商业修图干净感。
 
@@ -37685,21 +38666,21 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 
 第一版采用混合方案：
 
-``\`text
+```text
 对齐：Photoshop transform
 蒙版羽化：Photoshop mask/selection
 校色：优先像素统计 + Photoshop 调整层或像素回写
-``\`
+```
 
 若 Photoshop 调整层自动化成本过高，则第一版可以生成一个新融合结果层，并保留原返图图层隐藏或作为备份。
 
 建议默认非破坏：
 
-``\`text
+```text
 原 AI 返图图层保留
 生成 “PixelRunner 融合校色 - 原图层名” 结果层
 或创建剪贴调整层组
-``\`
+```
 
 但自动贴回场景为了简洁，可以默认直接处理新返图图层，并允许设置“保留备份图层”。
 
@@ -37707,9 +38688,9 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 
 新增状态按钮：
 
-``\`text
+```text
 自动融合校色
-``\`
+```
 
 状态含义：
 
@@ -37740,22 +38721,22 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 
 日志示例：
 
-``\`text
+```text
 [融合校色] 开始分析图层：PixelRunner - 全能图片 Pro
 [融合校色] 参考图已捕获：隐藏返图后的可见画面
 [融合校色] 明度 +6.2 / 饱和 -4.8 / 色偏 R-3 G+1 B+5
 [融合校色] 对齐：dx -2px, dy +1px, scale 100.0%, confidence 0.82
 [融合校色] 羽化半径 12px，边缘融合强度 65%
 [融合校色] 已完成
-``\`
+```
 
 任务卡片状态：
 
-``\`text
+```text
 任务已完成，并已自动贴回 Photoshop 文档 #12；融合校色完成。
 任务已完成，并已自动贴回；融合校色跳过：对齐置信度不足，仅完成校色。
 任务已完成，并已自动贴回；融合校色失败：无法捕获参考图。
-``\`
+```
 
 ## 分阶段实施
 
@@ -37923,7 +38904,7 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 
 ## 推荐第一版参数默认值
 
-``\`text
+```text
 模式：均衡
 总强度：70
 明度匹配：75
@@ -37938,7 +38919,7 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 保留中心区域：70
 自动融合校色：关
 保留备份图层：关
-``\`
+```
 
 自动模式默认建议为关。等手动工具稳定后，再在 UI 中推荐用户开启。
 
@@ -37946,7 +38927,7 @@ AI 返图常比原图更干净，贴回后边缘和质感会露馅。颗粒匹�
 
 第一阶段可能涉及：
 
-``\`text
+```text
 PixelRunner/app.html
 PixelRunner/app.css
 PixelRunner/src/webview-entry.js
@@ -37957,13 +38938,13 @@ PixelRunner/src/host/main.js
 PixelRunner/src/host/photoshop-bridge.js
 PixelRunner/src/host/photoshop/service.js
 PixelRunner/src/host/photoshop/blend-match.js
-``\`
+```
 
 如果复用 `photoshop.runToolAction`，也可能涉及：
 
-``\`text
+```text
 PixelRunner/src/host/photoshop/tool-actions.js
-``\`
+```
 
 但考虑功能复杂度，建议独立 host 模块更清晰。
 
@@ -38006,19 +38987,19 @@ PixelRunner/src/host/photoshop/tool-actions.js
 
 建议把这个功能作为 `2.6.0` 的主线：
 
-``\`text
+```text
 2.6.0：融合校色
-``\`
+```
 
 发布说明重点：
 
-``\`text
+```text
 - 新增工具箱「融合校色」。
 - 支持将 AI 返图图层自动匹配原图明度、色彩和边缘过渡。
 - 支持返图贴回后自动融合校色开关。
 - 支持边缘羽化强度调节。
 - 为后续小范围对齐、颗粒匹配和高级边缘融合预留算法模块。
-``\`
+```
 
 ## 最终判断
 
@@ -38032,13 +39013,13 @@ PixelRunner/src/host/photoshop/tool-actions.js
 - 它比油画、磨皮、通用调色更像 PixelRunner 的特色能力。
 
 推荐先做手动 MVP，确认融合质量和图层捕获链路稳定后，再接入自动贴回。
-```
+````
 
 ---
 
 ### `README.md`
 
-```markdown
+````markdown
 # PixelRunner
 
 <p align="center">
@@ -38228,7 +39209,7 @@ PixelRunner 可以使用参考图和当前主 prompt，调用你配置的 Runnin
 
 ## 使用流程
 
-``\`text
+```text
 打开 Photoshop
   ↓
 加载 PixelRunner 插件
@@ -38246,7 +39227,7 @@ PixelRunner 可以使用参考图和当前主 prompt，调用你配置的 Runnin
 提交任务
   ↓
 等待结果自动贴回 Photoshop
-``\`
+```
 
 ## 快速上手
 
@@ -38262,17 +39243,17 @@ PixelRunner 可以使用参考图和当前主 prompt，调用你配置的 Runnin
 
 ### 2. 获取项目
 
-``\`bash
+```bash
 git clone https://github.com/XIAOTsune/PixelRunner.git
 cd PixelRunner/PixelRunner
-``\`
+```
 
 ### 3. 安装依赖并构建
 
-``\`bash
+```bash
 npm install
 npm run build
-``\`
+```
 
 ### 4. 在 UXP Developer Tool 中加载
 
@@ -38293,7 +39274,7 @@ npm run build
 
 ## 项目结构
 
-``\`text
+```text
 .
 ├── LICENSE
 ├── README.md
@@ -38315,51 +39296,51 @@ npm run build
         ├── webview/             # UI、状态、任务、模板、辉光等逻辑
         ├── host-entry.js
         └── webview-entry.js
-``\`
+```
 
 ## 开发与构建
 
 进入插件目录：
 
-``\`bash
+```bash
 cd PixelRunner
-``\`
+```
 
 安装依赖：
 
-``\`bash
+```bash
 npm install
-``\`
+```
 
 构建插件 bundle：
 
-``\`bash
+```bash
 npm run build
-``\`
+```
 
 开发时监听构建：
 
-``\`bash
+```bash
 npm run build:watch
-``\`
+```
 
 检查构建产物是否与源码同步：
 
-``\`bash
+```bash
 npm run check:dist
-``\`
+```
 
 生成测试包：
 
-``\`bash
+```bash
 npm run package:test
-``\`
+```
 
 生成正式发布包：
 
-``\`bash
+```bash
 npm run package:release
-``\`
+```
 
 ## 开发约定
 
@@ -38428,4 +39409,212 @@ PixelRunner 会继续围绕一个目标迭代：让 Photoshop 内的 AI 修图�
 PixelRunner 使用 [Apache License 2.0](LICENSE) 开源。
 
 Copyright 2026 XIAOTsune
+````
+
+---
+
+### `LICENSE`
+
+```text
+                                 Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!) The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright 2026 XIAOTsune
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 ```
