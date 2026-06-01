@@ -267,14 +267,18 @@
     }
   }
 
-  function buildPayload() {
+  function buildPayload(options = {}) {
     readSettingsFromInputs();
     const detailed = deriveDetailedSettings(localState.settings);
-    return {
+    const payload = {
       action: "blendMatch",
       ...localState.settings,
       ...detailed
     };
+    if (options && options.includePreviewCache && localState.preview && localState.preview.previewCacheKey) {
+      payload.previewCacheKey = localState.preview.previewCacheKey;
+    }
+    return payload;
   }
 
   function setPreviewState(message) {
@@ -889,7 +893,7 @@
     modules.ui.logToWorkspace("[融合校色] 准备使用当前活动图层作为 AI 返图图层。", "info");
 
     try {
-      const result = await modules.runtime.callHost("photoshop.runToolAction", [buildPayload()], { timeoutMs: 90000 });
+      const result = await modules.runtime.callHost("photoshop.runToolAction", [buildPayload({ includePreviewCache: true })], { timeoutMs: 90000 });
       const logs = Array.isArray(result && result.logs) ? result.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
       if (result && result.skipped) {

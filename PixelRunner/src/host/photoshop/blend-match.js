@@ -24,6 +24,10 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
   previewMaxEdge: 512
 };
 
+const BLEND_MATCH_PREVIEW_CACHE_TTL_MS = 120000;
+const BLEND_MATCH_PREVIEW_CACHE_LIMIT = 3;
+const blendMatchPreviewCache = new Map();
+
 function clampNumber(value, min, max, fallback) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -124,6 +128,105 @@ function getBlendMatchConfig(payload = {}) {
     localMeshMaxOffset: clampNumber(payload.localMeshMaxOffset, 1, 12, DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxOffset),
     localMeshMaxEdge: clampNumber(payload.localMeshMaxEdge, 512, 2048, DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxEdge),
     previewMaxEdge: clampNumber(payload.previewMaxEdge, 256, 768, DEFAULT_BLEND_MATCH_CONFIG.previewMaxEdge)
+  };
+}
+
+function getBlendMatchAnalysisConfigKey(config) {
+  const source = config && typeof config === "object" ? config : {};
+  return [
+    source.mode,
+    Math.round(Number(source.totalStrength) || 0),
+    Math.round(Number(source.luminanceStrength) || 0),
+    Math.round(Number(source.colorStrength) || 0),
+    Math.round(Number(source.saturationStrength) || 0),
+    Math.round(Number(source.contrastStrength) || 0),
+    Math.round(Number(source.featherRadius) || 0),
+    source.alignmentEnabled !== false ? 1 : 0,
+    Math.round(Number(source.alignmentMaxOffset) || 0),
+    source.alignmentScaleEnabled !== false ? 1 : 0,
+    Number(source.alignmentMaxScale || 0).toFixed(2),
+    Number(source.alignmentMaxRotation || 0).toFixed(2),
+    Number(source.alignmentMaxStretch || 0).toFixed(2),
+    source.localAlignmentEnabled !== false ? 1 : 0,
+    Number(source.localMeshStrength || 0).toFixed(3),
+    Number(source.localMeshMaxOffset || 0).toFixed(2),
+    Math.round(Number(source.previewMaxEdge) || 0)
+  ].join("|");
+}
+
+function buildBoundsCacheKey(bounds) {
+  return [
+    Math.round(Number(bounds && bounds.left) || 0),
+    Math.round(Number(bounds && bounds.top) || 0),
+    Math.round(Number(bounds && bounds.right) || 0),
+    Math.round(Number(bounds && bounds.bottom) || 0)
+  ].join(",");
+}
+
+function buildBlendMatchPreviewCacheKey(documentId, layerId, bounds, config) {
+  return [
+    Number(documentId) || 0,
+    Number(layerId) || 0,
+    buildBoundsCacheKey(bounds),
+    getBlendMatchAnalysisConfigKey(config)
+  ].join("::");
+}
+
+function cloneAlignmentResult(alignment) {
+  return alignment && typeof alignment === "object" ? JSON.parse(JSON.stringify(alignment)) : alignment;
+}
+
+function cloneSampleForPreviewCache(sample, includeEncoded = false) {
+  if (!sample || !sample.data) return null;
+  return {
+    width: sample.width,
+    height: sample.height,
+    scaleX: sample.scaleX,
+    scaleY: sample.scaleY,
+    data: sample.data instanceof Uint8Array ? new Uint8Array(sample.data) : sample.data,
+    sourceComponents: sample.sourceComponents,
+    sourcePixelFormat: sample.sourcePixelFormat,
+    stats: sample.stats,
+    base64: includeEncoded ? sample.base64 : "",
+    mimeType: includeEncoded ? sample.mimeType : "",
+    dataUrl: includeEncoded ? sample.dataUrl : ""
+  };
+}
+
+function pruneBlendMatchPreviewCache(now = getNowMs()) {
+  for (const [key, entry] of blendMatchPreviewCache.entries()) {
+    if (!entry || now - Number(entry.createdAt || 0) > BLEND_MATCH_PREVIEW_CACHE_TTL_MS) {
+      blendMatchPreviewCache.delete(key);
+    }
+  }
+  while (blendMatchPreviewCache.size > BLEND_MATCH_PREVIEW_CACHE_LIMIT) {
+    const oldestKey = blendMatchPreviewCache.keys().next().value;
+    if (!oldestKey) break;
+    blendMatchPreviewCache.delete(oldestKey);
+  }
+}
+
+function storeBlendMatchPreviewCache(key, entry) {
+  if (!key || !entry) return;
+  pruneBlendMatchPreviewCache();
+  blendMatchPreviewCache.set(key, {
+    ...entry,
+    createdAt: getNowMs()
+  });
+  pruneBlendMatchPreviewCache();
+}
+
+function getBlendMatchPreviewCache(key) {
+  if (!key) return null;
+  pruneBlendMatchPreviewCache();
+  const entry = blendMatchPreviewCache.get(key);
+  if (!entry) return null;
+  entry.lastUsedAt = getNowMs();
+  return {
+    ...entry,
+    sourceSample: cloneSampleForPreviewCache(entry.sourceSample),
+    referenceSample: cloneSampleForPreviewCache(entry.referenceSample),
+    alignment: cloneAlignmentResult(entry.alignment)
   };
 }
 
@@ -3294,7 +3397,8 @@ function rejectLocalMesh(local, validation, reason = "local-validation-rejected"
 
 function validateLocalMeshImprovement(sourceField, refField, width, height, affineBest, local, stride, context = {}) {
   if (!local || !local.applied) return local;
-  const validationStride = Math.max(1, Math.floor((Number(stride) || 1) * 1.35));
+  const validationStrideScale = context.previewFastAlignment ? 1.75 : 1.35;
+  const validationStride = Math.max(1, Math.floor((Number(stride) || 1) * validationStrideScale));
   const globalScore = scoreGradientFieldWarp(sourceField, refField, width, height, affineBest, null, validationStride);
   const localScore = scoreGradientFieldWarp(sourceField, refField, width, height, affineBest, local, validationStride);
   const scoreGain = localScore.score - globalScore.score;
@@ -3623,7 +3727,8 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const local = validateLocalMeshImprovement(sourceField, refField, width, height, affineBest, estimatedLocal, Math.max(1, stride), {
     confidence,
     globalScoreGap: affineBest.score - comparisonScore,
-    alreadyAligned: !affineSignificant
+    alreadyAligned: !affineSignificant,
+    previewFastAlignment: config.previewFastAlignment === true
   });
   const localDeformation = Boolean(local.applied);
   const localDampen = localDeformation ? Math.max(0.12, Math.min(0.38, local.strength * 0.5)) : 0;
@@ -4067,6 +4172,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     const sourceLayerName = getLayerName(sourceLayer);
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
+    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
     const resultLayerName = `PixelRunner 融合校色 - ${sourceLayerName}`.slice(0, 240);
     logs.push(`[融合校色] 开始分析图层：${sourceLayerName}。`);
@@ -4080,32 +4186,45 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let sourceSample = null;
     let referenceSample = null;
     let restoredVisibility = false;
+    const requestedPreviewCacheKey = String(payload.previewCacheKey || "");
+    const previewCache = requestedPreviewCacheKey && requestedPreviewCacheKey === previewCacheKey
+      ? getBlendMatchPreviewCache(requestedPreviewCacheKey)
+      : null;
 
-    try {
-      sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-      timing.mark("source 采样", { width: sourceSample.width, height: sourceSample.height });
-      await selectLayerById(action, sourceLayerId);
+    if (previewCache && previewCache.sourceSample && previewCache.referenceSample) {
+      sourceSample = previewCache.sourceSample;
+      referenceSample = previewCache.referenceSample;
+      timing.mark("复用预览采样", { width: sourceSample.width, height: sourceSample.height });
+      logs.push(`[融合校色] 已复用最近预览采样：source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    } else {
+      try {
+        sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+        timing.mark("source 采样", { width: sourceSample.width, height: sourceSample.height });
+        await selectLayerById(action, sourceLayerId);
 
-      await setLayerVisible(action, sourceLayerId, false);
-      referenceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
-      timing.mark("reference 采样", { width: referenceSample.width, height: referenceSample.height });
+        await setLayerVisible(action, sourceLayerId, false);
+        referenceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
+        timing.mark("reference 采样", { width: referenceSample.width, height: referenceSample.height });
 
-      await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-      timing.mark("恢复图层");
-      restoredVisibility = true;
-      logs.push(`[融合校色] 采样完成：source/reference ${sourceSample.width}x${sourceSample.height}。`);
-    } finally {
-      if (!restoredVisibility) {
-        try {
-          await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-          logs.push("[融合校色] 异常回滚：已恢复返图图层可见性。");
-        } catch (_) {}
+        await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+        timing.mark("恢复图层");
+        restoredVisibility = true;
+        logs.push(`[融合校色] 采样完成：source/reference ${sourceSample.width}x${sourceSample.height}。`);
+      } finally {
+        if (!restoredVisibility) {
+          try {
+            await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+            logs.push("[融合校色] 异常回滚：已恢复返图图层可见性。");
+          } catch (_) {}
+        }
       }
     }
 
     const sourceStats = sourceSample.stats;
     const referenceStats = referenceSample.stats;
-    const alignment = config.alignmentEnabled
+    const alignment = previewCache && previewCache.alignment
+      ? previewCache.alignment
+      : config.alignmentEnabled
       ? estimateGradientAlignment(sourceSample, referenceSample, config)
       : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
     timing.mark("快速对齐", {
@@ -4114,7 +4233,8 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       reason: alignment.reason || "",
       localApplied: Boolean(alignment.localDeformation),
       localRejected: Boolean(alignment.local && alignment.local.rejected),
-      localReason: alignment.local && alignment.local.reason || ""
+      localReason: alignment.local && alignment.local.reason || "",
+      cached: Boolean(previewCache && previewCache.alignment)
     });
     if (config.alignmentEnabled) {
       if (alignment.applied) {
@@ -4252,6 +4372,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
 
   return core.executeAsModal(async () => {
     const logs = [];
+    const timing = createTimingRecorder();
     const docInfo = getDocumentInfo(document);
     if (isUnsupportedBitsPerChannel(docInfo)) {
       throw buildUnsupportedBitsError(docInfo);
@@ -4266,6 +4387,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
     const sourceLayerName = getLayerName(sourceLayer);
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
     const previewMaxEdge = config.previewMaxEdge;
+    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
     let sourceWasVisible = true;
     try {
       sourceWasVisible = sourceLayer.visible !== false;
@@ -4276,9 +4398,12 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
     let restoredVisibility = false;
     try {
       sourceSample = await captureCompositeSample(imaging, document, sourceBounds, previewMaxEdge, true);
+      timing.mark("source 预览采样", { width: sourceSample.width, height: sourceSample.height });
       await setLayerVisible(action, sourceLayerId, false);
       referenceSample = await captureCompositeSample(imaging, document, sourceBounds, previewMaxEdge, true);
+      timing.mark("reference 预览采样", { width: referenceSample.width, height: referenceSample.height });
       await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+      timing.mark("恢复图层");
       restoredVisibility = true;
     } finally {
       if (!restoredVisibility) {
@@ -4289,10 +4414,24 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
     }
 
     const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+    timing.mark("预览颜色统计");
+    const previewAlignmentConfig = { ...config, previewFastAlignment: true };
     const alignment = config.alignmentEnabled
-      ? estimateGradientAlignment(sourceSample, referenceSample, config)
+      ? estimateGradientAlignment(sourceSample, referenceSample, previewAlignmentConfig)
       : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+    timing.mark("预览快速对齐", {
+      applied: Boolean(alignment.applied),
+      confidence: Number((Number(alignment.confidence) || 0).toFixed(3)),
+      localApplied: Boolean(alignment.localDeformation),
+      localRejected: Boolean(alignment.local && alignment.local.rejected)
+    });
+    storeBlendMatchPreviewCache(previewCacheKey, {
+      sourceSample: cloneSampleForPreviewCache(sourceSample),
+      referenceSample: cloneSampleForPreviewCache(referenceSample),
+      alignment: cloneAlignmentResult(alignment)
+    });
     logs.push(`[融合校色] 预览已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}。`);
+    timing.logTo(logs, "[融合校色] 预览耗时");
 
     return {
       ok: true,
@@ -4307,6 +4446,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       referenceDataUrl: referenceSample.dataUrl,
       corrections,
       alignment,
+      previewCacheKey,
       config,
       logs
     };
