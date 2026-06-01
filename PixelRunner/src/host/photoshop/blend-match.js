@@ -12,7 +12,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
   createBackupLayer: true,
   pixelPipelineEnabled: true,
   alignmentEnabled: true,
-  alignmentMaxOffset: 12,
+  alignmentMaxOffset: 120,
   alignmentScaleEnabled: true,
   alignmentMaxScale: 2.5,
   alignmentMaxRotation: 1.75,
@@ -118,7 +118,7 @@ function getBlendMatchConfig(payload = {}) {
     createBackupLayer: payload.createBackupLayer !== false,
     pixelPipelineEnabled: payload.pixelPipelineEnabled !== false && payload.pixelCorrectionEnabled !== false,
     alignmentEnabled: payload.alignmentEnabled !== false,
-    alignmentMaxOffset: clampNumber(payload.alignmentMaxOffset, 1, 24, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset),
+    alignmentMaxOffset: clampNumber(payload.alignmentMaxOffset, 1, 320, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset),
     alignmentScaleEnabled: payload.alignmentScaleEnabled !== false,
     alignmentMaxScale: clampNumber(payload.alignmentMaxScale, 0, 4, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxScale),
     alignmentMaxRotation: clampNumber(payload.alignmentMaxRotation, 0, 3, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxRotation),
@@ -2645,18 +2645,39 @@ function scoreMaskedOffset(sourceField, referenceField, mask, width, height, dx,
 function estimateGlobalOffset(maskInfo, config) {
   const width = maskInfo.width;
   const height = maskInfo.height;
-  const maxOffset = Math.max(1, Math.min(24, Math.round(Number(config && config.sampleMaxOffset) || 8)));
+  const maxOffset = Math.max(1, Math.min(Math.floor(Math.min(width, height) * 0.45), Math.round(Number(config && config.sampleMaxOffset) || 8)));
   const stride = Math.max(1, Math.floor(Math.max(width, height) / 240));
+  const coarseStep = getLargeOffsetStep(maxOffset);
+  const coarseStride = Math.max(1, Math.floor(stride * (coarseStep >= 6 ? 1.65 : coarseStep >= 4 ? 1.35 : 1)));
   let best = { dx: 0, dy: 0, score: -1, ncc: -1, direction: 0, overlap: 0, count: 0 };
   let second = -1;
-  for (let dy = -maxOffset; dy <= maxOffset; dy += 1) {
-    for (let dx = -maxOffset; dx <= maxOffset; dx += 1) {
-      const scored = scoreMaskedOffset(maskInfo.sourceField, maskInfo.referenceField, maskInfo.mask, width, height, dx, dy, stride);
-      if (scored.score > best.score) {
-        second = best.score;
-        best = { dx, dy, ...scored };
-      } else if (scored.score > second) {
-        second = scored.score;
+  const update = (dx, dy, activeStride) => {
+    const scored = scoreMaskedOffset(maskInfo.sourceField, maskInfo.referenceField, maskInfo.mask, width, height, dx, dy, activeStride);
+    if (scored.score > best.score) {
+      second = best.score;
+      best = { dx, dy, ...scored };
+    } else if (scored.score > second) {
+      second = scored.score;
+    }
+  };
+  const searchGrid = (step, centerDx = 0, centerDy = 0, radius = null, activeStride = stride) => {
+    const dxValues = buildOffsetCandidates(maxOffset, step, centerDx, radius);
+    const dyValues = buildOffsetCandidates(maxOffset, step, centerDy, radius);
+    dyValues.forEach((dy) => {
+      dxValues.forEach((dx) => {
+        update(dx, dy, activeStride);
+      });
+    });
+  };
+  searchGrid(coarseStep, 0, 0, null, coarseStride);
+  if (coarseStep > 1) {
+    const refineRadius = Math.min(maxOffset, Math.max(3, coarseStep * 2));
+    searchGrid(Math.max(1, Math.floor(coarseStep / 2)), best.dx, best.dy, refineRadius, stride);
+    searchGrid(1, best.dx, best.dy, Math.min(maxOffset, 2), stride);
+  } else {
+    for (let dy = -maxOffset; dy <= maxOffset; dy += 1) {
+      for (let dx = -maxOffset; dx <= maxOffset; dx += 1) {
+        update(dx, dy, stride);
       }
     }
   }
@@ -2682,6 +2703,7 @@ function estimateGlobalOffset(maskInfo, config) {
     ...best,
     maxOffset,
     stride,
+    coarseStep,
     scoreGap,
     reliable,
     reason: reliable ? "global-gradient-roi" : best.count < 80 ? "insufficient-roi-samples" : best.score <= 0.12 ? "low-global-score" : "ambiguous-global-offset"
@@ -2897,7 +2919,7 @@ function fitPiecewiseVerticalControls(tiles, width, globalMotion, maxOffset) {
 }
 
 function fitVerticalWarpModel(maskInfo, globalMotion, tileMotion, config) {
-  const maxOffset = Math.max(1, Math.min(24, Number(config && config.sampleMaxOffset) || Number(globalMotion && globalMotion.maxOffset) || 8));
+  const maxOffset = Math.max(1, Math.min(Math.floor(Math.min(maskInfo.width, maskInfo.height) * 0.45), Number(config && config.sampleMaxOffset) || Number(globalMotion && globalMotion.maxOffset) || 8));
   const tiles = tileMotion && tileMotion.reliable ? tileMotion.tiles : [];
   const useTiles = tiles.length >= Math.max(4, Math.round((tileMotion && tileMotion.totalTiles || 1) * 0.22));
   const dxValues = useTiles ? tiles : [];
@@ -3110,7 +3132,7 @@ function buildPixelAlignmentV2(sourceSample, referenceSample, config) {
     return { applied: false, reason: "sample-size-mismatch" };
   }
   const scale = Math.max(Number(sourceSample.scaleX) || 1, Number(sourceSample.scaleY) || 1);
-  const sampleMaxOffset = Math.max(1, Math.min(24, Math.round((Number(config.alignmentMaxOffset) || 12) / scale)));
+  const sampleMaxOffset = Math.max(1, Math.min(Math.floor(Math.min(sourceSample.width, sourceSample.height) * 0.45), Math.round((Number(config.alignmentMaxOffset) || DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset) / scale)));
   const maskInfo = buildAlignmentMask(sourceSample, referenceSample);
   if (maskInfo.reason !== "ok") {
     return { applied: false, reason: maskInfo.reason, mask: maskInfo };
@@ -3186,6 +3208,30 @@ function buildSymmetricCandidates(maxValue, enabled, unit = 1) {
   }
   if (Math.abs(max % step) > 0.001) raw.push(-max, max);
   return Array.from(new Set(raw)).sort((a, b) => Math.abs(a) - Math.abs(b));
+}
+
+function buildOffsetCandidates(maxOffset, step = 1, center = 0, radius = null) {
+  const max = Math.max(0, Number(maxOffset) || 0);
+  const stride = Math.max(1, Math.round(Number(step) || 1));
+  const origin = Math.max(-max, Math.min(max, Math.round(Number(center) || 0)));
+  const searchRadius = radius === null || radius === undefined
+    ? max
+    : Math.max(0, Math.min(max, Number(radius) || 0));
+  const start = Math.max(-max, Math.round(origin - searchRadius));
+  const end = Math.min(max, Math.round(origin + searchRadius));
+  const values = [];
+  for (let value = start; value <= end; value += stride) {
+    values.push(Math.round(value));
+  }
+  values.push(start, origin, end);
+  if (radius === null || radius === undefined) {
+    values.push(-max, 0, max);
+  }
+  return Array.from(new Set(values)).sort((a, b) => {
+    const da = Math.abs(a - origin);
+    const db = Math.abs(b - origin);
+    return da === db ? Math.abs(a) - Math.abs(b) : da - db;
+  });
 }
 
 function buildStretchPairs(maxStretch, enabled) {
@@ -3314,6 +3360,66 @@ function selectConservativeAlignmentModel(translationBest, affineBest) {
     stretchDelta,
     rotationDelta,
     affineComplexity
+  };
+}
+
+function getLargeOffsetStep(sampleOffset) {
+  const max = Math.max(1, Number(sampleOffset) || 1);
+  if (max > 96) return 8;
+  if (max > 48) return 6;
+  if (max > 28) return 4;
+  if (max > 16) return 2;
+  return 1;
+}
+
+function searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride) {
+  const coarseStep = getLargeOffsetStep(sampleOffset);
+  const coarseStride = Math.max(1, Math.floor((Number(stride) || 1) * (coarseStep >= 6 ? 1.65 : coarseStep >= 4 ? 1.35 : 1)));
+  let best = { dx: 0, dy: 0, scale: 1, score: -1 };
+  let second = -1;
+  let translationBase = { dx: 0, dy: 0, scale: 1, score: -1 };
+  let translationSecond = -1;
+  const update = (dx, dy, scale, score) => {
+    if (Math.abs(scale - 1) < 0.000001) {
+      if (score > translationBase.score) {
+        translationSecond = translationBase.score;
+        translationBase = { dx, dy, scale: 1, score };
+      } else if (score > translationSecond) {
+        translationSecond = score;
+      }
+    }
+    if (score > best.score) {
+      second = best.score;
+      best = { dx, dy, scale, score };
+    } else if (score > second) {
+      second = score;
+    }
+  };
+  const runGrid = (maxOffset, step, centerDx, centerDy, activeStride, radius = null) => {
+    const dxValues = buildOffsetCandidates(maxOffset, step, centerDx, radius);
+    const dyValues = buildOffsetCandidates(maxOffset, step, centerDy, radius);
+    scaleCandidates.forEach((scale) => {
+      dyValues.forEach((dy) => {
+        dxValues.forEach((dx) => {
+          const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, scale, activeStride);
+          update(dx, dy, scale, score);
+        });
+      });
+    });
+  };
+  runGrid(sampleOffset, coarseStep, 0, 0, coarseStride);
+  if (coarseStep > 1) {
+    const refineRadius = Math.min(sampleOffset, Math.max(3, coarseStep * 2));
+    runGrid(sampleOffset, Math.max(1, Math.floor(coarseStep / 2)), best.dx, best.dy, Math.max(1, stride), refineRadius);
+    runGrid(sampleOffset, 1, best.dx, best.dy, Math.max(1, stride), Math.min(sampleOffset, 2));
+  }
+  return {
+    best,
+    second,
+    translationBase,
+    translationSecond,
+    coarseStep,
+    coarseStride
   };
 }
 
@@ -3741,38 +3847,18 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const width = sourceSample.width;
   const height = sourceSample.height;
   if (width < 32 || height < 32) return { applied: false, dx: 0, dy: 0, confidence: 0, reason: "too-small" };
-  const sampleOffset = Math.max(1, Math.min(24, Math.round(Number(config.alignmentMaxOffset) / Math.max(sourceSample.scaleX, sourceSample.scaleY))));
+  const sampleOffset = Math.max(1, Math.min(Math.floor(Math.min(width, height) * 0.45), Math.round(Number(config.alignmentMaxOffset) / Math.max(sourceSample.scaleX, sourceSample.scaleY))));
   const sourceField = buildSobelField(buildLuma(sourceSample.data, width, height), width, height);
   const refField = buildSobelField(buildLuma(referenceSample.data, width, height), width, height);
   const sourceGrad = sourceField.mag;
   const refGrad = refField.mag;
   const stride = Math.max(1, Math.floor(Math.max(width, height) / 180));
   const scaleCandidates = buildScaleCandidates(config.alignmentMaxScale, config.alignmentScaleEnabled);
-  let best = { dx: 0, dy: 0, scale: 1, score: -1 };
-  let second = -1;
-  let translationBase = { dx: 0, dy: 0, scale: 1, score: -1 };
-  let translationSecond = -1;
-  scaleCandidates.forEach((scale) => {
-    for (let dy = -sampleOffset; dy <= sampleOffset; dy += 1) {
-      for (let dx = -sampleOffset; dx <= sampleOffset; dx += 1) {
-        const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, scale, stride);
-        if (Math.abs(scale - 1) < 0.000001) {
-          if (score > translationBase.score) {
-            translationSecond = translationBase.score;
-            translationBase = { dx, dy, scale: 1, score };
-          } else if (score > translationSecond) {
-            translationSecond = score;
-          }
-        }
-        if (score > best.score) {
-          second = best.score;
-          best = { dx, dy, scale, score };
-        } else if (score > second) {
-          second = score;
-        }
-      }
-    }
-  });
+  const globalSearch = searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride);
+  const best = globalSearch.best;
+  const second = globalSearch.second;
+  const translationBase = globalSearch.translationBase;
+  const translationSecond = globalSearch.translationSecond;
   const translationSeed = {
     dx: translationBase.dx,
     dy: translationBase.dy,
@@ -3869,6 +3955,11 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       rawSampleScaleY: affineBest.scaleY,
       rawSampleRotation: affineBest.rotation,
       modelChoice,
+      search: {
+        sampleOffset,
+        coarseStep: globalSearch.coarseStep,
+        coarseStride: globalSearch.coarseStride
+      },
       local,
       localDeformation,
       reason: significant ? "low-confidence" : "already-aligned"
@@ -3896,6 +3987,11 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     rawSampleScaleY: affineBest.scaleY,
     rawSampleRotation: affineBest.rotation,
     modelChoice,
+    search: {
+      sampleOffset,
+      coarseStep: globalSearch.coarseStep,
+      coarseStride: globalSearch.coarseStride
+    },
     local,
     localDeformation,
     reason: Math.abs(rotation) >= 0.03 || Math.abs(scaleXPercent - scaleYPercent) >= 0.08 ? "gradient-ncc-affine" : scalePercent === 100 ? "gradient-ncc" : "gradient-ncc-scale"
@@ -4338,6 +4434,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       }
       if (alignment.modelChoice && alignment.modelChoice.rejectedAffine) {
         logs.push(`[融合校色] 对齐模型：纯平移优先，已拒绝弱仿射缩放/旋转；平移分 ${formatFixed(alignment.modelChoice.translationScore, 4)}，仿射分 ${formatFixed(alignment.modelChoice.affineScore, 4)}，增益 ${formatFixed(alignment.modelChoice.affineGain, 4)}，要求 ${formatFixed(alignment.modelChoice.minAffineGain, 4)}。`);
+      }
+      if (alignment.search && Number(alignment.search.coarseStep) > 1) {
+        logs.push(`[融合校色] 大偏移搜索：采样半径 ${alignment.search.sampleOffset}px，粗搜步长 ${alignment.search.coarseStep}px，已精修到 1px。`);
       }
       if (alignment.localDeformation) {
         const validation = alignment.local && alignment.local.validation;
