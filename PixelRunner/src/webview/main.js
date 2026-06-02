@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   modules.ui.bindTabs();
   modules.ui.bindTactileFeedback();
   modules.ui.bindToolActions();
+  modules.blendMatch.bindBlendMatchActions();
   modules.spaceFx.bindSpaceFxActions();
   modules.apps.bindAppPicker();
   modules.workspace.bindWorkspaceActions();
@@ -43,7 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.5.0"
+        version: "2.5.1"
       });
     })
     .catch((error) => {

@@ -12,6 +12,26 @@ export function toNumberValue(value) {
   return Number.isFinite(result) ? result : null;
 }
 
+export function normalizeBitsPerChannel(value) {
+  const text = String(value == null ? "" : value).trim();
+  if (!text) return "";
+  const normalized = text.toUpperCase();
+  if (normalized === "8" || normalized === "EIGHT") return "EIGHT";
+  if (normalized === "16" || normalized === "SIXTEEN") return "SIXTEEN";
+  if (normalized === "32" || normalized === "THIRTYTWO") return "THIRTYTWO";
+  if (normalized === "1" || normalized === "ONE") return "ONE";
+  return normalized;
+}
+
+export function getBitsPerChannelLabel(value) {
+  const normalized = normalizeBitsPerChannel(value);
+  if (normalized === "EIGHT") return "8 位";
+  if (normalized === "SIXTEEN") return "16 位";
+  if (normalized === "THIRTYTWO") return "32 位";
+  if (normalized === "ONE") return "1 位";
+  return String(value == null ? "" : value).trim();
+}
+
 export function getDocumentInfo(doc) {
   if (!doc) {
     return {
@@ -28,6 +48,8 @@ export function getDocumentInfo(doc) {
     width: toNumberValue(doc.width),
     height: toNumberValue(doc.height),
     resolution: toNumberValue(doc.resolution),
+    bitsPerChannel: normalizeBitsPerChannel(doc.bitsPerChannel),
+    bitsPerChannelLabel: getBitsPerChannelLabel(doc.bitsPerChannel),
     selectionBounds: getSelectionBounds(doc)
   };
 }

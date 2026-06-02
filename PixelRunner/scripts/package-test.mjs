@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +23,7 @@ function getIncludedEntries(version, channel) {
     packageDirName: channel === "release" ? `PixelRunnerV${version}` : `PixelRunnerV${version}-test`,
     entries: [
       "manifest.json",
+      "LICENSE",
       "index.html",
       "app.html",
       "sound-player.html",
@@ -37,41 +38,17 @@ function getIncludedEntries(version, channel) {
   };
 }
 
-function buildReadme(version, packageDirName, entries, channel) {
-  const fileList = entries.map((entry) => `- ${entry}`).join("\n");
-  const packageLabel = channel === "release" ? "Release" : "Test";
-  return `# PixelRunner ${packageLabel} Package
-
-Version: ${version}
-Folder: ${packageDirName}
-
-This package contains only the runtime files required by the Photoshop UXP plugin shell and the bundled WebView UI.
-
-Included:
-${fileList}
-
-Not included:
-- docs/
-- legacy/
-- scripts/
-- src/
-- node_modules/
-- package.json
-- package-lock.json
-
-Why:
-- The plugin runtime loads \`index.html\` as the panel entry.
-- \`index.html\` and \`app.html\` both load bundled files from \`dist/\`.
-- Icons and \`manifest.json\` are required for UXP installation and display.
-`;
-}
-
 async function main() {
   const version = await readManifestVersion();
   const channel = getBuildChannel();
   const { packageDirName, entries } = getIncludedEntries(version, channel);
   const packageDir = path.join(releaseRoot, packageDirName);
-  const readmeFileName = channel === "release" ? "README-RELEASE-PACKAGE.txt" : "README-TEST-PACKAGE.txt";
+  const packageDocs = [
+    "README.md",
+    "README.txt",
+    "README-RELEASE-PACKAGE.txt",
+    "README-TEST-PACKAGE.txt"
+  ];
 
   await mkdir(releaseRoot, { recursive: true });
   await rm(packageDir, { recursive: true, force: true });
@@ -83,11 +60,10 @@ async function main() {
     await cp(sourcePath, targetPath, { recursive: true });
   }
 
-  await writeFile(
-    path.join(packageDir, readmeFileName),
-    buildReadme(version, packageDirName, entries, channel),
-    "utf8"
-  );
+  for (const docName of packageDocs) {
+    await rm(path.join(packageDir, docName), { force: true });
+    await rm(path.join(packageDir, "assets", "space-fx", docName), { force: true });
+  }
 
   console.log(`PixelRunner ${channel} package created at: ${packageDir}`);
 }

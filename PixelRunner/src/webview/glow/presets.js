@@ -123,7 +123,8 @@
     const thresholdRatio = threshold / 100;
     // Lower UI threshold is the precision end: fewer, more clipping-like highlights are allowed to emit.
     const thresholdSelectivity = 1 - thresholdRatio;
-    const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.45);
+    const thresholdFineSelectivity = Math.pow(thresholdSelectivity, 1.35);
+    const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.78);
     const thresholdOpen = thresholdRatio;
     const thresholdKneeOpen = Math.pow(thresholdRatio, 1.22);
     const exposureRatio = brightnessBias / 100;
@@ -132,12 +133,12 @@
     // Lens-scatter proxy: halo footprint follows area growth (~r^2 trend in normalized domain).
     const lensArea = Math.pow(radiusRatio, 2);
     // Strength should add optical energy without turning the extracted source into a white matte.
-    const strengthDrive = Math.pow(strengthRatio, 0.62);
+    const strengthDrive = Math.pow(strengthRatio, 1.22);
     // Radius should mostly move energy outward into halo instead of boosting local white.
     const spreadEnergyCompensation = 1 - spreadRatio * 0.12 - spreadAir * 0.04;
     const radiusEnergyDamping = 1 / (1 + lensArea * 1.55);
     // Physical mapping: strength=0 should produce zero emitted glow energy.
-    const strengthEnergyBoost = strengthDrive * 13.5;
+    const strengthEnergyBoost = strengthDrive * 12.2;
     // Chromatic slider should become visible earlier (especially in 12~45 range).
     const chromaticRatio = Math.pow(chromatic / 100, 0.88);
     const diffusionT = Math.max(0, Math.min(1, spreadRatio));
@@ -172,13 +173,13 @@
       source: {
         // thresholdHigh is the soft-knee center; thresholdLow is only the lower support for specular/rim gates.
         thresholdLow: clamp(
-          0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
-            (0.045 + thresholdOpen * 0.13 + spreadRatio * 0.02) * 0.65,
-          0.06,
-          0.92,
+          0.16 + thresholdPrecision * 0.8 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
+            (0.034 + thresholdOpen * 0.12 + spreadRatio * 0.018) * (0.35 + thresholdRatio * 0.3),
+          0.08,
+          0.965,
           0.42
         ),
-        thresholdHigh: clamp(0.16 + thresholdPrecision * 0.74 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.96, 0.58),
+        thresholdHigh: clamp(0.16 + thresholdPrecision * 0.81 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.985, 0.58),
         thresholdKnee: clamp(
           0.022 + thresholdKneeOpen * 0.12 + legacyRadiusRatio * 0.01 + spreadRatio * 0.014 + Math.max(0, exposureRatio) * 0.018,
           0.025,
@@ -189,10 +190,10 @@
         sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
         haloMaskRadius: Math.max(10, Math.min(20, Math.round(10 + legacyRadiusRatio * 7 + wideRadiusRatio * 3))),
         contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
-        contrastHigh: clamp(0.052 + thresholdSelectivity * 0.06 - exposureRatio * 0.018, 0.032, 0.13, 0.068),
-        specularLow: 0.06,
-        specularHigh: 0.28,
-        lowEnergyCutoff: 0.038,
+        contrastHigh: clamp(0.052 + thresholdFineSelectivity * 0.078 - exposureRatio * 0.018, 0.032, 0.15, 0.068),
+        specularLow: clamp(0.06 + thresholdFineSelectivity * 0.05, 0.06, 0.12, 0.06),
+        specularHigh: clamp(0.28 + thresholdFineSelectivity * 0.16, 0.28, 0.48, 0.28),
+        lowEnergyCutoff: clamp(0.038 + thresholdFineSelectivity * 0.032, 0.038, 0.078, 0.038),
         chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.24 + Math.max(0, exposureRatio) * 0.03, 0, 0.68, preset.chromaBoost),
         whiteProtect: preset.whiteProtect,
         skinProtect: preset.skinProtect,
@@ -225,8 +226,8 @@
         // Split glow into core vs halo at composite stage (strength-gated).
         coreSuppression: clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
         coreCeiling: clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
-        haloBoost: clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 0.58), 0, 3.4, 0),
-        haloMix: clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 0.62), 0, 0.82, 0),
+        haloBoost: clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
+        haloMix: clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
         energyFloor: 0,
         energyFloorSoftness: 0.001
       },
