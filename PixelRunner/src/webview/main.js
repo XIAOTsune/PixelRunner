@@ -8,7 +8,7 @@ window.PixelRunnerModules.main = {
   }
 };
 
-document.addEventListener("DOMContentLoaded", () => {
+function initializePixelRunnerApp() {
   const modules = window.PixelRunnerModules;
   document.body.classList.toggle("is-browser-preview", !modules.runtime.isPluginRuntime());
 
@@ -55,4 +55,10 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       modules.ui.logToWorkspace(`初始化失败：${error.message}`, "error");
     });
-});
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializePixelRunnerApp, { once: true });
+} else {
+  initializePixelRunnerApp();
+}
