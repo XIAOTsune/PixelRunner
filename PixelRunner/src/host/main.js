@@ -25,6 +25,33 @@ import {
 } from "./photoshop-bridge.js";
 
 const WEBVIEW_READY_TIMEOUT_MS = 3500;
+const INLINE_COMPATIBILITY_VERSIONS = [
+  { major: 27, minor: 7 }
+];
+
+function getPhotoshopVersionInfo() {
+  try {
+    if (typeof require !== "function") return null;
+    const photoshop = require("photoshop");
+    const version = String(photoshop && photoshop.app && photoshop.app.version ? photoshop.app.version : "");
+    const match = version.match(/(\d+)(?:\.(\d+))?/);
+    if (!match) return { raw: version, major: 0, minor: 0 };
+    return {
+      raw: version,
+      major: Number(match[1]) || 0,
+      minor: Number(match[2]) || 0
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function shouldPreferInlineCompatibilityMode(versionInfo = getPhotoshopVersionInfo()) {
+  if (!versionInfo) return false;
+  return INLINE_COMPATIBILITY_VERSIONS.some(
+    (version) => versionInfo.major === version.major && versionInfo.minor === version.minor
+  );
+}
 
 function readHostStorage(key) {
   try {
@@ -202,10 +229,10 @@ async function loadScriptSequentially(src) {
   });
 }
 
-async function mountInlineAppFallback() {
+async function mountInlineAppFallback(statusMessage = "WebView 未返回 ready，正在启用兼容模式...") {
   if (document.body.classList.contains("inline-app-mounted")) return;
 
-  setHostStatus("WebView 未返回 ready，正在启用兼容模式...", "warning");
+  setHostStatus(statusMessage, "warning");
   const appHtml = await readPluginText("app.html");
   const headMatch = appHtml.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
   const bodyMatch = appHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
@@ -254,6 +281,18 @@ async function mountInlineAppFallback() {
 }
 
 function mountWebView() {
+  const photoshopVersion = getPhotoshopVersionInfo();
+  console.log("[PixelRunner/Host] Photoshop version", photoshopVersion ? photoshopVersion.raw : "unknown");
+
+  if (shouldPreferInlineCompatibilityMode(photoshopVersion)) {
+    const versionLabel = photoshopVersion && photoshopVersion.raw ? photoshopVersion.raw : "27.7";
+    mountInlineAppFallback(`检测到 Photoshop ${versionLabel}，正在直接启用兼容模式...`).catch((error) => {
+      console.error("[PixelRunner/Host] inline compatibility mode failed", error);
+      setHostStatus(`兼容模式启动失败：${error.message}`, "warning");
+    });
+    return;
+  }
+
   const nextWebview = getById("pixelrunnerWebview");
   if (!nextWebview) {
     setHostStatus("WebView element not found in host shell.", "warning");
