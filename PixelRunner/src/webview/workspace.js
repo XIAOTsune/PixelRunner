@@ -5,8 +5,6 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
-  const RUNNINGHUB_CALL_RECORD_URL = "https://www.runninghub.cn/call-api/call-record";
-  const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -507,18 +505,157 @@
     return Boolean(task && typeof task === "object" && isTaskTerminalStatus(task.status));
   }
 
-  function canOpenRunningHubCallRecord(task) {
-    if (!task || typeof task !== "object") return false;
-    const normalized = String(task.status || "").trim().toLowerCase();
+  function compactTaskMessage(value, maxLength = 500) {
+    return String(value || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, Math.max(80, Number(maxLength) || 500));
+  }
+
+  function isGenericTaskFailureMessage(message) {
+    const text = compactTaskMessage(message, 160).toLowerCase().replace(/[。.!]+$/g, "");
+    if (!text) return false;
+    if (/^request failed(?: \(http \d+\))?$/.test(text)) return true;
+    if (/^http \d+(?: request failed)?$/.test(text)) return true;
+    return [
+      "api task error",
+      "api error",
+      "task failed",
+      "task failure",
+      "request failed",
+      "failed",
+      "failure",
+      "error",
+      "unknown error",
+      "任务失败",
+      "任务执行失败",
+      "执行失败",
+      "请求失败",
+      "未知错误"
+    ].includes(text);
+  }
+
+  function isContentPolicyTaskMessage(message) {
+    const text = compactTaskMessage(message, 800).toLowerCase();
+    if (!text) return false;
+    return /(content\s*(policy|safety|moderation|filter)|policy\s*(violation|violated|reject|rejected|refusal)|safety\s*(policy|system|filter|check)|moderation|review failed|audit failed|not pass(?:ed)? (?:the )?(?:review|audit)|sensitive|inappropriate|nsfw|porn|sexual|violence|violent|harmful|unsafe|prohibited|blocked|banned|abuse|violation|violates|审核|审查|内容安全|安全策略|内容政策|敏感|违规|违禁|不合规|风控|拒绝|拦截)/i.test(text);
+  }
+
+  function isBalanceTaskMessage(message) {
+    return /(insufficient|not enough|lack of|balance|quota|credit|recharge|余额不足|欠费|额度不足|点数不足|充值)/i.test(String(message || ""));
+  }
+
+  function isAuthTaskMessage(message) {
+    return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(String(message || ""));
+  }
+
+  function getTaskMessageHttpStatus(message) {
+    const match = String(message || "").match(/\b(?:http\s*)?([1-5]\d\d)\b/i);
+    if (!match) return 0;
+    const code = Number(match[1]);
+    return Number.isFinite(code) ? code : 0;
+  }
+
+  function buildTaskRawSuffix(rawMessage, normalizedText = "") {
+    const raw = compactTaskMessage(rawMessage, 260);
+    if (!raw) return "";
+    if (normalizedText && normalizedText.includes(raw)) return "";
+    return `（云端返回：${raw}）`;
+  }
+
+  function isNormalizedTaskFailureMessage(message) {
+    return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|(?:RunningHub|GRS) (?:账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
+      String(message || "").trim()
+    );
+  }
+
+  function normalizeTaskFailureMessage(message, task = null) {
+    const providerLabel = isThirdPartyTaskRecord(task) ? "GRS" : "RunningHub";
+    const raw = compactTaskMessage(message, 500);
+    const httpStatus = getTaskMessageHttpStatus(raw);
+    if (isNormalizedTaskFailureMessage(raw)) return raw;
+    if (!raw) return `${providerLabel} 任务执行失败，平台未返回具体原因。请检查提示词、输入图片和配置后重试。`;
+    if (/^任务已取消[。.]?$/.test(raw) || /task polling cancelled|cancelled|canceled/i.test(raw)) return "任务已取消。";
+    if (isContentPolicyTaskMessage(raw)) {
+      const messageText = "内容未通过审核，请调整提示词或输入图片后重试。请求内容可能触发平台内容政策或安全策略。";
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (isBalanceTaskMessage(raw)) {
+      const messageText = `${providerLabel} 账户余额或额度不足，请充值或检查额度后重试。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (isAuthTaskMessage(raw) || httpStatus === 401) {
+      const messageText = `${providerLabel} 鉴权失败，请检查 API Key、账号权限或登录状态后重试。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (httpStatus === 403) {
+      const messageText = `${providerLabel} 拒绝了本次请求，请检查账号权限、应用权限或内容安全策略。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (httpStatus === 429) {
+      const messageText = `${providerLabel} 请求过于频繁或额度受限，请稍后再试。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (httpStatus >= 500) {
+      const messageText = `${providerLabel} 云端服务暂时异常，请稍后重试。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (/timeout|timed out|超时/i.test(raw)) {
+      const messageText = `${providerLabel} 任务等待超时，插件未能在本地等待时间内确认最终结果。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (isGenericTaskFailureMessage(raw)) {
+      const messageText = `${providerLabel} 任务执行失败，平台未返回更具体原因。请检查提示词、输入图片和配置后重试。`;
+      return `${messageText}${buildTaskRawSuffix(raw, messageText)}`;
+    }
+    if (/[\u4e00-\u9fff]/.test(raw)) return raw;
+    return `${providerLabel} 任务执行失败：${raw}`;
+  }
+
+  function isFailureLikeTaskStatus(status) {
+    const normalized = String(status || "").trim().toLowerCase();
     return ["failed", "error", "timeout"].includes(normalized);
+  }
+
+  function isTaskSuccessStatus(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    return ["succeeded", "success", "done"].includes(normalized);
+  }
+
+  function getTaskActionUrl(task) {
+    if (!task || typeof task !== "object") return "";
+    const explicitUrl = String(task.detailUrl || task.taskDetailUrl || task.recordUrl || "").trim();
+    if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
+    const outputUrl = String(task.outputUrl || "").trim();
+    if (isTaskSuccessStatus(task.status) && /^https?:\/\//i.test(outputUrl)) return outputUrl;
+    return "";
+  }
+
+  function canOpenTaskAction(task) {
+    return Boolean(getTaskActionUrl(task));
+  }
+
+  function getTaskActionLabel(task) {
+    if (!task || typeof task !== "object") return "详情";
+    if (isTaskSuccessStatus(task.status) && String(task.outputUrl || "").trim()) return "结果";
+    if (isFailureLikeTaskStatus(task.status)) return "详情";
+    return "详情";
+  }
+
+  function getTaskActionTitle(task) {
+    if (!task || typeof task !== "object") return "打开详情";
+    if (isTaskSuccessStatus(task.status) && String(task.outputUrl || "").trim()) return "打开结果图";
+    return isThirdPartyTaskRecord(task) ? "打开 GRS 任务详情" : "打开 RunningHub 任务详情";
+  }
+
+  function getTaskActionTargetName(task) {
+    if (!task || typeof task !== "object") return "任务详情";
+    if (isTaskSuccessStatus(task.status) && String(task.outputUrl || "").trim()) return "结果图";
+    return isThirdPartyTaskRecord(task) ? "GRS 任务详情" : "RunningHub 任务详情";
   }
 
   function isThirdPartyTaskRecord(task) {
     return Boolean(task && (String(task.provider || "").trim() === "grs" || String(task.appName || "").trim() === "第三方 API"));
-  }
-
-  function getTaskDetailUrl(task) {
-    return isThirdPartyTaskRecord(task) ? GRS_CONSUMPTION_LOG_URL : RUNNINGHUB_CALL_RECORD_URL;
   }
 
   function getActiveRunningTasks() {
@@ -582,8 +719,11 @@
 
   function getTaskStatusDetail(task) {
     if (!task || typeof task !== "object") return "";
-    if (task.detail) return String(task.detail);
     const normalized = String(task.status || "").trim().toLowerCase();
+    if (normalized === "failed" || normalized === "error") {
+      return normalizeTaskFailureMessage(task.errorMessage || task.detail || "任务执行失败", task);
+    }
+    if (task.detail) return String(task.detail);
     if (normalized === "submitting") return "正在提交到 RunningHub...";
     if (normalized === "submitted") return "任务已创建，等待 RunningHub 执行。";
     if (normalized === "running") return "任务执行中，正在等待结果返回。";
@@ -594,7 +734,7 @@
     if (normalized === "placing") return "任务已完成，正在下载结果并贴回 Photoshop。";
     if (normalized === "timeout") return "本地等待超时，尚未确认云端最终状态。";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "任务已完成。";
-    if (normalized === "failed" || normalized === "error") return task.errorMessage || "任务执行失败。";
+    if (normalized === "failed" || normalized === "error") return normalizeTaskFailureMessage(task.errorMessage || "任务执行失败", task);
     if (normalized === "cancelled" || normalized === "canceled") return "任务已取消。";
     return "";
   }
@@ -712,7 +852,7 @@
     if (status === "timeout" || /timeout|超时/.test(text)) return "timeout";
     if (status === "cancelled" || status === "canceled" || /cancel|取消/.test(text)) return "cancelled";
     if (/欠费|余额不足|insufficient|not enough balance|lack of balance|recharge|quota/.test(text)) return "insufficient_balance";
-    if (/违规|violation|forbidden|policy|safety|sensitive|blocked|ban/.test(text)) return "violation";
+    if (/违规|violation|forbidden|policy|safety|moderation|sensitive|blocked|ban|审核|内容安全|内容政策|敏感|拒绝/.test(text)) return "content_policy";
     if (status === "failed" || status === "error") return "failed";
     return "";
   }
@@ -725,7 +865,7 @@
     if (code === "timeout") return "超时";
     if (code === "cancelled") return "已取消";
     if (code === "insufficient_balance") return "欠费";
-    if (code === "violation") return "违规";
+    if (code === "content_policy" || code === "violation") return "内容审核";
     if (code === "failed") return "失败";
     return "";
   }
@@ -881,8 +1021,9 @@
             : "";
         const canCancel = isTaskCancellable(task);
         const canDelete = isTaskDeletable(task);
-        const canOpenCallRecord = canOpenRunningHubCallRecord(task);
-        const detailTitle = isThirdPartyTaskRecord(task) ? "打开 GRS 消费记录" : "打开 RunningHub 调用记录";
+        const canOpenAction = canOpenTaskAction(task);
+        const actionLabel = getTaskActionLabel(task);
+        const actionTitle = getTaskActionTitle(task);
         const actionTaskId = modules.runtime.escapeHtml(String(task.taskId || "").trim());
         return `
           <div class="running-task-item">
@@ -892,8 +1033,8 @@
                 <div class="running-task-topline-actions">
                   <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
                   ${
-                    canOpenCallRecord
-                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-runninghub-call-record" data-task-id="${actionTaskId}" title="${modules.runtime.escapeHtml(detailTitle)}">详情</button>`
+                    canOpenAction
+                      ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-task-action-url" data-task-id="${actionTaskId}" title="${modules.runtime.escapeHtml(actionTitle)}">${modules.runtime.escapeHtml(actionLabel)}</button>`
                       : ""
                   }
                   ${
@@ -1399,7 +1540,8 @@
         : undefined,
       failureCode: String(patch.failureCode || "").trim(),
       failureLabel: String(patch.failureLabel || "").trim(),
-      outputUrl: String(patch.outputUrl || "").trim(),
+      outputUrl: hasOwn("outputUrl") ? String(patch.outputUrl || "").trim() : undefined,
+      detailUrl: hasOwn("detailUrl") ? String(patch.detailUrl || "").trim() : undefined,
       sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
       createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
       submittedAt: Number(patch.submittedAt) > 0 ? Number(patch.submittedAt) : now,
@@ -1423,6 +1565,8 @@
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
         chargeDisplay: nextTask.chargeDisplay !== undefined ? nextTask.chargeDisplay : current.chargeDisplay,
         accountSnapshot: nextTask.accountSnapshot !== undefined ? nextTask.accountSnapshot : current.accountSnapshot,
+        outputUrl: nextTask.outputUrl !== undefined ? nextTask.outputUrl : current.outputUrl || "",
+        detailUrl: nextTask.detailUrl !== undefined ? nextTask.detailUrl : current.detailUrl || "",
         createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
         submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
         finishedAt: Number(nextTask.finishedAt) > 0 ? Number(nextTask.finishedAt) : Number(current.finishedAt) || 0,
@@ -1585,9 +1729,10 @@
         if (shouldStopTrackingFromStatusResult(statusResult)) {
           stopTaskStatusTracking(remoteTaskId);
           const finishedAt = Date.now();
-          const failMessage = String(
+          const rawFailMessage = String(
             (statusResult && statusResult.message) || `后台追踪已停止：${providerLabel} 未返回可继续追踪的有效状态。`
           ).trim();
+          const failMessage = normalizeTaskFailureMessage(rawFailMessage, { provider: payload.provider || "", appName: payload.appName });
           upsertRunningTask({
             taskId: remoteTaskId,
             remoteTaskId,
@@ -1610,9 +1755,10 @@
         if (statusResult && statusResult.failed) {
           stopTaskStatusTracking(remoteTaskId);
           const finishedAt = Date.now();
-          const failMessage = String(
+          const rawFailMessage = String(
             (statusResult && statusResult.message) || `${providerLabel} 返回失败状态 ${remoteStatus || "FAILED"}`
           ).trim();
+          const failMessage = normalizeTaskFailureMessage(rawFailMessage, { provider: payload.provider || "", appName: payload.appName });
           upsertRunningTask({
             taskId: remoteTaskId,
             remoteTaskId,
@@ -1664,9 +1810,10 @@
 
         if (isPermanentTrackingErrorMessage(message) || nextFailureCount >= TASK_TRACKING_MAX_TEMP_FAILURES) {
           stopTaskStatusTracking(remoteTaskId);
-          const finalMessage = isPermanentTrackingErrorMessage(message)
+          const rawFinalMessage = isPermanentTrackingErrorMessage(message)
             ? message
             : `${message}（已连续失败 ${nextFailureCount} 次，停止自动重试）`;
+          const finalMessage = normalizeTaskFailureMessage(rawFinalMessage, { provider: payload.provider || "", appName: payload.appName });
           upsertRunningTask({
             taskId: remoteTaskId,
             remoteTaskId,
@@ -2209,7 +2356,10 @@
 
       if (pollResult && pollResult.failed) {
         const finishedAt = Date.now();
-        const failedMessage = String(pollResult.message || "任务执行失败").trim();
+        const failedMessage = normalizeTaskFailureMessage(String(pollResult.message || "任务执行失败").trim(), {
+          provider: payload.provider || "",
+          appName: payload.appName
+        });
         const failureLabel = getTaskFailureLabel({
           status: pollResult.status || "failed",
           errorMessage: failedMessage,
@@ -2316,9 +2466,13 @@
       });
     } catch (error) {
       const message = error && error.message ? error.message : String(error || "任务执行失败");
-      const normalizedMessage = String(message).trim();
-      const cancelled = /cancel/i.test(normalizedMessage);
-      if (activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(normalizedMessage)) {
+      const rawMessage = String(message).trim();
+      const normalizedMessage = normalizeTaskFailureMessage(rawMessage, {
+        provider: payload.provider || "",
+        appName: payload.appName
+      });
+      const cancelled = /cancel/i.test(rawMessage);
+      if (activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(rawMessage)) {
         const retryDetail = `网络波动或状态查询暂不可用：${normalizedMessage}。已保留 taskId，并切换为后台追踪继续确认 ${statusLabel} 结果。`;
         upsertRunningTask({
           taskId: activeTaskId,
@@ -2743,11 +2897,15 @@
         return;
       }
 
-      if (action === "open-runninghub-call-record") {
+      if (action === "open-task-action-url") {
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
         const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === taskId);
-        const targetUrl = getTaskDetailUrl(currentTask);
-        const targetName = isThirdPartyTaskRecord(currentTask) ? "GRS 消费记录" : "RunningHub 调用记录";
+        const targetUrl = getTaskActionUrl(currentTask);
+        const targetName = getTaskActionTargetName(currentTask);
+        if (!targetUrl) {
+          modules.ui.logToWorkspace("当前任务没有可打开的准确详情页。", "warn");
+          return;
+        }
         target.disabled = true;
         try {
           if (!modules.runtime.isPluginRuntime()) {
@@ -2755,14 +2913,14 @@
           } else {
             const result = await modules.runtime.callHost(
               "shell.openExternal",
-              [targetUrl, `将使用系统默认浏览器打开 ${targetName} 页面。`],
+              [targetUrl, `将使用系统默认浏览器打开${targetName}。`],
               { timeoutMs: 15000 }
             );
             if (!result || !result.ok) throw new Error("系统未确认打开成功");
           }
-          modules.ui.logToWorkspace(`已打开 ${targetName}${taskId ? `：${taskId}` : ""}`, "info");
+          modules.ui.logToWorkspace(`已打开${targetName}${taskId ? `：${taskId}` : ""}`, "info");
         } catch (error) {
-          modules.ui.logToWorkspace(`打开调用记录失败：${error.message || error}`, "error");
+          modules.ui.logToWorkspace(`打开${targetName}失败：${error.message || error}`, "error");
         } finally {
           target.disabled = false;
         }
