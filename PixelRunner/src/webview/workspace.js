@@ -801,6 +801,32 @@
     return statusResult.ok === false;
   }
 
+  function isThirdPartyRunPayload(payload) {
+    return Boolean(payload && String(payload.provider || "").trim() === "grs");
+  }
+
+  function getTaskProviderLabel(payload) {
+    return isThirdPartyRunPayload(payload) ? "GRS" : "RunningHub";
+  }
+
+  function buildTaskStatusRequest(taskId, payload) {
+    const remoteTaskId = String(taskId || "").trim();
+    if (isThirdPartyRunPayload(payload)) {
+      return {
+        method: "thirdParty.grs.fetchTaskStatus",
+        args: [{
+          ...payload,
+          taskId: remoteTaskId,
+          timeoutMs: 30000
+        }]
+      };
+    }
+    return {
+      method: "runninghub.fetchTaskStatus",
+      args: [{ apiKey: payload.apiKey, taskId: remoteTaskId, timeoutMs: 30000 }]
+    };
+  }
+
   function scheduleAccountSummaryRefresh(delayMs = 1200) {
     if (!modules.runtime.isPluginRuntime()) return;
     if (!modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return;
@@ -1485,7 +1511,9 @@
       sourceDocument,
       finishedAt: completedAt
     });
-    await refreshAccountAndPatchTaskCharge(remoteTaskId);
+    if (!isThirdPartyRunPayload(payload)) {
+      await refreshAccountAndPatchTaskCharge(remoteTaskId);
+    }
     setLastResult({
       appName: payload.appName,
       sourceDocument,
@@ -1540,15 +1568,13 @@
   function startTaskStatusTracking(taskId, payload, sourceDocument) {
     const remoteTaskId = String(taskId || "").trim();
     if (!remoteTaskId || taskTrackingTimers.has(remoteTaskId) || !modules.runtime.isPluginRuntime()) return;
+    const providerLabel = getTaskProviderLabel(payload);
     taskTrackingFailureCounts.set(remoteTaskId, 0);
 
     const trackOnce = async () => {
       try {
-        const statusResult = await modules.runtime.callHost(
-          "runninghub.fetchTaskStatus",
-          [{ apiKey: payload.apiKey, taskId: remoteTaskId, timeoutMs: 30000 }],
-          { timeoutMs: 35000 }
-        );
+        const statusRequest = buildTaskStatusRequest(remoteTaskId, payload);
+        const statusResult = await modules.runtime.callHost(statusRequest.method, statusRequest.args, { timeoutMs: 35000 });
         const remoteStatus = String((statusResult && statusResult.status) || "").trim().toUpperCase();
 
         if (statusResult && String(statusResult.outputUrl || "").trim()) {
@@ -1560,7 +1586,7 @@
           stopTaskStatusTracking(remoteTaskId);
           const finishedAt = Date.now();
           const failMessage = String(
-            (statusResult && statusResult.message) || "后台追踪已停止：RunningHub 未返回可继续追踪的有效状态。"
+            (statusResult && statusResult.message) || `后台追踪已停止：${providerLabel} 未返回可继续追踪的有效状态。`
           ).trim();
           upsertRunningTask({
             taskId: remoteTaskId,
@@ -1585,7 +1611,7 @@
           stopTaskStatusTracking(remoteTaskId);
           const finishedAt = Date.now();
           const failMessage = String(
-            (statusResult && statusResult.message) || `RunningHub 返回失败状态 ${remoteStatus || "FAILED"}`
+            (statusResult && statusResult.message) || `${providerLabel} 返回失败状态 ${remoteStatus || "FAILED"}`
           ).trim();
           upsertRunningTask({
             taskId: remoteTaskId,
@@ -1606,7 +1632,9 @@
             sourceDocument,
             finishedAt
           });
-          await refreshAccountAndPatchTaskCharge(remoteTaskId);
+          if (!isThirdPartyRunPayload(payload)) {
+            await refreshAccountAndPatchTaskCharge(remoteTaskId);
+          }
           modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
           return;
         }
@@ -1619,7 +1647,7 @@
             : "tracking";
         const nextDetail =
           statusResult && statusResult.stillRunning
-            ? `云端状态：${remoteStatus || "RUNNING"}，插件继续后台追踪中。`
+            ? `${providerLabel} 状态：${remoteStatus || "RUNNING"}，插件继续后台追踪中。`
             : `暂未获取到终态结果${statusResult && statusResult.message ? `：${statusResult.message}` : "，插件继续后台追踪中。"}`;
         upsertRunningTask({
           taskId: remoteTaskId,
@@ -2120,6 +2148,7 @@
 
   async function startRunTaskFlow(payload, sourceDocument) {
     const isThirdPartyTask = payload && payload.provider === "grs";
+    const statusLabel = isThirdPartyTask ? "GRS" : "RunningHub";
     const tempTaskId = createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
@@ -2153,7 +2182,6 @@
 
       const submitMethod = isThirdPartyTask ? "thirdParty.grs.submitTask" : "runninghub.submitTask";
       const pollMethod = isThirdPartyTask ? "thirdParty.grs.pollTask" : "runninghub.pollTask";
-      const statusLabel = isThirdPartyTask ? "GRS" : "RunningHub";
       const submitResult = await modules.runtime.callHost(submitMethod, [payload], {
         timeoutMs: Math.max(10000, Number(payload.settings.timeout || 180) * 1000 + 5000)
       });
@@ -2178,23 +2206,6 @@
         [isThirdPartyTask ? { ...payload, taskId: remoteTaskId } : { apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
         { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
       );
-
-      if (pollResult && pollResult.timedOut) {
-        const timeoutDetail = pollResult.stillRunning
-          ? `本地等待超时，但 ${statusLabel} 状态仍为 ${pollResult.status || "RUNNING"}，已切换为后台追踪。`
-          : `本地等待超时，当前状态：${pollResult.status || "未知"}。已切换为后台追踪继续确认。`;
-        upsertRunningTask({
-          taskId: remoteTaskId,
-          remoteTaskId,
-          appName: payload.appName,
-          status: pollResult.stillRunning ? "remote-running" : "tracking",
-          detail: timeoutDetail,
-          sourceDocument
-        });
-        modules.ui.logToWorkspace(timeoutDetail, "warn");
-        if (!isThirdPartyTask) startTaskStatusTracking(remoteTaskId, payload, sourceDocument);
-        return;
-      }
 
       if (pollResult && pollResult.failed) {
         const finishedAt = Date.now();
@@ -2223,6 +2234,23 @@
           await refreshAccountAndPatchTaskCharge(remoteTaskId);
         }
         modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
+        return;
+      }
+
+      if (pollResult && pollResult.timedOut) {
+        const timeoutDetail = pollResult.stillRunning
+          ? `本地等待超时，但 ${statusLabel} 状态仍为 ${pollResult.status || "RUNNING"}，已切换为后台追踪。`
+          : `本地等待超时，当前状态：${pollResult.status || "未知"}。已切换为后台追踪继续确认。`;
+        upsertRunningTask({
+          taskId: remoteTaskId,
+          remoteTaskId,
+          appName: payload.appName,
+          status: pollResult.stillRunning ? "remote-running" : "tracking",
+          detail: timeoutDetail,
+          sourceDocument
+        });
+        modules.ui.logToWorkspace(timeoutDetail, "warn");
+        startTaskStatusTracking(remoteTaskId, payload, sourceDocument);
         return;
       }
 
@@ -2290,8 +2318,8 @@
       const message = error && error.message ? error.message : String(error || "任务执行失败");
       const normalizedMessage = String(message).trim();
       const cancelled = /cancel/i.test(normalizedMessage);
-      if (!isThirdPartyTask && activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(normalizedMessage)) {
-        const retryDetail = `网络波动或状态查询暂不可用：${normalizedMessage}。已保留 taskId，并切换为后台追踪继续确认 RunningHub 结果。`;
+      if (activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(normalizedMessage)) {
+        const retryDetail = `网络波动或状态查询暂不可用：${normalizedMessage}。已保留 taskId，并切换为后台追踪继续确认 ${statusLabel} 结果。`;
         upsertRunningTask({
           taskId: activeTaskId,
           remoteTaskId: activeRemoteTaskId,

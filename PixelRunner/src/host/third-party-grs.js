@@ -233,39 +233,141 @@ function extractApiError(json, rawText) {
   return String(rawText || "").slice(0, 500);
 }
 
+function normalizeStatusValue(value) {
+  if (value == null) return "";
+  if (typeof value === "number") {
+    if (value < 0) return "-1";
+    if (value === 0) return "0";
+    if (value === 1) return "1";
+    if (value === 2) return "2";
+  }
+  const text = String(value).trim();
+  if (!text) return "";
+  return text.toUpperCase().replace(/[\s-]+/g, "_");
+}
+
+function findStatusValue(value, depth = 0, seen = new Set()) {
+  if (!value || depth > 7 || typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const status = findStatusValue(item, depth + 1, seen);
+      if (status) return status;
+    }
+    return "";
+  }
+
+  const statusKeys = [
+    "status",
+    "state",
+    "taskStatus",
+    "task_status",
+    "runStatus",
+    "run_status",
+    "jobStatus",
+    "job_status",
+    "nodeStatus",
+    "node_status"
+  ];
+  for (const key of statusKeys) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const normalized = normalizeStatusValue(value[key]);
+    if (normalized) return normalized;
+  }
+
+  for (const key of ["data", "result", "results", "output", "outputs", "task", "job", "items", "list"]) {
+    const status = findStatusValue(value[key], depth + 1, seen);
+    if (status) return status;
+  }
+
+  return "";
+}
+
+function extractMessageText(value, depth = 0, seen = new Set()) {
+  if (value == null || depth > 7) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = extractMessageText(item, depth + 1, seen);
+      if (text) return text;
+    }
+    return "";
+  }
+
+  for (const key of ["message", "msg", "error", "errors", "detail", "reason", "failureReason", "failure_reason", "errMsg", "errorMessage"]) {
+    const item = value[key];
+    if (typeof item === "string" && item.trim() && !isGenericSuccessMessage(item)) return item.trim();
+    if (item && typeof item === "object") {
+      const text = extractMessageText(item, depth + 1, seen);
+      if (text) return text;
+    }
+  }
+
+  for (const key of ["data", "result", "results", "output", "outputs", "task", "job", "items", "list"]) {
+    const text = extractMessageText(value[key], depth + 1, seen);
+    if (text) return text;
+  }
+
+  return "";
+}
+
+function getApiCode(value) {
+  if (!value || typeof value !== "object") return null;
+  const raw = value.code ?? value.statusCode ?? value.errorCode ?? value.errCode;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const code = Number(raw);
+  return Number.isFinite(code) ? code : null;
+}
+
+function isFailureMessage(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/processing|pending|running|queue|wait|not finished|not completed|not ready|运行中|排队|处理中|等待中|未完成/i.test(text)) return false;
+  return /(fail|failed|failure|error|exception|cancelled|canceled|rejected|insufficient|forbidden|unauthorized|余额不足|欠费|失败|错误|异常|取消|违规|拒绝)/i.test(text);
+}
+
+function isGenericSuccessMessage(message) {
+  const text = String(message || "").trim().toLowerCase();
+  return ["success", "succeed", "succeeded", "ok", "done", "complete", "completed", "请求成功", "成功"].includes(text);
+}
+
 function getFailureMessage(value, rawText = "") {
   const obj = value && typeof value === "object" ? value : {};
-  const data = obj.data && typeof obj.data === "object" ? obj.data : {};
-  const output = obj.output && typeof obj.output === "object" ? obj.output : {};
-  const status = String(obj.status || obj.state || data.status || output.status || "").toLowerCase();
-  const error = obj.error || obj.errors || obj.failure_reason || obj.failureReason || obj.message || obj.msg || data.error || data.message || data.failure_reason || output.error;
-  if (status && /failed|error|cancelled|canceled/.test(status)) {
-    return typeof error === "string" && error.trim() ? error.trim() : `GRS 任务失败：${status}`;
+  const status = extractTaskStatus(obj);
+  const message = extractMessageText(obj);
+  const code = getApiCode(obj);
+  const data = obj.data && typeof obj.data === "object" ? obj.data : null;
+  const dataCode = getApiCode(data);
+  const failedByCode = [code, dataCode].some((item) => item !== null && item !== 0 && item !== 200);
+  if (isFailedStatus(status) || isFailureMessage(message) || (failedByCode && isFailureMessage(message || rawText))) {
+    return message || (status ? `GRS 任务失败：${status}` : "GRS 任务失败");
   }
-  if (Number(obj.status) < 0 || Number(data.status) < 0) {
-    return typeof error === "string" && error.trim() ? error.trim() : "GRS 任务失败";
-  }
-  if (error && typeof error === "object") return String(error.message || error.msg || JSON.stringify(error)).slice(0, 500);
-  if (typeof error === "string" && /failed|error|失败|错误/.test(error)) return error.trim();
   const text = String(rawText || "");
   if (/insufficient|forbidden|unauthorized|余额不足|欠费/i.test(text)) return text.slice(0, 500);
   return "";
 }
 
-function findImageUrl(value, depth = 0) {
+function findImageUrl(value, depth = 0, trustedUrlField = false) {
   if (value == null || depth > 7) return "";
   if (typeof value === "string") {
     const text = value.trim();
+    if (trustedUrlField && /^https?:\/\/.+/i.test(text)) return text;
     if (/^https?:\/\/.+\.(png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(text)) return text;
     if (/^https?:\/\/.+\/file\//i.test(text)) return text;
     if (/^https?:\/\/.+/i.test(text) && /(image|img|media|output|result|cdn|file)/i.test(text)) return text;
     const parsed = parseJsonSafe(text);
-    if (parsed) return findImageUrl(parsed, depth + 1);
+    if (parsed) return findImageUrl(parsed, depth + 1, trustedUrlField);
     return "";
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findImageUrl(item, depth + 1);
+      const found = findImageUrl(item, depth + 1, trustedUrlField);
       if (found) return found;
     }
     return "";
@@ -289,7 +391,7 @@ function findImageUrl(value, depth = 0) {
     "response",
     "taskResult"
   ]) {
-    const found = findImageUrl(value[key], depth + 1);
+    const found = findImageUrl(value[key], depth + 1, true);
     if (found) return found;
   }
   for (const key of ["results", "data", "result", "outputs", "output", "images", "files", "items", "media", "urls"]) {
@@ -322,10 +424,7 @@ function extractGrsTaskId(value) {
 }
 
 function extractTaskStatus(value) {
-  if (!value || typeof value !== "object") return "";
-  const data = value.data && typeof value.data === "object" ? value.data : null;
-  const output = value.output && typeof value.output === "object" ? value.output : null;
-  return String(value.status || value.state || value.taskStatus || (data && (data.status || data.state || data.taskStatus)) || (output && (output.status || output.state)) || "").toUpperCase();
+  return findStatusValue(value);
 }
 
 function isPendingStatus(status) {
@@ -337,7 +436,7 @@ function isSucceededStatus(status) {
 }
 
 function isFailedStatus(status) {
-  return ["-1", "2", "FAILED", "ERROR", "CANCELLED", "CANCELED"].includes(String(status || "").toUpperCase());
+  return ["-1", "2", "FAIL", "FAILED", "FAILURE", "ERROR", "EXCEPTION", "CANCELLED", "CANCELED", "REJECTED", "TIMEOUT", "TIMED_OUT"].includes(String(status || "").toUpperCase());
 }
 
 async function fetchJson(url, options = {}, timeoutMs = 30000, controller = null) {
