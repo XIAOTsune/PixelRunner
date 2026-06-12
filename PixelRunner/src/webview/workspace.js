@@ -5,6 +5,8 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
+  const RUNNINGHUB_TASK_DETAIL_URL = "https://www.runninghub.cn/bill-task";
+  const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -505,6 +507,15 @@
     return Boolean(task && typeof task === "object" && isTaskTerminalStatus(task.status));
   }
 
+  function getTaskRemoteId(task) {
+    if (!task || typeof task !== "object") return "";
+    return String(task.remoteTaskId || task.taskId || "").trim();
+  }
+
+  function isLocalTaskId(taskId) {
+    return /^local-/i.test(String(taskId || "").trim());
+  }
+
   function compactTaskMessage(value, maxLength = 500) {
     return String(value || "")
       .replace(/\s+/g, " ")
@@ -515,6 +526,8 @@
   function isGenericTaskFailureMessage(message) {
     const text = compactTaskMessage(message, 160).toLowerCase().replace(/[。.!]+$/g, "");
     if (!text) return false;
+    if (getTaskStatusErrorCode(text.toUpperCase())) return true;
+    if (/返回任务状态异常|任务响应信息/.test(text)) return true;
     if (/^request failed(?: \(http \d+\))?$/.test(text)) return true;
     if (/^http \d+(?: request failed)?$/.test(text)) return true;
     return [
@@ -546,7 +559,21 @@
   }
 
   function isAuthTaskMessage(message) {
-    return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(String(message || ""));
+    const text = String(message || "");
+    if (getTaskStatusErrorCode(text)) return false;
+    return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(text);
+  }
+
+  function isTaskStatusErrorCode(message) {
+    const text = String(message || "").trim();
+    if (!text) return false;
+    return /^[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*$/.test(text) || /^[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*$/.test(text);
+  }
+
+  function getTaskStatusErrorCode(message) {
+    const text = String(message || "").toUpperCase();
+    const match = text.match(/\b[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*\b/) || text.match(/\b[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*\b/);
+    return match ? match[0] : "";
   }
 
   function getTaskMessageHttpStatus(message) {
@@ -564,7 +591,7 @@
   }
 
   function isNormalizedTaskFailureMessage(message) {
-    return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|(?:RunningHub|GRS) (?:账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
+    return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|(?:RunningHub|GRS) (?:返回任务状态异常|账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
       String(message || "").trim()
     );
   }
@@ -573,6 +600,10 @@
     const providerLabel = isThirdPartyTaskRecord(task) ? "GRS" : "RunningHub";
     const raw = compactTaskMessage(message, 500);
     const httpStatus = getTaskMessageHttpStatus(raw);
+    const taskStatusErrorCode = getTaskStatusErrorCode(raw);
+    if (taskStatusErrorCode) {
+      return `${providerLabel} 返回任务状态异常，请点击“详情”进入任务页面，在“任务响应信息”中查看具体失败原因。（状态：${taskStatusErrorCode}）`;
+    }
     if (isNormalizedTaskFailureMessage(raw)) return raw;
     if (!raw) return `${providerLabel} 任务执行失败，平台未返回具体原因。请检查提示词、输入图片和配置后重试。`;
     if (/^任务已取消[。.]?$/.test(raw) || /task polling cancelled|cancelled|canceled/i.test(raw)) return "任务已取消。";
@@ -612,46 +643,30 @@
     return `${providerLabel} 任务执行失败：${raw}`;
   }
 
-  function isFailureLikeTaskStatus(status) {
-    const normalized = String(status || "").trim().toLowerCase();
-    return ["failed", "error", "timeout"].includes(normalized);
-  }
-
-  function isTaskSuccessStatus(status) {
-    const normalized = String(status || "").trim().toLowerCase();
-    return ["succeeded", "success", "done"].includes(normalized);
-  }
-
   function getTaskActionUrl(task) {
     if (!task || typeof task !== "object") return "";
     const explicitUrl = String(task.detailUrl || task.taskDetailUrl || task.recordUrl || "").trim();
     if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
-    const outputUrl = String(task.outputUrl || "").trim();
-    if (isTaskSuccessStatus(task.status) && /^https?:\/\//i.test(outputUrl)) return outputUrl;
-    return "";
+    return isThirdPartyTaskRecord(task) ? GRS_CONSUMPTION_LOG_URL : RUNNINGHUB_TASK_DETAIL_URL;
   }
 
   function canOpenTaskAction(task) {
-    return Boolean(getTaskActionUrl(task));
+    const remoteTaskId = getTaskRemoteId(task);
+    return Boolean(remoteTaskId && !isLocalTaskId(remoteTaskId) && getTaskActionUrl(task));
   }
 
   function getTaskActionLabel(task) {
-    if (!task || typeof task !== "object") return "详情";
-    if (isTaskSuccessStatus(task.status) && String(task.outputUrl || "").trim()) return "结果";
-    if (isFailureLikeTaskStatus(task.status)) return "详情";
     return "详情";
   }
 
   function getTaskActionTitle(task) {
     if (!task || typeof task !== "object") return "打开详情";
-    if (isTaskSuccessStatus(task.status) && String(task.outputUrl || "").trim()) return "打开结果图";
-    return isThirdPartyTaskRecord(task) ? "打开 GRS 任务详情" : "打开 RunningHub 任务详情";
+    return isThirdPartyTaskRecord(task) ? "打开 GRS 消费记录" : "打开 RunningHub 任务详情";
   }
 
   function getTaskActionTargetName(task) {
     if (!task || typeof task !== "object") return "任务详情";
-    if (isTaskSuccessStatus(task.status) && String(task.outputUrl || "").trim()) return "结果图";
-    return isThirdPartyTaskRecord(task) ? "GRS 任务详情" : "RunningHub 任务详情";
+    return isThirdPartyTaskRecord(task) ? "GRS 消费记录" : "RunningHub 任务详情";
   }
 
   function isThirdPartyTaskRecord(task) {
@@ -851,6 +866,7 @@
 
     if (status === "timeout" || /timeout|超时/.test(text)) return "timeout";
     if (status === "cancelled" || status === "canceled" || /cancel|取消/.test(text)) return "cancelled";
+    if (/task_status_error|status_error|任务状态异常|返回任务状态异常|任务响应信息/.test(text)) return "status_error";
     if (/欠费|余额不足|insufficient|not enough balance|lack of balance|recharge|quota/.test(text)) return "insufficient_balance";
     if (/违规|violation|forbidden|policy|safety|moderation|sensitive|blocked|ban|审核|内容安全|内容政策|敏感|拒绝/.test(text)) return "content_policy";
     if (status === "failed" || status === "error") return "failed";
@@ -864,6 +880,7 @@
     const code = inferTaskFailureCode(task);
     if (code === "timeout") return "超时";
     if (code === "cancelled") return "已取消";
+    if (code === "status_error") return "状态异常";
     if (code === "insufficient_balance") return "欠费";
     if (code === "content_policy" || code === "violation") return "内容审核";
     if (code === "failed") return "失败";

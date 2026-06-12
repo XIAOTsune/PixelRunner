@@ -920,6 +920,8 @@ function compactFailureText(value, maxLength = 500) {
 function isGenericFailureMessage(message) {
   const text = compactFailureText(message, 160).toLowerCase().replace(/[。.!]+$/g, "");
   if (!text) return false;
+  if (getTaskStatusErrorCode(text.toUpperCase())) return true;
+  if (/返回任务状态异常|任务响应信息/.test(text)) return true;
   if (/^request failed(?: \(http \d+\))?$/.test(text)) return true;
   return [
     "api task error",
@@ -950,7 +952,21 @@ function isBalanceFailureMessage(message) {
 }
 
 function isAuthFailureMessage(message) {
-  return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(String(message || ""));
+  const text = String(message || "");
+  if (getTaskStatusErrorCode(text)) return false;
+  return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(text);
+}
+
+function isTaskStatusErrorCode(message) {
+  const text = String(message || "").trim();
+  if (!text) return false;
+  return /^[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*$/.test(text) || /^[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*$/.test(text);
+}
+
+function getTaskStatusErrorCode(message) {
+  const text = String(message || "").toUpperCase();
+  const match = text.match(/\b[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*\b/) || text.match(/\b[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*\b/);
+  return match ? match[0] : "";
 }
 
 function getHttpStatusFromFailureMessage(message) {
@@ -968,7 +984,7 @@ function buildFailureRawSuffix(rawMessage, normalizedText = "") {
 }
 
 function isNormalizedCloudFailureMessage(message) {
-  return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|RunningHub (?:账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
+  return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|RunningHub (?:返回任务状态异常|账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
     String(message || "").trim()
   );
 }
@@ -980,6 +996,10 @@ function normalizeCloudFailureMessage(message, options = {}) {
   const httpStatus = Number(options.httpStatus) || getHttpStatusFromFailureMessage(raw);
   const source = raw || (status ? `任务状态：${status}` : "");
 
+  const taskStatusErrorCode = getTaskStatusErrorCode(source);
+  if (taskStatusErrorCode) {
+    return `${provider} 返回任务状态异常，请点击“详情”进入任务页面，在“任务响应信息”中查看具体失败原因。（状态：${taskStatusErrorCode}）`;
+  }
   if (isNormalizedCloudFailureMessage(raw)) return raw;
   if (!source) {
     return `${provider} 任务执行失败，平台未返回具体原因。请稍后重试，或检查提示词、输入图片和工作流配置。`;
@@ -1149,7 +1169,20 @@ function collectFailureMessageTexts(value, depth = 0, seen = new Set(), output =
     "error",
     "errors",
     "cause",
-    "description"
+    "description",
+    "response",
+    "taskResponse",
+    "task_response",
+    "responseInfo",
+    "response_info",
+    "taskResponseInfo",
+    "task_response_info",
+    "callbackResponse",
+    "callback_response",
+    "apiResponse",
+    "api_response",
+    "outputResponse",
+    "output_response"
   ]) {
     if (Object.prototype.hasOwnProperty.call(value, key)) {
       collectFailureMessageTexts(value[key], depth + 1, seen, output);
