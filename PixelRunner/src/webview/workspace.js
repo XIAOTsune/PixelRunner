@@ -7,6 +7,7 @@
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
   const RUNNINGHUB_TASK_DETAIL_URL = "https://www.runninghub.cn/bill-task";
   const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
+  const MODAL_CLOSE_ANIMATION_MS = 180;
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
@@ -17,11 +18,37 @@
   const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
 
+  function hasVisibleModal() {
+    return Boolean(document.querySelector(".overlay-modal.is-open, .overlay-modal.is-closing"));
+  }
+
   function setModalOpen(modalId, open) {
     const modal = modules.runtime.getById(modalId);
     if (!modal) return;
-    modal.classList.toggle("is-open", open);
-    document.body.classList.toggle("modal-open", open);
+    const shouldOpen = Boolean(open);
+    if (modal._pixelRunnerCloseTimer) {
+      window.clearTimeout(modal._pixelRunnerCloseTimer);
+      modal._pixelRunnerCloseTimer = 0;
+    }
+    if (shouldOpen) {
+      modal.classList.remove("is-closing");
+      modal.classList.add("is-open");
+      document.body.classList.add("modal-open");
+      return;
+    }
+    if (!modal.classList.contains("is-open")) {
+      modal.classList.remove("is-closing");
+      document.body.classList.toggle("modal-open", hasVisibleModal());
+      return;
+    }
+    modal.classList.remove("is-open");
+    modal.classList.add("is-closing");
+    document.body.classList.toggle("modal-open", hasVisibleModal());
+    modal._pixelRunnerCloseTimer = window.setTimeout(() => {
+      modal.classList.remove("is-closing");
+      modal._pixelRunnerCloseTimer = 0;
+      document.body.classList.toggle("modal-open", hasVisibleModal());
+    }, MODAL_CLOSE_ANIMATION_MS);
   }
 
   function isImageInput(input) {
@@ -732,6 +759,40 @@
     return status;
   }
 
+  function normalizeTaskStatusStage(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    if (!normalized) return "running";
+    if (["success", "succeeded", "done"].includes(normalized)) return "success";
+    if (["failed", "error"].includes(normalized)) return "error";
+    if (["cancelled", "canceled"].includes(normalized)) return "cancelled";
+    if ([
+      "submitting",
+      "submitted",
+      "queued",
+      "tracking",
+      "remote-running",
+      "downloading",
+      "placing",
+      "timeout"
+    ].includes(normalized)) {
+      return normalized;
+    }
+    return "running";
+  }
+
+  function getTaskProgressForStage(stage) {
+    const normalized = String(stage || "").trim().toLowerCase();
+    if (normalized === "submitting") return 0.18;
+    if (normalized === "submitted" || normalized === "queued") return 0.28;
+    if (normalized === "running" || normalized === "remote-running") return 0.52;
+    if (normalized === "tracking") return 0.62;
+    if (normalized === "downloading") return 0.76;
+    if (normalized === "placing") return 0.88;
+    if (normalized === "success") return 1;
+    if (normalized === "error" || normalized === "failed" || normalized === "cancelled" || normalized === "timeout") return 1;
+    return 0.42;
+  }
+
   function getTaskStatusDetail(task) {
     if (!task || typeof task !== "object") return "";
     const normalized = String(task.status || "").trim().toLowerCase();
@@ -1028,6 +1089,9 @@
         const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "等待分配任务 ID";
         const statusLabel = getTaskStatusLabel(task.status || "running");
         const statusTone = getTaskStatusTone(task.status || "running");
+        const statusStage = normalizeTaskStatusStage(task.status || "running");
+        const progressValue = getTaskProgressForStage(statusStage).toFixed(2);
+        const isActive = !isTaskTerminalStatus(task.status) && statusStage !== "timeout";
         const durationLabel = `${isTaskTerminalStatus(task.status) ? "耗时" : "已运行"} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
         const chargeDisplay = formatTaskChargeDisplay(task);
@@ -1043,12 +1107,12 @@
         const actionTitle = getTaskActionTitle(task);
         const actionTaskId = modules.runtime.escapeHtml(String(task.taskId || "").trim());
         return `
-          <div class="running-task-item">
+          <div class="running-task-item" data-stage="${modules.runtime.escapeHtml(statusStage)}" data-active="${isActive ? "true" : "false"}" style="--task-progress: ${progressValue}">
             <div class="running-task-main">
               <div class="running-task-topline">
                 <div class="running-task-title">${appName}</div>
                 <div class="running-task-topline-actions">
-                  <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}">${modules.runtime.escapeHtml(statusLabel)}</span>
+                  <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}" data-stage="${modules.runtime.escapeHtml(statusStage)}">${modules.runtime.escapeHtml(statusLabel)}</span>
                   ${
                     canOpenAction
                       ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-task-action-url" data-task-id="${actionTaskId}" title="${modules.runtime.escapeHtml(actionTitle)}">${modules.runtime.escapeHtml(actionLabel)}</button>`

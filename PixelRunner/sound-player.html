@@ -12,7 +12,19 @@
   <script>
     (function initSoundPlayer() {
       const audio = document.getElementById("completionSound");
-      const state = { enabled: true };
+      const state = { enabled: true, volume: 0.8, muted: false };
+
+      function clampVolume(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return 0.8;
+        return Math.max(0, Math.min(1, numeric));
+      }
+
+      function syncAudioConfig() {
+        if (!audio) return;
+        audio.volume = clampVolume(state.volume);
+        audio.muted = Boolean(state.muted);
+      }
 
       function post(message) {
         try {
@@ -21,9 +33,10 @@
       }
 
       async function playSound(reason) {
-        if (!state.enabled || !audio) return;
+        if (!state.enabled || state.muted || state.volume <= 0 || !audio) return;
         try {
           audio.pause();
+          syncAudioConfig();
           audio.currentTime = 0;
           await audio.play();
           post({ type: "pixelrunner.sound.playback", ok: true, reason: String(reason || "queue-empty") });
@@ -42,6 +55,9 @@
         if (!payload || typeof payload !== "object") return;
         if (payload.type === "pixelrunner.sound.config") {
           state.enabled = payload.enabled !== false;
+          state.volume = clampVolume(payload.volume);
+          state.muted = payload.muted === true;
+          syncAudioConfig();
           if (!state.enabled && audio) {
             try {
               audio.pause();
@@ -51,10 +67,14 @@
           return;
         }
         if (payload.type === "pixelrunner.sound.play") {
+          if (payload.volume != null) state.volume = clampVolume(payload.volume);
+          state.muted = payload.muted === true;
+          syncAudioConfig();
           void playSound(payload.reason);
         }
       });
 
+      syncAudioConfig();
       post({ type: "pixelrunner.sound.ready" });
     })();
   </script>

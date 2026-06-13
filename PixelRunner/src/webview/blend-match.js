@@ -245,16 +245,24 @@
   }
 
   function openPanel() {
-    const modal = getById("blendMatchModal");
-    if (modal) modal.classList.add("is-open");
+    if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+      modules.workspace.setModalOpen("blendMatchModal", true);
+    } else {
+      const modal = getById("blendMatchModal");
+      if (modal) modal.classList.add("is-open");
+    }
     setText("blendMatchPanelStatus", "当前图层：使用 Photoshop 当前活动图层");
     renderSettings();
     void refreshPreview();
   }
 
   function closePanel() {
-    const modal = getById("blendMatchModal");
-    if (modal) modal.classList.remove("is-open");
+    if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+      modules.workspace.setModalOpen("blendMatchModal", false);
+    } else {
+      const modal = getById("blendMatchModal");
+      if (modal) modal.classList.remove("is-open");
+    }
   }
 
   function resetSettings() {

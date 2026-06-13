@@ -74,6 +74,10 @@
   }
 
   function setTemplateFormOpen(open) {
+    if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
+      modules.workspace.setModalOpen("templateFormModal", Boolean(open));
+      return;
+    }
     const modal = modules.runtime.getById("templateFormModal");
     if (!modal) return;
     modal.classList.toggle("is-open", Boolean(open));

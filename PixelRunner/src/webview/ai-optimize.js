@@ -138,6 +138,23 @@
     return "info";
   }
 
+  function getTaskStatusStage(status) {
+    const normalized = String(status || "").trim().toLowerCase();
+    if (normalized === "running") return "running";
+    if (normalized === "success") return "success";
+    if (normalized === "cancelled" || normalized === "canceled") return "cancelled";
+    if (normalized === "error") return "error";
+    return "queued";
+  }
+
+  function getTaskProgressForStage(stage) {
+    const normalized = String(stage || "").trim().toLowerCase();
+    if (normalized === "queued") return 0.24;
+    if (normalized === "running") return 0.58;
+    if (normalized === "success" || normalized === "error" || normalized === "cancelled") return 1;
+    return 0.42;
+  }
+
   function normalizeTaskChargeValue(value) {
     if (value == null) return null;
     if (typeof value === "number") return Number.isFinite(value) ? Math.abs(Number(value.toFixed(3))) : null;
@@ -451,6 +468,8 @@
     const taskId = String(state.taskId || "").trim();
     const status = getTaskStatusLabel(state.taskStatus);
     const tone = getTaskStatusTone(state.taskStatus);
+    const stage = getTaskStatusStage(state.taskStatus);
+    const progress = getTaskProgressForStage(stage).toFixed(2);
     const duration = state.taskStartedAt ? formatElapsed(state.taskStartedAt, state.taskUpdatedAt || Date.now()) : "--";
     const chargeDisplay = formatTaskChargeDisplay();
     const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "尚未创建任务";
@@ -459,12 +478,12 @@
     const showClear = !state.running && taskId;
 
     container.innerHTML = `
-      <div class="running-task-item ai-optimize-task-item">
+      <div class="running-task-item ai-optimize-task-item" data-stage="${modules.runtime.escapeHtml(stage)}" data-active="${state.running ? "true" : "false"}" style="--task-progress: ${progress}">
         <div class="running-task-main">
           <div class="running-task-topline">
             <div class="running-task-title">AI优化任务</div>
             <div class="running-task-topline-actions">
-              <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(tone)}">${modules.runtime.escapeHtml(status)}</span>
+              <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(tone)}" data-stage="${modules.runtime.escapeHtml(stage)}">${modules.runtime.escapeHtml(status)}</span>
               ${
                 showCancel
                   ? `<button id="btnCancelAiOptimizeTask" class="mini-btn running-task-inline-btn" type="button" ${state.canceling ? "disabled" : ""}>${state.canceling ? "取消中" : "取消"}</button>`
