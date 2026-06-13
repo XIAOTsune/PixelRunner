@@ -13,6 +13,8 @@
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
     QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
     SOUND_ENABLED: "pixelrunner.sound_enabled",
+    SOUND_VOLUME: "pixelrunner.sound_volume",
+    SOUND_MUTED: "pixelrunner.sound_muted",
     THEME: "pixelrunner.theme.v1",
     BLEND_MATCH_SETTINGS: "pixelrunner.blendMatch.settings.v1",
     THIRD_PARTY_SETTINGS: "pixelrunner.thirdParty.settings.v1",
@@ -129,6 +131,8 @@
     },
     sound: {
       enabled: true,
+      volume: 80,
+      muted: false,
       playerReady: false
     },
     theme: { ...DEFAULT_THEME }

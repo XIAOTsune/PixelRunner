@@ -50,6 +50,9 @@
   }
 
   function setActiveView(activeTabId) {
+    if (modules.sound && typeof modules.sound.closeVolumePopover === "function") {
+      modules.sound.closeVolumePopover();
+    }
     Object.entries(modules.main.VIEW_MAP).forEach(([tabId, viewId]) => {
       const tab = modules.runtime.getById(tabId);
       const view = modules.runtime.getById(viewId);

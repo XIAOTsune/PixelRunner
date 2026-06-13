@@ -38,6 +38,12 @@
   --shadow-soft: 0 4px 0 rgba(20, 27, 36, 0.72), 0 12px 20px rgba(0, 0, 0, 0.18);
   --shadow-float: 0 10px 0 rgba(20, 27, 36, 0.7), 0 18px 32px rgba(0, 0, 0, 0.2);
   --press-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-fast: 120ms;
+  --motion-base: 170ms;
+  --motion-slow: 220ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-press: var(--press-ease);
   --radius-xl: 16px;
   --radius-lg: 12px;
   --radius-md: 10px;
@@ -94,7 +100,7 @@ body::before {
   background-size: cover;
   background-position: center;
   opacity: var(--theme-image-opacity);
-  transition: opacity 220ms ease;
+  transition: opacity var(--motion-slow) var(--ease-standard);
 }
 
 body.has-custom-theme-image::before {
@@ -389,11 +395,11 @@ button {
   letter-spacing: 0.01em;
   white-space: nowrap;
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    background 170ms ease,
-    filter 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    filter var(--motion-base) var(--ease-standard);
 }
 
 .api-visibility-btn {
@@ -447,7 +453,7 @@ button {
   border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03) 52%, rgba(255, 255, 255, 0));
   pointer-events: none;
-  transition: opacity 170ms ease;
+  transition: opacity var(--motion-base) var(--ease-standard);
 }
 
 .ghost-btn,
@@ -541,12 +547,12 @@ button {
   overflow: hidden;
   box-shadow: 3px 4px 0 var(--btn-shadow);
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    background 170ms ease,
-    color 170ms ease,
-    filter 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard),
+    filter var(--motion-base) var(--ease-standard);
 }
 
 .nav-tab.active {
@@ -676,11 +682,15 @@ button {
 }
 
 .sound-toggle-btn[data-enabled="false"] .sound-wave,
-.sound-toggle-btn[data-enabled="false"] .sound-wave-outer {
+.sound-toggle-btn[data-enabled="false"] .sound-wave-outer,
+.sound-toggle-btn[data-muted="true"] .sound-wave,
+.sound-toggle-btn[data-muted="true"] .sound-wave-outer,
+.sound-toggle-btn[data-volume="0"] .sound-wave,
+.sound-toggle-btn[data-volume="0"] .sound-wave-outer {
   opacity: 0;
 }
 
-.sound-toggle-btn[data-enabled="true"] .sound-off-line {
+.sound-toggle-btn[data-enabled="true"]:not([data-muted="true"]):not([data-volume="0"]) .sound-off-line {
   opacity: 0;
 }
 
@@ -713,6 +723,82 @@ button {
   opacity: 0;
   pointer-events: none;
   inset: auto;
+}
+
+.sound-volume-popover {
+  position: fixed;
+  z-index: 60;
+  width: min(260px, calc(100vw - 18px));
+  padding: 10px;
+  border-radius: 12px;
+  border: 2px solid var(--control-edge);
+  background: linear-gradient(180deg, rgba(var(--surface-rgb), 0.98), rgba(var(--surface-soft-rgb), 0.96));
+  color: var(--text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.985);
+  transform-origin: top right;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-out);
+}
+
+.sound-volume-popover.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.sound-volume-popover.is-closing {
+  opacity: 0;
+  transform: translateY(-3px) scale(0.99);
+  pointer-events: none;
+}
+
+.sound-volume-head,
+.sound-volume-value-row,
+.sound-volume-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sound-volume-head {
+  margin-bottom: 8px;
+}
+
+.sound-volume-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.sound-volume-value {
+  min-width: 42px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.sound-volume-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.sound-volume-actions {
+  margin-top: 8px;
+}
+
+.sound-volume-actions .mini-btn {
+  min-width: 0;
+  flex: 1 1 0;
+  min-height: 30px;
+  border-radius: 10px;
 }
 
 .panel-eyebrow {
@@ -860,10 +946,10 @@ button {
   border-radius: 12px;
   box-shadow: 2px 3px 0 rgba(29, 40, 54, 0.72);
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    background 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 
 .workspace-header-strip {
@@ -1227,6 +1313,7 @@ button {
 }
 
 .running-task-item {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1235,6 +1322,40 @@ button {
   border-radius: 12px;
   border: 1px solid var(--control-edge);
   background: rgba(var(--surface-rgb), var(--surface-soft-alpha));
+  overflow: hidden;
+  transition:
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.running-task-item::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 5px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(99, 214, 123, 0.88), rgba(159, 220, 255, 0.78));
+  opacity: 0;
+  transform: scaleX(0.18);
+  transform-origin: left center;
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-slow) var(--ease-out);
+  pointer-events: none;
+}
+
+.running-task-item[data-active="true"] {
+  border-color: rgba(159, 220, 255, 0.48);
+  background: rgba(var(--surface-soft-rgb), 0.74);
+  box-shadow: inset 0 0 0 1px rgba(159, 220, 255, 0.06);
+}
+
+.running-task-item[data-active="true"]::after {
+  opacity: 0.76;
+  transform: scaleX(var(--task-progress, 0.42));
 }
 
 .running-task-main {
@@ -1282,6 +1403,29 @@ button {
 
 .running-task-status-chip {
   flex: 0 0 auto;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-base) var(--ease-standard),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard);
+}
+
+.running-task-status-chip[data-stage="submitting"],
+.running-task-status-chip[data-stage="queued"] {
+  border-color: rgba(159, 220, 255, 0.58);
+}
+
+.running-task-status-chip[data-stage="running"],
+.running-task-status-chip[data-stage="remote-running"],
+.running-task-status-chip[data-stage="tracking"] {
+  border-color: rgba(99, 214, 123, 0.56);
+}
+
+.running-task-status-chip[data-stage="downloading"],
+.running-task-status-chip[data-stage="placing"] {
+  border-color: rgba(255, 213, 106, 0.68);
 }
 
 .running-task-inline-btn {
@@ -1347,10 +1491,13 @@ button {
   background: rgba(var(--control-rgb), var(--surface-soft-alpha));
   box-shadow: 2px 3px 0 rgba(29, 40, 54, 0.72);
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    filter 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    color var(--motion-base) var(--ease-standard),
+    filter var(--motion-base) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
 }
 
 .status-chip[data-status="success"] {
@@ -1641,7 +1788,7 @@ button {
   height: 100%;
   object-fit: contain;
   transform-origin: center center;
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
   will-change: transform;
 }
@@ -1839,6 +1986,17 @@ button {
   cursor: grabbing;
 }
 
+.space-fx-preview-viewport.is-panning .space-fx-base-image,
+.space-fx-preview-viewport.is-panning .space-fx-lab-image,
+.space-fx-preview-viewport.is-panning .space-fx-control-overlay,
+.glow-preview-viewport.is-panning .glow-base-image,
+.glow-preview-viewport.is-panning .glow-overlay-image,
+.glow-preview-viewport.is-panning #glowPreviewResultImage,
+.glow-preview-viewport.is-panning #glowPreviewResultCanvas,
+.blend-match-preview-frame.is-panning #blendMatchPreviewCanvas {
+  transition: none;
+}
+
 .space-fx-preview-viewport.is-drawing {
   cursor: crosshair;
 }
@@ -1851,7 +2009,7 @@ button {
   height: 100%;
   object-fit: contain;
   transform-origin: center center;
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
   will-change: transform;
 }
@@ -1875,7 +2033,7 @@ button {
   z-index: 2;
   pointer-events: none;
   transform-origin: center center;
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) var(--ease-out);
   will-change: transform;
 }
 
@@ -2227,7 +2385,7 @@ button {
   height: 100%;
   object-fit: contain;
   transform-origin: center center;
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
   will-change: transform;
 }
@@ -2257,7 +2415,7 @@ button {
   max-height: none;
   object-fit: contain;
   transform-origin: center center;
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
   will-change: transform;
 }
@@ -3215,10 +3373,21 @@ button {
   position: fixed;
   inset: 0;
   z-index: 40;
+  pointer-events: none;
+}
+
+.overlay-modal.is-open,
+.overlay-modal.is-closing {
+  display: block;
 }
 
 .overlay-modal.is-open {
-  display: block;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.overlay-modal.is-closing {
+  pointer-events: none;
 }
 
 .overlay-backdrop {
@@ -3226,6 +3395,16 @@ button {
   inset: 0;
   background: rgba(8, 12, 18, 0.44);
   backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+
+.overlay-modal.is-open .overlay-backdrop {
+  opacity: 1;
+}
+
+.overlay-modal.is-closing .overlay-backdrop {
+  opacity: 0;
 }
 
 .overlay-card {
@@ -3242,6 +3421,21 @@ button {
   background: linear-gradient(180deg, rgba(var(--surface-rgb), var(--surface-alpha)) 0%, rgba(var(--surface-soft-rgb), var(--surface-alpha)) 100%);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
   overflow: auto;
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  transition:
+    opacity var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-out);
+}
+
+.overlay-modal.is-open .overlay-card {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.overlay-modal.is-closing .overlay-card {
+  opacity: 0;
+  transform: translateY(5px) scale(0.992);
 }
 
 .resizable-overlay-card {
@@ -3337,9 +3531,9 @@ button {
   color: var(--text-strong);
   text-align: left;
   transition:
-    border-color 170ms ease,
-    background 170ms ease,
-    transform 170ms var(--press-ease);
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-press);
 }
 
 .template-action-menu-item:hover {
@@ -3387,10 +3581,10 @@ button {
   box-shadow: 2px 3px 0 var(--control-edge);
   color: var(--text-strong);
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    background 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 
 .donation-card:hover {
@@ -3435,10 +3629,10 @@ button {
   background: rgba(var(--surface-soft-rgb), var(--surface-soft-alpha));
   box-shadow: 2px 3px 0 var(--control-edge);
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    background 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 
 .tool-item:hover,
@@ -3590,8 +3784,8 @@ button {
   border-radius: 12px;
   background: rgba(var(--surface-soft-rgb), 0.16);
   transition:
-    border-color 170ms ease,
-    background 170ms ease;
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 
 .settings-collapse-summary {
@@ -3609,8 +3803,8 @@ button {
   background:
     linear-gradient(180deg, rgba(var(--surface-soft-rgb), 0.32), rgba(var(--surface-rgb), 0.08));
   transition:
-    color 170ms ease,
-    background 170ms ease;
+    color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 
 .settings-collapse-summary::after {
@@ -3727,9 +3921,9 @@ button {
   color: var(--text);
   box-shadow: 1px 2px 0 rgba(29, 40, 54, 0.62);
   transition:
-    border-color 170ms ease,
-    background 170ms ease,
-    transform 170ms var(--press-ease);
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard),
+    transform var(--motion-base) var(--ease-press);
 }
 
 .template-category-tab:hover {
@@ -3898,9 +4092,9 @@ button {
   cursor: pointer;
   z-index: 4;
   transition:
-    opacity 150ms ease,
-    transform 150ms ease,
-    background 150ms ease;
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-standard);
 }
 
 .template-category-tab .template-card-menu {
@@ -4088,10 +4282,10 @@ button {
   color: var(--text-strong);
   box-shadow: 2px 3px 0 rgba(29, 40, 54, 0.72);
   transition:
-    transform 170ms var(--press-ease),
-    box-shadow 170ms var(--press-ease),
-    border-color 170ms ease,
-    background 170ms ease;
+    transform var(--motion-base) var(--ease-press),
+    box-shadow var(--motion-base) var(--ease-press),
+    border-color var(--motion-base) var(--ease-standard),
+    background var(--motion-base) var(--ease-standard);
 }
 
 .field-input::placeholder {
@@ -5156,7 +5350,17 @@ button {
   *,
   *::before,
   *::after {
+    animation: none !important;
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+
+  .overlay-card,
+  .overlay-modal.is-open .overlay-card,
+  .overlay-modal.is-closing .overlay-card,
+  .sound-volume-popover,
+  .sound-volume-popover.is-open,
+  .sound-volume-popover.is-closing {
+    transform: none !important;
   }
 }

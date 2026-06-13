@@ -233,39 +233,342 @@ function extractApiError(json, rawText) {
   return String(rawText || "").slice(0, 500);
 }
 
-function getFailureMessage(value, rawText = "") {
-  const obj = value && typeof value === "object" ? value : {};
-  const data = obj.data && typeof obj.data === "object" ? obj.data : {};
-  const output = obj.output && typeof obj.output === "object" ? obj.output : {};
-  const status = String(obj.status || obj.state || data.status || output.status || "").toLowerCase();
-  const error = obj.error || obj.errors || obj.failure_reason || obj.failureReason || obj.message || obj.msg || data.error || data.message || data.failure_reason || output.error;
-  if (status && /failed|error|cancelled|canceled/.test(status)) {
-    return typeof error === "string" && error.trim() ? error.trim() : `GRS 任务失败：${status}`;
+function compactFailureText(value, maxLength = 500) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, Math.max(80, Number(maxLength) || 500));
+}
+
+function isGenericFailureMessage(message) {
+  const text = compactFailureText(message, 160).toLowerCase().replace(/[。.!]+$/g, "");
+  if (!text) return false;
+  if (getTaskStatusErrorCode(text.toUpperCase())) return true;
+  if (/返回任务状态异常|任务响应信息/.test(text)) return true;
+  if (/^http \d+(?: request failed)?$/.test(text)) return true;
+  if (/^request failed(?: \(http \d+\))?$/.test(text)) return true;
+  return [
+    "api task error",
+    "api error",
+    "task failed",
+    "task failure",
+    "request failed",
+    "failed",
+    "failure",
+    "error",
+    "unknown error",
+    "任务失败",
+    "任务执行失败",
+    "执行失败",
+    "请求失败",
+    "未知错误"
+  ].includes(text);
+}
+
+function isContentPolicyFailureMessage(message) {
+  const text = compactFailureText(message, 800).toLowerCase();
+  if (!text) return false;
+  return /(content\s*(policy|safety|moderation|filter)|policy\s*(violation|violated|reject|rejected|refusal)|safety\s*(policy|system|filter|check)|moderation|review failed|audit failed|not pass(?:ed)? (?:the )?(?:review|audit)|sensitive|inappropriate|nsfw|porn|sexual|violence|violent|harmful|unsafe|prohibited|blocked|banned|abuse|violation|violates|审核|审查|内容安全|安全策略|内容政策|敏感|违规|违禁|不合规|风控|拒绝|拦截)/i.test(text);
+}
+
+function isBalanceFailureMessage(message) {
+  return /(insufficient|not enough|lack of|balance|quota|credit|recharge|余额不足|欠费|额度不足|点数不足|充值)/i.test(String(message || ""));
+}
+
+function isAuthFailureMessage(message) {
+  const text = String(message || "");
+  if (getTaskStatusErrorCode(text)) return false;
+  return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(text);
+}
+
+function isTaskStatusErrorCode(message) {
+  const text = String(message || "").trim();
+  if (!text) return false;
+  return /^[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*$/.test(text) || /^[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*$/.test(text);
+}
+
+function getTaskStatusErrorCode(message) {
+  const text = String(message || "").toUpperCase();
+  const match = text.match(/\b[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*\b/) || text.match(/\b[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*\b/);
+  return match ? match[0] : "";
+}
+
+function getHttpStatusFromFailureMessage(message) {
+  const match = String(message || "").match(/\b(?:http\s*)?([1-5]\d\d)\b/i);
+  if (!match) return 0;
+  const code = Number(match[1]);
+  return Number.isFinite(code) ? code : 0;
+}
+
+function buildFailureRawSuffix(rawMessage, normalizedText = "") {
+  const raw = compactFailureText(rawMessage, 260);
+  if (!raw) return "";
+  if (normalizedText && normalizedText.includes(raw)) return "";
+  return `（云端返回：${raw}）`;
+}
+
+function isNormalizedCloudFailureMessage(message) {
+  return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|GRS (?:返回任务状态异常|账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
+    String(message || "").trim()
+  );
+}
+
+function normalizeCloudFailureMessage(message, options = {}) {
+  const provider = String(options.provider || "GRS").trim() || "GRS";
+  const raw = compactFailureText(message || options.fallback || "", 500);
+  const status = String(options.status || "").trim();
+  const httpStatus = Number(options.httpStatus) || getHttpStatusFromFailureMessage(raw);
+  const source = raw || (status ? `任务状态：${status}` : "");
+
+  const taskStatusErrorCode = getTaskStatusErrorCode(source);
+  if (taskStatusErrorCode) {
+    return `${provider} 返回任务状态异常，请点击“详情”进入任务页面，在“任务响应信息”中查看具体失败原因。（状态：${taskStatusErrorCode}）`;
   }
-  if (Number(obj.status) < 0 || Number(data.status) < 0) {
-    return typeof error === "string" && error.trim() ? error.trim() : "GRS 任务失败";
+  if (isNormalizedCloudFailureMessage(raw)) return raw;
+  if (!source) return `${provider} 任务执行失败，平台未返回具体原因。请稍后重试，或检查提示词、输入图片和模型配置。`;
+  if (/任务轮询已取消|任务已取消/.test(source) || /task polling cancelled|cancelled|canceled/i.test(source)) return "任务已取消。";
+  if (isContentPolicyFailureMessage(source)) {
+    const messageText = "内容未通过审核，请调整提示词或输入图片后重试。请求内容可能触发平台内容政策或安全策略。";
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
   }
-  if (error && typeof error === "object") return String(error.message || error.msg || JSON.stringify(error)).slice(0, 500);
-  if (typeof error === "string" && /failed|error|失败|错误/.test(error)) return error.trim();
-  const text = String(rawText || "");
-  if (/insufficient|forbidden|unauthorized|余额不足|欠费/i.test(text)) return text.slice(0, 500);
+  if (isBalanceFailureMessage(source)) {
+    const messageText = `${provider} 账户余额或额度不足，请充值或检查额度后重试。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (isAuthFailureMessage(source) || httpStatus === 401) {
+    const messageText = `${provider} 鉴权失败，请检查 API Key、账号权限或登录状态后重试。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (httpStatus === 403) {
+    const messageText = `${provider} 拒绝了本次请求，请检查账号权限、模型权限或内容安全策略。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (httpStatus === 429) {
+    const messageText = `${provider} 请求过于频繁或额度受限，请稍后再试。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (httpStatus >= 500) {
+    const messageText = `${provider} 云端服务暂时异常，请稍后重试。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (/timeout|timed out|超时/i.test(source)) {
+    const messageText = `${provider} 任务等待超时，插件未能在本地等待时间内确认最终结果。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (isGenericFailureMessage(source)) {
+    const messageText = `${provider} 任务执行失败，平台未返回更具体原因。请检查提示词、输入图片和模型配置后重试。`;
+    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
+  }
+  if (/[\u4e00-\u9fff]/.test(source)) return source;
+  return `${provider} 任务执行失败：${source}`;
+}
+
+function normalizeStatusValue(value) {
+  if (value == null) return "";
+  if (typeof value === "number") {
+    if (value < 0) return "-1";
+    if (value === 0) return "0";
+    if (value === 1) return "1";
+    if (value === 2) return "2";
+  }
+  const text = String(value).trim();
+  if (!text) return "";
+  return text.toUpperCase().replace(/[\s-]+/g, "_");
+}
+
+function findStatusValue(value, depth = 0, seen = new Set()) {
+  if (!value || depth > 7 || typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const status = findStatusValue(item, depth + 1, seen);
+      if (status) return status;
+    }
+    return "";
+  }
+
+  const statusKeys = [
+    "status",
+    "state",
+    "taskStatus",
+    "task_status",
+    "runStatus",
+    "run_status",
+    "jobStatus",
+    "job_status",
+    "nodeStatus",
+    "node_status"
+  ];
+  for (const key of statusKeys) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const normalized = normalizeStatusValue(value[key]);
+    if (normalized) return normalized;
+  }
+
+  for (const key of ["data", "result", "results", "output", "outputs", "task", "job", "items", "list"]) {
+    const status = findStatusValue(value[key], depth + 1, seen);
+    if (status) return status;
+  }
+
   return "";
 }
 
-function findImageUrl(value, depth = 0) {
+function extractMessageText(value, depth = 0, seen = new Set()) {
+  if (value == null || depth > 7) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value !== "object") return "";
+  if (seen.has(value)) return "";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = extractMessageText(item, depth + 1, seen);
+      if (text) return text;
+    }
+    return "";
+  }
+
+  for (const key of ["message", "msg", "error", "errors", "detail", "reason", "failureReason", "failure_reason", "errMsg", "errorMessage"]) {
+    const item = value[key];
+    if (typeof item === "string" && item.trim() && !isGenericSuccessMessage(item)) return item.trim();
+    if (item && typeof item === "object") {
+      const text = extractMessageText(item, depth + 1, seen);
+      if (text) return text;
+    }
+  }
+
+  for (const key of ["data", "result", "results", "output", "outputs", "task", "job", "items", "list"]) {
+    const text = extractMessageText(value[key], depth + 1, seen);
+    if (text) return text;
+  }
+
+  return "";
+}
+
+function collectFailureMessageTexts(value, depth = 0, seen = new Set(), output = []) {
+  if (value == null || depth > 7) return output;
+  if (typeof value === "string") {
+    const text = compactFailureText(value);
+    if (text && !isGenericSuccessMessage(text)) output.push(text);
+    return output;
+  }
+  if (typeof value !== "object") return output;
+  if (seen.has(value)) return output;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const item of value) collectFailureMessageTexts(item, depth + 1, seen, output);
+    return output;
+  }
+
+  for (const key of [
+    "failureReason",
+    "failure_reason",
+    "failReason",
+    "fail_reason",
+    "reason",
+    "detail",
+    "errorMessage",
+    "errMsg",
+    "message",
+    "msg",
+    "error",
+    "errors",
+    "cause",
+    "description",
+    "response",
+    "taskResponse",
+    "task_response",
+    "responseInfo",
+    "response_info",
+    "taskResponseInfo",
+    "task_response_info",
+    "callbackResponse",
+    "callback_response",
+    "apiResponse",
+    "api_response",
+    "outputResponse",
+    "output_response"
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      collectFailureMessageTexts(value[key], depth + 1, seen, output);
+    }
+  }
+
+  for (const key of ["data", "result", "results", "output", "outputs", "task", "job", "items", "list"]) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      collectFailureMessageTexts(value[key], depth + 1, seen, output);
+    }
+  }
+
+  return output;
+}
+
+function extractBestFailureMessageText(value) {
+  const messages = collectFailureMessageTexts(value)
+    .map((item) => compactFailureText(item))
+    .filter(Boolean);
+  return messages.find((item) => !isGenericFailureMessage(item)) || messages[0] || "";
+}
+
+function getApiCode(value) {
+  if (!value || typeof value !== "object") return null;
+  const raw = value.code ?? value.statusCode ?? value.errorCode ?? value.errCode;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const code = Number(raw);
+  return Number.isFinite(code) ? code : null;
+}
+
+function isFailureMessage(message) {
+  const text = String(message || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/processing|pending|running|queue|wait|not finished|not completed|not ready|运行中|排队|处理中|等待中|未完成/i.test(text)) return false;
+  return /(fail|failed|failure|error|exception|cancelled|canceled|rejected|insufficient|forbidden|unauthorized|policy|safety|moderation|sensitive|blocked|violation|余额不足|欠费|失败|错误|异常|取消|违规|拒绝|审核|内容安全|安全策略|内容政策|敏感)/i.test(text);
+}
+
+function isGenericSuccessMessage(message) {
+  const text = String(message || "").trim().toLowerCase();
+  return ["success", "succeed", "succeeded", "ok", "done", "complete", "completed", "请求成功", "成功"].includes(text);
+}
+
+function getFailureMessage(value, rawText = "") {
+  const obj = value && typeof value === "object" ? value : {};
+  const status = extractTaskStatus(obj);
+  const message = extractBestFailureMessageText(obj) || extractMessageText(obj);
+  const code = getApiCode(obj);
+  const data = obj.data && typeof obj.data === "object" ? obj.data : null;
+  const dataCode = getApiCode(data);
+  const failedByCode = [code, dataCode].some((item) => item !== null && item !== 0 && item !== 200);
+  if (isFailedStatus(status) || isFailureMessage(message) || (failedByCode && isFailureMessage(message || rawText))) {
+    return normalizeCloudFailureMessage(message || rawText || (status ? `GRS 任务失败：${status}` : "GRS 任务失败"), {
+      provider: "GRS",
+      status
+    });
+  }
+  const text = String(rawText || "");
+  if (/insufficient|forbidden|unauthorized|policy|safety|moderation|sensitive|blocked|violation|余额不足|欠费|审核|内容安全|内容政策|敏感|违规/i.test(text)) {
+    return normalizeCloudFailureMessage(text, { provider: "GRS", status });
+  }
+  return "";
+}
+
+function findImageUrl(value, depth = 0, trustedUrlField = false) {
   if (value == null || depth > 7) return "";
   if (typeof value === "string") {
     const text = value.trim();
+    if (trustedUrlField && /^https?:\/\/.+/i.test(text)) return text;
     if (/^https?:\/\/.+\.(png|jpe?g|webp|gif)(?:[?#].*)?$/i.test(text)) return text;
     if (/^https?:\/\/.+\/file\//i.test(text)) return text;
     if (/^https?:\/\/.+/i.test(text) && /(image|img|media|output|result|cdn|file)/i.test(text)) return text;
     const parsed = parseJsonSafe(text);
-    if (parsed) return findImageUrl(parsed, depth + 1);
+    if (parsed) return findImageUrl(parsed, depth + 1, trustedUrlField);
     return "";
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = findImageUrl(item, depth + 1);
+      const found = findImageUrl(item, depth + 1, trustedUrlField);
       if (found) return found;
     }
     return "";
@@ -289,7 +592,7 @@ function findImageUrl(value, depth = 0) {
     "response",
     "taskResult"
   ]) {
-    const found = findImageUrl(value[key], depth + 1);
+    const found = findImageUrl(value[key], depth + 1, true);
     if (found) return found;
   }
   for (const key of ["results", "data", "result", "outputs", "output", "images", "files", "items", "media", "urls"]) {
@@ -322,10 +625,7 @@ function extractGrsTaskId(value) {
 }
 
 function extractTaskStatus(value) {
-  if (!value || typeof value !== "object") return "";
-  const data = value.data && typeof value.data === "object" ? value.data : null;
-  const output = value.output && typeof value.output === "object" ? value.output : null;
-  return String(value.status || value.state || value.taskStatus || (data && (data.status || data.state || data.taskStatus)) || (output && (output.status || output.state)) || "").toUpperCase();
+  return findStatusValue(value);
 }
 
 function isPendingStatus(status) {
@@ -337,7 +637,7 @@ function isSucceededStatus(status) {
 }
 
 function isFailedStatus(status) {
-  return ["-1", "2", "FAILED", "ERROR", "CANCELLED", "CANCELED"].includes(String(status || "").toUpperCase());
+  return ["-1", "2", "FAIL", "FAILED", "FAILURE", "ERROR", "EXCEPTION", "CANCELLED", "CANCELED", "REJECTED", "TIMEOUT", "TIMED_OUT"].includes(String(status || "").toUpperCase());
 }
 
 async function fetchJson(url, options = {}, timeoutMs = 30000, controller = null) {
