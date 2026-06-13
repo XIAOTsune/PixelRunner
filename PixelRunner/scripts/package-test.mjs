@@ -20,7 +20,7 @@ function getBuildChannel() {
 
 function getIncludedEntries(version, channel) {
   return {
-    packageDirName: channel === "release" ? `PixelRunnerV${version}` : `PixelRunnerV${version}-test`,
+    packageDirName: `PixelRunnerV${version}`,
     entries: [
       "manifest.json",
       "LICENSE",
