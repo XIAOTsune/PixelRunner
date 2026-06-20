@@ -465,6 +465,14 @@
                 <span class="field-label">AI 优化应用 ID</span>
                 <input id="settingsAiOptimizeAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub AI优化应用 ID" />
               </label>
+              <div class="field toggle-field settings-toggle-field">
+                <span class="field-label">多图输入保护</span>
+                <label class="checkbox-line">
+                  <input id="settingsAutoFillEmptyImageInputs" type="checkbox" checked />
+                  <span>副图或参考图为空时，自动复用主图</span>
+                </label>
+                <span class="field-hint settings-field-hint">运行前如果已填写第一张主图，其它空的图片输入会自动使用同一张图，减少多图工作流因空参考图失败。</span>
+              </div>
               <div class="action-row">
                 <button id="btnResetAiOptimizeAppId" class="secondary-btn" type="button">恢复默认</button>
               </div>

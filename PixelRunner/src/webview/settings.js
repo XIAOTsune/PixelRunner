@@ -128,6 +128,9 @@
         settings.aiOptimizeAppId ?? modules.state.DEFAULT_AI_OPTIMIZE_APP_ID
       );
     }
+    if (modules.runtime.getById("settingsAutoFillEmptyImageInputs")) {
+      modules.runtime.getById("settingsAutoFillEmptyImageInputs").checked = settings.autoFillEmptyImageInputs !== false;
+    }
     fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
   }
 
@@ -593,6 +596,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
+      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked !== false,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
     });
   }
@@ -645,6 +649,7 @@
       timeout: rawSettings && rawSettings.timeout,
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
+      autoFillEmptyImageInputs: rawSettings ? rawSettings.autoFillEmptyImageInputs : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
     });
   }
@@ -680,6 +685,7 @@
         timeout: nextSettings.timeout,
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
+        autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
         activeApiProfileId: nextSettings.activeApiProfileId,
         thirdParty
       })
@@ -782,6 +788,7 @@
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
       "settingsAiOptimizeAppIdInput",
+      "settingsAutoFillEmptyImageInputs",
       "thirdPartyEnabledInput",
       "thirdPartyGrsApiUrlInput",
       "thirdPartyGrsApiKeyInput",

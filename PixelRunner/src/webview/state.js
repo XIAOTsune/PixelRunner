@@ -29,7 +29,8 @@
     pollInterval: 2,
     timeout: 180,
     maxConcurrentTasks: 3,
-    aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID
+    aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
+    autoFillEmptyImageInputs: true
   };
 
   const DEFAULT_THIRD_PARTY_SETTINGS = {
@@ -168,6 +169,7 @@
       timeout,
       maxConcurrentTasks,
       aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
+      autoFillEmptyImageInputs: source.autoFillEmptyImageInputs !== false,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()
     };
   }

@@ -118,6 +118,41 @@ function isImageLikeInput(input) {
   return typeMarker.includes("image") || typeMarker.includes("img") || typeMarker.includes("file") || fieldMarker === "image";
 }
 
+function getImageInputMarker(input) {
+  return `${(input && input.key) || ""} ${(input && input.label) || ""} ${(input && input.name) || ""} ${(input && input.fieldName) || ""}`
+    .toLowerCase();
+}
+
+function isMainImageInput(input) {
+  return /(主图|主输入|原图|底图|主体图|main|primary|source|base)/i.test(getImageInputMarker(input));
+}
+
+function getImageInputPrimaryScore(input, index = 0) {
+  const marker = getImageInputMarker(input);
+  let score = 0;
+  if (isMainImageInput(input)) score += 80;
+  if (/(参考|副图|辅图|风格图|遮罩|控制图|ref|reference|style|mask|control|pose|depth|edge)/i.test(marker)) score -= 40;
+  if (input && input.required) score += 8;
+  return score - index * 0.01;
+}
+
+function findPrimaryImageInput(inputs, values) {
+  const imageInputs = (Array.isArray(inputs) ? inputs : []).filter(isImageLikeInput);
+  const mainInputs = imageInputs.filter(isMainImageInput);
+  const sourceInputs = mainInputs.length ? mainInputs : imageInputs;
+  const ranked = sourceInputs
+    .map((input, index) => ({
+      input,
+      index,
+      key: String((input && input.key) || "").trim() || `param_${index + 1}`,
+      score: getImageInputPrimaryScore(input, index)
+    }))
+    .filter((item) => item.key && isFilledInputValue(values[item.key]))
+    .filter((item) => mainInputs.length || item.score >= 0)
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  return ranked.length ? ranked[0] : null;
+}
+
 function parseDataUrl(value) {
   const text = String(value || "").trim();
   const match = text.match(/^data:([^;,]+)?;base64,(.+)$/i);
@@ -350,9 +385,56 @@ function buildNodeParams(app, inputValues) {
 async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
   const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
   const values = inputValues && typeof inputValues === "object" ? inputValues : {};
+  const autoFillEmptyImageInputs = settings.autoFillEmptyImageInputs !== false;
+  const primaryImageInput = autoFillEmptyImageInputs ? findPrimaryImageInput(inputs, values) : null;
+  const uploadedImageValues = new Map();
   const normalizedValues = {};
   const nodeInfoList = [];
   const nodeParams = {};
+
+  async function normalizeImageSubmission(input, rawValue, key) {
+    const imageSubmission = classifyImageSubmissionValue(rawValue);
+    if (imageSubmission.mode === "empty") return "";
+    if (imageSubmission.mode === "upload") {
+      try {
+        return await uploadImageValue(apiKey, imageSubmission.value, settings);
+      } catch (error) {
+        console.warn("[PixelRunner/RunningHub] image upload classification failed", {
+          key,
+          fieldName: String((input && (input.fieldName || input.name || key)) || key),
+          mode: imageSubmission.mode,
+          message: error && error.message ? error.message : String(error || "")
+        });
+        throw error;
+      }
+    }
+    return imageSubmission.value;
+  }
+
+  async function getPrimaryImageValue() {
+    if (!primaryImageInput || !primaryImageInput.key) return "";
+    if (uploadedImageValues.has(primaryImageInput.key)) return uploadedImageValues.get(primaryImageInput.key);
+    const normalized = await normalizeImageSubmission(
+      primaryImageInput.input,
+      values[primaryImageInput.key],
+      primaryImageInput.key
+    );
+    if (isFilledInputValue(normalized)) uploadedImageValues.set(primaryImageInput.key, normalized);
+    return normalized;
+  }
+
+  function pushImagePayload(input, key, normalizedValue) {
+    normalizedValues[key] = normalizedValue;
+    nodeParams[key] = normalizedValue;
+    const fieldName = String((input && (input.fieldName || input.name)) || "").trim();
+    if (fieldName && !(fieldName in nodeParams)) nodeParams[fieldName] = normalizedValue;
+    nodeInfoList.push({
+      nodeId: input && input.nodeId ? input.nodeId : key,
+      fieldName: String((input && (input.fieldName || input.key || input.name)) || key).trim(),
+      fieldValue: normalizedValue,
+      ...(input && input.fieldType ? { fieldType: input.fieldType } : {})
+    });
+  }
 
   for (let index = 0; index < inputs.length; index += 1) {
     const input = inputs[index];
@@ -360,18 +442,33 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     const rawValue = values[key];
     const isImageInput = isImageLikeInput(input);
     if (!isFilledInputValue(rawValue)) {
+      if (isImageInput && autoFillEmptyImageInputs) {
+        const primaryImageValue = await getPrimaryImageValue();
+        if (primaryImageValue && (!primaryImageInput || key !== primaryImageInput.key)) {
+          pushImagePayload(input, key, primaryImageValue);
+          console.log("[PixelRunner/RunningHub] image input empty, reusing primary image", {
+            key,
+            fieldName: String((input && (input.fieldName || input.name || key)) || key)
+          });
+          continue;
+        }
+      }
+
       if (isImageInput && !(input && input.required)) {
+        if (autoFillEmptyImageInputs) {
+          const primaryImageValue = await getPrimaryImageValue();
+          if (primaryImageValue) {
+            pushImagePayload(input, key, primaryImageValue);
+            console.log("[PixelRunner/RunningHub] optional image empty, reusing primary image", {
+              key,
+              fieldName: String((input && (input.fieldName || input.name || key)) || key)
+            });
+            continue;
+          }
+        }
+
         const blankToken = await getBlankImageToken(apiKey, settings);
-        normalizedValues[key] = blankToken;
-        nodeParams[key] = blankToken;
-        const optionalFieldName = String((input && (input.fieldName || input.name)) || "").trim();
-        if (optionalFieldName && !(optionalFieldName in nodeParams)) nodeParams[optionalFieldName] = blankToken;
-        nodeInfoList.push({
-          nodeId: input && input.nodeId ? input.nodeId : key,
-          fieldName: String((input && (input.fieldName || input.key || input.name)) || key).trim(),
-          fieldValue: blankToken,
-          ...(input && input.fieldType ? { fieldType: input.fieldType } : {})
-        });
+        pushImagePayload(input, key, blankToken);
         console.log("[PixelRunner/RunningHub] optional image empty, using blank placeholder", {
           key,
           fieldName: String((input && (input.fieldName || input.name || key)) || key)
@@ -392,25 +489,28 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         if (input && input.required) {
           throw new Error(`Missing required input: ${input.label || input.name || key}`);
         }
-        normalizedValue = await getBlankImageToken(apiKey, settings);
-        console.log("[PixelRunner/RunningHub] optional image normalized to blank placeholder", {
-          key,
-          fieldName: String((input && (input.fieldName || input.name || key)) || key)
-        });
-      } else if (imageSubmission.mode === "upload") {
-        try {
-          normalizedValue = await uploadImageValue(apiKey, imageSubmission.value, settings);
-        } catch (error) {
-          console.warn("[PixelRunner/RunningHub] image upload classification failed", {
+        const primaryImageValue = autoFillEmptyImageInputs ? await getPrimaryImageValue() : "";
+        if (primaryImageValue) {
+          normalizedValue = primaryImageValue;
+          console.log("[PixelRunner/RunningHub] optional image normalized to primary image", {
             key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key),
-            mode: imageSubmission.mode,
-            message: error && error.message ? error.message : String(error || "")
+            fieldName: String((input && (input.fieldName || input.name || key)) || key)
           });
-          throw error;
+        } else {
+          normalizedValue = await getBlankImageToken(apiKey, settings);
+          console.log("[PixelRunner/RunningHub] optional image normalized to blank placeholder", {
+            key,
+            fieldName: String((input && (input.fieldName || input.name || key)) || key)
+          });
         }
+      } else if (imageSubmission.mode === "upload") {
+        normalizedValue = uploadedImageValues.has(key)
+          ? uploadedImageValues.get(key)
+          : await normalizeImageSubmission(input, rawValue, key);
+        uploadedImageValues.set(key, normalizedValue);
       } else {
         normalizedValue = imageSubmission.value;
+        uploadedImageValues.set(key, normalizedValue);
       }
       console.log("[PixelRunner/RunningHub] image uploaded", {
         key,
