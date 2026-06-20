@@ -129,7 +129,7 @@
       );
     }
     if (modules.runtime.getById("settingsAutoFillEmptyImageInputs")) {
-      modules.runtime.getById("settingsAutoFillEmptyImageInputs").checked = settings.autoFillEmptyImageInputs !== false;
+      modules.runtime.getById("settingsAutoFillEmptyImageInputs").checked = settings.autoFillEmptyImageInputs === true;
     }
     fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
   }
@@ -596,7 +596,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
-      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked !== false,
+      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
     });
   }

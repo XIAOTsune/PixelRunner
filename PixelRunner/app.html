@@ -468,10 +468,10 @@
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">多图输入保护</span>
                 <label class="checkbox-line">
-                  <input id="settingsAutoFillEmptyImageInputs" type="checkbox" checked />
-                  <span>副图或参考图为空时，自动复用主图</span>
+                  <input id="settingsAutoFillEmptyImageInputs" type="checkbox" />
+                  <span>参考图或副图为空时，自动复用主图</span>
                 </label>
-                <span class="field-hint settings-field-hint">运行前如果已填写第一张主图，其它空的图片输入会自动使用同一张图，减少多图工作流因空参考图失败。</span>
+                <span class="field-hint settings-field-hint">关闭时空的可选图片字段会直接跳过；开启后仅补齐参考图、副图、image2 等普通图片字段，不会补齐遮罩、控制图、深度图或姿态图。</span>
               </div>
               <div class="action-row">
                 <button id="btnResetAiOptimizeAppId" class="secondary-btn" type="button">恢复默认</button>

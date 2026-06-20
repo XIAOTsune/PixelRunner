@@ -1,9 +1,6 @@
 import { parseRunningHubApp } from "./runninghub-parser.js";
 
 const runninghubTaskControllers = new Map();
-const blankImageTokenCache = new Map();
-const BLANK_IMAGE_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2fJ0QAAAAASUVORK5CYII=";
 
 function normalizeAppId(value) {
   const normalized = String(value == null ? "" : value).trim();
@@ -123,15 +120,39 @@ function getImageInputMarker(input) {
     .toLowerCase();
 }
 
+function getImageInputRole(input) {
+  return String((input && input.role) || "").trim().toLowerCase();
+}
+
+function getImageInputEmptyBehavior(input) {
+  return String((input && (input.emptyBehavior || input.emptyBehaviour || input.emptyPolicy || input.onEmpty)) || "")
+    .trim()
+    .toLowerCase();
+}
+
 function isMainImageInput(input) {
-  return /(主图|主输入|原图|底图|主体图|main|primary|source|base)/i.test(getImageInputMarker(input));
+  return getImageInputRole(input) === "primary" || /(主图|主输入|原图|底图|主体图|main|primary|source|base)/i.test(getImageInputMarker(input));
+}
+
+function isControlImageInput(input) {
+  return /(遮罩|蒙版|控制图|姿态|深度|法线|线稿|边缘|mask|control|pose|depth|normal|canny|edge|lineart|scribble|sketch|seg|segmentation|openpose)/i.test(getImageInputMarker(input));
+}
+
+function shouldAutoFillImageInput(input) {
+  if (!input || isMainImageInput(input)) return false;
+  const emptyBehavior = getImageInputEmptyBehavior(input);
+  if (/^(copyprimary|copy-primary|copy_primary)$/.test(emptyBehavior)) return true;
+  if (emptyBehavior === "skip" || emptyBehavior === "require" || isControlImageInput(input)) return false;
+  if (["reference", "secondary", "style"].includes(getImageInputRole(input))) return true;
+  return /(参考|副图|辅图|风格图|参照|reference|ref|secondary|second|image2|img2|style)/i.test(getImageInputMarker(input));
 }
 
 function getImageInputPrimaryScore(input, index = 0) {
   const marker = getImageInputMarker(input);
   let score = 0;
   if (isMainImageInput(input)) score += 80;
-  if (/(参考|副图|辅图|风格图|遮罩|控制图|ref|reference|style|mask|control|pose|depth|edge)/i.test(marker)) score -= 40;
+  if (isControlImageInput(input)) score -= 80;
+  if (/(参考|副图|辅图|风格图|ref|reference|style)/i.test(marker)) score -= 40;
   if (input && input.required) score += 8;
   return score - index * 0.01;
 }
@@ -284,31 +305,6 @@ async function uploadImageValue(apiKey, imageValue, settings = {}) {
   throw lastError || new Error("Image upload failed");
 }
 
-async function getBlankImageToken(apiKey, settings = {}) {
-  const cacheKey = String(apiKey || "").trim();
-  if (!cacheKey) throw new Error("RunningHub API Key is missing");
-  const cached = blankImageTokenCache.get(cacheKey);
-  if (cached) return cached;
-
-  const pending = uploadImageValue(cacheKey, BLANK_IMAGE_PNG_BASE64, settings)
-    .then((token) => {
-      const normalized = String(token || "").trim();
-      if (!normalized) {
-        blankImageTokenCache.delete(cacheKey);
-        throw new Error("Blank image upload returned empty token");
-      }
-      blankImageTokenCache.set(cacheKey, normalized);
-      return normalized;
-    })
-    .catch((error) => {
-      blankImageTokenCache.delete(cacheKey);
-      throw error;
-    });
-
-  blankImageTokenCache.set(cacheKey, pending);
-  return pending;
-}
-
 function normalizeInputValue(input, value) {
   const typeMarker = String((input && (input.type || input.fieldType)) || "").trim().toLowerCase();
   if (isImageLikeInput(input) || typeMarker === "image" || typeMarker === "file") {
@@ -385,8 +381,11 @@ function buildNodeParams(app, inputValues) {
 async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
   const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
   const values = inputValues && typeof inputValues === "object" ? inputValues : {};
-  const autoFillEmptyImageInputs = settings.autoFillEmptyImageInputs !== false;
-  const primaryImageInput = autoFillEmptyImageInputs ? findPrimaryImageInput(inputs, values) : null;
+  const autoFillEmptyImageInputs = settings.autoFillEmptyImageInputs === true;
+  const hasExplicitCopyPrimaryInput = inputs.some(
+    (input) => isImageLikeInput(input) && /^(copyprimary|copy-primary|copy_primary)$/.test(getImageInputEmptyBehavior(input))
+  );
+  const primaryImageInput = autoFillEmptyImageInputs || hasExplicitCopyPrimaryInput ? findPrimaryImageInput(inputs, values) : null;
   const uploadedImageValues = new Map();
   const normalizedValues = {};
   const nodeInfoList = [];
@@ -441,8 +440,14 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     const key = String((input && input.key) || "").trim() || `param_${index + 1}`;
     const rawValue = values[key];
     const isImageInput = isImageLikeInput(input);
+    const imageEmptyBehavior = isImageInput ? getImageInputEmptyBehavior(input) : "";
+    const imageRequiresValue = Boolean(input && input.required) || imageEmptyBehavior === "require";
+    const canCopyPrimaryImage =
+      isImageInput &&
+      shouldAutoFillImageInput(input) &&
+      (autoFillEmptyImageInputs || /^(copyprimary|copy-primary|copy_primary)$/.test(imageEmptyBehavior));
     if (!isFilledInputValue(rawValue)) {
-      if (isImageInput && autoFillEmptyImageInputs) {
+      if (canCopyPrimaryImage) {
         const primaryImageValue = await getPrimaryImageValue();
         if (primaryImageValue && (!primaryImageInput || key !== primaryImageInput.key)) {
           pushImagePayload(input, key, primaryImageValue);
@@ -454,8 +459,8 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         }
       }
 
-      if (isImageInput && !(input && input.required)) {
-        if (autoFillEmptyImageInputs) {
+      if (isImageInput && !imageRequiresValue) {
+        if (canCopyPrimaryImage) {
           const primaryImageValue = await getPrimaryImageValue();
           if (primaryImageValue) {
             pushImagePayload(input, key, primaryImageValue);
@@ -467,42 +472,33 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
           }
         }
 
-        const blankToken = await getBlankImageToken(apiKey, settings);
-        pushImagePayload(input, key, blankToken);
-        console.log("[PixelRunner/RunningHub] optional image empty, using blank placeholder", {
+        console.log("[PixelRunner/RunningHub] optional image empty, skipping field", {
           key,
           fieldName: String((input && (input.fieldName || input.name || key)) || key)
         });
         continue;
       }
-      if (input && input.required && typeof rawValue !== "boolean") {
+      if (imageRequiresValue && typeof rawValue !== "boolean") {
         throw new Error(`Missing required input: ${input.label || input.name || key}`);
       }
       continue;
     }
 
     let normalizedValue = rawValue;
-    const typeMarker = String((input && (input.type || input.fieldType)) || "").trim().toLowerCase();
     if (isImageInput) {
       const imageSubmission = classifyImageSubmissionValue(rawValue);
       if (imageSubmission.mode === "empty") {
-        if (input && input.required) {
+        if (imageRequiresValue) {
           throw new Error(`Missing required input: ${input.label || input.name || key}`);
         }
-        const primaryImageValue = autoFillEmptyImageInputs ? await getPrimaryImageValue() : "";
+        const primaryImageValue = canCopyPrimaryImage ? await getPrimaryImageValue() : "";
         if (primaryImageValue) {
           normalizedValue = primaryImageValue;
           console.log("[PixelRunner/RunningHub] optional image normalized to primary image", {
             key,
             fieldName: String((input && (input.fieldName || input.name || key)) || key)
           });
-        } else {
-          normalizedValue = await getBlankImageToken(apiKey, settings);
-          console.log("[PixelRunner/RunningHub] optional image normalized to blank placeholder", {
-            key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key)
-          });
-        }
+        } else continue;
       } else if (imageSubmission.mode === "upload") {
         normalizedValue = uploadedImageValues.has(key)
           ? uploadedImageValues.get(key)

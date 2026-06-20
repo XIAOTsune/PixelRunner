@@ -30,7 +30,7 @@
     timeout: 180,
     maxConcurrentTasks: 3,
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
-    autoFillEmptyImageInputs: true
+    autoFillEmptyImageInputs: false
   };
 
   const DEFAULT_THIRD_PARTY_SETTINGS = {
@@ -169,7 +169,7 @@
       timeout,
       maxConcurrentTasks,
       aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
-      autoFillEmptyImageInputs: source.autoFillEmptyImageInputs !== false,
+      autoFillEmptyImageInputs: source.autoFillEmptyImageInputs === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()
     };
   }
