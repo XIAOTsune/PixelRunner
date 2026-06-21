@@ -605,6 +605,58 @@
     });
   }
 
+  function readAdvancedSettingsForm() {
+    return modules.state.normalizeSettings({
+      ...modules.state.state.settings,
+      pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
+      timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
+      maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
+      aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
+      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
+      appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
+      apiKey: modules.state.state.settings.apiKey,
+      activeApiProfileId: modules.state.state.activeApiProfileId || modules.state.state.settings.activeApiProfileId || ""
+    });
+  }
+
+  async function writeSettingsStorage(nextSettings, thirdParty) {
+    await modules.runtime.storageSetItem(
+      modules.state.STORAGE_KEYS.SETTINGS,
+      JSON.stringify({
+        pollInterval: nextSettings.pollInterval,
+        timeout: nextSettings.timeout,
+        maxConcurrentTasks: nextSettings.maxConcurrentTasks,
+        aiOptimizeAppId: nextSettings.aiOptimizeAppId,
+        autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
+        appPickerLayout: nextSettings.appPickerLayout,
+        activeApiProfileId: nextSettings.activeApiProfileId,
+        thirdParty
+      })
+    );
+  }
+
+  function applySettingsSnapshot(nextSettings, thirdParty, options = {}) {
+    modules.state.state.settings = nextSettings;
+    modules.state.state.thirdPartySettings = thirdParty;
+    modules.state.state.settingsLoaded = true;
+    if (!options.skipFillForm) {
+      fillSettingsForm(nextSettings);
+    }
+    if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
+      modules.workspace.updateRunButtonState();
+    }
+    if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") {
+      modules.workspace.renderWorkspace();
+    }
+    if (modules.apps && typeof modules.apps.renderAppPickerList === "function") {
+      modules.apps.renderAppPickerList();
+    }
+    renderSettingsDiagnostics(options.diagnosticsMessage || "当前设置已同步。", {
+      runtime: modules.state.state.hostRuntime,
+      hasApiKey: Boolean(nextSettings.apiKey)
+    });
+  }
+
   async function loadSettingsSnapshot() {
     const apiKey = String((await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.API_KEY)) || "").trim();
     const rawSettings = modules.runtime.readJsonText(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.SETTINGS), {});
@@ -683,44 +735,31 @@
     );
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdParty));
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdParty.grs.apiKey || "");
-    await modules.runtime.storageSetItem(
-      modules.state.STORAGE_KEYS.SETTINGS,
-      JSON.stringify({
-        pollInterval: nextSettings.pollInterval,
-        timeout: nextSettings.timeout,
-        maxConcurrentTasks: nextSettings.maxConcurrentTasks,
-        aiOptimizeAppId: nextSettings.aiOptimizeAppId,
-        autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
-        appPickerLayout: nextSettings.appPickerLayout,
-        activeApiProfileId: nextSettings.activeApiProfileId,
-        thirdParty
-      })
-    );
+    await writeSettingsStorage(nextSettings, thirdParty);
 
     modules.state.state.apiProfiles = apiProfileState.profiles;
     modules.state.state.activeApiProfileId = nextSettings.activeApiProfileId;
-    modules.state.state.settings = nextSettings;
-    modules.state.state.thirdPartySettings = thirdParty;
-    modules.state.state.settingsLoaded = true;
-    fillSettingsForm(nextSettings);
-    if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
-      modules.workspace.updateRunButtonState();
-    }
-    if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") {
-      modules.workspace.renderWorkspace();
-    }
-    if (modules.apps && typeof modules.apps.renderAppPickerList === "function") {
-      modules.apps.renderAppPickerList();
-    }
+    applySettingsSnapshot(nextSettings, thirdParty);
     renderSettingsStatus("设置已保存到宿主本地存储。", "success");
-    renderSettingsDiagnostics("当前设置已同步。", {
-      runtime: modules.state.state.hostRuntime,
-      hasApiKey: Boolean(nextSettings.apiKey)
-    });
     modules.ui.logToWorkspace(
       `设置已保存：轮询 ${nextSettings.pollInterval}s，超时 ${nextSettings.timeout}s，并发 ${nextSettings.maxConcurrentTasks} 个。`,
       "success"
     );
+    return nextSettings;
+  }
+
+  async function saveAdvancedSettingsSnapshot(options = {}) {
+    const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
+    const nextSettings = readAdvancedSettingsForm();
+    await writeSettingsStorage(nextSettings, thirdParty);
+    modules.state.state.activeApiProfileId = nextSettings.activeApiProfileId;
+    applySettingsSnapshot(nextSettings, thirdParty, {
+      diagnosticsMessage: "高级设置已自动同步。",
+      skipFillForm: true
+    });
+    if (!options.quiet) {
+      renderSettingsStatus("高级设置已自动保存并立即生效。", "success");
+    }
     return nextSettings;
   }
 
@@ -793,12 +832,6 @@
     const fieldIds = [
       "settingsApiKeyInput",
       "settingsApiProfileNameInput",
-      "settingsPollIntervalInput",
-      "settingsTimeoutInput",
-      "settingsMaxConcurrentTasksInput",
-      "settingsAiOptimizeAppIdInput",
-      "settingsAutoFillEmptyImageInputs",
-      "settingsAppPickerLayoutInput",
       "thirdPartyEnabledInput",
       "thirdPartyGrsApiUrlInput",
       "thirdPartyGrsApiKeyInput",
@@ -809,8 +842,47 @@
       "thirdPartyGrsDefaultResolutionInput",
       "thirdPartyGrsAdapterInput"
     ];
+    const advancedSettingFieldIds = [
+      "settingsPollIntervalInput",
+      "settingsTimeoutInput",
+      "settingsMaxConcurrentTasksInput",
+      "settingsAiOptimizeAppIdInput",
+      "settingsAutoFillEmptyImageInputs",
+      "settingsAppPickerLayoutInput"
+    ];
+    const immediateAdvancedFieldIds = new Set([
+      "settingsAutoFillEmptyImageInputs",
+      "settingsAppPickerLayoutInput"
+    ]);
+    let advancedSaveTimer = null;
 
     bindAppManagerControls();
+
+    function scheduleAdvancedSettingsSave(sourceId, options = {}) {
+      const run = async () => {
+        advancedSaveTimer = null;
+        try {
+          await saveAdvancedSettingsSnapshot({ quiet: true });
+          renderSettingsStatus("高级设置已自动保存并立即生效。", "success");
+        } catch (error) {
+          renderSettingsStatus(`高级设置自动保存失败：${error.message}`, "error");
+          modules.ui.logToWorkspace(`高级设置自动保存失败：${error.message}`, "error");
+        }
+      };
+
+      if (advancedSaveTimer) {
+        window.clearTimeout(advancedSaveTimer);
+        advancedSaveTimer = null;
+      }
+
+      if (options.immediate) {
+        void run();
+        return;
+      }
+
+      renderSettingsStatus("高级设置将在停止输入后自动保存。", "pending");
+      advancedSaveTimer = window.setTimeout(run, 450);
+    }
 
     function prepareNewApiProfileDraft() {
       modules.state.state.activeApiProfileId = "";
@@ -983,8 +1055,15 @@
           if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
         });
       }
-      if (id === "settingsMaxConcurrentTasksInput") {
-        element.addEventListener("input", () => {
+      element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
+    });
+
+    advancedSettingFieldIds.forEach((id) => {
+      const element = runtime.getById(id);
+      if (!element) return;
+      const eventName = element.type === "checkbox" ? "change" : "input";
+      element.addEventListener(eventName, () => {
+        if (id === "settingsMaxConcurrentTasksInput") {
           const previewSettings = modules.state.normalizeSettings({
             ...modules.state.state.settings,
             maxConcurrentTasks: element.value
@@ -996,9 +1075,9 @@
           ) {
             modules.workspace.updateRunButtonState();
           }
-        });
-      }
-      element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
+        }
+        scheduleAdvancedSettingsSave(id, { immediate: immediateAdvancedFieldIds.has(id) });
+      });
     });
 
     if (saveButton) {
@@ -1032,10 +1111,10 @@
     }
 
     if (resetAiOptimizeButton) {
-      resetAiOptimizeButton.addEventListener("click", () => {
+      resetAiOptimizeButton.addEventListener("click", async () => {
         const input = runtime.getById("settingsAiOptimizeAppIdInput");
         if (input) input.value = modules.state.DEFAULT_AI_OPTIMIZE_APP_ID;
-        renderSettingsStatus("AI 优化应用 ID 已恢复为内置默认值，记得保存设置。", "pending");
+        scheduleAdvancedSettingsSave("settingsAiOptimizeAppIdInput", { immediate: true });
       });
     }
 
