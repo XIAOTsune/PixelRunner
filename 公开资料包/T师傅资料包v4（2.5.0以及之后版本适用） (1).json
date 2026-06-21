@@ -1,0 +1,2496 @@
+{
+  "schema": "pixelrunner.bundle",
+  "version": 2,
+  "exportedAt": "2026-06-03T02:48:18.989Z",
+  "name": "PixelRunner 资料包",
+  "apps": [
+    {
+      "id": "app-1780454877117-5w3buo",
+      "appId": "2060263005136449538",
+      "name": "全能图片 Pro",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/c2530fb35194e9b1098b9e5418af8769/2026-05-29/06012976519303320781140297a72b08.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "3:image",
+          "name": "上传图像 1 【选填,一张图不上传默认是文生图】",
+          "label": "上传图像 1 【选填,一张图不上传默认是文生图】",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "b0a5bbecda5d96339c412bca621dbf0e1604d3bf836403fbf5f807c49f61fb74.png",
+          "nodeId": "3",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "7:image",
+          "name": "上传图像 2 【选填,用不上的图像可以直接删掉】",
+          "label": "上传图像 2 【选填,用不上的图像可以直接删掉】",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "92a05874f3ff1bb38eb58cd1a42760e1c855741f410895a82512ed8b06b8b53b.png",
+          "nodeId": "7",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "8:image",
+          "name": "上传图像 3 【选填,工作流里面最多支持10张图】",
+          "label": "上传图像 3 【选填,工作流里面最多支持10张图】",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "f40310c57753b8c1a5a2e230022f256ca24f1aa70c58a65f4230daa19901988b.png",
+          "nodeId": "8",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "2:aspectRatio",
+          "name": "设置比例",
+          "label": "设置比例",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "9:16",
+          "options": [
+            {
+              "value": "auto",
+              "label": "auto"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            }
+          ],
+          "nodeId": "2",
+          "fieldName": "aspectRatio",
+          "fieldType": "LIST",
+          "fieldData": "[[\"auto\", \"1:1\", \"2:3\", \"3:2\", \"3:4\", \"4:3\", \"4:5\", \"5:4\", \"9:16\", \"16:9\", \"21:9\"], {\"default\": \"4:3\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "2:resolution",
+          "name": "分辨率",
+          "label": "分辨率",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1k",
+          "options": [
+            {
+              "value": "1k",
+              "label": "1k"
+            },
+            {
+              "value": "2k",
+              "label": "2k"
+            },
+            {
+              "value": "4k",
+              "label": "4k"
+            },
+            {
+              "value": "8k (Official only)",
+              "label": "8k (Official only)"
+            }
+          ],
+          "nodeId": "2",
+          "fieldName": "resolution",
+          "fieldType": "LIST",
+          "fieldData": "[[\"1k\", \"2k\", \"4k\", \"8k (Official only)\"], {\"default\": \"2k\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "2:channel",
+          "name": "第三方/官方切换",
+          "label": "第三方/官方切换",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "Third-party",
+          "options": [
+            {
+              "value": "Third-party",
+              "label": "Third-party"
+            },
+            {
+              "value": "Official",
+              "label": "Official"
+            }
+          ],
+          "nodeId": "2",
+          "fieldName": "channel",
+          "fieldType": "LIST",
+          "fieldData": "[[\"Third-party\", \"Official\"], {\"default\": \"Third-party\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "2:prompt",
+          "name": "输入文本",
+          "label": "输入文本",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "用图像3模特的脸，生成戴图像2帽子的年轻女性模特图，穿图像1的衣服，生成高清近景图，影棚浅灰色背景，模特动作潮酷，戴一副银色辣妹耳圈，有几根发丝轻轻飘动，专业相机拍摄",
+          "nodeId": "2",
+          "fieldName": "prompt",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1780454877117,
+      "updatedAt": 1780454877117
+    },
+    {
+      "id": "app-1780407716208-e7jee0",
+      "appId": "2060249594856034306",
+      "name": "全能图片2.0",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/c2530fb35194e9b1098b9e5418af8769/2026-05-29/a35d790b50ee34aea0ee667d2d7375a5.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "2:image",
+          "name": "上传图像 1 【选填,一张图不上传默认是文生图】",
+          "label": "上传图像 1 【选填,一张图不上传默认是文生图】",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "46ebc94e03f5c684a902a93c7b72d7383591fe7979bff26d7508ca72f13b2f18.png",
+          "nodeId": "2",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "3:image",
+          "name": "上传图像 2 【选填,用不上的图像可以直接删掉】",
+          "label": "上传图像 2 【选填,用不上的图像可以直接删掉】",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "c819d8f6f925e1786ceaf7f77db42186cb742742aecb303998369bad2eff2aae.jpg",
+          "nodeId": "3",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "4:image",
+          "name": "上传图像 3 【选填,工作流里面最多支持10张图】",
+          "label": "上传图像 3 【选填,工作流里面最多支持10张图】",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "7e1cb2850b8c95cb0b50b69403dd17f772b5673766458bba399797dfe7a181f8.jpg",
+          "nodeId": "4",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "1:aspectRatio",
+          "name": "设置比例",
+          "label": "设置比例",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "9:16",
+          "options": [
+            {
+              "value": "auto",
+              "label": "auto"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "1:4",
+              "label": "1:4"
+            },
+            {
+              "value": "1:8",
+              "label": "1:8"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "4:1",
+              "label": "4:1"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "8:1",
+              "label": "8:1"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            }
+          ],
+          "nodeId": "1",
+          "fieldName": "aspectRatio",
+          "fieldType": "LIST",
+          "fieldData": "[[\"auto\", \"1:1\", \"1:4\", \"1:8\", \"2:3\", \"3:2\", \"3:4\", \"4:1\", \"4:3\", \"4:5\", \"5:4\", \"8:1\", \"9:16\", \"16:9\", \"21:9\"], {\"default\": \"4:3\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "1:resolution",
+          "name": "分辨率",
+          "label": "分辨率",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2k",
+          "options": [
+            {
+              "value": "1k",
+              "label": "1k"
+            },
+            {
+              "value": "2k",
+              "label": "2k"
+            },
+            {
+              "value": "4k",
+              "label": "4k"
+            }
+          ],
+          "nodeId": "1",
+          "fieldName": "resolution",
+          "fieldType": "LIST",
+          "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"2k\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "1:channel",
+          "name": "第三方/官方切换",
+          "label": "第三方/官方切换",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "Third-party",
+          "options": [
+            {
+              "value": "Third-party",
+              "label": "Third-party"
+            },
+            {
+              "value": "Official",
+              "label": "Official"
+            }
+          ],
+          "nodeId": "1",
+          "fieldName": "channel",
+          "fieldType": "LIST",
+          "fieldData": "[[\"Third-party\", \"Official\"], {\"default\": \"Third-party\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "9:text",
+          "name": "输入文本",
+          "label": "输入文本",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "近景构图（膝盖以上），图 1 的女孩穿着图 2 的衣服，身处图 3 的场景中，自信展示自我，姿态酷飒随性，眼神冷艳有气场，保持人物五官一致性，高级电影质感，光影干净柔和，细节超清，氛围感拉满，酷女孩风格，画面自然高级",
+          "nodeId": "9",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1780407716208,
+      "updatedAt": 1780407716208
+    },
+    {
+      "id": "app-1780325880300-cgabcw",
+      "appId": "1988620716486647809",
+      "name": "胸部控制器（丰胸大小控制）",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/e84b749658b6f2ed12f889ea1207ff30/2025-12-14/420992a73dbb4f090efed77c2866d5c3.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "8:image",
+          "name": "上传图片",
+          "label": "上传图片",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "8cf57efc3695f39ba1495f680c17442ecef62152779c4ff301c4975489c8f19e.png",
+          "nodeId": "8",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "18:strength_model",
+          "name": "胸部大小2最大（-2—2）",
+          "label": "胸部大小2最大（-2—2）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2.0000000000000004",
+          "nodeId": "18",
+          "fieldName": "strength_model",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 100, \"min\": -100, \"step\": 0.01, \"default\": 1}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "24:text",
+          "name": "提示词（辅助效果可不改）",
+          "label": "提示词（辅助效果可不改）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "胸部变大",
+          "nodeId": "24",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1780325880300,
+      "updatedAt": 1780325880300
+    },
+    {
+      "id": "app-1779447584750-kf4msv",
+      "appId": "2053720398398799873",
+      "name": "浮光掠影 · 日系胶片情绪电影叙事造像师/文生图/人像写真",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/0a0a777432e8cbab96eac9a9c1050612/2026-05-11/807604cf277adc9d075e7105e6d72349.gif?imageMogr2/format/webp/ignore-error/1",
+      "inputs": [
+        {
+          "key": "194:text",
+          "name": "text",
+          "label": "text",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "清爽海边，",
+          "nodeId": "194",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "fallback",
+          "labelConfidence": 0.4
+        },
+        {
+          "key": "131:width",
+          "name": "width",
+          "label": "width",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1024",
+          "nodeId": "131",
+          "fieldName": "width",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 16384, \"min\": 16, \"step\": 8, \"default\": 512, \"tooltip\": \"The width of the latent images in pixels.\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "131:height",
+          "name": "height",
+          "label": "height",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1536",
+          "nodeId": "131",
+          "fieldName": "height",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 16384, \"min\": 16, \"step\": 8, \"default\": 512, \"tooltip\": \"The height of the latent images in pixels.\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1779447584750,
+      "updatedAt": 1779447584750
+    },
+    {
+      "id": "app-1779446294762-a8wpsj",
+      "appId": "2049842218650882049",
+      "name": "惠绘_橙子一键2转3Klein",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-04-30/932253dbb8e11e9342282aeece81f3fe.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "164:image",
+          "name": "image",
+          "label": "image",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "7ad064287359cac3eb0ed81bbe3bce65ed1cf1eaab5039a533f5b9b7f9cdda4f.jpg",
+          "nodeId": "164",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "194:value",
+          "name": "value",
+          "label": "value",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "Author: 抖音@影惠。原创不易，尊重版权，仅供学习交流，严禁倒卖。",
+          "nodeId": "194",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "fallback",
+          "labelConfidence": 0.4
+        }
+      ],
+      "createdAt": 1779446294762,
+      "updatedAt": 1779446294762
+    },
+    {
+      "id": "app-1778595211851-uftnbr",
+      "appId": "1964753754237095937",
+      "name": "Qwen-edit 万物重打光",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/f0daa4c16c39ba8432b42e202e867c51/2025-09-09/d714162810fa96eb41b53e577c07424f.gif?imageMogr2/format/webp/ignore-error/1",
+      "inputs": [
+        {
+          "key": "19:image",
+          "name": "图片替换",
+          "label": "图片替换",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "51b8c742a34a6bde76d6c25cec59a711198e4ebc8918b5b18beb08f3c6f99a78.jpg",
+          "nodeId": "19",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "25:text",
+          "name": "提示词输入（修改最后两个字即可）",
+          "label": "提示词输入（修改最后两个字即可）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "将主光源移动到角色的左侧",
+          "nodeId": "25",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "18:weight_dtype",
+          "name": "效果不好可以改",
+          "label": "效果不好可以改",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "fp8_e4m3fn",
+          "options": [
+            {
+              "value": "default",
+              "label": "效果最好但光影对比最强"
+            },
+            {
+              "value": "fp8_e4m3fn",
+              "label": "默认效果比较稳定"
+            },
+            {
+              "value": "fp8_e4m3fn_fast",
+              "label": "乱码不要用"
+            },
+            {
+              "value": "fp8_e5m2",
+              "label": "保留原有光影再加光"
+            }
+          ],
+          "nodeId": "18",
+          "fieldName": "weight_dtype",
+          "fieldType": "LIST",
+          "fieldData": "[{\"name\":\"default\",\"index\":\"default\",\"description\":\"效果最好但光影对比最强\",\"fastIndex\":1.0,\"descriptionEn\":\"The best effect but the strongest light and shadow contrast\"},{\"name\":\"fp8_e4m3fn\",\"index\":\"fp8_e4m3fn\",\"description\":\"默认效果比较稳定\",\"fastIndex\":2.0,\"descriptionEn\":\"Default effect is relatively stable\"},{\"name\":\"fp8_e4m3fn_fast\",\"index\":\"fp8_e4m3fn_fast\",\"description\":\"乱码不要用\",\"fastIndex\":3.0,\"descriptionEn\":\"Don\\u0027t use garbled text\"},{\"name\":\"fp8_e5m2\",\"index\":\"fp8_e5m2\",\"description\":\"保留原有光影再加光\",\"fastIndex\":4.0,\"descriptionEn\":\"Retain the original light and shadow and add light\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "15:strength_model",
+          "name": "LORA模型强度",
+          "label": "LORA模型强度",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1.0000000000000002",
+          "nodeId": "15",
+          "fieldName": "strength_model",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 100, \"min\": -100, \"step\": 0.01, \"default\": 1}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1778595211851,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1776135003609-e3ts3f",
+      "appId": "2043884236624629761",
+      "name": "F2K-放大/编辑（锁一致性&颜色）",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-14/fa9fa46d9e8e440e0369548d09a74cc7.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "31:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "b09edd9d3c2cc09e358aa30586c499e26e06c6100fab5c2b4c33950f7af23e1b.jpeg",
+          "nodeId": "31",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "11:image",
+          "name": "副图（启用时请关闭色彩匹配）",
+          "label": "副图（启用时请关闭色彩匹配）",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "b4d0f3267c53e70d255f82825456a3ba4acd6811e9083707094b1bc00448b6c0.jpeg",
+          "nodeId": "11",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "44:Input",
+          "name": "是否开启色彩匹配（1开启，2关闭，编辑时请关闭）",
+          "label": "是否开启色彩匹配（1开启，2关闭，编辑时请关闭）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1",
+          "nodeId": "44",
+          "fieldName": "Input",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 2, \"min\": 1, \"default\": 1}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "27:value",
+          "name": "长边分辨率（可不修改，尽量匹配图像，过大易爆显存）",
+          "label": "长边分辨率（可不修改，尽量匹配图像，过大易爆显存）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1600",
+          "nodeId": "27",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "21:text",
+          "name": "提示词（默认高清放大，可编辑）",
+          "label": "提示词（默认高清放大，可编辑）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "Transform the image to realistic photograph. add realistic details to the corrupted image. restore high frequence details from the corrupted image. \n超高清，极致细节，高对比度，清晰的光影细节。 ",
+          "nodeId": "21",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"tooltip\": \"The text to be encoded.\", \"multiline\": true, \"dynamicPrompts\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1776135003609,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1777556180228-wzgucm",
+      "appId": "2046579741951528961",
+      "name": "F2K溶图",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-21/6c0a7ab077fcb64761c9a717eaf48151.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "25:image",
+          "name": "框大一些",
+          "label": "框大一些",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "feabf55fa56077bde238b4cafd596e78a8ec2ef577e92f0a8bf2deba5c972acf.jpg",
+          "nodeId": "25",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "33:strength_model",
+          "name": "强度（默认即可）",
+          "label": "强度（默认即可）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0.8000000000000002",
+          "nodeId": "33",
+          "fieldName": "strength_model",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 100, \"min\": -100, \"step\": 0.01, \"default\": 1}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "36:value",
+          "name": "长边分辨率（1-4k）",
+          "label": "长边分辨率（1-4k）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2048",
+          "nodeId": "36",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1777556180229,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570025123-rfk2fu",
+      "appId": "2024785405106724865",
+      "name": "惠绘_Klein修脸厚涂_橙子（",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-02-20/4a0aff0b1faa98a236170beea5fdd4b6.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "164:image",
+          "name": "1加载主图",
+          "label": "1加载主图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "example.png",
+          "nodeId": "164",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "186:value",
+          "name": "2.1厚涂lora（模型强度）",
+          "label": "2.1厚涂lora（模型强度）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0.9",
+          "nodeId": "186",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "265:value",
+          "name": "2.2一致性lora（模型强度，0.5修皮肤，0修头发）",
+          "label": "2.2一致性lora（模型强度，0.5修皮肤，0修头发）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0",
+          "nodeId": "265",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "199:value",
+          "name": "3.1提示词（默认起手）",
+          "label": "3.1提示词（默认起手）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "漂亮可爱的人脸，瘦脸颊。移除皮肤的瑕疵。光滑的皮肤。保持头发颜色不变，去除杂乱的发丝，添加大量整齐的细碎的发光发丝。细腻的质感头发。",
+          "nodeId": "199",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "163:value",
+          "name": "3.2提示词（瞳孔颜色）",
+          "label": "3.2提示词（瞳孔颜色）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "",
+          "nodeId": "163",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "174:value",
+          "name": "4.1像素量（百万）",
+          "label": "4.1像素量（百万）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2",
+          "nodeId": "174",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "175:value",
+          "name": "4.2批次数量",
+          "label": "4.2批次数量",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1",
+          "nodeId": "175",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570025123,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570058822-j8bigy",
+      "appId": "2012102815430221826",
+      "name": "Zimage自然磨皮",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-01-16/8aed95fb6c4dfccd659e4b3e977475c3.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "4:image",
+          "name": "图像",
+          "label": "图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "4e63380a146e3eb09a6baf634fca5f826a14a791345b283d2533695093190f0f.png",
+          "nodeId": "4",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "14:value",
+          "name": "重绘幅度",
+          "label": "重绘幅度",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0.3600000000000001",
+          "nodeId": "14",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "10:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "皮肤，coser 扮演的特写肖像，脸部自然磨皮，光滑，去除痘印、去除斑点、去除毛孔瑕疵，保留细腻皮肤纹理与精致 cos 妆容，眼妆清晰立体，唇妆轮廓分明，柔和侧光，摄影级高清画质，皮肤通透白皙，面部光影均匀",
+          "nodeId": "10",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "15:value",
+          "name": "提示词强度",
+          "label": "提示词强度",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2.1000000000000005",
+          "nodeId": "15",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "9:steps",
+          "name": "步数",
+          "label": "步数",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "8",
+          "nodeId": "9",
+          "fieldName": "steps",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 10000, \"min\": 1, \"default\": 20, \"tooltip\": \"The number of steps used in the denoising process.\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570058822,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570072264-6u7i12",
+      "appId": "1999293453307609089",
+      "name": "单图编辑-直出4K-Qwen-Rapid-AIO-v23",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/7d502cda3ef15a2fecbfc35f073dbf61/2026-04-27/d217dd4df2031f6be0eeb9a0990cfa87.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "13:image",
+          "name": "加载图像",
+          "label": "加载图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "740446057fea35e189f00eb944db8868ebb9a94cf3a74f70b2b528b969dc3823.jpg",
+          "nodeId": "13",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "17:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "将图中女人的头发颜色改为粉色，保持人物一致性",
+          "nodeId": "17",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570072265,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570084191-268sv6",
+      "appId": "2038973794726977537",
+      "name": "QwenEdit 2511 零偏移",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-03-31/7614f826ae424d3cef57c49f26aedf14.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "14:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "29fab324e4cf761b022d4c0603d31d8670dbd79d1e844a54eb6de447cb18d702.jpg",
+          "nodeId": "14",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "12:prompt",
+          "name": "提示词，精简一些就行",
+          "label": "提示词，精简一些就行",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "将人物衣服和头发都改为粉红色",
+          "nodeId": "12",
+          "fieldName": "prompt",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"prompt\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570084191,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775707933884-h1z80q",
+      "appId": "2042093060057735169",
+      "name": "Klein扩图-ps插件原生版",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-09/e0088630cca782bfa4017a2c780d5752.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "13:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "655548d4955648e245c73fff79ce5a2bb6df80a103c0d489df29ecd5597683d5.jpg",
+          "nodeId": "13",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "133:text",
+          "name": "引导词（若无特殊需要，无需修改）",
+          "label": "引导词（若无特殊需要，无需修改）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "忽略白色区域当前的颜色。将原始图像中非白色边缘的有效主体区域定义为绝对保护区，保护区内的每一个像素都必须得到绝对保持，严禁进行任何重采样、像素修改、变形、边缘融合或模糊操作，生成画面内容。\n将外围白色区域填充为与保护区风格一致的延伸场景，根据保护区内的主体，推断出其合理的所处环境，并完整生成该环境的纹理、细节以及带有空间景深感的光影。\n扩展区域的光影必须严格继承保护区主体本身已有的光影逻辑和方向，不得引入会改变保护区观感的新光源或反射。扩展部分必须精确、像素级地对接保护区边界，互不重合。\n绝对禁止改变原始有效主体区域的一个像素。禁止留白、禁止生硬渐变、禁止无内容的填充。 ",
+          "nodeId": "133",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775707933884,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1778239349893-h04myw",
+      "appId": "2046794551444119554",
+      "name": "全能图片G-2.0-文生图-低价渠道版",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/431c8b65e23401f0645b6af625430999/2026-04-22/10f295da6b59dfa1a6644e1e16e6dc9c.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "18:aspectRatio",
+          "name": "设置比例",
+          "label": "设置比例",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "4:3",
+          "options": [
+            {
+              "value": "empty",
+              "label": "empty"
+            },
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            },
+            {
+              "value": "9:21",
+              "label": "9:21"
+            }
+          ],
+          "nodeId": "18",
+          "fieldName": "aspectRatio",
+          "fieldType": "LIST",
+          "fieldData": "[[\"empty\", \"1:1\", \"4:3\", \"3:4\", \"3:2\", \"2:3\", \"16:9\", \"9:16\", \"21:9\", \"9:21\"], {\"default\": \"empty\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "18:prompt",
+          "name": "输入文本",
+          "label": "输入文本",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "runninghub × 谷雨节气非遗皮影海报文案\n主视觉文案\n上方居中：LANDI POSTER DESIGN\n左上英文：Guyu Diary\n中间大字：谷雨・雨生百谷\n中间小字：Advanced plant pairing\n左下小字：春雨润田，谷生万物\n底部英文：Rain nourishes the fields, grains thrive in spring, inheriting the shadow puppetry heritage\n右下角小标：art‑landi\n底部版权：©2026 runninghub All rights reserved. 非遗皮影艺术联合呈现\n联动主题 slogan（适配海报角落 / 延展使用）\nrunninghub 踏春行・谷雨皮影映百谷\n非遗皮影承古韵，谷雨润田赴新程\n雨生万物，皮影传情，runninghub 伴四季",
+          "nodeId": "18",
+          "fieldName": "prompt",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1778239349893,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1776166905109-ssjmpn",
+      "appId": "2044018179520864257",
+      "name": "究极抠图",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-14/4f4d9b1479f7235a3ac08084c00b7f0b.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "43:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "96f878350d1f94442a5794be0553600296b2aa074b5acf25ccf362e15917db97.jpg",
+          "nodeId": "43",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1776166905110,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1776063377190-uiejfw",
+      "appId": "1932733052437368834",
+      "name": "超强物体移除应用",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/aafa84970428882192072a032fa5d82a/2025-06-11/9f460a1c8cffdc10f4fe4bd69d283ee1.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "2:image",
+          "name": "放入需要去除的图片",
+          "label": "放入需要去除的图片",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "b10066d955701884c96f7fb6058eeb6093c58a4593dea2c92e29defaf49c2827.png",
+          "nodeId": "2",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"bd7129b7707661dc1f37ec6a00af5605cca6d18ea51d0d37e26e3ff0d3bdb515.png\", \"e8db2c11b83f0698ff0afcae9fbb802fa038ec228ba4ee84b7f25cbacc673321.png\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "7:text",
+          "name": "提示词（输入物品名）",
+          "label": "提示词（输入物品名）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "鞋子",
+          "nodeId": "7",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1776063377190,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570094437-8r4ajo",
+      "appId": "2038989011930324993",
+      "name": "Klein高清零偏移",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-03-31/ab0bc578215960915fedee6bacd2e026.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "10:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "54cdf2978bc1113744524113be1bb88ea5fa36d837140c9b5f1dda380ce75f65.png",
+          "nodeId": "10",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "16:value",
+          "name": "分辨率（默认2k，3-4k有爆显存风险）",
+          "label": "分辨率（默认2k，3-4k有爆显存风险）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2",
+          "nodeId": "16",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "18:value",
+          "name": "一致性强度（默认0.4）",
+          "label": "一致性强度（默认0.4）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0.4000000000000001",
+          "nodeId": "18",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "19:prompt",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "将头发变为紫色",
+          "nodeId": "19",
+          "fieldName": "prompt",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"prompt\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570094438,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775737146486-yozwgd",
+      "appId": "2042209777182314497",
+      "name": "超清放大",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-09/33a4dbd578363073f50eb98edb324bc9.jpg?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "68:image",
+          "name": "输入图像（请适度调大画布）",
+          "label": "输入图像（请适度调大画布）",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "6cbc72b2b371d95623c248a0e17bb2fd2c5c8d15dca1b083df0eaa4d826f2319.jpeg",
+          "nodeId": "68",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "70:text",
+          "name": "放大倍数（2-8，默认4）",
+          "label": "放大倍数（2-8，默认4）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "4",
+          "nodeId": "70",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775737146486,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570101864-lnu44j",
+      "appId": "2039995556772188162",
+      "name": "klein简易2D转3D",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-03/562ad519f5b3e6069e5a34c9984b2158.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "76:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "7ea66bfdca0cf72eef97c4b9363fe6c3436876321480d32b7865f4905a9caef9.jpg",
+          "nodeId": "76",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "122:value",
+          "name": "分辨率（默认长边2k）",
+          "label": "分辨率（默认长边2k）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2.0000000000000004",
+          "nodeId": "122",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "124:value",
+          "name": "强度（0-1）",
+          "label": "强度（0-1）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1.0000000000000002",
+          "nodeId": "124",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570101864,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775570015520-wxjr8h",
+      "appId": "2012116034295177218",
+      "name": "Zimage灵动飘发",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-01-16/597fcf5ddaa4cc23efb59e0e149c6b36.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "4:image",
+          "name": "image",
+          "label": "image",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "f826b490f8a4aa9418c64d9a338b27cf04720195d8eb53b72e7d9b8b598491d0.png",
+          "nodeId": "4",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "14:value",
+          "name": "重绘幅度",
+          "label": "重绘幅度",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0.5100000000000001",
+          "nodeId": "14",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "10:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
+          "nodeId": "10",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "15:value",
+          "name": "提示词关联度",
+          "label": "提示词关联度",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2.1000000000000005",
+          "nodeId": "15",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "9:steps",
+          "name": "步数",
+          "label": "步数",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "8",
+          "nodeId": "9",
+          "fieldName": "steps",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 10000, \"min\": 1, \"default\": 20, \"tooltip\": \"The number of steps used in the denoising process.\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775570015520,
+      "updatedAt": 1779328865156
+    },
+    {
+      "id": "app-1775832765499-z6rr3d",
+      "appId": "2042574131031445506",
+      "name": "惠绘_Klein热机脸_橙子（",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-04-10/6a981b30704a472cb31ba0003c07b2e1.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "164:image",
+          "name": "1加载主图",
+          "label": "1加载主图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "pasted/16b1fd40b98f5ec18124adb4ea7508227dc31cd93f4db79fdd9524a15c760d40.png",
+          "nodeId": "164",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "186:value",
+          "name": "#2.1热机脸lora（1.5~2）",
+          "label": "#2.1热机脸lora（1.5~2）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1.5000000000000002",
+          "nodeId": "186",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "608:value",
+          "name": "#2.2一致性lora（0~0.5）",
+          "label": "#2.2一致性lora（0~0.5）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0",
+          "nodeId": "608",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "199:value",
+          "name": "#3.1提示词（默认起手）",
+          "label": "#3.1提示词（默认起手）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "漂亮可爱的人脸",
+          "nodeId": "199",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "163:value",
+          "name": "#3.2瞳孔颜色（xx颜色的瞳孔）",
+          "label": "#3.2瞳孔颜色（xx颜色的瞳孔）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "深色的墨绿黑色瞳孔",
+          "nodeId": "163",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "175:value",
+          "name": "4.1批次数量",
+          "label": "4.1批次数量",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1",
+          "nodeId": "175",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "616:value",
+          "name": "y.操作说明",
+          "label": "y.操作说明",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "✒使用步骤：\n①框选区域（人脸大致占四分之一面积）；\n②设置热机脸lora权重，默认0.8；\n③输入瞳孔颜色，例如【墨绿色瞳孔】；\n④运行；\n⭐默认起手：\n简单磨皮：漂亮可爱的人脸。\n极致美白热机脸：尖下巴，V型脸，小脸，鹅蛋脸，轮廓流畅，五官精致，面部留白少，中庭短，人偶感面部，白皙肌肤，哑光皮肤，大眼睛，明显卧蚕。",
+          "nodeId": "616",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1775832765499,
+      "updatedAt": 1779328865156
+    }
+  ],
+  "templateCategories": [
+    {
+      "id": "default",
+      "name": "默认分类",
+      "createdAt": 1779324441803,
+      "updatedAt": 1779324441803
+    },
+    {
+      "id": "tplcat-1779326366496-xfnkno",
+      "name": "人像",
+      "createdAt": 1779326366496,
+      "updatedAt": 1779326366496
+    },
+    {
+      "id": "tplcat-1779326961693-u6zuo0",
+      "name": "场景",
+      "createdAt": 1779326961693,
+      "updatedAt": 1779326961693
+    },
+    {
+      "id": "tplcat-1779327224333-3m6lze",
+      "name": "道具",
+      "createdAt": 1779327224333,
+      "updatedAt": 1779327224333
+    },
+    {
+      "id": "tplcat-1779327439569-2c8j5t",
+      "name": "特效",
+      "createdAt": 1779327439569,
+      "updatedAt": 1779327439569
+    }
+  ],
+  "templates": [
+    {
+      "id": "tpl-1779685016777-8cou70",
+      "title": "树叶",
+      "content": "在人物周围添加适量飘落树叶，大小、虚实和运动方向符合镜头景深。前景树叶可轻微虚化，中景树叶清晰，远景树叶更淡。严格保持人物五官、服装和原构图不变，让树叶与现场光自然融合。",
+      "categoryId": "default",
+      "createdAt": 1779685016776,
+      "updatedAt": 1779685016776
+    },
+    {
+      "id": "tpl-1779327423489-s9xf2x",
+      "title": "全能-二维转三维",
+      "content": "将当前二维感较强的画面优化为 Blender/影视 CG 渲染风格素材。严格保持人物外貌、服装、道具、构图和基础轮廓不变，增强体积光、环境反射、材质厚度、能量粒子和真实景深。模拟 35mm 大光圈镜头的浅景深与柔和虚化。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1779327423489,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327393481-djl6sm",
+      "title": "紧贴衣物",
+      "content": "收紧衣物多余松弛、鼓包和下垂区域，使布料更贴合人物动作和身体姿态。可将内层衣物或下摆自然整理进腰带或衣装结构中，保持织物张力真实。严禁改变服装设计、颜色、图案、配饰、缝线和角色识别特征。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1779327393481,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327330634-lwrse2",
+      "title": "去除衣服褶皱",
+      "content": "清理衣服、裤子、裙摆、袖口、袜子和披风上的杂乱折痕、挤压褶皱与松垮变形，使布料更平整、有商业摄影质感。保留必要的结构褶和角色服装设计线，保持材质、颜色、花纹、装饰和高光细节不变。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1779327330634,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327291262-epfieo",
+      "title": "道具燃烧",
+      "content": "严格保持人物、道具造型、构图和角色动作不变。在武器刃部、法杖顶端或手持道具指定区域添加真实火焰效果，包含橙红火舌、火星、少量烟雾和热气扭曲。火光需要自然照亮道具、手部和附近服装，阴影方向符合原图光源。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1779327291262,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327237683-w03mr6",
+      "title": "金属质感",
+      "content": "严格保持人物和构图不变，将手持或佩戴道具优化为真实金属材质。保留原本道具形状和颜色倾向，增加金属反射、边缘高光、细微磨损、划痕和冷暖环境反射。避免塑料感、镜面过曝和形状变形。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1779327237683,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327215022-ogb18r",
+      "title": "背景杂物清理",
+      "content": "严格保持主模特、服装、道具、构图、镜头透视和整体色调不变。移除背景中的路人、摄影灯架、柔光箱、三脚架、线缆、杂乱展架、垃圾和干扰标识。用原场景纹理无缝补齐，确保地面、墙面和环境光自然连续。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779327215022,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327198817-0jt0q1",
+      "title": "分类分割图",
+      "content": "参考原图生成语义分割图。画面由纯色色块构成，不包含光影、渐变、纹理和摄影细节。使用高饱和、互不相同的颜色区分人物、头发、服装、皮肤、道具、背景、地面和装饰物，边缘清晰，便于后续选区和局部修图。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779327198817,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327147625-yi9y45",
+      "title": "人物溶图",
+      "content": "严格保持人物姿态、镜头角度、服装和构图不变。根据当前场景重新匹配人物受光、阴影、接触投影、环境反射和色温，让人物像真实站在该场景中。避免改变五官和服装细节，只修正光影融合与空间关系。",
+      "categoryId": "default",
+      "createdAt": 1779327147625,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327134866-266d4s",
+      "title": "去除路人",
+      "content": "严格保持主体人物、服装、道具、姿态和构图不变。移除背景中的路人、围观者和无关人物，用周围环境自然填充空缺区域。补齐后的地面、墙面、光影、虚化和透视需与原图一致。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779327134866,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779327126853-bx2t41",
+      "title": "去除毯子",
+      "content": "严格保持人物姿态、服装边缘、道具和构图不变。移除人物下方或周围的毯子、地垫、布料和临时垫片，用与周围地面一致的纹理、光影和透视自然补齐。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779327126853,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326988264-lg0oao",
+      "title": "去除梯子",
+      "content": "移除主体人物下方或身后的梯子、支架和辅助设备，保持人物姿态、服装边缘和构图不变。用周围背景自然填充，接触阴影和地面纹理保持连贯，使人物站位看起来自然可信。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779326988264,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326978171-v7xvhl",
+      "title": "漫展去杂",
+      "content": "严格保持图片颜色，保持图片构图，去除图片主体人物背后大部分人物，去除图片主体人物背后黑色的灯架和柔光箱，去除图片中黑色的灯架和柔光箱，去除图片中大部分杂物。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779326978171,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326770621-y61aln",
+      "title": "油润光泽",
+      "content": "保持动作、构图、服装和原始光影不变。为暴露皮肤加入轻薄均匀的 SPA 级水润光泽，弱化生硬肌理，使皮肤过渡柔和细腻。高光遵循真实光源方向，避免局部油腻、过曝白斑、塑料感或过度磨皮。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326770621,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326755841-897zfu",
+      "title": "全能-马甲线",
+      "content": "在尊重人物原本体态的基础上，轻微强化腹部和腰部的自然线条，形成柔和的 11 字马甲线。肌肉线条需隐藏在真实皮肤和软组织之下，不夸张、不健美化。保持肤色、服装材质、透视和原有光影不变。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326755841,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326739108-4r5gml",
+      "title": "胸部饱满",
+      "content": "以商业 cosplay 后期标准优化胸前服装轮廓：保持人物身份、动作、视角、肤色和服饰款式不变，让布料贴合更自然、轮廓更稳定饱满。光影过渡符合原始光源，材质细节和装饰图案完整保留，避免夸张比例和塑料感。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326739108,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326394588-fe1nji",
+      "title": "人像磨皮",
+      "content": "严格保持五官、面部骨相、妆容和原始明暗关系不变。对皮肤进行自然磨皮，清理瑕疵与斑点，同时保留毛孔、皮肤纹理和真实高光。整体质感偏影视 CG 精修，但避免油腻、蜡像、塑料皮肤和过度美颜。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326394588,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326722346-td30rv",
+      "title": "全局去碎发",
+      "content": "全局清理头部、脸侧、肩颈、手臂和服装上的杂乱碎发与飞散发丝。保留角色发型结构、发量、刘海形状和发色渐变，增强发丝顺滑层次与自然高光。不得改变五官、头型、服装和原图明暗。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326722346,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326637763-xhvmp9",
+      "title": "头发写实",
+      "content": "将假发或头发优化为高写实摄影质感：增强发丝分层、发根走向、单根发丝、自然碎发和柔顺高光。保留原本发型轮廓、刘海、发色、发饰与角色造型，不改变五官和动作。避免毛躁、糊成一片或塑料假发感。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326637763,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326620264-9gz2t2",
+      "title": "厚涂修容",
+      "content": "保持构图、背景、服装、角色身份和原有光影不变。按 cosplay 海报精修风格强化眼妆、睫毛、鼻梁高光、面部修容、唇妆和腮红，清理瑕疵、暗沉、眼袋、法令纹与杂发。皮肤过渡细腻但保留真实纹理，呈现高级厚涂感与摄影质感结合的效果。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326620264,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326583496-oxdnk7",
+      "title": "CG修容",
+      "content": "在保持本人脸、角色妆造、姿势、构图和服装设计不变的前提下，将画面精修为高精度写实游戏宣传图质感。增强皮肤纹理、眼妆、睫毛、唇妆、发丝、服装材质与三点式摄影光影，清理杂发和衣物褶皱。效果应像真实照片的高级 CG 后期，不改变人物身份。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326583496,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326562426-grab6c",
+      "title": "自然感修容",
+      "content": "保持构图、背景、服装、动作、肤色和色彩参数不变。锁定五官位置与比例，根据角色妆造清理黑眼圈、眼袋、法令纹、唇纹、痘印、杂发和肤色不均。轻微加强腮红、唇妆、鼻梁高光与面部轮廓，整体自然、干净、像专业 cosplay 摄影后期。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326562426,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326548462-gghwug",
+      "title": "皮肤抹油",
+      "content": "为暴露皮肤添加非常轻薄、均匀的润肤油光泽，呈现丝缎般健康反光。严格保持肤色、肌理、身体轮廓和原始光向不变，高光只出现在合理受光区域，避免油腻、湿身、过曝或塑料质感。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326548462,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326536613-69pgox",
+      "title": "丰胸",
+      "content": "在不改变角色服装设计、动作和透视的前提下，整理胸前服装轮廓与布料张力，使胸型线条更自然饱满但不过度夸张。保持布料材质、纹理、花纹、饰品和高光反射一致，避免不真实变形。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326536613,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326422230-k6546n",
+      "title": "头发飘动",
+      "content": "保持人物五官、发型基础结构、动作和原图光影不变。让长发或发尾顺着统一风向自然飘动，发束整齐、有层次、有空气感，不凌乱四散。增加少量发丝高光和真实发束边缘，使画面更有 cosplay 动态摄影感。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326422230,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326521406-l2sfue",
+      "title": "人像去糊",
+      "content": "修复模糊人像并提升摄影细节：增强眼睛、睫毛、眉毛、唇纹、皮肤毛孔、发丝和服装边缘清晰度。保持人物身份、五官比例、表情和构图不变，不重绘成另一张脸。锐化自然，避免噪点、假纹理和 AI 过度细节。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326521406,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326476716-e1fjcx",
+      "title": "全能-战损伤痕",
+      "content": "为 cosplay 角色添加轻度战损效果：衣物边缘出现少量撕裂、焦黑、灰尘和磨损，裸露皮肤处加入轻微擦伤与污渍，脸部只保留极少量细小痕迹。严格保持人物五官、发型、动作、服装主体设计和构图不变。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779326476716,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779326450938-b1g4vl",
+      "title": "飘动衣服",
+      "content": "严格保持人物五官、动作、服装款式和构图不变。将裙摆、披风、飘带或长袖调整为被微风带起的自然飘动状态，布料受力方向统一，褶皱和边缘运动感真实。保持原有颜色、材质、花纹和装饰细节，不改变角色设定。",
+      "categoryId": "default",
+      "createdAt": 1779326450938,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779283455606-gj3i9i",
+      "title": "全能-生成相关物体",
+      "content": "保持原有构图、背景、模特动作、材质、色相、饱和度、明度、伽马和对比度不变。根据角色 IP 或服装设定，在画面前景/中景/后景生成少量相关道具、符号或氛围元素，透视、遮挡、景深和环境光必须符合照片逻辑，并与人物自然融合。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779283455606,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1779277714303-xyifzn",
+      "title": "空中花瓣",
+      "content": "在人物周围添加适量飘落花瓣，花瓣颜色与原图花材一致，大小、虚实和运动方向符合镜头景深。前景花瓣可轻微虚化，中景花瓣清晰，远景花瓣更淡。严格保持人物五官、服装和原构图不变，让花瓣与现场光自然融合。",
+      "categoryId": "default",
+      "createdAt": 1779277714303,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1777518407994-nrsg6e",
+      "title": "秃树长花",
+      "content": "保持人物、构图、镜头焦段和整体色调不变。移除干枯杂乱的细树枝，为背景枝条添加层次丰富的白粉色小花，花朵密度自然、有前后虚实和景深变化。花瓣受光与原图一致，营造春日 cosplay 外景氛围。",
+      "categoryId": "default",
+      "createdAt": 1777518407994,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761578059_dgww89p",
+      "title": "漫展去杂物",
+      "content": "严格保持主体人物、服装、肤色、构图和原始色调不变。清理漫展现场中干扰主体的路人、灯架、柔光箱、三脚架、线缆、杂物和明显标识，用周围背景自然补齐，保持透视、地面纹理和环境光连贯。",
+      "categoryId": "default",
+      "createdAt": 1774761578059,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1776138584517-5g4y8w",
+      "title": "补妆修脸",
+      "content": "以 cosplay 摄影精修标准处理面部：严格保持人物身份、五官比例、妆面风格、服装配色与构图不变。清理痘印、浮粉、暗沉、黑眼圈、唇纹和杂乱碎发，保留真实毛孔与皮肤纹理。根据角色设定微调眼妆、腮红、高光和修容，使肤色通透、面部轮廓清晰，最终呈现棚拍级精致妆造质感。",
+      "categoryId": "default",
+      "createdAt": 1776138584517,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1776137341440-itez3k",
+      "title": "去杂毛",
+      "content": "以 cosplay 棚拍精修标准清理头发：移除面部、肩颈、手臂和服装表面的散乱发丝、过曝白发丝、打结发束与枯燥发尾。保留发型轮廓、发量和角色造型，增强发丝顺滑度与层次，使发尾收束自然，光影过渡柔和。",
+      "categoryId": "default",
+      "createdAt": 1776137341440,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761471467_bo5e10q",
+      "title": "飘动衣服",
+      "content": "严格保持人物五官和姿态，保持构图，将人物的衣物裙摆和飘带修改为被微风轻轻吹动的自然飘扬状态，布料褶皱自然，保持衣物原本的颜色和材质纹理不变.",
+      "categoryId": "default",
+      "createdAt": 1774761471467,
+      "updatedAt": 1778207711919
+    },
+    {
+      "id": "tpl-1776137046707-prv32t",
+      "title": "F2K磨皮",
+      "content": "特写肖像级自然磨皮：严格保持五官、妆容、表情和面部骨相不变。清理痘印、斑点、粗大毛孔和局部泛红，保留真实皮肤纹理、眼妆细节、唇妆边界与睫毛清晰度。柔和侧光下皮肤通透干净，避免塑料感、蜡像感和过度锐化。",
+      "categoryId": "default",
+      "createdAt": 1776137046707,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761533679_q70ou67",
+      "title": "全能图片-战损伤痕",
+      "content": "将人物衣物修改为轻微的破损状态，布料边缘呈现被火焰灼烧后的焦黑和碳化质感，大量布料有撕裂，布料撕裂处自然露出下方的皮肤。在皮肤裸露处添加轻微的擦伤，在脸部几乎无伤痕。严格保持人物五官特征、发型结构和肢体动作.",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1774761533679,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761599721_vugzaho",
+      "title": "人物溶图",
+      "content": "保持图片角度，保持图片构图，将图中的人物光影的跟场景融合，生成自然的人物投影和反射，使人物光影与场景匹配。",
+      "categoryId": "default",
+      "createdAt": 1774761599721,
+      "updatedAt": 1778207711919
+    },
+    {
+      "id": "id_1774761617120_we63p0k",
+      "title": "道具转3d",
+      "content": "严格保持道具的结构、纹理、颜色、角度和构图不变。将道具表面优化为影视级 3D/PBR 渲染质感，增强材质厚度、边缘高光、细小划痕和真实反射。避免改变道具造型、图案和角色持握方式。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1774761617120,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761640826_9d93fde",
+      "title": "全能图片-fufu玩偶",
+      "content": "保持模特动作、构图、服装和原图色调不变。根据人物当前 cosplay 服饰，在画面中添加同款服饰的可爱 Fufu 玩偶，玩偶可在前景或身旁互动。玩偶需呈现真实毛绒/毛毡/刺绣实体周边质感，带清晰缝线、绒毛边缘透光、接触阴影和与原图一致的色温反射。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1774761640826,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761676002_70nk88i",
+      "title": "全能图片-添加晨雾",
+      "content": "保持画面比例、构图和人物清晰度不变。在中远景加入轻柔晨雾与薄雾，近景人物区域只保留少量浅雾。雾气随景深逐渐变厚，受原始光源照亮，营造清晨外景、仙境或游戏宣传图氛围。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1774761676002,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761726516_qysbhug",
+      "title": "全能图片-雷电绿引",
+      "content": "保持画面比例和构图，将绿色标记区域替换为蓝紫色雷电特效。电弧需要有分叉、跳跃感、电火花和边缘辉光，并让冷色电光自然照亮附近皮肤、服装与道具。未标记区域的颜色、明暗和细节保持不变。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1774761726516,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761743261_8delu64",
+      "title": "全能图片-火焰绿引",
+      "content": "保持画面比例和构图，将绿色标记区域替换为真实火焰特效。火焰包含橙红火舌、金色火星、少量烟雾和热浪扭曲，并让火光自然影响附近人物皮肤、服装和道具。未标记区域的颜色、明暗和细节保持不变。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1774761743261,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774761767949_fa21eyc",
+      "title": "全能图片-移除绿引",
+      "content": "保持画面比例、构图、人物、服装、道具和光影不变。移除绿色画笔标记区域，并根据周围环境、材质、纹理和阴影进行自然填充，确保看不出修补痕迹。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1774761767949,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774762139413_e00ss8y",
+      "title": "深度图",
+      "content": "保持画面比例和构图，生成一张用于后期的 Z-Depth 深度图。画面只使用黑白灰，不包含纹理、颜色和表面光影。近景物体更亮，远景逐渐变暗，人物、道具、前景和背景的空间层次清晰，灰度过渡平滑。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1774762139413,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "id_1774762561527_u4arzmb",
+      "title": "全能图片-万能材质增强",
+      "content": "以高质量 cosplay 摄影后期标准增强材质。严格保持所有物体的原始几何形状、花纹图案、标志、装饰和独特纹理不变，只增强表面微观质感。金属增加拉丝、氧化和边缘高光；织物呈现纤维编织；皮革呈现毛孔和柔和反光；木材增强年轮和清漆通透感；塑料保留材质厚度。增加极细微划痕、灰尘和指纹，并用真实轮廓光与高光呈现质感。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1774762561527,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-1776341405202-cgxygp",
+      "title": "全能图片-人物溶图",
+      "content": "保持图片角度，保持图片构图，将图中的人物光影的跟场景融合，生成自然的人物投影和反射，使人物光影与场景匹配。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1774761599721,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-cos-1779328797145-01",
+      "title": "全能-火焰环绕",
+      "content": "为cosplay人物周围添加环绕式火焰与金色余烬。火焰沿角色动作和服装飘带方向流动，带少量烟雾、热浪扭曲和橙红色边缘光。严格保持人物五官、服装、道具和构图不变，火光需要真实影响皮肤、金属和布料。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797145,
+      "updatedAt": 1779328986690
+    },
+    {
+      "id": "tpl-cos-1779328797146-02",
+      "title": "全能-雷电缠绕",
+      "content": "为武器、手部或角色周围添加蓝紫色雷电缠绕特效，电弧分叉自然，有电火花、辉光和短暂曝光感。冷色电光照亮附近皮肤、发丝、服装边缘和道具金属面。保持人物身份、动作、服装花纹、构图和原始明暗不变。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797146,
+      "updatedAt": 1779328995334
+    },
+    {
+      "id": "tpl-cos-1779328797147-03",
+      "title": "全能-能量粒子",
+      "content": "在人物周围添加少量漂浮能量粒子、发光尘埃和细碎光点，粒子大小随景深变化，前景略虚、中景清晰、远景淡出。颜色根据角色主色自动匹配，避免遮挡面部。整体像游戏角色宣传图的后期特效，保持原图人物和构图不变。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797147,
+      "updatedAt": 1779329003276
+    },
+    {
+      "id": "tpl-cos-1779328797149-05",
+      "title": "全能-烟雾爆发",
+      "content": "在人物背后或道具周围添加层次分明的烟雾爆发。烟雾包含亮部边缘光、暗部体积感和少量飞散尘埃，不能遮住脸和主体服装。保持人物清晰，整体呈现舞台特效或战斗定格氛围。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797149,
+      "updatedAt": 1779329025912
+    },
+    {
+      "id": "tpl-cos-1779328797151-07",
+      "title": "全能-冰霜寒气",
+      "content": "为角色周围添加冰霜、冷雾和蓝白色寒气特效。道具边缘或衣物局部可出现细小霜晶，高光冷而通透，空气中有轻微白雾。保持人物五官、服装、道具造型和构图不变，冷色光只影响合理区域，避免整张图发灰。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797151,
+      "updatedAt": 1779329048128
+    },
+    {
+      "id": "tpl-cos-1779328797152-08",
+      "title": "全能-暗黑红光",
+      "content": "将局部氛围调整为暗黑红光特效：在人物背后或侧后方加入深红轮廓光、少量黑雾、暗红粒子和低饱和阴影。保持主体肤色不过度变红，五官和服装细节清晰。适合反派、战损、吸血鬼、魔女等 cosplay 氛围。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797152,
+      "updatedAt": 1779329056789
+    },
+    {
+      "id": "tpl-cos-1779328797153-09",
+      "title": "全能-刀光轨迹",
+      "content": "为挥动武器或手部动作添加清晰的刀光/剑气轨迹。光轨沿动作方向延伸，边缘锐利，中间带半透明辉光和少量粒子碎屑。保持武器本体、手部姿势、人物五官和构图不变，光轨不能遮挡关键面部表情。",
+      "categoryId": "tplcat-1779327439569-2c8j5t",
+      "createdAt": 1779328797153,
+      "updatedAt": 1779329067853
+    },
+    {
+      "id": "tpl-cos-1779328797155-11",
+      "title": "cos妆造统一",
+      "content": "以cosplay 摄影师视角统一妆造：保持本人脸和角色识别度不变，微调假睫毛、眼线、眼影、腮红、唇妆、鼻影和高光，使妆面更贴合角色设定。清理浮粉、脱妆、皮肤暗沉和假发边缘杂乱，整体干净精致但不过度网红化。",
+      "categoryId": "tplcat-1779326366496-xfnkno",
+      "createdAt": 1779328797155,
+      "updatedAt": 1779328956550
+    },
+    {
+      "id": "tpl-cos-1779328797156-12",
+      "title": "展会背景虚化",
+      "content": "保持主体人物和服装清晰不变，将杂乱展会背景处理为自然镜头虚化。弱化路人、展板文字、灯架和高饱和杂色，让背景只保留空间氛围和柔和光斑。虚化程度符合镜头景深，人物边缘干净，不出现抠图感。",
+      "categoryId": "tplcat-1779326961693-u6zuo0",
+      "createdAt": 1779328797156,
+      "updatedAt": 1779328865157
+    },
+    {
+      "id": "tpl-cos-1779328797157-13",
+      "title": "道具发光核心",
+      "content": "为法杖、武器、饰品或核心道具添加可控发光效果。发光区域遵循道具结构，亮部有内发光、外圈辉光和轻微色散，并自然照亮手部、袖口和附近金属/布料。保持道具造型、花纹、人物动作和构图不变。",
+      "categoryId": "tplcat-1779327224333-3m6lze",
+      "createdAt": 1779328797157,
+      "updatedAt": 1779328865157
+    }
+  ],
+  "quickEntries": [
+    {
+      "id": "quick-1777950977233-p6xera",
+      "title": "三次元磨皮",
+      "appRef": {
+        "savedAppId": "app-1776135003609-e3ts3f",
+        "appId": "2043884236624629761",
+        "appName": "F2K-放大/编辑（锁一致性&颜色）"
+      },
+      "inputValues": {
+        "44:Input": 1,
+        "27:value": 2000,
+        "21:text": "特写肖像，脸部自然磨皮，光滑，去除痘印、去除斑点、去除毛孔瑕疵，保留细腻皮肤纹理与精致妆容，眼妆清晰立体，唇妆轮廓分明，柔和侧光，摄影级高清画质，皮肤通透白皙，面部光影均匀 "
+      },
+      "imageBindings": [
+        {
+          "inputKey": "31:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1777950977233,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1777950987327,
+        "runCount": 1
+      }
+    },
+    {
+      "id": "quick-1777948945570-dayesu",
+      "title": "高清（2k）",
+      "appRef": {
+        "savedAppId": "app-1776135003609-e3ts3f",
+        "appId": "2043884236624629761",
+        "appName": "F2K-放大/编辑（锁一致性&颜色）"
+      },
+      "inputValues": {
+        "44:Input": 1,
+        "27:value": 2000,
+        "21:text": "Transform the image to realistic photograph. add realistic details to the corrupted image. restore high frequence details from the corrupted image. \n超高清，极致细节，高对比度，清晰的光影细节。 "
+      },
+      "imageBindings": [
+        {
+          "inputKey": "31:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1777948945570,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1780309675251,
+        "runCount": 10
+      }
+    },
+    {
+      "id": "quick-1777948490557-ah6dbm",
+      "title": "漫展清场",
+      "appRef": {
+        "savedAppId": "app-1776135003609-e3ts3f",
+        "appId": "2043884236624629761",
+        "appName": "F2K-放大/编辑（锁一致性&颜色）"
+      },
+      "inputValues": {
+        "44:Input": 2,
+        "27:value": 2000,
+        "21:text": "严格保持图片颜色，保持图片构图，去除图片主体人物背后大部分人物，去除图片主体人物背后黑色的灯架和柔光箱，去除图片中黑色的灯架和柔光箱，去除图片中大部分杂物。"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "31:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1777948490557,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1778244321426,
+        "runCount": 7
+      }
+    },
+    {
+      "id": "quick-1776588661511-27cuxx",
+      "title": "热机脸",
+      "appRef": {
+        "savedAppId": "app-1775832765499-z6rr3d",
+        "appId": "2042574131031445506",
+        "appName": "惠绘_Klein热机脸_橙子（"
+      },
+      "inputValues": {
+        "186:value": 1.5000000000000002,
+        "608:value": 0,
+        "199:value": "漂亮可爱的人脸",
+        "163:value": "原本图片颜色的瞳孔",
+        "175:value": 1,
+        "616:value": "✒使用步骤：\n①框选区域（人脸大致占四分之一面积）；\n②设置热机脸lora权重，默认0.8；\n③输入瞳孔颜色，例如【墨绿色瞳孔】；\n④运行；\n⭐默认起手：\n简单磨皮：漂亮可爱的人脸。\n极致美白热机脸：尖下巴，V型脸，小脸，鹅蛋脸，轮廓流畅，五官精致，面部留白少，中庭短，人偶感面部，白皙肌肤，哑光皮肤，大眼睛，明显卧蚕。",
+        "265:value": "0",
+        "174:value": "2"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "164:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588661511,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 0,
+        "runCount": 0
+      }
+    },
+    {
+      "id": "quick-1776588608989-ry8zxe",
+      "title": "2D转3D(4K)",
+      "appRef": {
+        "savedAppId": "app-1775485548007-jb21ks",
+        "appId": "2039995556772188162",
+        "appName": "klein简易2D转3D"
+      },
+      "inputValues": {
+        "122:value": 4,
+        "124:value": 0.8
+      },
+      "imageBindings": [
+        {
+          "inputKey": "76:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588608989,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 0,
+        "runCount": 0
+      }
+    },
+    {
+      "id": "quick-1776588573621-fsgbvb",
+      "title": "手绘头发润真实",
+      "appRef": {
+        "savedAppId": "app-1776588522472-4k7i37",
+        "appId": "2012116034295177218",
+        "appName": "Zimage灵动飘发"
+      },
+      "inputValues": {
+        "14:value": 0.45,
+        "10:text": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
+        "15:value": "2.1000000000000005",
+        "9:steps": 8
+      },
+      "imageBindings": [
+        {
+          "inputKey": "4:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588573621,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1777941928343,
+        "runCount": 3
+      }
+    },
+    {
+      "id": "quick-1776588552533-ca421y",
+      "title": "粗略手绘头发转真实",
+      "appRef": {
+        "savedAppId": "app-1776588522472-4k7i37",
+        "appId": "2012116034295177218",
+        "appName": "Zimage灵动飘发"
+      },
+      "inputValues": {
+        "14:value": 0.5100000000000001,
+        "10:text": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
+        "15:value": "2.1000000000000005",
+        "9:steps": 8
+      },
+      "imageBindings": [
+        {
+          "inputKey": "4:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588552533,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 0,
+        "runCount": 0
+      }
+    },
+    {
+      "id": "quick-1776588460531-r8zsgv",
+      "title": "丰胸",
+      "appRef": {
+        "savedAppId": "app-1776588452859-xnw5cr",
+        "appId": "2037061991965134850",
+        "appName": "丰胸效果 胸部增强 Flux-2-klein-9B 胸部放大 美女模特身材优化"
+      },
+      "inputValues": {
+        "27:text": "把照片中人物的胸部放大，其他保持不变"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "4:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588460531,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 0,
+        "runCount": 0
+      }
+    },
+    {
+      "id": "quick-1776588413599-p1wvzi",
+      "title": "去杂毛",
+      "appRef": {
+        "savedAppId": "app-1776586304484-8bip9d",
+        "appId": "2043884236624629761",
+        "appName": "F2K-放大/编辑（锁一致性&颜色）"
+      },
+      "inputValues": {
+        "44:Input": 2,
+        "27:value": 1600,
+        "21:text": "移除面部、头发周围的碎发及杂发，修整过曝毛发和独立杂发，使头发明暗过渡自然柔和。去掉明显光亮发丝、缠绕打卷发束和枯燥发尾，使发尾收紧为一缕。清理模特手臂和肩部上的散落头发，优化整体发型效果。"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "31:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588413599,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1780309378037,
+        "runCount": 12
+      }
+    },
+    {
+      "id": "quick-1776588001674-1xeuta",
+      "title": "抠图",
+      "appRef": {
+        "savedAppId": "app-1776167353095-q4eep6",
+        "appId": "2044018179520864257",
+        "appName": "究极抠图"
+      },
+      "inputValues": {},
+      "imageBindings": [
+        {
+          "inputKey": "43:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776588001674,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1778595757135,
+        "runCount": 7
+      }
+    },
+    {
+      "id": "quick-1776587527492-u6pcna",
+      "title": "2D转3D(2k)",
+      "appRef": {
+        "savedAppId": "app-1775485548007-jb21ks",
+        "appId": "2039995556772188162",
+        "appName": "klein简易2D转3D"
+      },
+      "inputValues": {
+        "122:value": 2.0000000000000004,
+        "124:value": 0.8
+      },
+      "imageBindings": [
+        {
+          "inputKey": "76:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776587527492,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 0,
+        "runCount": 0
+      }
+    },
+    {
+      "id": "quick-1776586886622-z0e7ww",
+      "title": "扩图",
+      "appRef": {
+        "savedAppId": "app-1775714208129-4952tg",
+        "appId": "2042093060057735169",
+        "appName": "Klein扩图-ps插件原生版"
+      },
+      "inputValues": {
+        "133:text": "忽略白色区域当前的颜色。将原始图像中非白色边缘的有效主体区域定义为绝对保护区，保护区内的每一个像素都必须得到绝对保持，严禁进行任何重采样、像素修改、变形、边缘融合或模糊操作，生成画面内容。\n将外围白色区域填充为与保护区风格一致的延伸场景，根据保护区内的主体，推断出其合理的所处环境，并完整生成该环境的纹理、细节以及带有空间景深感的光影。\n扩展区域的光影必须严格继承保护区主体本身已有的光影逻辑和方向，不得引入会改变保护区观感的新光源或反射。扩展部分必须精确、像素级地对接保护区边界，互不重合。\n绝对禁止改变原始有效主体区域的一个像素。禁止留白、禁止生硬渐变、禁止无内容的填充。 ",
+        "186:value": "0.9",
+        "265:value": "0",
+        "199:value": "漂亮可爱的人脸，瘦脸颊。移除皮肤的瑕疵。光滑的皮肤。保持头发颜色不变，去除杂乱的发丝，添加大量整齐的细碎的发光发丝。细腻的质感头发。",
+        "163:value": "跟图像原本瞳孔颜色一致",
+        "174:value": "2",
+        "175:value": "1"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "13:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776586886622,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1779715665975,
+        "runCount": 4
+      }
+    },
+    {
+      "id": "quick-1776586875267-b9cxjq",
+      "title": "厚涂",
+      "appRef": {
+        "savedAppId": "app-1775724849533-3mwhrd",
+        "appId": "2024785405106724865",
+        "appName": "惠绘_Klein修脸厚涂_橙子（"
+      },
+      "inputValues": {
+        "186:value": 0.9,
+        "265:value": 0,
+        "199:value": "漂亮可爱的人脸，瘦脸颊。移除皮肤的瑕疵。光滑的皮肤。保持头发颜色不变，去除杂乱的发丝，添加大量整齐的细碎的发光发丝。细腻的质感头发。",
+        "163:value": "跟图像原本瞳孔颜色一致",
+        "174:value": 2,
+        "175:value": 1,
+        "14:value": "0.3600000000000001",
+        "10:text": "皮肤，coser 扮演的特写肖像，脸部自然磨皮，光滑，去除痘印、去除斑点、去除毛孔瑕疵，保留细腻皮肤纹理与精致 cos 妆容，眼妆清晰立体，唇妆轮廓分明，柔和侧光，摄影级高清画质，皮肤通透白皙，面部光影均匀",
+        "15:value": "2.1000000000000005",
+        "9:steps": "8"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "164:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776586875267,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1779680913119,
+        "runCount": 34
+      }
+    },
+    {
+      "id": "quick-1776586846248-o63ty7",
+      "title": "二次元磨皮",
+      "appRef": {
+        "savedAppId": "app-1775485524817-wanyfn",
+        "appId": "2012102815430221826",
+        "appName": "Zimage自然磨皮"
+      },
+      "inputValues": {
+        "14:value": 0.3600000000000001,
+        "10:text": "皮肤，coser 扮演的特写肖像，脸部自然磨皮，光滑，去除痘印、去除斑点、去除毛孔瑕疵，保留细腻皮肤纹理与精致 cos 妆容，眼妆清晰立体，唇妆轮廓分明，柔和侧光，摄影级高清画质，皮肤通透白皙，面部光影均匀",
+        "15:value": "2.1000000000000005",
+        "9:steps": 8
+      },
+      "imageBindings": [
+        {
+          "inputKey": "4:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1776586846248,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 1780309397918,
+        "runCount": 38
+      }
+    }
+  ]
+}
