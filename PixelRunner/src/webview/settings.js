@@ -131,6 +131,9 @@
     if (modules.runtime.getById("settingsAutoFillEmptyImageInputs")) {
       modules.runtime.getById("settingsAutoFillEmptyImageInputs").checked = settings.autoFillEmptyImageInputs === true;
     }
+    if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
+      modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
+    }
     fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
   }
 
@@ -597,6 +600,7 @@
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
       autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
+      appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
     });
   }
@@ -650,6 +654,7 @@
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
       autoFillEmptyImageInputs: rawSettings ? rawSettings.autoFillEmptyImageInputs : undefined,
+      appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
     });
   }
@@ -686,6 +691,7 @@
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
         autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
+        appPickerLayout: nextSettings.appPickerLayout,
         activeApiProfileId: nextSettings.activeApiProfileId,
         thirdParty
       })
@@ -702,6 +708,9 @@
     }
     if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") {
       modules.workspace.renderWorkspace();
+    }
+    if (modules.apps && typeof modules.apps.renderAppPickerList === "function") {
+      modules.apps.renderAppPickerList();
     }
     renderSettingsStatus("设置已保存到宿主本地存储。", "success");
     renderSettingsDiagnostics("当前设置已同步。", {
@@ -789,6 +798,7 @@
       "settingsMaxConcurrentTasksInput",
       "settingsAiOptimizeAppIdInput",
       "settingsAutoFillEmptyImageInputs",
+      "settingsAppPickerLayoutInput",
       "thirdPartyEnabledInput",
       "thirdPartyGrsApiUrlInput",
       "thirdPartyGrsApiKeyInput",
