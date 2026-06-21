@@ -447,6 +447,7 @@
           <details class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">高级设置</summary>
             <div class="form-stack collapsible-body">
+              <div class="summary-strip">这里的选项会在修改后自动保存并立即生效。</div>
               <div class="dual-grid">
                 <label class="field">
                   <span class="field-label">轮询间隔（秒）</span>
@@ -472,6 +473,14 @@
                   <span>参考图或副图为空时，自动复用主图</span>
                 </label>
                 <span class="field-hint settings-field-hint">关闭时空的可选图片字段会直接跳过；开启后仅补齐参考图、副图、image2 等普通图片字段，不会补齐遮罩、控制图、深度图或姿态图。</span>
+              </div>
+              <div class="field toggle-field settings-toggle-field">
+                <span class="field-label">应用切换密度</span>
+                <label class="checkbox-line">
+                  <input id="settingsAppPickerLayoutInput" type="checkbox" />
+                  <span>使用仅文字的高密度列表</span>
+                </label>
+                <span class="field-hint settings-field-hint">关闭时保持封面图加文字的卡片样式；开启后应用切换面板会隐藏封面图，让同屏显示更多应用。</span>
               </div>
               <div class="action-row">
                 <button id="btnResetAiOptimizeAppId" class="secondary-btn" type="button">恢复默认</button>

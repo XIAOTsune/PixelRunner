@@ -6,27 +6,30 @@
   <title>PixelRunner RunningHub 使用文档</title>
   <style>
     :root {
-      --bg: #f5f7fb;
+      --bg: #f6f8fc;
       --surface: #ffffff;
-      --surface-soft: #f8fafc;
-      --text: #152033;
-      --muted: #5b6678;
-      --subtle: #7b8798;
-      --line: #d9e1ec;
-      --line-strong: #bfccd9;
-      --primary: #2563eb;
+      --surface-soft: #f7f9fd;
+      --surface-tint: #eef5ff;
+      --text: #111827;
+      --muted: #4b5563;
+      --subtle: #6b7280;
+      --line: #dde6f2;
+      --line-strong: #b7c6d8;
+      --primary: #2f6fec;
       --primary-dark: #1d4ed8;
-      --primary-soft: #e8f0ff;
+      --primary-soft: #e8f1ff;
+      --primary-glow: rgba(47, 111, 236, 0.16);
       --green: #10805f;
       --green-soft: #e6f6ef;
       --amber: #a15c00;
       --amber-soft: #fff3d8;
       --red: #c2413d;
       --red-soft: #fff0ee;
-      --shadow: 0 18px 45px rgba(15, 31, 56, 0.09);
+      --shadow: 0 16px 40px rgba(18, 31, 55, 0.08);
+      --shadow-soft: 0 10px 26px rgba(18, 31, 55, 0.06);
       --radius: 8px;
       --radius-sm: 6px;
-      --content: 1180px;
+      --content: 1200px;
       --nav-width: 260px;
     }
 
@@ -43,7 +46,9 @@
       min-height: 100vh;
       color: var(--text);
       background:
-        linear-gradient(180deg, rgba(37, 99, 235, 0.07), transparent 310px),
+        radial-gradient(circle at 14% 0%, rgba(47, 111, 236, 0.15), transparent 310px),
+        radial-gradient(circle at 86% 8%, rgba(16, 128, 95, 0.1), transparent 280px),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.88), transparent 360px),
         var(--bg);
       font: 15px/1.75 "Segoe UI", "Microsoft YaHei UI", "PingFang SC", Arial, sans-serif;
     }
@@ -56,7 +61,8 @@
     code {
       padding: 2px 6px;
       border-radius: 5px;
-      background: #eef2f7;
+      border: 1px solid #dbe4f0;
+      background: #f3f7fc;
       color: #0f172a;
       font-family: Consolas, "SFMono-Regular", monospace;
       font-size: 0.92em;
@@ -78,10 +84,15 @@
       top: 12px;
     }
 
+    :focus-visible {
+      outline: 3px solid var(--primary-glow);
+      outline-offset: 3px;
+    }
+
     .page {
       width: min(var(--content), calc(100vw - 32px));
       margin: 0 auto;
-      padding: 28px 0 56px;
+      padding: 30px 0 60px;
     }
 
     .hero {
@@ -109,7 +120,30 @@
     }
 
     .hero-main {
-      padding: 34px;
+      position: relative;
+      overflow: hidden;
+      padding: 36px;
+      border-color: rgba(47, 111, 236, 0.18);
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 255, 0.92)),
+        var(--surface);
+    }
+
+    .hero-main::after {
+      content: "";
+      position: absolute;
+      right: -72px;
+      bottom: -104px;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(47, 111, 236, 0.13), transparent 68%);
+      pointer-events: none;
+    }
+
+    .hero-main > * {
+      position: relative;
+      z-index: 1;
     }
 
     .eyebrow {
@@ -131,8 +165,8 @@
     h1 {
       max-width: 820px;
       margin-bottom: 14px;
-      font-size: clamp(32px, 5vw, 52px);
-      line-height: 1.08;
+      font-size: clamp(30px, 4.4vw, 48px);
+      line-height: 1.12;
       letter-spacing: 0;
     }
 
@@ -155,6 +189,7 @@
       margin-bottom: 22px;
       color: var(--muted);
       font-size: 17px;
+      line-height: 1.8;
     }
 
     .hero-actions,
@@ -178,7 +213,7 @@
       color: var(--text);
       font-weight: 700;
       cursor: pointer;
-      transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
     }
 
     .btn:hover,
@@ -186,6 +221,7 @@
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
       outline: none;
+      transform: translateY(-1px);
     }
 
     .btn.primary {
@@ -212,7 +248,7 @@
 
     .hero-aside {
       padding: 22px;
-      background: linear-gradient(180deg, var(--surface), #f8fbff);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), #f7fbff);
     }
 
     .status-list,
@@ -232,7 +268,7 @@
       display: flex;
       gap: 10px;
       align-items: flex-start;
-      padding: 10px;
+      padding: 11px;
       border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       background: var(--surface-soft);
@@ -259,7 +295,9 @@
       position: sticky;
       top: 18px;
       padding: 14px;
-      box-shadow: none;
+      box-shadow: var(--shadow-soft);
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(12px);
     }
 
     .side-nav-title {
@@ -280,13 +318,14 @@
       border-radius: var(--radius-sm);
       color: var(--muted);
       font-weight: 650;
-      transition: background 160ms ease, color 160ms ease;
+      transition: background 180ms ease, color 180ms ease, transform 180ms ease;
     }
 
     .side-nav a:hover,
     .side-nav a.active {
       background: var(--primary-soft);
       color: var(--primary-dark);
+      transform: translateX(2px);
     }
 
     .content {
@@ -296,8 +335,9 @@
     }
 
     .doc-card {
-      padding: 26px;
+      padding: 28px;
       scroll-margin-top: 18px;
+      box-shadow: var(--shadow-soft);
     }
 
     .section-head {
@@ -316,8 +356,8 @@
       padding: 4px 9px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      background: var(--surface-soft);
-      color: var(--muted);
+      background: var(--surface-tint);
+      color: var(--primary-dark);
       font-size: 12px;
       font-weight: 800;
       white-space: nowrap;
@@ -345,11 +385,13 @@
     .quick-help {
       padding: 16px;
       box-shadow: none;
-      transition: border-color 160ms ease, transform 160ms ease;
+      background: linear-gradient(180deg, #fff, #f9fbff);
+      transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
     }
 
     .quick-help:hover {
       border-color: var(--primary);
+      box-shadow: 0 8px 22px rgba(47, 111, 236, 0.09);
       transform: translateY(-1px);
     }
 
@@ -374,7 +416,7 @@
       display: grid;
       grid-template-columns: 46px minmax(0, 1fr);
       gap: 14px;
-      padding: 16px;
+      padding: 18px;
       box-shadow: none;
       background: var(--surface);
     }
@@ -388,7 +430,7 @@
       width: 36px;
       height: 36px;
       border-radius: var(--radius-sm);
-      background: var(--primary-soft);
+      background: linear-gradient(180deg, var(--primary-soft), #dbeafe);
       color: var(--primary-dark);
       font-weight: 900;
     }
@@ -450,8 +492,8 @@
     }
 
     .callout {
-      background: var(--primary-soft);
-      border-color: #b8ccff;
+      background: linear-gradient(180deg, #ffffff, #f7fbff);
+      border-color: #c9d8ee;
     }
 
     .checklist {
@@ -468,6 +510,33 @@
       padding: 12px;
       box-shadow: none;
       background: var(--surface-soft);
+    }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .contact-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, #ffffff, #f8fbff);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .contact-card h3 {
+      margin-bottom: 0;
+    }
+
+    .contact-card p {
+      color: var(--muted);
+      margin-bottom: 0;
     }
 
     .check-mark {
@@ -508,6 +577,7 @@
       border: 1px solid var(--line);
       border-radius: var(--radius);
       background: var(--surface);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
     }
 
     table {
@@ -528,6 +598,14 @@
       background: var(--surface-soft);
       color: var(--text);
       font-size: 13px;
+    }
+
+    tbody tr {
+      transition: background 160ms ease;
+    }
+
+    tbody tr:hover {
+      background: #f9fbff;
     }
 
     tr:last-child td {
@@ -593,6 +671,7 @@
 
       .side-nav {
         position: static;
+        backdrop-filter: none;
       }
 
       .side-nav .nav-links {
@@ -602,7 +681,8 @@
       }
 
       .quick-grid,
-      .problem-grid {
+      .problem-grid,
+      .contact-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
@@ -631,6 +711,7 @@
       .cards-grid,
       .problem-grid,
       .checklist,
+      .contact-grid,
       .side-nav .nav-links {
         grid-template-columns: 1fr;
       }
@@ -668,9 +749,9 @@
     <header class="hero">
       <section class="hero-main">
         <p class="eyebrow">PixelRunner 本地帮助中心</p>
-        <h1>RunningHub 从第一次配置到保存查看，一页讲清楚</h1>
+        <h1>PixelRunner 连接 RunningHub，从第一次配置到返图</h1>
         <p class="lead">
-          这份文档按真实使用顺序整理：先保存 API Key，再添加应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
+          这份文档按 RunningHub 当前官网入口和 PixelRunner 的实际使用顺序整理：先到消费级 API 控制台复制 API Key，再从 AI 应用页找到合适应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
         </p>
         <div class="hero-actions">
           <a class="btn primary" href="#first-run">
@@ -691,10 +772,10 @@
       <aside class="hero-aside">
         <h2>先确认这 4 件事</h2>
         <ul class="status-list">
-          <li><span class="dot"></span><span><strong>RunningHub 账号</strong><br />需要能登录官网，并能拿到自己的 API Key。</span></li>
-          <li><span class="dot"></span><span><strong>钱包有余额</strong><br />任务消耗 RunningHub 钱包余额或 RH 币，余额不足会直接失败。</span></li>
+          <li><span class="dot"></span><span><strong>RunningHub 账号</strong><br />需要能登录官网，并能进入消费级 API 控制台复制 API Key。</span></li>
+          <li><span class="dot"></span><span><strong>钱包有 RH 币</strong><br />消费级 API 会消耗账号 RH 币，网站任务和 API 调用共享并发限制。</span></li>
           <li><span class="dot"></span><span><strong>Photoshop 已打开文档</strong><br />需要捕获当前文档或选区时，必须先打开图像。</span></li>
-          <li><span class="dot"></span><span><strong>关闭代理加速器</strong><br />RunningHub 是国内服务，代理环境可能导致请求失败。</span></li>
+          <li><span class="dot"></span><span><strong>准备一个 AI 应用</strong><br />从 RunningHub 的 AI 应用页下翻到广场，或直接搜索需要的应用。</span></li>
         </ul>
       </aside>
     </header>
@@ -728,11 +809,11 @@
           <div class="quick-grid">
             <a class="quick-help" href="#api-key">
               <strong>API Key 怎么保存？</strong>
-              <span>设置页填写 Key、档案名称，点击保存设置。</span>
+              <span>先到消费级 API 控制台复制 Key，再回设置页保存。</span>
             </a>
             <a class="quick-help" href="#app-add">
               <strong>怎么添加 AI 应用？</strong>
-              <span>工作台点切换，添加应用，输入应用 ID 或链接。</span>
+              <span>从 AI 应用页复制详情页链接，或复制末尾应用 ID。</span>
             </a>
             <a class="quick-help" href="#result-view">
               <strong>任务结果去哪看？</strong>
@@ -758,17 +839,22 @@
           <div class="flow">
             <article class="flow-step" id="api-key">
               <div>
-                <h3>在 RunningHub 获取 API Key</h3>
-                <p>打开 RunningHub 官网，登录账号，在个人设置或开放接口相关页面找到 API Key。复制时注意不要多复制空格。</p>
+                <h3>在消费级 API 控制台复制 API Key</h3>
+                <p>打开 RunningHub 的 <strong>消费级-会员 API 控制台</strong>，登录账号后进入密钥区域，复制自己的 API Key。当前直达地址是 <code>https://www.runninghub.cn/enterprise-api/consumerApi</code>。</p>
                 <ul class="plain-list">
-                  <li>如果你刚注册账号，先确认账号能正常登录。</li>
-                  <li>如果 API Key 失效，回官网重新生成或复制新的 Key。</li>
+                  <li>目前官网右上角头像菜单里没有 API 控制台入口，建议直接使用上面的控制台网址。</li>
+                  <li>消费级 API 调用会消耗账号里的 RH 币；如果看不到密钥或调用失败，先确认账号是否具备对应 API 权益。</li>
+                  <li>如果 API Key 失效，回官网 API 控制台重新复制或重置新的 Key。</li>
                   <li>API Key 属于敏感信息，不建议发到公开群聊或截图里。</li>
                 </ul>
                 <div class="inline-actions" style="margin-top: 12px;">
-                  <a class="btn" href="https://www.runninghub.cn" target="_blank" rel="noreferrer">
+                  <a class="btn" href="https://www.runninghub.cn/enterprise-api/consumerApi" target="_blank" rel="noreferrer">
                     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="m10 14 11-11"></path></svg>
-                    打开 RunningHub
+                    打开 API 控制台
+                  </a>
+                  <a class="btn" href="https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287334" target="_blank" rel="noreferrer">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"></path></svg>
+                    查看官方 API 文档
                   </a>
                 </div>
               </div>
@@ -777,9 +863,9 @@
             <article class="flow-step">
               <div>
                 <h3>充值或确认钱包余额</h3>
-                <p>任务会消耗 RunningHub 钱包余额或 RH 币。建议第一次运行前先在官网确认余额，避免插件里看起来提交了，但云端直接因为余额不足失败。</p>
+                <p>PixelRunner 调用的是 RunningHub 云端任务。消费级 API 会消耗账号 RH 币，且官网运行任务和 API 调用任务共享同一套并发限制。建议第一次运行前先在官网确认余额，避免插件里看起来提交了，但云端直接因为余额不足失败。</p>
                 <div class="notice">
-                  <strong>经验判断：</strong>如果一点击运行就很快失败，优先查余额和 API Key；如果等了很久才失败，再看应用拥挤、网络或内容审核。
+                  <strong>经验判断：</strong>如果一点击运行就很快失败，优先查余额、会员/API 权益和 API Key；如果等了很久才失败，再看应用拥挤、并发限制、网络或内容审核。
                 </div>
               </div>
             </article>
@@ -801,15 +887,34 @@
 
             <article class="flow-step" id="app-add">
               <div>
-                <h3>添加第一个 RunningHub 应用</h3>
-                <p>进入 <span class="kbd">工作台</span>，在“选择应用”区域点击 <strong>切换</strong>，再点击弹窗里的 <strong>添加应用</strong>。把 RunningHub 应用 ID 或完整应用链接粘进去，点击 <strong>解析</strong>，确认名称后点击 <strong>保存应用</strong>。</p>
+                <h3>在 RunningHub 找到要用的 AI 应用</h3>
+                <p>打开 <code>https://www.runninghub.cn/ai-apps</code>。页面前面通常是 <strong>精选应用</strong>，继续往下翻会看到 <strong>AI应用广场</strong>；也可以直接用页面里的搜索或筛选找到目标应用。</p>
                 <ul class="plain-list">
-                  <li>应用 ID 可以是纯数字，也可以是 RunningHub 应用链接。</li>
+                  <li>优先选择自己在网页端能正常打开、能手动试跑的应用。</li>
+                  <li>打开应用详情页后，浏览器地址通常类似 <code>https://www.runninghub.cn/ai-detail/1937084629516193794</code>。</li>
+                  <li>详情页末尾那串数字就是 <strong>webappId / 应用 ID</strong>；PixelRunner 可以直接粘完整链接，也可以只粘这串数字。</li>
+                  <li>如果官网入口从 <span class="kbd">AI 应用</span> 跳到新版页面，仍然以详情页链接里的 <code>ai-detail/数字</code> 为准。</li>
+                </ul>
+                <div class="inline-actions" style="margin-top: 12px;">
+                  <a class="btn" href="https://www.runninghub.cn/ai-apps" target="_blank" rel="noreferrer">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="m10 14 11-11"></path></svg>
+                    打开 AI 应用页
+                  </a>
+                </div>
+              </div>
+            </article>
+
+            <article class="flow-step">
+              <div>
+                <h3>把 AI 应用保存到 PixelRunner</h3>
+                <p>回到 PixelRunner，进入 <span class="kbd">工作台</span>，在“选择应用”区域点击 <strong>切换</strong>，再点击弹窗里的 <strong>添加应用</strong>。把 RunningHub 应用 ID 或完整应用链接粘进去，点击 <strong>解析</strong>，确认名称后点击 <strong>保存应用</strong>。</p>
+                <ul class="plain-list">
                   <li>解析成功后，应用会出现在“已保存应用”列表中。</li>
                   <li>应用保存后会自动切换到工作台，表单会按该应用的输入项生成。</li>
+                  <li>如果你保存了很多应用，可以在 <span class="kbd">设置</span> / <strong>高级设置</strong> 中打开“仅文字的高密度列表”，应用切换面板会更紧凑。</li>
                 </ul>
                 <div class="notice danger">
-                  <strong>解析失败先看三件事：</strong>API Key 是否已保存，应用 ID 是否复制错，当前网络是否走了代理或加速器。
+                  <strong>解析失败先看四件事：</strong>API Key 是否已保存，账号是否有 API 调用权益，应用 ID 是否复制错，当前网络是否能直连 RunningHub。
                 </div>
               </div>
             </article>
@@ -833,7 +938,7 @@
             </article>
             <article class="callout">
               <h3>2. 选择已保存应用</h3>
-              <p>工作台左上“选择应用”区域点击 <strong>切换</strong>。你可以搜索应用、添加应用、编辑应用，或拖动应用卡片调整顺序。</p>
+              <p>工作台左上“选择应用”区域点击 <strong>切换</strong>。你可以搜索应用、添加应用、编辑应用，或拖动应用卡片调整顺序。应用很多时，可以去高级设置打开高密度文字列表，同屏更容易扫到目标应用。</p>
             </article>
             <article class="callout">
               <h3>3. 填写动态表单</h3>
@@ -845,7 +950,7 @@
             </article>
             <article class="callout">
               <h3>5. 点击开始运行</h3>
-              <p>点击 <strong>开始运行</strong> 后，任务卡片会显示提交、运行、完成或失败状态。插件会按设置里的轮询间隔和超时时间等待 RunningHub 返回结果。</p>
+              <p>点击 <strong>开始运行</strong> 后，任务卡片会显示提交、运行、完成或失败状态。插件会按设置里的轮询间隔、超时时间和最大并发数等待 RunningHub 返回结果。</p>
             </article>
             <article class="callout" id="result-view">
               <h3>6. 查看返图和日志</h3>
@@ -902,9 +1007,15 @@
                 </tr>
                 <tr>
                   <td>AI 应用</td>
-                  <td>工作台 / 切换 / 添加应用 / 保存应用，也可在设置的“AI 应用管理（高级）”里保存</td>
+                  <td>RunningHub AI 应用页复制详情链接或 ID，然后在工作台 / 切换 / 添加应用 / 保存应用</td>
                   <td>工作台“切换”弹窗的已保存应用列表，或设置页应用列表</td>
-                  <td>解析依赖 API Key 和网络。保存后不会影响 RunningHub 官网应用本身。</td>
+                  <td>解析依赖 API Key、API 权益和网络。保存后不会影响 RunningHub 官网应用本身。</td>
+                </tr>
+                <tr>
+                  <td>应用切换显示密度</td>
+                  <td>设置 / 高级设置 / 应用切换密度 / 保存设置</td>
+                  <td>工作台“切换”弹窗会按图片卡片或文字高密度列表显示</td>
+                  <td>只影响本地显示方式，不影响已保存应用和 RunningHub 官网应用。</td>
                 </tr>
                 <tr>
                   <td>提示词模板</td>
@@ -1013,15 +1124,15 @@
           <div class="problem-grid">
             <article class="issue-card" data-level="error">
               <h3>余额不足</h3>
-              <p>工作台右上余额为空或过低时，先去 RunningHub 官网确认钱包。余额不足是最常见的失败原因之一。</p>
+              <p>工作台右上余额为空或过低时，先去 RunningHub 官网确认 RH 币和消费级 API 权益。余额不足是最常见的失败原因之一。</p>
             </article>
             <article class="issue-card" data-level="error">
               <h3>API Key 未保存或失效</h3>
               <p>报错里出现 API Key missing、param apikey is required，回设置页重新粘贴 Key 并保存设置。</p>
             </article>
             <article class="issue-card" data-level="warn">
-              <h3>热门应用拥挤</h3>
-              <p>全能图片 Pro / 2 等热门应用在高峰时段可能排队、超时或偶发失败。可以稍后重试或换轻量应用。</p>
+              <h3>热门应用或并发限制</h3>
+              <p>热门应用在高峰时段可能排队、超时或偶发失败；消费级 API 也会和网页端任务共享并发限制。可以稍后重试、降低并发，或换轻量应用。</p>
             </article>
             <article class="issue-card" data-level="warn">
               <h3>图片内容被审核拦截</h3>
@@ -1029,7 +1140,7 @@
             </article>
             <article class="issue-card" data-level="warn">
               <h3>代理、加速器或网络转发</h3>
-              <p>关闭代理、加速器、异常 DNS 或网络转发后重试。国内服务在代理环境下更容易请求失败。</p>
+              <p>关闭代理、加速器、异常 DNS 或网络转发后重试。若必须使用代理，至少确认浏览器能正常打开 API 控制台和 AI 应用详情页。</p>
             </article>
             <article class="issue-card" data-level="ok">
               <h3>Photoshop 正忙导致返图延迟</h3>
@@ -1053,7 +1164,7 @@
             <article class="flow-step">
               <div>
                 <h3>最后去 RunningHub 官网核对</h3>
-                <p>如果插件显示任务 ID，但本地等待超时，说明远端任务可能还在运行。可以去 RunningHub 的调用记录或任务记录里搜索任务状态。</p>
+                <p>如果插件显示任务 ID，但本地等待超时，说明远端任务可能还在运行。可以去 RunningHub 消费级 API 控制台查看调用记录，或在官网任务记录里搜索任务状态。</p>
               </div>
             </article>
           </div>
@@ -1066,7 +1177,7 @@
               <h2>仍然解决不了时，带这些信息求助</h2>
               <p class="muted">信息越完整，越容易快速判断是 Key、余额、应用、网络、图片审核，还是插件贴回问题。</p>
             </div>
-            <span class="tag">QQ 1078517474</span>
+            <span class="tag">QQ 交流群</span>
           </div>
 
           <div class="checklist">
@@ -1088,11 +1199,26 @@
             </div>
           </div>
 
+          <div class="contact-grid">
+            <article class="contact-card">
+              <h3>一群</h3>
+              <p>群号：<code>1078517474</code></p>
+              <button class="btn primary" type="button" data-copy-text="1078517474" data-copy-label="一群群号">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                复制一群群号
+              </button>
+            </article>
+            <article class="contact-card">
+              <h3>二群</h3>
+              <p>群号：<code>790069193</code></p>
+              <button class="btn primary" type="button" data-copy-text="790069193" data-copy-label="二群群号">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                复制二群群号
+              </button>
+            </article>
+          </div>
+
           <div class="inline-actions" style="margin-top: 16px;">
-            <button class="btn primary" type="button" id="copyQq">
-              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              复制 QQ 群号 1078517474
-            </button>
             <a class="btn" href="#troubleshooting">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path></svg>
               回到排查清单
@@ -1155,13 +1281,17 @@
       window.setTimeout(() => toast.classList.remove("show"), 1800);
     }
 
-    document.getElementById("copyQq").addEventListener("click", async () => {
-      try {
-        await copyText("1078517474");
-        showToast("已复制 QQ 群号");
-      } catch (_) {
-        showToast("复制失败，请手动复制 1078517474");
-      }
+    document.querySelectorAll("[data-copy-text]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const text = button.getAttribute("data-copy-text") || "";
+        const label = button.getAttribute("data-copy-label") || "内容";
+        try {
+          await copyText(text);
+          showToast(`已复制${label}`);
+        } catch (_) {
+          showToast(`复制失败，请手动复制 ${text}`);
+        }
+      });
     });
 
     window.addEventListener("scroll", () => {
