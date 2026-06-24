@@ -1266,6 +1266,7 @@
   function updateRunButtonState() {
     const state = modules.state.state;
     const runButton = modules.runtime.getById("btnRun");
+    const runPlusButton = modules.runtime.getById("btnRunPlus");
     const taskStatusSummary = modules.runtime.getById("taskStatusSummary");
     const runningTaskList = modules.runtime.getById("runningTaskList");
     const hasCurrentApp = !!state.currentApp;
@@ -1294,6 +1295,16 @@
       } else {
         runButton.textContent = `运行 ${modules.state.getAppDisplayName(state.currentApp)}`;
       }
+    }
+
+    if (runPlusButton) {
+      const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
+      runPlusButton.disabled = quickMode || !hasCurrentApp || isThirdPartyApp || concurrencyReached || cooldownActive;
+      runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
+      runPlusButton.setAttribute(
+        "aria-label",
+        isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行，48G 显存"
+      );
     }
 
     if (taskStatusSummary) {
@@ -1647,13 +1658,19 @@
     }
   }
 
-  function buildRunPayload() {
+  function normalizeRunningHubInstanceType(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return normalized === "plus" ? "plus" : "";
+  }
+
+  function buildRunPayload(options = {}) {
     const state = modules.state.state;
     collectFormValuesFromDom();
     if (modules.state.isThirdPartyApp(state.currentApp)) {
       return buildThirdPartyRunPayload();
     }
     const currentAppId = modules.state.resolveAppId(state.currentApp);
+    const instanceType = normalizeRunningHubInstanceType(options.instanceType);
     const payload = {
       appId: currentAppId,
       appName: state.currentApp ? state.currentApp.name : "",
@@ -1674,6 +1691,7 @@
         autoFillEmptyImageInputs: state.settings.autoFillEmptyImageInputs === true
       }
     };
+    if (instanceType) payload.instanceType = instanceType;
     state.lastRunPayload = payload;
     return payload;
   }
@@ -2533,7 +2551,11 @@
       provider: payload.provider || "",
       appName: payload.appName,
       status: "submitting",
-      detail: isThirdPartyTask ? "正在提交到 GRS..." : "正在提交到 RunningHub...",
+      detail: isThirdPartyTask
+        ? "正在提交到 GRS..."
+        : payload.instanceType === "plus"
+          ? "正在提交到 RunningHub Plus 模式..."
+          : "正在提交到 RunningHub...",
       accountSnapshot: submissionAccountSnapshot,
       sourceDocument,
       createdAt: Date.now(),
@@ -2542,7 +2564,7 @@
 
     try {
       modules.ui.logToWorkspace(
-        `[运行提交] provider=${payload.provider || "runninghub"} appId=${payload.appId} appName=${payload.appName || "-"} inputCount=${Object.keys(payload.inputs || {}).length}`,
+        `[运行提交] provider=${payload.provider || "runninghub"} appId=${payload.appId} appName=${payload.appName || "-"} instanceType=${payload.instanceType || "default"} inputCount=${Object.keys(payload.inputs || {}).length}`,
         "info"
       );
 
@@ -2730,8 +2752,38 @@
       modules.ui.logToWorkspace(normalizedMessage, cancelled ? "warn" : "error");
     }
   }
+
+  async function runCurrentWorkspaceTask(options = {}) {
+    validateRunPayload();
+    clearLastResult();
+    const payload = buildRunPayload(options);
+    if (!modules.runtime.isPluginRuntime()) {
+      modules.ui.logToWorkspace(`浏览器预览模式已生成任务负载：${JSON.stringify(payload)}`, "info");
+      return;
+    }
+    if (!payload.apiKey) throw new Error(payload.provider === "grs" ? "请先在第三方支持中配置 GRS API Key" : "请先在设置页保存 RunningHub API Key");
+    if (!payload.appId) throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
+    if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
+      throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
+    }
+    if (isRunCooldownActive()) {
+      throw new Error("请不要短时间连续点击运行按钮，稍后再试。");
+    }
+
+    markRunCooldown();
+    await persistThirdPartyLastSelection();
+    const fallbackSourceDocument = await captureSourceDocumentInfo();
+    const sourceDocument = resolveSourceDocumentFromImageInputs(
+      modules.state.state.currentApp,
+      modules.state.state.formValues,
+      fallbackSourceDocument
+    );
+    startRunTaskFlow(payload, sourceDocument);
+  }
+
   function bindWorkspaceActions() {
     const runButton = modules.runtime.getById("btnRun");
+    const runPlusButton = modules.runtime.getById("btnRunPlus");
     const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
     const createQuickEntryButton = modules.runtime.getById("btnCreateQuickEntry");
     const quickEntryNameTitle = modules.runtime.getById("quickEntryNameTitle");
@@ -3020,31 +3072,18 @@
     if (runButton) {
       runButton.addEventListener("click", async () => {
         try {
-          validateRunPayload();
-          clearLastResult();
-          const payload = buildRunPayload();
-          if (!modules.runtime.isPluginRuntime()) {
-            modules.ui.logToWorkspace(`浏览器预览模式已生成任务负载：${JSON.stringify(payload)}`, "info");
-            return;
-          }
-          if (!payload.apiKey) throw new Error(payload.provider === "grs" ? "请先在第三方支持中配置 GRS API Key" : "请先在设置页保存 RunningHub API Key");
-          if (!payload.appId) throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
-          if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
-            throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
-          }
-          if (isRunCooldownActive()) {
-            throw new Error("请不要短时间连续点击运行按钮，稍后再试。");
-          }
+          await runCurrentWorkspaceTask();
+        } catch (error) {
+          modules.ui.logToWorkspace(error.message, "warn");
+          updateRunButtonState();
+        }
+      });
+    }
 
-          markRunCooldown();
-          await persistThirdPartyLastSelection();
-          const fallbackSourceDocument = await captureSourceDocumentInfo();
-          const sourceDocument = resolveSourceDocumentFromImageInputs(
-            modules.state.state.currentApp,
-            modules.state.state.formValues,
-            fallbackSourceDocument
-          );
-          startRunTaskFlow(payload, sourceDocument);
+    if (runPlusButton) {
+      runPlusButton.addEventListener("click", async () => {
+        try {
+          await runCurrentWorkspaceTask({ instanceType: "plus" });
         } catch (error) {
           modules.ui.logToWorkspace(error.message, "warn");
           updateRunButtonState();

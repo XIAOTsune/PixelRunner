@@ -1456,6 +1456,7 @@ export async function submitRunningHubTask(args = []) {
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
   const apiKey = String(payload.apiKey || "").trim();
   const appId = normalizeAppId(app.appId || payload.appId);
+  const instanceType = String(payload.instanceType || "").trim().toLowerCase() === "plus" ? "plus" : "";
 
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!appId) throw new Error("RunningHub App ID is missing");
@@ -1465,11 +1466,12 @@ export async function submitRunningHubTask(args = []) {
     { apiKey, webappId: appId, nodeInfoList },
     { apiKey, webAppId: appId, nodeInfoList },
     { apiKey, appId, nodeInfoList }
-  ];
+  ].map((body) => (instanceType ? { ...body, instanceType } : body));
 
   console.log("[PixelRunner/RunningHub] submit task", {
     appId,
     appName: String(payload.appName || app.name || "").trim(),
+    instanceType: instanceType || "default",
     inputCount: Array.isArray(nodeInfoList) ? nodeInfoList.length : 0,
     legacyParamCount: Object.keys(nodeParams).length
   });
