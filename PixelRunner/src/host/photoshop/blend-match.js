@@ -1206,6 +1206,149 @@ function weightedStatsWhere(values, weights, predicate) {
   };
 }
 
+function weightedPercentiles(values, weights, percentiles, predicate, min = 0, max = 255, bins = 256) {
+  const safeMin = Number.isFinite(Number(min)) ? Number(min) : 0;
+  const safeMax = Number.isFinite(Number(max)) && Number(max) > safeMin ? Number(max) : safeMin + 1;
+  const binCount = Math.max(16, Math.floor(Number(bins) || 256));
+  const histogram = new Float64Array(binCount);
+  let totalWeight = 0;
+  const scale = (binCount - 1) / (safeMax - safeMin);
+  for (let i = 0; i < values.length; i += 1) {
+    if (predicate && !predicate(i)) continue;
+    const weight = weights ? Number(weights[i]) || 0 : 1;
+    if (weight <= 0) continue;
+    const value = Math.max(safeMin, Math.min(safeMax, Number(values[i]) || 0));
+    const bin = Math.max(0, Math.min(binCount - 1, Math.round((value - safeMin) * scale)));
+    histogram[bin] += weight;
+    totalWeight += weight;
+  }
+  if (totalWeight <= 0) return null;
+  const targets = Array.isArray(percentiles) && percentiles.length ? percentiles : [0.5];
+  const out = {};
+  const sorted = targets
+    .map((value) => Math.max(0, Math.min(1, Number(value) || 0)))
+    .sort((a, b) => a - b);
+  let targetIndex = 0;
+  let accumulated = 0;
+  for (let bin = 0; bin < binCount && targetIndex < sorted.length; bin += 1) {
+    accumulated += histogram[bin];
+    while (targetIndex < sorted.length && accumulated >= totalWeight * sorted[targetIndex]) {
+      out[sorted[targetIndex]] = safeMin + (bin / Math.max(1, binCount - 1)) * (safeMax - safeMin);
+      targetIndex += 1;
+    }
+  }
+  while (targetIndex < sorted.length) {
+    out[sorted[targetIndex]] = safeMax;
+    targetIndex += 1;
+  }
+  return {
+    values: out,
+    weight: totalWeight
+  };
+}
+
+function weightedChromaStats(uValues, vValues, weights, predicate) {
+  let sum = 0;
+  let sumSq = 0;
+  let weight = 0;
+  for (let i = 0; i < uValues.length; i += 1) {
+    if (predicate && !predicate(i)) continue;
+    const w = weights ? Number(weights[i]) || 0 : 1;
+    if (w <= 0) continue;
+    const u = Number(uValues[i]) || 0;
+    const v = Number(vValues[i]) || 0;
+    const value = Math.hypot(u, v);
+    sum += value * w;
+    sumSq += value * value * w;
+    weight += w;
+  }
+  if (weight <= 0) return { mean: 0, std: 1, weight: 0 };
+  const mean = sum / weight;
+  return {
+    mean,
+    std: Math.sqrt(Math.max(0.0001, sumSq / weight - mean * mean)),
+    weight
+  };
+}
+
+function getColorProfileLimits(config, significantMismatch) {
+  const mode = String(config && config.mode || "balanced");
+  const strong = mode === "strong";
+  const natural = mode === "natural";
+  return {
+    toneCap: significantMismatch ? (strong ? 76 : natural ? 44 : 62) : (strong ? 52 : natural ? 30 : 42),
+    shadowCap: significantMismatch ? (strong ? 38 : natural ? 22 : 30) : (strong ? 26 : natural ? 14 : 20),
+    colorCap: significantMismatch ? (strong ? 64 : natural ? 40 : 54) : (strong ? 44 : natural ? 28 : 36),
+    chromaMin: significantMismatch ? (strong ? 0.68 : natural ? 0.82 : 0.76) : (strong ? 0.82 : natural ? 0.9 : 0.86),
+    chromaMax: significantMismatch ? (strong ? 1.46 : natural ? 1.2 : 1.34) : (strong ? 1.22 : natural ? 1.1 : 1.16),
+    saturationMin: significantMismatch ? (strong ? 0.78 : natural ? 0.88 : 0.82) : (strong ? 0.86 : natural ? 0.94 : 0.9),
+    saturationMax: significantMismatch ? (strong ? 1.3 : natural ? 1.16 : 1.24) : (strong ? 1.16 : natural ? 1.08 : 1.12)
+  };
+}
+
+function buildToneCurveProfile(sourceChannels, referenceChannels, weights, predicate, toneStrength, limits, significantMismatch) {
+  const sourceTone = weightedPercentiles(sourceChannels.y, weights, [0.1, 0.5, 0.9], predicate, 0, 255, 256);
+  const referenceTone = weightedPercentiles(referenceChannels.y, weights, [0.1, 0.5, 0.9], predicate, 0, 255, 256);
+  if (!sourceTone || !referenceTone || sourceTone.weight <= 12 || referenceTone.weight <= 12) return null;
+  const source = [
+    Number(sourceTone.values[0.1]) || 0,
+    Number(sourceTone.values[0.5]) || 0,
+    Number(sourceTone.values[0.9]) || 0
+  ];
+  const reference = [
+    Number(referenceTone.values[0.1]) || 0,
+    Number(referenceTone.values[0.5]) || 0,
+    Number(referenceTone.values[0.9]) || 0
+  ];
+  const cap = Math.max(1, Number(limits && limits.toneCap) || 42);
+  const shadowCap = Math.max(1, Number(limits && limits.shadowCap) || 20);
+  const curveStrength = Math.max(0, Math.min(significantMismatch ? 0.88 : 0.7, Number(toneStrength) || 0));
+  const delta10 = Math.max(-shadowCap, Math.min(shadowCap, (reference[0] - source[0]) * curveStrength));
+  const delta50 = Math.max(-cap, Math.min(cap, (reference[1] - source[1]) * curveStrength));
+  const delta90 = Math.max(-shadowCap, Math.min(shadowCap, (reference[2] - source[2]) * curveStrength));
+  const meanAbsDelta = (Math.abs(delta10) + Math.abs(delta50) + Math.abs(delta90)) / 3;
+  if (meanAbsDelta < 0.35) return null;
+  return {
+    source,
+    reference,
+    deltas: [delta10, delta50, delta90],
+    shadowDelta: delta10,
+    midDelta: delta50,
+    highlightDelta: delta90,
+    mix: significantMismatch ? 0.82 : 0.58,
+    weight: sourceTone.weight
+  };
+}
+
+function getToneCurveDelta(value, curve) {
+  if (!curve || !Array.isArray(curve.source) || !Array.isArray(curve.deltas)) return null;
+  const y = Math.max(0, Math.min(255, Number(value) || 0));
+  const s10 = Math.max(0, Math.min(255, Number(curve.source[0]) || 0));
+  const s50 = Math.max(s10 + 1, Math.min(255, Number(curve.source[1]) || s10 + 1));
+  const s90 = Math.max(s50 + 1, Math.min(255, Number(curve.source[2]) || s50 + 1));
+  const d10 = Number(curve.deltas[0]) || 0;
+  const d50 = Number(curve.deltas[1]) || 0;
+  const d90 = Number(curve.deltas[2]) || 0;
+  const shadowDelta = Number(curve.shadowDelta) || d10;
+  const highlightDelta = Number(curve.highlightDelta) || d90;
+  if (y <= s10) {
+    return lerp(shadowDelta, d10, smoothstep(0, Math.max(1, s10), y));
+  }
+  if (y <= s50) {
+    return lerp(d10, d50, (y - s10) / Math.max(1, s50 - s10));
+  }
+  if (y <= s90) {
+    return lerp(d50, d90, (y - s50) / Math.max(1, s90 - s50));
+  }
+  return lerp(d90, highlightDelta, smoothstep(s90, 255, y));
+}
+
+function summarizeToneCurveStrength(curve) {
+  if (!curve || !Array.isArray(curve.deltas) || !curve.deltas.length) return 0;
+  const total = curve.deltas.reduce((sum, value) => sum + Math.abs(Number(value) || 0), 0);
+  return total / curve.deltas.length;
+}
+
 function transformChannelStats(source, reference, weights, amount, options = {}) {
   const sourceStats = weightedStats(source, weights);
   const referenceStats = weightedStats(reference, weights);
@@ -1472,6 +1615,9 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
       const y0 = 0.299 * r + 0.587 * g + 0.114 * b;
       const u0 = b - y0;
       const v0 = r - y0;
+      const maxChannel = Math.max(r, g, b);
+      const minChannel = Math.min(r, g, b);
+      const sat0 = maxChannel <= 0 ? 0 : (maxChannel - minChannel) / maxChannel;
       const shadowWeight = 1 - smoothstep(42, 118, y0);
       const highlightWeight = smoothstep(172, 238, y0);
       const midWeight = Math.max(0, 1 - Math.max(shadowWeight, highlightWeight));
@@ -1479,12 +1625,18 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
         (Number(profile.shadowDelta) || 0) * shadowWeight +
         (Number(profile.midDelta) || 0) * midWeight +
         (Number(profile.highlightDelta) || 0) * highlightWeight;
+      const curveDelta = getToneCurveDelta(y0, profile.toneCurve);
+      if (Number.isFinite(curveDelta)) {
+        toneDelta = lerp(toneDelta, curveDelta, Math.max(0, Math.min(1, Number(profile.toneCurve && profile.toneCurve.mix) || 0.62)));
+      }
       if (y0 > 218 && toneDelta > 0) toneDelta *= 0.35;
       if (y0 < 32 && toneDelta < 0) toneDelta *= 0.35;
       const y = y0 + toneDelta;
       const chromaProtect = 0.52 + midWeight * 0.48;
-      const u = u0 * (1 + (profile.chromaScale - 1) * chromaProtect) + profile.uDelta * chromaProtect;
-      const v = v0 * (1 + (profile.chromaScale - 1) * chromaProtect) + profile.vDelta * chromaProtect;
+      const neutralWeight = (1 - smoothstep(0.06, 0.32, sat0)) * (0.36 + midWeight * 0.64);
+      const chromaScale = Number(profile.chromaScale) || 1;
+      const u = u0 * (1 + (chromaScale - 1) * chromaProtect) + profile.uDelta * chromaProtect + (Number(profile.neutralUDelta) || 0) * neutralWeight;
+      const v = v0 * (1 + (chromaScale - 1) * chromaProtect) + profile.vDelta * chromaProtect + (Number(profile.neutralVDelta) || 0) * neutralWeight;
       [r, g, b] = yuvToRgb(y, u, v);
       [r, g, b] = applySaturationToRgb(r, g, b, 1 + (profile.saturationFactor - 1) * chromaProtect);
     } else {
@@ -1508,15 +1660,15 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
     scaleY: sourceSample.scaleY,
     data: out,
     color: {
-      method: profile ? "protected-tone-chroma-profile" : "legacy-correction-profile",
+      method: profile ? (profile.significantMismatch ? "enhanced-tone-chroma-profile" : "protected-tone-chroma-profile") : "legacy-correction-profile",
       brightness: profile ? Number(profile.midDelta.toFixed(2)) : Number(brightness.toFixed(2)),
-      contrast: profile ? 0 : Number(contrast.toFixed(2)),
+      contrast: profile ? Number(summarizeToneCurveStrength(profile.toneCurve).toFixed(2)) : Number(contrast.toFixed(2)),
       saturation: profile ? Number(((profile.saturationFactor - 1) * 100).toFixed(2)) : Number(saturation.toFixed(2)),
       colorBalance: profile
         ? {
-            cyanRed: Number(profile.vDelta.toFixed(2)),
+            cyanRed: Number((profile.vDelta + (Number(profile.neutralVDelta) || 0)).toFixed(2)),
             magentaGreen: 0,
-            yellowBlue: Number(profile.uDelta.toFixed(2))
+            yellowBlue: Number((profile.uDelta + (Number(profile.neutralUDelta) || 0)).toFixed(2))
           }
         : {
             cyanRed: Number(((Number(balance.cyanRed) || 0) * colorScale).toFixed(2)),
@@ -1541,11 +1693,21 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const luminanceAmount = total * Math.max(0, Math.min(1.15, Number(config && config.luminanceStrength) / 100 || 0));
   const colorAmount = total * Math.max(0, Math.min(1.2, Number(config && config.colorStrength) / 100 || 0));
   const saturationAmount = total * Math.max(-1, Math.min(1.05, Number(config && config.saturationStrength) / 100 || 0));
-  const validMid = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] >= 42 && sourceChannels.y[i] <= 218 && referenceChannels.y[i] >= 32 && referenceChannels.y[i] <= 232;
-  const validShadow = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] < 106 && sourceChannels.y[i] >= 18;
-  const validHighlight = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] > 154 && sourceChannels.y[i] <= 245;
+  const validAny = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] >= 8 && sourceChannels.y[i] <= 248 && referenceChannels.y[i] >= 6 && referenceChannels.y[i] <= 250;
+  const validMidStrict = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] >= 42 && sourceChannels.y[i] <= 218 && referenceChannels.y[i] >= 32 && referenceChannels.y[i] <= 232;
+  const strictY = weightedStatsWhere(sourceChannels.y, weights, validMidStrict);
+  const validMid = strictY.weight > 24 ? validMidStrict : validAny;
+  const validShadow = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] < 112 && sourceChannels.y[i] >= 12;
+  const validHighlight = (i) => sourceChannels.alpha[i] > 0.08 && sourceChannels.y[i] > 146 && sourceChannels.y[i] <= 248;
+  const validNeutral = (i) => {
+    if (!validMid(i)) return false;
+    const sourceNeutral = sourceChannels.saturation[i] <= 0.34 && Math.hypot(sourceChannels.u[i], sourceChannels.v[i]) <= 42;
+    const referenceNeutral = referenceChannels.saturation[i] <= 0.38 && Math.hypot(referenceChannels.u[i], referenceChannels.v[i]) <= 48;
+    return sourceNeutral || referenceNeutral;
+  };
   const sourceY = weightedStatsWhere(sourceChannels.y, weights, validMid);
   const referenceY = weightedStatsWhere(referenceChannels.y, weights, validMid);
+  if (Math.min(sourceY.weight, referenceY.weight) <= 12) return null;
   const sourceShadowY = weightedStatsWhere(sourceChannels.y, weights, validShadow);
   const referenceShadowY = weightedStatsWhere(referenceChannels.y, weights, validShadow);
   const sourceHighlightY = weightedStatsWhere(sourceChannels.y, weights, validHighlight);
@@ -1554,30 +1716,67 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const referenceU = weightedStatsWhere(referenceChannels.u, weights, validMid);
   const sourceV = weightedStatsWhere(sourceChannels.v, weights, validMid);
   const referenceV = weightedStatsWhere(referenceChannels.v, weights, validMid);
+  const sourceNeutralU = weightedStatsWhere(sourceChannels.u, weights, validNeutral);
+  const referenceNeutralU = weightedStatsWhere(referenceChannels.u, weights, validNeutral);
+  const sourceNeutralV = weightedStatsWhere(sourceChannels.v, weights, validNeutral);
+  const referenceNeutralV = weightedStatsWhere(referenceChannels.v, weights, validNeutral);
   const sourceSat = weightedStatsWhere(sourceChannels.saturation, weights, validMid);
   const referenceSat = weightedStatsWhere(referenceChannels.saturation, weights, validMid);
-  const toneStrength = Math.min(0.72, luminanceAmount * 0.82);
-  const colorStrength = Math.min(0.82, colorAmount * 0.86);
-  const midDelta = Math.max(-34, Math.min(34, (referenceY.mean - sourceY.mean) * toneStrength));
-  const shadowRawDelta = referenceShadowY.weight > 16 ? referenceShadowY.mean - sourceShadowY.mean : referenceY.mean - sourceY.mean;
-  const highlightRawDelta = referenceHighlightY.weight > 16 ? referenceHighlightY.mean - sourceHighlightY.mean : referenceY.mean - sourceY.mean;
-  const shadowDelta = Math.max(-18, Math.min(18, (shadowRawDelta * 0.45 + (referenceY.mean - sourceY.mean) * 0.2) * toneStrength));
-  const highlightDelta = Math.max(-18, Math.min(18, (highlightRawDelta * 0.42 + (referenceY.mean - sourceY.mean) * 0.18) * toneStrength));
-  const uDelta = Math.max(-34, Math.min(34, (referenceU.mean - sourceU.mean) * colorStrength));
-  const vDelta = Math.max(-34, Math.min(34, (referenceV.mean - sourceV.mean) * colorStrength));
-  const saturationFactor = Math.max(0.9, Math.min(1.1, 1 + (referenceSat.mean - sourceSat.mean) * 1.05 * saturationAmount));
-  const chromaScale = 1;
+  const sourceChroma = weightedChromaStats(sourceChannels.u, sourceChannels.v, weights, validMid);
+  const referenceChroma = weightedChromaStats(referenceChannels.u, referenceChannels.v, weights, validMid);
+  const lumaDeltaRaw = referenceY.mean - sourceY.mean;
+  const chromaDeltaRaw = Math.hypot(referenceU.mean - sourceU.mean, referenceV.mean - sourceV.mean);
+  const saturationDeltaRaw = referenceSat.mean - sourceSat.mean;
+  const chromaRatioRaw = sourceChroma.mean > 1 ? referenceChroma.mean / sourceChroma.mean : 1;
+  const significantMismatch =
+    Math.abs(lumaDeltaRaw) > 18 ||
+    chromaDeltaRaw > 16 ||
+    Math.abs(saturationDeltaRaw) > 0.12 ||
+    chromaRatioRaw > 1.24 ||
+    chromaRatioRaw < 0.78;
+  const limits = getColorProfileLimits(config, significantMismatch);
+  const toneStrength = Math.min(significantMismatch ? 0.88 : 0.72, luminanceAmount * (significantMismatch ? 0.98 : 0.82));
+  const colorStrength = Math.min(significantMismatch ? 0.92 : 0.82, colorAmount * (significantMismatch ? 1.02 : 0.86));
+  const saturationStrength = significantMismatch ? saturationAmount * 1.24 : saturationAmount;
+  const midDelta = Math.max(-limits.toneCap, Math.min(limits.toneCap, lumaDeltaRaw * toneStrength));
+  const shadowRawDelta = referenceShadowY.weight > 16 ? referenceShadowY.mean - sourceShadowY.mean : lumaDeltaRaw;
+  const highlightRawDelta = referenceHighlightY.weight > 16 ? referenceHighlightY.mean - sourceHighlightY.mean : lumaDeltaRaw;
+  const shadowDelta = Math.max(-limits.shadowCap, Math.min(limits.shadowCap, (shadowRawDelta * 0.52 + lumaDeltaRaw * 0.24) * toneStrength));
+  const highlightDelta = Math.max(-limits.shadowCap, Math.min(limits.shadowCap, (highlightRawDelta * 0.48 + lumaDeltaRaw * 0.2) * toneStrength));
+  const neutralWeight = Math.min(sourceNeutralU.weight, referenceNeutralU.weight);
+  const neutralMix = neutralWeight > 18 ? (significantMismatch ? 0.54 : 0.38) : 0;
+  const neutralRawU = neutralWeight > 18 ? referenceNeutralU.mean - sourceNeutralU.mean : 0;
+  const neutralRawV = neutralWeight > 18 ? referenceNeutralV.mean - sourceNeutralV.mean : 0;
+  const uRawDelta = referenceU.mean - sourceU.mean;
+  const vRawDelta = referenceV.mean - sourceV.mean;
+  const uDelta = Math.max(-limits.colorCap, Math.min(limits.colorCap, (uRawDelta * (1 - neutralMix * 0.45) + neutralRawU * neutralMix * 0.45) * colorStrength));
+  const vDelta = Math.max(-limits.colorCap, Math.min(limits.colorCap, (vRawDelta * (1 - neutralMix * 0.45) + neutralRawV * neutralMix * 0.45) * colorStrength));
+  const neutralUDelta = Math.max(-limits.colorCap * 0.5, Math.min(limits.colorCap * 0.5, neutralRawU * neutralMix * colorStrength));
+  const neutralVDelta = Math.max(-limits.colorCap * 0.5, Math.min(limits.colorCap * 0.5, neutralRawV * neutralMix * colorStrength));
+  const saturationFactor = Math.max(limits.saturationMin, Math.min(limits.saturationMax, 1 + saturationDeltaRaw * 1.28 * saturationStrength));
+  const rawChromaScale = sourceChroma.mean > 1 ? referenceChroma.mean / sourceChroma.mean : 1;
+  const chromaScale = Math.max(limits.chromaMin, Math.min(limits.chromaMax, 1 + (rawChromaScale - 1) * colorStrength));
+  const toneCurve = buildToneCurveProfile(sourceChannels, referenceChannels, weights, validAny, toneStrength, limits, significantMismatch);
   return {
     midDelta,
     shadowDelta,
     highlightDelta,
     uDelta,
     vDelta,
+    neutralUDelta,
+    neutralVDelta,
     chromaScale,
     saturationFactor,
+    toneCurve,
+    significantMismatch,
     subjectWeight: sourceY.weight,
     weight: sourceY.weight,
     raw: {
+      significantMismatch,
+      lumaDeltaRaw,
+      chromaDeltaRaw,
+      saturationDeltaRaw,
+      chromaRatioRaw,
       sourceY,
       referenceY,
       sourceShadowY,
@@ -1588,8 +1787,14 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
       referenceU,
       sourceV,
       referenceV,
+      sourceNeutralU,
+      referenceNeutralU,
+      sourceNeutralV,
+      referenceNeutralV,
       sourceSat,
-      referenceSat
+      referenceSat,
+      sourceChroma,
+      referenceChroma
     }
   };
 }
