@@ -104,6 +104,7 @@
                 title="使用 Plus 模式运行（48G 显存）"
                 aria-label="使用 Plus 模式运行，48G 显存"
                 disabled
+                hidden
               >Plus</button>
             </div>
             <div id="runningTaskList" class="running-task-list">
@@ -489,6 +490,14 @@
                   <span>使用仅文字的高密度列表</span>
                 </label>
                 <span class="field-hint settings-field-hint">关闭时保持封面图加文字的卡片样式；开启后应用切换面板会隐藏封面图，让同屏显示更多应用。</span>
+              </div>
+              <div class="field toggle-field settings-toggle-field">
+                <span class="field-label">Plus 模式</span>
+                <label class="checkbox-line">
+                  <input id="settingsPlusModeEnabledInput" type="checkbox" />
+                  <span>在工作台显示 Plus 按钮</span>
+                </label>
+                <span class="field-hint settings-field-hint">开启后工作台会显示 Plus 按钮；Plus 会启动 48G 显存机器，适合显存吃紧的任务，但消耗约为普通模式的 2 倍。</span>
               </div>
               <div class="action-row">
                 <button id="btnResetAiOptimizeAppId" class="secondary-btn" type="button">恢复默认</button>

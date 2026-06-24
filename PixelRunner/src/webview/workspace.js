@@ -1299,6 +1299,8 @@
 
     if (runPlusButton) {
       const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
+      const plusModeEnabled = state.settings && state.settings.plusModeEnabled === true;
+      runPlusButton.hidden = !plusModeEnabled;
       runPlusButton.disabled = quickMode || !hasCurrentApp || isThirdPartyApp || concurrencyReached || cooldownActive;
       runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
       runPlusButton.setAttribute(
@@ -2757,6 +2759,9 @@
     validateRunPayload();
     clearLastResult();
     const payload = buildRunPayload(options);
+    if (payload.instanceType === "plus" && modules.state.state.settings.plusModeEnabled !== true) {
+      throw new Error("请先在设置页高级设置中开启 Plus 模式。");
+    }
     if (!modules.runtime.isPluginRuntime()) {
       modules.ui.logToWorkspace(`浏览器预览模式已生成任务负载：${JSON.stringify(payload)}`, "info");
       return;

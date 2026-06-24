@@ -31,7 +31,8 @@
     maxConcurrentTasks: 3,
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
     autoFillEmptyImageInputs: false,
-    appPickerLayout: "visual"
+    appPickerLayout: "visual",
+    plusModeEnabled: false
   };
 
   const DEFAULT_THIRD_PARTY_SETTINGS = {
@@ -172,6 +173,7 @@
       aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
       autoFillEmptyImageInputs: source.autoFillEmptyImageInputs === true,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
+      plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()
     };
   }

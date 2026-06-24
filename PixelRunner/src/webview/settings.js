@@ -134,6 +134,9 @@
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
     }
+    if (modules.runtime.getById("settingsPlusModeEnabledInput")) {
+      modules.runtime.getById("settingsPlusModeEnabledInput").checked = settings.plusModeEnabled === true;
+    }
     fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
   }
 
@@ -601,6 +604,7 @@
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
       autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
+      plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
     });
   }
@@ -614,6 +618,7 @@
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
       autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
+      plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       apiKey: modules.state.state.settings.apiKey,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.state.state.settings.activeApiProfileId || ""
     });
@@ -629,6 +634,7 @@
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
         autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
         appPickerLayout: nextSettings.appPickerLayout,
+        plusModeEnabled: nextSettings.plusModeEnabled,
         activeApiProfileId: nextSettings.activeApiProfileId,
         thirdParty
       })
@@ -707,6 +713,7 @@
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
       autoFillEmptyImageInputs: rawSettings ? rawSettings.autoFillEmptyImageInputs : undefined,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
+      plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
     });
   }
@@ -848,11 +855,13 @@
       "settingsMaxConcurrentTasksInput",
       "settingsAiOptimizeAppIdInput",
       "settingsAutoFillEmptyImageInputs",
-      "settingsAppPickerLayoutInput"
+      "settingsAppPickerLayoutInput",
+      "settingsPlusModeEnabledInput"
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsAutoFillEmptyImageInputs",
-      "settingsAppPickerLayoutInput"
+      "settingsAppPickerLayoutInput",
+      "settingsPlusModeEnabledInput"
     ]);
     let advancedSaveTimer = null;
 
