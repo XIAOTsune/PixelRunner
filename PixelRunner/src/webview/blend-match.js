@@ -332,8 +332,8 @@
     if (localState.preview && localState.preview.planHydrationError) {
       setPreviewOverlay(
         "compact",
-        "可信应用计划未就绪",
-        "预览可继续查看，Apply 会按旧路径重新 CPU 分析",
+        "将于融合时完成分析",
+        "预览可继续查看，Apply 会复用采样并补建 CPU plan",
         { status: "warn" }
       );
       return;
@@ -435,6 +435,8 @@
           ? "预览准备中"
           : waitingForPlan
             ? "分析中"
+            : localState.preview && localState.preview.planHydrationError
+              ? "分析并融合"
           : "分析并融合";
       applyButton.setAttribute("aria-busy", localState.busy || waitingForPlan ? "true" : "false");
     }
@@ -1651,7 +1653,7 @@
         localState.preview.planHydrationError = message;
       }
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] CPU plan 后台补齐失败：${message}。Apply 会按旧路径重新采样并用 CPU 分析。`, "warn");
+        modules.ui.logToWorkspace(`[融合校色] CPU plan 后台补齐失败：${message}。Apply 会优先复用预览 raw sample cache 补建 CPU plan，必要时才重新采样。`, "warn");
       }
     } finally {
       localState.previewPlanBusy = false;

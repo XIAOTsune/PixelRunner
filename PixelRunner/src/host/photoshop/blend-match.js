@@ -297,11 +297,19 @@ function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewC
     entry = getBlendMatchPreviewCache(requestedPreviewCacheKey);
     lookup = "previewCacheKey";
   }
-  if (!entry || !entry.plan) {
+  if (!entry) {
     return {
       entry: null,
       plan: null,
       validation: { ok: false, reason: requestedPlanId || requestedPreviewCacheKey ? "cache-miss" : "not-requested" },
+      lookup
+    };
+  }
+  if (!entry.plan) {
+    return {
+      entry,
+      plan: null,
+      validation: { ok: false, reason: entry.sourceSample && entry.referenceSample ? "plan-missing-sample-cache-hit" : "plan-missing" },
       lookup
     };
   }
@@ -5167,6 +5175,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let restoredVisibility = false;
     let activePlan = null;
     let cachedPlanUsed = false;
+    let previewSampleCacheUsed = false;
     let cachedPlanValidation = { ok: false, reason: "not-requested" };
     const requestedPreviewCacheKey = String(payload.previewCacheKey || "");
     const requestedPlanId = String(payload.planId || payload.blendMatchPlanId || "");
@@ -5180,6 +5189,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       config
     });
     const previewCache = resolvedPlan.validation.ok ? resolvedPlan.entry : null;
+    const previewSampleCache = !previewCache && resolvedPlan.entry && resolvedPlan.entry.sourceSample && resolvedPlan.entry.referenceSample
+      ? resolvedPlan.entry
+      : null;
 
     if (previewCache && previewCache.sourceSample && previewCache.referenceSample) {
       sourceSample = previewCache.sourceSample;
@@ -5193,6 +5205,17 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         height: sourceSample.height
       });
       logs.push(`[融合校色] Apply 复用 BlendMatchPlan：planId ${activePlan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    } else if (previewSampleCache) {
+      sourceSample = previewSampleCache.sourceSample;
+      referenceSample = previewSampleCache.referenceSample;
+      previewSampleCacheUsed = true;
+      cachedPlanValidation = resolvedPlan.validation;
+      timing.mark("复用预览 raw sample", {
+        reason: cachedPlanValidation.reason || "",
+        width: sourceSample.width,
+        height: sourceSample.height
+      });
+      logs.push(`[融合校色] Apply 未复用完整 plan：${cachedPlanValidation.reason}；已复用预览 raw sample cache，直接补建 CPU BlendMatchPlan，未重新 Photoshop 采样。`);
     } else {
       cachedPlanValidation = resolvedPlan.validation;
       if (requestedPlanId || requestedPreviewCacheKey) {
@@ -5273,7 +5296,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       colorPlan: colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback",
       colorReason: colorPlanResolution.validation && colorPlanResolution.validation.reason || ""
     });
-    logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
+    logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，sampleCache=${previewSampleCacheUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
     logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
@@ -5392,6 +5415,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       planId: activePlan ? activePlan.planId : "",
       previewCacheKey,
       cachedPlan: cachedPlanUsed,
+      previewSampleCacheUsed,
       planValidation: cachedPlanValidation,
       pixelPipeline: {
         used: true,
