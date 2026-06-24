@@ -5525,6 +5525,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   const config = getBlendMatchConfig(payload);
   const actionTiming = createTimingRecorder();
   const logs = [];
+  const deferCpuPlan = payload.previewDeferCpuPlan === true || payload.deferCpuPlan === true;
 
   const modalResult = await core.executeAsModal(async () => {
     const logs = [];
@@ -5613,6 +5614,76 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     referenceCount: referenceSample.stats.count
   });
 
+  if (deferCpuPlan) {
+    const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+    storeBlendMatchPreviewCache(previewCacheKey, {
+      sourceSample: cloneSampleForPreviewCache(sourceSample),
+      referenceSample: cloneSampleForPreviewCache(referenceSample),
+      alignment: null,
+      corrections: cloneJsonValue(corrections),
+      plan: null,
+      planId: "",
+      pendingPlan: true
+    });
+
+    const sourceRaw = serializeSampleForWebview(sourceSample);
+    const referenceRaw = serializeSampleForWebview(referenceSample);
+    actionTiming.mark("modal 外 raw 序列化", {
+      sourceBytes: sourceRaw ? sourceRaw.byteLength : 0,
+      referenceBytes: referenceRaw ? referenceRaw.byteLength : 0,
+      sourceEncodeMs: sourceRaw ? sourceRaw.encodingMs : 0,
+      referenceEncodeMs: referenceRaw ? referenceRaw.encodingMs : 0,
+      cpuPlanDeferred: true
+    });
+
+    logs.push(`[融合校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
+    logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
+    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan，WebView 将随后请求 host CPU plan 补齐；Apply 在 plan 准备完成前保持禁用。");
+    actionTiming.logTo(logs, "[融合校色] 快速预览采样 host action 耗时");
+
+    return {
+      ok: true,
+      action: "blendMatchPreviewSamples",
+      document: modalResult.document,
+      layerId: modalResult.layerId,
+      layerName: modalResult.layerName,
+      bounds: modalResult.bounds,
+      width: sourceSample.width,
+      height: sourceSample.height,
+      sourceDataUrl: "",
+      referenceDataUrl: "",
+      sourceSample: sourceRaw,
+      referenceSample: referenceRaw,
+      corrections,
+      alignment: {
+        backend: "cpu-pending",
+        applied: false,
+        dx: 0,
+        dy: 0,
+        scalePercent: 100,
+        scaleXPercent: 100,
+        scaleYPercent: 100,
+        rotation: 0,
+        confidence: 0,
+        score: 0,
+        reason: "cpu-plan-deferred",
+        validation: {
+          ok: false,
+          reason: "pending-host-cpu-plan"
+        }
+      },
+      cpuAlignment: null,
+      colorPlan: null,
+      colorSummary: null,
+      planId: "",
+      previewCacheKey,
+      planPending: true,
+      fastPreview: true,
+      config,
+      logs
+    };
+  }
+
   const plan = buildCpuBlendMatchPlanFromSamples({
     documentId: modalDocumentId,
     layerId: modalResult.layerId,
@@ -5671,6 +5742,126 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     colorSummary,
     planId: plan.planId,
     previewCacheKey,
+    config,
+    logs
+  };
+}
+
+export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
+  const { photoshop, app, document } = context;
+  const core = photoshop.core;
+  const action = photoshop.action;
+  const config = getBlendMatchConfig(payload);
+  const actionTiming = createTimingRecorder();
+  const logs = [];
+
+  const modalResult = await core.executeAsModal(async () => {
+    const docInfo = getDocumentInfo(document);
+    if (isUnsupportedBitsPerChannel(docInfo)) {
+      throw buildUnsupportedBitsError(docInfo);
+    }
+    const requestedLayerId = Number(payload.layerId || payload.targetLayerId) || 0;
+    if (requestedLayerId > 0) {
+      await selectLayerById(action, requestedLayerId);
+    }
+    const sourceLayer = getActiveLayer(app);
+    const sourceLayerId = getLayerId(sourceLayer);
+    if (!(sourceLayerId > 0)) throw new Error("请先选中一张 AI 返图图层。");
+    const sourceLayerName = getLayerName(sourceLayer);
+    const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
+    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
+    return {
+      document: getDocumentInfo(app.activeDocument),
+      documentId: Number(document.id) || 0,
+      layerId: sourceLayerId,
+      layerName: sourceLayerName,
+      bounds: sourceBounds,
+      previewCacheKey
+    };
+  }, {
+    commandName: "PixelRunner 融合校色预览分析"
+  });
+
+  actionTiming.mark("校验当前图层", {
+    previewCacheKey: modalResult.previewCacheKey
+  });
+
+  const requestedPreviewCacheKey = String(payload.previewCacheKey || "");
+  if (requestedPreviewCacheKey && requestedPreviewCacheKey !== modalResult.previewCacheKey) {
+    throw new Error("preview-cache-key-mismatch");
+  }
+
+  const cache = getBlendMatchPreviewCache(modalResult.previewCacheKey);
+  if (!cache || !cache.sourceSample || !cache.referenceSample) {
+    throw new Error("preview-sample-cache-miss");
+  }
+
+  let plan = cache.plan || null;
+  let validation = plan
+    ? validateBlendMatchPlanForRequest(plan, {
+        documentId: modalResult.documentId,
+        layerId: modalResult.layerId,
+        bounds: modalResult.bounds,
+        config,
+        previewCacheKey: modalResult.previewCacheKey,
+        sourceSample: cache.sourceSample,
+        referenceSample: cache.referenceSample
+      })
+    : { ok: false, reason: "missing-plan" };
+
+  if (!validation.ok) {
+    const sourceSample = cache.sourceSample;
+    const referenceSample = cache.referenceSample;
+    if (!sourceSample.stats) sourceSample.stats = buildStatsFromRgbaSafe(sourceSample.data);
+    if (!referenceSample.stats) referenceSample.stats = buildStatsFromRgbaSafe(referenceSample.data);
+    plan = buildCpuBlendMatchPlanFromSamples({
+      documentId: modalResult.documentId,
+      layerId: modalResult.layerId,
+      layerName: modalResult.layerName,
+      bounds: modalResult.bounds,
+      config,
+      previewCacheKey: modalResult.previewCacheKey,
+      sourceSample,
+      referenceSample,
+      alignmentConfig: config,
+      timing: actionTiming
+    });
+    validation = { ok: true, reason: "rebuilt-from-preview-samples" };
+    storeBlendMatchPreviewCache(modalResult.previewCacheKey, {
+      sourceSample: cloneSampleForPreviewCache(sourceSample),
+      referenceSample: cloneSampleForPreviewCache(referenceSample),
+      alignment: getPlanAlignment(plan),
+      plan,
+      planId: plan.planId
+    });
+    logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+  } else {
+    logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);
+  }
+
+  const alignment = getPlanAlignment(plan);
+  const corrections = getPlanCorrections(plan);
+  const colorPlan = getPlanColorPlan(plan);
+  const colorSummary = summarizeColorPlan(colorPlan);
+  actionTiming.logTo(logs, "[融合校色] CPU plan 后台补齐耗时");
+
+  return {
+    ok: true,
+    action: "blendMatchPreviewPlan",
+    document: modalResult.document,
+    layerId: modalResult.layerId,
+    layerName: modalResult.layerName,
+    bounds: modalResult.bounds,
+    corrections,
+    alignment,
+    cpuAlignment: alignment,
+    colorPlan,
+    colorSummary,
+    planId: plan.planId,
+    previewCacheKey: modalResult.previewCacheKey,
+    planPending: false,
+    planHydrated: true,
+    planValidation: validation,
     config,
     logs
   };

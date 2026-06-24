@@ -1,5 +1,5 @@
 import { activateDocument, ensureSelectionExists, getDocumentInfo } from "./document.js";
-import { blendMatchActiveLayer, previewBlendMatchActiveLayer, previewBlendMatchSamplesActiveLayer } from "./blend-match.js";
+import { blendMatchActiveLayer, hydrateBlendMatchPreviewPlan, previewBlendMatchActiveLayer, previewBlendMatchSamplesActiveLayer } from "./blend-match.js";
 import {
   runDialogCommandWithFallback,
   runMenuCommandByKey,
@@ -1794,6 +1794,10 @@ export async function runToolActionByName(payload, context) {
 
   if (actionName === "blendMatchPreviewSamples") {
     return previewBlendMatchSamplesActiveLayer(payload, context);
+  }
+
+  if (actionName === "blendMatchPreviewPlan") {
+    return hydrateBlendMatchPreviewPlan(payload, context);
   }
 
   const dialogResult = await runDialogToolAction(actionName, payload, core, action, app);
