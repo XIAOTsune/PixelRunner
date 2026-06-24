@@ -293,6 +293,17 @@
     setText("blendMatchPreviewState", message);
   }
 
+  function getPreviewNowMs() {
+    return typeof performance !== "undefined" && performance && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
+  function formatPreviewMs(value) {
+    const parsed = Number(value);
+    return `${Math.max(0, Math.round(Number.isFinite(parsed) ? parsed : 0))}ms`;
+  }
+
   function is16BitErrorMessage(message) {
     const text = String(message || "");
     return text.includes("仅支持 8 位文档") || text.includes("16 位");
@@ -853,15 +864,24 @@
     if (localState.previewBusy || !modules.runtime.isPluginRuntime()) return;
     localState.previewBusy = true;
     setPreviewState("正在采样");
+    const startedAt = getPreviewNowMs();
+    let hostDoneAt = startedAt;
+    let imagesDoneAt = startedAt;
     try {
       const result = await modules.runtime.callHost("photoshop.runToolAction", [{
         ...buildPayload(),
         action: "blendMatchPreview"
       }], { timeoutMs: 45000 });
+      hostDoneAt = getPreviewNowMs();
+      const logs = Array.isArray(result && result.logs) ? result.logs : [];
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
+      }
       const [sourceImage, referenceImage] = await Promise.all([
         loadImage(result.sourceDataUrl),
         loadImage(result.referenceDataUrl)
       ]);
+      imagesDoneAt = getPreviewNowMs();
       localState.preview = {
         ...result,
         sourceImage,
@@ -878,10 +898,17 @@
         ? `左融合前 / 右融合后 / dx ${alignment.dx}px / dy ${alignment.dy}px / X ${Number(alignment.scaleXPercent || alignment.scalePercent || 100).toFixed(2)}% / Y ${Number(alignment.scaleYPercent || alignment.scalePercent || 100).toFixed(2)}% / 旋转 ${Number(alignment.rotation || 0).toFixed(2)}° / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${localMeta}`
         : `左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围${localMeta}`);
       drawPreviewCanvas();
+      const drawDoneAt = getPreviewNowMs();
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载 ${formatPreviewMs(imagesDoneAt - hostDoneAt)} / canvas 绘制 ${formatPreviewMs(drawDoneAt - imagesDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+      }
     } catch (error) {
       const message = error && error.message ? error.message : "预览刷新失败";
       setPreviewState(is16BitErrorMessage(message) ? "不支持 16 位" : "预览失败");
       setText("blendMatchPreviewMeta", message);
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace(`[融合校色] 预览失败：${message}。前端等待 ${formatPreviewMs(getPreviewNowMs() - startedAt)}。`, "warn");
+      }
     } finally {
       localState.previewBusy = false;
     }
