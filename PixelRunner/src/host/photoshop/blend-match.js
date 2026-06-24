@@ -906,6 +906,16 @@ function cloneJsonValue(value) {
   return value && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
 }
 
+function readFiniteNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function readOptionalNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function stableJsonValue(value) {
   if (Array.isArray(value)) return value.map((item) => stableJsonValue(item));
   if (value && typeof value === "object") {
@@ -1113,23 +1123,52 @@ function buildCpuBlendMatchPlanFromSamples(options) {
     referenceSample,
     alignmentConfig = config,
     existingAlignment = null,
-    timing = null
+    timing = null,
+    logs = null,
+    gpuAlignmentSeed = null,
+    alignmentSeedCandidates = null,
+    seedTrust = ""
   } = options || {};
   const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
   if (timing) timing.mark("plan 颜色统计");
+  const effectiveAlignmentConfig = alignmentConfig && typeof alignmentConfig === "object"
+    ? { ...alignmentConfig }
+    : alignmentConfig;
+  if (effectiveAlignmentConfig && typeof effectiveAlignmentConfig === "object" && seedTrust === "hint-only" && gpuAlignmentSeed) {
+    effectiveAlignmentConfig.gpuAlignmentSeed = gpuAlignmentSeed;
+    effectiveAlignmentConfig.alignmentSeedCandidates = Array.isArray(alignmentSeedCandidates) ? alignmentSeedCandidates.slice(0, 12) : [];
+    effectiveAlignmentConfig.seedTrust = "hint-only";
+  }
   const alignment = existingAlignment
     ? cloneAlignmentResult(existingAlignment)
     : config.alignmentEnabled
-    ? estimateGradientAlignment(sourceSample, referenceSample, alignmentConfig || config)
+    ? estimateGradientAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config)
     : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+  const gpuSeedDiagnostics = alignment && alignment.search && alignment.search.gpuSeed ? alignment.search.gpuSeed : null;
   if (timing) {
     timing.mark("plan CPU 对齐", {
       applied: Boolean(alignment && alignment.applied),
       confidence: Number((Number(alignment && alignment.confidence) || 0).toFixed(3)),
       reason: alignment && alignment.reason || "",
       localApplied: Boolean(alignment && alignment.localDeformation),
-      localRejected: Boolean(alignment && alignment.local && alignment.local.rejected)
+      localRejected: Boolean(alignment && alignment.local && alignment.local.rejected),
+      gpuSeed: Boolean(gpuAlignmentSeed),
+      seedAccepted: Boolean(gpuSeedDiagnostics && gpuSeedDiagnostics.accepted),
+      fallbackFullCpu: Boolean(gpuSeedDiagnostics && gpuSeedDiagnostics.fallbackFullCpu)
     });
+  }
+  if (Array.isArray(logs) && seedTrust === "hint-only") {
+    logs.push(`[融合校色] CPU hydrate gpuSeed=${gpuAlignmentSeed ? "true" : "false"}，seedCandidates=${gpuSeedDiagnostics && Number(gpuSeedDiagnostics.seedCandidates) || 0}，seedAccepted=${gpuSeedDiagnostics && gpuSeedDiagnostics.accepted ? "true" : "false"}，fallbackFullCpu=${gpuSeedDiagnostics && gpuSeedDiagnostics.fallbackFullCpu ? "true" : "false"}，seedRejectReason=${gpuSeedDiagnostics && gpuSeedDiagnostics.rejectReason || "none"}。`);
+    if (gpuSeedDiagnostics) {
+      const seedMs = Number(gpuSeedDiagnostics.seedValidationMs) || 0;
+      const fullMs = Number(gpuSeedDiagnostics.fullCpuSearchMs) || 0;
+      const bestSeed = gpuSeedDiagnostics.bestSeed || null;
+      logs.push(`[融合校色] CPU hydrate seed search：accepted=${gpuSeedDiagnostics.accepted ? "true" : "false"}，seedValidationMs=${formatMs(seedMs)}，fullCpuSearchMs=${formatMs(fullMs)}，bestSeed=${bestSeed ? `${bestSeed.dx},${bestSeed.dy},${formatFixed(bestSeed.scale, 4)}` : "none"}，refinedScore=${formatFixed(gpuSeedDiagnostics.refinedScore, 4)}。`);
+    }
+  }
+  const alignmentTimings = alignment && alignment.search && alignment.search.timings ? alignment.search.timings : null;
+  if (Array.isArray(logs) && alignmentTimings) {
+    logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，total=${formatMs(alignmentTimings.totalMs)}。`);
   }
   const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, alignment);
   if (timing) {
@@ -4220,6 +4259,263 @@ function searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset,
   };
 }
 
+function normalizeGpuAlignmentSeedCandidate(candidate, fallbackStage = "gpu-seed") {
+  if (!candidate || typeof candidate !== "object") return null;
+  const dx = readFiniteNumber(candidate.sampleDx ?? candidate.rawSampleDx ?? candidate.dx);
+  const dy = readFiniteNumber(candidate.sampleDy ?? candidate.rawSampleDy ?? candidate.dy);
+  const scale = readFiniteNumber(candidate.scale ?? candidate.sampleScale ?? candidate.rawSampleScaleX ?? candidate.sampleScaleX, 1);
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(scale)) return null;
+  return {
+    dx,
+    dy,
+    scale: Math.max(0.92, Math.min(1.08, scale)),
+    score: readOptionalNumber(candidate.score),
+    stage: String(candidate.stage || fallbackStage || "gpu-seed")
+  };
+}
+
+function normalizeGpuAlignmentSeed(seed, sampleOffset, width = 0, height = 0) {
+  if (!seed || typeof seed !== "object") {
+    return {
+      accepted: false,
+      reason: "missing-gpu-seed",
+      candidates: []
+    };
+  }
+  if (String(seed.seedTrust || "") !== "hint-only") {
+    return {
+      accepted: false,
+      reason: "seed-trust-not-hint-only",
+      candidates: []
+    };
+  }
+  const seedWidth = Number(seed.width) || 0;
+  const seedHeight = Number(seed.height) || 0;
+  if ((seedWidth > 0 && Number(width) > 0 && seedWidth !== Number(width)) || (seedHeight > 0 && Number(height) > 0 && seedHeight !== Number(height))) {
+    return {
+      accepted: false,
+      reason: "seed-sample-size-mismatch",
+      candidates: []
+    };
+  }
+  if (seed.finalApplyEligible === true || seed.trusted === true) {
+    return {
+      accepted: false,
+      reason: "seed-claims-final-eligibility",
+      candidates: []
+    };
+  }
+  const validation = seed.validation && typeof seed.validation === "object" ? seed.validation : null;
+  const rejectReasons = Array.isArray(validation && validation.rejectReasons) ? validation.rejectReasons : [];
+  const hardRejectReasons = rejectReasons.filter((reason) => reason !== "cpu-baseline-missing");
+  if (validation && validation.verdict === "rejected" && hardRejectReasons.length) {
+    return {
+      accepted: false,
+      reason: `seed-shadow-rejected:${hardRejectReasons[0]}`,
+      candidates: []
+    };
+  }
+  const search = seed.search && typeof seed.search === "object" ? seed.search : {};
+  const candidates = [];
+  const addCandidate = (candidate, stage) => {
+    const normalized = normalizeGpuAlignmentSeedCandidate(candidate, stage);
+    if (!normalized) return;
+    if (Math.abs(normalized.dx) > sampleOffset || Math.abs(normalized.dy) > sampleOffset) return;
+    if (Math.abs(normalized.scale - 1) > 0.085) return;
+    const key = `${Math.round(normalized.dx * 1000)}:${Math.round(normalized.dy * 1000)}:${Math.round(normalized.scale * 1000000)}`;
+    if (candidates.some((item) => item.key === key)) return;
+    candidates.push({ ...normalized, key });
+  };
+  addCandidate(search.refinedCandidate, "gpu-refined");
+  if (seed.candidate) addCandidate(seed.candidate, "gpu-candidate");
+  if (Array.isArray(search.topCandidates)) {
+    search.topCandidates.slice(0, 8).forEach((candidate) => addCandidate(candidate, candidate && candidate.stage || "gpu-top-k"));
+  }
+  if (!candidates.length) {
+    return {
+      accepted: false,
+      reason: "no-valid-gpu-seed-candidates",
+      candidates: []
+    };
+  }
+  return {
+    accepted: true,
+    reason: "seed-candidates-ready",
+    candidates: candidates.map(({ key, ...candidate }) => candidate),
+    metadata: {
+      backend: String(seed.candidate && seed.candidate.backend || "gpu-webgl2-v1"),
+      previewCacheKey: String(seed.previewCacheKey || ""),
+      validationVerdict: String(seed.validation && seed.validation.verdict || ""),
+      gpuScoreCalls: Number(search.scoreCalls) || 0,
+      gpuReadyTotalMs: readOptionalNumber(seed.createdTotalMs)
+    }
+  };
+}
+
+function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, gpuAlignmentSeed) {
+  const seedInfo = normalizeGpuAlignmentSeed(gpuAlignmentSeed, sampleOffset, width, height);
+  const fullCpu = () => {
+    const startedAt = getNowMs();
+    const search = searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride);
+    return {
+      search,
+      seedDiagnostics: {
+        used: false,
+        accepted: false,
+        fallbackFullCpu: true,
+        rejectReason: seedInfo.reason || "seed-not-usable",
+        seedCandidates: seedInfo.candidates.length,
+        fullCpuSearchMs: Number((getNowMs() - startedAt).toFixed(1))
+      }
+    };
+  };
+  if (!seedInfo.accepted) return fullCpu();
+
+  const startedAt = getNowMs();
+  const validationStride = Math.max(1, stride);
+  const validated = [];
+  seedInfo.candidates.forEach((candidate) => {
+    const roundedDx = Math.max(-sampleOffset, Math.min(sampleOffset, Math.round(candidate.dx)));
+    const roundedDy = Math.max(-sampleOffset, Math.min(sampleOffset, Math.round(candidate.dy)));
+    const scale = scaleCandidates.reduce((best, current) => (
+      Math.abs(current - candidate.scale) < Math.abs(best - candidate.scale) ? current : best
+    ), scaleCandidates[0] || 1);
+    const score = scoreTransform(sourceGrad, refGrad, width, height, roundedDx, roundedDy, scale, validationStride);
+    validated.push({
+      ...candidate,
+      dx: roundedDx,
+      dy: roundedDy,
+      scale,
+      cpuScore: score
+    });
+  });
+  validated.sort((a, b) => Number(b.cpuScore) - Number(a.cpuScore));
+  const bestSeed = validated[0] || null;
+  const secondSeed = validated[1] || null;
+  const seedScore = Number(bestSeed && bestSeed.cpuScore);
+  const seedSecondScore = Number(secondSeed && secondSeed.cpuScore);
+  const seedScoreGap = Number.isFinite(seedScore) ? seedScore - Math.max(0, Number.isFinite(seedSecondScore) ? seedSecondScore : -1) : -1;
+  const seedStrongEnough =
+    bestSeed &&
+    Number.isFinite(seedScore) &&
+    seedScore >= 0.24 &&
+    (seedScoreGap >= 0.012 || seedScore >= 0.42);
+  if (!seedStrongEnough) {
+    const fallback = fullCpu();
+    fallback.seedDiagnostics = {
+      ...fallback.seedDiagnostics,
+      used: true,
+      accepted: false,
+      rejectReason: bestSeed ? "seed-cpu-validation-low-score" : "seed-cpu-validation-empty",
+      bestSeedScore: Number.isFinite(seedScore) ? Number(seedScore.toFixed(4)) : -1,
+      bestSeedGap: Number.isFinite(seedScoreGap) ? Number(seedScoreGap.toFixed(4)) : -1,
+      seedValidationMs: Number((getNowMs() - startedAt).toFixed(1)),
+      seedCandidates: validated.length
+    };
+    return fallback;
+  }
+
+  const refineRadius = Math.min(sampleOffset, Math.max(3, getLargeOffsetStep(sampleOffset) * 2));
+  const refined = searchGlobalAlignmentAroundSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, bestSeed, refineRadius);
+  const candidateGap = Number(refined.best && refined.best.score) - Math.max(0, Number(refined.second) || -1);
+  const refinedAccepted =
+    refined.best &&
+    Number(refined.best.score) >= Math.max(0.22, seedScore - 0.018) &&
+    (candidateGap >= 0.01 || Number(refined.best.score) >= 0.42);
+  if (!refinedAccepted) {
+    const fallback = fullCpu();
+    fallback.seedDiagnostics = {
+      ...fallback.seedDiagnostics,
+      used: true,
+      accepted: false,
+      rejectReason: "seed-refine-validation-failed",
+      bestSeedScore: Number(seedScore.toFixed(4)),
+      seedRefinedScore: Number(refined.best && Number(refined.best.score).toFixed(4)) || -1,
+      seedRefinedGap: Number.isFinite(candidateGap) ? Number(candidateGap.toFixed(4)) : -1,
+      seedValidationMs: Number((getNowMs() - startedAt).toFixed(1)),
+      seedCandidates: validated.length
+    };
+    return fallback;
+  }
+
+  return {
+    search: refined,
+    seedDiagnostics: {
+      used: true,
+      accepted: true,
+      fallbackFullCpu: false,
+      rejectReason: "",
+      seedCandidates: validated.length,
+      bestSeed: {
+        dx: bestSeed.dx,
+        dy: bestSeed.dy,
+        scale: Number(bestSeed.scale.toFixed(6)),
+        gpuScore: readOptionalNumber(bestSeed.score),
+        cpuScore: Number(seedScore.toFixed(4)),
+        stage: bestSeed.stage
+      },
+      refinedScore: Number((Number(refined.best && refined.best.score) || 0).toFixed(4)),
+      refinedGap: Number.isFinite(candidateGap) ? Number(candidateGap.toFixed(4)) : -1,
+      seedValidationMs: Number((getNowMs() - startedAt).toFixed(1)),
+      metadata: seedInfo.metadata || null
+    }
+  };
+}
+
+function searchGlobalAlignmentAroundSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, seed, radius) {
+  const coarseStep = getLargeOffsetStep(sampleOffset);
+  const coarseStride = Math.max(1, Math.floor((Number(stride) || 1) * (coarseStep >= 6 ? 1.65 : coarseStep >= 4 ? 1.35 : 1)));
+  const searchRadius = Math.max(1, Math.min(sampleOffset, Math.round(Number(radius) || 3)));
+  let best = { dx: Math.round(Number(seed && seed.dx) || 0), dy: Math.round(Number(seed && seed.dy) || 0), scale: Number(seed && seed.scale) || 1, score: Number(seed && seed.cpuScore) || -1 };
+  let second = -1;
+  let translationBase = { dx: 0, dy: 0, scale: 1, score: -1 };
+  let translationSecond = -1;
+  const update = (dx, dy, scale, score) => {
+    if (Math.abs(scale - 1) < 0.000001) {
+      if (score > translationBase.score) {
+        translationSecond = translationBase.score;
+        translationBase = { dx, dy, scale: 1, score };
+      } else if (score > translationSecond) {
+        translationSecond = score;
+      }
+    }
+    if (score > best.score) {
+      second = best.score;
+      best = { dx, dy, scale, score };
+    } else if (score > second) {
+      second = score;
+    }
+  };
+  const runGrid = (step, activeStride, activeRadius) => {
+    const dxValues = buildOffsetCandidates(sampleOffset, step, best.dx, activeRadius);
+    const dyValues = buildOffsetCandidates(sampleOffset, step, best.dy, activeRadius);
+    scaleCandidates.forEach((scale) => {
+      dyValues.forEach((dy) => {
+        dxValues.forEach((dx) => {
+          const score = scoreTransform(sourceGrad, refGrad, width, height, dx, dy, scale, activeStride);
+          update(dx, dy, scale, score);
+        });
+      });
+    });
+  };
+  runGrid(Math.max(1, Math.floor(coarseStep / 2)), Math.max(1, stride), searchRadius);
+  runGrid(1, Math.max(1, stride), Math.min(sampleOffset, 2));
+  if (translationBase.score < 0) {
+    const translationScore = scoreTransform(sourceGrad, refGrad, width, height, best.dx, best.dy, 1, Math.max(1, stride));
+    translationBase = { dx: best.dx, dy: best.dy, scale: 1, score: translationScore };
+  }
+  return {
+    best,
+    second,
+    translationBase,
+    translationSecond,
+    coarseStep,
+    coarseStride,
+    gpuSeedFastPath: true,
+    seedRadius: searchRadius
+  };
+}
+
 function buildLocalMeshProfile(width, height, config) {
   const shortEdge = Math.min(width, height);
   const mode = String(config && config.mode || "balanced");
@@ -4644,14 +4940,32 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const width = sourceSample.width;
   const height = sourceSample.height;
   if (width < 32 || height < 32) return { applied: false, dx: 0, dy: 0, confidence: 0, reason: "too-small" };
+  const alignmentStartedAt = getNowMs();
   const sampleOffset = Math.max(1, Math.min(Math.floor(Math.min(width, height) * 0.45), Math.round(Number(config.alignmentMaxOffset) / Math.max(sourceSample.scaleX, sourceSample.scaleY))));
+  const sobelStartedAt = getNowMs();
   const sourceField = buildSobelField(buildLuma(sourceSample.data, width, height), width, height);
   const refField = buildSobelField(buildLuma(referenceSample.data, width, height), width, height);
+  const sobelMs = Number((getNowMs() - sobelStartedAt).toFixed(1));
   const sourceGrad = sourceField.mag;
   const refGrad = refField.mag;
   const stride = Math.max(1, Math.floor(Math.max(width, height) / 180));
   const scaleCandidates = buildScaleCandidates(config.alignmentMaxScale, config.alignmentScaleEnabled);
-  const globalSearch = searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride);
+  const globalSearchStartedAt = getNowMs();
+  const seedSearch = config.seedTrust === "hint-only" && config.gpuAlignmentSeed
+    ? searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, config.gpuAlignmentSeed)
+    : {
+        search: searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride),
+        seedDiagnostics: {
+          used: false,
+          accepted: false,
+          fallbackFullCpu: false,
+          rejectReason: config.gpuAlignmentSeed ? "seed-trust-missing" : "no-gpu-seed",
+          seedCandidates: 0
+        }
+      };
+  const globalSearchMs = Number((getNowMs() - globalSearchStartedAt).toFixed(1));
+  const globalSearch = seedSearch.search;
+  const gpuSeedDiagnostics = seedSearch.seedDiagnostics || null;
   const best = globalSearch.best;
   const second = globalSearch.second;
   const translationBase = globalSearch.translationBase;
@@ -4662,8 +4976,10 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     scale: 1,
     score: translationBase.score
   };
+  const refineStartedAt = getNowMs();
   const translationBest = refineTranslationAlignment(sourceGrad, refGrad, width, height, translationSeed, translationSecond, sampleOffset, stride);
   const affineCandidate = refineAffineAlignment(sourceGrad, refGrad, width, height, best, second, config, sampleOffset, stride);
+  const refineMs = Number((getNowMs() - refineStartedAt).toFixed(1));
   const modelChoice = selectConservativeAlignmentModel(translationBest, affineCandidate);
   const affineBest = modelChoice.best;
   const comparisonScore = modelChoice.rejectedAffine
@@ -4696,6 +5012,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     baseDx: affineBest.dx,
     baseDy: affineBest.dy
   };
+  const localStartedAt = getNowMs();
   const estimatedLocal = config.localAlignmentEnabled && !(globalIsConfident && globalMotionIsSimple)
     ? estimateTileOffsets(sourceField, refField, width, height, Math.max(1, Math.min(8, sampleOffset)), Math.max(1, stride), localGuardConfig)
     : {
@@ -4714,6 +5031,14 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     globalScoreGap: affineBest.score - comparisonScore,
     alreadyAligned: !affineSignificant,
     previewFastAlignment: config.previewFastAlignment === true
+  });
+  const localMeshMs = Number((getNowMs() - localStartedAt).toFixed(1));
+  const alignmentTimings = () => ({
+    sobelMs,
+    globalSearchMs,
+    refineMs,
+    localMeshMs,
+    totalMs: Number((getNowMs() - alignmentStartedAt).toFixed(1))
   });
   const localDeformation = Boolean(local.applied);
   const effectiveBest = affineBest;
@@ -4755,7 +5080,9 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       search: {
         sampleOffset,
         coarseStep: globalSearch.coarseStep,
-        coarseStride: globalSearch.coarseStride
+        coarseStride: globalSearch.coarseStride,
+        timings: alignmentTimings(),
+        gpuSeed: gpuSeedDiagnostics
       },
       local,
       localDeformation,
@@ -4787,7 +5114,9 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     search: {
       sampleOffset,
       coarseStep: globalSearch.coarseStep,
-      coarseStride: globalSearch.coarseStride
+      coarseStride: globalSearch.coarseStride,
+      timings: alignmentTimings(),
+      gpuSeed: gpuSeedDiagnostics
     },
     local,
     localDeformation,
@@ -5297,6 +5626,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       colorReason: colorPlanResolution.validation && colorPlanResolution.validation.reason || ""
     });
     logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，sampleCache=${previewSampleCacheUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
+    logs.push("[融合校色] Apply GPU seed 状态：never final；最终执行只消费 host CPU trusted BlendMatchPlan，GPU 仅可作为 hydrate hint。");
     logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
@@ -5780,6 +6110,13 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   const config = getBlendMatchConfig(payload);
   const actionTiming = createTimingRecorder();
   const logs = [];
+  const payloadGpuSeed = payload && payload.gpuAlignmentSeed && typeof payload.gpuAlignmentSeed === "object"
+    ? cloneJsonValue(payload.gpuAlignmentSeed)
+    : null;
+  const payloadSeedTrust = String(payload && payload.seedTrust || payload && payload.gpuAlignmentSeed && payload.gpuAlignmentSeed.seedTrust || "");
+  const payloadSeedCandidates = Array.isArray(payload && payload.alignmentSeedCandidates)
+    ? cloneJsonValue(payload.alignmentSeedCandidates.slice(0, 12))
+    : [];
 
   const modalResult = await core.executeAsModal(async () => {
     const docInfo = getDocumentInfo(document);
@@ -5816,6 +6153,15 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   if (requestedPreviewCacheKey && requestedPreviewCacheKey !== modalResult.previewCacheKey) {
     throw new Error("preview-cache-key-mismatch");
   }
+  const seedPreviewCacheKey = String(payloadGpuSeed && payloadGpuSeed.previewCacheKey || "");
+  const gpuSeedPreviewMatch = Boolean(payloadGpuSeed && seedPreviewCacheKey && seedPreviewCacheKey === modalResult.previewCacheKey);
+  const effectiveGpuSeed = payloadGpuSeed && payloadSeedTrust === "hint-only" && gpuSeedPreviewMatch
+    ? payloadGpuSeed
+    : null;
+  logs.push(`[融合校色] CPU hydrate gpuSeed=${payloadGpuSeed ? "true" : "false"}，previewCacheKeyMatch=${gpuSeedPreviewMatch ? "true" : "false"}，seedTrust=${payloadSeedTrust || "none"}，seedCandidates=${payloadSeedCandidates.length}。`);
+  if (payloadGpuSeed && !effectiveGpuSeed) {
+    logs.push(`[融合校色] GPU seed 未进入 CPU fast path：${payloadSeedTrust !== "hint-only" ? "seed-trust-not-hint-only" : !gpuSeedPreviewMatch ? "preview-cache-key-mismatch" : "seed-unusable"}；将完整 CPU fallback。`);
+  }
 
   const cache = getBlendMatchPreviewCache(modalResult.previewCacheKey);
   if (!cache || !cache.sourceSample || !cache.referenceSample) {
@@ -5850,7 +6196,11 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       sourceSample,
       referenceSample,
       alignmentConfig: config,
-      timing: actionTiming
+      timing: actionTiming,
+      logs,
+      gpuAlignmentSeed: effectiveGpuSeed,
+      alignmentSeedCandidates: payloadSeedCandidates,
+      seedTrust: effectiveGpuSeed ? "hint-only" : ""
     });
     validation = { ok: true, reason: "rebuilt-from-preview-samples" };
     storeBlendMatchPreviewCache(modalResult.previewCacheKey, {

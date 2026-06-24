@@ -37,6 +37,8 @@
     alignmentMaxRotation: 1.5,
     alignmentMaxStretch: 2
   };
+  const GPU_ALIGNMENT_SEED_GRACE_MS = 120;
+  const GPU_ALIGNMENT_SEED_TTL_MS = 30000;
 
   const MODE_LABELS = {
     natural: "自然",
@@ -57,6 +59,8 @@
     alignmentValidationDone: false,
     previewPlanBusy: false,
     previewGpuDiagnosticBusy: false,
+    latestGpuAlignmentSeed: null,
+    gpuAlignmentSeedWaiters: [],
     previewRenderMode: "cpu",
     previewAssets: null,
     previewCache: null,
@@ -340,10 +344,11 @@
     }
     const waitingForPlan = Boolean(localState.previewPlanBusy || (localState.preview && localState.preview.planPending));
     if (waitingForPlan && localState.preview) {
+      const seed = getLatestGpuAlignmentSeed(localState.preview.previewCacheKey);
       setPreviewOverlay(
         "compact",
-        "正在分析对齐",
-        "后台准备可信 CPU BlendMatchPlan",
+        seed ? "GPU 已提供候选" : "正在分析对齐",
+        seed ? "CPU 正在验证 hint-only alignment seed" : "后台准备可信 CPU BlendMatchPlan",
         { status: "pending" }
       );
       return;
@@ -532,6 +537,80 @@
       } catch (_) {}
     }
     localState.alignmentEngine = null;
+  }
+
+  function resolveGpuAlignmentSeedWaiters(seed) {
+    const waiters = Array.isArray(localState.gpuAlignmentSeedWaiters)
+      ? localState.gpuAlignmentSeedWaiters
+      : [];
+    const remaining = [];
+    waiters.forEach((waiter) => {
+      try {
+        if (typeof waiter === "function") {
+          waiter(seed || null);
+          return;
+        }
+        if (!waiter || typeof waiter.resolve !== "function") return;
+        if (!seed || !waiter.previewCacheKey || String(seed.previewCacheKey || "") === String(waiter.previewCacheKey || "")) {
+          waiter.resolve(seed || null);
+        } else {
+          remaining.push(waiter);
+        }
+      } catch (_) {}
+    });
+    localState.gpuAlignmentSeedWaiters = remaining;
+  }
+
+  function clearStaleGpuAlignmentSeed() {
+    const seed = localState.latestGpuAlignmentSeed;
+    if (!seed) return;
+    const age = getPreviewNowMs() - Number(seed.createdAt || 0);
+    if (age > GPU_ALIGNMENT_SEED_TTL_MS) {
+      localState.latestGpuAlignmentSeed = null;
+    }
+  }
+
+  function isGpuAlignmentSeedPreviewMatch(seed, previewCacheKey) {
+    if (!seed || !previewCacheKey) return false;
+    return String(seed.previewCacheKey || "") === String(previewCacheKey || "");
+  }
+
+  function getLatestGpuAlignmentSeed(previewCacheKey) {
+    clearStaleGpuAlignmentSeed();
+    const seed = localState.latestGpuAlignmentSeed;
+    return isGpuAlignmentSeedPreviewMatch(seed, previewCacheKey) ? seed : null;
+  }
+
+  function waitForGpuAlignmentSeed(previewCacheKey, graceMs) {
+    const startedAt = getPreviewNowMs();
+    const immediateSeed = getLatestGpuAlignmentSeed(previewCacheKey);
+    if (immediateSeed || !(Number(graceMs) > 0)) {
+      return Promise.resolve({
+        seed: immediateSeed || null,
+        waitedMs: getPreviewNowMs() - startedAt,
+        match: Boolean(immediateSeed),
+        timedOut: !immediateSeed && !(Number(graceMs) > 0)
+      });
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      let timeoutId = 0;
+      const finish = (seed, timedOut = false) => {
+        if (done) return;
+        done = true;
+        if (timeoutId) window.clearTimeout(timeoutId);
+        localState.gpuAlignmentSeedWaiters = (localState.gpuAlignmentSeedWaiters || []).filter((waiter) => waiter.resolve !== finish);
+        const matchedSeed = isGpuAlignmentSeedPreviewMatch(seed, previewCacheKey) ? seed : null;
+        resolve({
+          seed: matchedSeed,
+          waitedMs: getPreviewNowMs() - startedAt,
+          match: Boolean(matchedSeed),
+          timedOut: Boolean(timedOut && !matchedSeed)
+        });
+      };
+      localState.gpuAlignmentSeedWaiters.push({ previewCacheKey: String(previewCacheKey || ""), resolve: finish });
+      timeoutId = window.setTimeout(() => finish(null, true), Math.max(1, Math.round(Number(graceMs) || 1)));
+    });
   }
 
   function decodeBase64Bytes(base64) {
@@ -752,6 +831,103 @@
       timings: clonePlainValue(gpuAlignment.timings) || null,
       support: clonePlainValue(gpuAlignment.support) || null
     };
+  }
+
+  function trimGpuSeedCandidates(candidates, limit = 8) {
+    if (!Array.isArray(candidates)) return [];
+    return candidates.slice(0, Math.max(1, Math.min(12, Number(limit) || 8))).map((candidate) => ({
+      dx: readFiniteNumber(candidate && candidate.dx),
+      dy: readFiniteNumber(candidate && candidate.dy),
+      scale: readFiniteNumber(candidate && candidate.scale, 1),
+      score: readOptionalNumber(candidate && candidate.score),
+      stage: String(candidate && candidate.stage || "")
+    }));
+  }
+
+  function buildGpuAlignmentSeed(candidate, sampleResult, validation, timingInfo = {}) {
+    if (!candidate || !sampleResult || !sampleResult.previewCacheKey) return null;
+    const search = candidate.search || {};
+    const refined = search.refinedCandidate || null;
+    const topCandidates = trimGpuSeedCandidates(search.topCandidates || []);
+    if (refined && !topCandidates.some((item) => (
+      Math.abs(readFiniteNumber(item.dx) - readFiniteNumber(refined.dx)) < 0.001 &&
+      Math.abs(readFiniteNumber(item.dy) - readFiniteNumber(refined.dy)) < 0.001 &&
+      Math.abs(readFiniteNumber(item.scale, 1) - readFiniteNumber(refined.scale, 1)) < 0.000001
+    ))) {
+      topCandidates.unshift({
+        dx: readFiniteNumber(refined.dx),
+        dy: readFiniteNumber(refined.dy),
+        scale: readFiniteNumber(refined.scale, 1),
+        score: readOptionalNumber(refined.score),
+        stage: "refinedCandidate"
+      });
+    }
+    return {
+      schemaVersion: 1,
+      seedTrust: "hint-only",
+      diagnosticOnly: true,
+      finalApplyEligible: false,
+      previewCacheKey: String(sampleResult.previewCacheKey || ""),
+      planId: String(sampleResult.planId || ""),
+      layerId: Number(sampleResult.layerId) || 0,
+      width: Number(sampleResult.width) || Number(sampleResult.sourceSample && sampleResult.sourceSample.width) || 0,
+      height: Number(sampleResult.height) || Number(sampleResult.sourceSample && sampleResult.sourceSample.height) || 0,
+      createdAt: getPreviewNowMs(),
+      createdTotalMs: Number((Number(timingInfo.totalFromPreviewStartMs) || 0).toFixed(1)),
+      candidate: {
+        backend: String(candidate.backend || "gpu-webgl2-v1"),
+        applied: Boolean(candidate.applied),
+        dx: readFiniteNumber(candidate.dx),
+        dy: readFiniteNumber(candidate.dy),
+        scaleXPercent: getAlignmentScaleXPercent(candidate),
+        scaleYPercent: getAlignmentScaleYPercent(candidate),
+        rotation: readFiniteNumber(candidate.rotation),
+        confidence: readOptionalNumber(candidate.confidence),
+        score: readOptionalNumber(candidate.score),
+        sampleDx: readFiniteNumber(candidate.sampleDx ?? candidate.rawSampleDx),
+        sampleDy: readFiniteNumber(candidate.sampleDy ?? candidate.rawSampleDy),
+        sampleScaleX: readFiniteNumber(candidate.sampleScaleX ?? candidate.rawSampleScaleX, 1),
+        sampleScaleY: readFiniteNumber(candidate.sampleScaleY ?? candidate.rawSampleScaleY, 1),
+        sampleRotation: readFiniteNumber(candidate.sampleRotation ?? candidate.rawSampleRotation)
+      },
+      search: {
+        sampleOffset: Number(search.sampleOffset) || 0,
+        stride: Number(search.stride) || 0,
+        scoreCalls: Number(search.scoreCalls) || 0,
+        coarseStep: Number(search.coarseStep) || 0,
+        coarseStride: Number(search.coarseStride) || 0,
+        refinedCandidate: refined ? {
+          dx: readFiniteNumber(refined.dx),
+          dy: readFiniteNumber(refined.dy),
+          scale: readFiniteNumber(refined.scale, 1),
+          score: readOptionalNumber(refined.score)
+        } : null,
+        topCandidates,
+        stages: Array.isArray(search.stages)
+          ? search.stages.slice(0, 8).map((stage) => ({
+              name: String(stage && stage.name || stage || ""),
+              step: Number(stage && stage.step) || 0,
+              radius: Number(stage && stage.radius) || 0,
+              candidates: Number(stage && stage.candidates) || 0
+            }))
+          : []
+      },
+      timings: clonePlainValue(candidate.timings) || null,
+      validation: clonePlainValue(validation || candidate.validation) || null
+    };
+  }
+
+  function saveLatestGpuAlignmentSeed(candidate, sampleResult, validation, timingInfo = {}) {
+    const seed = buildGpuAlignmentSeed(candidate, sampleResult, validation, timingInfo);
+    if (!seed) return null;
+    localState.latestGpuAlignmentSeed = seed;
+    resolveGpuAlignmentSeedWaiters(seed);
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      const topCount = seed.search && Array.isArray(seed.search.topCandidates) ? seed.search.topCandidates.length : 0;
+      modules.ui.logToWorkspace(`[融合校色] GPU seed ready total：${formatPreviewMs(seed.createdTotalMs)}，previewCacheKey=${seed.previewCacheKey || "无"}，topCandidates=${topCount}，trust=hint-only。`, "info");
+    }
+    updatePreviewBackgroundOverlay();
+    return seed;
   }
 
   function validateGpuAlignmentCandidate(candidate, cpuAlignment, options = {}) {
@@ -1635,10 +1811,38 @@
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace("[融合校色] CPU BlendMatchPlan 后台补齐开始：复用刚才的 raw sample，不重新采样 Photoshop 像素。", "info");
       }
-      const planResult = await modules.runtime.callHost("photoshop.runToolAction", [{
+      const seedWait = await waitForGpuAlignmentSeed(sampleResult.previewCacheKey, GPU_ALIGNMENT_SEED_GRACE_MS);
+      const gpuSeed = seedWait && seedWait.seed ? seedWait.seed : null;
+      const latestSeed = localState.latestGpuAlignmentSeed;
+      const seedKeyMatch = Boolean(gpuSeed) || Boolean(latestSeed && String(latestSeed.previewCacheKey || "") === String(sampleResult.previewCacheKey || ""));
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace(
+          `[融合校色] GPU seed hydrate grace：window=${formatPreviewMs(GPU_ALIGNMENT_SEED_GRACE_MS)}，waited=${formatPreviewMs(seedWait && seedWait.waitedMs)}，attached=${gpuSeed ? "true" : "false"}，previewCacheKeyMatch=${seedKeyMatch ? "true" : "false"}，timedOut=${seedWait && seedWait.timedOut ? "true" : "false"}。`,
+          gpuSeed ? "info" : "warn"
+        );
+      }
+      if (gpuSeed && localState.preview && localState.preview.previewCacheKey === sampleResult.previewCacheKey) {
+        localState.preview = {
+          ...localState.preview,
+          gpuAlignmentSeedAttached: true,
+          gpuAlignmentSeedStatus: "attached"
+        };
+        updatePreviewBackgroundOverlay();
+      }
+      const hydratePayload = {
         ...buildPayload({ includePreviewCache: true }),
         previewCacheKey: sampleResult.previewCacheKey,
-        action: "blendMatchPreviewPlan"
+        action: "blendMatchPreviewPlan",
+        seedTrust: "hint-only"
+      };
+      if (gpuSeed) {
+        hydratePayload.gpuAlignmentSeed = gpuSeed;
+        hydratePayload.alignmentSeedCandidates = gpuSeed.search && Array.isArray(gpuSeed.search.topCandidates)
+          ? gpuSeed.search.topCandidates
+          : [];
+      }
+      const planResult = await modules.runtime.callHost("photoshop.runToolAction", [{
+        ...hydratePayload
       }], { timeoutMs: 45000 });
       logPreviewLines(planResult && planResult.logs, "info");
       const merged = mergePreviewPlanHydration(planResult);
@@ -1698,6 +1902,16 @@
           gpuPreviewAlignment: gpuAlignment,
           gpuAlignmentCandidate: candidate,
           gpuAlignmentShadowValidation: validation
+        };
+      }
+      const seed = saveLatestGpuAlignmentSeed(candidate, sampleResult, validation, {
+        totalFromPreviewStartMs: gpuDoneAt - startedAt
+      });
+      if (samePreview && seed && localState.preview && localState.preview.previewCacheKey === sampleResult.previewCacheKey) {
+        localState.preview = {
+          ...localState.preview,
+          gpuAlignmentSeed: seed,
+          gpuAlignmentSeedStatus: "ready"
         };
       }
       logGpuAlignmentCandidate(candidate, validation, "WebGL2 background shadow validation");
@@ -1913,6 +2127,8 @@
   async function refreshPreview() {
     if (localState.previewBusy || !modules.runtime.isPluginRuntime()) return;
     localState.previewBusy = true;
+    localState.latestGpuAlignmentSeed = null;
+    resolveGpuAlignmentSeedWaiters(null);
     setPreviewLoadingState("正在采样图层", "正在采样当前图层并生成融合预览");
     const startedAt = getPreviewNowMs();
     try {
