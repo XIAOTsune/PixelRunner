@@ -205,6 +205,17 @@
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
+  function getImageTextureKey(image, fallbackPrefix) {
+    if (!image) return `${fallbackPrefix}:missing`;
+    const explicitKey = image.pixelrunnerTextureKey || (image.dataset && image.dataset.pixelrunnerTextureKey);
+    if (explicitKey) return String(explicitKey);
+    const src = String(image.src || image.currentSrc || "");
+    if (src) return src;
+    const width = Number(image.width || image.videoWidth || image.naturalWidth) || 0;
+    const height = Number(image.height || image.videoHeight || image.naturalHeight) || 0;
+    return `${fallbackPrefix}:${width}x${height}`;
+  }
+
   class BlendMatchWebglPreviewRenderer {
     constructor() {
       this.canvas = document.createElement("canvas");
@@ -447,8 +458,8 @@
       }
       this.ensureSize(width, height);
       const textureKey = [
-        String(sourceImage.src || sourceImage.currentSrc || ""),
-        String(referenceImage.src || referenceImage.currentSrc || "")
+        getImageTextureKey(sourceImage, "source"),
+        getImageTextureKey(referenceImage, "reference")
       ].join("|");
       const nextKey = [
         width,

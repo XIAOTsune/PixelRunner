@@ -765,6 +765,40 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
   }
 }
 
+async function captureCompositeRawSample(imaging, doc, bounds, maxEdge = 512) {
+  const targetSize = getSamplingTargetSize(bounds, maxEdge);
+  let pixels = null;
+  try {
+    pixels = await getPixelsWithFallback(imaging, {
+      documentID: Number(doc.id),
+      sourceBounds: bounds,
+      targetSize,
+      componentSize: 8,
+      applyAlpha: false
+    });
+    const data = await getImageDataBytes(pixels && pixels.imageData);
+    if (!data || data.length < 4) throw new Error("Photoshop 未返回可读取的像素数据。");
+    const copy = normalizeImageDataToRgba(pixels && pixels.imageData, data, targetSize.width, targetSize.height);
+    return {
+      width: targetSize.width,
+      height: targetSize.height,
+      scaleX: (Math.max(1, Number(bounds.right) - Number(bounds.left))) / Math.max(1, targetSize.width),
+      scaleY: (Math.max(1, Number(bounds.bottom) - Number(bounds.top))) / Math.max(1, targetSize.height),
+      data: copy,
+      sourceComponents: Number(pixels && pixels.imageData && pixels.imageData.components) || Math.floor(data.length / Math.max(1, targetSize.width * targetSize.height)) || 0,
+      sourcePixelFormat: String((pixels && pixels.imageData && pixels.imageData.pixelFormat) || ""),
+      stats: null,
+      base64: "",
+      mimeType: "",
+      dataUrl: ""
+    };
+  } finally {
+    try {
+      pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
+    } catch (_) {}
+  }
+}
+
 async function captureIsolatedLayerSample(imaging, app, action, originalDocument, sourceLayerId, bounds, maxEdge = 512) {
   const docSize = getDocumentPixelSize(originalDocument);
   const resolution = getDocumentResolutionValue(originalDocument);
@@ -922,6 +956,29 @@ function buildStatsFromRgba(data) {
     meanSat: sums.sat / sums.count,
     detailEnergy: sums.detail / Math.max(1, sums.count - 1)
   };
+}
+
+function buildStatsFromRgbaSafe(data) {
+  try {
+    return buildStatsFromRgba(data);
+  } catch (error) {
+    return {
+      count: 0,
+      meanR: 0,
+      meanG: 0,
+      meanB: 0,
+      weightedMeanR: 0,
+      weightedMeanG: 0,
+      weightedMeanB: 0,
+      weightedMeanLuma: 0,
+      weightedMeanSat: 0,
+      meanLuma: 0,
+      stdLuma: 0,
+      meanSat: 0,
+      detailEnergy: 0,
+      statsError: error && error.message ? error.message : "empty-stats"
+    };
+  }
 }
 
 function buildCorrections(sourceStats, referenceStats, config) {
@@ -4881,14 +4938,16 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   const core = photoshop.core;
   const action = photoshop.action;
   const imaging = photoshop.imaging;
-  if (!imaging || typeof imaging.getPixels !== "function" || typeof imaging.encodeImageData !== "function") {
+  if (!imaging || typeof imaging.getPixels !== "function") {
     throw new Error("Photoshop imaging API 不可用，无法生成融合校色预览采样。");
   }
   const config = getBlendMatchConfig(payload);
+  const actionTiming = createTimingRecorder();
+  const logs = [];
 
-  return core.executeAsModal(async () => {
+  const modalResult = await core.executeAsModal(async () => {
     const logs = [];
-    const timing = createTimingRecorder();
+    const modalTiming = createTimingRecorder();
     const docInfo = getDocumentInfo(document);
     if (isUnsupportedBitsPerChannel(docInfo)) {
       throw buildUnsupportedBitsError(docInfo);
@@ -4912,13 +4971,13 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     let referenceSample = null;
     let restoredVisibility = false;
     try {
-      sourceSample = await captureCompositeSample(imaging, document, sourceBounds, previewMaxEdge, true);
-      timing.mark("source 预览采样", { width: sourceSample.width, height: sourceSample.height });
+      sourceSample = await captureCompositeRawSample(imaging, document, sourceBounds, previewMaxEdge);
+      modalTiming.mark("source raw capture", { width: sourceSample.width, height: sourceSample.height });
       await setLayerVisible(action, sourceLayerId, false);
-      referenceSample = await captureCompositeSample(imaging, document, sourceBounds, previewMaxEdge, true);
-      timing.mark("reference 预览采样", { width: referenceSample.width, height: referenceSample.height });
+      referenceSample = await captureCompositeRawSample(imaging, document, sourceBounds, previewMaxEdge);
+      modalTiming.mark("reference raw capture", { width: referenceSample.width, height: referenceSample.height });
       await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-      timing.mark("恢复图层");
+      modalTiming.mark("restore visibility");
       restoredVisibility = true;
     } finally {
       if (!restoredVisibility) {
@@ -4929,33 +4988,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       }
     }
 
-    const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
-    timing.mark("预览颜色统计");
-    const previewAlignmentConfig = { ...config, previewFastAlignment: true };
-    const cpuAlignment = payload.gpuAlignmentValidation === true && config.alignmentEnabled
-      ? estimateGradientAlignment(sourceSample, referenceSample, previewAlignmentConfig)
-      : null;
-    if (cpuAlignment) {
-      timing.mark("CPU 基准对齐", {
-        applied: Boolean(cpuAlignment.applied),
-        confidence: Number((Number(cpuAlignment.confidence) || 0).toFixed(3)),
-        localApplied: Boolean(cpuAlignment.localDeformation),
-        localRejected: Boolean(cpuAlignment.local && cpuAlignment.local.rejected)
-      });
-    }
-    const sourceRaw = serializeSampleForWebview(sourceSample);
-    const referenceRaw = serializeSampleForWebview(referenceSample);
-    timing.mark("预览 raw 序列化", {
-      sourceBytes: sourceRaw ? sourceRaw.byteLength : 0,
-      referenceBytes: referenceRaw ? referenceRaw.byteLength : 0,
-      sourceEncodeMs: sourceRaw ? sourceRaw.encodingMs : 0,
-      referenceEncodeMs: referenceRaw ? referenceRaw.encodingMs : 0
-    });
-    logs.push(`[融合校色] 预览采样已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}，${cpuAlignment ? "已执行 host CPU 基准对齐" : "未执行 host CPU 快速对齐"}。`);
-    if (cpuAlignment) {
-      logs.push(`[融合校色] WebGL2 对齐验证：已用同一份预览采样跑 CPU 基准。`);
-    }
-    timing.logTo(logs, "[融合校色] 预览采样耗时");
+    logs.push(`[融合校色] 预览采样 modal：仅执行 Photoshop raw 采样与图层可见性恢复；未执行 JPEG/PNG 编码、raw base64 序列化、颜色修正或 CPU 对齐。`);
+    modalTiming.logTo(logs, "[融合校色] 预览采样 modal 耗时");
 
     return {
       ok: true,
@@ -4966,18 +5000,91 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       bounds: sourceBounds,
       width: sourceSample.width,
       height: sourceSample.height,
-      sourceDataUrl: sourceSample.dataUrl,
-      referenceDataUrl: referenceSample.dataUrl,
-      sourceSample: sourceRaw,
-      referenceSample: referenceRaw,
-      corrections,
-      alignment: { applied: false, dx: 0, dy: 0, confidence: 0, reason: "gpu-pending" },
-      cpuAlignment,
-      previewCacheKey: "",
+      sourceSample,
+      referenceSample,
       config,
-      logs
+      logs,
+      modalMs: modalTiming.totalMs()
     };
   }, {
     commandName: "PixelRunner 融合校色预览采样"
   });
+
+  actionTiming.mark("executeAsModal", {
+    modalMs: Number((Number(modalResult && modalResult.modalMs) || 0).toFixed(1)),
+    width: modalResult && modalResult.width,
+    height: modalResult && modalResult.height
+  });
+  if (Array.isArray(modalResult && modalResult.logs)) {
+    logs.push(...modalResult.logs);
+  }
+
+  const sourceSample = modalResult.sourceSample;
+  const referenceSample = modalResult.referenceSample;
+  const statsStartedAt = getNowMs();
+  sourceSample.stats = buildStatsFromRgbaSafe(sourceSample.data);
+  referenceSample.stats = buildStatsFromRgbaSafe(referenceSample.data);
+  actionTiming.mark("modal 外颜色统计", {
+    ms: Number((getNowMs() - statsStartedAt).toFixed(1)),
+    sourceCount: sourceSample.stats.count,
+    referenceCount: referenceSample.stats.count
+  });
+
+  const previewAlignmentConfig = { ...config, previewFastAlignment: true };
+  const cpuBaselineRequested = payload.gpuAlignmentValidation === true && config.alignmentEnabled;
+  const cpuAlignment = cpuBaselineRequested
+    ? estimateGradientAlignment(sourceSample, referenceSample, previewAlignmentConfig)
+    : null;
+  if (cpuAlignment) {
+    actionTiming.mark("modal 外 CPU baseline", {
+      applied: Boolean(cpuAlignment.applied),
+      confidence: Number((Number(cpuAlignment.confidence) || 0).toFixed(3)),
+      localApplied: Boolean(cpuAlignment.localDeformation),
+      localRejected: Boolean(cpuAlignment.local && cpuAlignment.local.rejected)
+    });
+  } else {
+    actionTiming.mark("modal 外 CPU baseline 跳过", {
+      requested: Boolean(payload.gpuAlignmentValidation === true),
+      alignmentEnabled: Boolean(config.alignmentEnabled)
+    });
+  }
+
+  const sourceRaw = serializeSampleForWebview(sourceSample);
+  const referenceRaw = serializeSampleForWebview(referenceSample);
+  actionTiming.mark("modal 外 raw 序列化", {
+    sourceBytes: sourceRaw ? sourceRaw.byteLength : 0,
+    referenceBytes: referenceRaw ? referenceRaw.byteLength : 0,
+    sourceEncodeMs: sourceRaw ? sourceRaw.encodingMs : 0,
+    referenceEncodeMs: referenceRaw ? referenceRaw.encodingMs : 0
+  });
+
+  logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，${cpuAlignment ? "已执行 host CPU 基准对齐" : "未执行 host CPU 快速对齐"}。`);
+  logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG，corrections 交由 WebView 用 stats 计算。`);
+  if (cpuAlignment) {
+    logs.push(`[融合校色] WebGL2 对齐验证：已用同一份预览采样在 modal 外跑 CPU 基准。`);
+  } else if (payload.gpuAlignmentValidation === true && !config.alignmentEnabled) {
+    logs.push(`[融合校色] WebGL2 对齐验证：请求了 CPU baseline，但当前对齐开关关闭，已跳过。`);
+  }
+  actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
+
+  return {
+    ok: true,
+    action: "blendMatchPreviewSamples",
+    document: modalResult.document,
+    layerId: modalResult.layerId,
+    layerName: modalResult.layerName,
+    bounds: modalResult.bounds,
+    width: sourceSample.width,
+    height: sourceSample.height,
+    sourceDataUrl: "",
+    referenceDataUrl: "",
+    sourceSample: sourceRaw,
+    referenceSample: referenceRaw,
+    corrections: null,
+    alignment: { applied: false, dx: 0, dy: 0, confidence: 0, reason: "gpu-pending" },
+    cpuAlignment,
+    previewCacheKey: "",
+    config,
+    logs
+  };
 }

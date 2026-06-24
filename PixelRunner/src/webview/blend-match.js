@@ -58,6 +58,7 @@
     previewRenderMode: "cpu",
     previewAssets: null,
     previewCache: null,
+    previewAssetSeq: 0,
     previewRenderTimer: 0,
     previewRenderQueued: false,
     previewView: {
@@ -395,9 +396,40 @@
           scaleY: Number(rawSample.scaleY) || 1,
           data,
           byteLength: data.byteLength,
+          stats: rawSample.stats || null,
           decodeMs: getPreviewNowMs() - startedAt
         }
       : null;
+  }
+
+  function createImageDataFromSample(sample) {
+    if (!sample || !sample.data) return null;
+    const width = Math.max(1, Math.floor(Number(sample.width) || 1));
+    const height = Math.max(1, Math.floor(Number(sample.height) || 1));
+    const expectedLength = width * height * 4;
+    const data = sample.data instanceof Uint8ClampedArray
+      ? sample.data
+      : new Uint8ClampedArray(sample.data.buffer, sample.data.byteOffset || 0, Math.min(sample.data.byteLength || sample.data.length || 0, expectedLength));
+    if (data.length < expectedLength) return null;
+    const clamped = data.length === expectedLength ? data : data.slice(0, expectedLength);
+    try {
+      return new ImageData(clamped, width, height);
+    } catch (_) {
+      const canvas = createCanvas(width, height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      const imageData = ctx.createImageData(width, height);
+      imageData.data.set(clamped);
+      return imageData;
+    }
+  }
+
+  function buildCanvasFromSample(sample, role, assetKey) {
+    const imageData = createImageDataFromSample(sample);
+    if (!imageData) return null;
+    const canvas = imageDataToCanvas(imageData);
+    canvas.pixelrunnerTextureKey = `${role}:${assetKey}`;
+    return { imageData, canvas };
   }
 
   function formatAlignmentComparison(gpuAlignment, cpuAlignment) {
@@ -517,10 +549,93 @@
     ].join("|");
   }
 
+  function buildCorrectionsFromStats(sourceStats, referenceStats, config) {
+    const safeConfig = config || {};
+    const total = (Number(safeConfig.totalStrength) || 0) / 100;
+    const luminanceAmount = total * ((Number(safeConfig.luminanceStrength) || 0) / 100);
+    const contrastAmount = total * ((Number(safeConfig.contrastStrength) || 0) / 100);
+    const colorAmount = total * ((Number(safeConfig.colorStrength) || 0) / 100);
+    const saturationAmount = total * ((Number(safeConfig.saturationStrength) || 0) / 100);
+    const sourceLuma = Number(sourceStats && sourceStats.weightedMeanLuma) || Number(sourceStats && sourceStats.meanLuma) || 0;
+    const referenceLuma = Number(referenceStats && referenceStats.weightedMeanLuma) || Number(referenceStats && referenceStats.meanLuma) || 0;
+    const sourceSat = Number(sourceStats && sourceStats.weightedMeanSat) || Number(sourceStats && sourceStats.meanSat) || 0;
+    const referenceSat = Number(referenceStats && referenceStats.weightedMeanSat) || Number(referenceStats && referenceStats.meanSat) || 0;
+    const lumaDelta = referenceLuma - sourceLuma;
+    const sourceStd = Number(sourceStats && sourceStats.stdLuma) || 0;
+    const referenceStd = Number(referenceStats && referenceStats.stdLuma) || 0;
+    const sourceDetail = Number(sourceStats && sourceStats.detailEnergy) || 0;
+    const referenceDetail = Number(referenceStats && referenceStats.detailEnergy) || 0;
+    const stdRatio = sourceStd > 1 ? referenceStd / sourceStd : 1;
+    const detailRatio = sourceDetail > 0.5 ? referenceDetail / sourceDetail : 1;
+    const rgbDelta = {
+      r: (Number(referenceStats && referenceStats.meanR) || 0) - (Number(sourceStats && sourceStats.meanR) || 0),
+      g: (Number(referenceStats && referenceStats.meanG) || 0) - (Number(sourceStats && sourceStats.meanG) || 0),
+      b: (Number(referenceStats && referenceStats.meanB) || 0) - (Number(sourceStats && sourceStats.meanB) || 0)
+    };
+    const weightedRgbDelta = {
+      r: (Number(referenceStats && referenceStats.weightedMeanR) || Number(referenceStats && referenceStats.meanR) || 0) - (Number(sourceStats && sourceStats.weightedMeanR) || Number(sourceStats && sourceStats.meanR) || 0),
+      g: (Number(referenceStats && referenceStats.weightedMeanG) || Number(referenceStats && referenceStats.meanG) || 0) - (Number(sourceStats && sourceStats.weightedMeanG) || Number(sourceStats && sourceStats.meanG) || 0),
+      b: (Number(referenceStats && referenceStats.weightedMeanB) || Number(referenceStats && referenceStats.meanB) || 0) - (Number(sourceStats && sourceStats.weightedMeanB) || Number(sourceStats && sourceStats.meanB) || 0)
+    };
+    const avgDelta = (weightedRgbDelta.r + weightedRgbDelta.g + weightedRgbDelta.b) / 3;
+    const colorBias = {
+      r: weightedRgbDelta.r - avgDelta,
+      g: weightedRgbDelta.g - avgDelta,
+      b: weightedRgbDelta.b - avgDelta
+    };
+    const directColorBias = {
+      r: weightedRgbDelta.r - lumaDelta * 0.36,
+      g: weightedRgbDelta.g - lumaDelta * 0.36,
+      b: weightedRgbDelta.b - lumaDelta * 0.36
+    };
+    const finalColorBias = {
+      r: colorBias.r * 0.68 + directColorBias.r * 0.32,
+      g: colorBias.g * 0.68 + directColorBias.g * 0.32,
+      b: colorBias.b * 0.68 + directColorBias.b * 0.32
+    };
+    return {
+      brightness: clampNumber(Math.round(lumaDelta * 0.78 * luminanceAmount), -45, 45, 0),
+      contrast: clampNumber(Math.round((((stdRatio - 1) * 0.72) + ((detailRatio - 1) * 0.28)) * 86 * contrastAmount), -35, 35, 0),
+      saturation: clampNumber(Math.round((referenceSat - sourceSat) * 170 * saturationAmount), -35, 35, 0),
+      colorBalance: {
+        cyanRed: clampNumber(Math.round(finalColorBias.r * 0.72 * colorAmount), -32, 32, 0),
+        magentaGreen: clampNumber(Math.round(finalColorBias.g * 0.72 * colorAmount), -32, 32, 0),
+        yellowBlue: clampNumber(Math.round(finalColorBias.b * 0.72 * colorAmount), -32, 32, 0)
+      },
+      raw: {
+        lumaDelta,
+        stdRatio,
+        detailRatio,
+        saturationDelta: referenceSat - sourceSat,
+        rgbDelta,
+        weightedRgbDelta,
+        colorBias: finalColorBias
+      }
+    };
+  }
+
+  function buildPreviewRawKey(preview) {
+    return String(preview && preview.rawAssetKey || [
+      preview && preview.sourceSample ? preview.sourceSample.byteLength : 0,
+      preview && preview.referenceSample ? preview.referenceSample.byteLength : 0,
+      preview && preview.width ? preview.width : 0,
+      preview && preview.height ? preview.height : 0,
+      preview && preview.sourceDataUrl ? preview.sourceDataUrl.length : 0,
+      preview && preview.referenceDataUrl ? preview.referenceDataUrl.length : 0
+    ].join("|"));
+  }
+
+  function buildPreviewAssetsKey(preview) {
+    return [
+      preview && preview.width ? preview.width : 0,
+      preview && preview.height ? preview.height : 0,
+      buildPreviewRawKey(preview)
+    ].join("|");
+  }
+
   function buildPreviewAssetKey(preview, settings) {
     return [
-      preview && preview.sourceDataUrl ? preview.sourceDataUrl.length : 0,
-      preview && preview.referenceDataUrl ? preview.referenceDataUrl.length : 0,
+      buildPreviewRawKey(preview),
       preview && preview.width ? preview.width : 0,
       preview && preview.height ? preview.height : 0,
       getPreviewCorrectionKey(preview && preview.corrections),
@@ -533,18 +648,27 @@
   }
 
   function buildPreviewAssets(preview) {
-    if (!preview || !preview.sourceImage || !preview.referenceImage) return null;
+    if (!preview) return null;
     const width = Math.max(1, preview.width);
     const height = Math.max(1, preview.height);
-    const sourceCanvas = createCanvas(width, height);
-    const referenceCanvas = createCanvas(width, height);
-    const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
-    const referenceCtx = referenceCanvas.getContext("2d", { willReadFrequently: true });
-    if (!sourceCtx || !referenceCtx) return null;
-    sourceCtx.drawImage(preview.sourceImage, 0, 0, width, height);
-    referenceCtx.drawImage(preview.referenceImage, 0, 0, width, height);
-    const source = sourceCtx.getImageData(0, 0, width, height);
-    const reference = referenceCtx.getImageData(0, 0, width, height);
+    let source = preview.sourceImageData || null;
+    let reference = preview.referenceImageData || null;
+    let sourceCanvas = preview.sourceCanvas || null;
+    let referenceCanvas = preview.referenceCanvas || null;
+    if (!source || !reference) {
+      if (!preview.sourceImage || !preview.referenceImage) return null;
+      sourceCanvas = createCanvas(width, height);
+      referenceCanvas = createCanvas(width, height);
+      const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
+      const referenceCtx = referenceCanvas.getContext("2d", { willReadFrequently: true });
+      if (!sourceCtx || !referenceCtx) return null;
+      sourceCtx.drawImage(preview.sourceImage, 0, 0, width, height);
+      referenceCtx.drawImage(preview.referenceImage, 0, 0, width, height);
+      source = sourceCtx.getImageData(0, 0, width, height);
+      reference = referenceCtx.getImageData(0, 0, width, height);
+    }
+    if (!sourceCanvas) sourceCanvas = imageDataToCanvas(source);
+    if (!referenceCanvas) referenceCanvas = imageDataToCanvas(reference);
     const threshold = getMaskThresholdFactor();
     const mask = new Float32Array(width * height);
     for (let i = 0, p = 0; i < source.data.length; i += 4, p += 1) {
@@ -555,15 +679,15 @@
       ) / 3;
       mask[p] = clamp01((diff - threshold.offset) / threshold.scale);
     }
-    const key = `${width}x${height}|${preview.sourceDataUrl ? preview.sourceDataUrl.length : 0}|${preview.referenceDataUrl ? preview.referenceDataUrl.length : 0}`;
+    const key = buildPreviewAssetsKey(preview);
     return {
       key,
       width,
       height,
       sourceImageData: source,
       referenceImageData: reference,
-      sourceCanvas: imageDataToCanvas(source),
-      referenceCanvas: imageDataToCanvas(reference),
+      sourceCanvas,
+      referenceCanvas,
       mask,
       maskKey: key
     };
@@ -632,7 +756,7 @@
   }
 
   function buildCpuPreviewCache(preview, settings) {
-    const assets = localState.previewAssets && localState.previewAssets.key === buildPreviewAssetKey(preview, settings)
+    const assets = localState.previewAssets && localState.previewAssets.key === buildPreviewAssetsKey(preview)
       ? localState.previewAssets
       : null;
     const nextAssets = assets || buildPreviewAssets(preview);
@@ -746,14 +870,18 @@
   function renderGpuPreview(split) {
     const renderer = ensurePreviewRenderer();
     const preview = localState.preview;
-    const cache = localState.previewCache;
-    if (!renderer || !preview || !cache) return false;
+    if (!renderer || !preview) return false;
+    const sourceImage = preview.sourceTextureInput || preview.sourceCanvas || preview.sourceImage;
+    const referenceImage = preview.referenceTextureInput || preview.referenceCanvas || preview.referenceImage;
+    if (!sourceImage || !referenceImage) return false;
+    const width = Math.max(1, Number(preview.width) || Number(sourceImage.width) || 1);
+    const height = Math.max(1, Number(preview.height) || Number(sourceImage.height) || 1);
     try {
       renderer.configure({
-        width: cache.width,
-        height: cache.height,
-        sourceImage: preview.sourceImage,
-        referenceImage: preview.referenceImage,
+        width,
+        height,
+        sourceImage,
+        referenceImage,
         brightness: preview.corrections ? preview.corrections.brightness : 0,
         contrast: preview.corrections ? preview.corrections.contrast : 0,
         saturation: preview.corrections ? preview.corrections.saturation : 0,
@@ -772,8 +900,8 @@
       const canvas = getById("blendMatchPreviewCanvas");
       const frame = canvas && canvas.closest(".blend-match-preview-frame");
       if (!canvas || !frame) return false;
-      if (canvas.width !== cache.width) canvas.width = cache.width;
-      if (canvas.height !== cache.height) canvas.height = cache.height;
+      if (canvas.width !== width) canvas.width = width;
+      if (canvas.height !== height) canvas.height = height;
       const ctx = canvas.getContext("2d");
       if (!ctx) return false;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -927,11 +1055,17 @@
 
   function drawPreviewCanvas() {
     const preview = localState.preview;
-    if (!preview || !preview.sourceImage || !preview.referenceImage) return;
+    if (!preview || !(preview.sourceImage || preview.sourceCanvas || preview.sourceImageData) || !(preview.referenceImage || preview.referenceCanvas || preview.referenceImageData)) return;
     const split = getPreviewSplit();
     localState.previewView.split = split;
     const cacheKey = buildPreviewAssetKey(preview, localState.settings);
-    const assetKey = `${Math.max(1, preview.width)}x${Math.max(1, preview.height)}|${preview.sourceDataUrl ? preview.sourceDataUrl.length : 0}|${preview.referenceDataUrl ? preview.referenceDataUrl.length : 0}`;
+    const assetKey = buildPreviewAssetsKey(preview);
+
+    if (renderGpuPreview(split)) {
+      localState.previewRenderMode = "webgl2";
+      applyPreviewTransform();
+      return;
+    }
 
     if (!localState.previewAssets || localState.previewAssets.key !== assetKey) {
       localState.previewAssets = buildPreviewAssets(preview);
@@ -943,7 +1077,7 @@
     }
     if (!localState.previewCache) return;
 
-    const rendered = renderGpuPreview(split) || renderCpuPreviewCache(localState.previewCache, split);
+    const rendered = renderCpuPreviewCache(localState.previewCache, split);
     if (!rendered) {
       setPreviewState("预览失败");
       return;
@@ -990,22 +1124,67 @@
   }
 
   async function installPreviewResult(result) {
-    const [sourceImage, referenceImage] = await Promise.all([
-      loadImage(result.sourceDataUrl),
-      loadImage(result.referenceDataUrl)
-    ]);
+    const rawStartedAt = getPreviewNowMs();
+    const rawAssetKey = `${buildPreviewRawKey(result)}|seq:${++localState.previewAssetSeq}`;
+    let sourceImage = null;
+    let referenceImage = null;
+    let sourceImageData = null;
+    let referenceImageData = null;
+    let sourceCanvas = null;
+    let referenceCanvas = null;
+    let sourceTextureInput = null;
+    let referenceTextureInput = null;
+    let rawCanvasMs = 0;
+    if (result && result.sourceSample && result.referenceSample) {
+      const sourceAsset = buildCanvasFromSample(result.sourceSample, "source", rawAssetKey);
+      const referenceAsset = buildCanvasFromSample(result.referenceSample, "reference", rawAssetKey);
+      if (!sourceAsset || !referenceAsset) {
+        throw new Error("raw 预览 canvas 构建失败");
+      }
+      sourceImageData = sourceAsset.imageData;
+      referenceImageData = referenceAsset.imageData;
+      sourceCanvas = sourceAsset.canvas;
+      referenceCanvas = referenceAsset.canvas;
+      sourceTextureInput = sourceCanvas;
+      referenceTextureInput = referenceCanvas;
+      rawCanvasMs = getPreviewNowMs() - rawStartedAt;
+    } else {
+      const loaded = await Promise.all([
+        loadImage(result.sourceDataUrl),
+        loadImage(result.referenceDataUrl)
+      ]);
+      sourceImage = loaded[0];
+      referenceImage = loaded[1];
+    }
     localState.preview = {
       ...result,
-      sourceSample: null,
-      referenceSample: null,
+      rawAssetKey,
       sourceImage,
       referenceImage,
+      sourceImageData,
+      referenceImageData,
+      sourceCanvas,
+      referenceCanvas,
+      sourceTextureInput,
+      referenceTextureInput,
+      sourceSample: null,
+      referenceSample: null,
+      rawCanvasMs,
       boundsWidth: result.bounds ? Math.max(1, Number(result.bounds.right) - Number(result.bounds.left)) : result.width,
       boundsHeight: result.bounds ? Math.max(1, Number(result.bounds.bottom) - Number(result.bounds.top)) : result.height
     };
     setPreviewState("实时预览");
     setText("blendMatchPreviewMeta", buildAlignmentMeta(result.alignment));
+    const drawStartedAt = getPreviewNowMs();
     drawPreviewCanvas();
+    const drawDoneAt = getPreviewNowMs();
+    return {
+      rawCanvasMs,
+      rawCanvas: Boolean(sourceCanvas && referenceCanvas),
+      prepareMs: drawStartedAt - rawStartedAt,
+      renderMs: drawDoneAt - drawStartedAt,
+      installMs: drawDoneAt - rawStartedAt
+    };
   }
 
   function isGpuAlignmentUsable(alignment) {
@@ -1030,10 +1209,10 @@
     if (gpuAlignment && result && result.alignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
       modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, result.alignment)}。`, "info");
     }
-    await installPreviewResult(result);
+    const installSummary = await installPreviewResult(result);
     const drawDoneAt = getPreviewNowMs();
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载+canvas ${formatPreviewMs(drawDoneAt - hostDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载+canvas ${formatPreviewMs(installSummary ? installSummary.prepareMs : drawDoneAt - hostDoneAt)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : 0)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
     }
   }
 
@@ -1045,17 +1224,16 @@
     const baselineResult = {
       ...sampleResult,
       alignment: sampleResult.cpuAlignment,
-      sourceSample: null,
-      referenceSample: null,
       cpuAlignment: null,
       previewCacheKey: ""
     };
     if (gpuAlignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
       modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}。`, "info");
     }
-    await installPreviewResult(baselineResult);
+    const installStartedAt = getPreviewNowMs();
+    const installSummary = await installPreviewResult(baselineResult);
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+CPU基准 ${formatPreviewMs(getPreviewNowMs() - startedAt)} / 未二次调用 CPU 预览。`, "info");
+      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+CPU基准 ${formatPreviewMs(installStartedAt - startedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : 0)} / 未二次调用 CPU 预览。`, "info");
     }
     return true;
   }
@@ -1076,6 +1254,10 @@
         return;
       }
       const requestCpuBaseline = shouldRequestCpuAlignmentBaseline();
+      const validationMode = getGpuAlignmentValidationMode();
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace(`[融合校色] WebGL2 预览路径：CPU baseline validation=${validationMode || "once"}，本轮${requestCpuBaseline ? "会" : "不会"}请求 host CPU 基准。`, requestCpuBaseline ? "warn" : "info");
+      }
       const sampleResult = await modules.runtime.callHost("photoshop.runToolAction", [{
         ...buildPayload(),
         gpuAlignmentValidation: requestCpuBaseline,
@@ -1092,6 +1274,11 @@
         await refreshPreviewWithCpu(startedAt, "raw 采样解码失败");
         return;
       }
+      sampleResult.sourceSample = sourceSample;
+      sampleResult.referenceSample = referenceSample;
+      const correctionsStartedAt = getPreviewNowMs();
+      sampleResult.corrections = buildCorrectionsFromStats(sourceSample.stats, referenceSample.stats, sampleResult.config || localState.settings);
+      const correctionsDoneAt = getPreviewNowMs();
       const gpuStartedAt = getPreviewNowMs();
       const gpuAlignment = engine.estimateGradientAlignmentGpu(sourceSample, referenceSample, {
         ...(sampleResult.config || localState.settings),
@@ -1114,14 +1301,14 @@
       }
       sampleResult.alignment = gpuAlignment;
       sampleResult.previewCacheKey = "";
-      await installPreviewResult(sampleResult);
+      const installSummary = await installPreviewResult(sampleResult);
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         const timings = gpuAlignment.timings || {};
         const search = gpuAlignment.search || {};
         modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐：可用，覆盖 Sobel + global translation/scale；剩余 CPU 阶段 affine-refine/local-mesh 本轮未接入预览热路径。`, "info");
         modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐耗时：raw 解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / GPU 初始化 ${formatPreviewMs(timings.init || 0)} / 上传 ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / global search ${formatPreviewMs(timings.globalSearch || 0)} / GPU 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / score calls ${search.scoreCalls || 0} / batch ${search.batchSize || 0}。`, "info");
-        modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样 ${formatPreviewMs(hostDoneAt - startedAt)} / raw解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / GPU对齐 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / 图片加载+canvas ${formatPreviewMs(drawDoneAt - gpuDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+传输 ${formatPreviewMs(hostDoneAt - startedAt)} / raw解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / GPU对齐 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / preview canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - gpuDoneAt)} / WebView 总计 ${formatPreviewMs(drawDoneAt - hostDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
       }
     } catch (error) {
       const message = error && error.message ? error.message : "预览刷新失败";
