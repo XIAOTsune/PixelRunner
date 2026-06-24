@@ -511,6 +511,186 @@ Recommended first PR / first implementation batch:
 
 Do not start by rewriting the whole WebGL algorithm. First make the pipeline correct and reusable, then accelerate the analyzer.
 
+## Progress Update - 2026-06-24
+
+Status after the first Phase 1/2 implementation batch:
+
+This rewrite is not complete yet. The current work established the first reusable plan/cache foundation, but the module has not yet reached the final target of fast correction with fully unified preview/final rendering and GPU acceleration.
+
+### Completed In The First Batch
+
+Files changed:
+
+- `PixelRunner/src/host/photoshop/blend-match.js`
+- `PixelRunner/src/webview/blend-match.js`
+
+Implemented:
+
+- Added a minimal host-side `BlendMatchPlan` shape with:
+  - `planId`
+  - `version`
+  - `documentId`
+  - `layerId`
+  - `bounds`
+  - `config`
+  - `configHash`
+  - `previewCacheKey`
+  - `sampleHash`
+  - `sampleSize`
+  - `alignment`
+  - `color`
+  - `preview`
+  - `timings`
+  - `warnings`
+- Extended the existing `blendMatchPreviewCache` so it can store:
+  - preview source/reference samples
+  - CPU alignment
+  - CPU color corrections/profile
+  - `BlendMatchPlan`
+  - `planId`
+- Added cache lookup by both `planId` and `previewCacheKey`.
+- Added plan validation for:
+  - plan version
+  - document id
+  - layer id
+  - bounds
+  - config hash
+  - preview cache key
+  - source/reference sample hash
+  - CPU backend trust marker
+- Wrapped existing CPU logic into plan creation:
+  - `estimateGradientAlignment`
+  - `buildCorrections`
+  - `buildInternalColorProfile`
+- Made both host preview paths return reusable identifiers:
+  - `planId`
+  - `previewCacheKey`
+- Modified WebView Apply payload so `runBlendMatch` sends:
+  - `planId`
+  - `previewCacheKey`
+- Modified Apply execution so it first attempts to reuse a valid preview plan.
+- Added clear logs for:
+  - preview plan creation
+  - Apply cache hit
+  - Apply cache miss / invalidation reason
+  - rebuilt CPU plan
+  - `cachedPlan=true/false`
+- Preserved old fallback behavior:
+  - if plan lookup or validation fails, Apply re-samples and re-runs CPU analysis.
+  - internal fusion fallback still duplicates the layer if pixel processing fails.
+  - existing CPU/GPU preview fallback remains.
+- Prevented GPU v1 partial alignment from becoming final truth:
+  - WebView now treats GPU v1 alignment as diagnostic-only.
+  - host-generated CPU plan remains the Apply source of truth.
+
+Representative logs expected after this batch:
+
+- Preview:
+  - `预览已刷新... CPU plan <planId>`
+  - `预览采样已刷新... 已生成 CPU BlendMatchPlan <planId>`
+  - `WebGL2 预览路径：host CPU plan=always，GPU v1 仅用于诊断/对比`
+- Apply:
+  - `Apply 复用 BlendMatchPlan：planId ...`
+  - `Apply 未复用预览 plan：<reason>；将重新采样并用 CPU 重新分析。`
+  - `Apply plan 状态：cachedPlan=true/false，reason=...，planId=...`
+
+Validation run:
+
+```text
+node --check PixelRunner/src/host/photoshop/blend-match.js
+node --check PixelRunner/src/webview/blend-match.js
+npm run build
+npm run check:dist
+```
+
+All passed during the first implementation batch.
+
+### Current Completion Estimate
+
+Approximate status:
+
+- Phase 1 minimal plan schema: around 70%
+- Phase 1 CPU result wrapped into plan: around 65%
+- Phase 1 preview/final both truly rendering from plan: around 45%
+- Phase 2 host plan cache and Apply reuse: around 70%
+- Phase 2 clear reuse/invalidation logs: around 80%
+- Fast preview target: not complete
+- GPU as full acceleration backend: not complete
+- Preview/final visual parity: not complete
+- Automatic Photoshop pixel regression validation: not complete
+
+### Important Current Limitations
+
+The first batch is a foundation, not the final algorithm.
+
+Remaining gaps:
+
+- Preview rendering still does not fully consume `BlendMatchPlan`.
+  - It still largely uses simplified preview corrections and the existing preview renderer.
+  - It does not yet render the full final `buildInternalColorProfile` behavior.
+- Preview and final color can still differ.
+  - `ColorPlan` is not yet fully defined as a preview-renderable, final-executable contract.
+- GPU is still diagnostic-only for alignment.
+  - Existing WebGL2 alignment covers only Sobel + global translation/uniform scale candidate search.
+  - It does not cover the full CPU pipeline: affine refinement, non-uniform scale/stretch, rotation, local mesh, validation, conservative model selection.
+- The current raw/WebGL preview path generates a host CPU plan to preserve correctness.
+  - This improves Apply reuse, but does not yet solve preview speed.
+- Plan cache is still minimal and in-memory.
+  - It has useful validation, but it is not a full `BlendMatchSession` / `BlendMatchPlan` cache architecture yet.
+- Full-resolution Apply still spends time on:
+  - isolated source capture
+  - full-resolution warp
+  - color correction
+  - PNG encode
+  - Photoshop placement
+- There is no automated Photoshop/UXP visual regression test yet.
+
+### Manual Test Checklist
+
+These checks still require Photoshop/UXP because they cannot be validated by the build:
+
+- Open an 8-bit or 16-bit RGB document with an AI return layer selected.
+- Open Blend Match and refresh preview.
+- Confirm logs include a generated CPU `planId`.
+- Click Apply without changing layer/settings.
+- Confirm logs show `cachedPlan=true` and `Apply 复用 BlendMatchPlan`.
+- Compare final result against the previous CPU result:
+  - global alignment
+  - local deformation cases
+  - color/tone/chroma
+  - feather/mask edges
+- Change a setting and Apply again.
+- Confirm the old plan is rejected with a reason such as `config-mismatch`.
+- Switch layer or change bounds and Apply.
+- Confirm stale plans are rejected with `layer-mismatch`, `bounds-mismatch`, or `cache-miss`.
+- Force/fake a preview capture failure and confirm source layer visibility is restored.
+- Test WebGL-available and WebGL-unavailable environments.
+- Confirm GPU v1 logs are diagnostic-only and Apply still uses host CPU plan.
+
+### Recommended Next Work
+
+The next conversation should not restart Phase 1/2 from scratch. It should verify the current implementation, then continue from the next correctness bottleneck.
+
+Recommended next batch:
+
+1. Audit the current Phase 1/2 implementation.
+   - Confirm `planId` and `previewCacheKey` survive both CPU preview and raw/WebGL preview paths.
+   - Confirm Apply reuses valid plans and rejects stale plans.
+   - Confirm GPU v1 alignment is not used as final Apply alignment.
+2. Start Phase 3: define a real `ColorPlan`.
+   - Convert `buildInternalColorProfile` output into a stable serializable plan contract.
+   - Keep legacy simplified corrections as fallback.
+   - Make final execution consume `plan.color`, not rebuild it unless stale.
+3. Update preview rendering to consume `BlendMatchPlan`.
+   - Preview should not independently decide color or alignment.
+   - CPU canvas preview and WebGL preview should both read plan data.
+4. Add focused diagnostics.
+   - `alignmentSummary`
+   - `colorSummary`
+   - plan validation summary
+   - preview/final parity notes
+5. Only after Phase 3 is stable, continue with GPU Analyzer Backend V2.
+
 ## New Conversation Delivery Prompt
 
 Use the prompt below in a fresh conversation:
@@ -524,15 +704,51 @@ Use the prompt below in a fresh conversation:
 
 目标不是继续叠小补丁，而是按计划重构：让预览和最终应用共享同一个 BlendMatchPlan，使 CPU 是可靠参考实现，GPU 是加速后端，最终达到快速校正且不损失精度和效果。
 
-请从计划中的 Phase 1 和 Phase 2 开始实施：
+当前已经完成了 Phase 1/2 的第一批地基改动，但还没有完成完整目标。请先阅读计划中的 “Progress Update - 2026-06-24”，再检查当前代码实现，尤其是：
 
-1. 定义 BlendMatchPlan / plan cache 的最小可用结构。
-2. 用现有 CPU alignment 和 color 逻辑生成 plan，先不改变视觉效果。
-3. 让预览返回可复用的 planId / previewCacheKey。
-4. 让点击“应用”时复用有效预览 plan，避免重复采样和重复 CPU 对齐。
-5. 保留现有 CPU/GPU fallback，不要删除旧路径。
-6. 添加清晰日志，能看出 Apply 是否复用了 plan、何时因为失效而重新分析。
-7. 完成后运行可用的构建/检查命令，并说明无法自动验证的 Photoshop/UXP 手测步骤。
+- PixelRunner/src/host/photoshop/blend-match.js
+- PixelRunner/src/webview/blend-match.js
+
+当前已知状态：
+
+- 已有最小 host-side BlendMatchPlan。
+- 预览会返回 planId / previewCacheKey。
+- Apply 会发送 planId / previewCacheKey。
+- Apply 会尝试复用有效预览 plan，失效时重新采样并走 CPU 分析。
+- WebGL2 GPU v1 alignment 只能作为诊断，不允许作为最终 Apply 的完整对齐结果。
+- 预览渲染还没有真正完全消费 BlendMatchPlan。
+- ColorPlan 还没有完成，预览和最终颜色仍可能有差异。
+- GPU 后端 V2 还没有开始，不能牺牲 CPU 精度。
+
+你的任务是继续推进下一批改动，不要从头重做 Phase 1/2。请按以下顺序工作：
+
+1. 先运行 git status，确认工作区是否有用户改动，不要回退用户改动。
+2. 快速审查当前 Phase 1/2 实现是否存在明显问题：
+   - planId / previewCacheKey 是否在 CPU preview 和 raw/WebGL preview 都能返回。
+   - Apply 是否能复用有效 plan。
+   - Apply 是否会在 document/layer/bounds/config/sample 不匹配时拒绝 plan。
+   - GPU v1 partial alignment 是否没有冒充最终 CPU alignment。
+   - 图层可见性恢复逻辑是否仍安全。
+3. 如果发现 Phase 1/2 的小 bug，先修小 bug。
+4. 然后开始 Phase 3：定义并落地 ColorPlan 的第一批可用结构。
+   - 把 buildInternalColorProfile 的输出整理成可序列化、可缓存、可最终执行复用的 plan.color.profile。
+   - 保持最终视觉效果不变。
+   - 不要删除 legacy corrections fallback。
+   - 让最终执行优先消费 plan.color，而不是无条件重建颜色画像。
+   - 为后续 WebView preview renderer 读取 ColorPlan 留出清晰接口。
+5. 视复杂度推进预览端第一步：
+   - 让 WebView preview 尽量读取 host 返回的 plan/corrections/color summary。
+   - 不要一次性重写全部 WebGL shader，先保持行为稳定。
+6. 添加清晰日志：
+   - ColorPlan 是否复用。
+   - 何时因 plan/color stale 而重建。
+   - 当前预览是否仍处于 simplified color fallback。
+7. 完成后运行：
+   - node --check PixelRunner/src/host/photoshop/blend-match.js
+   - node --check PixelRunner/src/webview/blend-match.js
+   - npm run build
+   - npm run check:dist
+8. 最后说明无法自动验证的 Photoshop/UXP 手测步骤。
 
 重要约束：
 
@@ -541,6 +757,8 @@ Use the prompt below in a fresh conversation:
 - 不要破坏图层可见性恢复。
 - 保持改动聚焦在融合校色相关文件。
 - 工作区可能有用户改动，修改前先看 git status，不要回退用户改动。
+- 不要把 Phase 3 做成纯日志改动，要让 ColorPlan 真正进入最终执行路径。
+- 不要开始大规模 GPU V2 重写，除非 Phase 3 的颜色 plan 和预览/最终消费路径已经稳定。
 
-请先读代码和计划，再给出简短执行计划，然后直接实现 Phase 1/2 的第一批可落地改动。
+请先读代码和计划，再给出简短执行计划，然后直接实现下一批可落地改动。
 ```

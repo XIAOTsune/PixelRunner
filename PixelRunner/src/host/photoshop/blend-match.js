@@ -27,6 +27,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
 const BLEND_MATCH_PREVIEW_CACHE_TTL_MS = 120000;
 const BLEND_MATCH_PREVIEW_CACHE_LIMIT = 3;
 const BLEND_MATCH_PLAN_VERSION = 1;
+const BLEND_MATCH_COLOR_PLAN_VERSION = 1;
 const blendMatchPreviewCache = new Map();
 
 function clampNumber(value, min, max, fallback) {
@@ -897,6 +898,55 @@ function cloneJsonValue(value) {
   return value && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
 }
 
+function stableJsonValue(value) {
+  if (Array.isArray(value)) return value.map((item) => stableJsonValue(item));
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((out, key) => {
+        const current = value[key];
+        if (typeof current !== "undefined" && typeof current !== "function") {
+          out[key] = stableJsonValue(current);
+        }
+        return out;
+      }, {});
+  }
+  if (typeof value === "number") return Number.isFinite(value) ? Number(value.toFixed(6)) : 0;
+  return value;
+}
+
+function buildStableJsonHash(value) {
+  return JSON.stringify(stableJsonValue(value));
+}
+
+function buildBlendMatchAlignmentHash(alignment) {
+  const local = alignment && alignment.local ? alignment.local : null;
+  return buildStableJsonHash({
+    backend: alignment && alignment.backend || "cpu",
+    applied: Boolean(alignment && alignment.applied),
+    dx: Number(alignment && alignment.dx) || 0,
+    dy: Number(alignment && alignment.dy) || 0,
+    sampleDx: Number(alignment && alignment.sampleDx) || 0,
+    sampleDy: Number(alignment && alignment.sampleDy) || 0,
+    sampleScaleX: Number(alignment && alignment.sampleScaleX) || 1,
+    sampleScaleY: Number(alignment && alignment.sampleScaleY) || 1,
+    sampleRotation: Number(alignment && alignment.sampleRotation) || 0,
+    localApplied: Boolean(alignment && alignment.localDeformation),
+    localValidTiles: Number(local && local.validTiles) || 0,
+    localTotalTiles: Number(local && local.totalTiles) || 0,
+    localMaxDistance: Number(local && local.maxDistance) || 0,
+    localStrength: Number(local && local.strength) || 0,
+    localTiles: Array.isArray(local && local.tiles)
+      ? local.tiles.map((tile) => ({
+          row: Number(tile && tile.row) || 0,
+          col: Number(tile && tile.col) || 0,
+          dx: Number(tile && tile.dx) || 0,
+          dy: Number(tile && tile.dy) || 0
+        }))
+      : []
+  });
+}
+
 function summarizeColorProfile(profile) {
   if (!profile) return null;
   return {
@@ -916,6 +966,75 @@ function summarizeColorProfile(profile) {
   };
 }
 
+function buildColorPlanValidation({ configHash, sampleHash, alignmentHash, colorProfile, corrections }) {
+  const hasCorrections = Boolean(corrections);
+  const hasProfile = Boolean(colorProfile);
+  return {
+    ok: hasProfile || hasCorrections,
+    reason: hasProfile ? "valid" : hasCorrections ? "valid-legacy-corrections" : "missing-color-data",
+    configHash: String(configHash || ""),
+    sampleHash: String(sampleHash || ""),
+    alignmentHash: String(alignmentHash || "")
+  };
+}
+
+function buildBlendMatchColorPlan({ corrections, colorProfile, configHash, sampleHash, alignmentHash }) {
+  const method = colorProfile ? "internal-color-profile" : "legacy-corrections";
+  const summary = summarizeColorProfile(colorProfile);
+  return {
+    version: BLEND_MATCH_COLOR_PLAN_VERSION,
+    backend: "cpu",
+    method,
+    executable: true,
+    previewRenderable: false,
+    previewFallback: "simplified-corrections",
+    corrections: cloneJsonValue(corrections),
+    profile: cloneJsonValue(colorProfile),
+    summary,
+    hashes: {
+      configHash: String(configHash || ""),
+      sampleHash: String(sampleHash || ""),
+      alignmentHash: String(alignmentHash || "")
+    },
+    validation: buildColorPlanValidation({ configHash, sampleHash, alignmentHash, colorProfile, corrections })
+  };
+}
+
+function summarizeColorPlan(colorPlan) {
+  if (!colorPlan || typeof colorPlan !== "object") return null;
+  return {
+    version: Number(colorPlan.version) || 0,
+    backend: String(colorPlan.backend || ""),
+    method: String(colorPlan.method || ""),
+    executable: colorPlan.executable !== false,
+    previewRenderable: colorPlan.previewRenderable === true,
+    previewFallback: String(colorPlan.previewFallback || ""),
+    profile: cloneJsonValue(colorPlan.summary || summarizeColorProfile(colorPlan.profile)),
+    corrections: cloneJsonValue(colorPlan.corrections)
+  };
+}
+
+function validateBlendMatchColorPlan(colorPlan, request) {
+  if (!colorPlan || typeof colorPlan !== "object") return { ok: false, reason: "missing-color-plan" };
+  if (Number(colorPlan.version) !== BLEND_MATCH_COLOR_PLAN_VERSION) return { ok: false, reason: "color-version-mismatch" };
+  if (String(colorPlan.backend || "") !== "cpu") return { ok: false, reason: "color-backend-mismatch" };
+  if (colorPlan.executable === false) return { ok: false, reason: "color-not-executable" };
+  const hashes = colorPlan.hashes || {};
+  const expectedConfigHash = String(request && request.configHash || "");
+  const expectedSampleHash = String(request && request.sampleHash || "");
+  const expectedAlignmentHash = String(request && request.alignmentHash || "");
+  if (String(hashes.configHash || "") !== expectedConfigHash) return { ok: false, reason: "color-config-mismatch" };
+  if (String(hashes.sampleHash || "") !== expectedSampleHash) return { ok: false, reason: "color-sample-mismatch" };
+  if (String(hashes.alignmentHash || "") !== expectedAlignmentHash) return { ok: false, reason: "color-alignment-mismatch" };
+  if (colorPlan.method === "internal-color-profile" && !colorPlan.profile) return { ok: false, reason: "color-profile-missing" };
+  if (!colorPlan.corrections) return { ok: false, reason: "color-corrections-missing" };
+  return { ok: true, reason: "valid" };
+}
+
+function getPlanColorPlan(plan) {
+  return plan && plan.color ? cloneJsonValue(plan.color) : null;
+}
+
 function buildBlendMatchPlan({
   documentId,
   layerId,
@@ -932,6 +1051,19 @@ function buildBlendMatchPlan({
   warnings = []
 }) {
   const sampleHash = buildBlendMatchSampleHash(sourceSample, referenceSample);
+  const configHash = getBlendMatchAnalysisConfigKey(config);
+  const alignmentHash = buildBlendMatchAlignmentHash(alignment);
+  const colorPlan = buildBlendMatchColorPlan({
+    corrections,
+    colorProfile,
+    configHash,
+    sampleHash,
+    alignmentHash
+  });
+  colorPlan.stats = {
+    source: cloneJsonValue(sourceSample && sourceSample.stats),
+    reference: cloneJsonValue(referenceSample && referenceSample.stats)
+  };
   const planId = createBlendMatchPlanId(documentId, layerId, previewCacheKey, sampleHash);
   return {
     planId,
@@ -941,7 +1073,7 @@ function buildBlendMatchPlan({
     layerName: String(layerName || ""),
     bounds: bounds ? { ...bounds } : null,
     config: cloneJsonValue(config),
-    configHash: getBlendMatchAnalysisConfigKey(config),
+    configHash,
     previewCacheKey: String(previewCacheKey || ""),
     sampleHash,
     sampleSize: {
@@ -955,17 +1087,7 @@ function buildBlendMatchPlan({
       backend: "cpu",
       trusted: true
     },
-    color: {
-      method: colorProfile ? "internal-color-profile" : "legacy-corrections",
-      corrections: cloneJsonValue(corrections),
-      profile: cloneJsonValue(colorProfile),
-      summary: summarizeColorProfile(colorProfile),
-      stats: {
-        source: cloneJsonValue(sourceSample && sourceSample.stats),
-        reference: cloneJsonValue(referenceSample && referenceSample.stats)
-      },
-      validation: null
-    },
+    color: colorPlan,
     preview: {
       sourceTextureKey: "",
       referenceTextureKey: "",
@@ -1024,6 +1146,111 @@ function getPlanCorrections(plan) {
 
 function getPlanColorProfile(plan) {
   return plan && plan.color && plan.color.profile ? cloneJsonValue(plan.color.profile) : null;
+}
+
+function ensurePlanColorStats(plan, sourceSample, referenceSample) {
+  if (!plan || !plan.color) return;
+  plan.color.stats = {
+    source: cloneJsonValue(sourceSample && sourceSample.stats),
+    reference: cloneJsonValue(referenceSample && referenceSample.stats)
+  };
+}
+
+function rebuildBlendMatchColorPlanForSamples({ plan, config, sourceSample, referenceSample, alignment, reason = "rebuild" }) {
+  const corrections = buildCorrections(sourceSample && sourceSample.stats, referenceSample && referenceSample.stats, config);
+  const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, alignment);
+  const sampleHash = buildBlendMatchSampleHash(sourceSample, referenceSample);
+  const configHash = getBlendMatchAnalysisConfigKey(config);
+  const alignmentHash = buildBlendMatchAlignmentHash(alignment);
+  const colorPlan = buildBlendMatchColorPlan({
+    corrections,
+    colorProfile,
+    configHash,
+    sampleHash,
+    alignmentHash
+  });
+  colorPlan.rebuilt = true;
+  colorPlan.rebuildReason = String(reason || "rebuild");
+  colorPlan.stats = {
+    source: cloneJsonValue(sourceSample && sourceSample.stats),
+    reference: cloneJsonValue(referenceSample && referenceSample.stats)
+  };
+  if (plan && typeof plan === "object") {
+    plan.color = cloneJsonValue(colorPlan);
+    plan.sampleHash = sampleHash;
+    plan.configHash = configHash;
+  }
+  return colorPlan;
+}
+
+function resolveBlendMatchColorPlan({ plan, config, sourceSample, referenceSample, alignment, logs, timing, allowRebuild = true }) {
+  const existingColorPlan = getPlanColorPlan(plan);
+  const expected = {
+    configHash: getBlendMatchAnalysisConfigKey(config),
+    sampleHash: buildBlendMatchSampleHash(sourceSample, referenceSample),
+    alignmentHash: buildBlendMatchAlignmentHash(alignment)
+  };
+  const validation = validateBlendMatchColorPlan(existingColorPlan, expected);
+  if (validation.ok) {
+    if (timing) {
+      timing.mark("复用 ColorPlan", {
+        method: existingColorPlan.method || "",
+        previewFallback: existingColorPlan.previewFallback || "",
+        weight: Math.round(Number(existingColorPlan.profile && existingColorPlan.profile.subjectWeight) || 0)
+      });
+    }
+    if (Array.isArray(logs)) {
+      logs.push(`[融合校色] ColorPlan 复用：method=${existingColorPlan.method || "unknown"}，profile=${existingColorPlan.profile ? "yes" : "no"}，preview=${existingColorPlan.previewRenderable ? "plan" : existingColorPlan.previewFallback || "fallback"}。`);
+    }
+    return {
+      colorPlan: existingColorPlan,
+      validation,
+      reused: true,
+      rebuilt: false,
+      corrections: cloneJsonValue(existingColorPlan.corrections),
+      colorProfile: cloneJsonValue(existingColorPlan.profile)
+    };
+  }
+  if (Array.isArray(logs)) {
+    logs.push(`[融合校色] ColorPlan 未复用：${validation.reason}；${allowRebuild ? "将重建颜色画像" : "使用 legacy corrections fallback"}。`);
+  }
+  if (!allowRebuild) {
+    const corrections = getPlanCorrections(plan) || buildCorrections(sourceSample && sourceSample.stats, referenceSample && referenceSample.stats, config);
+    return {
+      colorPlan: null,
+      validation,
+      reused: false,
+      rebuilt: false,
+      corrections,
+      colorProfile: null
+    };
+  }
+  const rebuilt = rebuildBlendMatchColorPlanForSamples({
+    plan,
+    config,
+    sourceSample,
+    referenceSample,
+    alignment,
+    reason: validation.reason
+  });
+  if (timing) {
+    timing.mark("重建 ColorPlan", {
+      reason: validation.reason,
+      method: rebuilt.method,
+      weight: Math.round(Number(rebuilt.profile && rebuilt.profile.subjectWeight) || 0)
+    });
+  }
+  if (Array.isArray(logs)) {
+    logs.push(`[融合校色] ColorPlan 已重建：reason=${validation.reason}，method=${rebuilt.method}，profile=${rebuilt.profile ? "yes" : "no"}。`);
+  }
+  return {
+    colorPlan: rebuilt,
+    validation,
+    reused: false,
+    rebuilt: true,
+    corrections: cloneJsonValue(rebuilt.corrections),
+    colorProfile: cloneJsonValue(rebuilt.profile)
+  };
 }
 
 async function captureCompositeRawSample(imaging, doc, bounds, maxEdge = 512) {
@@ -2150,6 +2377,7 @@ async function createInternalBlendMatchResult({
   alignmentSample,
   config,
   corrections,
+  colorPlan: plannedColorPlan = null,
   colorProfile: plannedColorProfile = null,
   referenceSample,
   fullDocumentTarget,
@@ -2165,8 +2393,24 @@ async function createInternalBlendMatchResult({
   logs.push(`[融合校色] 内部处理：预览 ${alignmentSample.width}x${alignmentSample.height}，输出 ${sourceSample.width}x${sourceSample.height}，source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""}->RGBA。`);
   const alpha = getAlphaStats(sourceSample.data);
   const forceOpaque = fullDocumentTarget && alpha.opaqueRatio > 0.995 && alpha.transparentRatio < 0.001;
-  const colorProfile = plannedColorProfile || buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
-  if (timing) timing.mark(plannedColorProfile ? "复用颜色画像" : "颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
+  let effectiveCorrections = corrections;
+  let colorProfile = plannedColorProfile;
+  if (plannedColorPlan && typeof plannedColorPlan === "object") {
+    if (plannedColorPlan.corrections) effectiveCorrections = cloneJsonValue(plannedColorPlan.corrections);
+    if (plannedColorPlan.profile) colorProfile = cloneJsonValue(plannedColorPlan.profile);
+  }
+  const hasPlannedColorPlan = Boolean(plannedColorPlan && typeof plannedColorPlan === "object");
+  const plannedLegacyFallback = hasPlannedColorPlan && plannedColorPlan.method === "legacy-corrections";
+  if (!colorProfile && hasPlannedColorPlan && plannedColorPlan.method === "internal-color-profile") {
+    logs.push("[融合校色] ColorPlan 标记为 internal profile 但缺少 profile，执行前重建颜色画像。");
+  }
+  if (!colorProfile && !plannedLegacyFallback) {
+    colorProfile = buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
+  }
+  const colorPlanReused = Boolean(hasPlannedColorPlan && (plannedLegacyFallback || plannedColorPlan.profile && colorProfile));
+  if (timing) {
+    timing.mark(colorPlanReused ? "执行复用 ColorPlan" : "执行颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : { method: plannedLegacyFallback ? "legacy-corrections" : "profile-missing" });
+  }
   const warped = applyGlobalAndLocalWarp(sourceSample, alignment, alignmentSample || sourceSample) || {
     width: sourceSample.width,
     height: sourceSample.height,
@@ -2178,7 +2422,7 @@ async function createInternalBlendMatchResult({
     maxDistance: 0
   };
   if (timing) timing.mark(warped.globalApplied || warped.localApplied ? "原尺寸变形" : "跳过变形");
-  const corrected = applyInternalColorCorrectionsToRgba(warped, config, corrections, { forceOpaque, colorProfile });
+  const corrected = applyInternalColorCorrectionsToRgba(warped, config, effectiveCorrections, { forceOpaque, colorProfile });
   if (timing) timing.mark("原尺寸校色");
   const pngBuffer = await encodeRgbaPng(corrected.width, corrected.height, corrected.data);
   if (!pngBuffer) throw new Error("内部融合 PNG 编码失败。");
@@ -2193,6 +2437,7 @@ async function createInternalBlendMatchResult({
     width: corrected.width,
     height: corrected.height,
     color: corrected.color,
+    colorPlan: summarizeColorPlan(plannedColorPlan) || null,
     alignment: {
       globalApplied: Boolean(warped.globalApplied),
       localApplied: Boolean(warped.localApplied),
@@ -5003,8 +5248,19 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       logs.push(`[融合校色] Apply 已重建 CPU BlendMatchPlan：planId ${activePlan.planId}。`);
     }
     const alignment = getPlanAlignment(activePlan) || { applied: false, dx: 0, dy: 0, confidence: 0, reason: "missing-plan-alignment" };
-    const corrections = getPlanCorrections(activePlan) || buildCorrections(sourceStats, referenceStats, config);
-    const colorProfile = getPlanColorProfile(activePlan);
+    ensurePlanColorStats(activePlan, sourceSample, referenceSample);
+    const colorPlanResolution = resolveBlendMatchColorPlan({
+      plan: activePlan,
+      config,
+      sourceSample,
+      referenceSample,
+      alignment,
+      logs,
+      timing
+    });
+    const colorPlan = colorPlanResolution.colorPlan;
+    const corrections = colorPlanResolution.corrections || getPlanCorrections(activePlan) || buildCorrections(sourceStats, referenceStats, config);
+    const colorProfile = colorPlanResolution.colorProfile;
     timing.mark(cachedPlanUsed ? "使用缓存 plan 对齐/颜色" : "使用新建 plan 对齐/颜色", {
       applied: Boolean(alignment.applied),
       confidence: Number((Number(alignment.confidence) || 0).toFixed(3)),
@@ -5013,9 +5269,12 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       localRejected: Boolean(alignment.local && alignment.local.rejected),
       localReason: alignment.local && alignment.local.reason || "",
       cachedPlan: cachedPlanUsed,
-      planId: activePlan && activePlan.planId || ""
+      planId: activePlan && activePlan.planId || "",
+      colorPlan: colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback",
+      colorReason: colorPlanResolution.validation && colorPlanResolution.validation.reason || ""
     });
     logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
+    logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
         logs.push(`[融合校色] 快速对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
@@ -5061,6 +5320,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         alignmentSample: sourceSample,
         config,
         corrections,
+        colorPlan,
         colorProfile,
         referenceSample,
         fullDocumentTarget,
@@ -5139,6 +5399,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         width: pixelResult ? pixelResult.width : 0,
         height: pixelResult ? pixelResult.height : 0,
         color: pixelResult ? pixelResult.color : null,
+        colorPlan: pixelResult ? pixelResult.colorPlan : null,
         alignment: pixelResult ? pixelResult.alignment : null,
         timings: timing.entries()
       },
@@ -5216,6 +5477,8 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
     });
     const corrections = getPlanCorrections(plan);
     const alignment = getPlanAlignment(plan);
+    const colorPlan = getPlanColorPlan(plan);
+    const colorSummary = summarizeColorPlan(colorPlan);
     storeBlendMatchPreviewCache(previewCacheKey, {
       sourceSample: cloneSampleForPreviewCache(sourceSample),
       referenceSample: cloneSampleForPreviewCache(referenceSample),
@@ -5239,6 +5502,8 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       referenceDataUrl: referenceSample.dataUrl,
       corrections,
       alignment,
+      colorPlan,
+      colorSummary,
       planId: plan.planId,
       previewCacheKey,
       config,
@@ -5362,6 +5627,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   });
   const cpuAlignment = getPlanAlignment(plan);
   const corrections = getPlanCorrections(plan);
+  const colorPlan = getPlanColorPlan(plan);
+  const colorSummary = summarizeColorPlan(colorPlan);
   storeBlendMatchPreviewCache(previewCacheKey, {
     sourceSample: cloneSampleForPreviewCache(sourceSample),
     referenceSample: cloneSampleForPreviewCache(referenceSample),
@@ -5400,6 +5667,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     corrections,
     alignment: cpuAlignment,
     cpuAlignment,
+    colorPlan,
+    colorSummary,
     planId: plan.planId,
     previewCacheKey,
     config,

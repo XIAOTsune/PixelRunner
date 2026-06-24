@@ -552,6 +552,43 @@
     ].join("|");
   }
 
+  function getPreviewColorPlan(preview) {
+    if (!preview || typeof preview !== "object") return null;
+    if (preview.colorPlan && typeof preview.colorPlan === "object") return preview.colorPlan;
+    return null;
+  }
+
+  function getPreviewColorSummary(preview) {
+    if (!preview || typeof preview !== "object") return null;
+    if (preview.colorSummary && typeof preview.colorSummary === "object") return preview.colorSummary;
+    const colorPlan = getPreviewColorPlan(preview);
+    if (!colorPlan) return null;
+    return {
+      version: Number(colorPlan.version) || 0,
+      backend: String(colorPlan.backend || ""),
+      method: String(colorPlan.method || ""),
+      executable: colorPlan.executable !== false,
+      previewRenderable: colorPlan.previewRenderable === true,
+      previewFallback: String(colorPlan.previewFallback || ""),
+      profile: colorPlan.summary || null,
+      corrections: colorPlan.corrections || null
+    };
+  }
+
+  function isPreviewUsingSimplifiedColorFallback(preview) {
+    const summary = getPreviewColorSummary(preview);
+    return !summary || summary.previewRenderable !== true || String(summary.previewFallback || "") === "simplified-corrections";
+  }
+
+  function formatColorPlanMeta(preview) {
+    const summary = getPreviewColorSummary(preview);
+    if (!summary) return "color plan 无";
+    const profile = summary.profile || {};
+    const weight = Number(profile.subjectWeight) || 0;
+    const fallback = isPreviewUsingSimplifiedColorFallback(preview) ? "simplified fallback" : "plan renderer";
+    return `ColorPlan ${summary.method || "unknown"} / ${fallback}${weight ? ` / 权重 ${Math.round(weight)}` : ""}`;
+  }
+
   function buildCorrectionsFromStats(sourceStats, referenceStats, config) {
     const safeConfig = config || {};
     const total = (Number(safeConfig.totalStrength) || 0) / 100;
@@ -637,11 +674,18 @@
   }
 
   function buildPreviewAssetKey(preview, settings) {
+    const colorSummary = getPreviewColorSummary(preview);
     return [
       buildPreviewRawKey(preview),
       preview && preview.width ? preview.width : 0,
       preview && preview.height ? preview.height : 0,
       getPreviewCorrectionKey(preview && preview.corrections),
+      colorSummary ? [
+        Number(colorSummary.version) || 0,
+        colorSummary.method || "",
+        colorSummary.previewRenderable === true ? "plan" : colorSummary.previewFallback || "fallback",
+        JSON.stringify(colorSummary.profile || {})
+      ].join(":") : "",
       Number(settings && settings.featherRadius) || 0
     ].join("|");
   }
@@ -879,6 +923,8 @@
     if (!sourceImage || !referenceImage) return false;
     const width = Math.max(1, Number(preview.width) || Number(sourceImage.width) || 1);
     const height = Math.max(1, Number(preview.height) || Number(sourceImage.height) || 1);
+    const colorPlan = getPreviewColorPlan(preview);
+    const colorSummary = getPreviewColorSummary(preview);
     try {
       renderer.configure({
         width,
@@ -897,6 +943,9 @@
           : [0, 0, 0],
         featherMix: 1,
         featherRadius: localState.settings.featherRadius,
+        colorPlan,
+        colorSummary,
+        colorFallbackMode: isPreviewUsingSimplifiedColorFallback(preview) ? "simplified-corrections" : "plan",
         split
       });
       renderer.render();
@@ -1176,8 +1225,19 @@
       boundsWidth: result.bounds ? Math.max(1, Number(result.bounds.right) - Number(result.bounds.left)) : result.width,
       boundsHeight: result.bounds ? Math.max(1, Number(result.bounds.bottom) - Number(result.bounds.top)) : result.height
     };
+    const colorSummary = getPreviewColorSummary(localState.preview);
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      if (colorSummary) {
+        modules.ui.logToWorkspace(`[融合校色] 预览 ColorPlan：method=${colorSummary.method || "unknown"}，profile=${colorSummary.profile ? "yes" : "no"}，renderer=${colorSummary.previewRenderable ? "plan" : colorSummary.previewFallback || "simplified-corrections"}。`, "info");
+      } else {
+        modules.ui.logToWorkspace("[融合校色] 预览 ColorPlan：host 未返回颜色计划，使用 simplified color fallback。", "warn");
+      }
+      if (isPreviewUsingSimplifiedColorFallback(localState.preview)) {
+        modules.ui.logToWorkspace("[融合校色] 预览颜色仍处于 simplified color fallback；最终 Apply 会优先消费 host ColorPlan。", "info");
+      }
+    }
     setPreviewState("实时预览");
-    setText("blendMatchPreviewMeta", buildAlignmentMeta(result.alignment));
+    setText("blendMatchPreviewMeta", `${buildAlignmentMeta(result.alignment)} / ${formatColorPlanMeta(localState.preview)}`);
     const drawStartedAt = getPreviewNowMs();
     drawPreviewCanvas();
     const drawDoneAt = getPreviewNowMs();
