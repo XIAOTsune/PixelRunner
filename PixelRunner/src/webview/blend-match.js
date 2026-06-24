@@ -527,17 +527,222 @@
     return { imageData, canvas };
   }
 
-  function formatAlignmentComparison(gpuAlignment, cpuAlignment) {
-    if (!gpuAlignment || !cpuAlignment) return "无可比结果";
-    const dxDelta = Math.abs((Number(gpuAlignment.dx) || 0) - (Number(cpuAlignment.dx) || 0));
-    const dyDelta = Math.abs((Number(gpuAlignment.dy) || 0) - (Number(cpuAlignment.dy) || 0));
-    const scaleDelta = Math.max(
-      Math.abs((Number(gpuAlignment.scaleXPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleXPercent || cpuAlignment.scalePercent) || 100)),
-      Math.abs((Number(gpuAlignment.scaleYPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleYPercent || cpuAlignment.scalePercent) || 100))
+  const GPU_ALIGNMENT_SHADOW_THRESHOLDS = {
+    target: {
+      dxDelta: 2,
+      dyDelta: 2,
+      scaleDelta: 0.15,
+      rotationDelta: 0.15
+    },
+    reject: {
+      dxDelta: 10,
+      dyDelta: 10,
+      scaleDelta: 1.25,
+      rotationDelta: 1.25
+    }
+  };
+
+  function clonePlainValue(value) {
+    if (value == null || typeof value !== "object") return value;
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch (_) {
+      return Array.isArray(value) ? value.slice() : { ...value };
+    }
+  }
+
+  function readFiniteNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function readOptionalNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function getAlignmentScaleXPercent(alignment) {
+    if (!alignment || typeof alignment !== "object") return 100;
+    return readFiniteNumber(
+      alignment.scaleXPercent ?? alignment.scalePercent ?? (alignment.scaleX ? alignment.scaleX * 100 : undefined),
+      100
     );
-    const rotationDelta = Math.abs((Number(gpuAlignment.rotation) || 0) - (Number(cpuAlignment.rotation) || 0));
-    const confidenceDelta = Math.abs((Number(gpuAlignment.confidence) || 0) - (Number(cpuAlignment.confidence) || 0));
-    return `dx 差 ${dxDelta.toFixed(2)}px / dy 差 ${dyDelta.toFixed(2)}px / scale 差 ${scaleDelta.toFixed(3)}% / rotation 差 ${rotationDelta.toFixed(3)}° / confidence 差 ${confidenceDelta.toFixed(3)}`;
+  }
+
+  function getAlignmentScaleYPercent(alignment) {
+    if (!alignment || typeof alignment !== "object") return 100;
+    return readFiniteNumber(
+      alignment.scaleYPercent ?? alignment.scalePercent ?? (alignment.scaleY ? alignment.scaleY * 100 : undefined),
+      100
+    );
+  }
+
+  function getAlignmentDiff(gpuAlignment, cpuAlignment) {
+    if (!gpuAlignment || !cpuAlignment) return null;
+    const dxDelta = Math.abs(readFiniteNumber(gpuAlignment.dx) - readFiniteNumber(cpuAlignment.dx));
+    const dyDelta = Math.abs(readFiniteNumber(gpuAlignment.dy) - readFiniteNumber(cpuAlignment.dy));
+    const scaleDelta = Math.max(
+      Math.abs(getAlignmentScaleXPercent(gpuAlignment) - getAlignmentScaleXPercent(cpuAlignment)),
+      Math.abs(getAlignmentScaleYPercent(gpuAlignment) - getAlignmentScaleYPercent(cpuAlignment))
+    );
+    const rotationDelta = Math.abs(readFiniteNumber(gpuAlignment.rotation) - readFiniteNumber(cpuAlignment.rotation));
+    const confidenceDelta = Math.abs(readFiniteNumber(gpuAlignment.confidence) - readFiniteNumber(cpuAlignment.confidence));
+    return {
+      dxDelta,
+      dyDelta,
+      scaleDelta,
+      rotationDelta,
+      confidenceDelta,
+      dx: dxDelta,
+      dy: dyDelta,
+      scale: scaleDelta,
+      rotation: rotationDelta,
+      confidence: confidenceDelta
+    };
+  }
+
+  function formatAlignmentComparison(gpuAlignment, cpuAlignment) {
+    const diff = getAlignmentDiff(gpuAlignment, cpuAlignment);
+    if (!diff) return "无可比结果";
+    return `dxDelta ${diff.dxDelta.toFixed(2)}px / dyDelta ${diff.dyDelta.toFixed(2)}px / scaleDelta ${diff.scaleDelta.toFixed(3)}% / rotationDelta ${diff.rotationDelta.toFixed(3)}° / confidenceDelta ${diff.confidenceDelta.toFixed(3)}`;
+  }
+
+  function buildGpuAlignmentWarnings(gpuAlignment) {
+    const warnings = [];
+    if (!gpuAlignment || typeof gpuAlignment !== "object") return ["gpu-candidate-missing"];
+    const search = gpuAlignment.search || {};
+    const remaining = Array.isArray(search.remainingCpuStages) ? search.remainingCpuStages : [];
+    if (remaining.includes("affine-refine")) warnings.push("missing-affine-refinement");
+    if (remaining.includes("local-mesh")) warnings.push("missing-local-mesh");
+    if (!gpuAlignment.modelChoice) warnings.push("missing-conservative-model-selection");
+    if (!gpuAlignment.local || gpuAlignment.local.applied !== true) warnings.push("missing-local-mesh-validation");
+    if (Math.abs(readFiniteNumber(gpuAlignment.rotation)) <= 0.0001) warnings.push("missing-rotation-refinement");
+    if (Math.abs(getAlignmentScaleXPercent(gpuAlignment) - getAlignmentScaleYPercent(gpuAlignment)) <= 0.0001) warnings.push("missing-non-uniform-scale");
+    return Array.from(new Set(warnings));
+  }
+
+  function normalizeGpuAlignmentCandidate(gpuAlignment, options = {}) {
+    if (!gpuAlignment || typeof gpuAlignment !== "object") return null;
+    const score = readOptionalNumber(gpuAlignment.score);
+    const confidence = readOptionalNumber(gpuAlignment.confidence);
+    const search = clonePlainValue(gpuAlignment.search) || {};
+    const local = clonePlainValue(gpuAlignment.local) || {
+      enabled: false,
+      applied: false,
+      validTiles: 0,
+      totalTiles: 0,
+      reason: "gpu-local-missing"
+    };
+    const backend = String(gpuAlignment.backend || gpuAlignment.gpuBackend || "gpu-webgl2-v1");
+    return {
+      schemaVersion: 2,
+      backend,
+      sourceBackend: backend,
+      analyzer: "webview-shadow-candidate",
+      diagnosticOnly: true,
+      trusted: false,
+      finalApplyEligible: false,
+      applied: Boolean(gpuAlignment.applied),
+      dx: readFiniteNumber(gpuAlignment.dx),
+      dy: readFiniteNumber(gpuAlignment.dy),
+      scalePercent: readFiniteNumber(gpuAlignment.scalePercent, getAlignmentScaleXPercent(gpuAlignment)),
+      scaleXPercent: getAlignmentScaleXPercent(gpuAlignment),
+      scaleYPercent: getAlignmentScaleYPercent(gpuAlignment),
+      rotation: readFiniteNumber(gpuAlignment.rotation),
+      confidence,
+      score,
+      sampleDx: readFiniteNumber(gpuAlignment.sampleDx ?? gpuAlignment.rawSampleDx),
+      sampleDy: readFiniteNumber(gpuAlignment.sampleDy ?? gpuAlignment.rawSampleDy),
+      sampleScale: readFiniteNumber(gpuAlignment.sampleScale ?? gpuAlignment.rawSampleScaleX, 1),
+      sampleScaleX: readFiniteNumber(gpuAlignment.sampleScaleX ?? gpuAlignment.rawSampleScaleX, 1),
+      sampleScaleY: readFiniteNumber(gpuAlignment.sampleScaleY ?? gpuAlignment.rawSampleScaleY, 1),
+      sampleRotation: readFiniteNumber(gpuAlignment.sampleRotation ?? gpuAlignment.rawSampleRotation),
+      rawSampleDx: readFiniteNumber(gpuAlignment.rawSampleDx ?? gpuAlignment.sampleDx),
+      rawSampleDy: readFiniteNumber(gpuAlignment.rawSampleDy ?? gpuAlignment.sampleDy),
+      rawSampleScaleX: readFiniteNumber(gpuAlignment.rawSampleScaleX ?? gpuAlignment.sampleScaleX, 1),
+      rawSampleScaleY: readFiniteNumber(gpuAlignment.rawSampleScaleY ?? gpuAlignment.sampleScaleY, 1),
+      rawSampleRotation: readFiniteNumber(gpuAlignment.rawSampleRotation ?? gpuAlignment.sampleRotation),
+      modelChoice: clonePlainValue(gpuAlignment.modelChoice) || {
+        selected: "global-translation-uniform-scale",
+        rejectedAffine: true,
+        reason: "gpu-v1-global-only"
+      },
+      search: {
+        ...search,
+        shadowValidationMode: String(options.validationMode || ""),
+        schema: "alignment-candidate-v2"
+      },
+      validation: {
+        verdict: "pending",
+        reason: "pending-shadow-validation",
+        diagnosticOnly: true,
+        finalApplyEligible: false
+      },
+      local,
+      localDeformation: Boolean(gpuAlignment.localDeformation),
+      reason: String(gpuAlignment.reason || ""),
+      warnings: buildGpuAlignmentWarnings(gpuAlignment),
+      gpu: true,
+      timings: clonePlainValue(gpuAlignment.timings) || null,
+      support: clonePlainValue(gpuAlignment.support) || null
+    };
+  }
+
+  function validateGpuAlignmentCandidate(candidate, cpuAlignment, options = {}) {
+    const diff = getAlignmentDiff(candidate, cpuAlignment);
+    const rejectReasons = [];
+    const warnings = [];
+    const score = readOptionalNumber(candidate && candidate.score);
+    const confidence = readOptionalNumber(candidate && candidate.confidence);
+    const thresholds = clonePlainValue(GPU_ALIGNMENT_SHADOW_THRESHOLDS);
+    if (score === null || score <= -0.95) rejectReasons.push("gpu-missing-score");
+    if (confidence === null || confidence < 0 || confidence > 1) rejectReasons.push("gpu-invalid-confidence");
+    if (!cpuAlignment) rejectReasons.push("cpu-baseline-missing");
+    if (diff) {
+      if (diff.dxDelta > thresholds.reject.dxDelta) rejectReasons.push("dx-delta-too-large");
+      else if (diff.dxDelta > thresholds.target.dxDelta) warnings.push("dx-delta-above-reference-target");
+      if (diff.dyDelta > thresholds.reject.dyDelta) rejectReasons.push("dy-delta-too-large");
+      else if (diff.dyDelta > thresholds.target.dyDelta) warnings.push("dy-delta-above-reference-target");
+      if (diff.scaleDelta > thresholds.reject.scaleDelta) rejectReasons.push("scale-delta-too-large");
+      else if (diff.scaleDelta > thresholds.target.scaleDelta) warnings.push("scale-delta-above-reference-target");
+      if (diff.rotationDelta > thresholds.reject.rotationDelta) rejectReasons.push("rotation-delta-too-large");
+      else if (diff.rotationDelta > thresholds.target.rotationDelta) warnings.push("rotation-delta-above-reference-target");
+    }
+    const verdict = rejectReasons.length ? "rejected" : warnings.length ? "suspicious" : "acceptable";
+    return {
+      schemaVersion: 1,
+      mode: String(options.validationMode || ""),
+      verdict,
+      acceptable: verdict === "acceptable",
+      diff,
+      reasons: rejectReasons.slice(),
+      rejectReasons: rejectReasons.slice(),
+      warnings,
+      thresholds,
+      diagnosticOnly: true,
+      finalApplyEligible: false,
+      cpuBackend: String(cpuAlignment && cpuAlignment.backend || "cpu")
+    };
+  }
+
+  function attachGpuShadowValidation(candidate, validation) {
+    if (!candidate || typeof candidate !== "object") return candidate;
+    candidate.validation = {
+      ...candidate.validation,
+      ...(validation || {})
+    };
+    return candidate;
+  }
+
+  function formatShadowValidation(validation) {
+    if (!validation) return "verdict=unknown";
+    const diff = validation.diff || {};
+    const reasons = Array.isArray(validation.rejectReasons) && validation.rejectReasons.length
+      ? validation.rejectReasons.join(",")
+      : Array.isArray(validation.warnings) && validation.warnings.length
+        ? validation.warnings.join(",")
+        : "none";
+    return `verdict=${validation.verdict || "unknown"} / dxDelta=${Number(diff.dxDelta || 0).toFixed(2)}px / dyDelta=${Number(diff.dyDelta || 0).toFixed(2)}px / scaleDelta=${Number(diff.scaleDelta || 0).toFixed(3)}% / rotationDelta=${Number(diff.rotationDelta || 0).toFixed(3)}° / confidenceDelta=${Number(diff.confidenceDelta || 0).toFixed(3)} / reason=${reasons}`;
   }
 
   function getGpuAlignmentValidationMode() {
@@ -555,23 +760,14 @@
     return !localState.alignmentValidationDone;
   }
 
-  function getAlignmentDiff(gpuAlignment, cpuAlignment) {
-    if (!gpuAlignment || !cpuAlignment) return null;
-    return {
-      dx: Math.abs((Number(gpuAlignment.dx) || 0) - (Number(cpuAlignment.dx) || 0)),
-      dy: Math.abs((Number(gpuAlignment.dy) || 0) - (Number(cpuAlignment.dy) || 0)),
-      scale: Math.max(
-        Math.abs((Number(gpuAlignment.scaleXPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleXPercent || cpuAlignment.scalePercent) || 100)),
-        Math.abs((Number(gpuAlignment.scaleYPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleYPercent || cpuAlignment.scalePercent) || 100))
-      ),
-      rotation: Math.abs((Number(gpuAlignment.rotation) || 0) - (Number(cpuAlignment.rotation) || 0)),
-      confidence: Math.abs((Number(gpuAlignment.confidence) || 0) - (Number(cpuAlignment.confidence) || 0))
-    };
-  }
-
   function isAlignmentDiffAcceptable(diff) {
     if (!diff) return true;
-    return diff.dx <= 10 && diff.dy <= 10 && diff.scale <= 1.25 && diff.rotation <= 1.25;
+    return (
+      readFiniteNumber(diff.dxDelta ?? diff.dx) <= GPU_ALIGNMENT_SHADOW_THRESHOLDS.reject.dxDelta &&
+      readFiniteNumber(diff.dyDelta ?? diff.dy) <= GPU_ALIGNMENT_SHADOW_THRESHOLDS.reject.dyDelta &&
+      readFiniteNumber(diff.scaleDelta ?? diff.scale) <= GPU_ALIGNMENT_SHADOW_THRESHOLDS.reject.scaleDelta &&
+      readFiniteNumber(diff.rotationDelta ?? diff.rotation) <= GPU_ALIGNMENT_SHADOW_THRESHOLDS.reject.rotationDelta
+    );
   }
 
   function loadImage(src) {
@@ -1257,6 +1453,19 @@
     (Array.isArray(lines) ? lines : []).forEach((line) => modules.ui.logToWorkspace(line, level));
   }
 
+  function logGpuAlignmentCandidate(candidate, validation, context = "") {
+    if (!modules.ui || typeof modules.ui.logToWorkspace !== "function" || !candidate) return;
+    const label = context ? `${context}：` : "";
+    const validationText = validation || candidate.validation
+      ? formatShadowValidation(validation || candidate.validation)
+      : "verdict=pending";
+    modules.ui.logToWorkspace(
+      `[融合校色] ${label}GPU alignment candidate backend=${candidate.backend || "unknown"}，generated=true，diagnosticOnly=true，${validationText}。`,
+      validation && validation.verdict === "rejected" ? "warn" : "info"
+    );
+    modules.ui.logToWorkspace("[融合校色] 本轮 Apply 仍使用 host CPU BlendMatchPlan；GPU candidate 不会写入最终执行 alignment。", "info");
+  }
+
   function buildAlignmentMeta(alignment) {
     const localMeta = alignment && alignment.local && alignment.local.enabled
       ? ` / 网格 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}${alignment.localDeformation ? " 已启用" : " 已跳过"}`
@@ -1320,6 +1529,16 @@
     };
     const colorSummary = getPreviewColorSummary(localState.preview);
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      if (localState.preview.gpuAlignmentCandidate) {
+        const candidate = localState.preview.gpuAlignmentCandidate;
+        const validation = localState.preview.gpuAlignmentShadowValidation || candidate.validation || null;
+        modules.ui.logToWorkspace(
+          `[融合校色] 预览 GPU candidate 已挂载为 diagnostic：backend=${candidate.backend || "unknown"}，validation=${validation && validation.verdict || "pending"}，finalApplyEligible=false。`,
+          validation && validation.verdict === "rejected" ? "warn" : "info"
+        );
+      } else {
+        modules.ui.logToWorkspace("[融合校色] 预览 GPU candidate：未生成或已回退 CPU-only preview。", "info");
+      }
       if (colorSummary) {
         modules.ui.logToWorkspace(`[融合校色] 预览 ColorPlan：method=${colorSummary.method || "unknown"}，profile=${colorSummary.profile ? "yes" : "no"}，renderer=${colorSummary.previewRenderable ? "plan" : colorSummary.previewFallback || "simplified-corrections"}。`, "info");
       } else {
@@ -1379,8 +1598,17 @@
       modules.ui.logToWorkspace(`[融合校色] preview host call 结束：blendMatchPreview，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
     }
     logPreviewLines(result && result.logs, "info");
-    if (gpuAlignment && result && result.alignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, result.alignment)}。`, "info");
+    if (gpuAlignment && result && result.alignment) {
+      const candidate = normalizeGpuAlignmentCandidate(gpuAlignment, {
+        validationMode: "cpu-fallback-preview"
+      });
+      const validation = validateGpuAlignmentCandidate(candidate, result.alignment, {
+        validationMode: "cpu-fallback-preview"
+      });
+      attachGpuShadowValidation(candidate, validation);
+      result.gpuAlignmentCandidate = candidate;
+      result.gpuAlignmentShadowValidation = validation;
+      logGpuAlignmentCandidate(candidate, validation, "CPU fallback preview shadow validation");
     }
     const installSummary = await installPreviewResult(result);
     const drawDoneAt = getPreviewNowMs();
@@ -1400,8 +1628,17 @@
       alignment: sampleResult.cpuAlignment,
       cpuAlignment: null
     };
-    if (gpuAlignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}。`, "info");
+    if (gpuAlignment) {
+      const candidate = normalizeGpuAlignmentCandidate(gpuAlignment, {
+        validationMode: "sample-cpu-baseline"
+      });
+      const validation = validateGpuAlignmentCandidate(candidate, sampleResult.cpuAlignment, {
+        validationMode: "sample-cpu-baseline"
+      });
+      attachGpuShadowValidation(candidate, validation);
+      baselineResult.gpuAlignmentCandidate = candidate;
+      baselineResult.gpuAlignmentShadowValidation = validation;
+      logGpuAlignmentCandidate(candidate, validation, "sample CPU baseline shadow validation");
     }
     const installStartedAt = getPreviewNowMs();
     const installSummary = await installPreviewResult(baselineResult);
@@ -1472,29 +1709,37 @@
         previewFastAlignment: true
       });
       const gpuDoneAt = getPreviewNowMs();
+      const gpuAlignmentCandidate = normalizeGpuAlignmentCandidate(gpuAlignment, {
+        validationMode
+      });
       if (!isGpuAlignmentUsable(gpuAlignment)) {
         if (await useSampleCpuBaselinePreview(sampleResult, startedAt, `GPU 结果异常：${gpuAlignment && gpuAlignment.reason || "unknown"}`, gpuAlignment)) return;
         await refreshPreviewWithCpu(startedAt, `GPU 结果异常：${gpuAlignment && gpuAlignment.reason || "unknown"}`, gpuAlignment);
         return;
       }
-      if (sampleResult.cpuAlignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        const diff = getAlignmentDiff(gpuAlignment, sampleResult.cpuAlignment);
-        modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}。`, "info");
-        if (!isAlignmentDiffAcceptable(diff)) {
-          if (await useSampleCpuBaselinePreview(sampleResult, startedAt, `GPU/CPU 偏差过大：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}`, gpuAlignment)) return;
-          await refreshPreviewWithCpu(startedAt, `GPU/CPU 偏差过大：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}`, gpuAlignment);
-          return;
-        }
+      const shadowValidation = validateGpuAlignmentCandidate(gpuAlignmentCandidate, sampleResult.cpuAlignment || sampleResult.alignment, {
+        validationMode
+      });
+      attachGpuShadowValidation(gpuAlignmentCandidate, shadowValidation);
+      logGpuAlignmentCandidate(gpuAlignmentCandidate, shadowValidation, "WebGL2 preview shadow validation");
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function" && shadowValidation.verdict !== "acceptable") {
+        modules.ui.logToWorkspace(`[融合校色] GPU candidate ${shadowValidation.verdict} 仅记录诊断；预览主 alignment 和 Apply 仍使用 host CPU plan。`, shadowValidation.verdict === "rejected" ? "warn" : "info");
       }
       sampleResult.gpuPreviewAlignment = gpuAlignment;
+      sampleResult.gpuAlignmentCandidate = gpuAlignmentCandidate;
+      sampleResult.gpuAlignmentShadowValidation = shadowValidation;
+      sampleResult.alignment = sampleResult.cpuAlignment || sampleResult.alignment;
       setPreviewLoadingState("正在生成融合预览", "正在生成融合前后对比");
       const installSummary = await installPreviewResult(sampleResult);
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         const timings = gpuAlignment.timings || {};
         const search = gpuAlignment.search || {};
-        modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐：可用，覆盖 Sobel + global translation/scale；剩余 CPU 阶段 affine-refine/local-mesh 本轮未接入预览热路径。`, "info");
-        modules.ui.logToWorkspace(`[融合校色] 预览主 plan：${sampleResult.planId || "无"}，Apply 将复用 host CPU plan；GPU v1 不作为最终应用依据。`, "info");
+        const stages = Array.isArray(search.stages)
+          ? search.stages.map((stage) => stage.name || stage).join(" -> ")
+          : Array.isArray(search.gpuStages) ? search.gpuStages.join(" -> ") : "sobel-magnitude -> global-translation-scale-search";
+        modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐 candidate：backend=${gpuAlignmentCandidate.backend}，stages=${stages}；缺失 affine-refine/non-uniform-scale/rotation/local-mesh 完整验证。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] 预览主 plan：${sampleResult.planId || "无"}，alignment backend=${sampleResult.alignment && sampleResult.alignment.backend || "cpu"}；Apply 将复用 host CPU plan，GPU candidate 不作为最终应用依据。`, "info");
         modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐耗时：raw 解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / GPU 初始化 ${formatPreviewMs(timings.init || 0)} / 上传 ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / global search ${formatPreviewMs(timings.globalSearch || 0)} / GPU 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / score calls ${search.scoreCalls || 0} / batch ${search.batchSize || 0}。`, "info");
         modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+传输 ${formatPreviewMs(hostDoneAt - startedAt)} / raw解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / GPU对齐 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / preview canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - gpuDoneAt)} / WebView 总计 ${formatPreviewMs(drawDoneAt - hostDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
       }

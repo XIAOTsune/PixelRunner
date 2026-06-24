@@ -587,8 +587,23 @@
       let translationBase = { dx: 0, dy: 0, scale: 1, score: -1 };
       let translationSecond = -1;
       let scoreCalls = 0;
-      const update = (dx, dy, scale, score) => {
+      const topCandidates = [];
+      const stages = [];
+      const updateTopCandidates = (candidate) => {
+        if (!candidate || !Number.isFinite(Number(candidate.score))) return;
+        topCandidates.push({
+          dx: Number((Number(candidate.dx) || 0).toFixed(3)),
+          dy: Number((Number(candidate.dy) || 0).toFixed(3)),
+          scale: Number((Number(candidate.scale) || 1).toFixed(6)),
+          score: Number((Number(candidate.score) || 0).toFixed(6)),
+          stage: String(candidate.stage || "")
+        });
+        topCandidates.sort((a, b) => Number(b.score) - Number(a.score));
+        if (topCandidates.length > 8) topCandidates.length = 8;
+      };
+      const update = (dx, dy, scale, score, stageName) => {
         scoreCalls += 1;
+        updateTopCandidates({ dx, dy, scale, score, stage: stageName });
         if (Math.abs(scale - 1) < 0.000001) {
           if (score > translationBase.score) {
             translationSecond = translationBase.score;
@@ -604,16 +619,31 @@
           second = score;
         }
       };
-      const runGrid = (maxOffset, step, centerDx, centerDy, activeStride, radius = null) => {
+      const runGrid = (stageName, maxOffset, step, centerDx, centerDy, activeStride, radius = null) => {
         const dxValues = buildOffsetCandidates(maxOffset, step, centerDx, radius);
         const dyValues = buildOffsetCandidates(maxOffset, step, centerDy, radius);
+        const stage = {
+          name: String(stageName || "grid-search"),
+          maxOffset,
+          step,
+          centerDx,
+          centerDy,
+          stride: activeStride,
+          radius: radius === null || radius === undefined ? maxOffset : radius,
+          dxCandidates: dxValues.length,
+          dyCandidates: dyValues.length,
+          scaleCandidates: scaleCandidates.length,
+          candidates: dxValues.length * dyValues.length * scaleCandidates.length,
+          bestBefore: { ...best },
+          bestAfter: null
+        };
         scaleCandidates.forEach((scale) => {
           let pending = [];
           const flush = () => {
             if (!pending.length) return;
             const scores = this.scoreCandidateBatch(pending, activeStride);
             pending.forEach((candidate, index) => {
-              update(candidate.dx, candidate.dy, candidate.scale, scores[index]);
+              update(candidate.dx, candidate.dy, candidate.scale, scores[index], stage.name);
             });
             pending = [];
           };
@@ -625,12 +655,14 @@
           });
           flush();
         });
+        stage.bestAfter = { ...best };
+        stages.push(stage);
       };
-      runGrid(sampleOffset, coarseStep, 0, 0, coarseStride);
+      runGrid("coarse-global-translation-scale", sampleOffset, coarseStep, 0, 0, coarseStride);
       if (coarseStep > 1) {
         const refineRadius = Math.min(sampleOffset, Math.max(3, coarseStep * 2));
-        runGrid(sampleOffset, Math.max(1, Math.floor(coarseStep / 2)), best.dx, best.dy, Math.max(1, stride), refineRadius);
-        runGrid(sampleOffset, 1, best.dx, best.dy, Math.max(1, stride), Math.min(sampleOffset, 2));
+        runGrid("mid-global-translation-scale-refine", sampleOffset, Math.max(1, Math.floor(coarseStep / 2)), best.dx, best.dy, Math.max(1, stride), refineRadius);
+        runGrid("fine-global-translation-scale-refine", sampleOffset, 1, best.dx, best.dy, Math.max(1, stride), Math.min(sampleOffset, 2));
       }
       return {
         best,
@@ -639,7 +671,9 @@
         translationSecond,
         coarseStep,
         coarseStride,
-        scoreCalls
+        scoreCalls,
+        topCandidates,
+        stages
       };
     }
 
@@ -723,7 +757,25 @@
           batchSize: maxBatchSize,
           coarseStep: globalSearch.coarseStep,
           coarseStride: globalSearch.coarseStride,
-          gpuStages: ["sobel-magnitude", "global-translation-scale-search"],
+          topCandidates: globalSearch.topCandidates,
+          topCandidate: globalSearch.topCandidates && globalSearch.topCandidates[0] || null,
+          refinedCandidate: {
+            dx: Number((Number(best.dx) || 0).toFixed(3)),
+            dy: Number((Number(best.dy) || 0).toFixed(3)),
+            scale: Number((Number(best.scale) || 1).toFixed(6)),
+            score: Number((Number(best.score) || 0).toFixed(6))
+          },
+          translationCandidate: {
+            dx: Number((Number(globalSearch.translationBase.dx) || 0).toFixed(3)),
+            dy: Number((Number(globalSearch.translationBase.dy) || 0).toFixed(3)),
+            scale: 1,
+            score: Number((Number(globalSearch.translationBase.score) || 0).toFixed(6))
+          },
+          stages: [
+            { name: "sobel-magnitude", backend: "gpu-webgl2" },
+            ...globalSearch.stages
+          ],
+          gpuStages: ["sobel-magnitude", "coarse-global-translation-scale", "mid/fine-global-translation-scale-refine"],
           remainingCpuStages: ["affine-refine", "local-mesh"]
         },
         local: {
