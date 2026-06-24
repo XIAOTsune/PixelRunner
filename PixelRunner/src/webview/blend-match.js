@@ -291,6 +291,9 @@
     if (options && options.includePreviewCache && localState.preview && localState.preview.previewCacheKey) {
       payload.previewCacheKey = localState.preview.previewCacheKey;
     }
+    if (options && options.includePreviewCache && localState.preview && localState.preview.planId) {
+      payload.planId = localState.preview.planId;
+    }
     return payload;
   }
 
@@ -1224,8 +1227,7 @@
     const baselineResult = {
       ...sampleResult,
       alignment: sampleResult.cpuAlignment,
-      cpuAlignment: null,
-      previewCacheKey: ""
+      cpuAlignment: null
     };
     if (gpuAlignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
       modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}。`, "info");
@@ -1256,7 +1258,7 @@
       const requestCpuBaseline = shouldRequestCpuAlignmentBaseline();
       const validationMode = getGpuAlignmentValidationMode();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] WebGL2 预览路径：CPU baseline validation=${validationMode || "once"}，本轮${requestCpuBaseline ? "会" : "不会"}请求 host CPU 基准。`, requestCpuBaseline ? "warn" : "info");
+        modules.ui.logToWorkspace(`[融合校色] WebGL2 预览路径：host CPU plan=always，GPU v1 仅用于诊断/对比，validation=${validationMode || "once"}。`, "info");
       }
       const sampleResult = await modules.runtime.callHost("photoshop.runToolAction", [{
         ...buildPayload(),
@@ -1265,7 +1267,7 @@
       }], { timeoutMs: 45000 });
       const hostDoneAt = getPreviewNowMs();
       logPreviewLines(sampleResult && sampleResult.logs, "info");
-      if (requestCpuBaseline) localState.alignmentValidationDone = true;
+      if (requestCpuBaseline || sampleResult && sampleResult.cpuAlignment) localState.alignmentValidationDone = true;
       const decodeStartedAt = getPreviewNowMs();
       const sourceSample = decodePreviewSample(sampleResult && sampleResult.sourceSample);
       const referenceSample = decodePreviewSample(sampleResult && sampleResult.referenceSample);
@@ -1277,7 +1279,9 @@
       sampleResult.sourceSample = sourceSample;
       sampleResult.referenceSample = referenceSample;
       const correctionsStartedAt = getPreviewNowMs();
-      sampleResult.corrections = buildCorrectionsFromStats(sourceSample.stats, referenceSample.stats, sampleResult.config || localState.settings);
+      if (!sampleResult.corrections) {
+        sampleResult.corrections = buildCorrectionsFromStats(sourceSample.stats, referenceSample.stats, sampleResult.config || localState.settings);
+      }
       const correctionsDoneAt = getPreviewNowMs();
       const gpuStartedAt = getPreviewNowMs();
       const gpuAlignment = engine.estimateGradientAlignmentGpu(sourceSample, referenceSample, {
@@ -1299,14 +1303,14 @@
           return;
         }
       }
-      sampleResult.alignment = gpuAlignment;
-      sampleResult.previewCacheKey = "";
+      sampleResult.gpuPreviewAlignment = gpuAlignment;
       const installSummary = await installPreviewResult(sampleResult);
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         const timings = gpuAlignment.timings || {};
         const search = gpuAlignment.search || {};
         modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐：可用，覆盖 Sobel + global translation/scale；剩余 CPU 阶段 affine-refine/local-mesh 本轮未接入预览热路径。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] 预览主 plan：${sampleResult.planId || "无"}，Apply 将复用 host CPU plan；GPU v1 不作为最终应用依据。`, "info");
         modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐耗时：raw 解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / GPU 初始化 ${formatPreviewMs(timings.init || 0)} / 上传 ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / global search ${formatPreviewMs(timings.globalSearch || 0)} / GPU 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / score calls ${search.scoreCalls || 0} / batch ${search.batchSize || 0}。`, "info");
         modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+传输 ${formatPreviewMs(hostDoneAt - startedAt)} / raw解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / GPU对齐 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / preview canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - gpuDoneAt)} / WebView 总计 ${formatPreviewMs(drawDoneAt - hostDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
       }

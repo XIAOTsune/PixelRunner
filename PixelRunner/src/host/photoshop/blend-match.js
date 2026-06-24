@@ -26,6 +26,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
 
 const BLEND_MATCH_PREVIEW_CACHE_TTL_MS = 120000;
 const BLEND_MATCH_PREVIEW_CACHE_LIMIT = 3;
+const BLEND_MATCH_PLAN_VERSION = 1;
 const blendMatchPreviewCache = new Map();
 
 function clampNumber(value, min, max, fallback) {
@@ -226,7 +227,105 @@ function getBlendMatchPreviewCache(key) {
     ...entry,
     sourceSample: cloneSampleForPreviewCache(entry.sourceSample),
     referenceSample: cloneSampleForPreviewCache(entry.referenceSample),
-    alignment: cloneAlignmentResult(entry.alignment)
+    alignment: cloneAlignmentResult(entry.alignment),
+    plan: cloneJsonValue(entry.plan),
+    planId: entry.planId || (entry.plan && entry.plan.planId) || ""
+  };
+}
+
+function findBlendMatchPreviewCacheByPlanId(planId) {
+  const requestedPlanId = String(planId || "");
+  if (!requestedPlanId) return null;
+  pruneBlendMatchPreviewCache();
+  for (const [key, entry] of blendMatchPreviewCache.entries()) {
+    if (!entry) continue;
+    const entryPlanId = String(entry.planId || (entry.plan && entry.plan.planId) || "");
+    if (entryPlanId !== requestedPlanId) continue;
+    entry.lastUsedAt = getNowMs();
+    return {
+      key,
+      ...entry,
+      sourceSample: cloneSampleForPreviewCache(entry.sourceSample),
+      referenceSample: cloneSampleForPreviewCache(entry.referenceSample),
+      alignment: cloneAlignmentResult(entry.alignment),
+      plan: cloneJsonValue(entry.plan),
+      planId: entryPlanId
+    };
+  }
+  return null;
+}
+
+function validateBlendMatchPlanForRequest(plan, request) {
+  if (!plan || typeof plan !== "object") return { ok: false, reason: "missing-plan" };
+  if (Number(plan.version) !== BLEND_MATCH_PLAN_VERSION) return { ok: false, reason: "version-mismatch" };
+  const documentId = Number(request && request.documentId) || 0;
+  const layerId = Number(request && request.layerId) || 0;
+  if (Number(plan.documentId) !== documentId) return { ok: false, reason: "document-mismatch" };
+  if (Number(plan.layerId) !== layerId) return { ok: false, reason: "layer-mismatch" };
+  if (buildBoundsCacheKey(plan.bounds) !== buildBoundsCacheKey(request && request.bounds)) {
+    return { ok: false, reason: "bounds-mismatch" };
+  }
+  const expectedConfigHash = getBlendMatchAnalysisConfigKey(request && request.config);
+  if (String(plan.configHash || "") !== expectedConfigHash) {
+    return { ok: false, reason: "config-mismatch" };
+  }
+  const expectedPreviewCacheKey = String(request && request.previewCacheKey || "");
+  if (expectedPreviewCacheKey && String(plan.previewCacheKey || "") !== expectedPreviewCacheKey) {
+    return { ok: false, reason: "preview-cache-key-mismatch" };
+  }
+  const sourceSample = request && request.sourceSample;
+  const referenceSample = request && request.referenceSample;
+  if (sourceSample && referenceSample) {
+    const expectedSampleHash = buildBlendMatchSampleHash(sourceSample, referenceSample);
+    if (String(plan.sampleHash || "") !== expectedSampleHash) {
+      return { ok: false, reason: "sample-mismatch" };
+    }
+  }
+  if (!plan.alignment || plan.alignment.backend !== "cpu") {
+    return { ok: false, reason: "non-cpu-plan" };
+  }
+  return { ok: true, reason: "valid" };
+}
+
+function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewCacheKey, documentId, layerId, bounds, config }) {
+  const requestedPlanId = String(planId || "");
+  const requestedPreviewCacheKey = String(previewCacheKey || "");
+  let entry = requestedPlanId ? findBlendMatchPreviewCacheByPlanId(requestedPlanId) : null;
+  let lookup = requestedPlanId ? "planId" : "";
+  if (!entry && requestedPreviewCacheKey) {
+    entry = getBlendMatchPreviewCache(requestedPreviewCacheKey);
+    lookup = "previewCacheKey";
+  }
+  if (!entry || !entry.plan) {
+    return {
+      entry: null,
+      plan: null,
+      validation: { ok: false, reason: requestedPlanId || requestedPreviewCacheKey ? "cache-miss" : "not-requested" },
+      lookup
+    };
+  }
+  if (expectedPreviewCacheKey && entry.key && String(entry.key) !== String(expectedPreviewCacheKey)) {
+    return {
+      entry,
+      plan: entry.plan,
+      validation: { ok: false, reason: "preview-cache-key-mismatch" },
+      lookup
+    };
+  }
+  const validation = validateBlendMatchPlanForRequest(entry.plan, {
+    documentId,
+    layerId,
+    bounds,
+    config,
+    previewCacheKey: expectedPreviewCacheKey,
+    sourceSample: entry.sourceSample,
+    referenceSample: entry.referenceSample
+  });
+  return {
+    entry,
+    plan: entry.plan,
+    validation,
+    lookup
   };
 }
 
@@ -763,6 +862,168 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
     } catch (_) {}
   }
+}
+
+function normalizeSampleHashPart(sample) {
+  return [
+    Math.max(1, Math.round(Number(sample && sample.width) || 1)),
+    Math.max(1, Math.round(Number(sample && sample.height) || 1)),
+    Number(sample && sample.scaleX || 1).toFixed(6),
+    Number(sample && sample.scaleY || 1).toFixed(6),
+    Math.round(Number(sample && sample.stats && sample.stats.count) || 0),
+    Number(sample && sample.stats && sample.stats.weightedMeanLuma || sample && sample.stats && sample.stats.meanLuma || 0).toFixed(3),
+    Number(sample && sample.stats && sample.stats.weightedMeanSat || sample && sample.stats && sample.stats.meanSat || 0).toFixed(5),
+    Number(sample && sample.stats && sample.stats.detailEnergy || 0).toFixed(5)
+  ].join(":");
+}
+
+function buildBlendMatchSampleHash(sourceSample, referenceSample) {
+  return `${normalizeSampleHashPart(sourceSample)}::${normalizeSampleHashPart(referenceSample)}`;
+}
+
+function createBlendMatchPlanId(documentId, layerId, previewCacheKey, sampleHash) {
+  const seed = [
+    Number(documentId) || 0,
+    Number(layerId) || 0,
+    String(previewCacheKey || ""),
+    String(sampleHash || ""),
+    Date.now().toString(36),
+    Math.floor(Math.random() * 0xffffff).toString(36)
+  ].join(":");
+  return `bmp-${seed.replace(/[^a-zA-Z0-9_-]+/g, "-")}`;
+}
+
+function cloneJsonValue(value) {
+  return value && typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
+}
+
+function summarizeColorProfile(profile) {
+  if (!profile) return null;
+  return {
+    method: profile.significantMismatch ? "enhanced-tone-chroma-profile" : "protected-tone-chroma-profile",
+    significantMismatch: Boolean(profile.significantMismatch),
+    subjectWeight: Math.round(Number(profile.subjectWeight || profile.weight) || 0),
+    midDelta: Number((Number(profile.midDelta) || 0).toFixed(3)),
+    shadowDelta: Number((Number(profile.shadowDelta) || 0).toFixed(3)),
+    highlightDelta: Number((Number(profile.highlightDelta) || 0).toFixed(3)),
+    uDelta: Number((Number(profile.uDelta) || 0).toFixed(3)),
+    vDelta: Number((Number(profile.vDelta) || 0).toFixed(3)),
+    neutralUDelta: Number((Number(profile.neutralUDelta) || 0).toFixed(3)),
+    neutralVDelta: Number((Number(profile.neutralVDelta) || 0).toFixed(3)),
+    chromaScale: Number((Number(profile.chromaScale) || 1).toFixed(4)),
+    saturationFactor: Number((Number(profile.saturationFactor) || 1).toFixed(4)),
+    toneCurveStrength: Number(summarizeToneCurveStrength(profile.toneCurve).toFixed(3))
+  };
+}
+
+function buildBlendMatchPlan({
+  documentId,
+  layerId,
+  layerName,
+  bounds,
+  config,
+  previewCacheKey,
+  sourceSample,
+  referenceSample,
+  alignment,
+  corrections,
+  colorProfile = null,
+  timings = null,
+  warnings = []
+}) {
+  const sampleHash = buildBlendMatchSampleHash(sourceSample, referenceSample);
+  const planId = createBlendMatchPlanId(documentId, layerId, previewCacheKey, sampleHash);
+  return {
+    planId,
+    version: BLEND_MATCH_PLAN_VERSION,
+    documentId: Number(documentId) || 0,
+    layerId: Number(layerId) || 0,
+    layerName: String(layerName || ""),
+    bounds: bounds ? { ...bounds } : null,
+    config: cloneJsonValue(config),
+    configHash: getBlendMatchAnalysisConfigKey(config),
+    previewCacheKey: String(previewCacheKey || ""),
+    sampleHash,
+    sampleSize: {
+      width: Math.max(1, Number(sourceSample && sourceSample.width) || 1),
+      height: Math.max(1, Number(sourceSample && sourceSample.height) || 1),
+      scaleX: Number(sourceSample && sourceSample.scaleX) || 1,
+      scaleY: Number(sourceSample && sourceSample.scaleY) || 1
+    },
+    alignment: {
+      ...(cloneAlignmentResult(alignment) || { applied: false, dx: 0, dy: 0, confidence: 0, reason: "missing" }),
+      backend: "cpu",
+      trusted: true
+    },
+    color: {
+      method: colorProfile ? "internal-color-profile" : "legacy-corrections",
+      corrections: cloneJsonValue(corrections),
+      profile: cloneJsonValue(colorProfile),
+      summary: summarizeColorProfile(colorProfile),
+      stats: {
+        source: cloneJsonValue(sourceSample && sourceSample.stats),
+        reference: cloneJsonValue(referenceSample && referenceSample.stats)
+      },
+      validation: null
+    },
+    preview: {
+      sourceTextureKey: "",
+      referenceTextureKey: "",
+      renderMode: "existing-preview-pipeline"
+    },
+    timings: timings ? cloneJsonValue(timings) : null,
+    warnings: Array.isArray(warnings) ? warnings.slice() : []
+  };
+}
+
+function buildCpuBlendMatchPlanFromSamples(options) {
+  const {
+    config,
+    sourceSample,
+    referenceSample,
+    alignmentConfig = config,
+    existingAlignment = null,
+    timing = null
+  } = options || {};
+  const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+  if (timing) timing.mark("plan 颜色统计");
+  const alignment = existingAlignment
+    ? cloneAlignmentResult(existingAlignment)
+    : config.alignmentEnabled
+    ? estimateGradientAlignment(sourceSample, referenceSample, alignmentConfig || config)
+    : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+  if (timing) {
+    timing.mark("plan CPU 对齐", {
+      applied: Boolean(alignment && alignment.applied),
+      confidence: Number((Number(alignment && alignment.confidence) || 0).toFixed(3)),
+      reason: alignment && alignment.reason || "",
+      localApplied: Boolean(alignment && alignment.localDeformation),
+      localRejected: Boolean(alignment && alignment.local && alignment.local.rejected)
+    });
+  }
+  const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, alignment);
+  if (timing) {
+    timing.mark("plan 颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
+  }
+  return buildBlendMatchPlan({
+    ...options,
+    alignment,
+    corrections,
+    colorProfile,
+    timings: timing && typeof timing.entries === "function" ? timing.entries() : null
+  });
+}
+
+function getPlanAlignment(plan) {
+  return plan && plan.alignment ? cloneAlignmentResult(plan.alignment) : null;
+}
+
+function getPlanCorrections(plan) {
+  return plan && plan.color && plan.color.corrections ? cloneJsonValue(plan.color.corrections) : null;
+}
+
+function getPlanColorProfile(plan) {
+  return plan && plan.color && plan.color.profile ? cloneJsonValue(plan.color.profile) : null;
 }
 
 async function captureCompositeRawSample(imaging, doc, bounds, maxEdge = 512) {
@@ -1889,6 +2150,7 @@ async function createInternalBlendMatchResult({
   alignmentSample,
   config,
   corrections,
+  colorProfile: plannedColorProfile = null,
   referenceSample,
   fullDocumentTarget,
   logs,
@@ -1903,8 +2165,8 @@ async function createInternalBlendMatchResult({
   logs.push(`[融合校色] 内部处理：预览 ${alignmentSample.width}x${alignmentSample.height}，输出 ${sourceSample.width}x${sourceSample.height}，source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""}->RGBA。`);
   const alpha = getAlphaStats(sourceSample.data);
   const forceOpaque = fullDocumentTarget && alpha.opaqueRatio > 0.995 && alpha.transparentRatio < 0.001;
-  const colorProfile = buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
-  if (timing) timing.mark("颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
+  const colorProfile = plannedColorProfile || buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
+  if (timing) timing.mark(plannedColorProfile ? "复用颜色画像" : "颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
   const warped = applyGlobalAndLocalWarp(sourceSample, alignment, alignmentSample || sourceSample) || {
     width: sourceSample.width,
     height: sourceSample.height,
@@ -4658,17 +4920,41 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     let sourceSample = null;
     let referenceSample = null;
     let restoredVisibility = false;
+    let activePlan = null;
+    let cachedPlanUsed = false;
+    let cachedPlanValidation = { ok: false, reason: "not-requested" };
     const requestedPreviewCacheKey = String(payload.previewCacheKey || "");
-    const previewCache = requestedPreviewCacheKey && requestedPreviewCacheKey === previewCacheKey
-      ? getBlendMatchPreviewCache(requestedPreviewCacheKey)
-      : null;
+    const requestedPlanId = String(payload.planId || payload.blendMatchPlanId || "");
+    const resolvedPlan = resolveBlendMatchCachedPlan({
+      planId: requestedPlanId,
+      previewCacheKey: requestedPreviewCacheKey,
+      expectedPreviewCacheKey: previewCacheKey,
+      documentId: document.id,
+      layerId: sourceLayerId,
+      bounds: sourceBounds,
+      config
+    });
+    const previewCache = resolvedPlan.validation.ok ? resolvedPlan.entry : null;
 
     if (previewCache && previewCache.sourceSample && previewCache.referenceSample) {
       sourceSample = previewCache.sourceSample;
       referenceSample = previewCache.referenceSample;
-      timing.mark("复用预览采样", { width: sourceSample.width, height: sourceSample.height });
-      logs.push(`[融合校色] 已复用最近预览采样：source/reference ${sourceSample.width}x${sourceSample.height}。`);
+      activePlan = resolvedPlan.plan;
+      cachedPlanUsed = true;
+      cachedPlanValidation = resolvedPlan.validation;
+      timing.mark("复用 BlendMatchPlan", {
+        planId: activePlan && activePlan.planId || "",
+        width: sourceSample.width,
+        height: sourceSample.height
+      });
+      logs.push(`[融合校色] Apply 复用 BlendMatchPlan：planId ${activePlan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
     } else {
+      cachedPlanValidation = resolvedPlan.validation;
+      if (requestedPlanId || requestedPreviewCacheKey) {
+        logs.push(`[融合校色] Apply 未复用预览 plan：${cachedPlanValidation.reason}；将重新采样并用 CPU 重新分析。`);
+      } else {
+        logs.push("[融合校色] Apply 未收到预览 plan；将采样并用 CPU 分析。");
+      }
       try {
         sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
         timing.mark("source 采样", { width: sourceSample.width, height: sourceSample.height });
@@ -4694,20 +4980,42 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     const sourceStats = sourceSample.stats;
     const referenceStats = referenceSample.stats;
-    const alignment = previewCache && previewCache.alignment
-      ? previewCache.alignment
-      : config.alignmentEnabled
-      ? estimateGradientAlignment(sourceSample, referenceSample, config)
-      : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
-    timing.mark("快速对齐", {
+    if (!activePlan) {
+      activePlan = buildCpuBlendMatchPlanFromSamples({
+        documentId: document.id,
+        layerId: sourceLayerId,
+        layerName: sourceLayerName,
+        bounds: sourceBounds,
+        config,
+        previewCacheKey,
+        sourceSample,
+        referenceSample,
+        alignmentConfig: config,
+        timing
+      });
+      storeBlendMatchPreviewCache(previewCacheKey, {
+        sourceSample: cloneSampleForPreviewCache(sourceSample),
+        referenceSample: cloneSampleForPreviewCache(referenceSample),
+        alignment: getPlanAlignment(activePlan),
+        plan: activePlan,
+        planId: activePlan.planId
+      });
+      logs.push(`[融合校色] Apply 已重建 CPU BlendMatchPlan：planId ${activePlan.planId}。`);
+    }
+    const alignment = getPlanAlignment(activePlan) || { applied: false, dx: 0, dy: 0, confidence: 0, reason: "missing-plan-alignment" };
+    const corrections = getPlanCorrections(activePlan) || buildCorrections(sourceStats, referenceStats, config);
+    const colorProfile = getPlanColorProfile(activePlan);
+    timing.mark(cachedPlanUsed ? "使用缓存 plan 对齐/颜色" : "使用新建 plan 对齐/颜色", {
       applied: Boolean(alignment.applied),
       confidence: Number((Number(alignment.confidence) || 0).toFixed(3)),
       reason: alignment.reason || "",
       localApplied: Boolean(alignment.localDeformation),
       localRejected: Boolean(alignment.local && alignment.local.rejected),
       localReason: alignment.local && alignment.local.reason || "",
-      cached: Boolean(previewCache && previewCache.alignment)
+      cachedPlan: cachedPlanUsed,
+      planId: activePlan && activePlan.planId || ""
     });
+    logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
         logs.push(`[融合校色] 快速对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
@@ -4732,8 +5040,6 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       }
     }
 
-    const corrections = buildCorrections(sourceStats, referenceStats, config);
-    timing.mark("颜色统计");
     await selectLayerById(action, sourceLayerId);
     let resultLayer = null;
     let resultLayerId = 0;
@@ -4755,6 +5061,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         alignmentSample: sourceSample,
         config,
         corrections,
+        colorProfile,
         referenceSample,
         fullDocumentTarget,
         logs,
@@ -4822,6 +5129,10 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       },
       corrections,
       alignment,
+      planId: activePlan ? activePlan.planId : "",
+      previewCacheKey,
+      cachedPlan: cachedPlanUsed,
+      planValidation: cachedPlanValidation,
       pixelPipeline: {
         used: true,
         version: "internal-unified",
@@ -4891,24 +5202,28 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       }
     }
 
-    const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
-    timing.mark("预览颜色统计");
-    const previewAlignmentConfig = { ...config, previewFastAlignment: true };
-    const alignment = config.alignmentEnabled
-      ? estimateGradientAlignment(sourceSample, referenceSample, previewAlignmentConfig)
-      : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
-    timing.mark("预览快速对齐", {
-      applied: Boolean(alignment.applied),
-      confidence: Number((Number(alignment.confidence) || 0).toFixed(3)),
-      localApplied: Boolean(alignment.localDeformation),
-      localRejected: Boolean(alignment.local && alignment.local.rejected)
+    const plan = buildCpuBlendMatchPlanFromSamples({
+      documentId: document.id,
+      layerId: sourceLayerId,
+      layerName: sourceLayerName,
+      bounds: sourceBounds,
+      config,
+      previewCacheKey,
+      sourceSample,
+      referenceSample,
+      alignmentConfig: config,
+      timing
     });
+    const corrections = getPlanCorrections(plan);
+    const alignment = getPlanAlignment(plan);
     storeBlendMatchPreviewCache(previewCacheKey, {
       sourceSample: cloneSampleForPreviewCache(sourceSample),
       referenceSample: cloneSampleForPreviewCache(referenceSample),
-      alignment: cloneAlignmentResult(alignment)
+      alignment: cloneAlignmentResult(alignment),
+      plan,
+      planId: plan.planId
     });
-    logs.push(`[融合校色] 预览已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}。`);
+    logs.push(`[融合校色] 预览已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}，CPU plan ${plan.planId}。`);
     timing.logTo(logs, "[融合校色] 预览耗时");
 
     return {
@@ -4924,6 +5239,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       referenceDataUrl: referenceSample.dataUrl,
       corrections,
       alignment,
+      planId: plan.planId,
       previewCacheKey,
       config,
       logs
@@ -5021,6 +5337,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
 
   const sourceSample = modalResult.sourceSample;
   const referenceSample = modalResult.referenceSample;
+  const modalDocumentId = Number(modalResult.document && (modalResult.document.documentId || modalResult.document.id)) || Number(document && document.id) || 0;
+  const previewCacheKey = buildBlendMatchPreviewCacheKey(modalDocumentId, modalResult.layerId, modalResult.bounds, config);
   const statsStartedAt = getNowMs();
   sourceSample.stats = buildStatsFromRgbaSafe(sourceSample.data);
   referenceSample.stats = buildStatsFromRgbaSafe(referenceSample.data);
@@ -5030,24 +5348,27 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     referenceCount: referenceSample.stats.count
   });
 
-  const previewAlignmentConfig = { ...config, previewFastAlignment: true };
-  const cpuBaselineRequested = payload.gpuAlignmentValidation === true && config.alignmentEnabled;
-  const cpuAlignment = cpuBaselineRequested
-    ? estimateGradientAlignment(sourceSample, referenceSample, previewAlignmentConfig)
-    : null;
-  if (cpuAlignment) {
-    actionTiming.mark("modal 外 CPU baseline", {
-      applied: Boolean(cpuAlignment.applied),
-      confidence: Number((Number(cpuAlignment.confidence) || 0).toFixed(3)),
-      localApplied: Boolean(cpuAlignment.localDeformation),
-      localRejected: Boolean(cpuAlignment.local && cpuAlignment.local.rejected)
-    });
-  } else {
-    actionTiming.mark("modal 外 CPU baseline 跳过", {
-      requested: Boolean(payload.gpuAlignmentValidation === true),
-      alignmentEnabled: Boolean(config.alignmentEnabled)
-    });
-  }
+  const plan = buildCpuBlendMatchPlanFromSamples({
+    documentId: modalDocumentId,
+    layerId: modalResult.layerId,
+    layerName: modalResult.layerName,
+    bounds: modalResult.bounds,
+    config,
+    previewCacheKey,
+    sourceSample,
+    referenceSample,
+    alignmentConfig: config,
+    timing: actionTiming
+  });
+  const cpuAlignment = getPlanAlignment(plan);
+  const corrections = getPlanCorrections(plan);
+  storeBlendMatchPreviewCache(previewCacheKey, {
+    sourceSample: cloneSampleForPreviewCache(sourceSample),
+    referenceSample: cloneSampleForPreviewCache(referenceSample),
+    alignment: cloneAlignmentResult(cpuAlignment),
+    plan,
+    planId: plan.planId
+  });
 
   const sourceRaw = serializeSampleForWebview(sourceSample);
   const referenceRaw = serializeSampleForWebview(referenceSample);
@@ -5058,13 +5379,9 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     referenceEncodeMs: referenceRaw ? referenceRaw.encodingMs : 0
   });
 
-  logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，${cpuAlignment ? "已执行 host CPU 基准对齐" : "未执行 host CPU 快速对齐"}。`);
-  logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG，corrections 交由 WebView 用 stats 计算。`);
-  if (cpuAlignment) {
-    logs.push(`[融合校色] WebGL2 对齐验证：已用同一份预览采样在 modal 外跑 CPU 基准。`);
-  } else if (payload.gpuAlignmentValidation === true && !config.alignmentEnabled) {
-    logs.push(`[融合校色] WebGL2 对齐验证：请求了 CPU baseline，但当前对齐开关关闭，已跳过。`);
-  }
+  logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
+  logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
+  logs.push("[融合校色] WebGL2 对齐仅作为预览诊断；可复用 plan 来自主机 CPU 完整分析。");
   actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
 
   return {
@@ -5080,10 +5397,11 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     referenceDataUrl: "",
     sourceSample: sourceRaw,
     referenceSample: referenceRaw,
-    corrections: null,
-    alignment: { applied: false, dx: 0, dy: 0, confidence: 0, reason: "gpu-pending" },
+    corrections,
+    alignment: cpuAlignment,
     cpuAlignment,
-    previewCacheKey: "",
+    planId: plan.planId,
+    previewCacheKey,
     config,
     logs
   };
