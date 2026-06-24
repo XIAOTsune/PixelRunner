@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.5.3</span>
+              <span class="version-text">v2.5.4</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -111,7 +111,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.3 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.4 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -126,7 +126,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.5.3</span>
+            <span class="version-text">v2.5.4</span>
           </div>
         </div>
 
@@ -279,7 +279,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.5.3</span>
+          <span class="version-text">v2.5.4</span>
           </div>
         </div>
 
@@ -472,7 +472,7 @@
                   <input id="settingsAutoFillEmptyImageInputs" type="checkbox" />
                   <span>参考图或副图为空时，自动复用主图</span>
                 </label>
-                <span class="field-hint settings-field-hint">关闭时空的可选图片字段会直接跳过；开启后仅补齐参考图、副图、image2 等普通图片字段，不会补齐遮罩、控制图、深度图或姿态图。</span>
+                <span class="field-hint settings-field-hint">关闭时不自动复用主图，但提交多图应用前会为普通参考图、副图、image2 等空槽位填充不可见的 64x64 中性灰占位图，避免沿用 RunningHub 应用示例图；遮罩、控制图、深度图或姿态图不会自动补齐。</span>
               </div>
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">应用切换密度</span>
