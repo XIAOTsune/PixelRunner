@@ -4094,7 +4094,7 @@ button {
   min-height: 260px;
   max-height: min(64vh, 610px);
   padding: 4px;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .template-preset-tile {
@@ -4219,16 +4219,16 @@ button {
 
 .template-inline-menu {
   position: absolute;
-  top: 27px;
-  right: 4px;
-  z-index: 12;
+  top: 26px;
+  right: 0;
+  z-index: 120;
   display: flex;
   width: max-content;
-  min-width: 94px;
+  min-width: 88px;
   max-width: min(150px, calc(100vw - 24px));
   flex-direction: column;
   gap: 0;
-  padding: 7px 0;
+  padding: 4px 0;
   border: 1px solid rgba(156, 176, 196, 0.45);
   border-radius: 8px;
   background: rgba(11, 12, 13, 0.96);
@@ -4240,8 +4240,8 @@ button {
 }
 
 .template-inline-menu-item {
-  min-height: 30px;
-  padding: 5px 14px;
+  min-height: 26px;
+  padding: 4px 12px;
   border: 0;
   background: transparent;
   color: var(--text-strong);
