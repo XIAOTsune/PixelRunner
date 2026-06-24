@@ -1206,6 +1206,26 @@ function weightedStatsWhere(values, weights, predicate) {
   };
 }
 
+function serializeSampleForWebview(sample) {
+  if (!sample || !sample.data) return null;
+  const data = sample.data instanceof Uint8Array
+    ? sample.data
+    : new Uint8Array(sample.data);
+  const encodedAt = getNowMs();
+  return {
+    width: sample.width,
+    height: sample.height,
+    scaleX: sample.scaleX,
+    scaleY: sample.scaleY,
+    sourceComponents: sample.sourceComponents,
+    sourcePixelFormat: sample.sourcePixelFormat,
+    stats: sample.stats,
+    base64: arrayBufferToBase64(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)),
+    encodingMs: Number((getNowMs() - encodedAt).toFixed(1)),
+    byteLength: data.byteLength
+  };
+}
+
 function weightedPercentiles(values, weights, percentiles, predicate, min = 0, max = 255, bins = 256) {
   const safeMin = Number.isFinite(Number(min)) ? Number(min) : 0;
   const safeMax = Number.isFinite(Number(max)) && Number(max) > safeMin ? Number(max) : safeMin + 1;
@@ -4853,5 +4873,111 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
     };
   }, {
     commandName: "PixelRunner 融合校色预览"
+  });
+}
+
+export async function previewBlendMatchSamplesActiveLayer(payload = {}, context) {
+  const { photoshop, app, document } = context;
+  const core = photoshop.core;
+  const action = photoshop.action;
+  const imaging = photoshop.imaging;
+  if (!imaging || typeof imaging.getPixels !== "function" || typeof imaging.encodeImageData !== "function") {
+    throw new Error("Photoshop imaging API 不可用，无法生成融合校色预览采样。");
+  }
+  const config = getBlendMatchConfig(payload);
+
+  return core.executeAsModal(async () => {
+    const logs = [];
+    const timing = createTimingRecorder();
+    const docInfo = getDocumentInfo(document);
+    if (isUnsupportedBitsPerChannel(docInfo)) {
+      throw buildUnsupportedBitsError(docInfo);
+    }
+    const requestedLayerId = Number(payload.layerId || payload.targetLayerId) || 0;
+    if (requestedLayerId > 0) {
+      await selectLayerById(action, requestedLayerId);
+    }
+    const sourceLayer = getActiveLayer(app);
+    const sourceLayerId = getLayerId(sourceLayer);
+    if (!(sourceLayerId > 0)) throw new Error("请先选中一张 AI 返图图层。");
+    const sourceLayerName = getLayerName(sourceLayer);
+    const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
+    const previewMaxEdge = config.previewMaxEdge;
+    let sourceWasVisible = true;
+    try {
+      sourceWasVisible = sourceLayer.visible !== false;
+    } catch (_) {}
+
+    let sourceSample = null;
+    let referenceSample = null;
+    let restoredVisibility = false;
+    try {
+      sourceSample = await captureCompositeSample(imaging, document, sourceBounds, previewMaxEdge, true);
+      timing.mark("source 预览采样", { width: sourceSample.width, height: sourceSample.height });
+      await setLayerVisible(action, sourceLayerId, false);
+      referenceSample = await captureCompositeSample(imaging, document, sourceBounds, previewMaxEdge, true);
+      timing.mark("reference 预览采样", { width: referenceSample.width, height: referenceSample.height });
+      await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+      timing.mark("恢复图层");
+      restoredVisibility = true;
+    } finally {
+      if (!restoredVisibility) {
+        try {
+          await setLayerVisible(action, sourceLayerId, sourceWasVisible);
+          logs.push("[融合校色] 预览采样异常回滚：已恢复返图图层可见性。");
+        } catch (_) {}
+      }
+    }
+
+    const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+    timing.mark("预览颜色统计");
+    const previewAlignmentConfig = { ...config, previewFastAlignment: true };
+    const cpuAlignment = payload.gpuAlignmentValidation === true && config.alignmentEnabled
+      ? estimateGradientAlignment(sourceSample, referenceSample, previewAlignmentConfig)
+      : null;
+    if (cpuAlignment) {
+      timing.mark("CPU 基准对齐", {
+        applied: Boolean(cpuAlignment.applied),
+        confidence: Number((Number(cpuAlignment.confidence) || 0).toFixed(3)),
+        localApplied: Boolean(cpuAlignment.localDeformation),
+        localRejected: Boolean(cpuAlignment.local && cpuAlignment.local.rejected)
+      });
+    }
+    const sourceRaw = serializeSampleForWebview(sourceSample);
+    const referenceRaw = serializeSampleForWebview(referenceSample);
+    timing.mark("预览 raw 序列化", {
+      sourceBytes: sourceRaw ? sourceRaw.byteLength : 0,
+      referenceBytes: referenceRaw ? referenceRaw.byteLength : 0,
+      sourceEncodeMs: sourceRaw ? sourceRaw.encodingMs : 0,
+      referenceEncodeMs: referenceRaw ? referenceRaw.encodingMs : 0
+    });
+    logs.push(`[融合校色] 预览采样已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}，${cpuAlignment ? "已执行 host CPU 基准对齐" : "未执行 host CPU 快速对齐"}。`);
+    if (cpuAlignment) {
+      logs.push(`[融合校色] WebGL2 对齐验证：已用同一份预览采样跑 CPU 基准。`);
+    }
+    timing.logTo(logs, "[融合校色] 预览采样耗时");
+
+    return {
+      ok: true,
+      action: "blendMatchPreviewSamples",
+      document: getDocumentInfo(app.activeDocument),
+      layerId: sourceLayerId,
+      layerName: sourceLayerName,
+      bounds: sourceBounds,
+      width: sourceSample.width,
+      height: sourceSample.height,
+      sourceDataUrl: sourceSample.dataUrl,
+      referenceDataUrl: referenceSample.dataUrl,
+      sourceSample: sourceRaw,
+      referenceSample: referenceRaw,
+      corrections,
+      alignment: { applied: false, dx: 0, dy: 0, confidence: 0, reason: "gpu-pending" },
+      cpuAlignment,
+      previewCacheKey: "",
+      config,
+      logs
+    };
+  }, {
+    commandName: "PixelRunner 融合校色预览采样"
   });
 }

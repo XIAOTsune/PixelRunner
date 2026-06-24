@@ -52,6 +52,9 @@
     previewBusy: false,
     preview: null,
     previewRenderer: null,
+    alignmentEngine: null,
+    alignmentGpuUnavailableReason: "",
+    alignmentValidationDone: false,
     previewRenderMode: "cpu",
     previewAssets: null,
     previewCache: null,
@@ -263,6 +266,7 @@
       const modal = getById("blendMatchModal");
       if (modal) modal.classList.remove("is-open");
     }
+    disposeAlignmentEngine();
   }
 
   function resetSettings() {
@@ -332,6 +336,115 @@
     }
     localState.previewRenderer = null;
     localState.previewRenderMode = "cpu";
+  }
+
+  function ensureAlignmentEngine() {
+    if (localState.alignmentEngine) return localState.alignmentEngine;
+    if (!modules.blendMatchWebglAlignment || typeof modules.blendMatchWebglAlignment.createWebglAlignmentEngine !== "function") {
+      localState.alignmentGpuUnavailableReason = "webgl-alignment-module-missing";
+      return null;
+    }
+    try {
+      if (typeof modules.blendMatchWebglAlignment.detectSupport === "function") {
+        const support = modules.blendMatchWebglAlignment.detectSupport();
+        if (!support || !support.supported) {
+          localState.alignmentGpuUnavailableReason = support && support.reason ? support.reason : "webgl2-unavailable";
+          return null;
+        }
+      }
+      localState.alignmentEngine = modules.blendMatchWebglAlignment.createWebglAlignmentEngine();
+      localState.alignmentGpuUnavailableReason = "";
+      return localState.alignmentEngine;
+    } catch (error) {
+      localState.alignmentEngine = null;
+      localState.alignmentGpuUnavailableReason = error && error.message ? error.message : "webgl-alignment-create-failed";
+      console.warn("[PixelRunner] BlendMatch WebGL alignment unavailable:", error);
+      return null;
+    }
+  }
+
+  function disposeAlignmentEngine() {
+    if (localState.alignmentEngine && typeof localState.alignmentEngine.dispose === "function") {
+      try {
+        localState.alignmentEngine.dispose();
+      } catch (_) {}
+    }
+    localState.alignmentEngine = null;
+  }
+
+  function decodeBase64Bytes(base64) {
+    const text = String(base64 || "");
+    if (!text) return null;
+    const binary = window.atob(text);
+    const out = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      out[index] = binary.charCodeAt(index);
+    }
+    return out;
+  }
+
+  function decodePreviewSample(rawSample) {
+    if (!rawSample || typeof rawSample !== "object") return null;
+    const startedAt = getPreviewNowMs();
+    const data = decodeBase64Bytes(rawSample.base64);
+    return data
+      ? {
+          width: Math.max(1, Number(rawSample.width) || 1),
+          height: Math.max(1, Number(rawSample.height) || 1),
+          scaleX: Number(rawSample.scaleX) || 1,
+          scaleY: Number(rawSample.scaleY) || 1,
+          data,
+          byteLength: data.byteLength,
+          decodeMs: getPreviewNowMs() - startedAt
+        }
+      : null;
+  }
+
+  function formatAlignmentComparison(gpuAlignment, cpuAlignment) {
+    if (!gpuAlignment || !cpuAlignment) return "无可比结果";
+    const dxDelta = Math.abs((Number(gpuAlignment.dx) || 0) - (Number(cpuAlignment.dx) || 0));
+    const dyDelta = Math.abs((Number(gpuAlignment.dy) || 0) - (Number(cpuAlignment.dy) || 0));
+    const scaleDelta = Math.max(
+      Math.abs((Number(gpuAlignment.scaleXPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleXPercent || cpuAlignment.scalePercent) || 100)),
+      Math.abs((Number(gpuAlignment.scaleYPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleYPercent || cpuAlignment.scalePercent) || 100))
+    );
+    const rotationDelta = Math.abs((Number(gpuAlignment.rotation) || 0) - (Number(cpuAlignment.rotation) || 0));
+    const confidenceDelta = Math.abs((Number(gpuAlignment.confidence) || 0) - (Number(cpuAlignment.confidence) || 0));
+    return `dx 差 ${dxDelta.toFixed(2)}px / dy 差 ${dyDelta.toFixed(2)}px / scale 差 ${scaleDelta.toFixed(3)}% / rotation 差 ${rotationDelta.toFixed(3)}° / confidence 差 ${confidenceDelta.toFixed(3)}`;
+  }
+
+  function getGpuAlignmentValidationMode() {
+    try {
+      return String(window.localStorage && window.localStorage.getItem("pixelrunner.blendMatch.gpuAlignmentValidation") || "once").trim();
+    } catch (_) {
+      return "once";
+    }
+  }
+
+  function shouldRequestCpuAlignmentBaseline() {
+    const mode = getGpuAlignmentValidationMode();
+    if (mode === "always" || mode === "true" || mode === "1") return true;
+    if (mode === "off" || mode === "false" || mode === "0") return false;
+    return !localState.alignmentValidationDone;
+  }
+
+  function getAlignmentDiff(gpuAlignment, cpuAlignment) {
+    if (!gpuAlignment || !cpuAlignment) return null;
+    return {
+      dx: Math.abs((Number(gpuAlignment.dx) || 0) - (Number(cpuAlignment.dx) || 0)),
+      dy: Math.abs((Number(gpuAlignment.dy) || 0) - (Number(cpuAlignment.dy) || 0)),
+      scale: Math.max(
+        Math.abs((Number(gpuAlignment.scaleXPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleXPercent || cpuAlignment.scalePercent) || 100)),
+        Math.abs((Number(gpuAlignment.scaleYPercent || gpuAlignment.scalePercent) || 100) - (Number(cpuAlignment.scaleYPercent || cpuAlignment.scalePercent) || 100))
+      ),
+      rotation: Math.abs((Number(gpuAlignment.rotation) || 0) - (Number(cpuAlignment.rotation) || 0)),
+      confidence: Math.abs((Number(gpuAlignment.confidence) || 0) - (Number(cpuAlignment.confidence) || 0))
+    };
+  }
+
+  function isAlignmentDiffAcceptable(diff) {
+    if (!diff) return true;
+    return diff.dx <= 10 && diff.dy <= 10 && diff.scale <= 1.25 && diff.rotation <= 1.25;
   }
 
   function loadImage(src) {
@@ -860,54 +973,167 @@
     }, 96);
   }
 
+  function logPreviewLines(lines, level = "info") {
+    if (!modules.ui || typeof modules.ui.logToWorkspace !== "function") return;
+    (Array.isArray(lines) ? lines : []).forEach((line) => modules.ui.logToWorkspace(line, level));
+  }
+
+  function buildAlignmentMeta(alignment) {
+    const localMeta = alignment && alignment.local && alignment.local.enabled
+      ? ` / 网格 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}${alignment.localDeformation ? " 已启用" : " 已跳过"}`
+      : "";
+    if (alignment && alignment.applied) {
+      const prefix = alignment.gpu ? "GPU v1 / " : "";
+      return `${prefix}左融合前 / 右融合后 / dx ${alignment.dx}px / dy ${alignment.dy}px / X ${Number(alignment.scaleXPercent || alignment.scalePercent || 100).toFixed(2)}% / Y ${Number(alignment.scaleYPercent || alignment.scalePercent || 100).toFixed(2)}% / 旋转 ${Number(alignment.rotation || 0).toFixed(2)}° / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${localMeta}`;
+    }
+    return `左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围${localMeta}`;
+  }
+
+  async function installPreviewResult(result) {
+    const [sourceImage, referenceImage] = await Promise.all([
+      loadImage(result.sourceDataUrl),
+      loadImage(result.referenceDataUrl)
+    ]);
+    localState.preview = {
+      ...result,
+      sourceSample: null,
+      referenceSample: null,
+      sourceImage,
+      referenceImage,
+      boundsWidth: result.bounds ? Math.max(1, Number(result.bounds.right) - Number(result.bounds.left)) : result.width,
+      boundsHeight: result.bounds ? Math.max(1, Number(result.bounds.bottom) - Number(result.bounds.top)) : result.height
+    };
+    setPreviewState("实时预览");
+    setText("blendMatchPreviewMeta", buildAlignmentMeta(result.alignment));
+    drawPreviewCanvas();
+  }
+
+  function isGpuAlignmentUsable(alignment) {
+    if (!alignment || alignment.gpu !== true) return false;
+    if (!Number.isFinite(Number(alignment.score))) return false;
+    if (!Number.isFinite(Number(alignment.confidence))) return false;
+    if (!alignment.search || !(Number(alignment.search.scoreCalls) > 0)) return false;
+    if (Number(alignment.score) <= -0.95) return false;
+    return true;
+  }
+
+  async function refreshPreviewWithCpu(startedAt, fallbackReason = "", gpuAlignment = null) {
+    if (fallbackReason && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] GPU 预览路径回退 CPU：${fallbackReason}。`, "warn");
+    }
+    const result = await modules.runtime.callHost("photoshop.runToolAction", [{
+      ...buildPayload(),
+      action: "blendMatchPreview"
+    }], { timeoutMs: 45000 });
+    const hostDoneAt = getPreviewNowMs();
+    logPreviewLines(result && result.logs, "info");
+    if (gpuAlignment && result && result.alignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, result.alignment)}。`, "info");
+    }
+    await installPreviewResult(result);
+    const drawDoneAt = getPreviewNowMs();
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载+canvas ${formatPreviewMs(drawDoneAt - hostDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+    }
+  }
+
+  async function useSampleCpuBaselinePreview(sampleResult, startedAt, fallbackReason, gpuAlignment = null) {
+    if (!sampleResult || !sampleResult.cpuAlignment) return false;
+    if (fallbackReason && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] GPU 预览路径使用 CPU 基准结果：${fallbackReason}。`, "warn");
+    }
+    const baselineResult = {
+      ...sampleResult,
+      alignment: sampleResult.cpuAlignment,
+      sourceSample: null,
+      referenceSample: null,
+      cpuAlignment: null,
+      previewCacheKey: ""
+    };
+    if (gpuAlignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}。`, "info");
+    }
+    await installPreviewResult(baselineResult);
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+CPU基准 ${formatPreviewMs(getPreviewNowMs() - startedAt)} / 未二次调用 CPU 预览。`, "info");
+    }
+    return true;
+  }
+
   async function refreshPreview() {
     if (localState.previewBusy || !modules.runtime.isPluginRuntime()) return;
     localState.previewBusy = true;
     setPreviewState("正在采样");
     const startedAt = getPreviewNowMs();
-    let hostDoneAt = startedAt;
-    let imagesDoneAt = startedAt;
     try {
-      const result = await modules.runtime.callHost("photoshop.runToolAction", [{
-        ...buildPayload(),
-        action: "blendMatchPreview"
-      }], { timeoutMs: 45000 });
-      hostDoneAt = getPreviewNowMs();
-      const logs = Array.isArray(result && result.logs) ? result.logs : [];
-      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
+      if (!localState.settings.alignmentEnabled) {
+        await refreshPreviewWithCpu(startedAt, "");
+        return;
       }
-      const [sourceImage, referenceImage] = await Promise.all([
-        loadImage(result.sourceDataUrl),
-        loadImage(result.referenceDataUrl)
-      ]);
-      imagesDoneAt = getPreviewNowMs();
-      localState.preview = {
-        ...result,
-        sourceImage,
-        referenceImage,
-        boundsWidth: result.bounds ? Math.max(1, Number(result.bounds.right) - Number(result.bounds.left)) : result.width,
-        boundsHeight: result.bounds ? Math.max(1, Number(result.bounds.bottom) - Number(result.bounds.top)) : result.height
-      };
-      setPreviewState("实时预览");
-      const alignment = result.alignment;
-      const localMeta = alignment && alignment.local && alignment.local.enabled
-        ? ` / 网格 ${alignment.local.validTiles || 0}/${alignment.local.totalTiles || 0}${alignment.localDeformation ? " 已启用" : " 已跳过"}`
-        : "";
-      setText("blendMatchPreviewMeta", alignment && alignment.applied
-        ? `左融合前 / 右融合后 / dx ${alignment.dx}px / dy ${alignment.dy}px / X ${Number(alignment.scaleXPercent || alignment.scalePercent || 100).toFixed(2)}% / Y ${Number(alignment.scaleYPercent || alignment.scalePercent || 100).toFixed(2)}% / 旋转 ${Number(alignment.rotation || 0).toFixed(2)}° / 置信 ${Number(alignment.confidence || 0).toFixed(2)}${localMeta}`
-        : `左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围${localMeta}`);
-      drawPreviewCanvas();
+      const engine = ensureAlignmentEngine();
+      if (!engine) {
+        await refreshPreviewWithCpu(startedAt, localState.alignmentGpuUnavailableReason || "WebGL2 对齐不可用");
+        return;
+      }
+      const requestCpuBaseline = shouldRequestCpuAlignmentBaseline();
+      const sampleResult = await modules.runtime.callHost("photoshop.runToolAction", [{
+        ...buildPayload(),
+        gpuAlignmentValidation: requestCpuBaseline,
+        action: "blendMatchPreviewSamples"
+      }], { timeoutMs: 45000 });
+      const hostDoneAt = getPreviewNowMs();
+      logPreviewLines(sampleResult && sampleResult.logs, "info");
+      if (requestCpuBaseline) localState.alignmentValidationDone = true;
+      const decodeStartedAt = getPreviewNowMs();
+      const sourceSample = decodePreviewSample(sampleResult && sampleResult.sourceSample);
+      const referenceSample = decodePreviewSample(sampleResult && sampleResult.referenceSample);
+      const decodeDoneAt = getPreviewNowMs();
+      if (!sourceSample || !referenceSample) {
+        await refreshPreviewWithCpu(startedAt, "raw 采样解码失败");
+        return;
+      }
+      const gpuStartedAt = getPreviewNowMs();
+      const gpuAlignment = engine.estimateGradientAlignmentGpu(sourceSample, referenceSample, {
+        ...(sampleResult.config || localState.settings),
+        previewFastAlignment: true
+      });
+      const gpuDoneAt = getPreviewNowMs();
+      if (!isGpuAlignmentUsable(gpuAlignment)) {
+        if (await useSampleCpuBaselinePreview(sampleResult, startedAt, `GPU 结果异常：${gpuAlignment && gpuAlignment.reason || "unknown"}`, gpuAlignment)) return;
+        await refreshPreviewWithCpu(startedAt, `GPU 结果异常：${gpuAlignment && gpuAlignment.reason || "unknown"}`, gpuAlignment);
+        return;
+      }
+      if (sampleResult.cpuAlignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        const diff = getAlignmentDiff(gpuAlignment, sampleResult.cpuAlignment);
+        modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}。`, "info");
+        if (!isAlignmentDiffAcceptable(diff)) {
+          if (await useSampleCpuBaselinePreview(sampleResult, startedAt, `GPU/CPU 偏差过大：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}`, gpuAlignment)) return;
+          await refreshPreviewWithCpu(startedAt, `GPU/CPU 偏差过大：${formatAlignmentComparison(gpuAlignment, sampleResult.cpuAlignment)}`, gpuAlignment);
+          return;
+        }
+      }
+      sampleResult.alignment = gpuAlignment;
+      sampleResult.previewCacheKey = "";
+      await installPreviewResult(sampleResult);
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载 ${formatPreviewMs(imagesDoneAt - hostDoneAt)} / canvas 绘制 ${formatPreviewMs(drawDoneAt - imagesDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+        const timings = gpuAlignment.timings || {};
+        const search = gpuAlignment.search || {};
+        modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐：可用，覆盖 Sobel + global translation/scale；剩余 CPU 阶段 affine-refine/local-mesh 本轮未接入预览热路径。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] WebGL2 对齐耗时：raw 解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / GPU 初始化 ${formatPreviewMs(timings.init || 0)} / 上传 ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / global search ${formatPreviewMs(timings.globalSearch || 0)} / GPU 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / score calls ${search.scoreCalls || 0} / batch ${search.batchSize || 0}。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样 ${formatPreviewMs(hostDoneAt - startedAt)} / raw解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / GPU对齐 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / 图片加载+canvas ${formatPreviewMs(drawDoneAt - gpuDoneAt)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
       }
     } catch (error) {
       const message = error && error.message ? error.message : "预览刷新失败";
-      setPreviewState(is16BitErrorMessage(message) ? "不支持 16 位" : "预览失败");
-      setText("blendMatchPreviewMeta", message);
-      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] 预览失败：${message}。前端等待 ${formatPreviewMs(getPreviewNowMs() - startedAt)}。`, "warn");
+      try {
+        await refreshPreviewWithCpu(startedAt, `GPU 预览路径失败：${message}`);
+      } catch (fallbackError) {
+        const fallbackMessage = fallbackError && fallbackError.message ? fallbackError.message : message;
+        setPreviewState(is16BitErrorMessage(fallbackMessage) ? "不支持 16 位" : "预览失败");
+        setText("blendMatchPreviewMeta", fallbackMessage);
+        if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+          modules.ui.logToWorkspace(`[融合校色] 预览失败：${fallbackMessage}。前端等待 ${formatPreviewMs(getPreviewNowMs() - startedAt)}。`, "warn");
+        }
       }
     } finally {
       localState.previewBusy = false;
