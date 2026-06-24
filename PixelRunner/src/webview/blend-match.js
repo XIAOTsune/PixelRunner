@@ -226,6 +226,7 @@
     setChecked("blendMatchBackupToggle", settings.createBackupLayer);
     setChecked("blendMatchAlignmentToggle", settings.alignmentEnabled);
     setChecked("blendMatchAutoToggle", settings.autoEnabled);
+    updatePreviewControls();
   }
 
   function readSettingsFromInputs() {
@@ -257,6 +258,10 @@
     }
     setText("blendMatchPanelStatus", "当前图层：使用 Photoshop 当前活动图层");
     renderSettings();
+    setPreviewLoadingState("正在采样图层", "正在采样当前图层并生成融合预览");
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace("[融合校色] 已开始准备预览采样：打开面板后立即刷新当前图层。", "info");
+    }
     void refreshPreview();
   }
 
@@ -297,8 +302,95 @@
     return payload;
   }
 
-  function setPreviewState(message) {
-    setText("blendMatchPreviewState", message);
+  function setPreviewFrameMode(mode, message) {
+    const frame = getById("blendMatchPreviewFrame");
+    const empty = getById("blendMatchPreviewEmpty");
+    const normalizedMode = mode === "loading" || mode === "error" || mode === "empty" ? mode : "ready";
+    if (frame) {
+      frame.classList.toggle("is-loading", normalizedMode === "loading");
+      frame.classList.toggle("is-error", normalizedMode === "error");
+      frame.classList.toggle("is-empty", normalizedMode === "empty");
+      frame.setAttribute("aria-busy", normalizedMode === "loading" ? "true" : "false");
+    }
+    if (empty && message != null) {
+      empty.textContent = String(message);
+    }
+  }
+
+  function setPreviewState(message, options = {}) {
+    const state = getById("blendMatchPreviewState");
+    if (state) {
+      state.textContent = String(message || "");
+      const mode = options && options.mode;
+      state.classList.toggle("is-loading", mode === "loading");
+      state.classList.toggle("is-error", mode === "error");
+      state.classList.toggle("is-ready", mode === "ready");
+    }
+    if (options && Object.prototype.hasOwnProperty.call(options, "mode")) {
+      setPreviewFrameMode(options.mode, options.placeholder);
+    }
+  }
+
+  function setPreviewLoadingState(message, detail) {
+    setPreviewState(message, {
+      mode: "loading",
+      placeholder: detail || message
+    });
+    if (detail) setText("blendMatchPreviewMeta", detail);
+    updatePreviewControls();
+  }
+
+  function setPreviewErrorState(message, detail) {
+    const safeMessage = message || "预览失败";
+    setPreviewState(safeMessage, {
+      mode: "error",
+      placeholder: detail || safeMessage
+    });
+    setText("blendMatchPreviewMeta", detail || safeMessage);
+    updatePreviewControls();
+  }
+
+  function setPreviewReadyState(message = "实时预览") {
+    setPreviewState(message, { mode: "ready" });
+    updatePreviewControls();
+  }
+
+  function updatePreviewControls() {
+    const refreshButton = getById("btnBlendMatchRefreshPreview");
+    if (refreshButton) {
+      refreshButton.disabled = Boolean(localState.previewBusy || localState.busy);
+      refreshButton.textContent = localState.previewBusy ? "准备中" : "刷新预览";
+      refreshButton.setAttribute("aria-busy", localState.previewBusy ? "true" : "false");
+    }
+
+    const applyButton = getById("btnBlendMatchApply");
+    if (applyButton) {
+      const waitingForPreview = Boolean(localState.previewBusy);
+      applyButton.disabled = Boolean(localState.busy || waitingForPreview);
+      applyButton.textContent = localState.busy
+        ? "融合中"
+        : waitingForPreview
+          ? "预览准备中"
+          : "分析并融合";
+      applyButton.setAttribute("aria-busy", localState.busy ? "true" : "false");
+    }
+  }
+
+  function waitForPreviewPaint() {
+    return new Promise((resolve) => {
+      const finish = () => {
+        if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+          window.setTimeout(resolve, 0);
+        } else {
+          resolve();
+        }
+      };
+      if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(finish);
+      } else {
+        finish();
+      }
+    });
   }
 
   function getPreviewNowMs() {
@@ -1107,7 +1199,7 @@
 
   function drawPreviewCanvas() {
     const preview = localState.preview;
-    if (!preview || !(preview.sourceImage || preview.sourceCanvas || preview.sourceImageData) || !(preview.referenceImage || preview.referenceCanvas || preview.referenceImageData)) return;
+    if (!preview || !(preview.sourceImage || preview.sourceCanvas || preview.sourceImageData) || !(preview.referenceImage || preview.referenceCanvas || preview.referenceImageData)) return false;
     const split = getPreviewSplit();
     localState.previewView.split = split;
     const cacheKey = buildPreviewAssetKey(preview, localState.settings);
@@ -1116,26 +1208,27 @@
     if (renderGpuPreview(split)) {
       localState.previewRenderMode = "webgl2";
       applyPreviewTransform();
-      return;
+      return true;
     }
 
     if (!localState.previewAssets || localState.previewAssets.key !== assetKey) {
       localState.previewAssets = buildPreviewAssets(preview);
     }
-    if (!localState.previewAssets) return;
+    if (!localState.previewAssets) return false;
 
     if (!localState.previewCache || localState.previewCache.key !== cacheKey) {
       localState.previewCache = buildCpuPreviewCache(preview, localState.settings);
     }
-    if (!localState.previewCache) return;
+    if (!localState.previewCache) return false;
 
     const rendered = renderCpuPreviewCache(localState.previewCache, split);
     if (!rendered) {
-      setPreviewState("预览失败");
-      return;
+      setPreviewErrorState("预览失败", "预览画布渲染失败，请刷新重试");
+      return false;
     }
     localState.previewRenderMode = localState.previewRenderer ? "webgl2" : "cpu";
     applyPreviewTransform();
+    return true;
   }
 
   function schedulePreviewRender(options = {}) {
@@ -1236,11 +1329,19 @@
         modules.ui.logToWorkspace("[融合校色] 预览颜色仍处于 simplified color fallback；最终 Apply 会优先消费 host ColorPlan。", "info");
       }
     }
-    setPreviewState("实时预览");
+    setPreviewLoadingState("正在生成融合预览", "正在绘制融合前后对比");
     setText("blendMatchPreviewMeta", `${buildAlignmentMeta(result.alignment)} / ${formatColorPlanMeta(localState.preview)}`);
     const drawStartedAt = getPreviewNowMs();
-    drawPreviewCanvas();
+    const rendered = drawPreviewCanvas();
     const drawDoneAt = getPreviewNowMs();
+    if (rendered) {
+      setPreviewReadyState("实时预览");
+    } else {
+      setPreviewErrorState("预览失败", "预览画布渲染失败，请刷新重试");
+    }
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] preview planId 准备完成：${result && result.planId || "无"}，previewCacheKey=${result && result.previewCacheKey || "无"}。`, "info");
+    }
     return {
       rawCanvasMs,
       rawCanvas: Boolean(sourceCanvas && referenceCanvas),
@@ -1263,11 +1364,20 @@
     if (fallbackReason && modules.ui && typeof modules.ui.logToWorkspace === "function") {
       modules.ui.logToWorkspace(`[融合校色] GPU 预览路径回退 CPU：${fallbackReason}。`, "warn");
     }
+    setPreviewLoadingState("正在采样图层", "正在采样图层并生成 CPU 融合预览");
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace("[融合校色] preview host call 开始：blendMatchPreview。", "info");
+    }
+    await waitForPreviewPaint();
     const result = await modules.runtime.callHost("photoshop.runToolAction", [{
       ...buildPayload(),
       action: "blendMatchPreview"
     }], { timeoutMs: 45000 });
     const hostDoneAt = getPreviewNowMs();
+    setPreviewLoadingState("正在解码预览", "正在载入预览图像");
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace(`[融合校色] preview host call 结束：blendMatchPreview，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
+    }
     logPreviewLines(result && result.logs, "info");
     if (gpuAlignment && result && result.alignment && modules.ui && typeof modules.ui.logToWorkspace === "function") {
       modules.ui.logToWorkspace(`[融合校色] GPU/CPU 对齐对比：${formatAlignmentComparison(gpuAlignment, result.alignment)}。`, "info");
@@ -1284,6 +1394,7 @@
     if (fallbackReason && modules.ui && typeof modules.ui.logToWorkspace === "function") {
       modules.ui.logToWorkspace(`[融合校色] GPU 预览路径使用 CPU 基准结果：${fallbackReason}。`, "warn");
     }
+    setPreviewLoadingState("正在生成融合预览", "正在使用 CPU 基准 plan 绘制融合预览");
     const baselineResult = {
       ...sampleResult,
       alignment: sampleResult.cpuAlignment,
@@ -1303,9 +1414,13 @@
   async function refreshPreview() {
     if (localState.previewBusy || !modules.runtime.isPluginRuntime()) return;
     localState.previewBusy = true;
-    setPreviewState("正在采样");
+    setPreviewLoadingState("正在采样图层", "正在采样当前图层并生成融合预览");
     const startedAt = getPreviewNowMs();
     try {
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace("[融合校色] 预览准备已开始：等待 UI 绘制采样状态后调用 Photoshop。", "info");
+      }
+      await waitForPreviewPaint();
       if (!localState.settings.alignmentEnabled) {
         await refreshPreviewWithCpu(startedAt, "");
         return;
@@ -1319,13 +1434,19 @@
       const validationMode = getGpuAlignmentValidationMode();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(`[融合校色] WebGL2 预览路径：host CPU plan=always，GPU v1 仅用于诊断/对比，validation=${validationMode || "once"}。`, "info");
+        modules.ui.logToWorkspace("[融合校色] preview host call 开始：blendMatchPreviewSamples。", "info");
       }
+      setPreviewLoadingState("正在采样图层", "正在从 Photoshop 采样 source/reference raw 图层");
       const sampleResult = await modules.runtime.callHost("photoshop.runToolAction", [{
         ...buildPayload(),
         gpuAlignmentValidation: requestCpuBaseline,
         action: "blendMatchPreviewSamples"
       }], { timeoutMs: 45000 });
       const hostDoneAt = getPreviewNowMs();
+      setPreviewLoadingState("正在解码采样", "正在解码 raw 采样数据");
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace(`[融合校色] preview host call 结束：blendMatchPreviewSamples，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
+      }
       logPreviewLines(sampleResult && sampleResult.logs, "info");
       if (requestCpuBaseline || sampleResult && sampleResult.cpuAlignment) localState.alignmentValidationDone = true;
       const decodeStartedAt = getPreviewNowMs();
@@ -1338,11 +1459,13 @@
       }
       sampleResult.sourceSample = sourceSample;
       sampleResult.referenceSample = referenceSample;
+      setPreviewLoadingState("正在分析颜色", "正在准备融合颜色参数");
       const correctionsStartedAt = getPreviewNowMs();
       if (!sampleResult.corrections) {
         sampleResult.corrections = buildCorrectionsFromStats(sourceSample.stats, referenceSample.stats, sampleResult.config || localState.settings);
       }
       const correctionsDoneAt = getPreviewNowMs();
+      setPreviewLoadingState("正在分析对齐", "正在运行 WebGL2 对齐诊断并校验 CPU plan");
       const gpuStartedAt = getPreviewNowMs();
       const gpuAlignment = engine.estimateGradientAlignmentGpu(sourceSample, referenceSample, {
         ...(sampleResult.config || localState.settings),
@@ -1364,6 +1487,7 @@
         }
       }
       sampleResult.gpuPreviewAlignment = gpuAlignment;
+      setPreviewLoadingState("正在生成融合预览", "正在生成融合前后对比");
       const installSummary = await installPreviewResult(sampleResult);
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
@@ -1380,14 +1504,14 @@
         await refreshPreviewWithCpu(startedAt, `GPU 预览路径失败：${message}`);
       } catch (fallbackError) {
         const fallbackMessage = fallbackError && fallbackError.message ? fallbackError.message : message;
-        setPreviewState(is16BitErrorMessage(fallbackMessage) ? "不支持 16 位" : "预览失败");
-        setText("blendMatchPreviewMeta", fallbackMessage);
+        setPreviewErrorState(is16BitErrorMessage(fallbackMessage) ? "不支持 16 位" : "预览失败", fallbackMessage);
         if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
           modules.ui.logToWorkspace(`[融合校色] 预览失败：${fallbackMessage}。前端等待 ${formatPreviewMs(getPreviewNowMs() - startedAt)}。`, "warn");
         }
       }
     } finally {
       localState.previewBusy = false;
+      updatePreviewControls();
     }
   }
 

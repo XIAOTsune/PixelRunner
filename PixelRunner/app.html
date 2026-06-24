@@ -1210,7 +1210,7 @@
 
       <div class="blend-match-preview-panel">
         <div class="blend-match-preview-toolbar">
-          <span id="blendMatchPreviewState" class="status-chip">等待预览</span>
+          <span id="blendMatchPreviewState" class="status-chip" aria-live="polite">等待预览</span>
           <div class="blend-match-preview-toolbar-actions">
             <button id="btnBlendMatchRefreshPreview" class="mini-btn" type="button">刷新预览</button>
           </div>
@@ -1223,7 +1223,7 @@
             <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="reset" title="重置预览">⟲</button>
             <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="in" title="放大预览">+</button>
           </div>
-          <div id="blendMatchPreviewEmpty" class="blend-match-preview-empty">打开面板后刷新当前图层边界预览</div>
+          <div id="blendMatchPreviewEmpty" class="blend-match-preview-empty" role="status" aria-live="polite">打开面板后刷新当前图层边界预览</div>
         </div>
         <div id="blendMatchPreviewMeta" class="blend-match-preview-meta">左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围</div>
       </div>
