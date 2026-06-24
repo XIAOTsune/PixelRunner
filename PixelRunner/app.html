@@ -1223,6 +1223,13 @@
             <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="reset" title="重置预览">⟲</button>
             <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="in" title="放大预览">+</button>
           </div>
+          <div id="blendMatchPreviewOverlay" class="blend-match-preview-overlay" data-mode="idle" aria-live="polite" aria-hidden="true">
+            <span class="blend-match-preview-overlay-spinner" aria-hidden="true"></span>
+            <span class="blend-match-preview-overlay-copy">
+              <span id="blendMatchPreviewOverlayTitle" class="blend-match-preview-overlay-title">准备预览</span>
+              <span id="blendMatchPreviewOverlayDetail" class="blend-match-preview-overlay-detail">等待采样当前图层</span>
+            </span>
+          </div>
           <div id="blendMatchPreviewEmpty" class="blend-match-preview-empty" role="status" aria-live="polite">打开面板后刷新当前图层边界预览</div>
         </div>
         <div id="blendMatchPreviewMeta" class="blend-match-preview-meta">左侧融合前 / 右侧融合后 / 青色边界 / 绿色羽化范围</div>

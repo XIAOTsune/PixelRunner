@@ -5638,6 +5638,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
 
     logs.push(`[融合校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
     logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
+    logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
     logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan，WebView 将随后请求 host CPU plan 补齐；Apply 在 plan 准备完成前保持禁用。");
     actionTiming.logTo(logs, "[融合校色] 快速预览采样 host action 耗时");
 
@@ -5719,6 +5720,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
 
   logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
   logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
+  logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
   logs.push("[融合校色] WebGL2 对齐仅作为预览诊断；可复用 plan 来自主机 CPU 完整分析。");
   actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
 
@@ -5835,6 +5837,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       planId: plan.planId
     });
     logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    logs.push("[融合校色] CPU plan hydrate：命中 preview raw sample cache，未重新 Photoshop getPixels，未重新切换图层可见性。");
   } else {
     logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);
   }
@@ -5844,6 +5847,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   const colorPlan = getPlanColorPlan(plan);
   const colorSummary = summarizeColorPlan(colorPlan);
   actionTiming.logTo(logs, "[融合校色] CPU plan 后台补齐耗时");
+  logs.push(`[融合校色] CPU plan ready total：${formatMs(actionTiming.totalMs())}，validation=${validation.reason || "valid"}。`);
 
   return {
     ok: true,

@@ -56,6 +56,7 @@
     alignmentGpuUnavailableReason: "",
     alignmentValidationDone: false,
     previewPlanBusy: false,
+    previewGpuDiagnosticBusy: false,
     previewRenderMode: "cpu",
     previewAssets: null,
     previewCache: null,
@@ -303,6 +304,62 @@
     return payload;
   }
 
+  function setPreviewOverlay(mode, title, detail, options = {}) {
+    const overlay = getById("blendMatchPreviewOverlay");
+    const titleNode = getById("blendMatchPreviewOverlayTitle");
+    const detailNode = getById("blendMatchPreviewOverlayDetail");
+    const normalizedMode = ["blocking", "compact", "gpu", "error"].includes(String(mode || ""))
+      ? String(mode)
+      : "idle";
+    if (overlay) {
+      overlay.setAttribute("data-mode", normalizedMode);
+      overlay.setAttribute("aria-hidden", normalizedMode === "idle" ? "true" : "false");
+      if (options && options.status) {
+        overlay.setAttribute("data-status", String(options.status));
+      } else {
+        overlay.removeAttribute("data-status");
+      }
+    }
+    if (titleNode) titleNode.textContent = String(title || "");
+    if (detailNode) detailNode.textContent = String(detail || "");
+  }
+
+  function clearPreviewOverlay() {
+    setPreviewOverlay("idle", "", "");
+  }
+
+  function updatePreviewBackgroundOverlay() {
+    if (localState.preview && localState.preview.planHydrationError) {
+      setPreviewOverlay(
+        "compact",
+        "可信应用计划未就绪",
+        "预览可继续查看，Apply 会按旧路径重新 CPU 分析",
+        { status: "warn" }
+      );
+      return;
+    }
+    const waitingForPlan = Boolean(localState.previewPlanBusy || (localState.preview && localState.preview.planPending));
+    if (waitingForPlan && localState.preview) {
+      setPreviewOverlay(
+        "compact",
+        "正在分析对齐",
+        "后台准备可信 CPU BlendMatchPlan",
+        { status: "pending" }
+      );
+      return;
+    }
+    if (localState.previewGpuDiagnosticBusy && localState.preview) {
+      setPreviewOverlay(
+        "gpu",
+        "GPU 诊断中",
+        "仅做 shadow validation，不影响最终 Apply",
+        { status: "info" }
+      );
+      return;
+    }
+    if (localState.preview) clearPreviewOverlay();
+  }
+
   function setPreviewFrameMode(mode, message) {
     const frame = getById("blendMatchPreviewFrame");
     const empty = getById("blendMatchPreviewEmpty");
@@ -337,6 +394,7 @@
       mode: "loading",
       placeholder: detail || message
     });
+    setPreviewOverlay("blocking", message, detail || message, { status: "loading" });
     if (detail) setText("blendMatchPreviewMeta", detail);
     updatePreviewControls();
   }
@@ -347,12 +405,14 @@
       mode: "error",
       placeholder: detail || safeMessage
     });
+    setPreviewOverlay("error", safeMessage, detail || safeMessage, { status: "error" });
     setText("blendMatchPreviewMeta", detail || safeMessage);
     updatePreviewControls();
   }
 
   function setPreviewReadyState(message = "实时预览") {
     setPreviewState(message, { mode: "ready" });
+    updatePreviewBackgroundOverlay();
     updatePreviewControls();
   }
 
@@ -947,12 +1007,65 @@
     };
   }
 
+  function buildSampleStatsKey(stats) {
+    if (!stats || typeof stats !== "object") return "";
+    return [
+      stats.count,
+      stats.meanR,
+      stats.meanG,
+      stats.meanB,
+      stats.meanLuma,
+      stats.weightedMeanR,
+      stats.weightedMeanG,
+      stats.weightedMeanB,
+      stats.weightedMeanLuma,
+      stats.stdLuma,
+      stats.detailEnergy
+    ].map((value) => Number(Number(value) || 0).toFixed(2)).join(",");
+  }
+
+  function buildSampleDataFingerprint(sample) {
+    if (!sample || typeof sample !== "object") return "missing";
+    const data = sample.data || sample.rgba || null;
+    const byteLength = Number(sample.byteLength || (data && (data.byteLength || data.length)) || 0) || 0;
+    if (!data || byteLength <= 0) return `${byteLength}:no-data:${buildSampleStatsKey(sample.stats)}`;
+    const bytes = data instanceof Uint8Array
+      ? data
+      : data.buffer instanceof ArrayBuffer
+        ? new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength || data.length || byteLength)
+        : Array.isArray(data)
+          ? new Uint8Array(data)
+          : null;
+    if (!bytes || !bytes.length) return `${byteLength}:unreadable:${buildSampleStatsKey(sample.stats)}`;
+    let hash = 2166136261;
+    const probeCount = Math.min(96, bytes.length);
+    const stride = Math.max(1, Math.floor(bytes.length / probeCount));
+    for (let index = 0; index < bytes.length; index += stride) {
+      hash ^= bytes[index];
+      hash = Math.imul(hash, 16777619);
+    }
+    const tailStart = Math.max(0, bytes.length - 16);
+    for (let index = tailStart; index < bytes.length; index += 1) {
+      hash ^= bytes[index];
+      hash = Math.imul(hash, 16777619);
+    }
+    return [
+      byteLength,
+      (hash >>> 0).toString(36),
+      buildSampleStatsKey(sample.stats)
+    ].join(":");
+  }
+
   function buildPreviewRawKey(preview) {
     return String(preview && preview.rawAssetKey || [
+      preview && preview.previewCacheKey ? preview.previewCacheKey : "",
+      preview && preview.planId ? preview.planId : "",
       preview && preview.sourceSample ? preview.sourceSample.byteLength : 0,
       preview && preview.referenceSample ? preview.referenceSample.byteLength : 0,
       preview && preview.width ? preview.width : 0,
       preview && preview.height ? preview.height : 0,
+      preview && preview.sourceSample ? buildSampleDataFingerprint(preview.sourceSample) : "",
+      preview && preview.referenceSample ? buildSampleDataFingerprint(preview.referenceSample) : "",
       preview && preview.sourceDataUrl ? preview.sourceDataUrl.length : 0,
       preview && preview.referenceDataUrl ? preview.referenceDataUrl.length : 0
     ].join("|"));
@@ -1506,9 +1619,7 @@
       logGpuAlignmentCandidate(localState.preview.gpuAlignmentCandidate, validation, "CPU plan ready shadow validation");
     }
     setText("blendMatchPreviewMeta", `${buildAlignmentMeta(localState.preview.alignment)} / ${formatColorPlanMeta(localState.preview)}`);
-    if (!localState.previewCache) {
-      schedulePreviewRender({ immediate: true });
-    }
+    schedulePreviewRender({ immediate: true });
     updatePreviewControls();
     return true;
   }
@@ -1516,6 +1627,7 @@
   async function hydratePreviewPlanFromHost(sampleResult, startedAt) {
     if (!sampleResult || !sampleResult.previewCacheKey || !modules.runtime.isPluginRuntime()) return;
     localState.previewPlanBusy = true;
+    updatePreviewBackgroundOverlay();
     updatePreviewControls();
     try {
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
@@ -1528,6 +1640,7 @@
       }], { timeoutMs: 45000 });
       logPreviewLines(planResult && planResult.logs, "info");
       const merged = mergePreviewPlanHydration(planResult);
+      if (merged) setPreviewReadyState("实时预览");
       if (merged && modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(`[融合校色] CPU plan 已补齐：planId=${planResult && planResult.planId || "无"}，从打开面板到 plan ready ${formatPreviewMs(getPreviewNowMs() - startedAt)}；Apply 将复用 cached plan。`, "info");
       }
@@ -1542,12 +1655,15 @@
       }
     } finally {
       localState.previewPlanBusy = false;
+      updatePreviewBackgroundOverlay();
       updatePreviewControls();
     }
   }
 
   async function runPreviewGpuDiagnostic({ engine, sourceSample, referenceSample, sampleResult, validationMode, startedAt, decodeMs = 0, correctionsMs = 0 }) {
     if (!engine || !sourceSample || !referenceSample || !sampleResult) return;
+    localState.previewGpuDiagnosticBusy = true;
+    updatePreviewBackgroundOverlay();
     try {
       await waitForPreviewPaint();
       const gpuStartedAt = getPreviewNowMs();
@@ -1599,6 +1715,9 @@
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(`[融合校色] GPU 后台诊断失败：${error && error.message ? error.message : "unknown"}；快速预览和 CPU plan 不受影响。`, "warn");
       }
+    } finally {
+      localState.previewGpuDiagnosticBusy = false;
+      updatePreviewBackgroundOverlay();
     }
   }
 
@@ -1615,7 +1734,7 @@
 
   async function installPreviewResult(result) {
     const rawStartedAt = getPreviewNowMs();
-    const rawAssetKey = `${buildPreviewRawKey(result)}|seq:${++localState.previewAssetSeq}`;
+    const rawAssetKey = buildPreviewRawKey(result) || `preview:${++localState.previewAssetSeq}`;
     let sourceImage = null;
     let referenceImage = null;
     let sourceImageData = null;
@@ -1799,7 +1918,7 @@
         modules.ui.logToWorkspace("[融合校色] 预览准备已开始：等待 UI 绘制采样状态后调用 Photoshop。", "info");
       }
       await waitForPreviewPaint();
-      const engine = localState.settings.alignmentEnabled ? ensureAlignmentEngine() : null;
+      const shouldRunGpuDiagnostic = Boolean(localState.settings.alignmentEnabled);
       const requestCpuBaseline = shouldRequestCpuAlignmentBaseline();
       const validationMode = getGpuAlignmentValidationMode();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
@@ -1828,6 +1947,10 @@
         await refreshPreviewWithCpu(startedAt, "raw 采样解码失败");
         return;
       }
+      const transferredBytes = Number(sourceSample.byteLength || 0) + Number(referenceSample.byteLength || 0);
+      if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+        modules.ui.logToWorkspace(`[融合校色] bridge transfer + decode：raw payload ${transferredBytes} bytes，source decode ${formatPreviewMs(sourceSample.decodeMs)} / reference decode ${formatPreviewMs(referenceSample.decodeMs)} / 前端 decode 总计 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)}。`, "info");
+      }
       sampleResult.sourceSample = sourceSample;
       sampleResult.referenceSample = referenceSample;
       setPreviewLoadingState("正在分析颜色", "正在准备融合颜色参数");
@@ -1842,22 +1965,29 @@
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(`[融合校色] 快速预览已显示：planPending=${sampleResult.planPending ? "true" : "false"}，CPU plan 和 GPU 诊断转入后台；GPU candidate 不作为最终应用依据。`, "info");
-        modules.ui.logToWorkspace(`[融合校色] 快速预览前端耗时：host采样+传输 ${formatPreviewMs(hostDoneAt - startedAt)} / raw解码 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / preview canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - correctionsDoneAt)} / 首屏总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] quick preview render：corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - correctionsDoneAt)} / render install ${formatPreviewMs(installSummary ? installSummary.installMs : drawDoneAt - correctionsDoneAt)}。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] first preview visible total：host raw capture+encode+bridge ${formatPreviewMs(hostDoneAt - startedAt)} / front decode ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / quick render ${formatPreviewMs(drawDoneAt - correctionsStartedAt)} / total ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
       }
       void hydratePreviewPlanFromHost(sampleResult, startedAt);
-      if (engine) {
-        void runPreviewGpuDiagnostic({
-          engine,
-          sourceSample,
-          referenceSample,
-          sampleResult,
-          validationMode,
-          startedAt,
-          decodeMs: decodeDoneAt - decodeStartedAt,
-          correctionsMs: correctionsDoneAt - correctionsStartedAt
-        });
-      } else if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] GPU candidate 未启动：${localState.alignmentGpuUnavailableReason || "WebGL2 对齐不可用"}；快速预览和 CPU plan 后台补齐继续。`, "warn");
+      if (shouldRunGpuDiagnostic) {
+        const engine = ensureAlignmentEngine();
+        if (engine) {
+          if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+            modules.ui.logToWorkspace("[融合校色] GPU diagnostic 已在首屏预览显示后启动，不阻塞 raw preview。", "info");
+          }
+          void runPreviewGpuDiagnostic({
+            engine,
+            sourceSample,
+            referenceSample,
+            sampleResult,
+            validationMode,
+            startedAt,
+            decodeMs: decodeDoneAt - decodeStartedAt,
+            correctionsMs: correctionsDoneAt - correctionsStartedAt
+          });
+        } else if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+          modules.ui.logToWorkspace(`[融合校色] GPU candidate 未启动：${localState.alignmentGpuUnavailableReason || "WebGL2 对齐不可用"}；快速预览和 CPU plan 后台补齐继续。`, "warn");
+        }
       }
     } catch (error) {
       const message = error && error.message ? error.message : "预览刷新失败";
