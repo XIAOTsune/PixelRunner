@@ -54,7 +54,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.5.5</span>
+              <span class="version-text">v2.5.6</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -120,7 +120,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.5 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.5.6 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -135,7 +135,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.5.5</span>
+            <span class="version-text">v2.5.6</span>
           </div>
         </div>
 
@@ -288,7 +288,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.5.5</span>
+          <span class="version-text">v2.5.6</span>
           </div>
         </div>
 
@@ -470,6 +470,14 @@
                   <span class="field-label">最大并发任务数</span>
                   <input id="settingsMaxConcurrentTasksInput" class="field-input" type="number" min="1" max="100" placeholder="1-100" />
                 </label>
+              </div>
+              <div class="field toggle-field settings-toggle-field">
+                <span class="field-label">本地排队</span>
+                <label class="checkbox-line">
+                  <input id="settingsLocalQueueEnabledInput" type="checkbox" />
+                  <span>轮流上传任务，一个完成后再上传下一个</span>
+                </label>
+                <span class="field-hint settings-field-hint">适合 API 不支持多个任务同时上传的情况。开启后新任务会先进入本地队列，当前云端任务完成或结束后再自动提交；关闭后等待中的本地任务会按当前最大并发数立即放行。</span>
               </div>
               <label class="field">
                 <span class="field-label">AI 优化应用 ID</span>

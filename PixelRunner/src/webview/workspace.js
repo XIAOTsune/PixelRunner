@@ -17,6 +17,9 @@
   const taskTrackingTimers = new Map();
   const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
+  const pendingRunSubmissions = new Map();
+  const activeRunSubmissions = new Set();
+  let runSubmissionFlushScheduled = false;
 
   function hasVisibleModal() {
     return Boolean(document.querySelector(".overlay-modal.is-open, .overlay-modal.is-closing"));
@@ -650,9 +653,14 @@
     return ["succeeded", "success", "done", "failed", "error", "cancelled", "canceled"].includes(normalized);
   }
 
+  function isLocalQueuedTask(task) {
+    return Boolean(task && String(task.queueMode || "").trim() === "local" && String(task.status || "").trim().toLowerCase() === "queued");
+  }
+
   function isTaskCancellable(task) {
     if (!task || typeof task !== "object") return false;
     if (isTaskTerminalStatus(task.status)) return false;
+    if (isLocalQueuedTask(task)) return true;
     if (["placing", "downloading"].includes(String(task.status || "").trim().toLowerCase())) return false;
     return Boolean(String(task.remoteTaskId || task.taskId || "").trim()) && String(task.status || "").trim().toLowerCase() !== "submitting";
   }
@@ -828,11 +836,23 @@
   }
 
   function getActiveRunningTasks() {
-    return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status));
+    return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status) && !isLocalQueuedTask(task));
+  }
+
+  function getLocalQueuedTasks() {
+    return getRunningTasks().filter(isLocalQueuedTask);
+  }
+
+  function isLocalQueueEnabled() {
+    return modules.state.state.settings && modules.state.state.settings.localQueueEnabled === true;
   }
 
   function getMaxConcurrentTasks() {
     return Math.max(1, Number(modules.state.state.settings.maxConcurrentTasks) || modules.state.DEFAULT_SETTINGS.maxConcurrentTasks || 3);
+  }
+
+  function canAcceptQueuedSubmission() {
+    return isLocalQueueEnabled() || getActiveRunningTasks().length < getMaxConcurrentTasks();
   }
 
   function formatConcurrencyLabel(activeCount = getActiveRunningTasks().length, maxConcurrentTasks = getMaxConcurrentTasks()) {
@@ -1313,20 +1333,25 @@
     const hasCurrentApp = !!state.currentApp;
     const runningTasks = getRunningTasks();
     const activeRunningTasks = getActiveRunningTasks();
+    const queuedTasks = getLocalQueuedTasks();
     const hasRunningTask = runningTasks.length > 0;
     const activeCount = activeRunningTasks.length;
+    const queuedCount = queuedTasks.length;
     const maxConcurrentTasks = getMaxConcurrentTasks();
     const concurrencyReached = activeCount >= maxConcurrentTasks;
+    const localQueueEnabled = isLocalQueueEnabled();
     const cooldownActive = isRunCooldownActive();
     const cooldownSeconds = Math.max(1, Math.ceil((runButtonCooldownUntil - Date.now()) / 1000));
     const quickMode = state.workspaceMode === "quick";
 
     if (runButton) {
-      runButton.disabled = quickMode || !hasCurrentApp || concurrencyReached || cooldownActive;
+      runButton.disabled = quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       if (quickMode) {
         runButton.textContent = "点击快捷入口运行";
       } else if (!hasCurrentApp) {
         runButton.textContent = "开始运行";
+      } else if (concurrencyReached && localQueueEnabled) {
+        runButton.textContent = `加入队列 ${queuedCount} 等待`;
       } else if (concurrencyReached) {
         runButton.textContent = `并发已满 ${activeCount}/${maxConcurrentTasks}`;
       } else if (cooldownActive) {
@@ -1342,7 +1367,7 @@
       const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
       const plusModeEnabled = state.settings && state.settings.plusModeEnabled === true;
       runPlusButton.hidden = !plusModeEnabled;
-      runPlusButton.disabled = quickMode || !hasCurrentApp || isThirdPartyApp || concurrencyReached || cooldownActive;
+      runPlusButton.disabled = quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
       runPlusButton.setAttribute(
         "aria-label",
@@ -1354,16 +1379,18 @@
       if (quickMode) {
         taskStatusSummary.textContent =
           activeCount > 0
-            ? `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，快捷入口仍可在并发未满时继续提交。`
+            ? `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个${queuedCount ? `，本地排队 ${queuedCount} 个` : ""}。`
             : "后台任务：选择一个快捷入口即可直接运行。";
       } else if (!hasCurrentApp) {
         taskStatusSummary.textContent = "后台任务：无，请先选择应用。";
+      } else if (concurrencyReached && localQueueEnabled) {
+        taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，本地排队 ${queuedCount} 个；新任务会先排队，空出位置后自动提交。`;
       } else if (concurrencyReached) {
         taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，已达到并发上限，请等待任务完成或在卡片中取消。`;
       } else if (cooldownActive) {
         taskStatusSummary.textContent = `后台任务：已进入提交冷却，${cooldownSeconds}s 后可继续发送新任务。`;
       } else if (activeCount > 0) {
-        taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，可继续发送新任务，也可在卡片中逐个取消。`;
+        taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个${queuedCount ? `，本地排队 ${queuedCount} 个` : ""}，可继续发送新任务，也可在卡片中逐个取消。`;
       } else if (hasRunningTask) {
         taskStatusSummary.textContent = `后台任务：当前无进行中任务，已保留最近 ${runningTasks.length} 条任务卡片。`;
       } else {
@@ -1384,9 +1411,11 @@
     document.querySelectorAll(".quick-entry-run-btn").forEach((button) => {
       const isSubmitting = button.dataset.submitting === "true";
       const concurrencyLabel = formatConcurrencyLabel(activeCount, maxConcurrentTasks);
-      button.disabled = isSubmitting || concurrencyReached || cooldownActive;
+      button.disabled = isSubmitting || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       if (isSubmitting) {
         button.textContent = `提交中 ${concurrencyLabel}`;
+      } else if (concurrencyReached && localQueueEnabled) {
+        button.textContent = `排队 ${queuedCount}`;
       } else if (concurrencyReached) {
         button.textContent = `并发已满 ${concurrencyLabel}`;
       } else if (cooldownActive) {
@@ -1798,6 +1827,7 @@
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
+      queueMode: String(patch.queueMode || "").trim(),
       appName: String(patch.appName || "").trim(),
       status: hasOwn("status") ? String(patch.status || "running").trim() || "running" : undefined,
       detail: String(patch.detail || "").trim(),
@@ -1829,6 +1859,7 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        queueMode: nextTask.queueMode || current.queueMode || "",
         appName: nextTask.appName || current.appName || "",
         status: nextTask.status || current.status || "running",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
@@ -1847,6 +1878,7 @@
     } else {
       list.unshift({
         ...nextTask,
+        queueMode: nextTask.queueMode || "",
         status: nextTask.status || "running"
       });
     }
@@ -1854,6 +1886,7 @@
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     syncPrimaryRunningTask();
     updateRunButtonState();
+    if (nextTask.status && isTaskTerminalStatus(nextTask.status)) scheduleRunSubmissionFlush();
     return state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
   }
 
@@ -1873,6 +1906,7 @@
       ...nextTaskPatch,
       taskId: normalizedNextTaskId,
       remoteTaskId: String(nextTaskPatch.remoteTaskId || normalizedNextTaskId).trim(),
+      queueMode: String(nextTaskPatch.queueMode || "").trim(),
       finishedAt: Number(nextTaskPatch.finishedAt) > 0 ? Number(nextTaskPatch.finishedAt) : Number(current.finishedAt) || 0,
       updatedAt: Date.now()
     };
@@ -1887,11 +1921,14 @@
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId) return;
     stopTaskStatusTracking(normalizedTaskId);
+    pendingRunSubmissions.delete(normalizedTaskId);
+    activeRunSubmissions.delete(normalizedTaskId);
     state.runningTasks = (Array.isArray(state.runningTasks) ? state.runningTasks : []).filter(
       (item) => String(item.taskId || "") !== normalizedTaskId
     );
     syncPrimaryRunningTask();
     updateRunButtonState();
+    scheduleRunSubmissionFlush();
   }
 
   function stopTaskStatusTracking(taskId = "") {
@@ -2364,7 +2401,7 @@
     if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法运行快捷入口");
     if (!modules.state.state.settings.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
     if (!modules.state.resolveAppId(app)) throw new Error("快捷入口引用的应用缺少有效的 appId，请重新保存应用后再创建快捷入口");
-    if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
+    if (!canAcceptQueuedSubmission()) {
       throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
     }
     if (isRunCooldownActive()) throw new Error("请不要短时间连续点击运行按钮，稍后再试。");
@@ -2385,7 +2422,7 @@
     const payload = buildQuickRunPayload(entry, app, effectiveValues);
     const sourceDocument = resolveSourceDocumentFromImageInputs(app, effectiveValues, asset.document || null);
     await modules.quickEntries.markQuickEntryRan(entry.id);
-    startRunTaskFlow(payload, sourceDocument);
+    enqueueRunTaskFlow(payload, sourceDocument);
   }
 
   function buildAutoPlacementPayload(result) {
@@ -2601,10 +2638,94 @@
     }, RUN_BUTTON_COOLDOWN_MS + 80);
   }
 
-  async function startRunTaskFlow(payload, sourceDocument) {
+  function getRunnableTaskLimit() {
+    return Math.max(1, isLocalQueueEnabled() ? 1 : getMaxConcurrentTasks());
+  }
+
+  function getPendingSubmissionAge(taskId) {
+    const pending = pendingRunSubmissions.get(String(taskId || ""));
+    return Number(pending && pending.queuedAt) || 0;
+  }
+
+  function getQueuedSubmissionTasks() {
+    return getLocalQueuedTasks()
+      .filter((task) => pendingRunSubmissions.has(String(task.taskId || "")))
+      .sort((left, right) => {
+        const leftQueuedAt = getPendingSubmissionAge(left.taskId) || Number(left.createdAt || 0);
+        const rightQueuedAt = getPendingSubmissionAge(right.taskId) || Number(right.createdAt || 0);
+        return leftQueuedAt - rightQueuedAt;
+      });
+  }
+
+  function scheduleRunSubmissionFlush() {
+    if (runSubmissionFlushScheduled) return;
+    runSubmissionFlushScheduled = true;
+    window.setTimeout(() => {
+      runSubmissionFlushScheduled = false;
+      flushQueuedTasks();
+    }, 0);
+  }
+
+  function enqueueRunTaskFlow(payload, sourceDocument) {
+    const localTaskId = createLocalTaskId();
+    const providerLabel = getTaskProviderLabel(payload);
+    pendingRunSubmissions.set(localTaskId, {
+      payload,
+      sourceDocument,
+      queuedAt: Date.now()
+    });
+    upsertRunningTask({
+      taskId: localTaskId,
+      remoteTaskId: "",
+      provider: payload.provider || "",
+      queueMode: "local",
+      appName: payload.appName,
+      status: "queued",
+      detail: `本地排队中，等待前面的 ${providerLabel} 任务完成后自动上传。`,
+      sourceDocument,
+      createdAt: Date.now(),
+      submittedAt: 0
+    });
+    modules.ui.logToWorkspace(`任务已加入本地队列：${payload.appName || payload.appId || "未命名任务"}`, "info");
+    scheduleRunSubmissionFlush();
+    return localTaskId;
+  }
+
+  function flushQueuedTasks() {
+    const limit = getRunnableTaskLimit();
+    const activeTasks = getActiveRunningTasks();
+    const activeTaskIds = new Set(activeTasks.map((task) => String(task.taskId || "")));
+    const launchingCount = Array.from(activeRunSubmissions).filter((taskId) => !activeTaskIds.has(String(taskId || ""))).length;
+    const activeCount = activeTasks.length + launchingCount;
+    const available = Math.max(0, limit - activeCount);
+    if (available <= 0) {
+      updateRunButtonState();
+      return;
+    }
+
+    const queued = getQueuedSubmissionTasks().slice(0, available);
+    queued.forEach((task) => {
+      const localTaskId = String(task.taskId || "");
+      const pending = pendingRunSubmissions.get(localTaskId);
+      if (!pending) return;
+      pendingRunSubmissions.delete(localTaskId);
+      activeRunSubmissions.add(localTaskId);
+      void startRunTaskFlow(pending.payload, pending.sourceDocument, { localTaskId })
+        .catch((error) => {
+          modules.ui.logToWorkspace(`本地队列任务执行异常：${error && error.message ? error.message : error}`, "error");
+        })
+        .finally(() => {
+          activeRunSubmissions.delete(localTaskId);
+          scheduleRunSubmissionFlush();
+        });
+    });
+    updateRunButtonState();
+  }
+
+  async function startRunTaskFlow(payload, sourceDocument, options = {}) {
     const isThirdPartyTask = payload && payload.provider === "grs";
     const statusLabel = isThirdPartyTask ? "GRS" : "RunningHub";
-    const tempTaskId = createLocalTaskId();
+    const tempTaskId = String(options.localTaskId || "").trim() || createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
     let submissionAccountSnapshot = getCurrentAccountSnapshot();
@@ -2620,6 +2741,7 @@
       taskId: tempTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      queueMode: "",
       appName: payload.appName,
       status: "submitting",
       detail: isThirdPartyTask
@@ -2652,12 +2774,15 @@
       replaceRunningTaskId(tempTaskId, {
         taskId: remoteTaskId,
         remoteTaskId,
+        queueMode: "",
         appName: payload.appName,
         status: "running",
         detail: `任务已提交，正在等待 ${statusLabel} 返回结果。`,
         sourceDocument,
         submittedAt: Date.now()
       });
+      activeRunSubmissions.delete(tempTaskId);
+      scheduleRunSubmissionFlush();
       if (!isThirdPartyTask) scheduleAccountSummaryRefresh(600);
 
       const pollResult = await modules.runtime.callHost(
@@ -2837,7 +2962,7 @@
     }
     if (!payload.apiKey) throw new Error(payload.provider === "grs" ? "请先在第三方支持中配置 GRS API Key" : "请先在设置页保存 RunningHub API Key");
     if (!payload.appId) throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
-    if (getActiveRunningTasks().length >= getMaxConcurrentTasks()) {
+    if (!canAcceptQueuedSubmission()) {
       throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
     }
     if (isRunCooldownActive()) {
@@ -2852,7 +2977,7 @@
       modules.state.state.formValues,
       fallbackSourceDocument
     );
-    startRunTaskFlow(payload, sourceDocument);
+    enqueueRunTaskFlow(payload, sourceDocument);
   }
 
   function bindWorkspaceActions() {
@@ -3191,6 +3316,23 @@
         const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === taskId);
         const remoteTaskId = String((currentTask && (currentTask.remoteTaskId || currentTask.taskId)) || taskId).trim();
         if (!remoteTaskId) return;
+        if (isLocalQueuedTask(currentTask)) {
+          target.disabled = true;
+          pendingRunSubmissions.delete(taskId);
+          upsertRunningTask({
+            taskId,
+            remoteTaskId: "",
+            appName: currentTask && currentTask.appName ? currentTask.appName : "",
+            status: "cancelled",
+            detail: "本地排队任务已取消，尚未上传到云端。",
+            failureLabel: "已取消",
+            finishedAt: Date.now()
+          });
+          modules.ui.logToWorkspace(`本地排队任务已取消：${currentTask && currentTask.appName ? currentTask.appName : taskId}`, "warn");
+          flushQueuedTasks();
+          target.disabled = false;
+          return;
+        }
         const isThirdPartyTask = currentTask && String(currentTask.appName || "") === "第三方 API";
         const grs = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs ? modules.state.state.thirdPartySettings.grs : {};
         const cancelMethod = isThirdPartyTask ? "thirdParty.grs.cancelTask" : "runninghub.cancelTask";
@@ -3263,6 +3405,7 @@
   modules.workspace = {
     setModalOpen,
     updateRunButtonState,
+    flushQueuedTasks,
     updateThirdPartyDynamicOptions,
     renderWorkspace,
     buildRunPayload,

@@ -123,6 +123,9 @@
         settings.maxConcurrentTasks ?? modules.state.DEFAULT_SETTINGS.maxConcurrentTasks
       );
     }
+    if (modules.runtime.getById("settingsLocalQueueEnabledInput")) {
+      modules.runtime.getById("settingsLocalQueueEnabledInput").checked = settings.localQueueEnabled === true;
+    }
     if (modules.runtime.getById("settingsAiOptimizeAppIdInput")) {
       modules.runtime.getById("settingsAiOptimizeAppIdInput").value = String(
         settings.aiOptimizeAppId ?? modules.state.DEFAULT_AI_OPTIMIZE_APP_ID
@@ -601,6 +604,7 @@
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
+      localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
       autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
@@ -615,6 +619,7 @@
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
+      localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
       autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
@@ -631,6 +636,7 @@
         pollInterval: nextSettings.pollInterval,
         timeout: nextSettings.timeout,
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
+        localQueueEnabled: nextSettings.localQueueEnabled,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
         autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
         appPickerLayout: nextSettings.appPickerLayout,
@@ -710,6 +716,7 @@
       pollInterval: rawSettings && rawSettings.pollInterval,
       timeout: rawSettings && rawSettings.timeout,
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
+      localQueueEnabled: rawSettings ? rawSettings.localQueueEnabled : undefined,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
       autoFillEmptyImageInputs: rawSettings ? rawSettings.autoFillEmptyImageInputs : undefined,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
@@ -853,6 +860,7 @@
       "settingsPollIntervalInput",
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
+      "settingsLocalQueueEnabledInput",
       "settingsAiOptimizeAppIdInput",
       "settingsAutoFillEmptyImageInputs",
       "settingsAppPickerLayoutInput",
@@ -860,6 +868,7 @@
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsAutoFillEmptyImageInputs",
+      "settingsLocalQueueEnabledInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ]);
@@ -1078,10 +1087,21 @@
             maxConcurrentTasks: element.value
           });
           modules.state.state.settings.maxConcurrentTasks = previewSettings.maxConcurrentTasks;
-          if (
-            modules.workspace &&
-            typeof modules.workspace.updateRunButtonState === "function"
-          ) {
+          if (modules.workspace && typeof modules.workspace.flushQueuedTasks === "function") {
+            modules.workspace.flushQueuedTasks();
+          } else if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
+            modules.workspace.updateRunButtonState();
+          }
+        }
+        if (id === "settingsLocalQueueEnabledInput") {
+          const previewSettings = modules.state.normalizeSettings({
+            ...modules.state.state.settings,
+            localQueueEnabled: element.checked === true
+          });
+          modules.state.state.settings.localQueueEnabled = previewSettings.localQueueEnabled;
+          if (modules.workspace && typeof modules.workspace.flushQueuedTasks === "function") {
+            modules.workspace.flushQueuedTasks();
+          } else if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
             modules.workspace.updateRunButtonState();
           }
         }

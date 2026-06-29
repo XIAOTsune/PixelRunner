@@ -55,8 +55,24 @@
     modules.state.state.appEditorSnapshot = getAppEditorDraft();
   }
 
+  function isEmptyAppEditorDraft(draftText) {
+    const draft = modules.runtime.readJsonText(draftText, null);
+    if (!draft || typeof draft !== "object") return false;
+    return (
+      !String(draft.id || "").trim() &&
+      !String(draft.name || "").trim() &&
+      !String(draft.appId || "").trim() &&
+      !String(draft.description || "").trim() &&
+      !String(draft.previewImage || "").trim() &&
+      ["", "[]"].includes(String(draft.inputsText || "").trim())
+    );
+  }
+
   function isAppEditorDirty() {
-    return getAppEditorDraft() !== String(modules.state.state.appEditorSnapshot || "");
+    const snapshot = String(modules.state.state.appEditorSnapshot || "");
+    const draft = getAppEditorDraft();
+    if (!snapshot) return !isEmptyAppEditorDraft(draft);
+    return draft !== snapshot;
   }
 
   function isPickerEditorDirty() {
