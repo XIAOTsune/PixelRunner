@@ -20,7 +20,9 @@
     starLength: 58,
     starCount: 6,
     starRotation: 0,
-    streakLength: 86
+    starVisible: 68,
+    streakLength: 86,
+    streakVisible: 62
   };
   const GLOW_THRESHOLD_CURVE_EXPONENT = 2.15;
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
@@ -246,7 +248,9 @@
     const glowStarLengthInput = runtime.getById("glowStarLengthInput");
     const glowStarCountInput = runtime.getById("glowStarCountInput");
     const glowStarRotationInput = runtime.getById("glowStarRotationInput");
+    const glowStarVisibleInput = runtime.getById("glowStarVisibleInput");
     const glowStreakLengthInput = runtime.getById("glowStreakLengthInput");
+    const glowStreakVisibleInput = runtime.getById("glowStreakVisibleInput");
     const glowThresholdInput = runtime.getById("glowThresholdInput");
     const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
     const glowColorEnabledInput = runtime.getById("glowColorEnabledInput");
@@ -260,7 +264,9 @@
     const glowStarLengthParamValue = runtime.getById("glowStarLengthParamValue");
     const glowStarCountParamValue = runtime.getById("glowStarCountParamValue");
     const glowStarRotationParamValue = runtime.getById("glowStarRotationParamValue");
+    const glowStarVisibleParamValue = runtime.getById("glowStarVisibleParamValue");
     const glowStreakLengthParamValue = runtime.getById("glowStreakLengthParamValue");
+    const glowStreakVisibleParamValue = runtime.getById("glowStreakVisibleParamValue");
     const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
     const glowExposureParamValue = runtime.getById("glowExposureParamValue");
     const glowColorParamValue = runtime.getById("glowColorParamValue");
@@ -363,7 +369,9 @@
       starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 10, 220),
       starCount: readGlowSlider(glowStarCountInput, GLOW_DEFAULTS.starCount, 4, 12),
       starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -90, 90),
-      streakLength: readGlowSlider(glowStreakLengthInput, GLOW_DEFAULTS.streakLength, 16, 300)
+      starVisible: readGlowSlider(glowStarVisibleInput, GLOW_DEFAULTS.starVisible, 0, 100),
+      streakLength: readGlowSlider(glowStreakLengthInput, GLOW_DEFAULTS.streakLength, 16, 300),
+      streakVisible: readGlowSlider(glowStreakVisibleInput, GLOW_DEFAULTS.streakVisible, 0, 100)
     });
 
     const setGlowButtonsDisabled = (disabled) => {
@@ -398,7 +406,9 @@
       if (glowStarLengthParamValue) glowStarLengthParamValue.textContent = String(state.starLength);
       if (glowStarCountParamValue) glowStarCountParamValue.textContent = String(state.starCount);
       if (glowStarRotationParamValue) glowStarRotationParamValue.textContent = `${state.starRotation}°`;
+      if (glowStarVisibleParamValue) glowStarVisibleParamValue.textContent = String(state.starVisible);
       if (glowStreakLengthParamValue) glowStreakLengthParamValue.textContent = String(state.streakLength);
+      if (glowStreakVisibleParamValue) glowStreakVisibleParamValue.textContent = String(state.streakVisible);
       if (glowThresholdParamValue) glowThresholdParamValue.textContent = `${(state.threshold / 100).toFixed(2)} (滑块 ${thresholdSlider})`;
       if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
       if (glowColorParamValue) glowColorParamValue.textContent = state.colorEnabled ? `${state.colorAmount}%` : "关";
@@ -727,7 +737,9 @@
         state.starLength,
         state.starCount,
         state.starRotation,
+        state.starVisible,
         state.streakLength,
+        state.streakVisible,
         state.threshold,
         state.brightnessBias,
         state.colorEnabled ? state.colorHex : "color-off",
@@ -990,7 +1002,9 @@
       glowStarLengthInput,
       glowStarCountInput,
       glowStarRotationInput,
+      glowStarVisibleInput,
       glowStreakLengthInput,
+      glowStreakVisibleInput,
       glowThresholdInput,
       glowBrightnessBiasInput,
       glowColorAmountInput,
@@ -1039,7 +1053,9 @@
       glowStarLengthInput,
       glowStarCountInput,
       glowStarRotationInput,
+      glowStarVisibleInput,
       glowStreakLengthInput,
+      glowStreakVisibleInput,
       glowThresholdInput,
       glowBrightnessBiasInput,
       glowColorEnabledInput,

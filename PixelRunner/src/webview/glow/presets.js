@@ -149,7 +149,9 @@
     const starLength = clamp(config.starLength, 10, 220, 58);
     const starCount = Math.round(clamp(config.starCount, 4, 12, 6));
     const starRotation = clamp(config.starRotation, -90, 90, 0);
+    const starVisible = clamp(config.starVisible, 0, 100, 68);
     const streakLength = clamp(config.streakLength, 16, 300, 86);
+    const streakVisible = clamp(config.streakVisible, 0, 100, 62);
     const strengthRatio = strength / 100;
     const radiusRatio = radius / 500;
     const legacyRadiusRatio = Math.min(1, radius / 250);
@@ -259,6 +261,12 @@
           diagonalMix: style === "starburst" ? 0.58 : 0,
           starCount,
           rotation: style === "starburst" ? starRotation : 0,
+          visibility: style === "starburst" ? starVisible / 100 : (style === "anamorphic" ? streakVisible / 100 : 1),
+          sourceGate: style === "starburst"
+            ? clamp(0.74 - starVisible / 100 * 0.54, 0.12, 0.86, 0.36)
+            : (style === "anamorphic"
+              ? clamp(0.78 - streakVisible / 100 * 0.56, 0.14, 0.88, 0.42)
+              : 0),
           uiLength: style === "anamorphic" ? streakLength : starLength
         }
       },

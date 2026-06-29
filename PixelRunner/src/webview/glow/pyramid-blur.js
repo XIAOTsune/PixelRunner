@@ -199,13 +199,33 @@
     ];
   }
 
-  function addDirectionalSample(layer, x, y, dx, dy, distance, weight, accum) {
-    const a = sampleLayerRgb(layer, x + dx * distance, y + dy * distance);
-    const b = sampleLayerRgb(layer, x - dx * distance, y - dy * distance);
-    accum[0] += (a[0] + b[0]) * weight;
-    accum[1] += (a[1] + b[1]) * weight;
-    accum[2] += (a[2] + b[2]) * weight;
-    return weight * 2;
+  function smoothstep(edge0, edge1, value) {
+    const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(0.0001, edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  }
+
+  function sampleSourceGate(sourceLayer, x, y, gate, softness) {
+    if (!sourceLayer) return 1;
+    const r = sampleBilinear(sourceLayer, x, y, sourceLayer.r);
+    const g = sampleBilinear(sourceLayer, x, y, sourceLayer.g);
+    const b = sampleBilinear(sourceLayer, x, y, sourceLayer.b);
+    return smoothstep(gate, gate + softness, Math.max(r, g, b));
+  }
+
+  function addGatedDirectionalSample(layer, sourceLayer, x, y, dx, dy, distance, weight, gate, softness, accum) {
+    const ax = x + dx * distance;
+    const ay = y + dy * distance;
+    const bx = x - dx * distance;
+    const by = y - dy * distance;
+    const gateA = sampleSourceGate(sourceLayer, ax, ay, gate, softness);
+    const gateB = sampleSourceGate(sourceLayer, bx, by, gate, softness);
+    const pairWeight = weight * (0.18 + Math.max(gateA, gateB) * 0.82);
+    const a = sampleLayerRgb(layer, ax, ay);
+    const b = sampleLayerRgb(layer, bx, by);
+    accum[0] += (a[0] * (0.28 + gateA * 0.72) + b[0] * (0.28 + gateB * 0.72)) * pairWeight;
+    accum[1] += (a[1] * (0.28 + gateA * 0.72) + b[1] * (0.28 + gateB * 0.72)) * pairWeight;
+    accum[2] += (a[2] * (0.28 + gateA * 0.72) + b[2] * (0.28 + gateB * 0.72)) * pairWeight;
+    return pairWeight * 2;
   }
 
   function applyOpticalShape(layer, sourceLayer, params) {
@@ -218,12 +238,15 @@
     }
 
     const out = createLayer(layer.width, layer.height);
-    const steps = mode === "anamorphic" ? 15 : 11;
+    const steps = mode === "anamorphic" ? 28 : 24;
     const sharpness = Math.max(0.7, Number(optics.sharpness) || 1.6);
     const coreMix = Math.max(0.35, Math.min(1, Number(optics.coreMix) || 0.8));
     const verticalTightness = Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1));
     const starCount = Math.max(4, Math.min(12, Math.round(Number(optics.starCount) || 6)));
     const rotation = (Number(optics.rotation) || 0) * Math.PI / 180;
+    const visibility = Math.max(0, Math.min(1, Number(optics.visibility) || 1));
+    const sourceGate = Math.max(0, Math.min(1, Number(optics.sourceGate) || 0));
+    const sourceSoftness = 0.18 + (0.055 - 0.18) * visibility;
     const maxDistance = Math.max(1, Math.min(Math.max(layer.width, layer.height) * 0.45, length));
 
     for (let y = 0; y < layer.height; y += 1) {
@@ -243,26 +266,29 @@
         for (let step = 1; step <= steps; step += 1) {
           const t = step / steps;
           const distance = t * maxDistance;
-          const falloff = Math.pow(1 - t * 0.86, sharpness) * (mode === "anamorphic" ? 0.74 : 0.58);
+          const falloff = Math.pow(1 - t * 0.82, sharpness) * (mode === "anamorphic" ? 0.48 : 0.36);
           if (falloff <= 0.0001) continue;
           if (mode === "starburst") {
             for (let ray = 0; ray < starCount; ray += 1) {
               const angle = rotation + Math.PI * 2 * ray / starCount;
               const axisWeight = ray === 0 ? 1 : (0.48 + 0.2 * Math.abs(Math.cos(angle)));
-              totalWeight += addDirectionalSample(
+              totalWeight += addGatedDirectionalSample(
                 layer,
+                sourceLayer,
                 x,
                 y,
                 Math.cos(angle),
                 Math.sin(angle),
                 distance * (0.86 + 0.14 * axisWeight),
                 falloff * axisWeight,
+                sourceGate,
+                sourceSoftness,
                 accum
               );
             }
           } else {
-            totalWeight += addDirectionalSample(layer, x, y, 1, 0, distance, falloff, accum);
-            totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.12, falloff * 0.08 * verticalTightness, accum);
+            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 1, 0, distance, falloff, sourceGate, sourceSoftness, accum);
+            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 0, 1, distance * 0.1, falloff * 0.05 * verticalTightness, sourceGate, sourceSoftness, accum);
           }
         }
 

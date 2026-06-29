@@ -100,6 +100,8 @@
     uniform float uOpticsVerticalTightness;
     uniform float uOpticsStarCount;
     uniform float uOpticsRotation;
+    uniform float uOpticsVisibility;
+    uniform float uOpticsSourceGate;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -110,33 +112,43 @@
       return mat2(c, -s, s, c);
     }
 
-    vec3 samplePair(vec2 direction, float distance, float weight) {
+    float sourceGateAt(vec2 uv) {
+      float sourceEnergy = max(max(texture(uSource, uv).r, texture(uSource, uv).g), texture(uSource, uv).b);
+      float softness = mix(0.18, 0.055, clamp(uOpticsVisibility, 0.0, 1.0));
+      return smoothstep(uOpticsSourceGate, uOpticsSourceGate + softness, sourceEnergy);
+    }
+
+    vec3 samplePair(vec2 direction, float distance, float weight, inout float totalWeight) {
       vec2 offset = direction * distance * uTexel;
-      return (texture(uCombined, vUv + offset).rgb + texture(uCombined, vUv - offset).rgb) * weight;
+      vec2 uvA = vUv + offset;
+      vec2 uvB = vUv - offset;
+      float gateA = sourceGateAt(uvA);
+      float gateB = sourceGateAt(uvB);
+      float pairWeight = weight * (0.18 + max(gateA, gateB) * 0.82);
+      totalWeight += pairWeight * 2.0;
+      return (texture(uCombined, uvA).rgb * (0.28 + gateA * 0.72) + texture(uCombined, uvB).rgb * (0.28 + gateB * 0.72)) * pairWeight;
     }
 
     vec3 opticalShape(vec3 base) {
       if (uOpticsStrength <= 0.0001 || uOpticsLength <= 0.5 || uOpticsMode < 0.5) return base;
       float sourceEnergy = max(max(texture(uSource, vUv).r, texture(uSource, vUv).g), texture(uSource, vUv).b);
-      float localGate = pow(clamp(sourceEnergy * 1.35, 0.0, 1.0), 0.62);
+      float localGate = pow(clamp(max(sourceEnergy, sourceGateAt(vUv)) * 1.35, 0.0, 1.0), 0.62);
       vec3 accum = base * uOpticsCoreMix;
       float totalWeight = uOpticsCoreMix;
-      float steps = uOpticsMode > 1.5 ? 15.0 : 11.0;
+      float steps = uOpticsMode > 1.5 ? 28.0 : 24.0;
       mat2 rot = rotation2d(radians(uOpticsRotation));
 
-      for (int i = 1; i <= 15; i += 1) {
+      for (int i = 1; i <= 28; i += 1) {
         float stepIndex = float(i);
         if (stepIndex > steps) break;
         float t = stepIndex / steps;
         float distance = t * uOpticsLength;
-        float falloff = pow(max(0.0, 1.0 - t * 0.86), uOpticsSharpness) * (uOpticsMode > 1.5 ? 0.74 : 0.58);
+        float falloff = pow(max(0.0, 1.0 - t * 0.82), uOpticsSharpness) * (uOpticsMode > 1.5 ? 0.48 : 0.36);
         if (falloff <= 0.0001) continue;
 
         if (uOpticsMode > 1.5) {
-          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff);
-          totalWeight += falloff * 2.0;
-          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.12, falloff * 0.08 * uOpticsVerticalTightness);
-          totalWeight += falloff * 0.16 * uOpticsVerticalTightness;
+          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff, totalWeight);
+          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.1, falloff * 0.05 * uOpticsVerticalTightness, totalWeight);
         } else {
           float rays = clamp(floor(uOpticsStarCount + 0.5), 4.0, 12.0);
           for (int ray = 0; ray < 12; ray += 1) {
@@ -145,8 +157,7 @@
             float angle = 6.28318530718 * rayIndex / rays;
             vec2 direction = rot * vec2(cos(angle), sin(angle));
             float axisWeight = ray == 0 ? 1.0 : mix(0.48, 0.68, abs(cos(angle)));
-            accum += samplePair(direction, distance * mix(0.86, 1.0, axisWeight), falloff * axisWeight);
-            totalWeight += falloff * axisWeight * 2.0;
+            accum += samplePair(direction, distance * mix(0.86, 1.0, axisWeight), falloff * axisWeight, totalWeight);
           }
         }
       }
@@ -430,6 +441,8 @@
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsVerticalTightness"), Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsStarCount"), Math.max(4, Math.min(12, Number(optics.starCount) || 6)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsRotation"), Math.max(-180, Math.min(180, Number(optics.rotation) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsVisibility"), Math.max(0, Math.min(1, Number(optics.visibility) || 1)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsSourceGate"), Math.max(0, Math.min(1, Number(optics.sourceGate) || 0)));
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, width), 1 / Math.max(1, height));
       this.renderTo(target, program);
       return target;
