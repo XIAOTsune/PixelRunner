@@ -89,11 +89,76 @@
   const FINAL_SHADER = `#version 300 es
     precision highp float;
     uniform sampler2D uCombined;
+    uniform sampler2D uSource;
     uniform float uPyramidWeight;
+    uniform float uOpticsMode;
+    uniform float uOpticsStrength;
+    uniform float uOpticsLength;
+    uniform float uOpticsSharpness;
+    uniform float uOpticsCoreMix;
+    uniform float uOpticsDiagonalMix;
+    uniform float uOpticsVerticalTightness;
+    uniform float uOpticsStarCount;
+    uniform float uOpticsRotation;
+    uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
+
+    mat2 rotation2d(float angle) {
+      float s = sin(angle);
+      float c = cos(angle);
+      return mat2(c, -s, s, c);
+    }
+
+    vec3 samplePair(vec2 direction, float distance, float weight) {
+      vec2 offset = direction * distance * uTexel;
+      return (texture(uCombined, vUv + offset).rgb + texture(uCombined, vUv - offset).rgb) * weight;
+    }
+
+    vec3 opticalShape(vec3 base) {
+      if (uOpticsStrength <= 0.0001 || uOpticsLength <= 0.5 || uOpticsMode < 0.5) return base;
+      float sourceEnergy = max(max(texture(uSource, vUv).r, texture(uSource, vUv).g), texture(uSource, vUv).b);
+      float localGate = pow(clamp(sourceEnergy * 1.35, 0.0, 1.0), 0.62);
+      vec3 accum = base * uOpticsCoreMix;
+      float totalWeight = uOpticsCoreMix;
+      float steps = uOpticsMode > 1.5 ? 15.0 : 11.0;
+      mat2 rot = rotation2d(radians(uOpticsRotation));
+
+      for (int i = 1; i <= 15; i += 1) {
+        float stepIndex = float(i);
+        if (stepIndex > steps) break;
+        float t = stepIndex / steps;
+        float distance = t * uOpticsLength;
+        float falloff = pow(max(0.0, 1.0 - t * 0.86), uOpticsSharpness) * (uOpticsMode > 1.5 ? 0.74 : 0.58);
+        if (falloff <= 0.0001) continue;
+
+        if (uOpticsMode > 1.5) {
+          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff);
+          totalWeight += falloff * 2.0;
+          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.12, falloff * 0.08 * uOpticsVerticalTightness);
+          totalWeight += falloff * 0.16 * uOpticsVerticalTightness;
+        } else {
+          float rays = clamp(floor(uOpticsStarCount + 0.5), 4.0, 12.0);
+          for (int ray = 0; ray < 12; ray += 1) {
+            float rayIndex = float(ray);
+            if (rayIndex >= rays) break;
+            float angle = 6.28318530718 * rayIndex / rays;
+            vec2 direction = rot * vec2(cos(angle), sin(angle));
+            float axisWeight = ray == 0 ? 1.0 : mix(0.48, 0.68, abs(cos(angle)));
+            accum += samplePair(direction, distance * mix(0.86, 1.0, axisWeight), falloff * axisWeight);
+            totalWeight += falloff * axisWeight * 2.0;
+          }
+        }
+      }
+
+      vec3 shaped = accum / max(0.0001, totalWeight);
+      float mixAmount = clamp(uOpticsStrength * (0.45 + localGate * 0.55), 0.0, 0.92);
+      float sparkle = uOpticsMode < 1.5 ? 1.0 + localGate * uOpticsStrength * 0.22 : 1.0;
+      return mix(base, shaped * sparkle, mixAmount);
+    }
+
     void main() {
-      vec3 color = texture(uCombined, vUv).rgb * uPyramidWeight;
+      vec3 color = opticalShape(texture(uCombined, vUv).rgb) * uPyramidWeight;
       outColor = vec4(color, 1.0);
     }
   `;
@@ -214,88 +279,6 @@
       out.r[pixel] = Math.max(0, data[index]);
       out.g[pixel] = Math.max(0, data[index + 1]);
       out.b[pixel] = Math.max(0, data[index + 2]);
-    }
-    return out;
-  }
-
-  function sampleBilinear(layer, x, y, channel) {
-    const sx = Math.min(layer.width - 1, Math.max(0, x));
-    const sy = Math.min(layer.height - 1, Math.max(0, y));
-    const x0 = Math.floor(sx);
-    const y0 = Math.floor(sy);
-    const x1 = Math.min(layer.width - 1, x0 + 1);
-    const y1 = Math.min(layer.height - 1, y0 + 1);
-    const tx = sx - x0;
-    const ty = sy - y0;
-    const a = y0 * layer.width + x0;
-    const b = y0 * layer.width + x1;
-    const c = y1 * layer.width + x0;
-    const d = y1 * layer.width + x1;
-    return channel[a] * (1 - tx) * (1 - ty) +
-      channel[b] * tx * (1 - ty) +
-      channel[c] * (1 - tx) * ty +
-      channel[d] * tx * ty;
-  }
-
-  function addDirectionalSample(layer, x, y, dx, dy, distance, weight, accum) {
-    const ar = sampleBilinear(layer, x + dx * distance, y + dy * distance, layer.r);
-    const ag = sampleBilinear(layer, x + dx * distance, y + dy * distance, layer.g);
-    const ab = sampleBilinear(layer, x + dx * distance, y + dy * distance, layer.b);
-    const br = sampleBilinear(layer, x - dx * distance, y - dy * distance, layer.r);
-    const bg = sampleBilinear(layer, x - dx * distance, y - dy * distance, layer.g);
-    const bb = sampleBilinear(layer, x - dx * distance, y - dy * distance, layer.b);
-    accum[0] += (ar + br) * weight;
-    accum[1] += (ag + bg) * weight;
-    accum[2] += (ab + bb) * weight;
-    return weight * 2;
-  }
-
-  function applyOpticalShape(layer, sourceLayer, params) {
-    const optics = params && params.blur && params.blur.optics;
-    const mode = String(optics && optics.mode || "soft");
-    const strength = Math.max(0, Number(optics && optics.strength) || 0);
-    const length = Math.max(0, Number(optics && optics.length) || 0);
-    if (strength <= 0.0001 || length <= 0.5 || (mode !== "starburst" && mode !== "anamorphic")) return layer;
-
-    const out = createLayer(layer.width, layer.height);
-    const steps = mode === "anamorphic" ? 15 : 11;
-    const sharpness = Math.max(0.7, Number(optics.sharpness) || 1.6);
-    const coreMix = Math.max(0.35, Math.min(1, Number(optics.coreMix) || 0.8));
-    const diagonalMix = Math.max(0, Math.min(1, Number(optics.diagonalMix) || 0));
-    const verticalTightness = Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1));
-    const maxDistance = Math.max(1, Math.min(Math.max(layer.width, layer.height) * 0.45, length));
-
-    for (let y = 0; y < layer.height; y += 1) {
-      for (let x = 0; x < layer.width; x += 1) {
-        const index = y * layer.width + x;
-        const sourceEnergy = sourceLayer
-          ? Math.max(sourceLayer.r[index] || 0, sourceLayer.g[index] || 0, sourceLayer.b[index] || 0)
-          : Math.max(layer.r[index] || 0, layer.g[index] || 0, layer.b[index] || 0);
-        const localGate = Math.pow(Math.max(0, Math.min(1, sourceEnergy * 1.35)), 0.62);
-        const accum = [layer.r[index] * coreMix, layer.g[index] * coreMix, layer.b[index] * coreMix];
-        let totalWeight = coreMix;
-
-        for (let step = 1; step <= steps; step += 1) {
-          const t = step / steps;
-          const distance = t * maxDistance;
-          const falloff = Math.pow(1 - t * 0.86, sharpness) * (mode === "anamorphic" ? 0.74 : 0.58);
-          if (falloff <= 0.0001) continue;
-          totalWeight += addDirectionalSample(layer, x, y, 1, 0, distance, falloff, accum);
-          if (mode === "starburst") {
-            totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.82, falloff * 0.5, accum);
-            totalWeight += addDirectionalSample(layer, x, y, 0.7071, 0.7071, distance * 0.92, falloff * diagonalMix * 0.42, accum);
-            totalWeight += addDirectionalSample(layer, x, y, 0.7071, -0.7071, distance * 0.92, falloff * diagonalMix * 0.42, accum);
-          } else {
-            totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.12, falloff * 0.08 * verticalTightness, accum);
-          }
-        }
-
-        const mix = Math.max(0, Math.min(0.92, strength * (0.45 + localGate * 0.55)));
-        const sparkle = mode === "starburst" ? 1 + localGate * strength * 0.22 : 1;
-        out.r[index] = layer.r[index] * (1 - mix) + accum[0] / Math.max(0.0001, totalWeight) * mix * sparkle;
-        out.g[index] = layer.g[index] * (1 - mix) + accum[1] / Math.max(0.0001, totalWeight) * mix * sparkle;
-        out.b[index] = layer.b[index] * (1 - mix) + accum[2] / Math.max(0.0001, totalWeight) * mix * sparkle;
-      }
     }
     return out;
   }
@@ -426,14 +409,28 @@
       return target;
     }
 
-    finalComposite(combined, pyramidWeight, width, height) {
+    finalComposite(combined, sourceTexture, params, width, height) {
       const gl = this.gl;
       const target = createTarget(gl, width, height, this.targetFormat);
       if (this.allocatedTargets) this.allocatedTargets.push(target);
       const program = this.programs.final;
+      const optics = params && params.blur && params.blur.optics ? params.blur.optics : {};
+      const mode = String(optics.mode || "soft");
+      const opticsMode = mode === "starburst" ? 1 : (mode === "anamorphic" ? 2 : 0);
       this.bindProgram(program);
       this.bindTexture(program, "uCombined", combined.texture, 0);
-      gl.uniform1f(gl.getUniformLocation(program, "uPyramidWeight"), pyramidWeight);
+      this.bindTexture(program, "uSource", sourceTexture, 1);
+      gl.uniform1f(gl.getUniformLocation(program, "uPyramidWeight"), Number(params && params.blur && params.blur.pyramidWeight) || 1);
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsMode"), opticsMode);
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsStrength"), Math.max(0, Number(optics.strength) || 0));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsLength"), Math.max(0, Number(optics.length) || 0));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsSharpness"), Math.max(0.7, Number(optics.sharpness) || 1.6));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsCoreMix"), Math.max(0.35, Math.min(1, Number(optics.coreMix) || 0.8)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsDiagonalMix"), Math.max(0, Math.min(1, Number(optics.diagonalMix) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsVerticalTightness"), Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsStarCount"), Math.max(4, Math.min(12, Number(optics.starCount) || 6)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsRotation"), Math.max(-180, Math.min(180, Number(optics.rotation) || 0)));
+      gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, width), 1 / Math.max(1, height));
       this.renderTo(target, program);
       return target;
     }
@@ -482,7 +479,8 @@
 
         const finalTarget = this.finalComposite(
           combined,
-          params.blur.pyramidWeight || 1,
+          currentTexture,
+          params,
           width,
           height
         );
@@ -497,7 +495,6 @@
           gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
           glowLayer = rgba8ToLayer(pixels, width, height);
         }
-        glowLayer = applyOpticalShape(glowLayer, sourceLayer, params);
 
         return {
           glowLayer,

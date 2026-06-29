@@ -221,8 +221,9 @@
     const steps = mode === "anamorphic" ? 15 : 11;
     const sharpness = Math.max(0.7, Number(optics.sharpness) || 1.6);
     const coreMix = Math.max(0.35, Math.min(1, Number(optics.coreMix) || 0.8));
-    const diagonalMix = Math.max(0, Math.min(1, Number(optics.diagonalMix) || 0));
     const verticalTightness = Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1));
+    const starCount = Math.max(4, Math.min(12, Math.round(Number(optics.starCount) || 6)));
+    const rotation = (Number(optics.rotation) || 0) * Math.PI / 180;
     const maxDistance = Math.max(1, Math.min(Math.max(layer.width, layer.height) * 0.45, length));
 
     for (let y = 0; y < layer.height; y += 1) {
@@ -244,12 +245,23 @@
           const distance = t * maxDistance;
           const falloff = Math.pow(1 - t * 0.86, sharpness) * (mode === "anamorphic" ? 0.74 : 0.58);
           if (falloff <= 0.0001) continue;
-          totalWeight += addDirectionalSample(layer, x, y, 1, 0, distance, falloff, accum);
           if (mode === "starburst") {
-            totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.82, falloff * 0.5, accum);
-            totalWeight += addDirectionalSample(layer, x, y, 0.7071, 0.7071, distance * 0.92, falloff * diagonalMix * 0.42, accum);
-            totalWeight += addDirectionalSample(layer, x, y, 0.7071, -0.7071, distance * 0.92, falloff * diagonalMix * 0.42, accum);
+            for (let ray = 0; ray < starCount; ray += 1) {
+              const angle = rotation + Math.PI * 2 * ray / starCount;
+              const axisWeight = ray === 0 ? 1 : (0.48 + 0.2 * Math.abs(Math.cos(angle)));
+              totalWeight += addDirectionalSample(
+                layer,
+                x,
+                y,
+                Math.cos(angle),
+                Math.sin(angle),
+                distance * (0.86 + 0.14 * axisWeight),
+                falloff * axisWeight,
+                accum
+              );
+            }
           } else {
+            totalWeight += addDirectionalSample(layer, x, y, 1, 0, distance, falloff, accum);
             totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.12, falloff * 0.08 * verticalTightness, accum);
           }
         }

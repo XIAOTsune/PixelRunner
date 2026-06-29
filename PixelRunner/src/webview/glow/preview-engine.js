@@ -124,6 +124,8 @@
       params.blur && params.blur.optics && params.blur.optics.mode,
       params.blur && params.blur.optics && params.blur.optics.strength,
       params.blur && params.blur.optics && params.blur.optics.length,
+      params.blur && params.blur.optics && params.blur.optics.starCount,
+      params.blur && params.blur.optics && params.blur.optics.rotation,
       blur.mipCount,
       blur.pyramidWeight,
       ...(Array.isArray(blur.mipWeights) ? blur.mipWeights : [])

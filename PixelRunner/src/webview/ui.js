@@ -16,7 +16,11 @@
     colorEnabled: false,
     colorAmount: 0,
     colorHex: "#ffd27a",
-    chromatic: 0
+    chromatic: 0,
+    starLength: 58,
+    starCount: 6,
+    starRotation: 0,
+    streakLength: 86
   };
   const GLOW_THRESHOLD_CURVE_EXPONENT = 2.15;
   const GLOW_PREVIEW_LAYER_NAME = "PixelRunner Glow Preview";
@@ -239,6 +243,10 @@
     const glowStyleInput = runtime.getById("glowStyleInput");
     const glowStrengthInput = runtime.getById("glowStrengthInput");
     const glowRadiusInput = runtime.getById("glowRadiusInput");
+    const glowStarLengthInput = runtime.getById("glowStarLengthInput");
+    const glowStarCountInput = runtime.getById("glowStarCountInput");
+    const glowStarRotationInput = runtime.getById("glowStarRotationInput");
+    const glowStreakLengthInput = runtime.getById("glowStreakLengthInput");
     const glowThresholdInput = runtime.getById("glowThresholdInput");
     const glowBrightnessBiasInput = runtime.getById("glowBrightnessBiasInput");
     const glowColorEnabledInput = runtime.getById("glowColorEnabledInput");
@@ -249,6 +257,10 @@
     const glowStrengthValue = runtime.getById("glowStrengthValue");
     const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
     const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
+    const glowStarLengthParamValue = runtime.getById("glowStarLengthParamValue");
+    const glowStarCountParamValue = runtime.getById("glowStarCountParamValue");
+    const glowStarRotationParamValue = runtime.getById("glowStarRotationParamValue");
+    const glowStreakLengthParamValue = runtime.getById("glowStreakLengthParamValue");
     const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
     const glowExposureParamValue = runtime.getById("glowExposureParamValue");
     const glowColorParamValue = runtime.getById("glowColorParamValue");
@@ -347,7 +359,11 @@
       colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
       colorHex: readGlowColorHex(),
       chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
-      chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100)
+      chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100),
+      starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 10, 220),
+      starCount: readGlowSlider(glowStarCountInput, GLOW_DEFAULTS.starCount, 4, 12),
+      starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -90, 90),
+      streakLength: readGlowSlider(glowStreakLengthInput, GLOW_DEFAULTS.streakLength, 16, 300)
     });
 
     const setGlowButtonsDisabled = (disabled) => {
@@ -379,6 +395,10 @@
       if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
       if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
+      if (glowStarLengthParamValue) glowStarLengthParamValue.textContent = String(state.starLength);
+      if (glowStarCountParamValue) glowStarCountParamValue.textContent = String(state.starCount);
+      if (glowStarRotationParamValue) glowStarRotationParamValue.textContent = `${state.starRotation}°`;
+      if (glowStreakLengthParamValue) glowStreakLengthParamValue.textContent = String(state.streakLength);
       if (glowThresholdParamValue) glowThresholdParamValue.textContent = `${(state.threshold / 100).toFixed(2)} (滑块 ${thresholdSlider})`;
       if (glowExposureParamValue) glowExposureParamValue.textContent = String(state.brightnessBias);
       if (glowColorParamValue) glowColorParamValue.textContent = state.colorEnabled ? `${state.colorAmount}%` : "关";
@@ -386,6 +406,7 @@
       if (glowColorAmountInput) glowColorAmountInput.disabled = !state.colorEnabled;
       if (glowColorPickerInput) glowColorPickerInput.disabled = !state.colorEnabled;
       if (glowChromaticInput) glowChromaticInput.disabled = !state.chromaticEnabled;
+      if (glowSliderStack) glowSliderStack.dataset.style = state.style;
     };
 
     const updateGlowWorkbenchLayout = () => {
@@ -703,6 +724,10 @@
         state.style,
         state.strength,
         state.radius,
+        state.starLength,
+        state.starCount,
+        state.starRotation,
+        state.streakLength,
         state.threshold,
         state.brightnessBias,
         state.colorEnabled ? state.colorHex : "color-off",
@@ -959,7 +984,18 @@
       });
     });
 
-    const glowRealtimeInputs = [glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorAmountInput, glowChromaticInput]
+    const glowRealtimeInputs = [
+      glowStrengthInput,
+      glowRadiusInput,
+      glowStarLengthInput,
+      glowStarCountInput,
+      glowStarRotationInput,
+      glowStreakLengthInput,
+      glowThresholdInput,
+      glowBrightnessBiasInput,
+      glowColorAmountInput,
+      glowChromaticInput
+    ]
       .filter(Boolean);
 
     const stopSliderDragging = () => {
@@ -996,7 +1032,22 @@
     window.addEventListener("pointerup", stopSliderDragging);
     window.addEventListener("blur", stopSliderDragging);
 
-    [glowStyleInput, glowStrengthInput, glowRadiusInput, glowThresholdInput, glowBrightnessBiasInput, glowColorEnabledInput, glowColorAmountInput, glowColorPickerInput, glowChromaticEnabledInput, glowChromaticInput]
+    [
+      glowStyleInput,
+      glowStrengthInput,
+      glowRadiusInput,
+      glowStarLengthInput,
+      glowStarCountInput,
+      glowStarRotationInput,
+      glowStreakLengthInput,
+      glowThresholdInput,
+      glowBrightnessBiasInput,
+      glowColorEnabledInput,
+      glowColorAmountInput,
+      glowColorPickerInput,
+      glowChromaticEnabledInput,
+      glowChromaticInput
+    ]
       .filter(Boolean)
       .forEach((input) => {
         input.addEventListener("input", () => {

@@ -146,6 +146,10 @@
     const colorAmount = colorEnabled ? clamp(config.colorAmount, 0, 100, 0) : 0;
     const colorTint = hexToRgb01(config.colorHex);
     const chromatic = config.chromaticEnabled === false ? 0 : clamp(config.chromatic, 0, 100, 0);
+    const starLength = clamp(config.starLength, 10, 220, 58);
+    const starCount = Math.round(clamp(config.starCount, 4, 12, 6));
+    const starRotation = clamp(config.starRotation, -90, 90, 0);
+    const streakLength = clamp(config.streakLength, 16, 300, 86);
     const strengthRatio = strength / 100;
     const radiusRatio = radius / 500;
     const legacyRadiusRatio = Math.min(1, radius / 250);
@@ -245,14 +249,17 @@
               ? clamp((0.28 + strengthRatio * 0.74 + thresholdSelectivity * 0.1) * (0.9 + spreadRatio * 0.62), 0, 1.32, 0.84)
               : 0),
           length: style === "starburst"
-            ? clamp(10 + radius * 0.42 + strengthRatio * 18, 8, 190, 54)
+            ? clamp(starLength * (0.82 + radiusRatio * 0.54 + strengthRatio * 0.18), 8, 260, 58)
             : (style === "anamorphic"
-              ? clamp(18 + radius * 0.72 + strengthRatio * 34, 14, 260, 86)
+              ? clamp(streakLength * (0.82 + radiusRatio * 0.66 + strengthRatio * 0.22), 14, 360, 86)
               : 0),
           sharpness: style === "starburst" ? 1.82 : (style === "anamorphic" ? 2.28 : 1),
           coreMix: style === "starburst" ? 0.82 : (style === "anamorphic" ? 0.68 : 1),
           verticalTightness: style === "anamorphic" ? 0.72 : 1,
-          diagonalMix: style === "starburst" ? 0.58 : 0
+          diagonalMix: style === "starburst" ? 0.58 : 0,
+          starCount,
+          rotation: style === "starburst" ? starRotation : 0,
+          uiLength: style === "anamorphic" ? streakLength : starLength
         }
       },
       composite: {

@@ -2785,6 +2785,16 @@ button {
   background: rgba(16, 27, 38, 0.52);
 }
 
+.glow-star-control,
+.glow-streak-control {
+  display: none;
+}
+
+.glow-slider-stack[data-style="starburst"] .glow-star-control,
+.glow-slider-stack[data-style="anamorphic"] .glow-streak-control {
+  display: flex;
+}
+
 .glow-field-hint {
   display: block;
   margin-top: 2px;
