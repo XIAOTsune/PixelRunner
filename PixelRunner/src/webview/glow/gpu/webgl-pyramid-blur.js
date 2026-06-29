@@ -102,6 +102,9 @@
     uniform float uOpticsRotation;
     uniform float uOpticsVisibility;
     uniform float uOpticsSourceGate;
+    uniform float uOpticsSoftSourceMix;
+    uniform float uOpticsBaseVeil;
+    uniform float uOpticsNormalization;
     uniform vec2 uTexel;
     in vec2 vUv;
     out vec4 outColor;
@@ -114,7 +117,9 @@
 
     float sourceGateAt(vec2 uv) {
       float sourceEnergy = max(max(texture(uSource, uv).r, texture(uSource, uv).g), texture(uSource, uv).b);
-      float softness = mix(0.18, 0.055, clamp(uOpticsVisibility, 0.0, 1.0));
+      float softness = uOpticsMode > 1.5
+        ? mix(0.12, 0.04, clamp(uOpticsVisibility, 0.0, 1.0))
+        : mix(0.1, 0.032, clamp(uOpticsVisibility, 0.0, 1.0));
       return smoothstep(uOpticsSourceGate, uOpticsSourceGate + softness, sourceEnergy);
     }
 
@@ -124,16 +129,21 @@
       vec2 uvB = vUv - offset;
       float gateA = sourceGateAt(uvA);
       float gateB = sourceGateAt(uvB);
-      float pairWeight = weight * (0.18 + max(gateA, gateB) * 0.82);
+      float pairWeight = weight * max(gateA, gateB);
       totalWeight += pairWeight * 2.0;
-      return (texture(uCombined, uvA).rgb * (0.28 + gateA * 0.72) + texture(uCombined, uvB).rgb * (0.28 + gateB * 0.72)) * pairWeight;
+      vec3 sourceA = texture(uSource, uvA).rgb;
+      vec3 sourceB = texture(uSource, uvB).rgb;
+      vec3 softA = mix(sourceA, texture(uCombined, uvA).rgb, clamp(uOpticsSoftSourceMix, 0.0, 0.35));
+      vec3 softB = mix(sourceB, texture(uCombined, uvB).rgb, clamp(uOpticsSoftSourceMix, 0.0, 0.35));
+      return (softA * gateA * (0.5 + gateA * 0.5) + softB * gateB * (0.5 + gateB * 0.5)) * pairWeight;
     }
 
     vec3 opticalShape(vec3 base) {
       if (uOpticsStrength <= 0.0001 || uOpticsLength <= 0.5 || uOpticsMode < 0.5) return base;
       float sourceEnergy = max(max(texture(uSource, vUv).r, texture(uSource, vUv).g), texture(uSource, vUv).b);
       float localGate = pow(clamp(max(sourceEnergy, sourceGateAt(vUv)) * 1.35, 0.0, 1.0), 0.62);
-      vec3 accum = base * uOpticsCoreMix;
+      vec3 source = texture(uSource, vUv).rgb;
+      vec3 accum = mix(source, base, clamp(uOpticsSoftSourceMix, 0.0, 0.35)) * uOpticsCoreMix;
       float totalWeight = uOpticsCoreMix;
       float steps = uOpticsMode > 1.5 ? 28.0 : 24.0;
       mat2 rot = rotation2d(radians(uOpticsRotation));
@@ -162,10 +172,10 @@
         }
       }
 
-      vec3 shaped = accum / max(0.0001, totalWeight);
+      vec3 shaped = accum / max(0.0001, totalWeight * clamp(uOpticsNormalization, 0.18, 1.4));
       float mixAmount = clamp(uOpticsStrength * (0.45 + localGate * 0.55), 0.0, 0.92);
-      float sparkle = uOpticsMode < 1.5 ? 1.0 + localGate * uOpticsStrength * 0.22 : 1.0;
-      return mix(base, shaped * sparkle, mixAmount);
+      float sparkle = uOpticsMode < 1.5 ? 1.0 + localGate * uOpticsStrength * 0.18 : 1.0;
+      return base * clamp(uOpticsBaseVeil, 0.0, 1.0) + shaped * sparkle * mixAmount;
     }
 
     void main() {
@@ -443,6 +453,9 @@
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsRotation"), Math.max(-180, Math.min(180, Number(optics.rotation) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsVisibility"), Math.max(0, Math.min(1, Number(optics.visibility) || 1)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSourceGate"), Math.max(0, Math.min(1, Number(optics.sourceGate) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsSoftSourceMix"), Math.max(0, Math.min(0.35, Number(optics.softSourceMix) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsBaseVeil"), Math.max(0, Math.min(1, Number(optics.baseVeil) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsNormalization"), Math.max(0.18, Math.min(1.4, Number(optics.normalization) || 0.65)));
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, width), 1 / Math.max(1, height));
       this.renderTo(target, program);
       return target;

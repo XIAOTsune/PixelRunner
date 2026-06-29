@@ -150,13 +150,16 @@ function getStyleFade(style) {
 function getGlowConfig(payload = {}) {
   const style = normalizeGlowStyle(payload.style);
   const stylePreset = GLOW_STYLE_PRESETS[style];
+  const opticalStyle = style === "starburst" || style === "anamorphic";
   const strength = clampNumber(payload.strength, 0, 100, 47);
-  const radius = clampNumber(payload.radius, 1, 240, 81);
+  const radius = opticalStyle
+    ? clampNumber(style === "starburst" ? payload.starLength : payload.streakLength, 12, 240, style === "starburst" ? 58 : 86)
+    : clampNumber(payload.radius, 1, 240, 81);
   const threshold = clampNumber(payload.threshold, 0, 100, 81);
-  const thresholdGate = 100 - threshold;
+  const thresholdGate = opticalStyle ? threshold : 100 - threshold;
   const fade = getStyleFade(style);
   const saturation = clampNumber(payload.saturation, -100, 100, 81);
-  const brightnessBias = clampNumber(payload.brightnessBias, -50, 50, 0);
+  const brightnessBias = opticalStyle ? 0 : clampNumber(payload.brightnessBias, -50, 50, 0);
   const strengthRatio = strength / 100;
   const fadeRatio = 1 - fade / 140;
   const brightnessLift = brightnessBias / 50;
@@ -164,7 +167,7 @@ function getGlowConfig(payload = {}) {
   const negativeBias = Math.max(0, -brightnessLift);
   const highlightSpreadFactor = 1 + positiveBias * 0.12 - negativeBias * 0.08;
   const glowExpansionFactor = 1 + positiveBias * 0.16 - negativeBias * 0.1;
-  const glowOpacityFactor = 1 + positiveBias * 0.12 - negativeBias * 0.08;
+  const glowOpacityFactor = opticalStyle ? (style === "starburst" ? 0.28 : 0.24) : 1 + positiveBias * 0.12 - negativeBias * 0.08;
   const bloomOpacityBase = Math.round(18 + strength * 0.38);
   const detailOpacity = clampNumber(Math.round((18 + strength * 0.22 - fade * 0.1 + brightnessBias * 0.1) * stylePreset.detailOpacityWeight), 10, 48, 24);
   const coreOpacity = clampNumber(Math.round((26 + strength * 0.48 - fade * 0.06 + brightnessBias * 0.18) * stylePreset.coreOpacityWeight), 16, 84, 34);
@@ -173,11 +176,17 @@ function getGlowConfig(payload = {}) {
   const haloRadius = Math.max(coreRadius + 0.6, roundToTenth(radius * 0.34 * stylePreset.haloRadiusWeight * (1 + positiveBias * 0.12 - negativeBias * 0.05), coreRadius + 0.6));
   const midRadius = Math.max(haloRadius + 0.8, roundToTenth(radius * 0.72 * Math.max(1, stylePreset.glowRadiusWeight * 0.94) * glowExpansionFactor, haloRadius + 0.8));
   const bloomRadius = Math.max(midRadius + 1.2, roundToTenth(radius * 1.36 * stylePreset.glowRadiusWeight * glowExpansionFactor, midRadius + 1.2));
-  const highlightFuzziness = clampNumber(Math.round((18 + radius * 0.28 + fade * 0.22) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 12, 72, 24);
+  const highlightFuzziness = opticalStyle
+    ? clampNumber(Math.round((style === "starburst" ? 8 : 10) + (100 - threshold) * 0.08), 6, 20, 10)
+    : clampNumber(Math.round((18 + radius * 0.28 + fade * 0.22) * stylePreset.highlightFuzzinessWeight * highlightSpreadFactor + brightnessBias * 0.1), 12, 72, 24);
   const channelOutputClamp = clampNumber(Math.round(8 + thresholdGate * 0.18 + fade * 0.08 - brightnessBias * 0.2), 0, 86, 20);
-  const sourceInputBlack = clampNumber(Math.round(42 + thresholdGate * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
+  const sourceInputBlack = opticalStyle
+    ? clampNumber(Math.round((style === "starburst" ? 92 : 84) + thresholdGate * (style === "starburst" ? 1.16 : 1.08)), 54, 230, style === "starburst" ? 130 : 120)
+    : clampNumber(Math.round(42 + thresholdGate * 1.24 - brightnessBias * 0.56 + fade * 0.18 + stylePreset.highlightLowerLimitBias * 0.34), 18, 188, 78);
   const sourceInputWhite = clampNumber(Math.round(248 - Math.max(0, brightnessBias) * 0.2), 220, 255, 248);
-  const sourceGamma = Number(clampNumber(0.68 + thresholdGate / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92).toFixed(2));
+  const sourceGamma = Number((opticalStyle
+    ? clampNumber(0.72 + threshold / 100 * 0.34, 0.68, 1.18, 0.86)
+    : clampNumber(0.68 + thresholdGate / 100 * 0.72 + fade / 180 - brightnessLift * 0.08, 0.48, 1.75, 0.92)).toFixed(2));
   const coreInputBlack = clampNumber(Math.round(sourceInputBlack + 16 + thresholdGate * 0.28), sourceInputBlack + 8, 226, sourceInputBlack + 20);
   const coreGammaBoost = Number(clampNumber(sourceGamma * 0.82, 0.42, 1.28, 0.76).toFixed(2));
   const sourceSaturation = clampNumber(Math.round(8 + saturation * 0.38 + stylePreset.sourceSaturationBias), -40, 72, 16);
@@ -195,8 +204,10 @@ function getGlowConfig(payload = {}) {
     Math.min(44, Math.max(9, Math.round(bloomOpacityBase * (0.5 * fadeRatio)))),
     Math.min(34, Math.max(6, Math.round(bloomOpacityBase * (0.34 * fadeRatio))))
   ].map((opacity, index) => clampNumber(Math.round(opacity * stylePreset.glowOpacityWeight * glowOpacityFactor), index === 0 ? 18 : 6, 84, opacity));
-  const mipCount = clampNumber(Math.round(3 + Math.min(1, radius / 120) * 3 + Math.max(0, (radius - 120) / 120)), 3, 7, 5);
-  const mipScales = [50, 25, 12.5, 6.25, 3.125, 1.5625, 0.78125].slice(0, mipCount);
+  const mipCount = opticalStyle ? (style === "starburst" ? 2 : 3) : clampNumber(Math.round(3 + Math.min(1, radius / 120) * 3 + Math.max(0, (radius - 120) / 120)), 3, 7, 5);
+  const mipScales = (opticalStyle
+    ? (style === "starburst" ? [50, 25] : [50, 25, 12.5])
+    : [50, 25, 12.5, 6.25, 3.125, 1.5625, 0.78125]).slice(0, mipCount);
   const mipOpacityBase = [
     Math.round(bloomOpacityBase * 0.76),
     Math.round(bloomOpacityBase * 0.92),
@@ -209,8 +220,8 @@ function getGlowConfig(payload = {}) {
     .slice(0, mipCount)
     .map((opacity, index) => clampNumber(
       Math.round(opacity * stylePreset.glowOpacityWeight * glowOpacityFactor),
-      index === 0 ? 12 : 5,
-      86,
+      opticalStyle ? 4 : (index === 0 ? 12 : 5),
+      opticalStyle ? 28 : 86,
       opacity
     ));
   return {

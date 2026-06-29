@@ -135,6 +135,7 @@
     const whiteProtect = sourceParams.whiteProtect;
     const skinProtect = sourceParams.skinProtect;
     const chromaBoostAmount = sourceParams.chromaBoost;
+    const triggerMode = Number(sourceParams.triggerMode) || 0;
 
     for (let index = 0, pixel = 0; pixel < total; pixel += 1, index += 4) {
       const sr = data[index] * inv255;
@@ -155,7 +156,7 @@
       const brightPass = thresholdGate;
       const contrastScore = smoothstep(sourceParams.contrastLow, sourceParams.contrastHigh, contrast);
       const specularScore = smoothstep(sourceParams.specularLow, sourceParams.specularHigh, specular);
-      const brightEnergy = Math.pow(clamp(brightPass, 0, 1), 1.16);
+      const brightEnergy = Math.pow(clamp(brightPass, 0, 1), triggerMode ? (triggerMode === 1 ? 1.58 : 1.42) : 1.16);
       const specularPass =
         Math.pow(specularScore, 1.16) *
         secondaryThresholdGate *
@@ -198,12 +199,34 @@
       const protection = clamp(protectionBase * (1 - nearClipException * 0.42), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
       const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
-      let emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      const opticalPointSignal = clamp(
+        specularScore * (triggerMode === 1 ? 0.78 : 0.62) +
+          contrastScore * (triggerMode === 1 ? 0.32 : 0.24) +
+          nearClip * 0.58 +
+          colorReflection * 0.18,
+        0,
+        1
+      );
+      const opticalPointGate = triggerMode
+        ? smoothstep(triggerMode === 1 ? 0.2 : 0.14, triggerMode === 1 ? 0.72 : 0.58, opticalPointSignal)
+        : 1;
+      const opticalAreaGuard = triggerMode
+        ? (triggerMode === 1 ? 0.16 + opticalPointGate * 0.84 : 0.28 + opticalPointGate * 0.72)
+        : 1;
+      let emissionEnergy = triggerMode
+        ? (
+            brightEnergy * (triggerMode === 1 ? 0.98 : 1.1) * (1 + colorReflection * 0.12) * opticalAreaGuard +
+            specularPass * (triggerMode === 1 ? 0.82 : 0.64) +
+            rimPass * (triggerMode === 1 ? 0.018 : 0.05)
+          )
+        : brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
       const neutralClothReject = whiteFlat * (1 - specularScore * 0.42) * (1 - nearClipException * 0.35) * (1 - colorReflection * 0.32);
-      emissionEnergy *= 1 - protection * 0.86;
-      emissionEnergy *= 1 - neutralClothReject * 0.82;
+      emissionEnergy *= 1 - protection * (triggerMode ? (triggerMode === 1 ? 0.93 : 0.9) : 0.86);
+      emissionEnergy *= 1 - neutralClothReject * (triggerMode ? 0.94 : 0.82);
       emissionEnergy *= smoothstep(lowEnergyCutoff * 0.62, lowEnergyCutoff * 2.6, emissionEnergy);
-      emissionEnergy = clamp(Math.pow(emissionEnergy, 1.04) * 1.18, 0, 1);
+      emissionEnergy = triggerMode
+        ? clamp(Math.pow(emissionEnergy, triggerMode === 1 ? 1.12 : 1.08) * (triggerMode === 1 ? 1.08 : 1.14), 0, 1)
+        : clamp(Math.pow(emissionEnergy, 1.04) * 1.18, 0, 1);
       const neutralHighlight = brightPass * (1 - sat) * smoothstep(0.82, 1.0, maxChannel);
       const warmColorHint = smoothstep(0.018, 0.16, Math.max(Math.abs(r - g), Math.abs(g - b)));
       const chromaKeep = clamp(

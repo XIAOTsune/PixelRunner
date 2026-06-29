@@ -2795,6 +2795,11 @@ button {
   display: flex;
 }
 
+.glow-slider-stack[data-style="starburst"] .glow-bloom-control,
+.glow-slider-stack[data-style="anamorphic"] .glow-bloom-control {
+  display: none;
+}
+
 .glow-field-hint {
   display: block;
   margin-top: 2px;

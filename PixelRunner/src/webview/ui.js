@@ -267,6 +267,7 @@
     const glowStarVisibleParamValue = runtime.getById("glowStarVisibleParamValue");
     const glowStreakLengthParamValue = runtime.getById("glowStreakLengthParamValue");
     const glowStreakVisibleParamValue = runtime.getById("glowStreakVisibleParamValue");
+    const glowThresholdLabel = runtime.getById("glowThresholdLabel");
     const glowThresholdParamValue = runtime.getById("glowThresholdParamValue");
     const glowExposureParamValue = runtime.getById("glowExposureParamValue");
     const glowColorParamValue = runtime.getById("glowColorParamValue");
@@ -354,25 +355,32 @@
       return Math.round(Math.pow(normalized, GLOW_THRESHOLD_CURVE_EXPONENT) * 100);
     };
 
-    const readGlowState = () => ({
-      style: readGlowStyle(),
-      strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-      radius: readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 500),
-      threshold: mapThresholdSliderToEffective(readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100)),
-      saturation: 0,
-      brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -100, 100),
-      colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
-      colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
-      colorHex: readGlowColorHex(),
-      chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
-      chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100),
-      starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 10, 220),
-      starCount: readGlowSlider(glowStarCountInput, GLOW_DEFAULTS.starCount, 4, 12),
-      starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -90, 90),
-      starVisible: readGlowSlider(glowStarVisibleInput, GLOW_DEFAULTS.starVisible, 0, 100),
-      streakLength: readGlowSlider(glowStreakLengthInput, GLOW_DEFAULTS.streakLength, 16, 300),
-      streakVisible: readGlowSlider(glowStreakVisibleInput, GLOW_DEFAULTS.streakVisible, 0, 100)
-    });
+    const isOpticalGlowStyle = (style) => style === "starburst" || style === "anamorphic";
+
+    const readGlowState = () => {
+      const style = readGlowStyle();
+      const opticalStyle = isOpticalGlowStyle(style);
+      const thresholdSlider = readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100);
+      return {
+        style,
+        strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
+        radius: opticalStyle ? GLOW_DEFAULTS.radius : readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 500),
+        threshold: opticalStyle ? thresholdSlider : mapThresholdSliderToEffective(thresholdSlider),
+        saturation: 0,
+        brightnessBias: opticalStyle ? 0 : readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -100, 100),
+        colorEnabled: opticalStyle ? false : !!(glowColorEnabledInput && glowColorEnabledInput.checked),
+        colorAmount: opticalStyle ? 0 : readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
+        colorHex: readGlowColorHex(),
+        chromaticEnabled: opticalStyle ? false : !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
+        chromatic: opticalStyle ? 0 : readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100),
+        starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 10, 220),
+        starCount: readGlowSlider(glowStarCountInput, GLOW_DEFAULTS.starCount, 4, 12),
+        starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -90, 90),
+        starVisible: readGlowSlider(glowStarVisibleInput, GLOW_DEFAULTS.starVisible, 0, 100),
+        streakLength: readGlowSlider(glowStreakLengthInput, GLOW_DEFAULTS.streakLength, 16, 300),
+        streakVisible: readGlowSlider(glowStreakVisibleInput, GLOW_DEFAULTS.streakVisible, 0, 100)
+      };
+    };
 
     const setGlowButtonsDisabled = (disabled) => {
       [glowOpenButton, glowApplyButton, glowCancelButton, glowModalClose].filter(Boolean).forEach((button) => {
@@ -394,13 +402,32 @@
       glowPreviewState.dataset.status = type;
     };
 
+    const getGlowStateSummary = (state = readGlowState()) => {
+      const thresholdLabel = isOpticalGlowStyle(state.style) ? "触发阈值" : "阈值";
+      const base = `${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / ${thresholdLabel} ${(state.threshold / 100).toFixed(2)}`;
+      if (state.style === "starburst") {
+        return `${base} / 星芒长度 ${state.starLength} / 边数 ${state.starCount} / 显示 ${state.starVisible}%`;
+      }
+      if (state.style === "anamorphic") {
+        return `${base} / 拉丝长度 ${state.streakLength} / 显示 ${state.streakVisible}%`;
+      }
+      return `${base} / 扩散 ${state.radius} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
+    };
+
     const updateGlowLabels = () => {
       const state = readGlowState();
       const thresholdSlider = readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100);
+      const opticalStyle = isOpticalGlowStyle(state.style);
+      const thresholdLabel = opticalStyle ? "触发阈值" : "阈值";
       if (glowStrengthValue) glowStrengthValue.textContent = `${getGlowStyleLabel(state.style)} ${state.strength}%`;
       if (glowStyleBadge) glowStyleBadge.textContent = `风格 ${getGlowStyleLabel(state.style)}`;
-      if (glowRadiusValue) glowRadiusValue.textContent = `扩散 ${state.radius}`;
-      if (glowThresholdValue) glowThresholdValue.textContent = `阈值 ${(state.threshold / 100).toFixed(2)}`;
+      if (glowRadiusValue) {
+        glowRadiusValue.textContent = state.style === "starburst"
+          ? `星芒 ${state.starLength}`
+          : (state.style === "anamorphic" ? `拉丝 ${state.streakLength}` : `扩散 ${state.radius}`);
+      }
+      if (glowThresholdValue) glowThresholdValue.textContent = `${thresholdLabel} ${(state.threshold / 100).toFixed(2)}`;
+      if (glowThresholdLabel) glowThresholdLabel.textContent = thresholdLabel;
       if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
       if (glowStarLengthParamValue) glowStarLengthParamValue.textContent = String(state.starLength);
@@ -600,7 +627,7 @@
         const blurBackend = timings.blurBackend ? ` ${timings.blurBackend}` : "";
         const compositeBackend = timings.compositeBackend ? ` ${timings.compositeBackend}` : "";
         const qualityLabel = glowPreviewQuality === "interactive" ? "快速" : "精细";
-        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · 强度 ${state.strength} / 扩散 ${state.radius} / 阈值 ${(state.threshold / 100).toFixed(2)} / 曝光 ${state.brightnessBias} / 颜色 ${state.colorEnabled ? `${state.colorHex} ${state.colorAmount}%` : "关"} / 色散 ${state.chromaticEnabled ? state.chromatic : "关"}`;
+        glowPreviewMeta.textContent = `预览 ${qualityLabel} · ${glowResult.width}x${glowResult.height} · total ${timings.totalMs || glowResult.elapsedMs || 0}ms · source${sourceBackend} ${timings.sourceMs || 0}ms / blur${blurBackend} ${timings.blurMs || 0}ms / composite${compositeBackend} ${timings.compositeMs || 0}ms · ${getGlowStateSummary(state)}`;
       }
     };
 
@@ -798,7 +825,7 @@
       glowPreviewNeedsReplay = false;
       const state = readGlowState();
       setGlowPreviewBadge("正在预览", "pending");
-      setGlowStatus(`正在更新辉光预览：${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 扩散 ${state.radius} / 阈值 ${state.threshold}%`, "pending");
+      setGlowStatus(`正在更新辉光预览：${getGlowStateSummary(state)}`, "pending");
 
       try {
         const result = await callGlowCpuPreviewAction(action);
@@ -1103,7 +1130,7 @@
           const successMessage = result && result.message ? result.message : `已生成 Glow ${state.strength}%`;
           logToWorkspace(successMessage, "success");
           setGlowStatus(successMessage, "success");
-          setQuickGlowStatus(`${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / 扩散 ${state.radius} / 阈值 ${state.threshold}%`, "success");
+          setQuickGlowStatus(getGlowStateSummary(state), "success");
           glowPreviewOpen = false;
           modules.workspace.setModalOpen("glowModal", false);
         } catch (error) {

@@ -212,19 +212,31 @@
     return smoothstep(gate, gate + softness, Math.max(r, g, b));
   }
 
-  function addGatedDirectionalSample(layer, sourceLayer, x, y, dx, dy, distance, weight, gate, softness, accum) {
+  function addGatedDirectionalSample(layer, sourceLayer, x, y, dx, dy, distance, weight, gate, softness, softSourceMix, accum) {
     const ax = x + dx * distance;
     const ay = y + dy * distance;
     const bx = x - dx * distance;
     const by = y - dy * distance;
     const gateA = sampleSourceGate(sourceLayer, ax, ay, gate, softness);
     const gateB = sampleSourceGate(sourceLayer, bx, by, gate, softness);
-    const pairWeight = weight * (0.18 + Math.max(gateA, gateB) * 0.82);
-    const a = sampleLayerRgb(layer, ax, ay);
-    const b = sampleLayerRgb(layer, bx, by);
-    accum[0] += (a[0] * (0.28 + gateA * 0.72) + b[0] * (0.28 + gateB * 0.72)) * pairWeight;
-    accum[1] += (a[1] * (0.28 + gateA * 0.72) + b[1] * (0.28 + gateB * 0.72)) * pairWeight;
-    accum[2] += (a[2] * (0.28 + gateA * 0.72) + b[2] * (0.28 + gateB * 0.72)) * pairWeight;
+    const pairGate = Math.max(gateA, gateB);
+    const pairWeight = weight * pairGate;
+    if (pairWeight <= 0.000001) return 0;
+    const sourceA = sampleLayerRgb(sourceLayer || layer, ax, ay);
+    const sourceB = sampleLayerRgb(sourceLayer || layer, bx, by);
+    const softA = softSourceMix > 0 ? sampleLayerRgb(layer, ax, ay) : sourceA;
+    const softB = softSourceMix > 0 ? sampleLayerRgb(layer, bx, by) : sourceB;
+    const mixA = gateA * (0.5 + gateA * 0.5);
+    const mixB = gateB * (0.5 + gateB * 0.5);
+    const a0 = sourceA[0] * (1 - softSourceMix) + softA[0] * softSourceMix;
+    const a1 = sourceA[1] * (1 - softSourceMix) + softA[1] * softSourceMix;
+    const a2 = sourceA[2] * (1 - softSourceMix) + softA[2] * softSourceMix;
+    const b0 = sourceB[0] * (1 - softSourceMix) + softB[0] * softSourceMix;
+    const b1 = sourceB[1] * (1 - softSourceMix) + softB[1] * softSourceMix;
+    const b2 = sourceB[2] * (1 - softSourceMix) + softB[2] * softSourceMix;
+    accum[0] += (a0 * mixA + b0 * mixB) * pairWeight;
+    accum[1] += (a1 * mixA + b1 * mixB) * pairWeight;
+    accum[2] += (a2 * mixA + b2 * mixB) * pairWeight;
     return pairWeight * 2;
   }
 
@@ -246,7 +258,12 @@
     const rotation = (Number(optics.rotation) || 0) * Math.PI / 180;
     const visibility = Math.max(0, Math.min(1, Number(optics.visibility) || 1));
     const sourceGate = Math.max(0, Math.min(1, Number(optics.sourceGate) || 0));
-    const sourceSoftness = 0.18 + (0.055 - 0.18) * visibility;
+    const sourceSoftness = mode === "anamorphic"
+      ? 0.12 + (0.04 - 0.12) * visibility
+      : 0.1 + (0.032 - 0.1) * visibility;
+    const softSourceMix = Math.max(0, Math.min(0.35, Number(optics.softSourceMix) || 0));
+    const baseVeil = Math.max(0, Math.min(1, Number(optics.baseVeil) || 0));
+    const normalization = Math.max(0.18, Math.min(1.4, Number(optics.normalization) || 0.65));
     const maxDistance = Math.max(1, Math.min(Math.max(layer.width, layer.height) * 0.45, length));
 
     for (let y = 0; y < layer.height; y += 1) {
@@ -256,10 +273,13 @@
           ? Math.max(sourceLayer.r[index] || 0, sourceLayer.g[index] || 0, sourceLayer.b[index] || 0)
           : Math.max(layer.r[index] || 0, layer.g[index] || 0, layer.b[index] || 0);
         const localGate = Math.pow(Math.max(0, Math.min(1, sourceEnergy * 1.35)), 0.62);
+        const sourceR = sourceLayer ? sourceLayer.r[index] || 0 : layer.r[index] || 0;
+        const sourceG = sourceLayer ? sourceLayer.g[index] || 0 : layer.g[index] || 0;
+        const sourceB = sourceLayer ? sourceLayer.b[index] || 0 : layer.b[index] || 0;
         const accum = [
-          layer.r[index] * coreMix,
-          layer.g[index] * coreMix,
-          layer.b[index] * coreMix
+          (sourceR * (1 - softSourceMix) + layer.r[index] * softSourceMix) * coreMix,
+          (sourceG * (1 - softSourceMix) + layer.g[index] * softSourceMix) * coreMix,
+          (sourceB * (1 - softSourceMix) + layer.b[index] * softSourceMix) * coreMix
         ];
         let totalWeight = coreMix;
 
@@ -283,23 +303,24 @@
                 falloff * axisWeight,
                 sourceGate,
                 sourceSoftness,
+                softSourceMix,
                 accum
               );
             }
           } else {
-            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 1, 0, distance, falloff, sourceGate, sourceSoftness, accum);
-            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 0, 1, distance * 0.1, falloff * 0.05 * verticalTightness, sourceGate, sourceSoftness, accum);
+            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 1, 0, distance, falloff, sourceGate, sourceSoftness, softSourceMix, accum);
+            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 0, 1, distance * 0.08, falloff * 0.035 * verticalTightness, sourceGate, sourceSoftness, softSourceMix, accum);
           }
         }
 
-        const shapedR = accum[0] / Math.max(0.0001, totalWeight);
-        const shapedG = accum[1] / Math.max(0.0001, totalWeight);
-        const shapedB = accum[2] / Math.max(0.0001, totalWeight);
-        const mix = Math.max(0, Math.min(0.92, strength * (0.45 + localGate * 0.55)));
-        const sparkle = mode === "starburst" ? 1 + localGate * strength * 0.22 : 1;
-        out.r[index] = layer.r[index] * (1 - mix) + shapedR * mix * sparkle;
-        out.g[index] = layer.g[index] * (1 - mix) + shapedG * mix * sparkle;
-        out.b[index] = layer.b[index] * (1 - mix) + shapedB * mix * sparkle;
+        const shapedR = accum[0] / Math.max(0.0001, totalWeight * normalization);
+        const shapedG = accum[1] / Math.max(0.0001, totalWeight * normalization);
+        const shapedB = accum[2] / Math.max(0.0001, totalWeight * normalization);
+        const mix = Math.max(0, Math.min(0.96, strength * (0.5 + localGate * 0.5)));
+        const sparkle = mode === "starburst" ? 1 + localGate * strength * 0.18 : 1;
+        out.r[index] = layer.r[index] * baseVeil + shapedR * mix * sparkle;
+        out.g[index] = layer.g[index] * baseVeil + shapedG * mix * sparkle;
+        out.b[index] = layer.b[index] * baseVeil + shapedB * mix * sparkle;
       }
     }
     return out;

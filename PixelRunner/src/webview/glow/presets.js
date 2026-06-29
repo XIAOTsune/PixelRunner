@@ -104,32 +104,32 @@
       scatter: 1.18
     },
     starburst: {
-      thresholdBias: 0.01,
-      whiteProtect: 0.82,
-      skinProtect: 0.76,
-      darkProtect: 0.48,
-      knee: 0.16,
-      chromaBoost: 0.24,
-      smallWeight: 0.62,
-      mediumWeight: 0.58,
-      largeWeight: 0.28,
-      softAddMix: 0.34,
-      warmth: 0.035,
-      scatter: 0.82
+      thresholdBias: 0.04,
+      whiteProtect: 0.96,
+      skinProtect: 0.9,
+      darkProtect: 0.72,
+      knee: 0.06,
+      chromaBoost: 0.18,
+      smallWeight: 0.16,
+      mediumWeight: 0.055,
+      largeWeight: 0.012,
+      softAddMix: 0.08,
+      warmth: 0.018,
+      scatter: 0.18
     },
     anamorphic: {
-      thresholdBias: 0.02,
-      whiteProtect: 0.84,
-      skinProtect: 0.78,
-      darkProtect: 0.5,
-      knee: 0.18,
-      chromaBoost: 0.18,
-      smallWeight: 0.44,
-      mediumWeight: 0.64,
-      largeWeight: 0.36,
-      softAddMix: 0.28,
-      warmth: 0.02,
-      scatter: 0.72
+      thresholdBias: 0.035,
+      whiteProtect: 0.94,
+      skinProtect: 0.88,
+      darkProtect: 0.7,
+      knee: 0.07,
+      chromaBoost: 0.16,
+      smallWeight: 0.12,
+      mediumWeight: 0.05,
+      largeWeight: 0.014,
+      softAddMix: 0.06,
+      warmth: 0.012,
+      scatter: 0.16
     }
   };
 
@@ -157,13 +157,36 @@
     const legacyRadiusRatio = Math.min(1, radius / 250);
     const wideRadiusRatio = Math.max(0, (radius - 250) / 250);
     const thresholdRatio = threshold / 100;
-    // Lower UI threshold is the precision end: fewer, more clipping-like highlights are allowed to emit.
+    const exposureRatio = brightnessBias / 100;
+    const opticalStyle = style === "starburst" || style === "anamorphic";
+    const triggerThreshold = thresholdRatio;
+    const triggerOpen = 1 - triggerThreshold;
+    const triggerHigh = clamp(
+      style === "starburst"
+        ? 0.34 + triggerThreshold * 0.56 + preset.thresholdBias
+        : (style === "anamorphic"
+          ? 0.3 + triggerThreshold * 0.54 + preset.thresholdBias
+          : 0),
+      0.24,
+      0.96,
+      0.58
+    );
+    const triggerKnee = clamp(
+      style === "starburst"
+        ? 0.035 + triggerOpen * 0.085 + Math.max(0, exposureRatio) * 0.012
+        : (style === "anamorphic"
+          ? 0.04 + triggerOpen * 0.095 + Math.max(0, exposureRatio) * 0.014
+          : 0),
+      0.025,
+      0.14,
+      0.06
+    );
+    // Legacy bloom modes keep the existing inverse selectivity curve.
     const thresholdSelectivity = 1 - thresholdRatio;
     const thresholdFineSelectivity = Math.pow(thresholdSelectivity, 1.35);
     const thresholdPrecision = 1 - Math.pow(thresholdRatio, 1.78);
     const thresholdOpen = thresholdRatio;
     const thresholdKneeOpen = Math.pow(thresholdRatio, 1.22);
-    const exposureRatio = brightnessBias / 100;
     const spreadRatio = Math.pow(radiusRatio, 0.92);
     const spreadAir = Math.pow(radiusRatio, 1.15);
     // Lens-scatter proxy: halo footprint follows area growth (~r^2 trend in normalized domain).
@@ -182,17 +205,71 @@
     const midMipWeights = [0.36, 0.32, 0.24, 0.16, 0.082, 0.035, 0.014];
     // Keep a near-field core floor even at maximum diffusion; far mips add veil instead of replacing bloom.
     const farMipWeights = [0.2, 0.23, 0.24, 0.22, 0.16, 0.09, 0.045];
-    const mipShape = diffusionT < 0.52
+    const bloomMipShape = diffusionT < 0.52
       ? mixLists(nearMipWeights, midMipWeights, diffusionT / 0.52)
       : mixLists(midMipWeights, farMipWeights, (diffusionT - 0.52) / 0.48);
+    const starMipWeights = [0.32, 0.13, 0.042, 0.012, 0.003, 0, 0];
+    const anamorphicMipWeights = [0.22, 0.105, 0.052, 0.018, 0.004, 0, 0];
+    const mipShape = opticalStyle
+      ? (style === "starburst" ? starMipWeights : anamorphicMipWeights)
+      : bloomMipShape;
     const styleEnergy = style === "none" ? 0 : clamp(
       0.98 + preset.smallWeight * 0.16 + preset.mediumWeight * 0.14 + preset.largeWeight * 0.12,
       0,
       1.42,
       1.16
     );
-    const diffusionEnergyCompensation = 1 + diffusionT * 0.12;
+    const diffusionEnergyCompensation = opticalStyle ? 0.22 : 1 + diffusionT * 0.12;
     const normalizedMipWeights = normalizeWeights(mipShape, styleEnergy * diffusionEnergyCompensation);
+    const sourceParams = opticalStyle
+      ? {
+          thresholdLow: clamp(triggerHigh - triggerKnee * (style === "starburst" ? 1.15 : 1.35), 0.18, 0.94, 0.42),
+          thresholdHigh: triggerHigh,
+          thresholdKnee: triggerKnee,
+          localRadius: Math.max(2, Math.round(style === "starburst" ? 3 + triggerOpen * 4 : 4 + triggerOpen * 5)),
+          sourceFeatherRadius: Math.max(1, Math.min(3, Math.round(style === "starburst" ? 1 + triggerOpen * 1.4 : 1 + triggerOpen * 1.7))),
+          haloMaskRadius: Math.max(4, Math.min(10, Math.round(style === "starburst" ? 4 + triggerOpen * 4 : 5 + triggerOpen * 5))),
+          contrastLow: clamp(0.016 - exposureRatio * 0.006, 0.01, 0.03, 0.018),
+          contrastHigh: clamp((style === "starburst" ? 0.05 : 0.044) + triggerThreshold * 0.09 - exposureRatio * 0.012, 0.032, 0.15, 0.062),
+          specularLow: clamp((style === "starburst" ? 0.045 : 0.038) + triggerThreshold * 0.04, 0.03, 0.105, 0.052),
+          specularHigh: clamp((style === "starburst" ? 0.18 : 0.16) + triggerThreshold * 0.2, 0.13, 0.44, 0.24),
+          lowEnergyCutoff: clamp((style === "starburst" ? 0.034 : 0.03) + triggerThreshold * 0.058, 0.024, 0.105, 0.04),
+          chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.12 + Math.max(0, exposureRatio) * 0.018, 0, 0.48, preset.chromaBoost),
+          whiteProtect: preset.whiteProtect,
+          skinProtect: preset.skinProtect,
+          darkProtect: preset.darkProtect,
+          triggerMode: style === "starburst" ? 1 : 2
+        }
+      : {
+          // thresholdHigh is the soft-knee center; thresholdLow is only the lower support for specular/rim gates.
+          thresholdLow: clamp(
+            0.16 + thresholdPrecision * 0.8 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
+              (0.034 + thresholdOpen * 0.12 + spreadRatio * 0.018) * (0.35 + thresholdRatio * 0.3),
+            0.08,
+            0.965,
+            0.42
+          ),
+          thresholdHigh: clamp(0.16 + thresholdPrecision * 0.81 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.985, 0.58),
+          thresholdKnee: clamp(
+            0.022 + thresholdKneeOpen * 0.12 + legacyRadiusRatio * 0.01 + spreadRatio * 0.014 + Math.max(0, exposureRatio) * 0.018,
+            0.025,
+            0.17,
+            0.08
+          ),
+          localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
+          sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
+          haloMaskRadius: Math.max(10, Math.min(20, Math.round(10 + legacyRadiusRatio * 7 + wideRadiusRatio * 3))),
+          contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
+          contrastHigh: clamp(0.052 + thresholdFineSelectivity * 0.078 - exposureRatio * 0.018, 0.032, 0.15, 0.068),
+          specularLow: clamp(0.06 + thresholdFineSelectivity * 0.05, 0.06, 0.12, 0.06),
+          specularHigh: clamp(0.28 + thresholdFineSelectivity * 0.16, 0.28, 0.48, 0.28),
+          lowEnergyCutoff: clamp(0.038 + thresholdFineSelectivity * 0.032, 0.038, 0.078, 0.038),
+          chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.24 + Math.max(0, exposureRatio) * 0.03, 0, 0.68, preset.chromaBoost),
+          whiteProtect: preset.whiteProtect,
+          skinProtect: preset.skinProtect,
+          darkProtect: preset.darkProtect,
+          triggerMode: 0
+        };
 
     return {
       style,
@@ -206,39 +283,15 @@
       colorAmount,
       colorTint,
       chromatic,
-      source: {
-        // thresholdHigh is the soft-knee center; thresholdLow is only the lower support for specular/rim gates.
-        thresholdLow: clamp(
-          0.16 + thresholdPrecision * 0.8 + preset.thresholdBias * 0.35 - exposureRatio * 0.02 -
-            (0.034 + thresholdOpen * 0.12 + spreadRatio * 0.018) * (0.35 + thresholdRatio * 0.3),
-          0.08,
-          0.965,
-          0.42
-        ),
-        thresholdHigh: clamp(0.16 + thresholdPrecision * 0.81 + preset.thresholdBias * 0.35 - exposureRatio * 0.024, 0.12, 0.985, 0.58),
-        thresholdKnee: clamp(
-          0.022 + thresholdKneeOpen * 0.12 + legacyRadiusRatio * 0.01 + spreadRatio * 0.014 + Math.max(0, exposureRatio) * 0.018,
-          0.025,
-          0.17,
-          0.08
-        ),
-        localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
-        sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
-        haloMaskRadius: Math.max(10, Math.min(20, Math.round(10 + legacyRadiusRatio * 7 + wideRadiusRatio * 3))),
-        contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
-        contrastHigh: clamp(0.052 + thresholdFineSelectivity * 0.078 - exposureRatio * 0.018, 0.032, 0.15, 0.068),
-        specularLow: clamp(0.06 + thresholdFineSelectivity * 0.05, 0.06, 0.12, 0.06),
-        specularHigh: clamp(0.28 + thresholdFineSelectivity * 0.16, 0.28, 0.48, 0.28),
-        lowEnergyCutoff: clamp(0.038 + thresholdFineSelectivity * 0.032, 0.038, 0.078, 0.038),
-        chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.24 + Math.max(0, exposureRatio) * 0.03, 0, 0.68, preset.chromaBoost),
-        whiteProtect: preset.whiteProtect,
-        skinProtect: preset.skinProtect,
-        darkProtect: preset.darkProtect
-      },
+      source: sourceParams,
       blur: {
-        mipCount: Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
+        mipCount: opticalStyle
+          ? Math.max(2, Math.min(4, Math.round(style === "starburst" ? 2.4 + triggerOpen * 1.1 : 2.8 + triggerOpen * 1.2)))
+          : Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
         mipWeights: normalizedMipWeights,
-        pyramidWeight: clamp(0.82 + diffusionT * 0.14 + preset.scatter * 0.045, 0.76, 1.08, 0.86),
+        pyramidWeight: opticalStyle
+          ? clamp(style === "starburst" ? 0.42 + strengthRatio * 0.2 : 0.38 + strengthRatio * 0.18, 0.32, 0.66, 0.45)
+          : clamp(0.82 + diffusionT * 0.14 + preset.scatter * 0.045, 0.76, 1.08, 0.86),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
         largeWeight: preset.largeWeight,
@@ -246,52 +299,57 @@
         optics: {
           mode: style === "starburst" ? "starburst" : (style === "anamorphic" ? "anamorphic" : "soft"),
           strength: style === "starburst"
-            ? clamp((0.24 + strengthRatio * 0.68 + thresholdSelectivity * 0.14) * (0.78 + spreadRatio * 0.48), 0, 1.18, 0.72)
+            ? clamp((0.36 + strengthRatio * 0.9 + triggerOpen * 0.12) * (0.94 + Math.pow(starLength / 220, 0.7) * 0.24), 0, 1.55, 0.82)
             : (style === "anamorphic"
-              ? clamp((0.28 + strengthRatio * 0.74 + thresholdSelectivity * 0.1) * (0.9 + spreadRatio * 0.62), 0, 1.32, 0.84)
+              ? clamp((0.38 + strengthRatio * 0.96 + triggerOpen * 0.1) * (1 + Math.pow(streakLength / 300, 0.72) * 0.28), 0, 1.7, 0.9)
               : 0),
           length: style === "starburst"
-            ? clamp(starLength * (0.82 + radiusRatio * 0.54 + strengthRatio * 0.18), 8, 260, 58)
+            ? clamp(starLength * (0.92 + strengthRatio * 0.16), 8, 260, 58)
             : (style === "anamorphic"
-              ? clamp(streakLength * (0.82 + radiusRatio * 0.66 + strengthRatio * 0.22), 14, 360, 86)
+              ? clamp(streakLength * (0.96 + strengthRatio * 0.2), 14, 360, 86)
               : 0),
-          sharpness: style === "starburst" ? 1.82 : (style === "anamorphic" ? 2.28 : 1),
-          coreMix: style === "starburst" ? 0.82 : (style === "anamorphic" ? 0.68 : 1),
-          verticalTightness: style === "anamorphic" ? 0.72 : 1,
+          sharpness: style === "starburst" ? 1.58 : (style === "anamorphic" ? 2.06 : 1),
+          coreMix: style === "starburst" ? 0.42 : (style === "anamorphic" ? 0.34 : 1),
+          verticalTightness: style === "anamorphic" ? 0.36 : 1,
           diagonalMix: style === "starburst" ? 0.58 : 0,
           starCount,
           rotation: style === "starburst" ? starRotation : 0,
           visibility: style === "starburst" ? starVisible / 100 : (style === "anamorphic" ? streakVisible / 100 : 1),
           sourceGate: style === "starburst"
-            ? clamp(0.74 - starVisible / 100 * 0.54, 0.12, 0.86, 0.36)
+            ? clamp(0.16 + triggerThreshold * 0.58 - starVisible / 100 * 0.1, 0.08, 0.82, 0.36)
             : (style === "anamorphic"
-              ? clamp(0.78 - streakVisible / 100 * 0.56, 0.14, 0.88, 0.42)
+              ? clamp(0.14 + triggerThreshold * 0.56 - streakVisible / 100 * 0.1, 0.08, 0.82, 0.4)
               : 0),
+          softSourceMix: style === "starburst" ? 0.16 : (style === "anamorphic" ? 0.12 : 0),
+          baseVeil: style === "starburst" ? 0.035 : (style === "anamorphic" ? 0.025 : 1),
+          normalization: style === "starburst" ? 0.64 : (style === "anamorphic" ? 0.5 : 1),
           uiLength: style === "anamorphic" ? streakLength : starLength
         }
       },
       composite: {
-        intensity: clamp(strengthEnergyBoost * (1.08 + radiusEnergyDamping * 0.52) * (1 + diffusionT * 0.12), 0, 38, 1),
+        intensity: opticalStyle
+          ? clamp(strengthDrive * (style === "starburst" ? 11.4 : 12.8) * (0.74 + triggerOpen * 0.18), 0, 32, 1)
+          : clamp(strengthEnergyBoost * (1.08 + radiusEnergyDamping * 0.52) * (1 + diffusionT * 0.12), 0, 38, 1),
         // Favor screen-like appearance; reduce additive/linear-dodge feel.
-        softAddMix: clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
+        softAddMix: opticalStyle ? clamp(0.025 + preset.softAddMix * 0.08, 0.02, 0.055, 0.03) : clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
         warmth: preset.warmth,
-        saturation: clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
-        highlightProtect: clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
+        saturation: opticalStyle ? clamp(1.08 + saturation / 100 * 0.34 + preset.chromaBoost * 0.18, 0.72, 1.62, 1) : clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
+        highlightProtect: opticalStyle ? clamp(0.68 + triggerThreshold * 0.08 + strengthRatio * 0.04, 0.62, 0.88, 0.72) : clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
         shadowProtect: preset.darkProtect,
-        colorProtect: clamp(0.24 + strengthRatio * 0.1 + spreadRatio * 0.025, 0.22, 0.48, 0.3),
+        colorProtect: opticalStyle ? clamp(0.2 + strengthRatio * 0.08, 0.18, 0.36, 0.26) : clamp(0.24 + strengthRatio * 0.1 + spreadRatio * 0.025, 0.22, 0.48, 0.3),
         // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
-        shoulder: clamp(0.16 + strengthRatio * 0.028 + spreadAir * 0.012 + Math.max(0, exposureRatio) * 0.004, 0.12, 0.28, 0.18),
+        shoulder: opticalStyle ? clamp(0.13 + strengthRatio * 0.018, 0.1, 0.2, 0.14) : clamp(0.16 + strengthRatio * 0.028 + spreadAir * 0.012 + Math.max(0, exposureRatio) * 0.004, 0.12, 0.28, 0.18),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,
         chromatic: chromaticRatio,
         // Split glow into core vs halo at composite stage (strength-gated).
-        coreSuppression: clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
-        coreCeiling: clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
-        haloBoost: clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
-        haloMix: clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
-        energyFloor: 0,
-        energyFloorSoftness: 0.001
+        coreSuppression: opticalStyle ? clamp(0.18 + strengthDrive * 0.16, 0.12, 0.42, 0.22) : clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
+        coreCeiling: opticalStyle ? clamp(0.18 + Math.pow(strengthRatio, 0.72) * 0.24, 0.14, 0.5, 0.28) : clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
+        haloBoost: opticalStyle ? clamp(0.42 + strengthRatio * 0.38, 0, 0.92, 0.5) : clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
+        haloMix: opticalStyle ? clamp(0.03 + strengthRatio * 0.08, 0, 0.16, 0.06) : clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
+        energyFloor: opticalStyle ? 0.003 + triggerThreshold * 0.006 : 0,
+        energyFloorSoftness: opticalStyle ? 0.01 : 0.001
       },
       sourceTone: {
         // Exposure is mostly source-side activity shaping (not output intensity).

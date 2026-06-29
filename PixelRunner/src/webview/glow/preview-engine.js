@@ -111,7 +111,8 @@
       source.chromaBoost,
       source.whiteProtect,
       source.skinProtect,
-      source.darkProtect
+      source.darkProtect,
+      source.triggerMode
     ].join("|");
   }
 
@@ -128,6 +129,9 @@
       params.blur && params.blur.optics && params.blur.optics.rotation,
       params.blur && params.blur.optics && params.blur.optics.visibility,
       params.blur && params.blur.optics && params.blur.optics.sourceGate,
+      params.blur && params.blur.optics && params.blur.optics.softSourceMix,
+      params.blur && params.blur.optics && params.blur.optics.baseVeil,
+      params.blur && params.blur.optics && params.blur.optics.normalization,
       blur.mipCount,
       blur.pyramidWeight,
       ...(Array.isArray(blur.mipWeights) ? blur.mipWeights : [])

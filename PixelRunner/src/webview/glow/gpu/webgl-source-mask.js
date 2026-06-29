@@ -86,6 +86,7 @@
     uniform float uDarkProtect;
     uniform float uChromaBoost;
     uniform float uLowEnergyCutoff;
+    uniform float uTriggerMode;
     in vec2 vUv;
     layout(location = 0) out vec4 outSource;
     layout(location = 1) out vec4 outMasks;
@@ -139,7 +140,7 @@
       float brightPass = thresholdGate;
       float contrastScore = smooth01(uContrastLow, uContrastHigh, contrast);
       float specularScore = smooth01(uSpecularLow, uSpecularHigh, specular);
-      float brightEnergy = pow(saturate(brightPass), 1.16);
+      float brightEnergy = pow(saturate(brightPass), uTriggerMode > 0.5 ? (uTriggerMode < 1.5 ? 1.58 : 1.42) : 1.16);
       float specularPass =
         pow(specularScore, 1.16) *
         secondaryThresholdGate *
@@ -177,12 +178,32 @@
       float nearClipException = nearClip * clippingDetail * thresholdGate;
       float protection = saturate(protectionBase * (1.0 - nearClipException * 0.42));
       float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
-      float emissionEnergy = brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+      float opticalPointSignal = saturate(
+        specularScore * (uTriggerMode < 1.5 ? 0.78 : 0.62) +
+        contrastScore * (uTriggerMode < 1.5 ? 0.32 : 0.24) +
+        nearClip * 0.58 +
+        colorReflection * 0.18
+      );
+      float opticalPointGate = uTriggerMode > 0.5
+        ? smooth01(uTriggerMode < 1.5 ? 0.2 : 0.14, uTriggerMode < 1.5 ? 0.72 : 0.58, opticalPointSignal)
+        : 1.0;
+      float opticalAreaGuard = uTriggerMode > 0.5
+        ? (uTriggerMode < 1.5 ? 0.16 + opticalPointGate * 0.84 : 0.28 + opticalPointGate * 0.72)
+        : 1.0;
+      float emissionEnergy = uTriggerMode > 0.5
+        ? (
+            brightEnergy * (uTriggerMode < 1.5 ? 0.98 : 1.1) * (1.0 + colorReflection * 0.12) * opticalAreaGuard +
+            specularPass * (uTriggerMode < 1.5 ? 0.82 : 0.64) +
+            rimPass * (uTriggerMode < 1.5 ? 0.018 : 0.05)
+          )
+        : brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
       float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.42) * (1.0 - nearClipException * 0.35) * (1.0 - colorReflection * 0.32);
-      emissionEnergy *= 1.0 - protection * 0.86;
-      emissionEnergy *= 1.0 - neutralClothReject * 0.82;
+      emissionEnergy *= 1.0 - protection * (uTriggerMode > 0.5 ? (uTriggerMode < 1.5 ? 0.93 : 0.9) : 0.86);
+      emissionEnergy *= 1.0 - neutralClothReject * (uTriggerMode > 0.5 ? 0.94 : 0.82);
       emissionEnergy *= smooth01(uLowEnergyCutoff * 0.62, uLowEnergyCutoff * 2.6, emissionEnergy);
-      emissionEnergy = saturate(pow(emissionEnergy, 1.04) * 1.18);
+      emissionEnergy = uTriggerMode > 0.5
+        ? saturate(pow(emissionEnergy, uTriggerMode < 1.5 ? 1.12 : 1.08) * (uTriggerMode < 1.5 ? 1.08 : 1.14))
+        : saturate(pow(emissionEnergy, 1.04) * 1.18);
       float neutralHighlight = brightPass * (1.0 - sat) * smooth01(0.82, 1.0, maxChannel);
       float warmColorHint = smooth01(0.018, 0.16, max(abs(c.r - c.g), abs(c.g - c.b)));
       float chromaKeep = clamp(0.34 + sat * 1.05 + warmColorHint * 0.24 + colorReflection * 0.22 + uChromaBoost * 0.3 - neutralHighlight * 0.06, 0.18, 0.98);
@@ -442,6 +463,7 @@
         gl.uniform1f(gl.getUniformLocation(program, "uDarkProtect"), sourceParams.darkProtect);
         gl.uniform1f(gl.getUniformLocation(program, "uChromaBoost"), sourceParams.chromaBoost);
         gl.uniform1f(gl.getUniformLocation(program, "uLowEnergyCutoff"), sourceParams.lowEnergyCutoff || 0.046);
+        gl.uniform1f(gl.getUniformLocation(program, "uTriggerMode"), Number(sourceParams.triggerMode) || 0);
         this.renderTo(sourceTarget, program);
 
         const sourcePixels = new Float32Array(width * height * 4);
