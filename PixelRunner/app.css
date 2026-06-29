@@ -2875,6 +2875,10 @@ button {
   min-height: 38px;
 }
 
+#glowHint {
+  display: none;
+}
+
 @media (min-width: 821px) {
   .glow-style-field {
     grid-column: 1 / -1;
@@ -2887,23 +2891,56 @@ button {
     min-height: auto;
   }
 
+  .glow-workbench {
+    gap: 8px;
+  }
+
+  .glow-inline-preview {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding: 8px;
+    background:
+      linear-gradient(135deg, rgba(9, 14, 21, 0.9), rgba(24, 38, 51, 0.96)),
+      repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.035) 0 8px, transparent 8px 16px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
+  }
+
+  .glow-inline-preview[hidden] {
+    display: none;
+  }
+
   .glow-controls-panel {
     position: static;
     max-height: none;
     overflow: visible;
+    gap: 8px;
+    padding: 8px;
   }
 
   .glow-slider-stack {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(148px, 1fr));
+    gap: 8px;
   }
 
   .glow-lab-tile-wide {
-    min-height: 220px;
-    height: clamp(240px, 36vh, 420px);
+    min-height: 180px;
+    height: clamp(190px, 32vh, 360px);
   }
 
   .glow-inline-preview {
     min-height: 0;
+  }
+
+  .glow-preview-meta {
+    min-height: 0;
+    padding: 4px 7px;
+    line-height: 1.35;
+  }
+
+  .glow-slider-field {
+    gap: 5px;
+    padding: 7px;
   }
 }
 
@@ -2912,9 +2949,18 @@ button {
     width: calc(100vw - 20px);
   }
 
+  .glow-modal-hero {
+    padding: 8px 10px;
+  }
+
+  .glow-modal-hero .subtle-note {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
   .glow-lab-tile-wide {
-    min-height: 220px;
-    height: 220px;
+    min-height: 176px;
+    height: clamp(176px, 34vh, 260px);
   }
 
   .glow-preview-viewport {
@@ -2923,9 +2969,33 @@ button {
   }
 
   .glow-slider-stack {
+    grid-template-columns: repeat(2, minmax(136px, 1fr));
+    gap: 7px;
+  }
+
+  .glow-style-field,
+  .glow-color-field {
+    grid-column: 1 / -1;
+  }
+
+  .glow-param-line {
+    gap: 8px;
+  }
+
+  .glow-strength-slider {
+    min-height: 20px;
+  }
+
+}
+
+@media (max-width: 430px) {
+  .glow-slider-stack {
     grid-template-columns: 1fr;
   }
 
+  .glow-lab-tile-wide {
+    height: clamp(160px, 30vh, 220px);
+  }
 }
 
 #viewTools .tool-list {

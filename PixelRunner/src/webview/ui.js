@@ -388,10 +388,9 @@
 
     const updateGlowWorkbenchLayout = () => {
       if (!glowWorkbench || !glowSliderStack) return;
-      const style = window.getComputedStyle(glowSliderStack);
-      const template = String(style.gridTemplateColumns || "").trim();
-      const isSingleColumn = !template || !template.includes(" ");
-      glowWorkbench.classList.toggle("is-side-by-side", !isSingleColumn);
+      const rect = glowWorkbench.getBoundingClientRect ? glowWorkbench.getBoundingClientRect() : null;
+      const width = Number(rect && rect.width) || 0;
+      glowWorkbench.classList.toggle("is-side-by-side", width >= 900);
     };
 
     const clampGlowPreviewView = () => {
