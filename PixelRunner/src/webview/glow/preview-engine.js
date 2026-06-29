@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-bloom-threshold-color-v10";
+  const GLOW_ALGORITHM_VERSION = "engine-bloom-threshold-color-v11";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");
@@ -121,6 +121,9 @@
       GLOW_ALGORITHM_VERSION,
       sourceKey,
       params.radius,
+      params.blur && params.blur.optics && params.blur.optics.mode,
+      params.blur && params.blur.optics && params.blur.optics.strength,
+      params.blur && params.blur.optics && params.blur.optics.length,
       blur.mipCount,
       blur.pyramidWeight,
       ...(Array.isArray(blur.mipWeights) ? blur.mipWeights : [])

@@ -136,12 +136,12 @@
       );
       vec3 centerGlow = texture(uGlow, vUv).rgb;
       float centerMax = max(max(centerGlow.r, centerGlow.g), centerGlow.b);
-      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.02);
-      float edgeGate = texture(uMasks, vUv).a * (0.68 + (1.0 - protect) * 0.32);
+      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.16);
+      float edgeGate = texture(uMasks, vUv).a * (0.44 + (1.0 - protect) * 0.24);
       vec3 fringe = vec3(
-        max(0.0, glowLayer.r - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate,
+        max(0.0, glowLayer.r - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate,
         0.0,
-        max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
+        max(0.0, glowLayer.b - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate
       );
       vec3 glow = clamp(linearToSrgb(computeGlow(glowLayer, fringe, texture(uMasks, vUv))), 0.0, 1.0);
       vec3 previewDither = (vec3(
@@ -261,12 +261,12 @@
       float source = masks.a;
       float haloSource = masks.b;
       float protect = masks.g;
-      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.02);
-      float edgeGate = source * (0.68 + (1.0 - protect) * 0.32);
+      float chromaStrength = pow(clamp(uChromaticAmount, 0.0, 1.0), 1.16);
+      float edgeGate = source * (0.44 + (1.0 - protect) * 0.24);
       vec3 fringe = vec3(
-        max(0.0, glowLayer.r - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate,
+        max(0.0, glowLayer.r - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate,
         0.0,
-        max(0.0, glowLayer.b - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate
+        max(0.0, glowLayer.b - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate
       );
       float highlightProtect = protect * uHighlightProtect * 0.86;
       float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
@@ -451,7 +451,7 @@
       const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
       gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
       gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
-      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(30, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 0.96) * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22))));
+      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(20, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 1.08) * (2.4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 0.82))));
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
       gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
       gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0.12, Math.min(1, Number(composite.coreCeiling) || 0.42)));
@@ -478,7 +478,7 @@
       const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
       gl.uniform3f(gl.getUniformLocation(program, "uColorTint"), tint[0], tint[1], tint[2]);
       gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
-      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(30, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 0.96) * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22))));
+      gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(20, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 1.08) * (2.4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 0.82))));
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
       gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
       gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0.12, Math.min(1, Number(composite.coreCeiling) || 0.42)));

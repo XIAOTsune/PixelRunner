@@ -45,8 +45,8 @@
 
   function getChromaticOffset(params) {
     const c = Math.max(0, Math.min(1, Number(params.composite.chromatic) || 0));
-    const curved = Math.pow(c, 0.96);
-    return Math.max(0, Math.min(30, curved * (4.2 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 1.22)));
+    const curved = Math.pow(c, 1.08);
+    return Math.max(0, Math.min(20, curved * (2.4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 0.82)));
   }
 
   function applyGlowColorShift(r, g, b, shift) {
@@ -117,10 +117,10 @@
       const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
       const protectGain = clamp(1 - highlightProtect * 0.045, 0.9, 1);
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
-      const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
-      const edgeGate = source * (0.68 + (1 - protect) * 0.32);
-      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
-      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
+      const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.16);
+      const edgeGate = source * (0.44 + (1 - protect) * 0.24);
+      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate : 0;
+      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate : 0;
       let warmedR = layerR * (1 + params.composite.warmth);
       let warmedG = layerG * (1 + params.composite.warmth * 0.35);
       let warmedB = layerB * (1 - params.composite.warmth * 0.28);
@@ -178,10 +178,10 @@
       const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
       const protectGain = clamp(1 - highlightProtect * 0.045, 0.9, 1);
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
-      const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.02);
-      const edgeGate = source * (0.68 + (1 - protect) * 0.32);
-      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
-      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.62) * chromaStrength * 2.18 * edgeGate : 0;
+      const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.16);
+      const edgeGate = source * (0.44 + (1 - protect) * 0.24);
+      const redEdge = chromaticOffset > 0 ? Math.max(0, layerR - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate : 0;
+      const blueEdge = chromaticOffset > 0 ? Math.max(0, layerB - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate : 0;
       let warmedR = layerR * (1 + params.composite.warmth);
       let warmedG = layerG * (1 + params.composite.warmth * 0.35);
       let warmedB = layerB * (1 - params.composite.warmth * 0.28);

@@ -27,6 +27,8 @@
     whitesoft: "白柔",
     whiteSoft: "白柔",
     shine: "辉光",
+    starburst: "星芒",
+    anamorphic: "宽幕拉丝",
     natural: "黑柔",
     soft: "白柔",
     dreamy: "辉光"

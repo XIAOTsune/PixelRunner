@@ -59,6 +59,40 @@ const GLOW_STYLE_PRESETS = {
     isolationGammaBias: 0.05,
     glowGammaBias: 0.12,
     finalGammaBias: 0.08
+  },
+  starburst: {
+    detailOpacityWeight: 1.12,
+    coreOpacityWeight: 1.08,
+    haloOpacityWeight: 0.84,
+    coreRadiusWeight: 0.8,
+    haloRadiusWeight: 0.88,
+    glowRadiusWeight: 0.86,
+    glowOpacityWeight: 0.96,
+    highlightFuzzinessWeight: 0.88,
+    highlightLowerLimitBias: -10,
+    sourceSaturationBias: 12,
+    finalSaturationWeight: 1.02,
+    finalVibranceWeight: 0.98,
+    isolationGammaBias: 0.02,
+    glowGammaBias: 0.03,
+    finalGammaBias: 0.02
+  },
+  anamorphic: {
+    detailOpacityWeight: 0.9,
+    coreOpacityWeight: 0.92,
+    haloOpacityWeight: 0.82,
+    coreRadiusWeight: 0.82,
+    haloRadiusWeight: 0.92,
+    glowRadiusWeight: 1.44,
+    glowOpacityWeight: 0.9,
+    highlightFuzzinessWeight: 0.94,
+    highlightLowerLimitBias: -8,
+    sourceSaturationBias: 8,
+    finalSaturationWeight: 0.96,
+    finalVibranceWeight: 0.9,
+    isolationGammaBias: 0.01,
+    glowGammaBias: 0.02,
+    finalGammaBias: 0.02
   }
 };
 const glowPreviewSession = {
@@ -92,6 +126,8 @@ function normalizeGlowStyle(style) {
   if (key === "none" || key === "darksoft") return "natural";
   if (key === "whitesoft") return "soft";
   if (key === "shine") return "dreamy";
+  if (key === "starburst" || key === "star" || key === "sparkle") return "starburst";
+  if (key === "anamorphic" || key === "wide" || key === "streak" || key === "widescreen") return "anamorphic";
   if (key && Object.prototype.hasOwnProperty.call(GLOW_STYLE_PRESETS, key)) return key;
   return "natural";
 }
@@ -102,6 +138,10 @@ function getStyleFade(style) {
       return 20;
     case "dreamy":
       return 28;
+    case "starburst":
+      return 14;
+    case "anamorphic":
+      return 18;
     default:
       return 12;
   }

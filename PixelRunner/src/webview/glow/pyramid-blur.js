@@ -191,6 +191,82 @@
     }
   }
 
+  function sampleLayerRgb(layer, x, y) {
+    return [
+      sampleBilinear(layer, x, y, layer.r),
+      sampleBilinear(layer, x, y, layer.g),
+      sampleBilinear(layer, x, y, layer.b)
+    ];
+  }
+
+  function addDirectionalSample(layer, x, y, dx, dy, distance, weight, accum) {
+    const a = sampleLayerRgb(layer, x + dx * distance, y + dy * distance);
+    const b = sampleLayerRgb(layer, x - dx * distance, y - dy * distance);
+    accum[0] += (a[0] + b[0]) * weight;
+    accum[1] += (a[1] + b[1]) * weight;
+    accum[2] += (a[2] + b[2]) * weight;
+    return weight * 2;
+  }
+
+  function applyOpticalShape(layer, sourceLayer, params) {
+    const optics = params && params.blur && params.blur.optics;
+    const mode = String(optics && optics.mode || "soft");
+    const strength = Math.max(0, Number(optics && optics.strength) || 0);
+    const length = Math.max(0, Number(optics && optics.length) || 0);
+    if (strength <= 0.0001 || length <= 0.5 || (mode !== "starburst" && mode !== "anamorphic")) {
+      return layer;
+    }
+
+    const out = createLayer(layer.width, layer.height);
+    const steps = mode === "anamorphic" ? 15 : 11;
+    const sharpness = Math.max(0.7, Number(optics.sharpness) || 1.6);
+    const coreMix = Math.max(0.35, Math.min(1, Number(optics.coreMix) || 0.8));
+    const diagonalMix = Math.max(0, Math.min(1, Number(optics.diagonalMix) || 0));
+    const verticalTightness = Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1));
+    const maxDistance = Math.max(1, Math.min(Math.max(layer.width, layer.height) * 0.45, length));
+
+    for (let y = 0; y < layer.height; y += 1) {
+      for (let x = 0; x < layer.width; x += 1) {
+        const index = y * layer.width + x;
+        const sourceEnergy = sourceLayer
+          ? Math.max(sourceLayer.r[index] || 0, sourceLayer.g[index] || 0, sourceLayer.b[index] || 0)
+          : Math.max(layer.r[index] || 0, layer.g[index] || 0, layer.b[index] || 0);
+        const localGate = Math.pow(Math.max(0, Math.min(1, sourceEnergy * 1.35)), 0.62);
+        const accum = [
+          layer.r[index] * coreMix,
+          layer.g[index] * coreMix,
+          layer.b[index] * coreMix
+        ];
+        let totalWeight = coreMix;
+
+        for (let step = 1; step <= steps; step += 1) {
+          const t = step / steps;
+          const distance = t * maxDistance;
+          const falloff = Math.pow(1 - t * 0.86, sharpness) * (mode === "anamorphic" ? 0.74 : 0.58);
+          if (falloff <= 0.0001) continue;
+          totalWeight += addDirectionalSample(layer, x, y, 1, 0, distance, falloff, accum);
+          if (mode === "starburst") {
+            totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.82, falloff * 0.5, accum);
+            totalWeight += addDirectionalSample(layer, x, y, 0.7071, 0.7071, distance * 0.92, falloff * diagonalMix * 0.42, accum);
+            totalWeight += addDirectionalSample(layer, x, y, 0.7071, -0.7071, distance * 0.92, falloff * diagonalMix * 0.42, accum);
+          } else {
+            totalWeight += addDirectionalSample(layer, x, y, 0, 1, distance * 0.12, falloff * 0.08 * verticalTightness, accum);
+          }
+        }
+
+        const shapedR = accum[0] / Math.max(0.0001, totalWeight);
+        const shapedG = accum[1] / Math.max(0.0001, totalWeight);
+        const shapedB = accum[2] / Math.max(0.0001, totalWeight);
+        const mix = Math.max(0, Math.min(0.92, strength * (0.45 + localGate * 0.55)));
+        const sparkle = mode === "starburst" ? 1 + localGate * strength * 0.22 : 1;
+        out.r[index] = layer.r[index] * (1 - mix) + shapedR * mix * sparkle;
+        out.g[index] = layer.g[index] * (1 - mix) + shapedG * mix * sparkle;
+        out.b[index] = layer.b[index] * (1 - mix) + shapedB * mix * sparkle;
+      }
+    }
+    return out;
+  }
+
   function buildMultiScaleGlow(sourceLayer, params) {
     const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
     const mipCount = Math.max(2, Math.min(7, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 4))));
@@ -220,7 +296,7 @@
     if (levels.length) {
       addUpsampled(out, combined, params.blur.pyramidWeight || 1);
     }
-    return { glowLayer: out, levels: { mips: levels } };
+    return { glowLayer: applyOpticalShape(out, sourceLayer, params), levels: { mips: levels } };
   }
 
   modules.glowPyramidBlur = {

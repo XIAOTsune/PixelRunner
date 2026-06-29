@@ -12,6 +12,8 @@
     if (key === "none") return "none";
     if (key === "whitesoft" || key === "soft") return "whiteSoft";
     if (key === "shine" || key === "dreamy") return "shine";
+    if (key === "starburst" || key === "star" || key === "sparkle") return "starburst";
+    if (key === "anamorphic" || key === "wide" || key === "streak" || key === "widescreen") return "anamorphic";
     return "darkSoft";
   }
 
@@ -100,6 +102,34 @@
       softAddMix: 0.44,
       warmth: 0.05,
       scatter: 1.18
+    },
+    starburst: {
+      thresholdBias: 0.01,
+      whiteProtect: 0.82,
+      skinProtect: 0.76,
+      darkProtect: 0.48,
+      knee: 0.16,
+      chromaBoost: 0.24,
+      smallWeight: 0.62,
+      mediumWeight: 0.58,
+      largeWeight: 0.28,
+      softAddMix: 0.34,
+      warmth: 0.035,
+      scatter: 0.82
+    },
+    anamorphic: {
+      thresholdBias: 0.02,
+      whiteProtect: 0.84,
+      skinProtect: 0.78,
+      darkProtect: 0.5,
+      knee: 0.18,
+      chromaBoost: 0.18,
+      smallWeight: 0.44,
+      mediumWeight: 0.64,
+      largeWeight: 0.36,
+      softAddMix: 0.28,
+      warmth: 0.02,
+      scatter: 0.72
     }
   };
 
@@ -206,7 +236,24 @@
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
         largeWeight: preset.largeWeight,
-        passes: 1
+        passes: 1,
+        optics: {
+          mode: style === "starburst" ? "starburst" : (style === "anamorphic" ? "anamorphic" : "soft"),
+          strength: style === "starburst"
+            ? clamp((0.24 + strengthRatio * 0.68 + thresholdSelectivity * 0.14) * (0.78 + spreadRatio * 0.48), 0, 1.18, 0.72)
+            : (style === "anamorphic"
+              ? clamp((0.28 + strengthRatio * 0.74 + thresholdSelectivity * 0.1) * (0.9 + spreadRatio * 0.62), 0, 1.32, 0.84)
+              : 0),
+          length: style === "starburst"
+            ? clamp(10 + radius * 0.42 + strengthRatio * 18, 8, 190, 54)
+            : (style === "anamorphic"
+              ? clamp(18 + radius * 0.72 + strengthRatio * 34, 14, 260, 86)
+              : 0),
+          sharpness: style === "starburst" ? 1.82 : (style === "anamorphic" ? 2.28 : 1),
+          coreMix: style === "starburst" ? 0.82 : (style === "anamorphic" ? 0.68 : 1),
+          verticalTightness: style === "anamorphic" ? 0.72 : 1,
+          diagonalMix: style === "starburst" ? 0.58 : 0
+        }
       },
       composite: {
         intensity: clamp(strengthEnergyBoost * (1.08 + radiusEnergyDamping * 0.52) * (1 + diffusionT * 0.12), 0, 38, 1),
