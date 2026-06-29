@@ -680,7 +680,7 @@ function parseChargeValue(value) {
   return Number.isFinite(parsed) ? Number(parsed.toFixed(3)) : null;
 }
 
-function extractTaskChargeByKeys(payload, keys = []) {
+function sumTaskChargeValues(payload, keys = []) {
   const candidates = collectCandidateValues(
     payload,
     (key) => {
@@ -700,11 +700,56 @@ function extractTaskChargeByKeys(payload, keys = []) {
   return matched ? Number(total.toFixed(3)) : null;
 }
 
+function collectTaskChargeValuesByKey(payload, keys = [], out = new Map()) {
+  collectCandidateValues(
+    payload,
+    (key, value) => {
+      const normalized = String(key || "").trim().toLowerCase();
+      if (!keys.includes(normalized)) return false;
+      const parsed = parseChargeValue(value);
+      if (parsed === null) return false;
+      const current = out.get(normalized);
+      const nextValue = Math.abs(parsed);
+      out.set(normalized, current === undefined ? nextValue : Math.max(current, nextValue));
+      return false;
+    }
+  );
+  return out;
+}
+
+function extractTaskChargeByKeys(payload, keys = []) {
+  if (Array.isArray(payload)) {
+    const valuesByKey = new Map();
+    payload.forEach((item) => collectTaskChargeValuesByKey(item, keys, valuesByKey));
+    if (valuesByKey.size === 0) return null;
+    const total = Array.from(valuesByKey.values()).reduce((sum, value) => sum + value, 0);
+    return Number(total.toFixed(3));
+  }
+  return sumTaskChargeValues(payload, keys);
+}
+
 function extractTaskBalanceCharge(payload) {
   return extractTaskChargeByKeys(payload, [
     "consume",
     "consumefee",
     "consumemoney",
+    "thirdpartyconsume",
+    "thirdpartyconsumefee",
+    "thirdpartyconsumemoney",
+    "thirdpartydeduct",
+    "thirdpartydeductfee",
+    "thirdpartydeductmoney",
+    "thirdpartycost",
+    "thirdpartymoneycost",
+    "thirdpartyfee",
+    "thirdpartycharge",
+    "modelconsume",
+    "modelconsumefee",
+    "modelconsumemoney",
+    "modelcost",
+    "modelmoneycost",
+    "modelfee",
+    "modelcharge",
     "deduct",
     "deductfee",
     "deductmoney",
@@ -723,6 +768,32 @@ function extractTaskBalanceCharge(payload) {
 function extractTaskCoinsCharge(payload) {
   return extractTaskChargeByKeys(payload, [
     "consumecoins",
+    "thirdpartyconsumecoins",
+    "thirdpartydeductcoins",
+    "thirdpartyusedcoins",
+    "thirdpartyspentcoins",
+    "thirdpartycoinscost",
+    "thirdpartycoincost",
+    "thirdpartycoincharge",
+    "thirdpartyconsumerhcoins",
+    "thirdpartydeductrhcoins",
+    "thirdpartyusedrhcoins",
+    "thirdpartyspentrhcoins",
+    "thirdpartyintegralcost",
+    "thirdpartyintegralcharge",
+    "modelconsumecoins",
+    "modeldeductcoins",
+    "modelusedcoins",
+    "modelspentcoins",
+    "modelcoinscost",
+    "modelcoincost",
+    "modelcoincharge",
+    "modelconsumerhcoins",
+    "modeldeductrhcoins",
+    "modelusedrhcoins",
+    "modelspentrhcoins",
+    "modelintegralcost",
+    "modelintegralcharge",
     "deductcoins",
     "usedcoins",
     "spentcoins",

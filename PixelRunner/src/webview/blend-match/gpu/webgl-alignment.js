@@ -41,7 +41,7 @@
       float br = lumaAt(pixel + ivec2( 1,  1));
       float gx = -tl + tr - 2.0 * ml + 2.0 * mr - bl + br;
       float gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
-      outColor = vec4(length(vec2(gx, gy)), 0.0, 0.0, 1.0);
+      outColor = vec4(length(vec2(gx, gy)), gx, gy, 1.0);
     }
   `;
 
@@ -59,14 +59,14 @@
 
     const int TILE = 16;
 
-    float sourceAt(vec2 pixel) {
+    vec4 sourceGradAt(vec2 pixel) {
       ivec2 safePixel = clamp(ivec2(floor(pixel + 0.5)), ivec2(0), ivec2(uSize) - ivec2(1));
-      return texelFetch(uSourceGrad, safePixel, 0).r;
+      return texelFetch(uSourceGrad, safePixel, 0);
     }
 
-    float referenceAt(vec2 pixel) {
+    vec4 referenceGradAt(vec2 pixel) {
       ivec2 safePixel = clamp(ivec2(floor(pixel + 0.5)), ivec2(0), ivec2(uSize) - ivec2(1));
-      return texelFetch(uReferenceGrad, safePixel, 0).r;
+      return texelFetch(uReferenceGrad, safePixel, 0);
     }
 
     void main() {
@@ -94,8 +94,8 @@
           vec2 local = vec2(x, y) - center;
           vec2 sourcePixel = center + local / max(0.0001, scale) + offset;
           if (sourcePixel.x < 1.0 || sourcePixel.x >= uSize.x - 1.0 || sourcePixel.y < 1.0 || sourcePixel.y >= uSize.y - 1.0) continue;
-          float a = sourceAt(sourcePixel);
-          float b = referenceAt(vec2(x, y));
+          float a = sourceGradAt(sourcePixel).r;
+          float b = referenceGradAt(vec2(x, y)).r;
           if (a < 8.0 && b < 8.0) continue;
           sumA += a;
           sumB += b;
@@ -124,14 +124,14 @@
 
     const int TILE = 16;
 
-    float sourceAt(vec2 pixel) {
+    vec4 sourceGradAt(vec2 pixel) {
       ivec2 safePixel = clamp(ivec2(floor(pixel + 0.5)), ivec2(0), ivec2(uSize) - ivec2(1));
-      return texelFetch(uSourceGrad, safePixel, 0).r;
+      return texelFetch(uSourceGrad, safePixel, 0);
     }
 
-    float referenceAt(vec2 pixel) {
+    vec4 referenceGradAt(vec2 pixel) {
       ivec2 safePixel = clamp(ivec2(floor(pixel + 0.5)), ivec2(0), ivec2(uSize) - ivec2(1));
-      return texelFetch(uReferenceGrad, safePixel, 0).r;
+      return texelFetch(uReferenceGrad, safePixel, 0);
     }
 
     void main() {
@@ -144,6 +144,8 @@
       float stepValue = max(1.0, uStride);
       vec2 center = uSize * 0.5;
       float sumAB = 0.0;
+      float directionSum = 0.0;
+      float overlapSum = 0.0;
       float count = 0.0;
 
       for (int localY = 0; localY < TILE; localY++) {
@@ -155,15 +157,21 @@
           vec2 local = vec2(x, y) - center;
           vec2 sourcePixel = center + local / max(0.0001, scale) + offset;
           if (sourcePixel.x < 1.0 || sourcePixel.x >= uSize.x - 1.0 || sourcePixel.y < 1.0 || sourcePixel.y >= uSize.y - 1.0) continue;
-          float a = sourceAt(sourcePixel);
-          float b = referenceAt(vec2(x, y));
+          vec4 sourceGrad = sourceGradAt(sourcePixel);
+          vec4 referenceGrad = referenceGradAt(vec2(x, y));
+          float a = sourceGrad.r;
+          float b = referenceGrad.r;
           if (a < 8.0 && b < 8.0) continue;
           sumAB += a * b;
+          float denom = max(0.001, a * b);
+          float cosValue = ((sourceGrad.g * referenceGrad.g) + (sourceGrad.b * referenceGrad.b)) / denom;
+          directionSum += clamp(cosValue, -1.0, 1.0);
+          overlapSum += min(a, b) / max(1.0, max(a, b));
           count += 1.0;
         }
       }
 
-      outColor = vec4(sumAB, count, 0.0, 1.0);
+      outColor = vec4(sumAB, count, directionSum, overlapSum);
     }
   `;
 
@@ -459,8 +467,8 @@
       this.sourceTexture = null;
       this.referenceTexture = null;
       this.candidateTexture = null;
-      this.sourceGradTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.R32F, gl.RED);
-      this.referenceGradTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.R32F, gl.RED);
+      this.sourceGradTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.RGBA32F, gl.RGBA);
+      this.referenceGradTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.RGBA32F, gl.RGBA);
       this.scoreTarget = createFloatTarget(gl, safeBatchSize, scoreHeight, gl.RGBA32F, gl.RGBA);
       this.scoreSumTarget = createFloatTarget(gl, safeBatchSize, scoreHeight, gl.RGBA32F, gl.RGBA);
       this.candidateTexture = createFloatTexture(gl, safeBatchSize, 1);
@@ -549,13 +557,15 @@
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.scoreSumTarget.framebuffer);
       gl.readPixels(0, 0, batchSize, scoreHeight, gl.RGBA, gl.FLOAT, this.scoreSumReadback);
 
-      const scores = new Array(batchSize);
+      const summaries = new Array(batchSize);
       for (let candidateIndex = 0; candidateIndex < batchSize; candidateIndex += 1) {
         let sumA = 0;
         let sumB = 0;
         let sumAA = 0;
         let sumBB = 0;
         let sumAB = 0;
+        let directionSum = 0;
+        let overlapSum = 0;
         let count = 0;
         for (let tileIndex = 0; tileIndex < scoreHeight; tileIndex += 1) {
           const index = (tileIndex * batchSize + candidateIndex) * 4;
@@ -565,18 +575,30 @@
           sumBB += this.scoreReadback[index + 3];
           sumAB += this.scoreSumReadback[index];
           count += this.scoreSumReadback[index + 1];
+          directionSum += this.scoreSumReadback[index + 2];
+          overlapSum += this.scoreSumReadback[index + 3];
         }
         if (count < 64) {
-          scores[candidateIndex] = -1;
+          summaries[candidateIndex] = {
+            score: -1,
+            sampleCount: Math.max(0, Math.round(count)),
+            directionAgreement: 0,
+            edgeOverlap: 0
+          };
           continue;
         }
         const numerator = sumAB - (sumA * sumB) / count;
         const denomA = sumAA - (sumA * sumA) / count;
         const denomB = sumBB - (sumB * sumB) / count;
         const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
-        scores[candidateIndex] = numerator / denom;
+        summaries[candidateIndex] = {
+          score: numerator / denom,
+          sampleCount: Math.max(0, Math.round(count)),
+          directionAgreement: directionSum / count,
+          edgeOverlap: overlapSum / count
+        };
       }
-      return scores;
+      return summaries;
     }
 
     searchGlobal(width, height, sampleOffset, scaleCandidates, stride, batchSize) {
@@ -596,25 +618,54 @@
           dy: Number((Number(candidate.dy) || 0).toFixed(3)),
           scale: Number((Number(candidate.scale) || 1).toFixed(6)),
           score: Number((Number(candidate.score) || 0).toFixed(6)),
+          sampleCount: Math.max(0, Math.round(Number(candidate.sampleCount) || 0)),
+          directionAgreement: Number((Number(candidate.directionAgreement) || 0).toFixed(6)),
+          edgeOverlap: Number((Number(candidate.edgeOverlap) || 0).toFixed(6)),
           stage: String(candidate.stage || "")
         });
         topCandidates.sort((a, b) => Number(b.score) - Number(a.score));
         if (topCandidates.length > 8) topCandidates.length = 8;
       };
-      const update = (dx, dy, scale, score, stageName) => {
+      const update = (dx, dy, scale, summary, stageName) => {
         scoreCalls += 1;
-        updateTopCandidates({ dx, dy, scale, score, stage: stageName });
+        const score = Number(summary && typeof summary === "object" ? summary.score : summary);
+        updateTopCandidates({
+          dx,
+          dy,
+          scale,
+          score,
+          sampleCount: summary && typeof summary === "object" ? summary.sampleCount : 0,
+          directionAgreement: summary && typeof summary === "object" ? summary.directionAgreement : 0,
+          edgeOverlap: summary && typeof summary === "object" ? summary.edgeOverlap : 0,
+          stage: stageName
+        });
         if (Math.abs(scale - 1) < 0.000001) {
           if (score > translationBase.score) {
             translationSecond = translationBase.score;
-            translationBase = { dx, dy, scale: 1, score };
+            translationBase = {
+              dx,
+              dy,
+              scale: 1,
+              score,
+              sampleCount: summary && typeof summary === "object" ? summary.sampleCount : 0,
+              directionAgreement: summary && typeof summary === "object" ? summary.directionAgreement : 0,
+              edgeOverlap: summary && typeof summary === "object" ? summary.edgeOverlap : 0
+            };
           } else if (score > translationSecond) {
             translationSecond = score;
           }
         }
         if (score > best.score) {
           second = best.score;
-          best = { dx, dy, scale, score };
+          best = {
+            dx,
+            dy,
+            scale,
+            score,
+            sampleCount: summary && typeof summary === "object" ? summary.sampleCount : 0,
+            directionAgreement: summary && typeof summary === "object" ? summary.directionAgreement : 0,
+            edgeOverlap: summary && typeof summary === "object" ? summary.edgeOverlap : 0
+          };
         } else if (score > second) {
           second = score;
         }
@@ -641,9 +692,9 @@
           let pending = [];
           const flush = () => {
             if (!pending.length) return;
-            const scores = this.scoreCandidateBatch(pending, activeStride);
+            const summaries = this.scoreCandidateBatch(pending, activeStride);
             pending.forEach((candidate, index) => {
-              update(candidate.dx, candidate.dy, candidate.scale, scores[index], stage.name);
+              update(candidate.dx, candidate.dy, candidate.scale, summaries[index], stage.name);
             });
             pending = [];
           };
@@ -664,6 +715,43 @@
         runGrid("mid-global-translation-scale-refine", sampleOffset, Math.max(1, Math.floor(coarseStep / 2)), best.dx, best.dy, Math.max(1, stride), refineRadius);
         runGrid("fine-global-translation-scale-refine", sampleOffset, 1, best.dx, best.dy, Math.max(1, stride), Math.min(sampleOffset, 2));
       }
+      const rankedTopCandidates = topCandidates.map((candidate, index) => {
+        const next = topCandidates[index + 1] || null;
+        const secondScore = Number.isFinite(Number(next && next.score)) ? Number(next.score) : Number(second);
+        const scoreGap = Number(candidate.score) - Math.max(0, Number.isFinite(secondScore) ? secondScore : -1);
+        return {
+          ...candidate,
+          secondScore: Number.isFinite(secondScore) ? Number(secondScore.toFixed(6)) : -1,
+          scoreGap: Number.isFinite(scoreGap) ? Number(scoreGap.toFixed(6)) : -1
+        };
+      });
+      const bestSecondScore = Math.max(0, Number(second) || -1);
+      const bestScoreGap = Number(best.score) - bestSecondScore;
+      const validationSummary = {
+        schemaVersion: 1,
+        backend: "gpu-webgl2-global-v1",
+        compact: true,
+        topK: rankedTopCandidates,
+        best: {
+          dx: Number((Number(best.dx) || 0).toFixed(3)),
+          dy: Number((Number(best.dy) || 0).toFixed(3)),
+          scale: Number((Number(best.scale) || 1).toFixed(6)),
+          score: Number((Number(best.score) || 0).toFixed(6)),
+          secondScore: Number((Number(bestSecondScore) || 0).toFixed(6)),
+          scoreGap: Number((Number(bestScoreGap) || 0).toFixed(6)),
+          sampleCount: Math.max(0, Math.round(Number(best.sampleCount) || 0)),
+          directionAgreement: Number((Number(best.directionAgreement) || 0).toFixed(6)),
+          edgeOverlap: Number((Number(best.edgeOverlap) || 0).toFixed(6))
+        },
+        sampleCount: Math.max(0, Math.round(Number(best.sampleCount) || 0)),
+        score: Number((Number(best.score) || 0).toFixed(6)),
+        secondScore: Number((Number(bestSecondScore) || 0).toFixed(6)),
+        scoreGap: Number((Number(bestScoreGap) || 0).toFixed(6)),
+        directionAgreement: Number((Number(best.directionAgreement) || 0).toFixed(6)),
+        edgeOverlap: Number((Number(best.edgeOverlap) || 0).toFixed(6)),
+        scoreCalls,
+        scoreReadback: "candidate-tile-summary"
+      };
       return {
         best,
         second,
@@ -672,7 +760,8 @@
         coarseStep,
         coarseStride,
         scoreCalls,
-        topCandidates,
+        topCandidates: rankedTopCandidates,
+        validationSummary,
         stages
       };
     }
@@ -759,17 +848,28 @@
           coarseStride: globalSearch.coarseStride,
           topCandidates: globalSearch.topCandidates,
           topCandidate: globalSearch.topCandidates && globalSearch.topCandidates[0] || null,
+          globalValidation: globalSearch.validationSummary,
           refinedCandidate: {
             dx: Number((Number(best.dx) || 0).toFixed(3)),
             dy: Number((Number(best.dy) || 0).toFixed(3)),
             scale: Number((Number(best.scale) || 1).toFixed(6)),
-            score: Number((Number(best.score) || 0).toFixed(6))
+            score: Number((Number(best.score) || 0).toFixed(6)),
+            secondScore: Number((Number(second) || 0).toFixed(6)),
+            scoreGap: Number((Number(best.score - second) || 0).toFixed(6)),
+            sampleCount: Math.max(0, Math.round(Number(best.sampleCount) || 0)),
+            directionAgreement: Number((Number(best.directionAgreement) || 0).toFixed(6)),
+            edgeOverlap: Number((Number(best.edgeOverlap) || 0).toFixed(6))
           },
           translationCandidate: {
             dx: Number((Number(globalSearch.translationBase.dx) || 0).toFixed(3)),
             dy: Number((Number(globalSearch.translationBase.dy) || 0).toFixed(3)),
             scale: 1,
-            score: Number((Number(globalSearch.translationBase.score) || 0).toFixed(6))
+            score: Number((Number(globalSearch.translationBase.score) || 0).toFixed(6)),
+            secondScore: Number((Number(globalSearch.translationSecond) || 0).toFixed(6)),
+            scoreGap: Number((Number(globalSearch.translationBase.score - Math.max(0, globalSearch.translationSecond)) || 0).toFixed(6)),
+            sampleCount: Math.max(0, Math.round(Number(globalSearch.translationBase.sampleCount) || 0)),
+            directionAgreement: Number((Number(globalSearch.translationBase.directionAgreement) || 0).toFixed(6)),
+            edgeOverlap: Number((Number(globalSearch.translationBase.edgeOverlap) || 0).toFixed(6))
           },
           stages: [
             { name: "sobel-magnitude", backend: "gpu-webgl2" },

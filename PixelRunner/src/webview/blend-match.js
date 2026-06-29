@@ -840,8 +840,42 @@
       dy: readFiniteNumber(candidate && candidate.dy),
       scale: readFiniteNumber(candidate && candidate.scale, 1),
       score: readOptionalNumber(candidate && candidate.score),
+      secondScore: readOptionalNumber(candidate && candidate.secondScore),
+      scoreGap: readOptionalNumber(candidate && candidate.scoreGap),
+      sampleCount: Math.max(0, Math.round(readFiniteNumber(candidate && candidate.sampleCount))),
+      directionAgreement: readOptionalNumber(candidate && candidate.directionAgreement),
+      edgeOverlap: readOptionalNumber(candidate && candidate.edgeOverlap),
       stage: String(candidate && candidate.stage || "")
     }));
+  }
+
+  function normalizeGpuValidationSummary(summary) {
+    if (!summary || typeof summary !== "object") return null;
+    return {
+      schemaVersion: Number(summary.schemaVersion) || 1,
+      backend: String(summary.backend || "gpu-webgl2-global-v1"),
+      compact: summary.compact !== false,
+      score: readOptionalNumber(summary.score),
+      secondScore: readOptionalNumber(summary.secondScore),
+      scoreGap: readOptionalNumber(summary.scoreGap),
+      sampleCount: Math.max(0, Math.round(readFiniteNumber(summary.sampleCount))),
+      directionAgreement: readOptionalNumber(summary.directionAgreement),
+      edgeOverlap: readOptionalNumber(summary.edgeOverlap),
+      scoreCalls: Math.max(0, Math.round(readFiniteNumber(summary.scoreCalls))),
+      scoreReadback: String(summary.scoreReadback || "candidate-summary"),
+      best: summary.best && typeof summary.best === "object" ? {
+        dx: readFiniteNumber(summary.best.dx),
+        dy: readFiniteNumber(summary.best.dy),
+        scale: readFiniteNumber(summary.best.scale, 1),
+        score: readOptionalNumber(summary.best.score),
+        secondScore: readOptionalNumber(summary.best.secondScore),
+        scoreGap: readOptionalNumber(summary.best.scoreGap),
+        sampleCount: Math.max(0, Math.round(readFiniteNumber(summary.best.sampleCount))),
+        directionAgreement: readOptionalNumber(summary.best.directionAgreement),
+        edgeOverlap: readOptionalNumber(summary.best.edgeOverlap)
+      } : null,
+      topK: trimGpuSeedCandidates(summary.topK || summary.topCandidates || [], 8)
+    };
   }
 
   function buildGpuAlignmentSeed(candidate, sampleResult, validation, timingInfo = {}) {
@@ -896,11 +930,17 @@
         scoreCalls: Number(search.scoreCalls) || 0,
         coarseStep: Number(search.coarseStep) || 0,
         coarseStride: Number(search.coarseStride) || 0,
+        globalValidation: normalizeGpuValidationSummary(search.globalValidation || search.validationSummary),
         refinedCandidate: refined ? {
           dx: readFiniteNumber(refined.dx),
           dy: readFiniteNumber(refined.dy),
           scale: readFiniteNumber(refined.scale, 1),
-          score: readOptionalNumber(refined.score)
+          score: readOptionalNumber(refined.score),
+          secondScore: readOptionalNumber(refined.secondScore),
+          scoreGap: readOptionalNumber(refined.scoreGap),
+          sampleCount: Math.max(0, Math.round(readFiniteNumber(refined.sampleCount))),
+          directionAgreement: readOptionalNumber(refined.directionAgreement),
+          edgeOverlap: readOptionalNumber(refined.edgeOverlap)
         } : null,
         topCandidates,
         stages: Array.isArray(search.stages)
@@ -1921,10 +1961,14 @@
         }
         const timings = gpuAlignment.timings || {};
         const search = gpuAlignment.search || {};
+        const globalValidation = search.globalValidation || null;
         const stages = Array.isArray(search.stages)
           ? search.stages.map((stage) => stage.name || stage).join(" -> ")
           : Array.isArray(search.gpuStages) ? search.gpuStages.join(" -> ") : "sobel-magnitude -> global-translation-scale-search";
         modules.ui.logToWorkspace(`[融合校色] WebGL2 后台对齐 candidate：backend=${candidate.backend}，stages=${stages}；缺失 affine-refine/non-uniform-scale/rotation/local-mesh 完整验证。`, "info");
+        if (globalValidation) {
+          modules.ui.logToWorkspace(`[融合校色] GPU validation ready total：${formatPreviewMs(gpuDoneAt - startedAt)}，score=${Number(globalValidation.score || 0).toFixed(4)}，scoreGap=${Number(globalValidation.scoreGap || 0).toFixed(4)}，sampleCount=${globalValidation.sampleCount || 0}，topK=${Array.isArray(globalValidation.topK) ? globalValidation.topK.length : 0}，readback=${globalValidation.scoreReadback || "compact-summary"}。`, "info");
+        }
         modules.ui.logToWorkspace(`[融合校色] WebGL2 后台对齐耗时：raw 解码 ${formatPreviewMs(decodeMs)} / corrections ${formatPreviewMs(correctionsMs)} / GPU 初始化 ${formatPreviewMs(timings.init || 0)} / 上传 ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / global search ${formatPreviewMs(timings.globalSearch || 0)} / GPU 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)} / 从打开面板到 GPU ready ${formatPreviewMs(gpuDoneAt - startedAt)}。`, "info");
       }
     } catch (error) {

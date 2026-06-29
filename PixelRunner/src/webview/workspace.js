@@ -965,6 +965,45 @@
     return parts.join(" · ");
   }
 
+  function hasTaskChargeValue(task) {
+    if (!task || typeof task !== "object") return false;
+    if (String(task.chargeDisplay || "").trim()) return true;
+    if (normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge) !== null) return true;
+    return normalizeTaskChargeValue(task.coinsCharge) !== null;
+  }
+
+  function getTaskActivityStartedAt(task) {
+    return Number(task && (task.submittedAt || task.createdAt || 0)) || 0;
+  }
+
+  function getTaskActivityFinishedAt(task, fallbackEnd = Date.now()) {
+    if (!task || typeof task !== "object") return 0;
+    const explicitEnd = Number(task.finishedAt || 0);
+    if (explicitEnd > 0) return explicitEnd;
+    if (isTaskTerminalStatus(task.status)) return Number(task.updatedAt || fallbackEnd) || fallbackEnd;
+    return fallbackEnd;
+  }
+
+  function doTaskActivityWindowsOverlap(leftTask, rightTask, fallbackEnd = Date.now()) {
+    const leftStart = getTaskActivityStartedAt(leftTask);
+    const rightStart = getTaskActivityStartedAt(rightTask);
+    if (!leftStart || !rightStart) return false;
+    const leftEnd = getTaskActivityFinishedAt(leftTask, fallbackEnd);
+    const rightEnd = getTaskActivityFinishedAt(rightTask, fallbackEnd);
+    return leftStart <= rightEnd && rightStart <= leftEnd;
+  }
+
+  function hasOverlappingRunningHubTask(task) {
+    if (!task || typeof task !== "object" || isThirdPartyTaskRecord(task)) return false;
+    const taskId = String(task.taskId || "").trim();
+    const now = Date.now();
+    return getRunningTasks().some((item) => {
+      if (!item || typeof item !== "object" || isThirdPartyTaskRecord(item)) return false;
+      if (String(item.taskId || "").trim() === taskId) return false;
+      return doTaskActivityWindowsOverlap(task, item, now);
+    });
+  }
+
   function getCurrentAccountSnapshot() {
     const accountSummary = modules.state.state.accountSummary || {};
     return {
@@ -1004,13 +1043,13 @@
     const nextBalanceCharge = normalizeTaskChargeValue(chargePatch.balanceCharge != null ? chargePatch.balanceCharge : chargePatch.charge);
     const nextCoinsCharge = normalizeTaskChargeValue(chargePatch.coinsCharge);
     const balanceCharge =
-      nextBalanceCharge !== null && (currentBalanceCharge === null || nextBalanceCharge > currentBalanceCharge)
-        ? nextBalanceCharge
-        : currentBalanceCharge;
+      currentBalanceCharge !== null
+        ? currentBalanceCharge
+        : nextBalanceCharge;
     const coinsCharge =
-      nextCoinsCharge !== null && (currentCoinsCharge === null || nextCoinsCharge > currentCoinsCharge)
-        ? nextCoinsCharge
-        : currentCoinsCharge;
+      currentCoinsCharge !== null
+        ? currentCoinsCharge
+        : nextCoinsCharge;
 
     if (balanceCharge === null && coinsCharge === null) return null;
     return {
@@ -1028,11 +1067,13 @@
       .catch(() => null)
       .then(async () => {
         const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+        const canPatchFromAccount = Boolean(task && !hasTaskChargeValue(task) && !hasOverlappingRunningHubTask(task));
         const beforeAccount =
-          task && task.accountSnapshot && typeof task.accountSnapshot === "object"
+          canPatchFromAccount && task.accountSnapshot && typeof task.accountSnapshot === "object"
             ? task.accountSnapshot
             : getCurrentAccountSnapshot();
         const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
+        if (!canPatchFromAccount) return null;
         const chargePatch = mergeTaskChargePatch(task, buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot()));
         if (chargePatch && task) {
           upsertRunningTask({
@@ -2371,10 +2412,17 @@
       message.includes("modal") ||
       message.includes("executeasmodal") ||
       message.includes("host is in a modal state") ||
+      message.includes("modal state") ||
+      message.includes("modal dialog") ||
       message.includes("photoshop is busy") ||
       message.includes("another modal") ||
+      message.includes("already in use") ||
       message.includes("command is currently unavailable") ||
-      message.includes("the object is currently in use")
+      message.includes("currently unavailable") ||
+      message.includes("the object is currently in use") ||
+      message.includes("liquify") ||
+      /photoshop.*(?:busy|unavailable|in use)/i.test(message) ||
+      /(?:正忙|忙碌|模态|液化|命令不可用|暂不可用|正在使用|当前无法|无法执行)/.test(message)
     );
   }
 
@@ -2438,15 +2486,31 @@
           upsertRunningTask({
             taskId,
             remoteTaskId: taskId,
+            status: "succeeded",
             detail:
               response && response.documentId
                 ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}。`
-                : "任务已完成，并已在 Photoshop 空闲后自动贴回。"
+                : "任务已完成，并已在 Photoshop 空闲后自动贴回。",
+            finishedAt: Date.now()
           });
           modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
         } catch (error) {
-          if (isAutoPlacementRetryableError(error) && Number(queued.attempts || 0) + 1 < AUTO_PLACEMENT_MAX_TEMP_FAILURES) {
-            const attempts = Number(queued.attempts || 0) + 1;
+          if (isAutoPlacementRetryableError(error)) {
+            const blocked = isAutoPlacementBlockedError(error);
+            const attempts = blocked ? Number(queued.attempts || 0) : Number(queued.attempts || 0) + 1;
+            if (!blocked && attempts >= AUTO_PLACEMENT_MAX_TEMP_FAILURES) {
+              pendingAutoPlacements.delete(taskId);
+              const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 失败");
+              upsertRunningTask({
+                taskId,
+                remoteTaskId: taskId,
+                status: "succeeded",
+                detail: `任务已完成，但自动贴回失败：${message}`,
+                finishedAt: Date.now()
+              });
+              modules.ui.logToWorkspace(`返图重试已停止：${message}`, "warn");
+              continue;
+            }
             const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
             pendingAutoPlacements.set(taskId, {
               ...queued,
@@ -2455,7 +2519,10 @@
             upsertRunningTask({
               taskId,
               remoteTaskId: taskId,
-              detail: `任务已完成，返图暂未成功：${message}，稍后自动重试（${attempts}/${AUTO_PLACEMENT_MAX_TEMP_FAILURES}）。`
+              status: "placing",
+              detail: blocked
+                ? "任务已完成，但 Photoshop 当前仍在液化或其他模态操作中，返图会在可执行时继续贴回。"
+                : `任务已完成，返图暂未成功：${message}，稍后自动重试（${attempts}/${AUTO_PLACEMENT_MAX_TEMP_FAILURES}）。`
             });
             continue;
           }
@@ -2464,7 +2531,9 @@
           upsertRunningTask({
             taskId,
             remoteTaskId: taskId,
-            detail: `任务已完成，但自动贴回失败：${message}`
+            status: "succeeded",
+            detail: `任务已完成，但自动贴回失败：${message}`,
+            finishedAt: Date.now()
           });
           modules.ui.logToWorkspace(`返图重试已停止：${message}`, "warn");
         }

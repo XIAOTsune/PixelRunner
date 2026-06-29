@@ -1164,15 +1164,30 @@ function buildCpuBlendMatchPlanFromSamples(options) {
       const fullMs = Number(gpuSeedDiagnostics.fullCpuSearchMs) || 0;
       const bestSeed = gpuSeedDiagnostics.bestSeed || null;
       logs.push(`[融合校色] CPU hydrate seed search：accepted=${gpuSeedDiagnostics.accepted ? "true" : "false"}，seedValidationMs=${formatMs(seedMs)}，fullCpuSearchMs=${formatMs(fullMs)}，bestSeed=${bestSeed ? `${bestSeed.dx},${bestSeed.dy},${formatFixed(bestSeed.scale, 4)}` : "none"}，refinedScore=${formatFixed(gpuSeedDiagnostics.refinedScore, 4)}。`);
+      if (gpuSeedDiagnostics.gpuValidation) {
+        const evidence = gpuSeedDiagnostics.gpuValidation;
+        logs.push(`[融合校色] GPU validation evidence：score=${formatFixed(evidence.score, 4)}，secondScore=${formatFixed(evidence.secondScore, 4)}，scoreGap=${formatFixed(evidence.scoreGap, 4)}，sampleCount=${evidence.sampleCount || 0}/${evidence.minSamples || 0}，directionAgreement=${evidence.directionAgreement === null ? "n/a" : formatFixed(evidence.directionAgreement, 4)}，edgeOverlap=${evidence.edgeOverlap === null ? "n/a" : formatFixed(evidence.edgeOverlap, 4)}，topK=${evidence.topK || 0}。`);
+      }
+      if (gpuSeedDiagnostics.cpuSpotCheck) {
+        const spot = gpuSeedDiagnostics.cpuSpotCheck;
+        logs.push(`[融合校色] CPU spot-check：score=${formatFixed(spot.score, 4)}，scoreGap=${formatFixed(spot.scoreGap, 4)}，refinedScore=${formatFixed(spot.refinedScore, 4)}，refinedGap=${formatFixed(spot.refinedGap, 4)}，dx=${spot.dx || 0}，dy=${spot.dy || 0}，scale=${formatFixed(spot.scale || 1, 4)}。`);
+      }
+      if (gpuSeedDiagnostics.parity) {
+        const parity = gpuSeedDiagnostics.parity;
+        logs.push(`[融合校色] GPU/CPU parity：scoreDelta=${parity.scoreDelta === null ? "n/a" : formatFixed(parity.scoreDelta, 4)}，scoreGapDelta=${parity.scoreGapDelta === null ? "n/a" : formatFixed(parity.scoreGapDelta, 4)}，dxDelta=${formatFixed(parity.dxDelta, 2)}，dyDelta=${formatFixed(parity.dyDelta, 2)}，scaleDelta=${formatFixed(parity.scaleDelta, 4)}，acceptParity=${parity.acceptParity ? "true" : "false"}，verdict=${parity.verdict || "parity-fallback"}。`);
+      }
     }
   }
   const alignmentTimings = alignment && alignment.search && alignment.search.timings ? alignment.search.timings : null;
-  if (Array.isArray(logs) && alignmentTimings) {
-    logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，total=${formatMs(alignmentTimings.totalMs)}。`);
-  }
+  const colorPlanStartedAt = getNowMs();
   const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, alignment);
+  const colorPlanMs = Number((getNowMs() - colorPlanStartedAt).toFixed(1));
   if (timing) {
     timing.mark("plan 颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
+  }
+  if (Array.isArray(logs) && alignmentTimings) {
+    const hydrateAnalysisTotal = Number(alignmentTimings.totalMs || 0) + colorPlanMs;
+    logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
   }
   return buildBlendMatchPlan({
     ...options,
@@ -4270,7 +4285,112 @@ function normalizeGpuAlignmentSeedCandidate(candidate, fallbackStage = "gpu-seed
     dy,
     scale: Math.max(0.92, Math.min(1.08, scale)),
     score: readOptionalNumber(candidate.score),
+    secondScore: readOptionalNumber(candidate.secondScore),
+    scoreGap: readOptionalNumber(candidate.scoreGap),
+    sampleCount: Math.max(0, Math.round(readFiniteNumber(candidate.sampleCount))),
+    directionAgreement: readOptionalNumber(candidate.directionAgreement),
+    edgeOverlap: readOptionalNumber(candidate.edgeOverlap),
     stage: String(candidate.stage || fallbackStage || "gpu-seed")
+  };
+}
+
+function normalizeGpuGlobalValidationSummary(summary) {
+  if (!summary || typeof summary !== "object") return null;
+  const best = summary.best && typeof summary.best === "object"
+    ? normalizeGpuAlignmentSeedCandidate(summary.best, "gpu-validation-best")
+    : null;
+  const topK = Array.isArray(summary.topK || summary.topCandidates)
+    ? (summary.topK || summary.topCandidates).slice(0, 8).map((candidate) => normalizeGpuAlignmentSeedCandidate(candidate, "gpu-validation-top-k")).filter(Boolean)
+    : [];
+  const score = readOptionalNumber(summary.score ?? (best && best.score));
+  const secondScore = readOptionalNumber(summary.secondScore ?? (best && best.secondScore));
+  const rawScoreGap = readOptionalNumber(summary.scoreGap ?? (best && best.scoreGap));
+  const scoreGap = rawScoreGap !== null
+    ? rawScoreGap
+    : score !== null ? score - Math.max(0, secondScore !== null ? secondScore : -1) : null;
+  const sampleCount = Math.max(0, Math.round(readFiniteNumber(summary.sampleCount ?? (best && best.sampleCount))));
+  const directionAgreement = readOptionalNumber(summary.directionAgreement ?? (best && best.directionAgreement));
+  const edgeOverlap = readOptionalNumber(summary.edgeOverlap ?? (best && best.edgeOverlap));
+  return {
+    schemaVersion: Number(summary.schemaVersion) || 1,
+    backend: String(summary.backend || "gpu-webgl2-global-v1"),
+    compact: summary.compact !== false,
+    score,
+    secondScore,
+    scoreGap,
+    sampleCount,
+    directionAgreement,
+    edgeOverlap,
+    scoreCalls: Math.max(0, Math.round(readFiniteNumber(summary.scoreCalls))),
+    scoreReadback: String(summary.scoreReadback || "candidate-summary"),
+    best,
+    topK
+  };
+}
+
+function evaluateGpuGlobalValidationEvidence(seedInfo, sampleOffset, width, height) {
+  const summary = seedInfo && seedInfo.validationSummary ? seedInfo.validationSummary : null;
+  if (!summary) {
+    return { ok: false, reason: "gpu-validation-summary-missing", summary: null };
+  }
+  const minSamples = Math.max(96, Math.round((Math.max(32, Math.min(width, height)) / Math.max(1, Math.round(Math.max(width, height) / 180))) * 0.35));
+  const score = Number(summary.score);
+  const scoreGap = Number(summary.scoreGap);
+  const sampleCount = Number(summary.sampleCount) || 0;
+  const directionAgreement = summary.directionAgreement === null ? null : Number(summary.directionAgreement);
+  const edgeOverlap = summary.edgeOverlap === null ? null : Number(summary.edgeOverlap);
+  const topK = Array.isArray(summary.topK) ? summary.topK : [];
+  const best = summary.best || topK[0] || null;
+  const reasons = [];
+  if (!best) reasons.push("gpu-validation-best-missing");
+  if (!Number.isFinite(score) || score < 0.26) reasons.push("gpu-validation-score-weak");
+  if (!Number.isFinite(scoreGap) || (scoreGap < 0.014 && !(Number.isFinite(score) && score >= 0.46))) reasons.push("gpu-validation-gap-weak");
+  if (sampleCount < minSamples) reasons.push("gpu-validation-sample-count-low");
+  if (directionAgreement !== null && Number.isFinite(directionAgreement) && directionAgreement < -0.08) reasons.push("gpu-validation-direction-disagree");
+  if (edgeOverlap !== null && Number.isFinite(edgeOverlap) && edgeOverlap < 0.12 && !(Number.isFinite(score) && score >= 0.48)) reasons.push("gpu-validation-edge-overlap-low");
+  if (best && (Math.abs(best.dx) > sampleOffset || Math.abs(best.dy) > sampleOffset || Math.abs((Number(best.scale) || 1) - 1) > 0.085)) {
+    reasons.push("gpu-validation-transform-out-of-range");
+  }
+  return {
+    ok: reasons.length === 0,
+    reason: reasons[0] || "gpu-validation-strong",
+    summary: {
+      score: Number.isFinite(score) ? Number(score.toFixed(4)) : -1,
+      secondScore: Number.isFinite(Number(summary.secondScore)) ? Number(Number(summary.secondScore).toFixed(4)) : -1,
+      scoreGap: Number.isFinite(scoreGap) ? Number(scoreGap.toFixed(4)) : -1,
+      sampleCount,
+      minSamples,
+      directionAgreement: directionAgreement !== null && Number.isFinite(directionAgreement) ? Number(directionAgreement.toFixed(4)) : null,
+      edgeOverlap: edgeOverlap !== null && Number.isFinite(edgeOverlap) ? Number(edgeOverlap.toFixed(4)) : null,
+      topK: topK.length,
+      scoreReadback: summary.scoreReadback
+    }
+  };
+}
+
+function buildGpuCpuParityLog({ gpuSummary, cpuSpot, accepted, fallbackFullCpu, rejectReason }) {
+  const gpuScore = Number(gpuSummary && gpuSummary.score);
+  const gpuGap = Number(gpuSummary && gpuSummary.scoreGap);
+  const cpuScore = Number(cpuSpot && cpuSpot.refinedScore);
+  const cpuGap = Number(cpuSpot && cpuSpot.refinedGap);
+  const dxDelta = Math.abs((Number(cpuSpot && cpuSpot.dx) || 0) - (Number(gpuSummary && gpuSummary.best && gpuSummary.best.dx) || 0));
+  const dyDelta = Math.abs((Number(cpuSpot && cpuSpot.dy) || 0) - (Number(gpuSummary && gpuSummary.best && gpuSummary.best.dy) || 0));
+  const scaleDelta = Math.abs((Number(cpuSpot && cpuSpot.scale) || 1) - (Number(gpuSummary && gpuSummary.best && gpuSummary.best.scale) || 1));
+  const scoreDelta = Number.isFinite(gpuScore) && Number.isFinite(cpuScore) ? Math.abs(cpuScore - gpuScore) : null;
+  const scoreGapDelta = Number.isFinite(gpuGap) && Number.isFinite(cpuGap) ? Math.abs(cpuGap - gpuGap) : null;
+  const acceptParity = Boolean(accepted && !fallbackFullCpu);
+  const verdict = acceptParity
+    ? ((scoreDelta === null || scoreDelta <= 0.08) && dxDelta <= 2 && dyDelta <= 2 && scaleDelta <= 0.004 ? "parity-ok" : "parity-warn")
+    : "parity-fallback";
+  return {
+    scoreDelta,
+    scoreGapDelta,
+    dxDelta,
+    dyDelta,
+    scaleDelta,
+    acceptParity,
+    verdict,
+    rejectReason: rejectReason || ""
   };
 }
 
@@ -4316,6 +4436,7 @@ function normalizeGpuAlignmentSeed(seed, sampleOffset, width = 0, height = 0) {
     };
   }
   const search = seed.search && typeof seed.search === "object" ? seed.search : {};
+  const validationSummary = normalizeGpuGlobalValidationSummary(search.globalValidation || seed.globalValidation || seed.validationSummary);
   const candidates = [];
   const addCandidate = (candidate, stage) => {
     const normalized = normalizeGpuAlignmentSeedCandidate(candidate, stage);
@@ -4342,6 +4463,7 @@ function normalizeGpuAlignmentSeed(seed, sampleOffset, width = 0, height = 0) {
     accepted: true,
     reason: "seed-candidates-ready",
     candidates: candidates.map(({ key, ...candidate }) => candidate),
+    validationSummary,
     metadata: {
       backend: String(seed.candidate && seed.candidate.backend || "gpu-webgl2-v1"),
       previewCacheKey: String(seed.previewCacheKey || ""),
@@ -4370,6 +4492,26 @@ function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampl
     };
   };
   if (!seedInfo.accepted) return fullCpu();
+  const evidence = evaluateGpuGlobalValidationEvidence(seedInfo, sampleOffset, width, height);
+  if (!evidence.ok) {
+    const fallback = fullCpu();
+    fallback.seedDiagnostics = {
+      ...fallback.seedDiagnostics,
+      used: true,
+      accepted: false,
+      rejectReason: evidence.reason,
+      seedCandidates: seedInfo.candidates.length,
+      gpuValidation: evidence.summary,
+      parity: buildGpuCpuParityLog({
+        gpuSummary: seedInfo.validationSummary,
+        cpuSpot: null,
+        accepted: false,
+        fallbackFullCpu: true,
+        rejectReason: evidence.reason
+      })
+    };
+    return fallback;
+  }
 
   const startedAt = getNowMs();
   const validationStride = Math.max(1, stride);
@@ -4392,25 +4534,49 @@ function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampl
   validated.sort((a, b) => Number(b.cpuScore) - Number(a.cpuScore));
   const bestSeed = validated[0] || null;
   const secondSeed = validated[1] || null;
-  const seedScore = Number(bestSeed && bestSeed.cpuScore);
-  const seedSecondScore = Number(secondSeed && secondSeed.cpuScore);
+  const seedScore = bestSeed ? Number(bestSeed.cpuScore) : NaN;
+  const seedSecondScore = secondSeed ? Number(secondSeed.cpuScore) : NaN;
   const seedScoreGap = Number.isFinite(seedScore) ? seedScore - Math.max(0, Number.isFinite(seedSecondScore) ? seedSecondScore : -1) : -1;
   const seedStrongEnough =
     bestSeed &&
     Number.isFinite(seedScore) &&
     seedScore >= 0.24 &&
     (seedScoreGap >= 0.012 || seedScore >= 0.42);
+  const buildCpuSpot = (refinedSearch = null) => ({
+    dx: Number(bestSeed && bestSeed.dx) || 0,
+    dy: Number(bestSeed && bestSeed.dy) || 0,
+    scale: Number(bestSeed && bestSeed.scale) || 1,
+    score: Number.isFinite(seedScore) ? Number(seedScore.toFixed(4)) : -1,
+    scoreGap: Number.isFinite(seedScoreGap) ? Number(seedScoreGap.toFixed(4)) : -1,
+    refinedScore: refinedSearch && refinedSearch.best
+      ? Number((Number(refinedSearch.best.score) || -1).toFixed(4))
+      : Number.isFinite(seedScore) ? Number(seedScore.toFixed(4)) : -1,
+    refinedGap: refinedSearch && refinedSearch.best
+      ? Number((Number(refinedSearch.best.score) - Math.max(0, Number(refinedSearch.second) || -1)).toFixed(4))
+      : Number.isFinite(seedScoreGap) ? Number(seedScoreGap.toFixed(4)) : -1
+  });
   if (!seedStrongEnough) {
+    const cpuSpot = buildCpuSpot(null);
     const fallback = fullCpu();
+    const rejectReason = bestSeed ? "seed-cpu-validation-low-score" : "seed-cpu-validation-empty";
     fallback.seedDiagnostics = {
       ...fallback.seedDiagnostics,
       used: true,
       accepted: false,
-      rejectReason: bestSeed ? "seed-cpu-validation-low-score" : "seed-cpu-validation-empty",
+      rejectReason,
       bestSeedScore: Number.isFinite(seedScore) ? Number(seedScore.toFixed(4)) : -1,
       bestSeedGap: Number.isFinite(seedScoreGap) ? Number(seedScoreGap.toFixed(4)) : -1,
       seedValidationMs: Number((getNowMs() - startedAt).toFixed(1)),
-      seedCandidates: validated.length
+      seedCandidates: validated.length,
+      gpuValidation: evidence.summary,
+      cpuSpotCheck: cpuSpot,
+      parity: buildGpuCpuParityLog({
+        gpuSummary: seedInfo.validationSummary,
+        cpuSpot,
+        accepted: false,
+        fallbackFullCpu: true,
+        rejectReason
+      })
     };
     return fallback;
   }
@@ -4418,26 +4584,44 @@ function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampl
   const refineRadius = Math.min(sampleOffset, Math.max(3, getLargeOffsetStep(sampleOffset) * 2));
   const refined = searchGlobalAlignmentAroundSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, bestSeed, refineRadius);
   const candidateGap = Number(refined.best && refined.best.score) - Math.max(0, Number(refined.second) || -1);
+  const cpuSpot = buildCpuSpot(refined);
   const refinedAccepted =
     refined.best &&
     Number(refined.best.score) >= Math.max(0.22, seedScore - 0.018) &&
     (candidateGap >= 0.01 || Number(refined.best.score) >= 0.42);
   if (!refinedAccepted) {
     const fallback = fullCpu();
+    const rejectReason = "seed-refine-validation-failed";
     fallback.seedDiagnostics = {
       ...fallback.seedDiagnostics,
       used: true,
       accepted: false,
-      rejectReason: "seed-refine-validation-failed",
+      rejectReason,
       bestSeedScore: Number(seedScore.toFixed(4)),
       seedRefinedScore: Number(refined.best && Number(refined.best.score).toFixed(4)) || -1,
       seedRefinedGap: Number.isFinite(candidateGap) ? Number(candidateGap.toFixed(4)) : -1,
       seedValidationMs: Number((getNowMs() - startedAt).toFixed(1)),
-      seedCandidates: validated.length
+      seedCandidates: validated.length,
+      gpuValidation: evidence.summary,
+      cpuSpotCheck: cpuSpot,
+      parity: buildGpuCpuParityLog({
+        gpuSummary: seedInfo.validationSummary,
+        cpuSpot,
+        accepted: false,
+        fallbackFullCpu: true,
+        rejectReason
+      })
     };
     return fallback;
   }
 
+  const parity = buildGpuCpuParityLog({
+    gpuSummary: seedInfo.validationSummary,
+    cpuSpot,
+    accepted: true,
+    fallbackFullCpu: false,
+    rejectReason: ""
+  });
   return {
     search: refined,
     seedDiagnostics: {
@@ -4457,6 +4641,9 @@ function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampl
       refinedScore: Number((Number(refined.best && refined.best.score) || 0).toFixed(4)),
       refinedGap: Number.isFinite(candidateGap) ? Number(candidateGap.toFixed(4)) : -1,
       seedValidationMs: Number((getNowMs() - startedAt).toFixed(1)),
+      gpuValidation: evidence.summary,
+      cpuSpotCheck: cpuSpot,
+      parity,
       metadata: seedInfo.metadata || null
     }
   };
