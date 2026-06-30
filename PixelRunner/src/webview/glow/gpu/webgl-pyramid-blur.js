@@ -145,10 +145,10 @@
       vec3 source = texture(uSource, vUv).rgb;
       vec3 accum = mix(source, base, clamp(uOpticsSoftSourceMix, 0.0, 0.35)) * uOpticsCoreMix;
       float totalWeight = uOpticsCoreMix;
-      float steps = uOpticsMode > 1.5 ? 28.0 : 24.0;
+      float steps = clamp(ceil(uOpticsLength / (uOpticsMode > 1.5 ? 2.0 : 1.55)), 36.0, 96.0);
       mat2 rot = rotation2d(radians(uOpticsRotation));
 
-      for (int i = 1; i <= 28; i += 1) {
+      for (int i = 1; i <= 96; i += 1) {
         float stepIndex = float(i);
         if (stepIndex > steps) break;
         float t = stepIndex / steps;
@@ -179,7 +179,8 @@
     }
 
     void main() {
-      vec3 color = opticalShape(texture(uCombined, vUv).rgb) * uPyramidWeight;
+      vec3 combined = texture(uCombined, vUv).rgb * uPyramidWeight;
+      vec3 color = uOpticsMode > 0.5 ? opticalShape(combined) : combined;
       outColor = vec4(color, 1.0);
     }
   `;
@@ -465,8 +466,21 @@
       if (!this.floatTargets) {
         throw new Error("WebGL2 glow blur requires float render targets");
       }
-      const width = sourceLayer.width;
-      const height = sourceLayer.height;
+      const optics = params && params.blur && params.blur.optics ? params.blur.optics : {};
+      const mode = String(optics.mode || "soft");
+      let blurSource = sourceLayer;
+      let emitterCount = 0;
+      if (
+        (mode === "starburst" || mode === "anamorphic") &&
+        modules.glowPyramidBlur &&
+        typeof modules.glowPyramidBlur.buildOpticalEmitterLayer === "function"
+      ) {
+        const opticalSource = modules.glowPyramidBlur.buildOpticalEmitterLayer(sourceLayer, params);
+        blurSource = opticalSource && opticalSource.layer ? opticalSource.layer : sourceLayer;
+        emitterCount = opticalSource && Array.isArray(opticalSource.emitters) ? opticalSource.emitters.length : 0;
+      }
+      const width = blurSource.width;
+      const height = blurSource.height;
       const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
       const mipCount = Math.max(2, Math.min(7, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 4))));
       const weights = Array.isArray(params.blur.mipWeights) && params.blur.mipWeights.length
@@ -483,8 +497,8 @@
       this.allocatedTargets = [];
 
       const currentTexture = this.floatTargets
-        ? createTexture(gl, width, height, sourceLayerToFloat32(sourceLayer), this.sourceFloatFormat)
-        : createTexture(gl, width, height, sourceLayerToRgba8(sourceLayer));
+        ? createTexture(gl, width, height, sourceLayerToFloat32(blurSource), this.sourceFloatFormat)
+        : createTexture(gl, width, height, sourceLayerToRgba8(blurSource));
       try {
         let current = { width, height, texture: currentTexture, framebuffer: null };
         const levels = [];
@@ -524,7 +538,7 @@
 
         return {
           glowLayer,
-          levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })) },
+          levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })), emitters: emitterCount },
           backend: "webgl2"
         };
       } finally {

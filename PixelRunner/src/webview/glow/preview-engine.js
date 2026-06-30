@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-bloom-threshold-color-v11";
+  const GLOW_ALGORITHM_VERSION = "engine-optical-emitters-v12";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");

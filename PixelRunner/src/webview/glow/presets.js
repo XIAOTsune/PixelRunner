@@ -208,8 +208,8 @@
     const bloomMipShape = diffusionT < 0.52
       ? mixLists(nearMipWeights, midMipWeights, diffusionT / 0.52)
       : mixLists(midMipWeights, farMipWeights, (diffusionT - 0.52) / 0.48);
-    const starMipWeights = [0.32, 0.13, 0.042, 0.012, 0.003, 0, 0];
-    const anamorphicMipWeights = [0.22, 0.105, 0.052, 0.018, 0.004, 0, 0];
+    const starMipWeights = [0.18, 0.045, 0.01, 0.002, 0, 0, 0];
+    const anamorphicMipWeights = [0.14, 0.04, 0.012, 0.003, 0, 0, 0];
     const mipShape = opticalStyle
       ? (style === "starburst" ? starMipWeights : anamorphicMipWeights)
       : bloomMipShape;
@@ -290,7 +290,7 @@
           : Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
         mipWeights: normalizedMipWeights,
         pyramidWeight: opticalStyle
-          ? clamp(style === "starburst" ? 0.42 + strengthRatio * 0.2 : 0.38 + strengthRatio * 0.18, 0.32, 0.66, 0.45)
+          ? clamp(style === "starburst" ? 0.18 + strengthRatio * 0.08 : 0.16 + strengthRatio * 0.075, 0.1, 0.32, 0.18)
           : clamp(0.82 + diffusionT * 0.14 + preset.scatter * 0.045, 0.76, 1.08, 0.86),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
@@ -316,13 +316,13 @@
           rotation: style === "starburst" ? starRotation : 0,
           visibility: style === "starburst" ? starVisible / 100 : (style === "anamorphic" ? streakVisible / 100 : 1),
           sourceGate: style === "starburst"
-            ? clamp(0.16 + triggerThreshold * 0.58 - starVisible / 100 * 0.1, 0.08, 0.82, 0.36)
+            ? clamp(0.012 + triggerThreshold * 0.08, 0.008, 0.14, 0.036)
             : (style === "anamorphic"
-              ? clamp(0.14 + triggerThreshold * 0.56 - streakVisible / 100 * 0.1, 0.08, 0.82, 0.4)
+              ? clamp(0.01 + triggerThreshold * 0.07, 0.006, 0.13, 0.034)
               : 0),
-          softSourceMix: style === "starburst" ? 0.16 : (style === "anamorphic" ? 0.12 : 0),
-          baseVeil: style === "starburst" ? 0.035 : (style === "anamorphic" ? 0.025 : 1),
-          normalization: style === "starburst" ? 0.64 : (style === "anamorphic" ? 0.5 : 1),
+          softSourceMix: style === "starburst" ? 0.035 : (style === "anamorphic" ? 0.025 : 0),
+          baseVeil: style === "starburst" ? 0.006 : (style === "anamorphic" ? 0.004 : 1),
+          normalization: style === "starburst" ? 0.48 : (style === "anamorphic" ? 0.44 : 1),
           uiLength: style === "anamorphic" ? streakLength : starLength
         }
       },
@@ -346,8 +346,8 @@
         // Split glow into core vs halo at composite stage (strength-gated).
         coreSuppression: opticalStyle ? clamp(0.18 + strengthDrive * 0.16, 0.12, 0.42, 0.22) : clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
         coreCeiling: opticalStyle ? clamp(0.18 + Math.pow(strengthRatio, 0.72) * 0.24, 0.14, 0.5, 0.28) : clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
-        haloBoost: opticalStyle ? clamp(0.42 + strengthRatio * 0.38, 0, 0.92, 0.5) : clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
-        haloMix: opticalStyle ? clamp(0.03 + strengthRatio * 0.08, 0, 0.16, 0.06) : clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
+        haloBoost: opticalStyle ? clamp(0.18 + strengthRatio * 0.22, 0, 0.48, 0.24) : clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
+        haloMix: opticalStyle ? clamp(0.008 + strengthRatio * 0.035, 0, 0.075, 0.025) : clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
         energyFloor: opticalStyle ? 0.003 + triggerThreshold * 0.006 : 0,
         energyFloorSoftness: opticalStyle ? 0.01 : 0.001
       },
