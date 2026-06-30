@@ -159,7 +159,12 @@ function getGlowConfig(payload = {}) {
   const thresholdGate = opticalStyle ? threshold : 100 - threshold;
   const fade = getStyleFade(style);
   const saturation = clampNumber(payload.saturation, -100, 100, 81);
-  const brightnessBias = opticalStyle ? 0 : clampNumber(payload.brightnessBias, -50, 50, 0);
+  const brightnessBias = clampNumber(payload.brightnessBias, -50, 50, 0);
+  const colorEnabled = !!payload.colorEnabled;
+  const colorAmount = colorEnabled ? clampNumber(payload.colorAmount, 0, 100, 0) : 0;
+  const colorHex = /^#[0-9a-fA-F]{6}$/.test(String(payload.colorHex || "")) ? String(payload.colorHex) : "#ffd27a";
+  const chromaticEnabled = payload.chromaticEnabled !== false;
+  const chromatic = chromaticEnabled ? clampNumber(payload.chromatic, 0, 100, 0) : 0;
   const strengthRatio = strength / 100;
   const fadeRatio = 1 - fade / 140;
   const brightnessLift = brightnessBias / 50;
@@ -231,6 +236,11 @@ function getGlowConfig(payload = {}) {
     threshold,
     fade,
     saturation,
+    colorEnabled,
+    colorAmount,
+    colorHex,
+    chromaticEnabled,
+    chromatic,
     brightnessBias,
     sourceSaturation,
     finalSaturation,

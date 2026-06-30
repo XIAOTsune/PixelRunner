@@ -215,6 +215,196 @@
     return seed - Math.floor(seed);
   }
 
+  function clamp01(value) {
+    return Math.max(0, Math.min(1, Number(value) || 0));
+  }
+
+  function getOpticalEnergyThreshold(sourceLayer, optics, visibility, maxEnergy, activeMean) {
+    const sourceGate = clamp01(optics.sourceGate);
+    const densityGate = clamp01(optics.densityGate);
+    const open = Math.pow(clamp01(visibility), 0.82);
+    const relativeGate = maxEnergy * Math.max(sourceGate, densityGate * 0.72);
+    const meanGate = activeMean * (0.72 + (1 - open) * 1.45 + densityGate * 1.4);
+    return Math.min(maxEnergy * 0.985, Math.max(0.0006, relativeGate, meanGate));
+  }
+
+  function isLocalMaximum(sourceLayer, x, y, energy, radius) {
+    const width = sourceLayer.width;
+    const height = sourceLayer.height;
+    const x0 = Math.max(0, x - radius);
+    const x1 = Math.min(width - 1, x + radius);
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+    for (let yy = y0; yy <= y1; yy += 1) {
+      for (let xx = x0; xx <= x1; xx += 1) {
+        if (xx === x && yy === y) continue;
+        const neighbor = getPixelEnergy(sourceLayer, yy * width + xx);
+        if (neighbor > energy * 1.002) return false;
+      }
+    }
+    return true;
+  }
+
+  function collectOpticalCandidates(sourceLayer, optics, visibility, maxEnergy, activeMean) {
+    const width = sourceLayer.width;
+    const height = sourceLayer.height;
+    const gate = getOpticalEnergyThreshold(sourceLayer, optics, visibility, maxEnergy, activeMean);
+    const sourceSoftness = Math.max(0.006, Math.min(0.24, Number(optics.sourceGateSoftness) || 0.08));
+    const softness = Math.max(0.0025, Math.min(0.22, sourceSoftness * Math.max(0.24, maxEnergy)));
+    const localRadius = Math.max(1, Math.min(3, Math.round(Math.min(width, height) / 900) + 1));
+    const candidates = [];
+    const longEdge = Math.max(width, height);
+    const tileSize = Math.max(5, Math.min(18, Math.round(longEdge / 240)));
+
+    for (let tileY = 0; tileY < height; tileY += tileSize) {
+      for (let tileX = 0; tileX < width; tileX += tileSize) {
+        const xStart = tileX;
+        const yStart = tileY;
+        const xEnd = Math.min(width, tileX + tileSize);
+        const yEnd = Math.min(height, tileY + tileSize);
+        let best = null;
+        for (let y = yStart; y < yEnd; y += 1) {
+          for (let x = xStart; x < xEnd; x += 1) {
+            const index = y * width + x;
+            const energy = getPixelEnergy(sourceLayer, index);
+            const gateValue = smoothstep(gate, gate + softness, energy);
+            if (gateValue <= 0.0001) continue;
+            const blueNoise = hash01(x, y, 91);
+            const score = energy * (0.88 + gateValue * 0.18) * (0.94 + blueNoise * 0.12);
+            if (!best || score > best.score) {
+              best = { x, y, index, energy, gate: gateValue, score };
+            }
+          }
+        }
+        if (best && isLocalMaximum(sourceLayer, best.x, best.y, best.energy, localRadius)) {
+          candidates.push(best);
+        }
+      }
+    }
+
+    if (candidates.length < 12) {
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const index = y * width + x;
+          const energy = getPixelEnergy(sourceLayer, index);
+          const gateValue = smoothstep(gate, gate + softness, energy);
+          if (gateValue <= 0.0001) continue;
+          if (!isLocalMaximum(sourceLayer, x, y, energy, localRadius)) continue;
+          const blueNoise = hash01(x, y, 91);
+          const score = energy * (0.88 + gateValue * 0.18) * (0.94 + blueNoise * 0.12);
+          candidates.push({ x, y, index, energy, gate: gateValue, score });
+        }
+      }
+    }
+
+    if (!candidates.length) {
+      const stride = Math.max(1, Math.round(Math.min(width, height) / 180));
+      for (let y = 0; y < height; y += stride) {
+        for (let x = 0; x < width; x += stride) {
+          const index = y * width + x;
+          const energy = getPixelEnergy(sourceLayer, index);
+          const gateValue = smoothstep(gate * 0.82, gate + softness * 1.4, energy);
+          if (gateValue <= 0.0001) continue;
+          candidates.push({
+            x,
+            y,
+            index,
+            energy,
+            gate: gateValue,
+            score: energy * (0.9 + hash01(x, y, 103) * 0.1)
+          });
+        }
+      }
+    }
+
+    candidates.sort((left, right) => right.score - left.score);
+    return { candidates, gate, softness };
+  }
+
+  function selectOpticalCandidates(sourceLayer, optics, visibility, maxEnergy, activeMean) {
+    const width = sourceLayer.width;
+    const height = sourceLayer.height;
+    const { candidates } = collectOpticalCandidates(sourceLayer, optics, visibility, maxEnergy, activeMean);
+    if (!candidates.length) return [];
+
+    const longEdge = Math.max(width, height);
+    const scale = longEdge / 1200;
+    const targetCount = Math.max(
+      1,
+      Math.min(
+        candidates.length,
+        Math.round((Number(optics.candidateCount) || 120) * Math.max(0.34, scale * scale))
+      )
+    );
+    let radius = Math.max(3, Number(optics.suppressionRadius) || 18) * Math.max(0.42, Math.sqrt(scale));
+    const minRadius = Math.max(2, radius * 0.35);
+    let selected = [];
+
+    for (let attempt = 0; attempt < 4 && selected.length < targetCount; attempt += 1) {
+      selected = [];
+      const cellSize = Math.max(2, radius);
+      const gridWidth = Math.max(1, Math.ceil(width / cellSize));
+      const gridHeight = Math.max(1, Math.ceil(height / cellSize));
+      const occupied = new Int32Array(gridWidth * gridHeight);
+      occupied.fill(-1);
+      const radiusSq = radius * radius;
+
+      for (let index = 0; index < candidates.length && selected.length < targetCount; index += 1) {
+        const candidate = candidates[index];
+        const cellX = Math.max(0, Math.min(gridWidth - 1, Math.floor(candidate.x / cellSize)));
+        const cellY = Math.max(0, Math.min(gridHeight - 1, Math.floor(candidate.y / cellSize)));
+        let blocked = false;
+        for (let yy = Math.max(0, cellY - 2); yy <= Math.min(gridHeight - 1, cellY + 2) && !blocked; yy += 1) {
+          for (let xx = Math.max(0, cellX - 2); xx <= Math.min(gridWidth - 1, cellX + 2); xx += 1) {
+            const selectedIndex = occupied[yy * gridWidth + xx];
+            if (selectedIndex < 0) continue;
+            const picked = selected[selectedIndex];
+            const dx = candidate.x - picked.x;
+            const dy = candidate.y - picked.y;
+            if (dx * dx + dy * dy < radiusSq) {
+              blocked = true;
+              break;
+            }
+          }
+        }
+        if (blocked) continue;
+        occupied[cellY * gridWidth + cellX] = selected.length;
+        selected.push(candidate);
+      }
+
+      radius = Math.max(minRadius, radius * 0.72);
+    }
+
+    return selected.length ? selected : candidates.slice(0, targetCount);
+  }
+
+  function splatOpticalCandidate(out, sourceLayer, candidate, radius, gain) {
+    const width = out.width;
+    const height = out.height;
+    const x0 = Math.max(0, Math.floor(candidate.x - radius));
+    const x1 = Math.min(width - 1, Math.ceil(candidate.x + radius));
+    const y0 = Math.max(0, Math.floor(candidate.y - radius));
+    const y1 = Math.min(height - 1, Math.ceil(candidate.y + radius));
+    const radiusSq = Math.max(0.0001, radius * radius);
+    const sourceR = sourceLayer.r[candidate.index] || 0;
+    const sourceG = sourceLayer.g[candidate.index] || 0;
+    const sourceB = sourceLayer.b[candidate.index] || 0;
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = x0; x <= x1; x += 1) {
+        const dx = x - candidate.x;
+        const dy = y - candidate.y;
+        const normalized = (dx * dx + dy * dy) / radiusSq;
+        if (normalized > 1) continue;
+        const falloff = Math.pow(1 - normalized, 2.2);
+        const weight = falloff * gain * (0.72 + candidate.gate * 0.28);
+        const index = y * width + x;
+        out.r[index] += sourceR * weight;
+        out.g[index] += sourceG * weight;
+        out.b[index] += sourceB * weight;
+      }
+    }
+  }
+
   function sampleLayerRgb(layer, x, y) {
     return [
       sampleBilinear(layer, x, y, layer.r),
@@ -284,33 +474,35 @@
     if (maxEnergy <= 0.0001) return { layer: out, activeRatio: 0 };
 
     const activeMean = activeCount > 0 ? activeSum / activeCount : 0;
-    const sourceGate = Math.max(0, Math.min(1, Number(optics.sourceGate) || 0));
-    const densityGate = Math.max(0, Math.min(1, Number(optics.densityGate) || 0));
-    const relativeGate = maxEnergy * Math.max(sourceGate, densityGate);
-    const meanGate = activeMean * (0.65 + densityGate * 3.2 + (1 - visibility) * 1.1);
-    const gate = Math.min(maxEnergy * 0.985, Math.max(0.0008, relativeGate, meanGate));
-    const sourceSoftness = Math.max(0.006, Math.min(0.24, Number(optics.sourceGateSoftness) || 0.08));
-    const softness = Math.max(0.0035, Math.min(0.22, sourceSoftness * Math.max(0.28, maxEnergy)));
-    let kept = 0;
+    const selected = selectOpticalCandidates(sourceLayer, optics, visibility, maxEnergy, activeMean);
+    const longEdge = Math.max(sourceLayer.width, sourceLayer.height);
+    const baseSplatRadius = Math.max(
+      mode === "anamorphic" ? 1.6 : 1.35,
+      Math.min(mode === "anamorphic" ? 5.2 : 4.6, longEdge / (mode === "anamorphic" ? 520 : 620))
+    );
+    const candidateBlend = Math.max(0, Math.min(0.42, Number(optics.candidateBlend) || 0.22));
+    for (let index = 0; index < selected.length; index += 1) {
+      const candidate = selected[index];
+      const localGain = Math.pow(Math.max(0, candidate.gate), 0.72) * (0.74 + Math.min(1, candidate.energy / Math.max(0.0001, maxEnergy)) * 0.26);
+      const radius = baseSplatRadius * (0.82 + hash01(candidate.x, candidate.y, 131) * 0.36);
+      splatOpticalCandidate(out, sourceLayer, candidate, radius, localGain);
 
-    for (let index = 0; index < sourceLayer.r.length; index += 1) {
-      const energy = getPixelEnergy(sourceLayer, index);
-      const pass = smoothstep(gate, gate + softness, energy);
-      const shaped = pass * (0.18 + pass * 0.82);
-      if (shaped > 0.0001) kept += 1;
-      out.r[index] = sourceLayer.r[index] * shaped;
-      out.g[index] = sourceLayer.g[index] * shaped;
-      out.b[index] = sourceLayer.b[index] * shaped;
+      if (candidateBlend > 0) {
+        const indexAtCandidate = candidate.index;
+        out.r[indexAtCandidate] += sourceLayer.r[indexAtCandidate] * candidateBlend * localGain;
+        out.g[indexAtCandidate] += sourceLayer.g[indexAtCandidate] * candidateBlend * localGain;
+        out.b[indexAtCandidate] += sourceLayer.b[indexAtCandidate] * candidateBlend * localGain;
+      }
     }
 
-    const softened = kawaseBlurLayer(out, mode === "anamorphic" ? 1.25 : 1.05);
-    const softMix = Math.max(0, Math.min(0.42, 0.08 + (Number(optics.softSourceMix) || 0) * 3.2));
+    const softened = kawaseBlurLayer(out, mode === "anamorphic" ? 1.35 : 1.15);
+    const softMix = Math.max(0, Math.min(0.48, 0.12 + (Number(optics.softSourceMix) || 0) * 3.4));
     for (let index = 0; index < out.r.length; index += 1) {
       out.r[index] = out.r[index] * (1 - softMix) + softened.r[index] * softMix;
       out.g[index] = out.g[index] * (1 - softMix) + softened.g[index] * softMix;
       out.b[index] = out.b[index] * (1 - softMix) + softened.b[index] * softMix;
     }
-    return { layer: out, activeRatio: kept / Math.max(1, out.r.length) };
+    return { layer: out, activeRatio: selected.length / Math.max(1, out.r.length), candidateCount: selected.length };
   }
 
   function buildOpticalEmitterLayer(sourceLayer, params) {

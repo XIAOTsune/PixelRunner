@@ -359,20 +359,19 @@
 
     const readGlowState = () => {
       const style = readGlowStyle();
-      const opticalStyle = isOpticalGlowStyle(style);
       const thresholdSlider = readGlowSlider(glowThresholdInput, GLOW_DEFAULTS.threshold, 0, 100);
       return {
         style,
         strength: readGlowSlider(glowStrengthInput, GLOW_DEFAULTS.strength, 0, 100),
-        radius: opticalStyle ? GLOW_DEFAULTS.radius : readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 500),
-        threshold: opticalStyle ? thresholdSlider : mapThresholdSliderToEffective(thresholdSlider),
+        radius: isOpticalGlowStyle(style) ? GLOW_DEFAULTS.radius : readGlowSlider(glowRadiusInput, GLOW_DEFAULTS.radius, 1, 500),
+        threshold: isOpticalGlowStyle(style) ? thresholdSlider : mapThresholdSliderToEffective(thresholdSlider),
         saturation: 0,
-        brightnessBias: opticalStyle ? 0 : readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -100, 100),
-        colorEnabled: opticalStyle ? false : !!(glowColorEnabledInput && glowColorEnabledInput.checked),
-        colorAmount: opticalStyle ? 0 : readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
+        brightnessBias: readGlowSlider(glowBrightnessBiasInput, GLOW_DEFAULTS.brightnessBias, -100, 100),
+        colorEnabled: !!(glowColorEnabledInput && glowColorEnabledInput.checked),
+        colorAmount: readGlowSlider(glowColorAmountInput, GLOW_DEFAULTS.colorAmount, 0, 100),
         colorHex: readGlowColorHex(),
-        chromaticEnabled: opticalStyle ? false : !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
-        chromatic: opticalStyle ? 0 : readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100),
+        chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
+        chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100),
         starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 10, 220),
         starCount: readGlowSlider(glowStarCountInput, GLOW_DEFAULTS.starCount, 4, 12),
         starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -90, 90),

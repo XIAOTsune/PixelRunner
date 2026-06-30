@@ -164,6 +164,24 @@
     const opticalVisibility = style === "starburst" ? starVisible / 100 : (style === "anamorphic" ? streakVisible / 100 : 1);
     const opticalDensityOpen = Math.pow(opticalVisibility, style === "anamorphic" ? 0.78 : 0.84);
     const opticalDensitySelectivity = 1 - opticalDensityOpen;
+    const opticalVisibilityShaped = Math.pow(opticalVisibility, style === "anamorphic" ? 1.08 : 1.12);
+    const opticalCandidateCount = opticalStyle
+      ? Math.round(
+          style === "starburst"
+            ? (8 + opticalVisibilityShaped * 180)
+            : (10 + opticalVisibilityShaped * 220)
+        )
+      : 0;
+    const opticalSuppressionRadius = opticalStyle
+      ? clamp(
+          style === "starburst"
+            ? 46 - opticalVisibilityShaped * 32
+            : 36 - opticalVisibilityShaped * 24,
+          style === "starburst" ? 10 : 8,
+          style === "starburst" ? 50 : 40,
+          style === "starburst" ? 22 : 18
+        )
+      : 0;
     const triggerHigh = clamp(
       style === "starburst"
         ? 0.34 + triggerThreshold * 0.56 + preset.thresholdBias
@@ -325,10 +343,18 @@
           starCount,
           rotation: style === "starburst" ? starRotation : 0,
           visibility: opticalVisibility,
+          candidateCount: opticalCandidateCount,
+          suppressionRadius: opticalSuppressionRadius,
+          candidateSoftness: style === "starburst"
+            ? clamp(0.2 + opticalDensityOpen * 0.18 + triggerOpen * 0.04, 0.18, 0.44, 0.28)
+            : clamp(0.18 + opticalDensityOpen * 0.16 + triggerOpen * 0.035, 0.16, 0.38, 0.24),
+          candidateBlend: style === "starburst"
+            ? clamp(0.18 + opticalDensityOpen * 0.12, 0.14, 0.34, 0.22)
+            : clamp(0.16 + opticalDensityOpen * 0.1, 0.12, 0.3, 0.2),
           sourceGate: style === "starburst"
-            ? clamp(0.012 + triggerThreshold * 0.08 + opticalDensitySelectivity * 0.1, 0.008, 0.22, 0.036)
+            ? clamp(0.012 + triggerThreshold * 0.08 + opticalDensitySelectivity * 0.038, 0.008, 0.18, 0.036)
             : (style === "anamorphic"
-              ? clamp(0.01 + triggerThreshold * 0.07 + opticalDensitySelectivity * 0.075, 0.006, 0.2, 0.034)
+              ? clamp(0.01 + triggerThreshold * 0.07 + opticalDensitySelectivity * 0.03, 0.006, 0.16, 0.034)
               : 0),
           sourceGateSoftness: style === "starburst"
             ? clamp(0.15 - opticalDensityOpen * 0.07 + triggerOpen * 0.028, 0.045, 0.19, 0.1)
@@ -336,9 +362,9 @@
               ? clamp(0.13 - opticalDensityOpen * 0.06 + triggerOpen * 0.024, 0.038, 0.17, 0.09)
               : 0.08),
           densityGate: style === "starburst"
-            ? clamp(0.04 + triggerThreshold * 0.1 + opticalDensitySelectivity * 0.48, 0.02, 0.68, 0.12)
+            ? clamp(0.04 + triggerThreshold * 0.1 + opticalDensitySelectivity * 0.12, 0.02, 0.32, 0.12)
             : (style === "anamorphic"
-              ? clamp(0.032 + triggerThreshold * 0.085 + opticalDensitySelectivity * 0.38, 0.016, 0.56, 0.1)
+              ? clamp(0.032 + triggerThreshold * 0.085 + opticalDensitySelectivity * 0.1, 0.016, 0.28, 0.1)
               : 0),
           softSourceMix: style === "starburst"
             ? clamp(0.052 + opticalDensityOpen * 0.025, 0.04, 0.09, 0.055)

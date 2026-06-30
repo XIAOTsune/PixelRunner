@@ -126,23 +126,35 @@
       return smoothstep(uOpticsSourceGate, uOpticsSourceGate + softness, sourceEnergy);
     }
 
-    vec3 samplePair(vec2 direction, float distance, float weight, inout float totalWeight) {
-      vec2 offset = direction * distance * uTexel;
-      vec2 uvA = vUv + offset;
-      vec2 uvB = vUv - offset;
-      float gateA = sourceGateAt(uvA);
-      float gateB = sourceGateAt(uvB);
-      float pairWeight = weight * (0.08 + max(gateA, gateB) * 0.92);
-      totalWeight += pairWeight * 2.0;
-      vec3 sourceA = texture(uSource, uvA).rgb;
-      vec3 sourceB = texture(uSource, uvB).rgb;
-      vec3 softA = mix(sourceA, texture(uCombined, uvA).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
-      vec3 softB = mix(sourceB, texture(uCombined, uvB).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
-      float warmA = hash12(floor(uvA / max(uTexel * 8.0, vec2(0.0001))));
-      float warmB = hash12(floor(uvB / max(uTexel * 8.0, vec2(0.0001))) + vec2(17.0, 3.0));
-      vec3 tintA = softA * vec3(1.0 + warmA * 0.08, 1.0 + warmA * 0.02, 1.0 - warmA * 0.035);
-      vec3 tintB = softB * vec3(1.0 + warmB * 0.06, 1.0 + warmB * 0.01, 1.0 + warmB * 0.05);
-      return (tintA * gateA * (0.42 + gateA * 0.58) + tintB * gateB * (0.42 + gateB * 0.58)) * pairWeight;
+    vec3 samplePair(vec2 direction, float distance, float weight, float spread, inout float totalWeight) {
+      vec2 normal = vec2(-direction.y, direction.x);
+      vec2 crossStep = normal * spread * uTexel;
+      vec3 accum = vec3(0.0);
+      float localWeight = 0.0;
+
+      for (int tap = 0; tap < 3; tap += 1) {
+        float cross = tap == 0 ? 0.0 : (tap == 1 ? -1.0 : 1.0);
+        float tapWeight = tap == 0 ? 1.0 : 0.36;
+        vec2 offset = direction * distance * uTexel + crossStep * cross;
+        vec2 uvA = vUv + offset;
+        vec2 uvB = vUv - offset;
+        float gateA = sourceGateAt(uvA);
+        float gateB = sourceGateAt(uvB);
+        float pairWeight = weight * tapWeight * (0.14 + max(gateA, gateB) * 0.86);
+        vec3 sourceA = texture(uSource, uvA).rgb;
+        vec3 sourceB = texture(uSource, uvB).rgb;
+        vec3 softA = mix(sourceA, texture(uCombined, uvA).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
+        vec3 softB = mix(sourceB, texture(uCombined, uvB).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
+        float warmA = hash12(floor(uvA / max(uTexel * 8.0, vec2(0.0001))));
+        float warmB = hash12(floor(uvB / max(uTexel * 8.0, vec2(0.0001))) + vec2(17.0, 3.0));
+        vec3 tintA = softA * vec3(1.0 + warmA * 0.08, 1.0 + warmA * 0.02, 1.0 - warmA * 0.035);
+        vec3 tintB = softB * vec3(1.0 + warmB * 0.06, 1.0 + warmB * 0.01, 1.0 + warmB * 0.05);
+        accum += (tintA * gateA * (0.38 + gateA * 0.62) + tintB * gateB * (0.38 + gateB * 0.62)) * pairWeight;
+        localWeight += pairWeight * 2.0;
+      }
+
+      totalWeight += localWeight;
+      return accum;
     }
 
     vec3 opticalShape(vec3 base) {
@@ -163,13 +175,17 @@
         float shoulder = exp(-t * (uOpticsMode > 1.5 ? 2.45 : 2.05));
         float tail = pow(max(0.0, 1.0 - t), uOpticsMode > 1.5 ? 2.2 : 1.85);
         float centerRidge = 0.58 + 0.42 * exp(-t * 9.0);
-        float falloff = (shoulder * 0.58 + tail * 0.42) * centerRidge * (uOpticsMode > 1.5 ? 0.32 : 0.26);
+        float nearFade = smoothstep(0.0, uOpticsMode > 1.5 ? 0.032 : 0.04, t);
+        float falloff = (shoulder * 0.58 + tail * 0.42) * centerRidge * nearFade * (uOpticsMode > 1.5 ? 0.32 : 0.26);
         if (falloff <= 0.0001) continue;
+        float spread = uOpticsMode > 1.5
+          ? clamp(0.82 + uOpticsLength / 220.0, 0.65, 2.5)
+          : clamp(0.68 + uOpticsLength / 280.0, 0.55, 2.1);
 
         if (uOpticsMode > 1.5) {
           float shimmer = mix(0.96, 1.04, hash12(vec2(stepIndex, uOpticsLength * 0.017)));
-          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff * shimmer, totalWeight);
-          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.055, falloff * 0.018 * uOpticsVerticalTightness, totalWeight);
+          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff * shimmer, spread, totalWeight);
+          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.055, falloff * 0.018 * uOpticsVerticalTightness, spread * 0.75, totalWeight);
         } else {
           float rays = clamp(floor(uOpticsStarCount + 0.5), 4.0, 12.0);
           for (int ray = 0; ray < 12; ray += 1) {
@@ -180,7 +196,7 @@
             vec2 direction = rot * vec2(cos(angle), sin(angle));
             float axisWeight = ray == 0 ? 1.0 : mix(0.28, 0.58, abs(cos(angle)));
             float rayGain = axisWeight * mix(0.78, 1.12, rayHash);
-            accum += samplePair(direction, distance * mix(0.72, 1.04, rayHash), falloff * rayGain, totalWeight);
+            accum += samplePair(direction, distance * mix(0.72, 1.04, rayHash), falloff * rayGain, spread, totalWeight);
           }
         }
       }

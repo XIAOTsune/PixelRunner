@@ -2792,6 +2792,7 @@ button {
 
 .glow-slider-stack[data-style="none"] .glow-effect-control,
 .glow-slider-stack[data-style="none"] .glow-bloom-control,
+.glow-slider-stack[data-style="none"] .glow-tone-control,
 .glow-slider-stack[data-style="none"] .glow-star-control,
 .glow-slider-stack[data-style="none"] .glow-streak-control {
   display: none;
