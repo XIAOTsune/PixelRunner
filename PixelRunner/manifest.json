@@ -1,7 +1,7 @@
 {
   "id": "com.tsune.pixelrunner",
   "name": "PixelRunner（小T修图助手）",
-  "version": "2.5.6",
+  "version": "2.6.0",
   "main": "index.html",
   "manifestVersion": 5,
   "entrypoints": [

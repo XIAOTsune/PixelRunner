@@ -1,20 +1,30 @@
 import { build, context } from "esbuild";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
-const distDir = path.join(rootDir, "dist");
 const watchMode = process.argv.includes("--watch");
+const releaseMode = process.argv.includes("--release");
+
+function readArgValue(name) {
+  const index = process.argv.indexOf(name);
+  if (index === -1) return null;
+  return process.argv[index + 1] || null;
+}
+
+const distDir = path.resolve(rootDir, readArgValue("--outdir") || "dist");
 
 const sharedOptions = {
   bundle: true,
-  sourcemap: true,
+  sourcemap: !releaseMode,
+  minify: releaseMode,
   charset: "utf8",
   target: ["chrome114"],
-  logLevel: "info"
+  logLevel: "info",
+  legalComments: releaseMode ? "none" : "eof"
 };
 
 const webviewConfig = {
@@ -35,6 +45,15 @@ const hostConfig = {
   external: ["photoshop", "uxp"]
 };
 
+async function cleanBundleArtifacts() {
+  await Promise.all([
+    rm(path.join(distDir, "app.bundle.js"), { force: true }),
+    rm(path.join(distDir, "app.bundle.js.map"), { force: true }),
+    rm(path.join(distDir, "host.bundle.js"), { force: true }),
+    rm(path.join(distDir, "host.bundle.js.map"), { force: true })
+  ]);
+}
+
 async function runBuild() {
   await mkdir(distDir, { recursive: true });
 
@@ -47,9 +66,10 @@ async function runBuild() {
     return;
   }
 
+  await cleanBundleArtifacts();
   await build(webviewConfig);
   await build(hostConfig);
-  console.log("PixelRunner bundles built successfully.");
+  console.log(`PixelRunner ${releaseMode ? "release" : "development"} bundles built successfully.`);
 }
 
 runBuild().catch((error) => {

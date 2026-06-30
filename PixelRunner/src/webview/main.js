@@ -44,7 +44,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.5.6"
+        version: "2.6.0"
       });
     })
     .catch((error) => {

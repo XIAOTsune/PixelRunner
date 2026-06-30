@@ -7,13 +7,16 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
+const releaseMode = process.argv.includes("--release");
 
 const sharedOptions = {
   bundle: true,
-  sourcemap: true,
+  sourcemap: !releaseMode,
+  minify: releaseMode,
   charset: "utf8",
   target: ["chrome114"],
-  logLevel: "silent"
+  logLevel: "silent",
+  legalComments: releaseMode ? "none" : "eof"
 };
 
 function normalizeBundleText(text) {
@@ -41,7 +44,7 @@ async function assertBundleMatches({ name, entryPoint, outfile, buildOptions }) 
 
     if (currentText !== generatedText) {
       throw new Error(
-        `${name} is out of sync. Update source files under src/ and run npm run build before packaging.`
+        `${name} is out of sync. Update source files under src/ and run npm run ${releaseMode ? "build:release" : "build"} before packaging.`
       );
     }
   } finally {
