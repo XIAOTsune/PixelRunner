@@ -208,8 +208,8 @@
     const bloomMipShape = diffusionT < 0.52
       ? mixLists(nearMipWeights, midMipWeights, diffusionT / 0.52)
       : mixLists(midMipWeights, farMipWeights, (diffusionT - 0.52) / 0.48);
-    const starMipWeights = [0.18, 0.045, 0.01, 0.002, 0, 0, 0];
-    const anamorphicMipWeights = [0.14, 0.04, 0.012, 0.003, 0, 0, 0];
+    const starMipWeights = [0.2, 0.07, 0.022, 0.006, 0.001, 0, 0];
+    const anamorphicMipWeights = [0.17, 0.065, 0.026, 0.008, 0.0015, 0, 0];
     const mipShape = opticalStyle
       ? (style === "starburst" ? starMipWeights : anamorphicMipWeights)
       : bloomMipShape;
@@ -290,7 +290,7 @@
           : Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
         mipWeights: normalizedMipWeights,
         pyramidWeight: opticalStyle
-          ? clamp(style === "starburst" ? 0.18 + strengthRatio * 0.08 : 0.16 + strengthRatio * 0.075, 0.1, 0.32, 0.18)
+          ? clamp(style === "starburst" ? 0.24 + strengthRatio * 0.1 : 0.22 + strengthRatio * 0.095, 0.14, 0.42, 0.24)
           : clamp(0.82 + diffusionT * 0.14 + preset.scatter * 0.045, 0.76, 1.08, 0.86),
         smallWeight: preset.smallWeight,
         mediumWeight: preset.mediumWeight,
@@ -299,18 +299,18 @@
         optics: {
           mode: style === "starburst" ? "starburst" : (style === "anamorphic" ? "anamorphic" : "soft"),
           strength: style === "starburst"
-            ? clamp((0.36 + strengthRatio * 0.9 + triggerOpen * 0.12) * (0.94 + Math.pow(starLength / 220, 0.7) * 0.24), 0, 1.55, 0.82)
+            ? clamp((0.28 + strengthRatio * 0.72 + triggerOpen * 0.08) * (0.9 + Math.pow(starLength / 220, 0.7) * 0.2), 0, 1.25, 0.68)
             : (style === "anamorphic"
-              ? clamp((0.38 + strengthRatio * 0.96 + triggerOpen * 0.1) * (1 + Math.pow(streakLength / 300, 0.72) * 0.28), 0, 1.7, 0.9)
+              ? clamp((0.3 + strengthRatio * 0.76 + triggerOpen * 0.075) * (0.95 + Math.pow(streakLength / 300, 0.72) * 0.22), 0, 1.32, 0.72)
               : 0),
           length: style === "starburst"
             ? clamp(starLength * (0.92 + strengthRatio * 0.16), 8, 260, 58)
             : (style === "anamorphic"
               ? clamp(streakLength * (0.96 + strengthRatio * 0.2), 14, 360, 86)
               : 0),
-          sharpness: style === "starburst" ? 1.58 : (style === "anamorphic" ? 2.06 : 1),
-          coreMix: style === "starburst" ? 0.42 : (style === "anamorphic" ? 0.34 : 1),
-          verticalTightness: style === "anamorphic" ? 0.36 : 1,
+          sharpness: style === "starburst" ? 1.82 : (style === "anamorphic" ? 2.32 : 1),
+          coreMix: style === "starburst" ? 0.32 : (style === "anamorphic" ? 0.26 : 1),
+          verticalTightness: style === "anamorphic" ? 0.48 : 1,
           diagonalMix: style === "starburst" ? 0.58 : 0,
           starCount,
           rotation: style === "starburst" ? starRotation : 0,
@@ -320,15 +320,15 @@
             : (style === "anamorphic"
               ? clamp(0.01 + triggerThreshold * 0.07, 0.006, 0.13, 0.034)
               : 0),
-          softSourceMix: style === "starburst" ? 0.035 : (style === "anamorphic" ? 0.025 : 0),
-          baseVeil: style === "starburst" ? 0.006 : (style === "anamorphic" ? 0.004 : 1),
-          normalization: style === "starburst" ? 0.48 : (style === "anamorphic" ? 0.44 : 1),
+          softSourceMix: style === "starburst" ? 0.055 : (style === "anamorphic" ? 0.045 : 0),
+          baseVeil: style === "starburst" ? 0.02 : (style === "anamorphic" ? 0.018 : 1),
+          normalization: style === "starburst" ? 0.62 : (style === "anamorphic" ? 0.58 : 1),
           uiLength: style === "anamorphic" ? streakLength : starLength
         }
       },
       composite: {
         intensity: opticalStyle
-          ? clamp(strengthDrive * (style === "starburst" ? 11.4 : 12.8) * (0.74 + triggerOpen * 0.18), 0, 32, 1)
+          ? clamp(strengthDrive * (style === "starburst" ? 9.2 : 10.4) * (0.7 + triggerOpen * 0.16), 0, 28, 1)
           : clamp(strengthEnergyBoost * (1.08 + radiusEnergyDamping * 0.52) * (1 + diffusionT * 0.12), 0, 38, 1),
         // Favor screen-like appearance; reduce additive/linear-dodge feel.
         softAddMix: opticalStyle ? clamp(0.025 + preset.softAddMix * 0.08, 0.02, 0.055, 0.03) : clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
@@ -346,10 +346,10 @@
         // Split glow into core vs halo at composite stage (strength-gated).
         coreSuppression: opticalStyle ? clamp(0.18 + strengthDrive * 0.16, 0.12, 0.42, 0.22) : clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
         coreCeiling: opticalStyle ? clamp(0.18 + Math.pow(strengthRatio, 0.72) * 0.24, 0.14, 0.5, 0.28) : clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
-        haloBoost: opticalStyle ? clamp(0.18 + strengthRatio * 0.22, 0, 0.48, 0.24) : clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
-        haloMix: opticalStyle ? clamp(0.008 + strengthRatio * 0.035, 0, 0.075, 0.025) : clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
-        energyFloor: opticalStyle ? 0.003 + triggerThreshold * 0.006 : 0,
-        energyFloorSoftness: opticalStyle ? 0.01 : 0.001
+        haloBoost: opticalStyle ? clamp(0.26 + strengthRatio * 0.28, 0, 0.62, 0.32) : clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
+        haloMix: opticalStyle ? clamp(0.025 + strengthRatio * 0.055, 0, 0.12, 0.045) : clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
+        energyFloor: opticalStyle ? 0.0018 + triggerThreshold * 0.003 : 0,
+        energyFloorSoftness: opticalStyle ? 0.016 : 0.001
       },
       sourceTone: {
         // Exposure is mostly source-side activity shaping (not output intensity).

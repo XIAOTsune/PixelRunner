@@ -115,6 +115,10 @@
       return mat2(c, -s, s, c);
     }
 
+    float hash12(vec2 p) {
+      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    }
+
     float sourceGateAt(vec2 uv) {
       float sourceEnergy = max(max(texture(uSource, uv).r, texture(uSource, uv).g), texture(uSource, uv).b);
       float softness = uOpticsMode > 1.5
@@ -133,9 +137,13 @@
       totalWeight += pairWeight * 2.0;
       vec3 sourceA = texture(uSource, uvA).rgb;
       vec3 sourceB = texture(uSource, uvB).rgb;
-      vec3 softA = mix(sourceA, texture(uCombined, uvA).rgb, clamp(uOpticsSoftSourceMix, 0.0, 0.35));
-      vec3 softB = mix(sourceB, texture(uCombined, uvB).rgb, clamp(uOpticsSoftSourceMix, 0.0, 0.35));
-      return (softA * gateA * (0.5 + gateA * 0.5) + softB * gateB * (0.5 + gateB * 0.5)) * pairWeight;
+      vec3 softA = mix(sourceA, texture(uCombined, uvA).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
+      vec3 softB = mix(sourceB, texture(uCombined, uvB).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
+      float warmA = hash12(floor(uvA / max(uTexel * 8.0, vec2(0.0001))));
+      float warmB = hash12(floor(uvB / max(uTexel * 8.0, vec2(0.0001))) + vec2(17.0, 3.0));
+      vec3 tintA = softA * vec3(1.0 + warmA * 0.08, 1.0 + warmA * 0.02, 1.0 - warmA * 0.035);
+      vec3 tintB = softB * vec3(1.0 + warmB * 0.06, 1.0 + warmB * 0.01, 1.0 + warmB * 0.05);
+      return (tintA * gateA * (0.45 + gateA * 0.55) + tintB * gateB * (0.45 + gateB * 0.55)) * pairWeight;
     }
 
     vec3 opticalShape(vec3 base) {
@@ -153,29 +161,36 @@
         if (stepIndex > steps) break;
         float t = stepIndex / steps;
         float distance = t * uOpticsLength;
-        float falloff = pow(max(0.0, 1.0 - t * 0.82), uOpticsSharpness) * (uOpticsMode > 1.5 ? 0.48 : 0.36);
+        float shoulder = exp(-t * (uOpticsMode > 1.5 ? 2.45 : 2.05));
+        float tail = pow(max(0.0, 1.0 - t), uOpticsMode > 1.5 ? 2.2 : 1.85);
+        float centerRidge = 0.58 + 0.42 * exp(-t * 9.0);
+        float falloff = (shoulder * 0.58 + tail * 0.42) * centerRidge * (uOpticsMode > 1.5 ? 0.32 : 0.26);
         if (falloff <= 0.0001) continue;
 
         if (uOpticsMode > 1.5) {
-          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff, totalWeight);
-          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.1, falloff * 0.05 * uOpticsVerticalTightness, totalWeight);
+          float shimmer = mix(0.9, 1.08, hash12(floor(vUv / max(uTexel * 12.0, vec2(0.0001))) + vec2(stepIndex, 19.0)));
+          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff * shimmer, totalWeight);
+          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.055, falloff * 0.018 * uOpticsVerticalTightness, totalWeight);
         } else {
           float rays = clamp(floor(uOpticsStarCount + 0.5), 4.0, 12.0);
           for (int ray = 0; ray < 12; ray += 1) {
             float rayIndex = float(ray);
             if (rayIndex >= rays) break;
-            float angle = 6.28318530718 * rayIndex / rays;
+            float rayHash = hash12(vec2(rayIndex * 19.0, floor(vUv.x / max(uTexel.x * 10.0, 0.0001))));
+            float angle = 6.28318530718 * rayIndex / rays + (rayHash - 0.5) * 0.03;
             vec2 direction = rot * vec2(cos(angle), sin(angle));
-            float axisWeight = ray == 0 ? 1.0 : mix(0.48, 0.68, abs(cos(angle)));
-            accum += samplePair(direction, distance * mix(0.86, 1.0, axisWeight), falloff * axisWeight, totalWeight);
+            float axisWeight = ray == 0 ? 1.0 : mix(0.28, 0.58, abs(cos(angle)));
+            float rayGain = axisWeight * mix(0.78, 1.12, rayHash);
+            accum += samplePair(direction, distance * mix(0.72, 1.04, rayHash), falloff * rayGain, totalWeight);
           }
         }
       }
 
       vec3 shaped = accum / max(0.0001, totalWeight * clamp(uOpticsNormalization, 0.18, 1.4));
-      float mixAmount = clamp(uOpticsStrength * (0.45 + localGate * 0.55), 0.0, 0.92);
-      float sparkle = uOpticsMode < 1.5 ? 1.0 + localGate * uOpticsStrength * 0.18 : 1.0;
-      return base * clamp(uOpticsBaseVeil, 0.0, 1.0) + shaped * sparkle * mixAmount;
+      vec3 aura = texture(uCombined, vUv).rgb * (uOpticsMode > 1.5 ? 0.18 : 0.22);
+      float mixAmount = clamp(uOpticsStrength * (0.34 + localGate * 0.5), 0.0, 0.78);
+      float sparkle = uOpticsMode < 1.5 ? 1.0 + localGate * uOpticsStrength * 0.08 : 1.0;
+      return base * clamp(uOpticsBaseVeil + 0.035, 0.0, 1.0) + aura * uOpticsStrength + shaped * sparkle * mixAmount;
     }
 
     void main() {
