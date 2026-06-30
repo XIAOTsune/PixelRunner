@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-optical-emitters-v13";
+  const GLOW_ALGORITHM_VERSION = "engine-optical-directional-v14";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");
@@ -129,6 +129,8 @@
       params.blur && params.blur.optics && params.blur.optics.rotation,
       params.blur && params.blur.optics && params.blur.optics.visibility,
       params.blur && params.blur.optics && params.blur.optics.sourceGate,
+      params.blur && params.blur.optics && params.blur.optics.sourceGateSoftness,
+      params.blur && params.blur.optics && params.blur.optics.densityGate,
       params.blur && params.blur.optics && params.blur.optics.softSourceMix,
       params.blur && params.blur.optics && params.blur.optics.baseVeil,
       params.blur && params.blur.optics && params.blur.optics.normalization,

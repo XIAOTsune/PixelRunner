@@ -215,357 +215,212 @@
     return seed - Math.floor(seed);
   }
 
-  function isLocalPeak(energy, width, height, x, y, index, radius, anisotropicY) {
-    const center = energy[index];
-    const yRadius = anisotropicY ? Math.max(1, Math.round(radius * 0.55)) : radius;
-    for (let yy = Math.max(0, y - yRadius); yy <= Math.min(height - 1, y + yRadius); yy += 1) {
-      for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx += 1) {
-        const neighbor = yy * width + xx;
-        if (neighbor !== index && energy[neighbor] > center * 1.015) return false;
+  function sampleLayerRgb(layer, x, y) {
+    return [
+      sampleBilinear(layer, x, y, layer.r),
+      sampleBilinear(layer, x, y, layer.g),
+      sampleBilinear(layer, x, y, layer.b)
+    ];
+  }
+
+  function sampleSourceGate(sourceLayer, x, y, gate, softness) {
+    if (!sourceLayer) return 1;
+    const energy = Math.max(
+      sampleBilinear(sourceLayer, x, y, sourceLayer.r),
+      sampleBilinear(sourceLayer, x, y, sourceLayer.g),
+      sampleBilinear(sourceLayer, x, y, sourceLayer.b)
+    );
+    return smoothstep(gate, gate + softness, energy);
+  }
+
+  function addGatedDirectionalSample(layer, sourceLayer, x, y, dx, dy, distance, weight, gate, softness, spread, accum) {
+    const px = -dy;
+    const py = dx;
+    const taps = [
+      [0, 1],
+      [-spread, 0.36],
+      [spread, 0.36]
+    ];
+    let totalWeight = 0;
+    for (let tapIndex = 0; tapIndex < taps.length; tapIndex += 1) {
+      const offset = taps[tapIndex][0];
+      const tapWeight = taps[tapIndex][1];
+      for (let side = -1; side <= 1; side += 2) {
+        const sx = x + dx * distance * side + px * offset;
+        const sy = y + dy * distance * side + py * offset;
+        const gateValue = sampleSourceGate(sourceLayer, sx, sy, gate, softness);
+        const shapedGate = gateValue * (0.16 + gateValue * 0.84);
+        const localWeight = weight * tapWeight * shapedGate;
+        if (localWeight <= 0.000001) continue;
+        const sample = sampleLayerRgb(layer, sx, sy);
+        accum[0] += sample[0] * localWeight;
+        accum[1] += sample[1] * localWeight;
+        accum[2] += sample[2] * localWeight;
+        totalWeight += localWeight;
       }
     }
-    return true;
+    return totalWeight;
   }
 
-  function getPeakProminence(energy, width, height, x, y, value, innerRadius, outerRadius) {
-    let sum = 0;
-    let count = 0;
-    let neighborMax = 0;
-    const innerSq = innerRadius * innerRadius;
-    const outerSq = outerRadius * outerRadius;
-    for (let yy = Math.max(0, y - outerRadius); yy <= Math.min(height - 1, y + outerRadius); yy += 1) {
-      for (let xx = Math.max(0, x - outerRadius); xx <= Math.min(width - 1, x + outerRadius); xx += 1) {
-        const dx = xx - x;
-        const dy = yy - y;
-        const distSq = dx * dx + dy * dy;
-        if (distSq <= innerSq || distSq > outerSq) continue;
-        const next = energy[yy * width + xx] || 0;
-        sum += next;
-        count += 1;
-        if (next > neighborMax) neighborMax = next;
-      }
-    }
-    const mean = count > 0 ? sum / count : 0;
-    return Math.max((value - mean) / Math.max(0.0001, value), (value - neighborMax * 0.96) / Math.max(0.0001, value));
-  }
-
-  function tintEmitter(emitter, warm, cool) {
-    return {
-      ...emitter,
-      r: emitter.r * (1 + warm * 0.16 - cool * 0.04),
-      g: emitter.g * (1 + warm * 0.04 + cool * 0.02),
-      b: emitter.b * (1 - warm * 0.08 + cool * 0.18)
-    };
-  }
-
-  function getEmitterCount(mode, visibility) {
-    const v = Math.max(0, Math.min(1, Number(visibility) || 0));
-    if (v <= 0.0001) return 0;
-    const maxCount = mode === "anamorphic" ? 28 : 16;
-    const curved = Math.pow(v, mode === "anamorphic" ? 1.58 : 1.48);
-    return Math.max(1, Math.round(1 + curved * (maxCount - 1)));
-  }
-
-  function getSuppressionDistance(mode, length, visibility) {
-    const v = Math.max(0, Math.min(1, Number(visibility) || 0));
-    const base = mode === "anamorphic" ? 11 : 18;
-    const scale = mode === "anamorphic" ? 0.1 : 0.16;
-    return Math.max(base, Math.min(mode === "anamorphic" ? 42 : 64, length * scale * (1.16 - v * 0.28)));
-  }
-
-  function selectOpticalEmitters(sourceLayer, params) {
+  function buildOpticalSourceLayer(sourceLayer, params) {
     const mode = getOpticalMode(params);
-    if (!isOpticalMode(mode) || !sourceLayer) return [];
+    if (!isOpticalMode(mode) || !sourceLayer) return { layer: sourceLayer, activeRatio: 1 };
     const optics = params && params.blur && params.blur.optics || {};
     const visibility = Math.max(0, Math.min(1, Number(optics.visibility) || 0));
-    const maxEmitters = getEmitterCount(mode, visibility);
-    if (maxEmitters <= 0) return [];
+    const out = createLayer(sourceLayer.width, sourceLayer.height);
+    if (visibility <= 0.0001) return { layer: out, activeRatio: 0 };
 
-    const width = sourceLayer.width;
-    const height = sourceLayer.height;
-    const total = width * height;
-    const thresholdRatio = Math.max(0, Math.min(1, Number(params && params.threshold) / 100 || 0));
-    const length = Math.max(1, Number(optics.length) || 1);
-    const energy = new Float32Array(total);
     let maxEnergy = 0;
-    let energySum = 0;
+    let activeSum = 0;
     let activeCount = 0;
-
-    for (let index = 0; index < total; index += 1) {
-      const value = getPixelEnergy(sourceLayer, index);
-      energy[index] = value;
-      if (value > maxEnergy) maxEnergy = value;
-      if (value > 0.0001) {
-        energySum += value;
+    for (let index = 0; index < sourceLayer.r.length; index += 1) {
+      const energy = getPixelEnergy(sourceLayer, index);
+      if (energy > maxEnergy) maxEnergy = energy;
+      if (energy > 0.0001) {
+        activeSum += energy;
         activeCount += 1;
       }
     }
-    if (maxEnergy <= 0.0001) return [];
+    if (maxEnergy <= 0.0001) return { layer: out, activeRatio: 0 };
 
-    const activeMean = activeCount > 0 ? energySum / activeCount : 0;
-    const adaptiveGate = maxEnergy * (mode === "anamorphic"
-      ? 0.17 + thresholdRatio * 0.68
-      : 0.2 + thresholdRatio * 0.7);
-    const meanGate = activeMean * (mode === "anamorphic"
-      ? 0.36 + thresholdRatio * 1.65
-      : 0.44 + thresholdRatio * 1.85);
-    const floorGate = mode === "anamorphic"
-      ? 0.006 + thresholdRatio * 0.055
-      : 0.008 + thresholdRatio * 0.066;
-    const gate = Math.min(maxEnergy * (0.94 - thresholdRatio * 0.02), Math.max(floorGate, adaptiveGate, meanGate));
-    const peakRadius = thresholdRatio > 0.66 ? 2 : 1;
-    const candidates = [];
+    const activeMean = activeCount > 0 ? activeSum / activeCount : 0;
+    const sourceGate = Math.max(0, Math.min(1, Number(optics.sourceGate) || 0));
+    const densityGate = Math.max(0, Math.min(1, Number(optics.densityGate) || 0));
+    const relativeGate = maxEnergy * Math.max(sourceGate, densityGate);
+    const meanGate = activeMean * (0.65 + densityGate * 3.2 + (1 - visibility) * 1.1);
+    const gate = Math.min(maxEnergy * 0.985, Math.max(0.0008, relativeGate, meanGate));
+    const sourceSoftness = Math.max(0.006, Math.min(0.24, Number(optics.sourceGateSoftness) || 0.08));
+    const softness = Math.max(0.0035, Math.min(0.22, sourceSoftness * Math.max(0.28, maxEnergy)));
+    let kept = 0;
 
-    for (let y = 0; y < height; y += 1) {
-      const row = y * width;
-      for (let x = 0; x < width; x += 1) {
-        const index = row + x;
-        const value = energy[index];
-        if (value < gate) continue;
-        if (!isLocalPeak(energy, width, height, x, y, index, peakRadius, mode === "anamorphic")) continue;
-        const prominence = getPeakProminence(energy, width, height, x, y, value, 1, mode === "starburst" ? 5 : 4);
-        const pointGate = mode === "starburst"
-          ? 0.035 + thresholdRatio * 0.08
-          : 0.01 + thresholdRatio * 0.035;
-        const nearMax = value >= maxEnergy * (mode === "starburst" ? 0.82 + thresholdRatio * 0.09 : 0.72 + thresholdRatio * 0.08);
-        if (prominence < pointGate && !nearMax) continue;
-        const colorSum = sourceLayer.r[index] + sourceLayer.g[index] + sourceLayer.b[index];
-        const score = value * 0.7 + colorSum * 0.05 + smoothstep(gate, maxEnergy, value) * 0.12 + Math.max(0, prominence) * 0.28;
-        candidates.push({
-          x,
-          y,
-          r: sourceLayer.r[index],
-          g: sourceLayer.g[index],
-          b: sourceLayer.b[index],
-          energy: value,
-          prominence,
-          score
-        });
-      }
+    for (let index = 0; index < sourceLayer.r.length; index += 1) {
+      const energy = getPixelEnergy(sourceLayer, index);
+      const pass = smoothstep(gate, gate + softness, energy);
+      const shaped = pass * (0.18 + pass * 0.82);
+      if (shaped > 0.0001) kept += 1;
+      out.r[index] = sourceLayer.r[index] * shaped;
+      out.g[index] = sourceLayer.g[index] * shaped;
+      out.b[index] = sourceLayer.b[index] * shaped;
     }
-    if (!candidates.length) return [];
 
-    candidates.sort((left, right) => right.score - left.score);
-    const minDistance = getSuppressionDistance(mode, length, visibility);
-    const kept = [];
-    const used = new Set();
-    const distanceFactors = visibility > 0.72
-      ? [1, 0.72, 0.5, 0.34]
-      : (visibility > 0.38 ? [1, 0.76, 0.54] : [1]);
-    for (let pass = 0; pass < distanceFactors.length && kept.length < maxEmitters; pass += 1) {
-      const minDistanceSq = Math.pow(minDistance * distanceFactors[pass], 2);
-      for (let index = 0; index < candidates.length && kept.length < maxEmitters; index += 1) {
-        if (used.has(index)) continue;
-        const candidate = candidates[index];
-        let blocked = false;
-        for (let keptIndex = 0; keptIndex < kept.length; keptIndex += 1) {
-          const item = kept[keptIndex];
-          const dx = candidate.x - item.x;
-          const dy = candidate.y - item.y;
-          const distanceSq = mode === "anamorphic"
-            ? dx * dx * 0.18 + dy * dy * 1.9
-            : dx * dx + dy * dy;
-          if (distanceSq < minDistanceSq) {
-            blocked = true;
-            break;
-          }
-        }
-        if (!blocked) {
-          kept.push(candidate);
-          used.add(index);
-        }
-      }
+    const softened = kawaseBlurLayer(out, mode === "anamorphic" ? 1.25 : 1.05);
+    const softMix = Math.max(0, Math.min(0.42, 0.08 + (Number(optics.softSourceMix) || 0) * 3.2));
+    for (let index = 0; index < out.r.length; index += 1) {
+      out.r[index] = out.r[index] * (1 - softMix) + softened.r[index] * softMix;
+      out.g[index] = out.g[index] * (1 - softMix) + softened.g[index] * softMix;
+      out.b[index] = out.b[index] * (1 - softMix) + softened.b[index] * softMix;
     }
-    kept.forEach((emitter, index) => {
-      emitter.rank = index;
-      emitter.seed = hash01(emitter.x, emitter.y, mode === "anamorphic" ? 31 : 17);
-    });
-    return kept;
-  }
-
-  function splatDisc(target, emitter, radius, gain) {
-    const safeRadius = Math.max(0.75, radius);
-    const sigma = Math.max(0.45, safeRadius * 0.48);
-    const radiusCeil = Math.ceil(safeRadius * 2.1);
-    for (let yy = Math.max(0, Math.floor(emitter.y - radiusCeil)); yy <= Math.min(target.height - 1, Math.ceil(emitter.y + radiusCeil)); yy += 1) {
-      for (let xx = Math.max(0, Math.floor(emitter.x - radiusCeil)); xx <= Math.min(target.width - 1, Math.ceil(emitter.x + radiusCeil)); xx += 1) {
-        const dx = xx - emitter.x;
-        const dy = yy - emitter.y;
-        const weight = Math.exp(-(dx * dx + dy * dy) / Math.max(0.0001, 2 * sigma * sigma)) * gain;
-        const index = yy * target.width + xx;
-        target.r[index] += emitter.r * weight;
-        target.g[index] += emitter.g * weight;
-        target.b[index] += emitter.b * weight;
-      }
-    }
-  }
-
-  function splatEllipse(target, emitter, radiusX, radiusY, gain) {
-    const rx = Math.max(0.8, radiusX);
-    const ry = Math.max(0.8, radiusY);
-    const radiusCeilX = Math.ceil(rx * 2.2);
-    const radiusCeilY = Math.ceil(ry * 2.2);
-    for (let yy = Math.max(0, Math.floor(emitter.y - radiusCeilY)); yy <= Math.min(target.height - 1, Math.ceil(emitter.y + radiusCeilY)); yy += 1) {
-      for (let xx = Math.max(0, Math.floor(emitter.x - radiusCeilX)); xx <= Math.min(target.width - 1, Math.ceil(emitter.x + radiusCeilX)); xx += 1) {
-        const dx = (xx - emitter.x) / rx;
-        const dy = (yy - emitter.y) / ry;
-        const weight = Math.exp(-(dx * dx + dy * dy) * 0.5) * gain;
-        const index = yy * target.width + xx;
-        target.r[index] += emitter.r * weight;
-        target.g[index] += emitter.g * weight;
-        target.b[index] += emitter.b * weight;
-      }
-    }
+    return { layer: out, activeRatio: kept / Math.max(1, out.r.length) };
   }
 
   function buildOpticalEmitterLayer(sourceLayer, params) {
     const mode = getOpticalMode(params);
-    if (!isOpticalMode(mode)) return { layer: sourceLayer, emitters: [] };
-    const optics = params && params.blur && params.blur.optics || {};
-    const emitters = selectOpticalEmitters(sourceLayer, params);
-    const out = createLayer(sourceLayer.width, sourceLayer.height);
-    const length = Math.max(1, Number(optics.length) || 1);
-    const thresholdRatio = Math.max(0, Math.min(1, Number(params && params.threshold) / 100 || 0));
-    const radius = mode === "anamorphic"
-      ? Math.max(1.2, Math.min(3.2, 1.35 + length / 260 + (1 - thresholdRatio) * 0.3))
-      : Math.max(1.1, Math.min(3.1, 1.28 + length / 240 + (1 - thresholdRatio) * 0.26));
-    const gain = mode === "anamorphic" ? 0.82 : 0.76;
-    for (let index = 0; index < emitters.length; index += 1) {
-      splatDisc(out, emitters[index], radius, gain);
-    }
-    const softened = emitters.length ? kawaseBlurLayer(out, mode === "anamorphic" ? 1.1 : 0.9) : out;
-    return { layer: softened, emitters };
+    if (!isOpticalMode(mode)) return { layer: sourceLayer, emitters: [], activeRatio: 1 };
+    const opticalSource = buildOpticalSourceLayer(sourceLayer, params);
+    return { layer: opticalSource.layer, emitters: [], activeRatio: opticalSource.activeRatio };
   }
 
-  function addLinePoint(target, x, y, emitter, weight, width) {
-    const safeWidth = Math.max(0.55, width);
-    const radius = Math.ceil(safeWidth * 1.7);
-    const sigma = Math.max(0.35, safeWidth * 0.62);
-    for (let yy = Math.max(0, Math.floor(y - radius)); yy <= Math.min(target.height - 1, Math.ceil(y + radius)); yy += 1) {
-      for (let xx = Math.max(0, Math.floor(x - radius)); xx <= Math.min(target.width - 1, Math.ceil(x + radius)); xx += 1) {
-        const dx = xx - x;
-        const dy = yy - y;
-        const disc = Math.exp(-(dx * dx + dy * dy) / Math.max(0.0001, 2 * sigma * sigma));
-        const amount = weight * disc;
-        const index = yy * target.width + xx;
-        target.r[index] += emitter.r * amount;
-        target.g[index] += emitter.g * amount;
-        target.b[index] += emitter.b * amount;
-      }
-    }
-  }
-
-  function renderOpticalShapeFromEmitters(baseLayer, opticalSource, emitters, params) {
+  function applyOpticalShape(layer, sourceLayer, params) {
     const optics = params && params.blur && params.blur.optics || {};
     const mode = getOpticalMode(params);
     const strength = Math.max(0, Number(optics.strength) || 0);
     const length = Math.max(0, Number(optics.length) || 0);
-    if (!isOpticalMode(mode) || strength <= 0.0001 || length <= 0.5 || !emitters.length) {
-      return baseLayer;
+    const visibility = Math.max(0, Math.min(1, Number(optics.visibility) || 0));
+    if (!isOpticalMode(mode) || strength <= 0.0001 || length <= 0.5 || visibility <= 0.0001) {
+      return layer;
     }
 
-    const out = createLayer(baseLayer.width, baseLayer.height);
-    const maxDistance = Math.max(1, Math.min(Math.max(baseLayer.width, baseLayer.height) * 0.46, length));
-    const sharpness = Math.max(0.8, Number(optics.sharpness) || (mode === "anamorphic" ? 2.0 : 1.6));
+    const out = createLayer(layer.width, layer.height);
+    const maxDistance = Math.max(1, Math.min(Math.max(layer.width, layer.height) * 0.46, length));
+    const sharpness = Math.max(0.75, Number(optics.sharpness) || (mode === "anamorphic" ? 2.1 : 1.7));
+    const coreMix = Math.max(0.08, Math.min(0.82, Number(optics.coreMix) || 0.35));
+    const sourceCoreMix = Math.max(0, Math.min(0.42, Number(optics.softSourceMix) || 0.05));
+    const verticalTightness = Math.max(0.18, Math.min(1, Number(optics.verticalTightness) || 0.55));
     const starCount = Math.max(4, Math.min(12, Math.round(Number(optics.starCount) || 6)));
     const rotation = (Number(optics.rotation) || 0) * Math.PI / 180;
-    const coreMix = Math.max(0, Math.min(1, Number(optics.coreMix) || 0.55));
-    const baseVeil = Math.max(0, Math.min(1, Number(optics.baseVeil) || 0));
-    const lineStep = mode === "anamorphic" ? 1.35 : 1.05;
-    const steps = Math.max(8, Math.min(240, Math.ceil(maxDistance / lineStep)));
-    const lineWidth = mode === "anamorphic"
-      ? Math.max(1.1, Math.min(3.8, 1.25 + maxDistance / 190))
-      : Math.max(0.9, Math.min(3.3, 0.95 + maxDistance / 210));
-    const energyGain = strength * (mode === "anamorphic" ? 0.078 : 0.064);
-    const auraGain = strength * (mode === "anamorphic" ? 0.026 : 0.032);
+    const sourceGate = Math.max(0, Math.min(1, Number(optics.sourceGate) || 0));
+    const sourceSoftness = Math.max(0.01, Math.min(0.24, Number(optics.sourceGateSoftness) || (0.13 + (1 - visibility) * 0.08)));
+    const baseVeil = Math.max(0, Math.min(0.28, Number(optics.baseVeil) || 0));
+    const normalization = Math.max(0.22, Math.min(1.35, Number(optics.normalization) || 0.7));
+    const stepSize = mode === "anamorphic" ? 7.2 : 8.4;
+    const maxSteps = mode === "anamorphic" ? 42 : 30;
+    const minSteps = mode === "anamorphic" ? 18 : 14;
+    const steps = Math.max(minSteps, Math.min(maxSteps, Math.ceil(maxDistance / stepSize)));
+    const spread = mode === "anamorphic"
+      ? Math.max(0.65, Math.min(2.4, 0.86 + maxDistance / 210))
+      : Math.max(0.55, Math.min(2.0, 0.68 + maxDistance / 260));
 
-    if (baseVeil > 0) {
-      addLayer(out, baseLayer, baseVeil);
-    }
+    for (let y = 0; y < layer.height; y += 1) {
+      for (let x = 0; x < layer.width; x += 1) {
+        const index = y * layer.width + x;
+        const sourceEnergy = sourceLayer
+          ? Math.max(sourceLayer.r[index] || 0, sourceLayer.g[index] || 0, sourceLayer.b[index] || 0)
+          : Math.max(layer.r[index] || 0, layer.g[index] || 0, layer.b[index] || 0);
+        const localGate = Math.pow(Math.max(0, Math.min(1, Math.max(sourceEnergy, sampleSourceGate(sourceLayer, x, y, sourceGate, sourceSoftness)) * 1.25)), 0.68);
+        const sourceMix = sourceCoreMix * (0.45 + localGate * 0.55);
+        const accum = [
+          layer.r[index] * coreMix + (sourceLayer ? sourceLayer.r[index] * sourceMix : 0),
+          layer.g[index] * coreMix + (sourceLayer ? sourceLayer.g[index] * sourceMix : 0),
+          layer.b[index] * coreMix + (sourceLayer ? sourceLayer.b[index] * sourceMix : 0)
+        ];
+        let totalWeight = coreMix + sourceMix;
 
-    for (let index = 0; index < emitters.length; index += 1) {
-      const emitter = emitters[index];
-      const seed = Number(emitter.seed) || hash01(emitter.x, emitter.y, index);
-      const seedB = hash01(emitter.x, emitter.y, index + 11);
-      const sourceBoost = 0.74 + Math.min(1.15, emitter.energy * 1.32) + Math.max(0, emitter.prominence || 0) * 0.36;
-      const rankFade = 1 / (1 + index * (mode === "starburst" ? 0.18 : 0.1));
-      const warm = mode === "anamorphic" ? 0.08 + seed * 0.12 : 0.04 + seed * 0.08;
-      const cool = mode === "anamorphic" ? 0.04 + seedB * 0.1 : 0.02 + seedB * 0.06;
-      const tinted = tintEmitter(emitter, warm, cool);
-      const coreRadius = mode === "anamorphic" ? lineWidth * 1.08 : lineWidth * 1.22;
-      splatDisc(out, tinted, coreRadius, coreMix * energyGain * sourceBoost * rankFade * 2.6);
-      splatDisc(out, tinted, coreRadius * (mode === "anamorphic" ? 4.6 : 3.8), auraGain * sourceBoost * rankFade);
-
-      if (mode === "starburst") {
-        for (let ray = 0; ray < starCount; ray += 1) {
-          const raySeed = hash01(emitter.x + ray * 13, emitter.y - ray * 7, 41);
-          const angle = rotation + Math.PI * 2 * ray / starCount + (raySeed - 0.5) * 0.035;
-          const dx = Math.cos(angle);
-          const dy = Math.sin(angle);
-          const opposite = ray >= starCount / 2;
-          const axisWeight = (ray === 0 || (starCount % 2 === 0 && ray === starCount / 2))
-            ? 1
-            : (0.3 + 0.28 * Math.abs(Math.cos(angle)));
-          const rayLength = maxDistance * (0.62 + raySeed * 0.46) * (opposite ? 0.9 + seedB * 0.14 : 1);
-          const rayGain = (0.62 + raySeed * 0.56) * axisWeight * rankFade;
-          for (let step = 1; step <= steps; step += 1) {
-            const t = step / steps;
-            const distance = t * rayLength;
-            const shoulder = Math.exp(-t * (1.35 + sharpness * 0.34));
-            const tail = Math.pow(Math.max(0, 1 - t), 1.72 + sharpness * 0.28);
-            const centerRidge = 0.66 + 0.34 * Math.exp(-t * 8.5);
-            const nearFade = smoothstep(0, 0.045, t);
-            const weight = (shoulder * 0.55 + tail * 0.45) * centerRidge * nearFade * rayGain * energyGain * sourceBoost / Math.max(1, starCount * 0.52);
-            if (weight <= 0.000004) continue;
-            const drift = (hash01(ray, step, seed * 23) - 0.5) * lineWidth * 0.22 * t;
-            addLinePoint(
-              out,
-              emitter.x + dx * distance - dy * drift,
-              emitter.y + dy * distance + dx * drift,
-              tinted,
-              weight,
-              lineWidth * (1.24 - t * 0.58)
-            );
-          }
-        }
-      } else {
-        const verticalTightness = Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 0.36));
-        const streakLength = maxDistance * (0.72 + seed * 0.34);
-        const yDrift = (seedB - 0.5) * lineWidth * 0.75;
-        splatEllipse(out, tinted, streakLength * 0.08, lineWidth * (1.6 + verticalTightness), auraGain * sourceBoost * rankFade * 0.86);
         for (let step = 1; step <= steps; step += 1) {
           const t = step / steps;
-          const distance = t * streakLength;
-          const tail = Math.exp(-t * (1.9 + sharpness * 0.32)) * 0.64 + Math.pow(Math.max(0, 1 - t), 2.2) * 0.36;
-          const centerRidge = 0.58 + 0.42 * Math.exp(-t * 10);
-          const nearFade = smoothstep(0, 0.035, t);
-          const weight = tail * centerRidge * nearFade * energyGain * sourceBoost * rankFade * 0.82;
-          if (weight <= 0.000004) continue;
-          const width = lineWidth * (1.24 - t * 0.58) * (0.72 + verticalTightness * 0.48);
-          const shimmer = 0.88 + hash01(step, emitter.x, emitter.y) * 0.18;
-          addLinePoint(out, emitter.x + distance, emitter.y + yDrift * t, tinted, weight * shimmer, width);
-          addLinePoint(out, emitter.x - distance, emitter.y - yDrift * t * 0.35, tinted, weight * (0.8 + seed * 0.24), width * 0.92);
+          const distance = t * maxDistance;
+          const shoulder = Math.exp(-t * (mode === "anamorphic" ? 2.36 : 2.02));
+          const tail = Math.pow(Math.max(0, 1 - t), mode === "anamorphic" ? 2.18 + sharpness * 0.18 : 1.72 + sharpness * 0.22);
+          const ridge = mode === "anamorphic" ? 0.58 + 0.42 * Math.exp(-t * 9.4) : 0.62 + 0.38 * Math.exp(-t * 8.2);
+          const nearFade = smoothstep(0, mode === "anamorphic" ? 0.032 : 0.04, t);
+          const falloff = (shoulder * 0.58 + tail * 0.42) * ridge * nearFade * (mode === "anamorphic" ? 0.34 : 0.27);
+          if (falloff <= 0.000001) continue;
+
+          if (mode === "anamorphic") {
+            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 1, 0, distance, falloff, sourceGate, sourceSoftness, spread, accum);
+            totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 0, 1, distance * 0.055, falloff * 0.018 * verticalTightness, sourceGate, sourceSoftness, spread * 0.75, accum);
+          } else {
+            for (let ray = 0; ray < starCount; ray += 1) {
+              const rayJitter = (hash01(ray, starCount, 23) - 0.5) * 0.026;
+              const angle = rotation + Math.PI * 2 * ray / starCount + rayJitter;
+              const axisWeight = (ray === 0 || (starCount % 2 === 0 && ray === starCount / 2))
+                ? 1
+                : (0.34 + 0.28 * Math.abs(Math.cos(angle)));
+              const rayScale = 0.82 + hash01(ray, starCount, 41) * 0.2;
+              totalWeight += addGatedDirectionalSample(
+                layer,
+                sourceLayer,
+                x,
+                y,
+                Math.cos(angle),
+                Math.sin(angle),
+                distance * rayScale,
+                falloff * axisWeight,
+                sourceGate,
+                sourceSoftness,
+                spread,
+                accum
+              );
+            }
+          }
         }
+
+        const shapedR = accum[0] / Math.max(0.0001, totalWeight * normalization);
+        const shapedG = accum[1] / Math.max(0.0001, totalWeight * normalization);
+        const shapedB = accum[2] / Math.max(0.0001, totalWeight * normalization);
+        const mix = Math.max(0, Math.min(0.82, strength * (0.3 + localGate * 0.48)));
+        const sparkle = mode === "starburst" ? 1 + localGate * strength * 0.08 : 1;
+        const aura = mode === "anamorphic" ? 0.16 : 0.2;
+        out.r[index] = layer.r[index] * (baseVeil + aura * strength) + shapedR * mix * sparkle;
+        out.g[index] = layer.g[index] * (baseVeil + aura * strength) + shapedG * mix * sparkle;
+        out.b[index] = layer.b[index] * (baseVeil + aura * strength) + shapedB * mix * sparkle;
       }
     }
-
-    if (opticalSource && coreMix > 0) {
-      addLayer(out, opticalSource, coreMix * energyGain * 0.44);
-    }
-    addLayer(out, baseLayer, mode === "anamorphic" ? strength * 0.018 : strength * 0.022);
     return out;
-  }
-
-  function applyOpticalShape(layer, sourceLayer, params) {
-    const mode = getOpticalMode(params);
-    if (!isOpticalMode(mode)) return layer;
-    const opticalSource = buildOpticalEmitterLayer(sourceLayer, params);
-    return renderOpticalShapeFromEmitters(layer, opticalSource.layer, opticalSource.emitters, params);
   }
 
   function buildMultiScaleGlow(sourceLayer, params) {
     const mode = getOpticalMode(params);
-    const opticalSource = isOpticalMode(mode) ? buildOpticalEmitterLayer(sourceLayer, params) : null;
+    const opticalSource = isOpticalMode(mode) ? buildOpticalSourceLayer(sourceLayer, params) : null;
     const blurSource = opticalSource ? opticalSource.layer : sourceLayer;
     const radiusRatio = Math.max(0, Math.min(1, Number(params.radius) / 240 || 0));
     const mipCount = Math.max(2, Math.min(7, Math.floor(Number(params.blur.mipCount) || Math.round(3 + radiusRatio * 4))));
@@ -596,13 +451,14 @@
       addUpsampled(out, combined, params.blur.pyramidWeight || 1);
     }
     const glowLayer = opticalSource
-      ? renderOpticalShapeFromEmitters(out, opticalSource.layer, opticalSource.emitters, params)
+      ? applyOpticalShape(out, opticalSource.layer, params)
       : applyOpticalShape(out, blurSource, params);
-    return { glowLayer, levels: { mips: levels, emitters: opticalSource ? opticalSource.emitters.length : 0 } };
+    return { glowLayer, levels: { mips: levels, activeRatio: opticalSource ? opticalSource.activeRatio : 1 } };
   }
 
   modules.glowPyramidBlur = {
     createLayer,
+    buildOpticalSourceLayer,
     buildOpticalEmitterLayer,
     buildMultiScaleGlow
   };

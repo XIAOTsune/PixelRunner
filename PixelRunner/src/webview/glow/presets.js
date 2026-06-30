@@ -161,6 +161,9 @@
     const opticalStyle = style === "starburst" || style === "anamorphic";
     const triggerThreshold = thresholdRatio;
     const triggerOpen = 1 - triggerThreshold;
+    const opticalVisibility = style === "starburst" ? starVisible / 100 : (style === "anamorphic" ? streakVisible / 100 : 1);
+    const opticalDensityOpen = Math.pow(opticalVisibility, style === "anamorphic" ? 0.78 : 0.84);
+    const opticalDensitySelectivity = 1 - opticalDensityOpen;
     const triggerHigh = clamp(
       style === "starburst"
         ? 0.34 + triggerThreshold * 0.56 + preset.thresholdBias
@@ -233,7 +236,14 @@
           contrastHigh: clamp((style === "starburst" ? 0.05 : 0.044) + triggerThreshold * 0.09 - exposureRatio * 0.012, 0.032, 0.15, 0.062),
           specularLow: clamp((style === "starburst" ? 0.045 : 0.038) + triggerThreshold * 0.04, 0.03, 0.105, 0.052),
           specularHigh: clamp((style === "starburst" ? 0.18 : 0.16) + triggerThreshold * 0.2, 0.13, 0.44, 0.24),
-          lowEnergyCutoff: clamp((style === "starburst" ? 0.034 : 0.03) + triggerThreshold * 0.058, 0.024, 0.105, 0.04),
+          lowEnergyCutoff: clamp(
+            (style === "starburst" ? 0.034 : 0.03) +
+              triggerThreshold * 0.058 +
+              opticalDensitySelectivity * (style === "starburst" ? 0.012 : 0.009),
+            0.024,
+            0.12,
+            0.04
+          ),
           chromaBoost: clamp(preset.chromaBoost + saturation / 100 * 0.12 + Math.max(0, exposureRatio) * 0.018, 0, 0.48, preset.chromaBoost),
           whiteProtect: preset.whiteProtect,
           skinProtect: preset.skinProtect,
@@ -314,15 +324,29 @@
           diagonalMix: style === "starburst" ? 0.58 : 0,
           starCount,
           rotation: style === "starburst" ? starRotation : 0,
-          visibility: style === "starburst" ? starVisible / 100 : (style === "anamorphic" ? streakVisible / 100 : 1),
+          visibility: opticalVisibility,
           sourceGate: style === "starburst"
-            ? clamp(0.012 + triggerThreshold * 0.08, 0.008, 0.14, 0.036)
+            ? clamp(0.012 + triggerThreshold * 0.08 + opticalDensitySelectivity * 0.1, 0.008, 0.22, 0.036)
             : (style === "anamorphic"
-              ? clamp(0.01 + triggerThreshold * 0.07, 0.006, 0.13, 0.034)
+              ? clamp(0.01 + triggerThreshold * 0.07 + opticalDensitySelectivity * 0.075, 0.006, 0.2, 0.034)
               : 0),
-          softSourceMix: style === "starburst" ? 0.055 : (style === "anamorphic" ? 0.045 : 0),
-          baseVeil: style === "starburst" ? 0.02 : (style === "anamorphic" ? 0.018 : 1),
-          normalization: style === "starburst" ? 0.62 : (style === "anamorphic" ? 0.58 : 1),
+          sourceGateSoftness: style === "starburst"
+            ? clamp(0.15 - opticalDensityOpen * 0.07 + triggerOpen * 0.028, 0.045, 0.19, 0.1)
+            : (style === "anamorphic"
+              ? clamp(0.13 - opticalDensityOpen * 0.06 + triggerOpen * 0.024, 0.038, 0.17, 0.09)
+              : 0.08),
+          densityGate: style === "starburst"
+            ? clamp(0.04 + triggerThreshold * 0.1 + opticalDensitySelectivity * 0.48, 0.02, 0.68, 0.12)
+            : (style === "anamorphic"
+              ? clamp(0.032 + triggerThreshold * 0.085 + opticalDensitySelectivity * 0.38, 0.016, 0.56, 0.1)
+              : 0),
+          softSourceMix: style === "starburst"
+            ? clamp(0.052 + opticalDensityOpen * 0.025, 0.04, 0.09, 0.055)
+            : (style === "anamorphic" ? clamp(0.044 + opticalDensityOpen * 0.02, 0.034, 0.074, 0.045) : 0),
+          baseVeil: style === "starburst" ? 0.018 : (style === "anamorphic" ? 0.016 : 1),
+          normalization: style === "starburst"
+            ? clamp(0.58 + opticalDensitySelectivity * 0.12, 0.54, 0.78, 0.62)
+            : (style === "anamorphic" ? clamp(0.56 + opticalDensitySelectivity * 0.1, 0.52, 0.72, 0.58) : 1),
           uiLength: style === "anamorphic" ? streakLength : starLength
         }
       },

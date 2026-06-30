@@ -102,6 +102,7 @@
     uniform float uOpticsRotation;
     uniform float uOpticsVisibility;
     uniform float uOpticsSourceGate;
+    uniform float uOpticsSourceGateSoftness;
     uniform float uOpticsSoftSourceMix;
     uniform float uOpticsBaseVeil;
     uniform float uOpticsNormalization;
@@ -121,9 +122,7 @@
 
     float sourceGateAt(vec2 uv) {
       float sourceEnergy = max(max(texture(uSource, uv).r, texture(uSource, uv).g), texture(uSource, uv).b);
-      float softness = uOpticsMode > 1.5
-        ? mix(0.12, 0.04, clamp(uOpticsVisibility, 0.0, 1.0))
-        : mix(0.1, 0.032, clamp(uOpticsVisibility, 0.0, 1.0));
+      float softness = max(0.006, uOpticsSourceGateSoftness);
       return smoothstep(uOpticsSourceGate, uOpticsSourceGate + softness, sourceEnergy);
     }
 
@@ -133,7 +132,7 @@
       vec2 uvB = vUv - offset;
       float gateA = sourceGateAt(uvA);
       float gateB = sourceGateAt(uvB);
-      float pairWeight = weight * max(gateA, gateB);
+      float pairWeight = weight * (0.08 + max(gateA, gateB) * 0.92);
       totalWeight += pairWeight * 2.0;
       vec3 sourceA = texture(uSource, uvA).rgb;
       vec3 sourceB = texture(uSource, uvB).rgb;
@@ -143,7 +142,7 @@
       float warmB = hash12(floor(uvB / max(uTexel * 8.0, vec2(0.0001))) + vec2(17.0, 3.0));
       vec3 tintA = softA * vec3(1.0 + warmA * 0.08, 1.0 + warmA * 0.02, 1.0 - warmA * 0.035);
       vec3 tintB = softB * vec3(1.0 + warmB * 0.06, 1.0 + warmB * 0.01, 1.0 + warmB * 0.05);
-      return (tintA * gateA * (0.45 + gateA * 0.55) + tintB * gateB * (0.45 + gateB * 0.55)) * pairWeight;
+      return (tintA * gateA * (0.42 + gateA * 0.58) + tintB * gateB * (0.42 + gateB * 0.58)) * pairWeight;
     }
 
     vec3 opticalShape(vec3 base) {
@@ -153,10 +152,10 @@
       vec3 source = texture(uSource, vUv).rgb;
       vec3 accum = mix(source, base, clamp(uOpticsSoftSourceMix, 0.0, 0.35)) * uOpticsCoreMix;
       float totalWeight = uOpticsCoreMix;
-      float steps = clamp(ceil(uOpticsLength / (uOpticsMode > 1.5 ? 2.0 : 1.55)), 36.0, 96.0);
+      float steps = clamp(ceil(uOpticsLength / (uOpticsMode > 1.5 ? 6.8 : 7.8)), uOpticsMode > 1.5 ? 18.0 : 14.0, uOpticsMode > 1.5 ? 46.0 : 32.0);
       mat2 rot = rotation2d(radians(uOpticsRotation));
 
-      for (int i = 1; i <= 96; i += 1) {
+      for (int i = 1; i <= 46; i += 1) {
         float stepIndex = float(i);
         if (stepIndex > steps) break;
         float t = stepIndex / steps;
@@ -168,7 +167,7 @@
         if (falloff <= 0.0001) continue;
 
         if (uOpticsMode > 1.5) {
-          float shimmer = mix(0.9, 1.08, hash12(floor(vUv / max(uTexel * 12.0, vec2(0.0001))) + vec2(stepIndex, 19.0)));
+          float shimmer = mix(0.96, 1.04, hash12(vec2(stepIndex, uOpticsLength * 0.017)));
           accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff * shimmer, totalWeight);
           accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.055, falloff * 0.018 * uOpticsVerticalTightness, totalWeight);
         } else {
@@ -176,7 +175,7 @@
           for (int ray = 0; ray < 12; ray += 1) {
             float rayIndex = float(ray);
             if (rayIndex >= rays) break;
-            float rayHash = hash12(vec2(rayIndex * 19.0, floor(vUv.x / max(uTexel.x * 10.0, 0.0001))));
+            float rayHash = hash12(vec2(rayIndex * 19.0, rays * 7.0 + uOpticsRotation * 0.013));
             float angle = 6.28318530718 * rayIndex / rays + (rayHash - 0.5) * 0.03;
             vec2 direction = rot * vec2(cos(angle), sin(angle));
             float axisWeight = ray == 0 ? 1.0 : mix(0.28, 0.58, abs(cos(angle)));
@@ -462,13 +461,14 @@
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsStrength"), Math.max(0, Number(optics.strength) || 0));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsLength"), Math.max(0, Number(optics.length) || 0));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSharpness"), Math.max(0.7, Number(optics.sharpness) || 1.6));
-      gl.uniform1f(gl.getUniformLocation(program, "uOpticsCoreMix"), Math.max(0.35, Math.min(1, Number(optics.coreMix) || 0.8)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsCoreMix"), Math.max(0.08, Math.min(0.82, Number(optics.coreMix) || 0.35)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsDiagonalMix"), Math.max(0, Math.min(1, Number(optics.diagonalMix) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsVerticalTightness"), Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsStarCount"), Math.max(4, Math.min(12, Number(optics.starCount) || 6)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsRotation"), Math.max(-180, Math.min(180, Number(optics.rotation) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsVisibility"), Math.max(0, Math.min(1, Number(optics.visibility) || 1)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSourceGate"), Math.max(0, Math.min(1, Number(optics.sourceGate) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uOpticsSourceGateSoftness"), Math.max(0.006, Math.min(0.24, Number(optics.sourceGateSoftness) || 0.08)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSoftSourceMix"), Math.max(0, Math.min(0.35, Number(optics.softSourceMix) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsBaseVeil"), Math.max(0, Math.min(1, Number(optics.baseVeil) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsNormalization"), Math.max(0.18, Math.min(1.4, Number(optics.normalization) || 0.65)));
@@ -484,15 +484,20 @@
       const optics = params && params.blur && params.blur.optics ? params.blur.optics : {};
       const mode = String(optics.mode || "soft");
       let blurSource = sourceLayer;
-      let emitterCount = 0;
+      let activeRatio = 1;
       if (
         (mode === "starburst" || mode === "anamorphic") &&
         modules.glowPyramidBlur &&
-        typeof modules.glowPyramidBlur.buildOpticalEmitterLayer === "function"
+        (
+          typeof modules.glowPyramidBlur.buildOpticalSourceLayer === "function" ||
+          typeof modules.glowPyramidBlur.buildOpticalEmitterLayer === "function"
+        )
       ) {
-        const opticalSource = modules.glowPyramidBlur.buildOpticalEmitterLayer(sourceLayer, params);
+        const opticalSource = typeof modules.glowPyramidBlur.buildOpticalSourceLayer === "function"
+          ? modules.glowPyramidBlur.buildOpticalSourceLayer(sourceLayer, params)
+          : modules.glowPyramidBlur.buildOpticalEmitterLayer(sourceLayer, params);
         blurSource = opticalSource && opticalSource.layer ? opticalSource.layer : sourceLayer;
-        emitterCount = opticalSource && Array.isArray(opticalSource.emitters) ? opticalSource.emitters.length : 0;
+        activeRatio = opticalSource && Number.isFinite(Number(opticalSource.activeRatio)) ? Number(opticalSource.activeRatio) : 1;
       }
       const width = blurSource.width;
       const height = blurSource.height;
@@ -553,7 +558,7 @@
 
         return {
           glowLayer,
-          levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })), emitters: emitterCount },
+          levels: { mips: levels.map((level) => ({ width: level.width, height: level.height })), activeRatio },
           backend: "webgl2"
         };
       } finally {
