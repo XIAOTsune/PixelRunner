@@ -1931,6 +1931,37 @@
     scheduleRunSubmissionFlush();
   }
 
+  function clearCompletedRunningTasks() {
+    const state = modules.state.state;
+    const tasks = Array.isArray(state.runningTasks) ? state.runningTasks : [];
+    let removedCount = 0;
+    const keptTasks = [];
+
+    tasks.forEach((task) => {
+      if (task && isTaskTerminalStatus(task.status)) {
+        const taskId = String(task.taskId || "").trim();
+        const remoteTaskId = String(task.remoteTaskId || taskId).trim();
+        if (taskId) {
+          stopTaskStatusTracking(taskId);
+          pendingRunSubmissions.delete(taskId);
+          activeRunSubmissions.delete(taskId);
+        }
+        if (remoteTaskId && remoteTaskId !== taskId) stopTaskStatusTracking(remoteTaskId);
+        if (remoteTaskId) pendingAutoPlacements.delete(remoteTaskId);
+        removedCount += 1;
+        return;
+      }
+      if (task) keptTasks.push(task);
+    });
+
+    if (removedCount === 0) return 0;
+    state.runningTasks = keptTasks;
+    syncPrimaryRunningTask();
+    updateRunButtonState();
+    scheduleRunSubmissionFlush();
+    return removedCount;
+  }
+
   function stopTaskStatusTracking(taskId = "") {
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId) return;
@@ -3408,6 +3439,7 @@
     flushQueuedTasks,
     updateThirdPartyDynamicOptions,
     renderWorkspace,
+    clearCompletedRunningTasks,
     buildRunPayload,
     collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,

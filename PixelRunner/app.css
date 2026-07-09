@@ -953,19 +953,24 @@ button {
 }
 
 .workspace-header-strip {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  padding: 4px 6px;
+  border-radius: 12px;
 }
 
 .workspace-header-side {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 8px;
+  gap: 4px;
+  width: 100%;
   min-width: 0;
 }
 
 .workspace-header-side .account-summary {
-  justify-content: flex-end;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -975,10 +980,16 @@ button {
   justify-content: flex-end;
   gap: 4px;
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .workspace-header-actions .ghost-btn {
   flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  box-shadow: 2px 3px 0 var(--btn-shadow);
 }
 
 .workspace-header-actions .version-text {
@@ -5754,29 +5765,130 @@ button {
 
 @media (max-width: 460px) {
   .workspace-header-strip {
-    align-items: stretch;
-  }
-
-  .workspace-header-strip .panel-header-main {
-    width: 100%;
-  }
-
-  .workspace-header-strip .panel-eyebrow {
-    font-size: 7px;
-  }
-
-  .workspace-header-strip .panel-title {
-    font-size: 12px;
-    line-height: 1.02;
+    align-items: center;
   }
 
   .workspace-header-side {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 3px;
   }
 
   .workspace-header-side .account-summary {
     justify-content: flex-start;
+  }
+
+  .workspace-header-actions .version-text {
+    display: none;
+  }
+}
+
+.layer-assist-card {
+  overflow: visible;
+  z-index: 3;
+}
+
+#viewTools .layer-quick-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  overflow: visible;
+}
+
+#viewTools .layer-quick-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 34px;
+  width: auto;
+  gap: 4px;
+  padding: 4px 5px;
+  border-width: 1px;
+  border-radius: 8px;
+  overflow: visible;
+  box-shadow: 1px 2px 0 var(--control-edge);
+}
+
+#viewTools .layer-quick-item > div {
+  min-width: 0;
+}
+
+#viewTools .layer-quick-item h4 {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#viewTools .layer-quick-item p {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 5px);
+  z-index: 40;
+  width: min(218px, calc(200% + 8px));
+  min-width: 132px;
+  padding: 6px 8px;
+  border: 1px solid rgba(138, 198, 223, 0.72);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(28, 42, 55, 0.98), rgba(16, 26, 36, 0.98));
+  color: var(--text);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  -webkit-box-orient: unset;
+  -webkit-line-clamp: unset;
+  transition:
+    opacity var(--motion-fast) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+#viewTools .layer-quick-item:nth-child(2n) p {
+  right: 0;
+  left: auto;
+}
+
+#viewTools .layer-quick-item:hover,
+#viewTools .layer-quick-item:focus,
+#viewTools .layer-quick-item:focus-within {
+  z-index: 50;
+}
+
+#viewTools .layer-quick-item:hover p,
+#viewTools .layer-quick-item:focus p,
+#viewTools .layer-quick-item:focus-within p {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#viewTools .layer-quick-item .mini-btn {
+  min-width: 40px;
+  min-height: 24px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  box-shadow: 1px 2px 0 var(--btn-shadow);
+}
+
+#viewTools .layer-quick-item .mini-btn:hover {
+  box-shadow: 0 3px 0 var(--btn-edge);
+}
+
+@media (max-width: 640px) {
+  #viewTools .layer-quick-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #viewTools .layer-quick-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: auto;
   }
 }
 

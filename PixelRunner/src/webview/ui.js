@@ -235,7 +235,14 @@
 
     if (clearButton && logWindow) {
       clearButton.addEventListener("click", () => {
-        logWindow.value = "[系统] 日志已清空，等待新的操作记录。";
+        const removedCount =
+          modules.workspace && typeof modules.workspace.clearCompletedRunningTasks === "function"
+            ? modules.workspace.clearCompletedRunningTasks()
+            : 0;
+        logWindow.value =
+          removedCount > 0
+            ? `[系统] 日志已清空，已移除 ${removedCount} 张已结束的任务卡片，等待新的操作记录。`
+            : "[系统] 日志已清空，等待新的操作记录。";
       });
     }
   }

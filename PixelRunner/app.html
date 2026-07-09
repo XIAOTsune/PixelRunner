@@ -25,12 +25,6 @@
     <main id="appMain" class="panel-main">
       <section id="viewWorkspace" class="panel-view active">
         <div class="panel-header-strip workspace-header-strip">
-          <div class="panel-header-main">
-            <div class="panel-heading-group">
-              <p class="panel-eyebrow">任务工作台</p>
-              <h2 class="panel-title">RunningHub 任务工作台</h2>
-            </div>
-          </div>
           <div class="panel-header-side workspace-header-side">
             <div id="accountSummary" class="account-summary is-empty">
               <div class="metric-pill">
@@ -54,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.6.0</span>
+              <span class="version-text">v2.6.1</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -120,7 +114,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.6.0 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.6.1 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -135,7 +129,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.6.0</span>
+            <span class="version-text">v2.6.1</span>
           </div>
         </div>
 
@@ -187,32 +181,32 @@
         </section>
 
         <div class="tool-group-grid">
-          <section class="surface-card">
+          <section class="surface-card layer-assist-card">
             <div class="card-head">
               <h3 class="card-title">图层辅助</h3>
               <span class="status-chip">3 项预置</span>
             </div>
-            <div class="tool-list">
-              <article class="tool-item">
+            <div class="tool-list layer-quick-list">
+              <article class="tool-item layer-quick-item" tabindex="0">
                 <div>
                   <h4>黑白观察层</h4>
                   <p>用于快速检查明暗和反差。</p>
                 </div>
-                <button id="btnObserver" class="mini-btn" type="button">创建</button>
+                <button id="btnObserver" class="mini-btn" type="button" title="创建黑白观察层。用于快速检查明暗和反差。">创建</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item layer-quick-item" tabindex="0">
                 <div>
                   <h4>中性灰图层</h4>
                   <p>预留 50% 灰加柔光的修图入口。</p>
                 </div>
-                <button id="btnNeutralGray" class="mini-btn" type="button">创建</button>
+                <button id="btnNeutralGray" class="mini-btn" type="button" title="创建中性灰图层。预留 50% 灰加柔光的修图入口。">创建</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item layer-quick-item" tabindex="0">
                 <div>
                   <h4>高低频</h4>
                   <p>分离为纹理层和颜色层，便于精修。</p>
                 </div>
-                <button id="btnFreqSep" class="mini-btn" type="button">创建</button>
+                <button id="btnFreqSep" class="mini-btn" type="button" title="创建高低频。分离为纹理层和颜色层，便于精修。">创建</button>
               </article>
             </div>
           </section>
@@ -288,7 +282,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.6.0</span>
+          <span class="version-text">v2.6.1</span>
           </div>
         </div>
 
