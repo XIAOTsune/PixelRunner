@@ -1627,9 +1627,9 @@ button {
 }
 
 .tool-glow-card {
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 10px;
   border: 1px solid rgba(98, 128, 152, 0.62);
   background:
     radial-gradient(circle at top right, rgba(159, 220, 255, 0.1), transparent 36%),
@@ -1644,13 +1644,13 @@ button {
   display: flex;
   align-items: center;
   flex-direction: row;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tool-glow-summary-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -1658,21 +1658,24 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 4px;
 }
 
-.glow-open-btn {
+#viewTools .glow-open-btn {
   flex: 0 0 auto;
   width: auto;
-  min-width: 104px;
-  min-height: 30px;
-  padding-inline: 14px;
+  min-width: 92px;
+  min-height: 26px;
+  padding-inline: 10px;
+  border-radius: 11px;
+  font-size: 11px;
+  box-shadow: 2px 3px 0 var(--btn-shadow);
 }
 
 .tool-space-fx-card {
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 10px;
   border: 1px solid rgba(117, 216, 199, 0.48);
   background:
     radial-gradient(circle at top right, rgba(255, 213, 106, 0.12), transparent 34%),
@@ -1687,13 +1690,13 @@ button {
   display: flex;
   align-items: center;
   flex-direction: row;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tool-space-fx-summary-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -1701,21 +1704,24 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 4px;
 }
 
-.space-fx-open-btn {
+#viewTools .space-fx-open-btn {
   flex: 0 0 auto;
   width: auto;
-  min-width: 104px;
-  min-height: 30px;
-  padding-inline: 14px;
+  min-width: 98px;
+  min-height: 26px;
+  padding-inline: 10px;
+  border-radius: 11px;
+  font-size: 11px;
+  box-shadow: 2px 3px 0 var(--btn-shadow);
 }
 
 .tool-blend-match-card {
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 12px;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 10px;
   border: 1px solid rgba(147, 197, 153, 0.5);
   background:
     radial-gradient(circle at top right, rgba(255, 221, 134, 0.12), transparent 34%),
@@ -1730,13 +1736,13 @@ button {
   display: flex;
   align-items: center;
   flex-direction: row;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tool-blend-match-summary-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -1744,19 +1750,22 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 4px;
 }
 
-.blend-match-open-btn {
+#viewTools .blend-match-open-btn {
   flex: 0 0 auto;
   width: auto;
-  min-width: 118px;
-  min-height: 30px;
-  padding-inline: 14px;
+  min-width: 104px;
+  min-height: 26px;
+  padding-inline: 10px;
+  border-radius: 11px;
+  font-size: 11px;
+  box-shadow: 2px 3px 0 var(--btn-shadow);
 }
 
 .blend-match-auto-field {
-  min-height: 30px;
+  min-height: 26px;
   border-color: rgba(126, 200, 154, 0.4);
   background: rgba(9, 25, 21, 0.28);
 }
@@ -2103,17 +2112,28 @@ button {
 
 @media (max-width: 720px) {
   .tool-blend-match-launcher {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
   }
 
-  .blend-match-open-btn {
-    width: 100%;
+  #viewTools .blend-match-open-btn {
+    width: auto;
   }
 
   .blend-match-controls,
   .blend-match-actions {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 430px) {
+  .tool-blend-match-launcher {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #viewTools .blend-match-open-btn {
+    width: 100%;
   }
 }
 
@@ -3068,7 +3088,8 @@ button {
 
 #viewTools .tool-item p,
 #viewTools .tool-glow-card .subtle-note,
-#viewTools .tool-space-fx-card .subtle-note {
+#viewTools .tool-space-fx-card .subtle-note,
+#viewTools .tool-blend-match-card .subtle-note {
   display: -webkit-box;
   overflow: hidden;
   line-height: 1.35;
@@ -3077,7 +3098,9 @@ button {
 }
 
 #viewTools .summary-strip {
-  padding-block: 4px;
+  padding: 3px 6px;
+  font-size: 9px;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5660,11 +5683,15 @@ button {
     line-height: 1.3;
   }
 
-  #viewTools .tool-list {
+  #viewTools .tool-list:not(.compact-tool-list) {
     grid-template-columns: 1fr;
   }
 
-  #viewTools .tool-item {
+  #viewTools .compact-tool-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #viewTools .tool-item:not(.compact-tool-item) {
     width: 100%;
   }
 
@@ -5788,13 +5815,25 @@ button {
   z-index: 3;
 }
 
-#viewTools .layer-quick-list {
+.compact-tool-card {
+  overflow: visible;
+  z-index: 3;
+}
+
+.compact-tool-card:hover,
+.compact-tool-card:focus-within {
+  z-index: 6;
+}
+
+#viewTools .layer-quick-list,
+#viewTools .compact-tool-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   overflow: visible;
 }
 
-#viewTools .layer-quick-item {
+#viewTools .layer-quick-item,
+#viewTools .compact-tool-item {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -5809,11 +5848,13 @@ button {
   box-shadow: 1px 2px 0 var(--control-edge);
 }
 
-#viewTools .layer-quick-item > div {
+#viewTools .layer-quick-item > div,
+#viewTools .compact-tool-item > div {
   min-width: 0;
 }
 
-#viewTools .layer-quick-item h4 {
+#viewTools .layer-quick-item h4,
+#viewTools .compact-tool-item h4 {
   margin: 0;
   font-size: 10px;
   line-height: 1.15;
@@ -5822,7 +5863,8 @@ button {
   white-space: nowrap;
 }
 
-#viewTools .layer-quick-item p {
+#viewTools .layer-quick-item p,
+#viewTools .compact-tool-item p {
   display: block;
   position: absolute;
   left: 0;
@@ -5849,25 +5891,33 @@ button {
     transform var(--motion-fast) var(--ease-out);
 }
 
-#viewTools .layer-quick-item:nth-child(2n) p {
+#viewTools .layer-quick-item:nth-child(2n) p,
+#viewTools .compact-tool-item:nth-child(2n) p {
   right: 0;
   left: auto;
 }
 
 #viewTools .layer-quick-item:hover,
 #viewTools .layer-quick-item:focus,
-#viewTools .layer-quick-item:focus-within {
+#viewTools .layer-quick-item:focus-within,
+#viewTools .compact-tool-item:hover,
+#viewTools .compact-tool-item:focus,
+#viewTools .compact-tool-item:focus-within {
   z-index: 50;
 }
 
 #viewTools .layer-quick-item:hover p,
 #viewTools .layer-quick-item:focus p,
-#viewTools .layer-quick-item:focus-within p {
+#viewTools .layer-quick-item:focus-within p,
+#viewTools .compact-tool-item:hover p,
+#viewTools .compact-tool-item:focus p,
+#viewTools .compact-tool-item:focus-within p {
   opacity: 1;
   transform: translateY(0);
 }
 
-#viewTools .layer-quick-item .mini-btn {
+#viewTools .layer-quick-item .mini-btn,
+#viewTools .compact-tool-item .mini-btn {
   min-width: 40px;
   min-height: 24px;
   padding: 0 6px;
@@ -5876,16 +5926,19 @@ button {
   box-shadow: 1px 2px 0 var(--btn-shadow);
 }
 
-#viewTools .layer-quick-item .mini-btn:hover {
+#viewTools .layer-quick-item .mini-btn:hover,
+#viewTools .compact-tool-item .mini-btn:hover {
   box-shadow: 0 3px 0 var(--btn-edge);
 }
 
 @media (max-width: 640px) {
-  #viewTools .layer-quick-list {
+  #viewTools .layer-quick-list,
+  #viewTools .compact-tool-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  #viewTools .layer-quick-item {
+  #viewTools .layer-quick-item,
+  #viewTools .compact-tool-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     width: auto;
