@@ -31,7 +31,6 @@
     maxConcurrentTasks: 3,
     localQueueEnabled: false,
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
-    autoFillEmptyImageInputs: false,
     appPickerLayout: "visual",
     plusModeEnabled: false
   };
@@ -173,7 +172,6 @@
       maxConcurrentTasks,
       localQueueEnabled: source.localQueueEnabled === true,
       aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
-      autoFillEmptyImageInputs: source.autoFillEmptyImageInputs === true,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()

@@ -144,15 +144,6 @@ function isControlImageInput(input) {
   return /(遮罩|蒙版|控制图|姿态|深度|法线|线稿|边缘|mask|control|pose|depth|normal|canny|edge|lineart|scribble|sketch|seg|segmentation|openpose)/i.test(getImageInputMarker(input));
 }
 
-function shouldAutoFillImageInput(input) {
-  if (!input || isMainImageInput(input)) return false;
-  const emptyBehavior = getImageInputEmptyBehavior(input);
-  if (/^(copyprimary|copy-primary|copy_primary)$/.test(emptyBehavior)) return true;
-  if (emptyBehavior === "skip" || emptyBehavior === "require" || isControlImageInput(input)) return false;
-  if (["reference", "secondary", "style"].includes(getImageInputRole(input))) return true;
-  return /(参考|副图|辅图|风格图|参照|reference|ref|secondary|second|image2|img2|style)/i.test(getImageInputMarker(input));
-}
-
 function getImageInputPrimaryScore(input, index = 0) {
   const marker = getImageInputMarker(input);
   let score = 0;
@@ -388,11 +379,6 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
   const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
   const values = inputValues && typeof inputValues === "object" ? inputValues : {};
   const imageInputs = inputs.filter(isImageLikeInput);
-  const autoFillEmptyImageInputs = settings.autoFillEmptyImageInputs === true;
-  const hasExplicitCopyPrimaryInput = inputs.some(
-    (input) => isImageLikeInput(input) && /^(copyprimary|copy-primary|copy_primary)$/.test(getImageInputEmptyBehavior(input))
-  );
-  const primaryImageInput = autoFillEmptyImageInputs || hasExplicitCopyPrimaryInput ? findPrimaryImageInput(inputs, values) : null;
   const placeholderAnchorInput = imageInputs.length >= 2 ? findPrimaryImageInput(inputs, values) : null;
   const uploadedImageValues = new Map();
   const normalizedValues = {};
@@ -419,28 +405,16 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     return imageSubmission.value;
   }
 
-  async function getPrimaryImageValue() {
-    if (!primaryImageInput || !primaryImageInput.key) return "";
-    if (uploadedImageValues.has(primaryImageInput.key)) return uploadedImageValues.get(primaryImageInput.key);
-    const normalized = await normalizeImageSubmission(
-      primaryImageInput.input,
-      values[primaryImageInput.key],
-      primaryImageInput.key
-    );
-    if (isFilledInputValue(normalized)) uploadedImageValues.set(primaryImageInput.key, normalized);
-    return normalized;
-  }
-
   async function getSafePlaceholderImageValue() {
     if (safePlaceholderImageValue) return safePlaceholderImageValue;
     safePlaceholderImageValue = await uploadImageValue(apiKey, SAFE_EMPTY_IMAGE_PLACEHOLDER, settings);
     return safePlaceholderImageValue;
   }
 
-  function shouldUseSafePlaceholder(input, key, imageRequiresValue, canCopyPrimaryImage) {
+  function shouldUseSafePlaceholder(input, key, imageRequiresValue) {
     if (!placeholderAnchorInput || !placeholderAnchorInput.key) return false;
     if (String(placeholderAnchorInput.key || "") === String(key || "")) return false;
-    if (imageRequiresValue || canCopyPrimaryImage) return false;
+    if (imageRequiresValue) return false;
     const emptyBehavior = getImageInputEmptyBehavior(input);
     if (emptyBehavior === "skip" || emptyBehavior === "require") return false;
     if (isMainImageInput(input) || isControlImageInput(input)) return false;
@@ -467,37 +441,9 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     const isImageInput = isImageLikeInput(input);
     const imageEmptyBehavior = isImageInput ? getImageInputEmptyBehavior(input) : "";
     const imageRequiresValue = Boolean(input && input.required) || imageEmptyBehavior === "require";
-    const canCopyPrimaryImage =
-      isImageInput &&
-      shouldAutoFillImageInput(input) &&
-      (autoFillEmptyImageInputs || /^(copyprimary|copy-primary|copy_primary)$/.test(imageEmptyBehavior));
     if (!isFilledInputValue(rawValue)) {
-      if (canCopyPrimaryImage) {
-        const primaryImageValue = await getPrimaryImageValue();
-        if (primaryImageValue && (!primaryImageInput || key !== primaryImageInput.key)) {
-          pushImagePayload(input, key, primaryImageValue);
-          console.log("[PixelRunner/RunningHub] image input empty, reusing primary image", {
-            key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key)
-          });
-          continue;
-        }
-      }
-
       if (isImageInput && !imageRequiresValue) {
-        if (canCopyPrimaryImage) {
-          const primaryImageValue = await getPrimaryImageValue();
-          if (primaryImageValue) {
-            pushImagePayload(input, key, primaryImageValue);
-            console.log("[PixelRunner/RunningHub] optional image empty, reusing primary image", {
-              key,
-              fieldName: String((input && (input.fieldName || input.name || key)) || key)
-            });
-            continue;
-          }
-        }
-
-        if (shouldUseSafePlaceholder(input, key, imageRequiresValue, canCopyPrimaryImage)) {
+        if (shouldUseSafePlaceholder(input, key, imageRequiresValue)) {
           const placeholderImageValue = await getSafePlaceholderImageValue();
           if (placeholderImageValue) {
             pushImagePayload(input, key, placeholderImageValue);
@@ -529,12 +475,15 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         if (imageRequiresValue) {
           throw new Error(`Missing required input: ${input.label || input.name || key}`);
         }
-        const primaryImageValue = canCopyPrimaryImage ? await getPrimaryImageValue() : "";
-        if (primaryImageValue) {
-          normalizedValue = primaryImageValue;
-          console.log("[PixelRunner/RunningHub] optional image normalized to primary image", {
+        const placeholderImageValue = shouldUseSafePlaceholder(input, key, imageRequiresValue)
+          ? await getSafePlaceholderImageValue()
+          : "";
+        if (placeholderImageValue) {
+          normalizedValue = placeholderImageValue;
+          console.log("[PixelRunner/RunningHub] optional image normalized to safe placeholder", {
             key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key)
+            fieldName: String((input && (input.fieldName || input.name || key)) || key),
+            size: "64x64"
           });
         } else continue;
       } else if (imageSubmission.mode === "upload") {

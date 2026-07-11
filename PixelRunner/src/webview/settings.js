@@ -131,9 +131,6 @@
         settings.aiOptimizeAppId ?? modules.state.DEFAULT_AI_OPTIMIZE_APP_ID
       );
     }
-    if (modules.runtime.getById("settingsAutoFillEmptyImageInputs")) {
-      modules.runtime.getById("settingsAutoFillEmptyImageInputs").checked = settings.autoFillEmptyImageInputs === true;
-    }
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
     }
@@ -606,7 +603,6 @@
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
-      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
@@ -621,7 +617,6 @@
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
       aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
-      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       apiKey: modules.state.state.settings.apiKey,
@@ -638,7 +633,6 @@
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
         localQueueEnabled: nextSettings.localQueueEnabled,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
-        autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
         appPickerLayout: nextSettings.appPickerLayout,
         plusModeEnabled: nextSettings.plusModeEnabled,
         activeApiProfileId: nextSettings.activeApiProfileId,
@@ -718,7 +712,6 @@
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
       localQueueEnabled: rawSettings ? rawSettings.localQueueEnabled : undefined,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
-      autoFillEmptyImageInputs: rawSettings ? rawSettings.autoFillEmptyImageInputs : undefined,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
@@ -862,12 +855,10 @@
       "settingsMaxConcurrentTasksInput",
       "settingsLocalQueueEnabledInput",
       "settingsAiOptimizeAppIdInput",
-      "settingsAutoFillEmptyImageInputs",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ];
     const immediateAdvancedFieldIds = new Set([
-      "settingsAutoFillEmptyImageInputs",
       "settingsLocalQueueEnabledInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"

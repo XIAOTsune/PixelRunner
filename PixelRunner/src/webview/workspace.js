@@ -378,109 +378,9 @@
     return /(遮罩|蒙版|控制图|姿态|深度|法线|线稿|边缘|mask|control|pose|depth|normal|canny|edge|lineart|scribble|sketch|seg|segmentation|openpose)/i.test(getImageInputMarker(input));
   }
 
-  function shouldAutoFillImageInput(input) {
-    if (!input || isMainImageInput(input)) return false;
-    const emptyBehavior = getImageInputEmptyBehavior(input);
-    if (/^(copyprimary|copy-primary|copy_primary)$/.test(emptyBehavior)) return true;
-    if (emptyBehavior === "skip" || emptyBehavior === "require" || isControlImageInput(input)) return false;
-    if (["reference", "secondary", "style"].includes(getImageInputRole(input))) return true;
-    return /(参考|副图|辅图|风格图|参照|reference|ref|secondary|second|image2|img2|style)/i.test(getImageInputMarker(input));
-  }
-
-  function getImageInputPrimaryScore(input, index = 0) {
-    const marker = getImageInputMarker(input);
-    let score = 0;
-    if (isMainImageInput(input)) score += 80;
-    if (isControlImageInput(input)) score -= 80;
-    if (/(参考|副图|辅图|风格图|ref|reference|style)/i.test(marker)) score -= 40;
-    if (input && input.required) score += 8;
-    return score - index * 0.01;
-  }
-
-  function cloneImageFieldValue(value) {
-    if (!hasImageFieldValue(value)) return null;
-    if (value instanceof ArrayBuffer) return value.slice(0);
-    if (ArrayBuffer.isView(value)) {
-      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-    }
-    if (hasImageAsset(value)) return cloneCaptureAsset(value);
-    if (Array.isArray(value)) return value.slice();
-    if (value && typeof value === "object") {
-      return {
-        ...value
-      };
-    }
-    return value;
-  }
-
-  function getAutoFillPrimaryImageInput(imageInputs, values) {
-    const mainInputs = imageInputs.filter(isMainImageInput);
-    const sourceInputs = mainInputs.length ? mainInputs : imageInputs;
-    const ranked = sourceInputs
-      .map((input, index) => ({
-        input,
-        index,
-        key: String((input && input.key) || "").trim(),
-        score: getImageInputPrimaryScore(input, index)
-      }))
-      .filter((item) => item.key && hasImageFieldValue(values[item.key]))
-      .filter((item) => mainInputs.length || item.score >= 0)
-      .sort((a, b) => b.score - a.score || a.index - b.index);
-    return ranked.length ? ranked[0].input : null;
-  }
-
-  function applyAutoFillEmptyImageInputs(app, formValues, options = {}) {
-    const settings = modules.state.state.settings || modules.state.DEFAULT_SETTINGS;
-
-    const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
-    const imageInputs = inputs.filter(isImageInput);
-    if (imageInputs.length < 2) return formValues;
-
-    const sourceValues = formValues && typeof formValues === "object" ? formValues : {};
-    const primaryInput = getAutoFillPrimaryImageInput(imageInputs, sourceValues);
-    if (!primaryInput) return formValues;
-
-    const primaryKey = String(primaryInput.key || "").trim();
-    const primaryValue = sourceValues[primaryKey];
-    const filledLabels = [];
-    const nextValues = { ...sourceValues };
-
-    imageInputs.forEach((input) => {
-      const key = String((input && input.key) || "").trim();
-      if (!key || key === primaryKey) return;
-      const explicitCopyPrimary = /^(copyprimary|copy-primary|copy_primary)$/.test(getImageInputEmptyBehavior(input));
-      if (!explicitCopyPrimary && settings.autoFillEmptyImageInputs !== true) return;
-      if (!shouldAutoFillImageInput(input)) return;
-      if (hasImageFieldValue(nextValues[key])) return;
-      const cloned = cloneImageFieldValue(primaryValue);
-      if (!hasImageFieldValue(cloned)) return;
-      nextValues[key] = cloned;
-      filledLabels.push(getImageInputLabel(input) || key);
-    });
-
-    if (filledLabels.length === 0) return formValues;
-
-    const primaryLabel = getImageInputLabel(primaryInput) || primaryKey;
-    if (options.mutateState) {
-      modules.state.state.formValues = {
-        ...modules.state.state.formValues,
-        ...nextValues
-      };
-      renderWorkspace();
-    }
-    if (!options.quiet && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(
-        `已自动复用“${primaryLabel}”补齐空图片输入：${filledLabels.join("、")}。`,
-        "info"
-      );
-    }
-
-    return nextValues;
-  }
-
   function normalizePayloadInputs(app, formValues) {
     const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
-    const source = applyAutoFillEmptyImageInputs(app, formValues);
+    const source = formValues && typeof formValues === "object" ? formValues : {};
     const out = { ...source };
     inputs.forEach((input) => {
       const key = String((input && input.key) || "").trim();
@@ -1759,8 +1659,7 @@
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
-        maxConcurrentTasks: state.settings.maxConcurrentTasks,
-        autoFillEmptyImageInputs: state.settings.autoFillEmptyImageInputs === true
+        maxConcurrentTasks: state.settings.maxConcurrentTasks
       }
     };
     if (instanceType) payload.instanceType = instanceType;
@@ -1782,8 +1681,7 @@
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
-        maxConcurrentTasks: state.settings.maxConcurrentTasks,
-        autoFillEmptyImageInputs: state.settings.autoFillEmptyImageInputs === true
+        maxConcurrentTasks: state.settings.maxConcurrentTasks
       },
       config: {
         apiUrl: grs.apiUrl || "https://grsaiapi.com",
@@ -2349,7 +2247,7 @@
       }
     }
     collectFormValuesFromDom();
-    const effectiveValues = applyAutoFillEmptyImageInputs(app, state.formValues, { quiet: true });
+    const effectiveValues = state.formValues && typeof state.formValues === "object" ? state.formValues : {};
     const missing = (Array.isArray(app.inputs) ? app.inputs : [])
       .filter(isRequiredInput)
       .filter((input) => isMissingRequiredValue(input, effectiveValues[input.key]));
@@ -2357,7 +2255,7 @@
   }
 
   function validateAppValues(app, values) {
-    const effectiveValues = applyAutoFillEmptyImageInputs(app, values, { quiet: true });
+    const effectiveValues = values && typeof values === "object" ? values : {};
     const missing = (Array.isArray(app && app.inputs) ? app.inputs : [])
       .filter(isRequiredInput)
       .filter((input) => isMissingRequiredValue(input, effectiveValues[input.key]));
@@ -2404,8 +2302,7 @@
       settings: {
         pollInterval: modules.state.state.settings.pollInterval,
         timeout: modules.state.state.settings.timeout,
-        maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
-        autoFillEmptyImageInputs: modules.state.state.settings.autoFillEmptyImageInputs === true
+        maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
       }
     };
     modules.state.state.lastRunPayload = payload;
