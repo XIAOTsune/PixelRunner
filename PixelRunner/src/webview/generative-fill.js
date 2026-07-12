@@ -21,6 +21,20 @@
     ))));
   }
 
+  function getConfiguredContextExpansion() {
+    return Math.max(0, Math.min(2048, Math.floor(numberOrDefault(
+      modules.state.state.settings.generativeFillContextExpansion,
+      DEFAULT_CONTEXT_EXPANSION
+    ))));
+  }
+
+  function getConfiguredMaskExpansion() {
+    return Math.max(0, Math.min(128, Math.floor(numberOrDefault(
+      modules.state.state.settings.generativeFillMaskExpansion,
+      DEFAULT_MASK_EXPANSION
+    ))));
+  }
+
   function numberOrDefault(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -96,6 +110,56 @@
     });
   }
 
+  function dilateAlphaMask(source, width, height, radius) {
+    const safeRadius = Math.max(0, Math.min(Math.max(width, height), Math.round(Number(radius) || 0)));
+    if (!safeRadius) return source;
+
+    const horizontal = new Uint8ClampedArray(source.length);
+    const output = new Uint8ClampedArray(source.length);
+    const deque = new Int32Array(Math.max(width, height));
+
+    for (let y = 0; y < height; y += 1) {
+      const rowOffset = y * width;
+      let head = 0;
+      let tail = 0;
+      let addIndex = 0;
+      for (let x = 0; x < width; x += 1) {
+        const addUntil = Math.min(width - 1, x + safeRadius);
+        while (addIndex <= addUntil) {
+          const value = source[rowOffset + addIndex];
+          while (tail > head && source[rowOffset + deque[tail - 1]] <= value) tail -= 1;
+          deque[tail] = addIndex;
+          tail += 1;
+          addIndex += 1;
+        }
+        const keepFrom = x - safeRadius;
+        while (tail > head && deque[head] < keepFrom) head += 1;
+        horizontal[rowOffset + x] = source[rowOffset + deque[head]];
+      }
+    }
+
+    for (let x = 0; x < width; x += 1) {
+      let head = 0;
+      let tail = 0;
+      let addIndex = 0;
+      for (let y = 0; y < height; y += 1) {
+        const addUntil = Math.min(height - 1, y + safeRadius);
+        while (addIndex <= addUntil) {
+          const value = horizontal[addIndex * width + x];
+          while (tail > head && horizontal[deque[tail - 1] * width + x] <= value) tail -= 1;
+          deque[tail] = addIndex;
+          tail += 1;
+          addIndex += 1;
+        }
+        const keepFrom = y - safeRadius;
+        while (tail > head && deque[head] < keepFrom) head += 1;
+        output[y * width + x] = horizontal[deque[head] * width + x];
+      }
+    }
+
+    return output;
+  }
+
   async function buildMaskVariants(selection) {
     const rawMask = selection && selection.maskAsset && selection.maskAsset.dataUrl ? selection.maskAsset : null;
     if (!rawMask || !rawMask.dataUrl) {
@@ -113,21 +177,16 @@
     sourceContext.drawImage(image, 0, 0, width, height);
     const sourceData = sourceContext.getImageData(0, 0, width, height);
 
-    const silhouetteCanvas = document.createElement("canvas");
-    silhouetteCanvas.width = width;
-    silhouetteCanvas.height = height;
-    const silhouetteContext = silhouetteCanvas.getContext("2d");
-    const silhouetteData = silhouetteContext.createImageData(width, height);
+    const alphaMask = new Uint8ClampedArray(width * height);
     for (let index = 0; index < sourceData.data.length; index += 4) {
       const luminance = Math.max(sourceData.data[index], sourceData.data[index + 1], sourceData.data[index + 2]);
-      const alpha = luminance;
-      silhouetteData.data[index] = 255;
-      silhouetteData.data[index + 1] = 255;
-      silhouetteData.data[index + 2] = 255;
-      silhouetteData.data[index + 3] = alpha;
+      alphaMask[index / 4] = luminance;
     }
-    silhouetteContext.putImageData(silhouetteData, 0, 0);
 
+    const maskCanvas = document.createElement("canvas");
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const maskContext = maskCanvas.getContext("2d");
     const expandedCanvas = document.createElement("canvas");
     expandedCanvas.width = width;
     expandedCanvas.height = height;
@@ -136,21 +195,22 @@
       width / Math.max(1, selection.contextBounds.right - selection.contextBounds.left),
       height / Math.max(1, selection.contextBounds.bottom - selection.contextBounds.top)
     );
-    const expansion = Math.max(0, Number(getState().maskExpansion) || 0) * scale;
+    const expansion = getConfiguredMaskExpansion() * scale;
     const feather = getConfiguredFeather() * scale;
+    const expandedAlpha = dilateAlphaMask(alphaMask, width, height, expansion);
+    const maskData = maskContext.createImageData(width, height);
+    for (let pixelIndex = 0; pixelIndex < expandedAlpha.length; pixelIndex += 1) {
+      const dataIndex = pixelIndex * 4;
+      maskData.data[dataIndex] = 255;
+      maskData.data[dataIndex + 1] = 255;
+      maskData.data[dataIndex + 2] = 255;
+      maskData.data[dataIndex + 3] = expandedAlpha[pixelIndex];
+    }
+    maskContext.putImageData(maskData, 0, 0);
+
     expandedContext.clearRect(0, 0, width, height);
     expandedContext.filter = feather > 0 ? `blur(${Math.max(0.5, feather)}px)` : "none";
-    expandedContext.drawImage(silhouetteCanvas, 0, 0);
-    if (expansion > 0) {
-      const rings = Math.max(1, Math.min(6, Math.ceil(expansion / 4)));
-      for (let ring = 1; ring <= rings; ring += 1) {
-        const radius = expansion * ring / rings;
-        for (let step = 0; step < 20; step += 1) {
-          const angle = Math.PI * 2 * step / 20;
-          expandedContext.drawImage(silhouetteCanvas, Math.cos(angle) * radius, Math.sin(angle) * radius);
-        }
-      }
-    }
+    expandedContext.drawImage(maskCanvas, 0, 0);
     expandedContext.filter = "none";
 
     const expandedData = expandedContext.getImageData(0, 0, width, height);
@@ -306,6 +366,22 @@
     render();
   }
 
+  async function cleanupSelectionSnapshot(selection) {
+    const channelName = String(selection && selection.selectionSnapshotChannelName || "").trim();
+    const documentId = Number(selection && selection.documentId) || 0;
+    if (!channelName || !(documentId > 0) || !modules.runtime.isPluginRuntime()) return false;
+    try {
+      await modules.runtime.callHost(
+        "photoshop.deleteSelectionSnapshot",
+        [{ documentId, selectionSnapshotChannelName: channelName }],
+        { timeoutMs: 15000 }
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function loadSchema() {
     const state = getState();
     const appId = getConfiguredAppId();
@@ -349,11 +425,11 @@
     if (!docInfo || !docInfo.hasActiveDocument) throw new Error("请先打开 Photoshop 文档");
     if (!selectionBounds) throw new Error("请先在 Photoshop 中框选要生成的区域");
 
-    const contextExpansion = Math.max(0, Math.min(2048, Math.floor(numberOrDefault(state.contextExpansion, DEFAULT_CONTEXT_EXPANSION))));
+    const contextExpansion = getConfiguredContextExpansion();
     setStatus("capturing", `正在捕获选区及周围 ${contextExpansion}px 上下文...`);
     const captured = await modules.runtime.callHost(
       "photoshop.captureDocumentPreview",
-      [{ maxDimension: 2048, quality: 90, selectionPadding: contextExpansion, captureSelectionMask: true, forceMaxDimension: true }],
+      [{ maxDimension: 2048, quality: 90, selectionPadding: contextExpansion, captureSelectionMask: true, preserveSelectionChannel: true, forceMaxDimension: true }],
       { timeoutMs: 45000 }
     );
     if (!captured || !captured.uploadDataUrl) throw new Error("Photoshop 未返回可上传的上下文图像");
@@ -367,6 +443,7 @@
       selectionBounds,
       contextBounds: cloneBounds(captured.contextBounds) || selectionBounds,
       selectionPadding: contextExpansion,
+      selectionSnapshotChannelName: String(captured.selectionSnapshotChannelName || ""),
       capturedAt: Date.now(),
       asset: captured,
       maskAsset: captured.selectionMaskDataUrl
@@ -423,10 +500,11 @@
         selectionBounds: selection.selectionBounds,
         contextBounds: selection.contextBounds,
         selectionPadding: selection.selectionPadding,
-        maskExpansion: numberOrDefault(getState().maskExpansion, DEFAULT_MASK_EXPANSION),
+        maskExpansion: getConfiguredMaskExpansion(),
         feather: getConfiguredFeather(),
         maskShape: maskVariants.shape,
         placementMaskDataUrl: maskVariants.placementMask ? maskVariants.placementMask.dataUrl : "",
+        selectionSnapshotChannelName: String(selection.selectionSnapshotChannelName || ""),
         useCurrentSelectionMask: true
       }
     };
@@ -434,6 +512,7 @@
 
   async function submit() {
     const state = getState();
+    let selection = null;
     if (submissionInFlight) return false;
     const promptText = String(state.prompt || "").trim();
     if (!promptText) {
@@ -452,7 +531,7 @@
     submissionInFlight = true;
     render();
     try {
-      const selection = await captureSelection();
+      selection = await captureSelection();
       const schema = await loadSchema();
       const payload = await buildPayload(schema, selection, promptText);
       const sourceDocument = {
@@ -472,6 +551,7 @@
       setStatus("queued", `已提交创成式填充任务，正在等待 RunningHub 返回结果。`);
       return true;
     } catch (error) {
+      if (selection) await cleanupSelectionSnapshot(selection);
       setStatus("error", error && error.message ? error.message : String(error || "创成式填充提交失败"));
       modules.ui.logToWorkspace(`创成式填充提交失败：${error && error.message ? error.message : error}`, "error");
       return false;
@@ -488,8 +568,6 @@
       return false;
     }
     const state = getState();
-    state.contextExpansion = Math.max(0, Math.min(2048, numberOrDefault(state.contextExpansion, DEFAULT_CONTEXT_EXPANSION)));
-    state.maskExpansion = Math.max(0, Math.min(128, numberOrDefault(state.maskExpansion, DEFAULT_MASK_EXPANSION)));
     state.status = "idle";
     state.statusMessage = "运行时自动读取当前 Photoshop 选区。";
     if (modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
@@ -557,18 +635,12 @@
             <span class="generative-fill-status-dot" aria-hidden="true"></span>
             <span>运行时自动读取当前 Photoshop 选区</span>
           </div>
-          <span class="generative-fill-context-note">上下文 ${numberOrDefault(state.contextExpansion, DEFAULT_CONTEXT_EXPANSION)}px</span>
         </div>
 
         <label class="generative-fill-prompt-field">
           <span class="generative-fill-prompt-label">描述你希望填充的内容</span>
           <textarea id="generativeFillPromptInput" class="generative-fill-prompt-input" rows="3" placeholder="例如：在选区内补充自然的窗户和室内光线">${modules.runtime.escapeHtml(state.prompt || "")}</textarea>
         </label>
-
-        <div class="generative-fill-control-row">
-          <label class="generative-fill-control"><span>上下文</span><input id="generativeFillContextInput" type="number" min="0" max="2048" step="1" value="${numberOrDefault(state.contextExpansion, DEFAULT_CONTEXT_EXPANSION)}" /><em>px</em></label>
-          <label class="generative-fill-control"><span>扩展</span><input id="generativeFillMaskExpansionInput" type="number" min="0" max="128" step="1" value="${numberOrDefault(state.maskExpansion, DEFAULT_MASK_EXPANSION)}" /><em>px</em></label>
-        </div>
 
         <div class="generative-fill-footer">
           <div class="generative-fill-status" aria-live="polite">${modules.runtime.escapeHtml(statusText)}<small>每次生成都会读取最新选区，并保留不规则蒙版</small></div>
@@ -592,14 +664,6 @@
       const target = event.target;
       const state = getState();
       if (target.id === "generativeFillPromptInput") state.prompt = target.value;
-      if (target.id === "generativeFillContextInput") {
-        const nextExpansion = Math.max(0, Math.min(2048, Math.floor(Number(target.value) || 0)));
-        state.contextExpansion = nextExpansion;
-      }
-      if (target.id === "generativeFillMaskExpansionInput") state.maskExpansion = Math.max(0, Math.min(128, Math.floor(Number(target.value) || 0)));
-    });
-    surface.addEventListener("change", (event) => {
-      if (event.target && event.target.id === "generativeFillContextInput") render();
     });
     surface.addEventListener("keydown", (event) => {
       if (event.target && event.target.id === "generativeFillPromptInput" && event.key === "Enter" && !event.shiftKey) {
@@ -618,6 +682,7 @@
 
   modules.generativeFill = {
     DEFAULT_CONTEXT_EXPANSION,
+    dilateAlphaMask,
     enterMode,
     exitMode,
     captureSelection,

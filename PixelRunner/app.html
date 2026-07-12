@@ -495,11 +495,23 @@
                 <input id="settingsGenerativeFillAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub 创成式填充应用 ID" />
                 <span class="field-hint settings-field-hint">当前国内版默认使用 2072190882207584257。创成式填充会在工作台应用切换中作为独立特殊模式运行。</span>
               </label>
-              <label class="field">
-                <span class="field-label">创成式填充蒙版羽化（像素）</span>
-                <input id="settingsGenerativeFillFeatherInput" class="field-input" type="number" min="0" max="128" step="1" placeholder="0-128" />
-                <span class="field-hint settings-field-hint">控制返图图层蒙版的边缘过渡，默认 12px；设置为 0 时不羽化。</span>
-              </label>
+              <div class="dual-grid">
+                <label class="field">
+                  <span class="field-label">创成式填充上下文（像素）</span>
+                  <input id="settingsGenerativeFillContextInput" class="field-input" type="number" min="0" max="2048" step="1" placeholder="0-2048" />
+                  <span class="field-hint settings-field-hint">默认在选区四周额外读取 128px。</span>
+                </label>
+                <label class="field">
+                  <span class="field-label">创成式填充选区扩展（像素）</span>
+                  <input id="settingsGenerativeFillMaskExpansionInput" class="field-input" type="number" min="0" max="128" step="1" placeholder="0-128" />
+                  <span class="field-hint settings-field-hint">默认向外扩展 4px 后生成和回贴。</span>
+                </label>
+                <label class="field">
+                  <span class="field-label">创成式填充蒙版羽化（像素）</span>
+                  <input id="settingsGenerativeFillFeatherInput" class="field-input" type="number" min="0" max="128" step="1" placeholder="0-128" />
+                  <span class="field-hint settings-field-hint">默认 12px；设置为 0 时不羽化。</span>
+                </label>
+              </div>
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">应用切换密度</span>
                 <label class="checkbox-line">

@@ -105,7 +105,7 @@
     const state = modules.state.state;
     const appId = String(state.settings && state.settings.generativeFillAppId || "").trim();
     const isActive = state.workspaceMode === "generative-fill";
-    const meta = appId ? `上下文 ${modules.state.state.generativeFill.contextExpansion || 128}px` : "请先配置应用 ID";
+    const meta = appId ? `上下文 ${modules.state.state.settings.generativeFillContextExpansion ?? 128}px` : "请先配置应用 ID";
     return `<button class="picker-item picker-item-special app-picker-special-card generative-fill-picker-item ${isActive ? "active" : ""} ${appId ? "" : "is-unavailable"}" type="button" data-action="select-generative-fill" title="${appId ? "进入创成式填充模式" : "请在高级设置中配置创成式填充应用 ID"}"><span class="picker-item-title">创成式填充</span><span class="picker-item-meta"><span>原生紧凑操作栏</span><span>${modules.runtime.escapeHtml(meta)}</span></span></button>`;
   }
 

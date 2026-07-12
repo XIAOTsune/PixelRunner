@@ -61,6 +61,8 @@
       cn: DEFAULT_GENERATIVE_FILL_APP_ID,
       global: ""
     },
+    generativeFillContextExpansion: 128,
+    generativeFillMaskExpansion: 4,
     generativeFillFeather: 12,
     appPickerLayout: "visual",
     plusModeEnabled: false
@@ -152,8 +154,6 @@
     },
     generativeFill: {
       prompt: "",
-      contextExpansion: 128,
-      maskExpansion: 4,
       selection: null,
       schema: null,
       schemaLoadedForAppId: "",
@@ -253,6 +253,14 @@
     const timeout = Math.min(600, Math.max(10, Math.floor(Number(source.timeout) || DEFAULT_SETTINGS.timeout)));
     const maxConcurrentTasks = Math.min(100, Math.max(1, Math.floor(Number(source.maxConcurrentTasks) || DEFAULT_SETTINGS.maxConcurrentTasks)));
     const rawGenerativeFillFeather = Number(source.generativeFillFeather);
+    const rawGenerativeFillContextExpansion = Number(source.generativeFillContextExpansion);
+    const rawGenerativeFillMaskExpansion = Number(source.generativeFillMaskExpansion);
+    const generativeFillContextExpansion = Number.isFinite(rawGenerativeFillContextExpansion)
+      ? Math.min(2048, Math.max(0, Math.floor(rawGenerativeFillContextExpansion)))
+      : DEFAULT_SETTINGS.generativeFillContextExpansion;
+    const generativeFillMaskExpansion = Number.isFinite(rawGenerativeFillMaskExpansion)
+      ? Math.min(128, Math.max(0, Math.floor(rawGenerativeFillMaskExpansion)))
+      : DEFAULT_SETTINGS.generativeFillMaskExpansion;
     const generativeFillFeather = Number.isFinite(rawGenerativeFillFeather)
       ? Math.min(128, Math.max(0, Math.floor(rawGenerativeFillFeather)))
       : DEFAULT_SETTINGS.generativeFillFeather;
@@ -268,6 +276,8 @@
       aiOptimizeAppIds,
       generativeFillAppId: generativeFillAppIds[runningHubRegion],
       generativeFillAppIds,
+      generativeFillContextExpansion,
+      generativeFillMaskExpansion,
       generativeFillFeather,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,

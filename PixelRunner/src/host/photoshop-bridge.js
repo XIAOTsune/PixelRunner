@@ -56,3 +56,12 @@ export async function placeResultIntoPhotoshop(args = []) {
 
   return photoshopService.placeImageFromUrl(payload);
 }
+
+export async function deletePhotoshopSelectionSnapshot(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const photoshopService = getPhotoshopService();
+  if (typeof photoshopService.deleteSelectionSnapshot !== "function") {
+    throw new Error("Photoshop host service is unavailable");
+  }
+  return photoshopService.deleteSelectionSnapshot(payload);
+}

@@ -1,5 +1,6 @@
 import {
   captureDocumentPreview,
+  deleteSelectionSnapshot,
   getActiveDocumentInfo,
   placeImageFromUrl,
   runToolAction
@@ -10,6 +11,7 @@ import {
   global.PixelRunnerHost.photoshop = {
     getActiveDocumentInfo,
     captureDocumentPreview,
+    deleteSelectionSnapshot,
     runToolAction,
     placeImageFromUrl
   };

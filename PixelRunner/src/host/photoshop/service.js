@@ -575,7 +575,19 @@ async function deleteChannelByName(action, channelName) {
   } catch (_) {}
 }
 
-async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, targetSize) {
+async function createSelectionSnapshotChannel(action, documentId) {
+  const channelName = `PixelRunner GF Snapshot ${Number(documentId) || 0} ${Date.now()} ${Math.random().toString(36).slice(2, 7)}`;
+  await action.batchPlay([{
+    _obj: "duplicate",
+    _target: [{ _ref: "channel", _property: "selection" }],
+    name: channelName,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  await selectCompositeChannel(action);
+  return channelName;
+}
+
+async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, targetSize, options = {}) {
   let pixels = null;
   if (typeof imaging.getSelection === "function") {
     try {
@@ -600,15 +612,18 @@ async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, t
     }
   }
 
-  const channelName = `PixelRunner GF Mask ${Date.now()}`;
+  const preservedChannelName = String(options.selectionSnapshotChannelName || "").trim();
+  const channelName = preservedChannelName || `PixelRunner GF Mask ${Date.now()}`;
   pixels = null;
   try {
-    await action.batchPlay([{
-      _obj: "duplicate",
-      _target: [{ _ref: "channel", _property: "selection" }],
-      name: channelName,
-      _options: { dialogOptions: "dontDisplay" }
-    }], {});
+    if (!preservedChannelName) {
+      await action.batchPlay([{
+        _obj: "duplicate",
+        _target: [{ _ref: "channel", _property: "selection" }],
+        name: channelName,
+        _options: { dialogOptions: "dontDisplay" }
+      }], {});
+    }
     await action.batchPlay([{
       _obj: "select",
       _target: [{ _ref: "channel", _name: channelName }],
@@ -639,7 +654,7 @@ async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, t
     try {
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
     } catch (_) {}
-    await deleteChannelByName(action, channelName);
+    if (!preservedChannelName) await deleteChannelByName(action, channelName);
     await selectCompositeChannel(action);
   }
 }
@@ -957,6 +972,44 @@ async function loadSelectionFromActiveLayerTransparency(action) {
   }], {});
 }
 
+async function loadSelectionFromChannel(action, channelName) {
+  const name = String(channelName || "").trim();
+  if (!name) throw new Error("Selection snapshot channel is missing");
+  await action.batchPlay([{
+    _obj: "set",
+    _target: [{ _ref: "channel", _property: "selection" }],
+    to: { _ref: "channel", _name: name },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
+async function refineActiveSelection(doc, action, expansion, feather) {
+  const expansionRadius = Math.max(0, Math.min(128, Number(expansion) || 0));
+  const featherRadius = Math.max(0, Math.min(128, Number(feather) || 0));
+  if (expansionRadius > 0) {
+    if (doc && doc.selection && typeof doc.selection.expand === "function") {
+      await doc.selection.expand(expansionRadius);
+    } else {
+      await action.batchPlay([{
+        _obj: "expand",
+        by: { _unit: "pixelsUnit", _value: expansionRadius },
+        _options: { dialogOptions: "dontDisplay" }
+      }], {});
+    }
+  }
+  if (featherRadius > 0) {
+    if (doc && doc.selection && typeof doc.selection.feather === "function") {
+      await doc.selection.feather(featherRadius);
+    } else {
+      await action.batchPlay([{
+        _obj: "feather",
+        radius: { _unit: "pixelsUnit", _value: featherRadius },
+        _options: { dialogOptions: "dontDisplay" }
+      }], {});
+    }
+  }
+}
+
 async function placeSessionToken(action, sessionToken) {
   await action.batchPlay([{
     _obj: "placeEvent",
@@ -1114,6 +1167,22 @@ export async function getActiveDocumentInfo() {
   return getDocumentInfo(photoshop.app && photoshop.app.activeDocument);
 }
 
+export async function deleteSelectionSnapshot(options = {}) {
+  const channelName = String(options.selectionSnapshotChannelName || options.channelName || "").trim();
+  const documentId = Number(options.targetDocumentId || options.documentId || 0);
+  if (!channelName || !(documentId > 0)) return { ok: true, deleted: false };
+  const { photoshop } = await ensureDeps();
+  const app = photoshop.app;
+  const action = photoshop.action;
+  const core = photoshop.core;
+  await core.executeAsModal(async () => {
+    await activateDocument(app, action, documentId);
+    await deleteChannelByName(action, channelName);
+    await selectCompositeChannel(action);
+  }, { commandName: "Cleanup Generative Fill Selection" });
+  return { ok: true, deleted: true, documentId, channelName };
+}
+
 export async function captureDocumentPreview(options = {}) {
   console.log("[PixelRunner/Photoshop] captureDocumentPreview:start", options);
   const deps = await ensureDeps();
@@ -1144,25 +1213,46 @@ export async function captureDocumentPreview(options = {}) {
   const sourceHeight = Math.max(1, Number(captureBounds.bottom) - Number(captureBounds.top));
   const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension);
   return core.executeAsModal(async () => {
-    const uploadAsset = await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
-    let selectionMaskDataUrl = "";
-    let selectionMaskShape = "none";
-    if (selectionBounds && options.captureSelectionMask === true && action) {
-      try {
-        selectionMaskDataUrl = await captureSelectionMaskDataUrl(action, imaging, doc, captureBounds, {
-          width: Math.max(1, Number(uploadAsset.width) || targetSize.width),
-          height: Math.max(1, Number(uploadAsset.height) || targetSize.height)
-        });
-        if (selectionMaskDataUrl) selectionMaskShape = "selection-channel";
-      } catch (error) {
-        console.warn("[PixelRunner/Photoshop] selection mask capture unavailable", error);
-        selectionMaskShape = "unavailable";
-      }
-    }
-
-    let pixels = null;
+    let selectionSnapshotChannelName = "";
     try {
-      pixels = await getPixelsWithFallback(imaging, {
+      if (selectionBounds && options.preserveSelectionChannel === true && action) {
+        await activateDocument(app, action, Number(doc.id));
+        selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
+      }
+      const uploadAsset = await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
+      let selectionMaskDataUrl = "";
+      let selectionMaskShape = "none";
+      if (selectionBounds && options.captureSelectionMask === true && action) {
+        try {
+          if (selectionSnapshotChannelName) {
+            await activateDocument(app, action, Number(doc.id));
+            await loadSelectionFromChannel(action, selectionSnapshotChannelName);
+          }
+          selectionMaskDataUrl = await captureSelectionMaskDataUrl(
+            action,
+            imaging,
+            doc,
+            captureBounds,
+            {
+              width: Math.max(1, Number(uploadAsset.width) || targetSize.width),
+              height: Math.max(1, Number(uploadAsset.height) || targetSize.height)
+            },
+            { selectionSnapshotChannelName }
+          );
+          if (selectionMaskDataUrl) selectionMaskShape = "selection-channel";
+        } catch (error) {
+          console.warn("[PixelRunner/Photoshop] selection mask capture unavailable", error);
+          selectionMaskShape = "unavailable";
+          if (selectionSnapshotChannelName) {
+            await deleteChannelByName(action, selectionSnapshotChannelName);
+            selectionSnapshotChannelName = "";
+          }
+        }
+      }
+
+      let pixels = null;
+      try {
+        pixels = await getPixelsWithFallback(imaging, {
         documentID: Number(doc.id),
         sourceBounds: captureBounds,
         targetSize,
@@ -1170,18 +1260,18 @@ export async function captureDocumentPreview(options = {}) {
         applyAlpha: true
       });
 
-      const encoded = await imaging.encodeImageData({
+        const encoded = await imaging.encodeImageData({
         imageData: pixels.imageData,
         base64: true,
         format: "jpeg",
         quality
       });
 
-      const base64 = extractEncodedBase64(encoded);
-      if (!base64) {
-        throw new Error("Photoshop returned an empty capture payload");
-      }
-      const result = {
+        const base64 = extractEncodedBase64(encoded);
+        if (!base64) {
+          throw new Error("Photoshop returned an empty capture payload");
+        }
+        const result = {
         ok: true,
         kind: "captured-document-image",
         source: "photoshop-document",
@@ -1192,6 +1282,7 @@ export async function captureDocumentPreview(options = {}) {
         selectionPadding,
         selectionMaskDataUrl,
         selectionMaskShape,
+        selectionSnapshotChannelName,
         capturedFromSelection: Boolean(selectionBounds),
         width: targetSize.width,
         height: targetSize.height,
@@ -1212,8 +1303,8 @@ export async function captureDocumentPreview(options = {}) {
         uploadTargetBytes: uploadAsset.targetBytes,
         uploadHardLimitBytes: uploadAsset.hardLimitBytes,
         compressionAttempts: uploadAsset.attempts
-      };
-      console.log("[PixelRunner/Photoshop] captureDocumentPreview:success", {
+        };
+        console.log("[PixelRunner/Photoshop] captureDocumentPreview:success", {
         documentId: result.documentId,
         width: result.width,
         height: result.height,
@@ -1223,12 +1314,16 @@ export async function captureDocumentPreview(options = {}) {
         uploadWidth: result.uploadWidth,
         uploadHeight: result.uploadHeight,
         uploadQuality: result.uploadQuality
-      });
-      return result;
-    } finally {
-      try {
-        pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
-      } catch (_) {}
+        });
+        return result;
+      } finally {
+        try {
+          pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
+        } catch (_) {}
+      }
+    } catch (error) {
+      if (selectionSnapshotChannelName) await deleteChannelByName(action, selectionSnapshotChannelName);
+      throw error;
     }
   }, { commandName: "PixelRunner Capture Preview" });
 }
@@ -1296,6 +1391,9 @@ export async function placeImageFromUrl(payload) {
   const sessionToken = await fs.createSessionToken(tempFile);
   const placementMaskDataUrl = String(options.placementMaskDataUrl || "").trim();
   const requirePlacementMask = options.requirePlacementMask === true;
+  const selectionSnapshotChannelName = String(options.selectionSnapshotChannelName || "").trim();
+  const selectionMaskExpansion = Math.max(0, Math.min(128, Number(options.selectionMaskExpansion) || 0));
+  const selectionMaskFeather = Math.max(0, Math.min(128, Number(options.selectionMaskFeather) || 0));
   let placementMaskSessionToken = "";
   let placementMaskInfo = null;
   if (placementMaskDataUrl) {
@@ -1307,7 +1405,7 @@ export async function placeImageFromUrl(payload) {
     await maskFile.write(maskBuffer, { format: formats.binary });
     placementMaskSessionToken = await fs.createSessionToken(maskFile);
   }
-  if (requirePlacementMask && !placementMaskSessionToken) {
+  if (requirePlacementMask && !selectionSnapshotChannelName && !placementMaskSessionToken) {
     throw new Error("创成式填充缺少不规则选区蒙版，已停止回贴以避免生成矩形蒙版");
   }
   const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
@@ -1347,7 +1445,7 @@ export async function placeImageFromUrl(payload) {
       }
     }
     const isFullBoundsTarget = isFullDocumentBounds(effectiveTargetBounds, targetDocInfo);
-    const applyMask = options.applyMask !== false && (!isFullBoundsTarget || Boolean(placementMaskSessionToken));
+    const applyMask = options.applyMask !== false && (!isFullBoundsTarget || Boolean(selectionSnapshotChannelName || placementMaskSessionToken));
     if (preserveCanvasBounds) {
       placementMode = normalizedMode === "stretch"
         ? "stretch"
@@ -1369,15 +1467,30 @@ export async function placeImageFromUrl(payload) {
       await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, effectiveTargetBounds, {
         mode: placementMode,
         imageSize: pngInfo,
-        applyMask: applyMask && !placementMaskSessionToken,
+        applyMask: applyMask && !selectionSnapshotChannelName && !placementMaskSessionToken,
         preferTransformBounds: isTransparentPngResult
       });
-      if (applyMask && !placementMaskSessionToken) appliedMaskMode = "bounds";
+      if (applyMask && !selectionSnapshotChannelName && !placementMaskSessionToken) appliedMaskMode = "bounds";
     }
 
     const resultLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
     const resultLayerId = Number(resultLayer && resultLayer.id) || 0;
-    if (applyMask && placementMaskSessionToken && resultLayerId > 0 && effectiveTargetBounds) {
+    if (applyMask && selectionSnapshotChannelName && resultLayerId > 0) {
+      try {
+        await loadSelectionFromChannel(action, selectionSnapshotChannelName);
+        await refineActiveSelection(activeTargetDocument || app.activeDocument, action, selectionMaskExpansion, selectionMaskFeather);
+        await selectLayerById(action, resultLayerId);
+        await applyLayerMaskFromSelection(action);
+        await deleteChannelByName(action, selectionSnapshotChannelName);
+        appliedMaskMode = "native-selection-snapshot";
+      } catch (error) {
+        try {
+          await selectLayerById(action, resultLayerId);
+          await deleteLayerById(action, resultLayerId);
+        } catch (_) {}
+        throw new Error(`原生选区快照回贴失败：${error && error.message ? error.message : String(error)}`);
+      }
+    } else if (applyMask && placementMaskSessionToken && resultLayerId > 0 && effectiveTargetBounds) {
       let maskLayerId = 0;
       try {
         await placeSessionToken(action, placementMaskSessionToken);

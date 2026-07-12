@@ -151,6 +151,16 @@
         settings.generativeFillFeather ?? modules.state.DEFAULT_SETTINGS.generativeFillFeather
       );
     }
+    if (modules.runtime.getById("settingsGenerativeFillContextInput")) {
+      modules.runtime.getById("settingsGenerativeFillContextInput").value = String(
+        settings.generativeFillContextExpansion ?? modules.state.DEFAULT_SETTINGS.generativeFillContextExpansion
+      );
+    }
+    if (modules.runtime.getById("settingsGenerativeFillMaskExpansionInput")) {
+      modules.runtime.getById("settingsGenerativeFillMaskExpansionInput").value = String(
+        settings.generativeFillMaskExpansion ?? modules.state.DEFAULT_SETTINGS.generativeFillMaskExpansion
+      );
+    }
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
     }
@@ -657,6 +667,8 @@
         [runningHubRegion]: generativeFillAppId
       },
       generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
+      generativeFillContextExpansion: modules.runtime.getById("settingsGenerativeFillContextInput")?.value,
+      generativeFillMaskExpansion: modules.runtime.getById("settingsGenerativeFillMaskExpansionInput")?.value,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
@@ -684,6 +696,8 @@
         [runningHubRegion]: generativeFillAppId
       },
       generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
+      generativeFillContextExpansion: modules.runtime.getById("settingsGenerativeFillContextInput")?.value,
+      generativeFillMaskExpansion: modules.runtime.getById("settingsGenerativeFillMaskExpansionInput")?.value,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       apiKey: modules.state.state.settings.apiKey,
@@ -704,6 +718,8 @@
         aiOptimizeAppIds: nextSettings.aiOptimizeAppIds,
         generativeFillAppId: nextSettings.generativeFillAppId,
         generativeFillAppIds: nextSettings.generativeFillAppIds,
+        generativeFillContextExpansion: nextSettings.generativeFillContextExpansion,
+        generativeFillMaskExpansion: nextSettings.generativeFillMaskExpansion,
         generativeFillFeather: nextSettings.generativeFillFeather,
         appPickerLayout: nextSettings.appPickerLayout,
         plusModeEnabled: nextSettings.plusModeEnabled,
@@ -790,6 +806,8 @@
       aiOptimizeAppIds: rawSettings && rawSettings.aiOptimizeAppIds,
       generativeFillAppId: rawSettings && rawSettings.generativeFillAppId,
       generativeFillAppIds: rawSettings && rawSettings.generativeFillAppIds,
+      generativeFillContextExpansion: rawSettings && rawSettings.generativeFillContextExpansion,
+      generativeFillMaskExpansion: rawSettings && rawSettings.generativeFillMaskExpansion,
       generativeFillFeather: rawSettings && rawSettings.generativeFillFeather,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
@@ -941,6 +959,8 @@
       "settingsLocalQueueEnabledInput",
       "settingsAiOptimizeAppIdInput",
       "settingsGenerativeFillAppIdInput",
+      "settingsGenerativeFillContextInput",
+      "settingsGenerativeFillMaskExpansionInput",
       "settingsGenerativeFillFeatherInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"

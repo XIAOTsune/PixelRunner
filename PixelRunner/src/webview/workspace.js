@@ -1807,13 +1807,31 @@
     }
 
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
+    const storedTask = state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+    const cleanupStatus = String(storedTask && storedTask.status || "").trim().toLowerCase();
+    const cleanupGenerativeFill = storedTask && storedTask.sourceDocument && storedTask.sourceDocument.generativeFill;
+    const cleanupChannelName = String(cleanupGenerativeFill && cleanupGenerativeFill.selectionSnapshotChannelName || "").trim();
+    if (
+      modules.runtime.isPluginRuntime() &&
+      cleanupChannelName &&
+      ["failed", "error", "cancelled", "canceled", "timeout"].includes(cleanupStatus)
+    ) {
+      void modules.runtime.callHost(
+        "photoshop.deleteSelectionSnapshot",
+        [{
+          documentId: Number(storedTask.sourceDocument.documentId) || 0,
+          selectionSnapshotChannelName: cleanupChannelName
+        }],
+        { timeoutMs: 15000 }
+      ).catch(() => {});
+    }
     syncPrimaryRunningTask();
     updateRunButtonState();
     if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
       modules.generativeFill.render();
     }
     if (nextTask.status && isTaskTerminalStatus(nextTask.status)) scheduleRunSubmissionFlush();
-    return state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+    return storedTask;
   }
 
   function replaceRunningTaskId(currentTaskId, nextTaskPatch = {}) {
@@ -1855,6 +1873,9 @@
     syncPrimaryRunningTask();
     updateRunButtonState();
     scheduleRunSubmissionFlush();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
   }
 
   function clearCompletedRunningTasks() {
@@ -1885,6 +1906,9 @@
     syncPrimaryRunningTask();
     updateRunButtonState();
     scheduleRunSubmissionFlush();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
     return removedCount;
   }
 
@@ -2404,6 +2428,9 @@
       fitMode: generativeFill || useFullDocumentBounds ? "stretch" : "contain",
       preserveCanvasBounds: Boolean(generativeFill),
       placementMaskDataUrl: generativeFill ? String(generativeFill.placementMaskDataUrl || "") : "",
+      selectionSnapshotChannelName: generativeFill ? String(generativeFill.selectionSnapshotChannelName || "") : "",
+      selectionMaskExpansion: generativeFill ? Number(generativeFill.maskExpansion) || 0 : 0,
+      selectionMaskFeather: generativeFill ? Number(generativeFill.feather) || 0 : 0,
       requirePlacementMask: Boolean(generativeFill),
       maskFallbackBounds: generativeFill ? null : selectionBounds,
       layerName: generativeFill ? "创成式填充" : getResultDefaultLayerName()

@@ -19,6 +19,7 @@ import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-pars
 import { openExternalUrl, openLocalPath, resolveTutorialPath } from "./shell.js";
 import {
   capturePhotoshopDocumentPreview,
+  deletePhotoshopSelectionSnapshot,
   getPhotoshopDocumentInfo,
   placeResultIntoPhotoshop,
   runPhotoshopToolAction
@@ -137,6 +138,9 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "photoshop.captureDocumentPreview":
         result = await capturePhotoshopDocumentPreview(message.args);
+        break;
+      case "photoshop.deleteSelectionSnapshot":
+        result = await deletePhotoshopSelectionSnapshot(message.args);
         break;
       case "photoshop.runToolAction":
         result = await runPhotoshopToolAction(message.args);
