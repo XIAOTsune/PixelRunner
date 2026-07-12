@@ -14,6 +14,13 @@
     return String(modules.state.state.settings.generativeFillAppId || "").trim();
   }
 
+  function getConfiguredFeather() {
+    return Math.max(0, Math.min(128, Math.floor(numberOrDefault(
+      modules.state.state.settings.generativeFillFeather,
+      DEFAULT_FEATHER
+    ))));
+  }
+
   function numberOrDefault(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -80,47 +87,6 @@
       : { mimeType: "image/png", base64: "" };
   }
 
-  function createFallbackMaskAsset(selection) {
-    const asset = selection && selection.asset ? selection.asset : {};
-    const contextBounds = cloneBounds(selection && selection.contextBounds);
-    const selectionBounds = cloneBounds(selection && selection.selectionBounds);
-    const width = Math.max(1, Number(asset.uploadWidth || asset.width || 1));
-    const height = Math.max(1, Number(asset.uploadHeight || asset.height || 1));
-    if (!contextBounds || !selectionBounds || typeof document === "undefined") return null;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-
-    const contextWidth = Math.max(1, contextBounds.right - contextBounds.left);
-    const contextHeight = Math.max(1, contextBounds.bottom - contextBounds.top);
-    const scaleX = width / contextWidth;
-    const scaleY = height / contextHeight;
-    const state = getState();
-    const expansion = Math.max(0, numberOrDefault(state.maskExpansion, DEFAULT_MASK_EXPANSION));
-    const left = Math.max(0, (selectionBounds.left - contextBounds.left - expansion) * scaleX);
-    const top = Math.max(0, (selectionBounds.top - contextBounds.top - expansion) * scaleY);
-    const right = Math.min(width, (selectionBounds.right - contextBounds.left + expansion) * scaleX);
-    const bottom = Math.min(height, (selectionBounds.bottom - contextBounds.top + expansion) * scaleY);
-
-    context.clearRect(0, 0, width, height);
-    context.fillStyle = "#fff";
-    context.fillRect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
-
-    const dataUrl = canvas.toDataURL("image/png");
-    const parsed = parseDataUrl(dataUrl);
-    return {
-      dataUrl,
-      base64: parsed.base64,
-      mimeType: parsed.mimeType,
-      width,
-      height,
-      shape: "bounds-fallback"
-    };
-  }
-
   function loadImage(dataUrl) {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -131,9 +97,10 @@
   }
 
   async function buildMaskVariants(selection) {
-    const fallback = createFallbackMaskAsset(selection);
-    const rawMask = selection && selection.maskAsset && selection.maskAsset.dataUrl ? selection.maskAsset : fallback;
-    if (!rawMask || !rawMask.dataUrl) return { apiMask: null, placementMask: null, shape: "unavailable" };
+    const rawMask = selection && selection.maskAsset && selection.maskAsset.dataUrl ? selection.maskAsset : null;
+    if (!rawMask || !rawMask.dataUrl) {
+      throw new Error("Photoshop 未返回不规则选区蒙版，已停止生成以避免使用矩形选区");
+    }
 
     const width = Math.max(1, Number(selection.asset.uploadWidth || rawMask.width || 1));
     const height = Math.max(1, Number(selection.asset.uploadHeight || rawMask.height || 1));
@@ -153,7 +120,7 @@
     const silhouetteData = silhouetteContext.createImageData(width, height);
     for (let index = 0; index < sourceData.data.length; index += 4) {
       const luminance = Math.max(sourceData.data[index], sourceData.data[index + 1], sourceData.data[index + 2]);
-      const alpha = rawMask.shape === "bounds-fallback" ? sourceData.data[index + 3] : luminance;
+      const alpha = luminance;
       silhouetteData.data[index] = 255;
       silhouetteData.data[index + 1] = 255;
       silhouetteData.data[index + 2] = 255;
@@ -170,7 +137,7 @@
       height / Math.max(1, selection.contextBounds.bottom - selection.contextBounds.top)
     );
     const expansion = Math.max(0, Number(getState().maskExpansion) || 0) * scale;
-    const feather = Math.max(0, Number(getState().feather) || 0) * scale;
+    const feather = getConfiguredFeather() * scale;
     expandedContext.clearRect(0, 0, width, height);
     expandedContext.filter = feather > 0 ? `blur(${Math.max(0.5, feather)}px)` : "none";
     expandedContext.drawImage(silhouetteCanvas, 0, 0);
@@ -390,6 +357,9 @@
       { timeoutMs: 45000 }
     );
     if (!captured || !captured.uploadDataUrl) throw new Error("Photoshop 未返回可上传的上下文图像");
+    if (!captured.selectionMaskDataUrl) {
+      throw new Error("Photoshop 未能读取不规则选区蒙版，请重新建立选区后再试");
+    }
 
     const selection = {
       documentId: Number(docInfo.documentId) || 0,
@@ -454,7 +424,7 @@
         contextBounds: selection.contextBounds,
         selectionPadding: selection.selectionPadding,
         maskExpansion: numberOrDefault(getState().maskExpansion, DEFAULT_MASK_EXPANSION),
-        feather: numberOrDefault(getState().feather, DEFAULT_FEATHER),
+        feather: getConfiguredFeather(),
         maskShape: maskVariants.shape,
         placementMaskDataUrl: maskVariants.placementMask ? maskVariants.placementMask.dataUrl : "",
         useCurrentSelectionMask: true
@@ -520,7 +490,6 @@
     const state = getState();
     state.contextExpansion = Math.max(0, Math.min(2048, numberOrDefault(state.contextExpansion, DEFAULT_CONTEXT_EXPANSION)));
     state.maskExpansion = Math.max(0, Math.min(128, numberOrDefault(state.maskExpansion, DEFAULT_MASK_EXPANSION)));
-    state.feather = Math.max(0, Math.min(128, numberOrDefault(state.feather, DEFAULT_FEATHER)));
     state.status = "idle";
     state.statusMessage = "运行时自动读取当前 Photoshop 选区。";
     if (modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
@@ -599,7 +568,6 @@
         <div class="generative-fill-control-row">
           <label class="generative-fill-control"><span>上下文</span><input id="generativeFillContextInput" type="number" min="0" max="2048" step="1" value="${numberOrDefault(state.contextExpansion, DEFAULT_CONTEXT_EXPANSION)}" /><em>px</em></label>
           <label class="generative-fill-control"><span>扩展</span><input id="generativeFillMaskExpansionInput" type="number" min="0" max="128" step="1" value="${numberOrDefault(state.maskExpansion, DEFAULT_MASK_EXPANSION)}" /><em>px</em></label>
-          <label class="generative-fill-control"><span>羽化</span><input id="generativeFillFeatherInput" type="number" min="0" max="128" step="1" value="${numberOrDefault(state.feather, DEFAULT_FEATHER)}" /><em>px</em></label>
         </div>
 
         <div class="generative-fill-footer">
@@ -629,7 +597,6 @@
         state.contextExpansion = nextExpansion;
       }
       if (target.id === "generativeFillMaskExpansionInput") state.maskExpansion = Math.max(0, Math.min(128, Math.floor(Number(target.value) || 0)));
-      if (target.id === "generativeFillFeatherInput") state.feather = Math.max(0, Math.min(128, Math.floor(Number(target.value) || 0)));
     });
     surface.addEventListener("change", (event) => {
       if (event.target && event.target.id === "generativeFillContextInput") render();

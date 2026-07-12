@@ -146,6 +146,11 @@
         settings.generativeFillAppId ?? modules.state.getDefaultGenerativeFillAppId(settings.runningHubRegion)
       );
     }
+    if (modules.runtime.getById("settingsGenerativeFillFeatherInput")) {
+      modules.runtime.getById("settingsGenerativeFillFeatherInput").value = String(
+        settings.generativeFillFeather ?? modules.state.DEFAULT_SETTINGS.generativeFillFeather
+      );
+    }
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
     }
@@ -651,6 +656,7 @@
         ...(modules.state.state.settings.generativeFillAppIds || {}),
         [runningHubRegion]: generativeFillAppId
       },
+      generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
@@ -677,6 +683,7 @@
         ...(modules.state.state.settings.generativeFillAppIds || {}),
         [runningHubRegion]: generativeFillAppId
       },
+      generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       apiKey: modules.state.state.settings.apiKey,
@@ -697,6 +704,7 @@
         aiOptimizeAppIds: nextSettings.aiOptimizeAppIds,
         generativeFillAppId: nextSettings.generativeFillAppId,
         generativeFillAppIds: nextSettings.generativeFillAppIds,
+        generativeFillFeather: nextSettings.generativeFillFeather,
         appPickerLayout: nextSettings.appPickerLayout,
         plusModeEnabled: nextSettings.plusModeEnabled,
         runningHubRegion: nextSettings.runningHubRegion,
@@ -782,6 +790,7 @@
       aiOptimizeAppIds: rawSettings && rawSettings.aiOptimizeAppIds,
       generativeFillAppId: rawSettings && rawSettings.generativeFillAppId,
       generativeFillAppIds: rawSettings && rawSettings.generativeFillAppIds,
+      generativeFillFeather: rawSettings && rawSettings.generativeFillFeather,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
@@ -932,6 +941,7 @@
       "settingsLocalQueueEnabledInput",
       "settingsAiOptimizeAppIdInput",
       "settingsGenerativeFillAppIdInput",
+      "settingsGenerativeFillFeatherInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ];

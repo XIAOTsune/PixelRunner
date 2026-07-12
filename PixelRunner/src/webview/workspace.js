@@ -2404,7 +2404,8 @@
       fitMode: generativeFill || useFullDocumentBounds ? "stretch" : "contain",
       preserveCanvasBounds: Boolean(generativeFill),
       placementMaskDataUrl: generativeFill ? String(generativeFill.placementMaskDataUrl || "") : "",
-      maskFallbackBounds: generativeFill ? selectionBounds : null,
+      requirePlacementMask: Boolean(generativeFill),
+      maskFallbackBounds: generativeFill ? null : selectionBounds,
       layerName: generativeFill ? "创成式填充" : getResultDefaultLayerName()
     };
   }

@@ -541,6 +541,19 @@ async function getPixelsWithFallback(imaging, options) {
   }
 }
 
+async function getSelectionWithFallback(imaging, options) {
+  if (!imaging || typeof imaging.getSelection !== "function") {
+    throw new Error("Photoshop selection imaging API is unavailable");
+  }
+  try {
+    return await imaging.getSelection(options);
+  } catch (error) {
+    const fallbackOptions = { ...options };
+    delete fallbackOptions.componentSize;
+    return imaging.getSelection(fallbackOptions);
+  }
+}
+
 async function selectCompositeChannel(action) {
   try {
     await action.batchPlay([{
@@ -563,8 +576,32 @@ async function deleteChannelByName(action, channelName) {
 }
 
 async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, targetSize) {
-  const channelName = `PixelRunner GF Mask ${Date.now()}`;
   let pixels = null;
+  if (typeof imaging.getSelection === "function") {
+    try {
+      pixels = await getSelectionWithFallback(imaging, {
+        documentID: Number(doc.id),
+        sourceBounds,
+        targetSize,
+        componentSize: 8
+      });
+      const encoded = await imaging.encodeImageData({
+        imageData: pixels.imageData,
+        base64: true,
+        format: "png"
+      });
+      const base64 = extractEncodedBase64(encoded);
+      if (!base64) throw new Error("Photoshop returned an empty selection mask");
+      return buildDataUrl("image/png", base64);
+    } finally {
+      try {
+        pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
+      } catch (_) {}
+    }
+  }
+
+  const channelName = `PixelRunner GF Mask ${Date.now()}`;
+  pixels = null;
   try {
     await action.batchPlay([{
       _obj: "duplicate",
@@ -579,8 +616,13 @@ async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, t
       _options: { dialogOptions: "dontDisplay" }
     }], {});
 
+    const alphaChannel = Array.from(doc.channels || []).find((channel) => String(channel && channel.name || "") === channelName);
+    const channelID = Number(alphaChannel && alphaChannel.id) || 0;
+    if (!(channelID > 0)) throw new Error("Photoshop did not expose the stored selection channel");
+
     pixels = await getPixelsWithFallback(imaging, {
       documentID: Number(doc.id),
+      channelID,
       sourceBounds,
       targetSize,
       componentSize: 8,
@@ -1253,6 +1295,7 @@ export async function placeImageFromUrl(payload) {
   await tempFile.write(placementBuffer, { format: formats.binary });
   const sessionToken = await fs.createSessionToken(tempFile);
   const placementMaskDataUrl = String(options.placementMaskDataUrl || "").trim();
+  const requirePlacementMask = options.requirePlacementMask === true;
   let placementMaskSessionToken = "";
   let placementMaskInfo = null;
   if (placementMaskDataUrl) {
@@ -1263,6 +1306,9 @@ export async function placeImageFromUrl(payload) {
     const maskFile = await tempFolder.createFile("pixelrunner-result-mask.png", { overwrite: true });
     await maskFile.write(maskBuffer, { format: formats.binary });
     placementMaskSessionToken = await fs.createSessionToken(maskFile);
+  }
+  if (requirePlacementMask && !placementMaskSessionToken) {
+    throw new Error("创成式填充缺少不规则选区蒙版，已停止回贴以避免生成矩形蒙版");
   }
   const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
   const targetBounds = normalizeBounds(options.targetBounds);
@@ -1356,7 +1402,12 @@ export async function placeImageFromUrl(payload) {
           } catch (_) {}
         }
         await selectLayerById(action, resultLayerId);
-        if (maskFallbackBounds) {
+        if (requirePlacementMask) {
+          try {
+            await deleteLayerById(action, resultLayerId);
+          } catch (_) {}
+          throw new Error(`不规则选区蒙版回贴失败：${error && error.message ? error.message : String(error)}`);
+        } else if (maskFallbackBounds) {
           await createSelectionFromBounds(activeTargetDocument || app.activeDocument, maskFallbackBounds);
           await applyLayerMaskFromSelection(action);
           appliedMaskMode = "bounds-fallback";
