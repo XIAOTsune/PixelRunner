@@ -23,6 +23,7 @@
   };
 
   const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
+  const DEFAULT_GENERATIVE_FILL_APP_ID = "2072190882207584257";
   const RUNNINGHUB_REGIONS = {
     CN: "cn",
     GLOBAL: "global"
@@ -39,6 +40,10 @@
     return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN ? DEFAULT_AI_OPTIMIZE_APP_ID : "";
   }
 
+  function getDefaultGenerativeFillAppId(region) {
+    return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN ? DEFAULT_GENERATIVE_FILL_APP_ID : "";
+  }
+
   const DEFAULT_SETTINGS = {
     apiKey: "",
     runningHubRegion: RUNNINGHUB_REGIONS.CN,
@@ -49,6 +54,11 @@
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
     aiOptimizeAppIds: {
       cn: DEFAULT_AI_OPTIMIZE_APP_ID,
+      global: ""
+    },
+    generativeFillAppId: DEFAULT_GENERATIVE_FILL_APP_ID,
+    generativeFillAppIds: {
+      cn: DEFAULT_GENERATIVE_FILL_APP_ID,
       global: ""
     },
     appPickerLayout: "visual",
@@ -71,6 +81,7 @@
   };
 
   const THIRD_PARTY_APP_ID = "__pixelrunner_third_party_api__";
+  const GENERATIVE_FILL_APP_ID = "__pixelrunner_generative_fill__";
 
   const GRS_COMMON_BANANA_RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"];
   const GRS_GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "1774x887", "887x1774"];
@@ -138,6 +149,18 @@
       maxDimension: 1536,
       quality: 82
     },
+    generativeFill: {
+      prompt: "",
+      contextExpansion: 128,
+      maskExpansion: 4,
+      feather: 12,
+      selection: null,
+      schema: null,
+      schemaLoadedForAppId: "",
+      status: "idle",
+      statusMessage: "先在 Photoshop 中框选区域。",
+      lastTaskId: ""
+    },
     lastRunPayload: null,
     lastResult: {
       appName: "",
@@ -204,6 +227,28 @@
             : ""
       ).trim()
     };
+    const sourceGenerativeFillAppIds = source.generativeFillAppIds && typeof source.generativeFillAppIds === "object"
+      ? source.generativeFillAppIds
+      : {};
+    const hasGenerativeFillCnId = Object.prototype.hasOwnProperty.call(sourceGenerativeFillAppIds, RUNNINGHUB_REGIONS.CN);
+    const hasGenerativeFillGlobalId = Object.prototype.hasOwnProperty.call(sourceGenerativeFillAppIds, RUNNINGHUB_REGIONS.GLOBAL);
+    const legacyGenerativeFillAppId = String(source.generativeFillAppId == null ? "" : source.generativeFillAppId).trim();
+    const generativeFillAppIds = {
+      cn: String(
+        hasGenerativeFillCnId
+          ? sourceGenerativeFillAppIds.cn
+          : runningHubRegion === RUNNINGHUB_REGIONS.CN
+            ? legacyGenerativeFillAppId || DEFAULT_GENERATIVE_FILL_APP_ID
+            : DEFAULT_GENERATIVE_FILL_APP_ID
+      ).trim(),
+      global: String(
+        hasGenerativeFillGlobalId
+          ? sourceGenerativeFillAppIds.global
+          : runningHubRegion === RUNNINGHUB_REGIONS.GLOBAL
+            ? legacyGenerativeFillAppId
+            : ""
+      ).trim()
+    };
     const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
     const timeout = Math.min(600, Math.max(10, Math.floor(Number(source.timeout) || DEFAULT_SETTINGS.timeout)));
     const maxConcurrentTasks = Math.min(100, Math.max(1, Math.floor(Number(source.maxConcurrentTasks) || DEFAULT_SETTINGS.maxConcurrentTasks)));
@@ -217,6 +262,8 @@
       localQueueEnabled: source.localQueueEnabled === true,
       aiOptimizeAppId: aiOptimizeAppIds[runningHubRegion],
       aiOptimizeAppIds,
+      generativeFillAppId: generativeFillAppIds[runningHubRegion],
+      generativeFillAppIds,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()
@@ -644,10 +691,12 @@
   modules.state = {
     STORAGE_KEYS,
     DEFAULT_AI_OPTIMIZE_APP_ID,
+    DEFAULT_GENERATIVE_FILL_APP_ID,
     RUNNINGHUB_REGIONS,
     DEFAULT_SETTINGS,
     DEFAULT_THIRD_PARTY_SETTINGS,
     THIRD_PARTY_APP_ID,
+    GENERATIVE_FILL_APP_ID,
     DEFAULT_THEME,
     DEFAULT_TEMPLATE_CATEGORY_ID,
     DEFAULT_TEMPLATE_CATEGORY_NAME,
@@ -655,6 +704,7 @@
     normalizeTheme,
     normalizeRunningHubRegion,
     getDefaultAiOptimizeAppId,
+    getDefaultGenerativeFillAppId,
     normalizeSettings,
     normalizeApiProfileRecord,
     normalizeApiProfileList,

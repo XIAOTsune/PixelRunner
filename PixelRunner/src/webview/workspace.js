@@ -205,7 +205,7 @@
   function getResultDefaultLayerName() {
     const state = modules.state.state;
     const appName = String((state.lastResult && state.lastResult.appName) || (state.currentApp && state.currentApp.name) || "Result").trim();
-    return `PixelRunner - ${appName}`;
+    return `像素起子 - ${appName}`;
   }
 
   function formatSelectionLabel(selectionBounds) {
@@ -1248,9 +1248,11 @@
     const cooldownActive = isRunCooldownActive();
     const cooldownSeconds = Math.max(1, Math.ceil((runButtonCooldownUntil - Date.now()) / 1000));
     const quickMode = state.workspaceMode === "quick";
+    const generativeFillMode = state.workspaceMode === "generative-fill";
 
     if (runButton) {
-      runButton.disabled = quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runButton.hidden = generativeFillMode;
+      runButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       if (quickMode) {
         runButton.textContent = "点击快捷入口运行";
       } else if (!hasCurrentApp) {
@@ -1271,8 +1273,8 @@
     if (runPlusButton) {
       const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
       const plusModeEnabled = state.settings && state.settings.plusModeEnabled === true;
-      runPlusButton.hidden = !plusModeEnabled;
-      runPlusButton.disabled = quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runPlusButton.hidden = generativeFillMode || !plusModeEnabled;
+      runPlusButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
       runPlusButton.setAttribute(
         "aria-label",
@@ -1281,7 +1283,9 @@
     }
 
     if (taskStatusSummary) {
-      if (quickMode) {
+      if (generativeFillMode) {
+        taskStatusSummary.textContent = "创成式填充：使用上方紧凑操作栏提交任务。";
+      } else if (quickMode) {
         taskStatusSummary.textContent =
           activeCount > 0
             ? `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个${queuedCount ? `，本地排队 ${queuedCount} 个` : ""}。`
@@ -1477,15 +1481,19 @@
     const workspaceInputArea = runtime.getById("workspaceInputArea");
     const createQuickEntryButton = runtime.getById("btnCreateQuickEntry");
     const quickMode = state.workspaceMode === "quick";
+    const generativeFillMode = state.workspaceMode === "generative-fill";
+    const workspaceGrid = document.querySelector(".workspace-grid-classic");
 
     if (appPickerMeta) {
       appPickerMeta.innerHTML = quickMode ? renderQuickModeMeta() : renderAppMeta(state.currentApp);
     }
 
     document.body.classList.toggle("workspace-mode-quick", quickMode);
+    document.body.classList.toggle("workspace-mode-generative-fill", generativeFillMode);
+    if (workspaceGrid) workspaceGrid.hidden = generativeFillMode;
     if (workspaceInputArea) workspaceInputArea.classList.toggle("workspace-quick-card", quickMode);
     if (createQuickEntryButton) {
-      createQuickEntryButton.hidden = quickMode;
+      createQuickEntryButton.hidden = quickMode || generativeFillMode;
       createQuickEntryButton.disabled = !state.currentApp;
     }
 
@@ -1507,6 +1515,9 @@
     updateRunButtonState();
     if (modules.settings && typeof modules.settings.refreshThemeSkin === "function") {
       modules.settings.refreshThemeSkin();
+    }
+    if (modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
     }
   }
 
@@ -1732,6 +1743,7 @@
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
+      kind: String(patch.kind || "").trim(),
       region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
       apiKey: hasOwn("apiKey") ? String(patch.apiKey || "").trim() : "",
       queueMode: String(patch.queueMode || "").trim(),
@@ -1766,10 +1778,12 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        kind: nextTask.kind || current.kind || "",
         region: nextTask.region || current.region || "cn",
         apiKey: nextTask.apiKey || current.apiKey || "",
         queueMode: nextTask.queueMode || current.queueMode || "",
         appName: nextTask.appName || current.appName || "",
+        sourceDocument: nextTask.sourceDocument || current.sourceDocument || null,
         status: nextTask.status || current.status || "running",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
@@ -1795,6 +1809,9 @@
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     syncPrimaryRunningTask();
     updateRunButtonState();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
     if (nextTask.status && isTaskTerminalStatus(nextTask.status)) scheduleRunSubmissionFlush();
     return state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
   }
@@ -2372,8 +2389,11 @@
   function buildAutoPlacementPayload(result) {
     const sourceDocument = result && result.sourceDocument && typeof result.sourceDocument === "object" ? result.sourceDocument : null;
     const selectionBounds = sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null;
+    const generativeFill = sourceDocument && sourceDocument.generativeFill && typeof sourceDocument.generativeFill === "object"
+      ? sourceDocument.generativeFill
+      : null;
     const documentBounds = getDocumentCanvasBounds(sourceDocument);
-    const targetBounds = selectionBounds || documentBounds || null;
+    const targetBounds = (generativeFill && generativeFill.contextBounds) || selectionBounds || documentBounds || null;
     const useFullDocumentBounds = !selectionBounds && !!documentBounds;
     return {
       url: result && result.outputUrl ? result.outputUrl : "",
@@ -2381,8 +2401,11 @@
       targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
       targetBounds,
       applyMask: Boolean(selectionBounds),
-      fitMode: useFullDocumentBounds ? "stretch" : "contain",
-      layerName: getResultDefaultLayerName()
+      fitMode: generativeFill || useFullDocumentBounds ? "stretch" : "contain",
+      preserveCanvasBounds: Boolean(generativeFill),
+      placementMaskDataUrl: generativeFill ? String(generativeFill.placementMaskDataUrl || "") : "",
+      maskFallbackBounds: generativeFill ? selectionBounds : null,
+      layerName: generativeFill ? "创成式填充" : getResultDefaultLayerName()
     };
   }
 
@@ -2622,6 +2645,7 @@
       taskId: localTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      kind: payload.kind || "",
       region: payload.region,
       apiKey: payload.apiKey,
       queueMode: "local",
@@ -3373,6 +3397,7 @@
     renderWorkspace,
     clearCompletedRunningTasks,
     buildRunPayload,
+    enqueueRunTaskFlow,
     collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,
     restoreWorkspaceFormSnapshot,

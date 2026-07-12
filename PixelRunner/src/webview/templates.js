@@ -259,7 +259,7 @@
       schema: "pixelrunner.bundle",
       version: 2,
       exportedAt: new Date().toISOString(),
-      name: "PixelRunner 资料包",
+      name: "像素起子资料包",
       apps: sanitizeAppsForBundle(modules.state.state.apps),
       templateCategories: Array.isArray(modules.state.state.templateCategories) ? modules.state.state.templateCategories : [],
       templates: sanitizeTemplatesForBundle(templates),

@@ -18,6 +18,7 @@ import "./webview/ui.js";
 import "./webview/sound.js";
 import "./webview/quick-entries.js";
 import "./webview/workspace.js";
+import "./webview/generative-fill.js";
 import "./webview/ai-optimize.js";
 import "./webview/apps.js";
 import "./webview/templates.js";

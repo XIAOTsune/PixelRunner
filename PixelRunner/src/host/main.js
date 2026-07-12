@@ -186,7 +186,7 @@ function mountWebView() {
 
     if (payload.type === "pixelrunner.webview.ready") {
       webviewReady = true;
-      setHostStatus("PixelRunner（小T修图助手） WebView ready", "success");
+      setHostStatus("像素起子（小T修图助手）WebView 已就绪", "success");
       document.body.classList.add("webview-ready");
       return;
     }
@@ -208,7 +208,7 @@ function mountWebView() {
   registerListener(window, "message", onMessage);
   registerListener(nextWebview, "message", onMessage);
 
-  setHostStatus("PixelRunner（小T修图助手） WebView mounted, waiting for ready signal...", "info");
+  setHostStatus("像素起子（小T修图助手）WebView 已挂载，等待就绪信号...", "info");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -222,6 +222,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  setHostStatus("Mounting PixelRunner（小T修图助手） WebView...", "info");
+  setHostStatus("正在挂载像素起子（小T修图助手）WebView...", "info");
   mountWebView();
 });

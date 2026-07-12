@@ -19,6 +19,7 @@ function initializePixelRunnerApp() {
   modules.spaceFx.bindSpaceFxActions();
   modules.apps.bindAppPicker();
   modules.workspace.bindWorkspaceActions();
+  modules.generativeFill.bindActions();
   modules.aiOptimize.bindModalEvents();
   modules.ui.bindPlaceholderActions();
   modules.templates.bindTemplateActions();

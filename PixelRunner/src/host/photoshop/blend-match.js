@@ -2731,7 +2731,7 @@ async function placePngBufferAsLayer(app, action, storage, buffer, targetBounds,
   const layer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
   if (!layer) return null;
   try {
-    layer.name = String(layerName || "PixelRunner 融合校色").slice(0, 240);
+    layer.name = String(layerName || "像素起子 融合校色").slice(0, 240);
   } catch (_) {}
   return layer;
 }
@@ -5444,7 +5444,7 @@ async function runPixelAlignmentV2Flow({
   sourceWasVisible,
   config
 }) {
-  const resultLayerName = `PixelRunner 像素对齐 - ${sourceLayerName}`.slice(0, 240);
+  const resultLayerName = `像素起子 像素对齐 - ${sourceLayerName}`.slice(0, 240);
   const maxEdge = Math.max(512, Math.min(2048, Number(config.localMeshMaxEdge) || DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxEdge));
   let sourceSample = null;
   let referenceSample = null;
@@ -5677,7 +5677,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
     const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
-    const resultLayerName = `PixelRunner 融合校色 - ${sourceLayerName}`.slice(0, 240);
+    const resultLayerName = `像素起子 融合校色 - ${sourceLayerName}`.slice(0, 240);
     logs.push(`[融合校色] 开始分析图层：${sourceLayerName}。`);
     logs.push(`[融合校色] 区域 ${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}；内部颜色匹配与快速对齐。`);
 
@@ -5947,7 +5947,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       featherApplied
     };
   }, {
-    commandName: "PixelRunner 融合校色"
+    commandName: "像素起子 融合校色"
   });
 }
 
@@ -6051,7 +6051,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       logs
     };
   }, {
-    commandName: "PixelRunner 融合校色预览"
+    commandName: "像素起子 融合校色预览"
   });
 }
 
@@ -6130,7 +6130,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       modalMs: modalTiming.totalMs()
     };
   }, {
-    commandName: "PixelRunner 融合校色预览采样"
+    commandName: "像素起子 融合校色预览采样"
   });
 
   actionTiming.mark("executeAsModal", {
@@ -6329,7 +6329,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       previewCacheKey
     };
   }, {
-    commandName: "PixelRunner 融合校色预览分析"
+    commandName: "像素起子 融合校色预览分析"
   });
 
   actionTiming.mark("校验当前图层", {

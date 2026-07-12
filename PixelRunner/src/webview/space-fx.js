@@ -1505,7 +1505,7 @@
       const outputCanvas = document.createElement("canvas");
       const result = await renderToCanvas(state.sourceImage, outputCanvas, CAPTURE_MAX_DIMENSION, state.params);
       const label = getPresetLabel(state.params.effect);
-      const placed = await placeDataUrl(result.dataUrl, `PixelRunner 空间特效 - ${label}`, 100, "normal");
+      const placed = await placeDataUrl(result.dataUrl, `像素起子 空间特效 - ${label}`, 100, "normal");
       setStatus(placed && placed.layerName ? `已生成空间特效结果层：${placed.layerName}` : "已生成空间特效结果层。", "success");
       setMeta(`已应用 ${result.width}x${result.height} · ${result.elapsedMs}ms`);
       modules.ui.logToWorkspace(`空间特效已应用：${label}。`, "success");
@@ -1537,7 +1537,7 @@
         mapDataUrl = result.mapDataUrl;
       }
       const label = getPresetLabel(state.params.effect);
-      const placed = await placeDataUrl(mapDataUrl, `PixelRunner 置换图 - ${label}`, 100, "normal");
+      const placed = await placeDataUrl(mapDataUrl, `像素起子 置换图 - ${label}`, 100, "normal");
       setStatus(placed && placed.layerName ? `已生成置换图层：${placed.layerName}` : "已生成置换图层。", "success");
       modules.ui.logToWorkspace(`空间特效置换图已生成：${label}。`, "success");
     } catch (error) {

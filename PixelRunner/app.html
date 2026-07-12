@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PixelRunner</title>
+  <title>像素起子（小T修图助手）</title>
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
@@ -64,6 +64,8 @@
           </div>
         </div>
 
+        <section id="generativeFillSurface" class="generative-fill-surface" hidden></section>
+
         <div class="workspace-grid workspace-grid-classic">
           <section class="surface-card workspace-app-card">
             <div class="workspace-app-toolbar">
@@ -114,7 +116,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.6.1 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子（小T修图助手）2.6.1 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -488,6 +490,11 @@
                 <span class="field-label">AI 优化应用 ID</span>
                 <input id="settingsAiOptimizeAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub AI优化应用 ID" />
               </label>
+              <label class="field">
+                <span class="field-label">创成式填充应用 ID</span>
+                <input id="settingsGenerativeFillAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub 创成式填充应用 ID" />
+                <span class="field-hint settings-field-hint">当前国内版默认使用 2072190882207584257。创成式填充会在工作台应用切换中作为独立特殊模式运行。</span>
+              </label>
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">应用切换密度</span>
                 <label class="checkbox-line">
@@ -506,6 +513,7 @@
               </div>
               <div class="action-row">
                 <button id="btnResetAiOptimizeAppId" class="secondary-btn" type="button">恢复默认</button>
+                <button id="btnResetGenerativeFillAppId" class="secondary-btn" type="button">恢复创成式填充默认</button>
               </div>
             </div>
           </details>
@@ -884,7 +892,7 @@
       <div class="card-head">
         <div>
           <p class="card-kicker">支持项目</p>
-          <h3 class="card-title">感谢支持 PixelRunner</h3>
+          <h3 class="card-title">感谢支持像素起子</h3>
         </div>
         <button id="donationModalClose" class="mini-btn" type="button">关闭</button>
       </div>

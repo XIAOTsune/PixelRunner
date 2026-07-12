@@ -1,7 +1,7 @@
-# PixelRunner
+# 像素起子（小T修图助手）
 
 <p align="center">
-  <img src="PixelRunner/icons/icon.png" width="128" height="128" alt="PixelRunner logo" />
+  <img src="PixelRunner/icons/icon.png" width="128" height="128" alt="像素起子图标" />
 </p>
 
 <h3 align="center">Photoshop 里的 AI 修图工作台</h3>
@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <a href="#为什么需要-pixelrunner">为什么需要它</a> ·
+  <a href="#为什么需要像素起子">为什么需要它</a> ·
   <a href="#核心功能">核心功能</a> ·
   <a href="#快速上手">快速上手</a> ·
   <a href="#开发与构建">开发与构建</a>
@@ -27,7 +27,7 @@
 
 ## 一句话介绍
 
-PixelRunner（小T修图助手）是一个面向 Photoshop 的 UXP 插件。它把 Photoshop 和 RunningHub 图像工作流接在一起，让你可以在 PS 里直接框选画面、提交 AI 任务、等待结果、自动贴回图层。
+像素起子（小T修图助手）是一个面向 Photoshop 的 UXP 插件。它把 Photoshop 和 RunningHub 图像工作流接在一起，让你可以在 PS 里直接框选画面、提交 AI 任务、等待结果、自动贴回图层。
 
 如果你平时要反复做这些事：
 
@@ -38,11 +38,11 @@ PixelRunner（小T修图助手）是一个面向 Photoshop 的 UXP 插件。它�
 - 再把图片拖回 Photoshop 对齐。
 - 下次换一个工作流，又要重新配一遍。
 
-PixelRunner 想解决的就是这条来回折腾的链路。它把“修图动作”和“AI 工作流”合到 Photoshop 面板里，让创作过程更像一次连续操作，而不是在多个窗口之间搬运素材。
+像素起子想解决的就是这条来回折腾的链路。它把“修图动作”和“AI 工作流”合到 Photoshop 面板里，让创作过程更像一次连续操作，而不是在多个窗口之间搬运素材。
 
-## 为什么需要 PixelRunner
+## 为什么需要像素起子
 
-| 以前的流程 | 使用 PixelRunner 后 |
+| 以前的流程 | 使用像素起子后 |
 | --- | --- |
 | 手动导出选区或整图 | 在 PS 内一键捕获当前选区或文档 |
 | 去网页上传图片 | 插件直接提交 RunningHub 工作流 |
@@ -54,7 +54,7 @@ PixelRunner 想解决的就是这条来回折腾的链路。它把“修图动�
 
 ## 适合谁
 
-PixelRunner 对这几类用户尤其有用：
+像素起子对这几类用户尤其有用：
 
 | 用户 | 能得到什么 |
 | --- | --- |
@@ -68,15 +68,15 @@ PixelRunner 对这几类用户尤其有用：
 
 ### 1. 不离开 Photoshop
 
-PixelRunner 的核心体验是“在 PS 里完成 AI 往返”。你可以直接使用当前文档或选区作为输入，任务完成后结果会回到 Photoshop，不需要手动导出、下载、拖拽和重新对齐。
+像素起子的核心体验是“在 PS 里完成 AI 往返”。你可以直接使用当前文档或选区作为输入，任务完成后结果会回到 Photoshop，不需要手动导出、下载、拖拽和重新对齐。
 
 ### 2. 小白也能跑工作流
 
-你不需要理解复杂接口。保存 RunningHub API Key 后，把应用 ID 或链接填进插件，PixelRunner 会解析应用输入项，并自动生成表单。该填图片的地方捕获图片，该填文字的地方写提示词。
+你不需要理解复杂接口。保存 RunningHub API Key 后，把应用 ID 或链接填进插件，像素起子会解析应用输入项，并自动生成表单。该填图片的地方捕获图片，该填文字的地方写提示词。
 
 ### 3. 常用配置可以沉淀下来
 
-PixelRunner 不只是“跑一次任务”。它可以保存：
+像素起子不只是“跑一次任务”。它可以保存：
 
 - RunningHub 应用
 - 应用参数
@@ -89,17 +89,17 @@ PixelRunner 不只是“跑一次任务”。它可以保存：
 
 ### 4. AI 任务状态可见、可控
 
-提交任务后，插件会显示运行状态，支持多任务并发、取消任务、超时追踪和任务完成回贴。比起把任务扔出去之后盲等，PixelRunner 更适合真实生产里的反复试错。
+提交任务后，插件会显示运行状态，支持多任务并发、取消任务、超时追踪和任务完成回贴。比起把任务扔出去之后盲等，像素起子更适合真实生产里的反复试错。
 
 ### 5. 修图工具和 AI 工具在同一个面板
 
-修图不是只有 AI。PixelRunner 也内置了一组高频 Photoshop 辅助工具，让你在使用 AI 前后都能快速处理画面。
+修图不是只有 AI。像素起子也内置了一组高频 Photoshop 辅助工具，让你在使用 AI 前后都能快速处理画面。
 
 ## 核心功能
 
 ### RunningHub 任务工作台
 
-工作台是 PixelRunner 的主场。它负责选择应用、填写参数、捕获图片、提交任务和接收结果。
+工作台是像素起子的主场。它负责选择应用、填写参数、捕获图片、提交任务和接收结果。
 
 | 能力 | 说明 |
 | --- | --- |
@@ -155,7 +155,7 @@ PixelRunner 不只是“跑一次任务”。它可以保存：
 
 ### AI 优化提示词
 
-PixelRunner 可以使用参考图和当前主 prompt，调用你配置的 RunningHub AI 优化应用，生成更清晰、更适合图像工作流使用的提示词。
+像素起子可以使用参考图和当前主 prompt，调用你配置的 RunningHub AI 优化应用，生成更清晰、更适合图像工作流使用的提示词。
 
 它的设计比较克制：AI 返回结果不会自动覆盖原 prompt，而是先展示在弹窗里。你确认之后，可以选择“替换当前”或“追加到当前”。
 
@@ -190,7 +190,7 @@ PixelRunner 可以使用参考图和当前主 prompt，调用你配置的 Runnin
 ```text
 打开 Photoshop
   ↓
-加载 PixelRunner 插件
+加载像素起子插件
   ↓
 在设置页保存 RunningHub API Key
   ↓
@@ -239,7 +239,7 @@ npm run build
 2. 点击 `Add Plugin`。
 3. 选择 `PixelRunner/manifest.json`。
 4. 点击 `Load` 或 `Watch`。
-5. 在 Photoshop 中打开 `Plugins -> Development -> PixelRunner（小T修图助手）`。
+5. 在 Photoshop 中打开 `Plugins -> Development -> 像素起子（小T修图助手）`。
 
 ### 5. 第一次使用
 
@@ -343,7 +343,7 @@ npm run package:release
 
 ## 隐私与安全
 
-PixelRunner 不需要你把任何密钥提交到仓库。RunningHub API Key 保存在本机 UXP 存储中，用于向 RunningHub 提交任务和查询状态。
+像素起子不需要你把任何密钥提交到仓库。RunningHub API Key 保存在本机 UXP 存储中，用于向 RunningHub 提交任务和查询状态。
 
 请不要提交：
 
@@ -354,9 +354,9 @@ PixelRunner 不需要你把任何密钥提交到仓库。RunningHub API Key 保�
 
 ## 常见问题
 
-### PixelRunner 是独立软件吗？
+### 像素起子是独立软件吗？
 
-不是。PixelRunner 是 Photoshop UXP 插件，需要在 Photoshop 和 UXP Developer Tool 中加载。
+不是。像素起子是 Photoshop UXP 插件，需要在 Photoshop 和 UXP Developer Tool 中加载。
 
 ### 必须有 RunningHub 账号吗？
 
@@ -372,7 +372,7 @@ PixelRunner 不需要你把任何密钥提交到仓库。RunningHub API Key 保�
 
 ## 路线方向
 
-PixelRunner 会继续围绕一个目标迭代：让 Photoshop 内的 AI 修图流程更顺手。
+像素起子会继续围绕一个目标迭代：让 Photoshop 内的 AI 修图流程更顺手。
 
 接下来值得继续增强的方向：
 
@@ -384,6 +384,6 @@ PixelRunner 会继续围绕一个目标迭代：让 Photoshop 内的 AI 修图�
 
 ## 许可证
 
-PixelRunner 使用 [Apache License 2.0](LICENSE) 开源。
+像素起子使用 [Apache License 2.0](LICENSE) 开源。
 
 Copyright 2026 XIAOTsune

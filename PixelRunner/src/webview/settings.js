@@ -141,6 +141,11 @@
         settings.aiOptimizeAppId ?? modules.state.getDefaultAiOptimizeAppId(settings.runningHubRegion)
       );
     }
+    if (modules.runtime.getById("settingsGenerativeFillAppIdInput")) {
+      modules.runtime.getById("settingsGenerativeFillAppIdInput").value = String(
+        settings.generativeFillAppId ?? modules.state.getDefaultGenerativeFillAppId(settings.runningHubRegion)
+      );
+    }
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
     }
@@ -628,6 +633,7 @@
     modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
     const runningHubRegion = getCurrentRunningHubRegion();
     const aiOptimizeAppId = modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "";
+    const generativeFillAppId = modules.runtime.getById("settingsGenerativeFillAppIdInput")?.value || "";
     return modules.state.normalizeSettings({
       apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
       runningHubRegion,
@@ -640,6 +646,11 @@
         ...(modules.state.state.settings.aiOptimizeAppIds || {}),
         [runningHubRegion]: aiOptimizeAppId
       },
+      generativeFillAppId,
+      generativeFillAppIds: {
+        ...(modules.state.state.settings.generativeFillAppIds || {}),
+        [runningHubRegion]: generativeFillAppId
+      },
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
@@ -649,6 +660,7 @@
   function readAdvancedSettingsForm() {
     const runningHubRegion = getCurrentRunningHubRegion();
     const aiOptimizeAppId = modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "";
+    const generativeFillAppId = modules.runtime.getById("settingsGenerativeFillAppIdInput")?.value || "";
     return modules.state.normalizeSettings({
       ...modules.state.state.settings,
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
@@ -659,6 +671,11 @@
       aiOptimizeAppIds: {
         ...(modules.state.state.settings.aiOptimizeAppIds || {}),
         [runningHubRegion]: aiOptimizeAppId
+      },
+      generativeFillAppId,
+      generativeFillAppIds: {
+        ...(modules.state.state.settings.generativeFillAppIds || {}),
+        [runningHubRegion]: generativeFillAppId
       },
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
@@ -678,6 +695,8 @@
         localQueueEnabled: nextSettings.localQueueEnabled,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
         aiOptimizeAppIds: nextSettings.aiOptimizeAppIds,
+        generativeFillAppId: nextSettings.generativeFillAppId,
+        generativeFillAppIds: nextSettings.generativeFillAppIds,
         appPickerLayout: nextSettings.appPickerLayout,
         plusModeEnabled: nextSettings.plusModeEnabled,
         runningHubRegion: nextSettings.runningHubRegion,
@@ -761,6 +780,8 @@
       localQueueEnabled: rawSettings ? rawSettings.localQueueEnabled : undefined,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
       aiOptimizeAppIds: rawSettings && rawSettings.aiOptimizeAppIds,
+      generativeFillAppId: rawSettings && rawSettings.generativeFillAppId,
+      generativeFillAppIds: rawSettings && rawSettings.generativeFillAppIds,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
@@ -881,6 +902,7 @@
     const apiProfileList = runtime.getById("apiProfileList");
     const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
+    const resetGenerativeFillButton = runtime.getById("btnResetGenerativeFillAppId");
     const parseAppButton = runtime.getById("btnParseApp");
     const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
     const deleteEditingAppButton = runtime.getById("btnDeleteEditingApp");
@@ -909,6 +931,7 @@
       "settingsMaxConcurrentTasksInput",
       "settingsLocalQueueEnabledInput",
       "settingsAiOptimizeAppIdInput",
+      "settingsGenerativeFillAppIdInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ];
@@ -1245,6 +1268,14 @@
         const input = runtime.getById("settingsAiOptimizeAppIdInput");
         if (input) input.value = modules.state.getDefaultAiOptimizeAppId(getCurrentRunningHubRegion());
         scheduleAdvancedSettingsSave("settingsAiOptimizeAppIdInput", { immediate: true });
+      });
+    }
+
+    if (resetGenerativeFillButton) {
+      resetGenerativeFillButton.addEventListener("click", async () => {
+        const input = runtime.getById("settingsGenerativeFillAppIdInput");
+        if (input) input.value = modules.state.getDefaultGenerativeFillAppId(getCurrentRunningHubRegion());
+        scheduleAdvancedSettingsSave("settingsGenerativeFillAppIdInput", { immediate: true });
       });
     }
 

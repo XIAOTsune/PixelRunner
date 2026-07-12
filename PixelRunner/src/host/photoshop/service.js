@@ -508,6 +508,18 @@ function clampBoundsToDocument(bounds, docInfo) {
   return { left, top, right, bottom };
 }
 
+function expandBoundsWithinDocument(bounds, padding, docInfo) {
+  const source = clampBoundsToDocument(bounds, docInfo);
+  const amount = Math.max(0, Math.min(4096, Math.floor(Number(padding) || 0)));
+  if (!amount) return source;
+  return clampBoundsToDocument({
+    left: source.left - amount,
+    top: source.top - amount,
+    right: source.right + amount,
+    bottom: source.bottom + amount
+  }, docInfo);
+}
+
 function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension) {
   const width = Math.max(1, Number(sourceWidth) || 1);
   const height = Math.max(1, Number(sourceHeight) || 1);
@@ -526,6 +538,67 @@ async function getPixelsWithFallback(imaging, options) {
     const fallbackOptions = { ...options };
     delete fallbackOptions.componentSize;
     return imaging.getPixels(fallbackOptions);
+  }
+}
+
+async function selectCompositeChannel(action) {
+  try {
+    await action.batchPlay([{
+      _obj: "select",
+      _target: [{ _ref: "channel", _enum: "channel", _value: "RGB" }],
+      makeVisible: false,
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+  } catch (_) {}
+}
+
+async function deleteChannelByName(action, channelName) {
+  try {
+    await action.batchPlay([{
+      _obj: "delete",
+      _target: [{ _ref: "channel", _name: channelName }],
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+  } catch (_) {}
+}
+
+async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, targetSize) {
+  const channelName = `PixelRunner GF Mask ${Date.now()}`;
+  let pixels = null;
+  try {
+    await action.batchPlay([{
+      _obj: "duplicate",
+      _target: [{ _ref: "channel", _property: "selection" }],
+      name: channelName,
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    await action.batchPlay([{
+      _obj: "select",
+      _target: [{ _ref: "channel", _name: channelName }],
+      makeVisible: false,
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+
+    pixels = await getPixelsWithFallback(imaging, {
+      documentID: Number(doc.id),
+      sourceBounds,
+      targetSize,
+      componentSize: 8,
+      applyAlpha: false
+    });
+    const encoded = await imaging.encodeImageData({
+      imageData: pixels.imageData,
+      base64: true,
+      format: "png"
+    });
+    const base64 = extractEncodedBase64(encoded);
+    return base64 ? buildDataUrl("image/png", base64) : "";
+  } finally {
+    try {
+      pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
+    } catch (_) {}
+    await deleteChannelByName(action, channelName);
+    await selectCompositeChannel(action);
   }
 }
 
@@ -689,6 +762,11 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
       await tempDoc.crop(cropBounds);
     }
 
+    const forceMaxDimension = compressionOptions.forceMaxDimension === true;
+    if (forceMaxDimension) {
+      await resizeDocumentToLongEdge(action, tempDoc, maxDimension);
+    }
+
     const originalCandidate = await exportCompressedJpegCandidate(
       storage,
       action,
@@ -700,7 +778,7 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     attempts = originalCandidate.attempts;
     uploadResult = originalCandidate.acceptedResult;
 
-    if (!uploadResult) {
+    if (!uploadResult && !forceMaxDimension) {
       await resizeDocumentToLongEdge(action, tempDoc, maxDimension);
       const resizedCandidate = await exportCompressedJpegCandidate(
         storage,
@@ -804,6 +882,49 @@ async function applyLayerMaskFromSelection(action) {
     new: { _class: "channel" },
     at: { _ref: "channel", _enum: "channel", _value: "mask" },
     using: { _enum: "userMaskEnabled", _value: "revealSelection" }
+  }], {});
+}
+
+async function selectLayerById(action, layerId) {
+  const id = Number(layerId);
+  if (!(id > 0)) throw new Error("Placed layer is unavailable");
+  await action.batchPlay([{
+    _obj: "select",
+    _target: [{ _ref: "layer", _id: id }],
+    makeVisible: false,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
+async function deleteLayerById(action, layerId) {
+  const id = Number(layerId);
+  if (!(id > 0)) return;
+  await action.batchPlay([{
+    _obj: "delete",
+    _target: [{ _ref: "layer", _id: id }],
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
+async function loadSelectionFromActiveLayerTransparency(action) {
+  await action.batchPlay([{
+    _obj: "set",
+    _target: [{ _ref: "channel", _property: "selection" }],
+    to: { _ref: "channel", _enum: "channel", _value: "transparencyEnum" },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
+async function placeSessionToken(action, sessionToken) {
+  await action.batchPlay([{
+    _obj: "placeEvent",
+    null: { _path: sessionToken, _kind: "local" },
+    freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
+    offset: {
+      _obj: "offset",
+      horizontal: { _unit: "pixelsUnit", _value: 0 },
+      vertical: { _unit: "pixelsUnit", _value: 0 }
+    }
   }], {});
 }
 
@@ -958,6 +1079,7 @@ export async function captureDocumentPreview(options = {}) {
   const app = photoshop.app;
   const imaging = photoshop.imaging;
   const core = photoshop.core;
+  const action = photoshop.action;
   const doc = app && app.activeDocument;
   if (!doc) throw new Error("No active Photoshop document");
 
@@ -971,12 +1093,30 @@ export async function captureDocumentPreview(options = {}) {
   const ignoreSelection = options.ignoreSelection === true || options.captureFullDocument === true;
   const rawSelectionBounds = ignoreSelection ? null : normalizeBounds(docInfo.selectionBounds);
   const selectionBounds = rawSelectionBounds ? clampBoundsToDocument(rawSelectionBounds, docInfo) : null;
-  const captureBounds = clampBoundsToDocument(selectionBounds, docInfo);
+  const selectionPadding = selectionBounds ? Math.max(0, Math.min(4096, Math.floor(Number(options.selectionPadding) || 0))) : 0;
+  const contextBounds = selectionBounds
+    ? expandBoundsWithinDocument(selectionBounds, selectionPadding, docInfo)
+    : clampBoundsToDocument(null, docInfo);
+  const captureBounds = contextBounds;
   const sourceWidth = Math.max(1, Number(captureBounds.right) - Number(captureBounds.left));
   const sourceHeight = Math.max(1, Number(captureBounds.bottom) - Number(captureBounds.top));
   const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension);
   return core.executeAsModal(async () => {
-    const uploadAsset = await buildCompressedUploadAsset(doc, docInfo, selectionBounds, options, deps);
+    const uploadAsset = await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
+    let selectionMaskDataUrl = "";
+    let selectionMaskShape = "none";
+    if (selectionBounds && options.captureSelectionMask === true && action) {
+      try {
+        selectionMaskDataUrl = await captureSelectionMaskDataUrl(action, imaging, doc, captureBounds, {
+          width: Math.max(1, Number(uploadAsset.width) || targetSize.width),
+          height: Math.max(1, Number(uploadAsset.height) || targetSize.height)
+        });
+        if (selectionMaskDataUrl) selectionMaskShape = "selection-channel";
+      } catch (error) {
+        console.warn("[PixelRunner/Photoshop] selection mask capture unavailable", error);
+        selectionMaskShape = "unavailable";
+      }
+    }
 
     let pixels = null;
     try {
@@ -1006,6 +1146,10 @@ export async function captureDocumentPreview(options = {}) {
         document: docInfo,
         documentId: docInfo.documentId,
         selectionBounds,
+        contextBounds,
+        selectionPadding,
+        selectionMaskDataUrl,
+        selectionMaskShape,
         capturedFromSelection: Boolean(selectionBounds),
         width: targetSize.width,
         height: targetSize.height,
@@ -1108,8 +1252,21 @@ export async function placeImageFromUrl(payload) {
   const tempFile = await tempFolder.createFile("pixelrunner-result.png", { overwrite: true });
   await tempFile.write(placementBuffer, { format: formats.binary });
   const sessionToken = await fs.createSessionToken(tempFile);
+  const placementMaskDataUrl = String(options.placementMaskDataUrl || "").trim();
+  let placementMaskSessionToken = "";
+  let placementMaskInfo = null;
+  if (placementMaskDataUrl) {
+    const parsedMask = parseDataUrl(placementMaskDataUrl);
+    if (!parsedMask || !parsedMask.base64) throw new Error("Placement mask is not a valid base64 image");
+    const maskBuffer = base64ToArrayBuffer(parsedMask.base64);
+    placementMaskInfo = await parsePngInfo(maskBuffer);
+    const maskFile = await tempFolder.createFile("pixelrunner-result-mask.png", { overwrite: true });
+    await maskFile.write(maskBuffer, { format: formats.binary });
+    placementMaskSessionToken = await fs.createSessionToken(maskFile);
+  }
   const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
   const targetBounds = normalizeBounds(options.targetBounds);
+  const maskFallbackBounds = normalizeBounds(options.maskFallbackBounds);
   const normalizedMode = String(options.fitMode || "contain").trim().toLowerCase();
   let placementMode =
     normalizedMode === "cover"
@@ -1119,6 +1276,7 @@ export async function placeImageFromUrl(payload) {
         : normalizedMode === "original" || normalizedMode === "pixel-perfect"
           ? "original"
           : "contain";
+  let appliedMaskMode = "none";
 
   await core.executeAsModal(async () => {
     const activeTargetDocument = await activateDocument(app, action, targetDocumentId);
@@ -1143,7 +1301,7 @@ export async function placeImageFromUrl(payload) {
       }
     }
     const isFullBoundsTarget = isFullDocumentBounds(effectiveTargetBounds, targetDocInfo);
-    const applyMask = options.applyMask !== false && !isFullBoundsTarget;
+    const applyMask = options.applyMask !== false && (!isFullBoundsTarget || Boolean(placementMaskSessionToken));
     if (preserveCanvasBounds) {
       placementMode = normalizedMode === "stretch"
         ? "stretch"
@@ -1159,24 +1317,53 @@ export async function placeImageFromUrl(payload) {
     } else if (isTransparentPngResult && isFullBoundsTarget && normalizedMode === "stretch") {
       placementMode = "original";
     }
-    await action.batchPlay([{
-      _obj: "placeEvent",
-      null: { _path: sessionToken, _kind: "local" },
-      freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-      offset: {
-        _obj: "offset",
-        horizontal: { _unit: "pixelsUnit", _value: 0 },
-        vertical: { _unit: "pixelsUnit", _value: 0 }
-      }
-    }], {});
+    await placeSessionToken(action, sessionToken);
 
     if (effectiveTargetBounds) {
       await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, effectiveTargetBounds, {
         mode: placementMode,
         imageSize: pngInfo,
-        applyMask,
+        applyMask: applyMask && !placementMaskSessionToken,
         preferTransformBounds: isTransparentPngResult
       });
+      if (applyMask && !placementMaskSessionToken) appliedMaskMode = "bounds";
+    }
+
+    const resultLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    const resultLayerId = Number(resultLayer && resultLayer.id) || 0;
+    if (applyMask && placementMaskSessionToken && resultLayerId > 0 && effectiveTargetBounds) {
+      let maskLayerId = 0;
+      try {
+        await placeSessionToken(action, placementMaskSessionToken);
+        const maskLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+        maskLayerId = Number(maskLayer && maskLayer.id) || 0;
+        await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, effectiveTargetBounds, {
+          mode: "stretch",
+          imageSize: placementMaskInfo,
+          applyMask: false,
+          preferTransformBounds: true
+        });
+        await loadSelectionFromActiveLayerTransparency(action);
+        await deleteLayerById(action, maskLayerId);
+        maskLayerId = 0;
+        await selectLayerById(action, resultLayerId);
+        await applyLayerMaskFromSelection(action);
+        appliedMaskMode = "selection-snapshot";
+      } catch (error) {
+        if (maskLayerId > 0) {
+          try {
+            await deleteLayerById(action, maskLayerId);
+          } catch (_) {}
+        }
+        await selectLayerById(action, resultLayerId);
+        if (maskFallbackBounds) {
+          await createSelectionFromBounds(activeTargetDocument || app.activeDocument, maskFallbackBounds);
+          await applyLayerMaskFromSelection(action);
+          appliedMaskMode = "bounds-fallback";
+        } else {
+          throw error;
+        }
+      }
     }
     await setActiveLayerStyle(action, {
       opacity: options.opacity,
@@ -1197,6 +1384,7 @@ export async function placeImageFromUrl(payload) {
     document: latestInfo,
     targetBounds,
     placementMode,
+    appliedMaskMode,
     resultImage: sanitizePngInfo(pngInfo)
   };
 }

@@ -96,9 +96,17 @@
   function getThirdPartyPickerButton() {
     if (!isThirdPartyEnabled()) return "";
     const state = modules.state.state;
-    const isActive = modules.state.isThirdPartyApp(state.currentApp);
+    const isActive = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
     const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
     return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS 生图快捷入口</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
+  }
+
+  function getGenerativeFillPickerButton() {
+    const state = modules.state.state;
+    const appId = String(state.settings && state.settings.generativeFillAppId || "").trim();
+    const isActive = state.workspaceMode === "generative-fill";
+    const meta = appId ? `上下文 ${modules.state.state.generativeFill.contextExpansion || 128}px` : "请先配置应用 ID";
+    return `<button class="picker-item picker-item-special app-picker-special-card generative-fill-picker-item ${isActive ? "active" : ""} ${appId ? "" : "is-unavailable"}" type="button" data-action="select-generative-fill" title="${appId ? "进入创成式填充模式" : "请在高级设置中配置创成式填充应用 ID"}"><span class="picker-item-title">创成式填充</span><span class="picker-item-meta"><span>原生紧凑操作栏</span><span>${modules.runtime.escapeHtml(meta)}</span></span></button>`;
   }
 
   function getAppPreviewImage(app) {
@@ -418,18 +426,20 @@
     if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${regionApps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
     const quickEntryButton = `<button class="picker-item picker-item-special app-picker-special-card ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>框选后点击即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
     const thirdPartyButton = getThirdPartyPickerButton();
+    const generativeFillButton = getGenerativeFillPickerButton();
+    const specialApps = `<div class="app-picker-special-grid" aria-label="特殊应用">${quickEntryButton}${generativeFillButton}${thirdPartyButton}</div>`;
 
     if (visibleApps.length === 0) {
       listEl.innerHTML =
         regionApps.length === 0
-          ? `${quickEntryButton}${thirdPartyButton}<div class="picker-empty"><strong>还没有已保存应用</strong><p>点击上方“添加应用”创建一个。</p></div>`
-          : `${quickEntryButton}${thirdPartyButton}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
+          ? `${specialApps}<div class="picker-empty"><strong>还没有已保存应用</strong><p>点击上方“添加应用”创建一个。</p></div>`
+          : `${specialApps}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
       return;
     }
 
-    listEl.innerHTML = quickEntryButton + thirdPartyButton + visibleApps
+    listEl.innerHTML = specialApps + visibleApps
       .map((app) => {
-        const isActive = state.currentApp && String(state.currentApp.id) === String(app.id);
+        const isActive = state.workspaceMode === "app" && state.currentApp && String(state.currentApp.id) === String(app.id);
         return `<article class="picker-item app-picker-card app-picker-tile is-draggable ${isActive ? "active" : ""}" draggable="true" data-app-id="${runtime.escapeHtml(String(app.id || ""))}"><button class="app-picker-card-main" type="button" value="${runtime.escapeHtml(String(app.id || ""))}" data-action="select-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}">${renderAppThumb(app)}<span class="picker-item-title">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</span><span class="picker-item-meta">${runtime.escapeHtml(modules.state.getAppDisplayId(app))}</span></button><div class="app-picker-card-actions"><button class="mini-btn app-picker-icon-btn" type="button" data-action="edit-picker-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}" title="编辑应用" aria-label="编辑应用">✎</button><button class="mini-btn app-picker-icon-btn" type="button" data-action="delete-picker-app" data-app-id="${runtime.escapeHtml(String(app.id || ""))}" title="删除应用" aria-label="删除应用">⌫</button></div></article>`;
       })
       .join("");
@@ -514,6 +524,11 @@
 
   async function setCurrentAppById(appId, options = {}) {
     const state = modules.state.state;
+    if (String(appId || "") === modules.state.GENERATIVE_FILL_APP_ID) {
+      return modules.generativeFill && typeof modules.generativeFill.enterMode === "function"
+        ? modules.generativeFill.enterMode(options)
+        : false;
+    }
     if (String(appId || "") === modules.state.THIRD_PARTY_APP_ID) {
       return setCurrentThirdPartyApp(options);
     }
@@ -817,6 +832,16 @@
         renderAppPickerList();
         closePickerModal();
         modules.ui.logToWorkspace("已切换到快捷入口模式。", "info");
+        return;
+      }
+
+      if (item.getAttribute("data-action") === "select-generative-fill") {
+        if (!modules.generativeFill || typeof modules.generativeFill.enterMode !== "function") return;
+        const entered = await modules.generativeFill.enterMode();
+        if (entered) {
+          renderAppPickerList();
+          closePickerModal();
+        }
         return;
       }
 
