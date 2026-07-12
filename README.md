@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-2.4.5-2f855a">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.7.0-2f855a">
   <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff">
   <img alt="UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6">
   <img alt="RunningHub" src="https://img.shields.io/badge/RunningHub-ready-111827">
