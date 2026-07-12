@@ -1,4 +1,6 @@
-const API_BASE_URL = "https://www.runninghub.cn";
+import { getRunningHubRegionConfig, resolveRunningHubRegion } from "./runninghub-region.js";
+
+const DEFAULT_API_BASE_URL = "https://www.runninghub.cn";
 const PARSE_ENDPOINT = "/api/webapp/apiCallDemo";
 const PARSE_FALLBACKS = ["/uc/openapi/app", "/uc/openapi/community/app", "/uc/openapi/workflow"];
 const APP_META_FALLBACKS = [
@@ -16,7 +18,7 @@ const PARSE_DEBUG_STORAGE_KEY = "rh_last_parse_debug";
 function normalizeAppId(rawValue) {
   const value = String(rawValue || "").trim();
   if (!value) return "";
-  if (!/[/?#]/.test(value) && !value.includes("runninghub.cn")) return value;
+  if (!/[/?#]/.test(value) && !/runninghub\.(?:cn|ai)/i.test(value)) return value;
 
   let decoded = value;
   try {
@@ -104,8 +106,8 @@ function persistParseDebug(record) {
   } catch (_) {}
 }
 
-function buildParseUrl(pathname, queryParams) {
-  const url = new URL(`${API_BASE_URL}${pathname}`);
+function buildParseUrl(pathname, queryParams, apiBaseUrl = DEFAULT_API_BASE_URL) {
+  const url = new URL(`${apiBaseUrl}${pathname}`);
   Object.entries(queryParams || {}).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
     url.searchParams.set(key, value);
@@ -679,7 +681,7 @@ function resolveBestAppName(data) {
   return candidates[0] && candidates[0].value ? candidates[0].value : "未命名应用";
 }
 
-function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set(), parentKey = "") {
+function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set(), parentKey = "", apiBaseUrl = DEFAULT_API_BASE_URL) {
   if (depth > 8 || value === undefined || value === null) return bucket;
 
   if (typeof value === "string") {
@@ -689,7 +691,7 @@ function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set
     const looksLikeImageUrl = /^(https?:|data:image|plugin:|file:)/i.test(text) && /(\.(png|jpe?g|webp|gif|svg)(\?|#|$)|image|img|cover|thumb|preview|cdn|oss|cos|media|file)/i.test(text);
     const looksLikeImagePath = /^(\.{0,2}\/|\/|[a-z]:\\|[^<>:"|?*]+\.(png|jpe?g|webp|gif|svg)(\?|#|$))/i.test(text);
     let candidateValue = text;
-    if (/^\//.test(text)) candidateValue = `${API_BASE_URL}${text}`;
+    if (/^\//.test(text)) candidateValue = `${apiBaseUrl}${text}`;
     if (text && (looksLikeImageUrl || (looksLikeImageKey && looksLikeImagePath)) && !seen.has(candidateValue)) {
       seen.add(candidateValue);
       const weights = { thumbnail: 60, cover: 56, preview: 54, imageurl: 48, icon: 32 };
@@ -697,26 +699,26 @@ function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set
     }
 
     const parsed = parseJsonFromEscapedText(text);
-    if (parsed !== undefined) collectImageUrlCandidates(parsed, depth + 1, bucket, seen, "");
+    if (parsed !== undefined) collectImageUrlCandidates(parsed, depth + 1, bucket, seen, "", apiBaseUrl);
     return bucket;
   }
 
   if (Array.isArray(value)) {
-    value.slice(0, 30).forEach((item) => collectImageUrlCandidates(item, depth + 1, bucket, seen, parentKey));
+    value.slice(0, 30).forEach((item) => collectImageUrlCandidates(item, depth + 1, bucket, seen, parentKey, apiBaseUrl));
     return bucket;
   }
 
   if (typeof value !== "object") return bucket;
 
   ["thumbnail", "thumb", "preview", "previewImage", "previewUrl", "cover", "coverUrl", "image", "imageUrl", "icon", "avatar", "poster", "banner"].forEach((key) => {
-    if (value[key] !== undefined) collectImageUrlCandidates(value[key], depth, bucket, seen, key);
+    if (value[key] !== undefined) collectImageUrlCandidates(value[key], depth, bucket, seen, key, apiBaseUrl);
   });
-  Object.entries(value).forEach(([key, child]) => collectImageUrlCandidates(child, depth + 1, bucket, seen, key));
+  Object.entries(value).forEach(([key, child]) => collectImageUrlCandidates(child, depth + 1, bucket, seen, key, apiBaseUrl));
   return bucket;
 }
 
-function resolveBestPreviewImage(data) {
-  const candidates = collectImageUrlCandidates(data, 0, [], new Set(), "");
+function resolveBestPreviewImage(data, apiBaseUrl = DEFAULT_API_BASE_URL) {
+  const candidates = collectImageUrlCandidates(data, 0, [], new Set(), "", apiBaseUrl);
   candidates.sort((a, b) => (b.score || 0) - (a.score || 0));
   return candidates[0] && candidates[0].value ? candidates[0].value : "";
 }
@@ -736,12 +738,12 @@ function mergeParsedAppMeta(base, meta) {
   return next;
 }
 
-function buildAppMetaFromResult(result) {
+function buildAppMetaFromResult(result, apiBaseUrl = DEFAULT_API_BASE_URL) {
   if (!result || typeof result !== "object") return { name: "", description: "", previewImage: "" };
   return {
     name: resolveBestAppName(result),
     description: String(result.description || result.desc || result.summary || "").trim(),
-    previewImage: resolveBestPreviewImage(result)
+    previewImage: resolveBestPreviewImage(result, apiBaseUrl)
   };
 }
 
@@ -777,10 +779,10 @@ function findCurlDemoText(data, depth = 0) {
   return "";
 }
 
-function extractAppInfoPayload(data) {
+function extractAppInfoPayload(data, apiBaseUrl = DEFAULT_API_BASE_URL) {
   if (typeof data === "string") {
     const parsedString = parseJsonFromEscapedText(data);
-    if (parsedString && typeof parsedString === "object") return extractAppInfoPayload(parsedString);
+    if (parsedString && typeof parsedString === "object") return extractAppInfoPayload(parsedString, apiBaseUrl);
   }
 
   if (!data || typeof data !== "object") {
@@ -855,7 +857,7 @@ function extractAppInfoPayload(data) {
     payload: {
       name: resolveBestAppName(data),
       description: String(data.description || data.desc || data.summary || "").trim(),
-      previewImage: resolveBestPreviewImage(data),
+      previewImage: resolveBestPreviewImage(data, apiBaseUrl),
       inputs
     },
     debug: {
@@ -869,10 +871,10 @@ function extractAppInfoPayload(data) {
   };
 }
 
-function pickBestParsedPayload(candidates) {
+function pickBestParsedPayload(candidates, apiBaseUrl = DEFAULT_API_BASE_URL) {
   let best = null;
   (candidates || []).forEach((source) => {
-    const parsed = extractAppInfoPayload(source);
+    const parsed = extractAppInfoPayload(source, apiBaseUrl);
     const payload = parsed && parsed.payload ? parsed.payload : { name: "未命名应用", description: "", inputs: [] };
     const inputs = Array.isArray(payload.inputs) ? payload.inputs : [];
     const score = inputs.length;
@@ -886,7 +888,7 @@ function pickBestParsedPayload(candidates) {
   return best;
 }
 
-function buildFallbackUrls(endpoint, normalizedId) {
+function buildFallbackUrls(endpoint, normalizedId, apiBaseUrl = DEFAULT_API_BASE_URL) {
   const urls = [];
   const seen = new Set();
   const push = (url) => {
@@ -895,15 +897,15 @@ function buildFallbackUrls(endpoint, normalizedId) {
     urls.push(url);
   };
 
-  push(`${API_BASE_URL}${endpoint}/${encodeURIComponent(normalizedId)}`);
-  push(buildParseUrl(endpoint, { webappId: normalizedId }));
-  push(buildParseUrl(endpoint, { webAppId: normalizedId }));
-  push(buildParseUrl(endpoint, { appId: normalizedId }));
-  push(buildParseUrl(endpoint, { id: normalizedId }));
+  push(`${apiBaseUrl}${endpoint}/${encodeURIComponent(normalizedId)}`);
+  push(buildParseUrl(endpoint, { webappId: normalizedId }, apiBaseUrl));
+  push(buildParseUrl(endpoint, { webAppId: normalizedId }, apiBaseUrl));
+  push(buildParseUrl(endpoint, { appId: normalizedId }, apiBaseUrl));
+  push(buildParseUrl(endpoint, { id: normalizedId }, apiBaseUrl));
   return urls;
 }
 
-async function fetchRunningHubAppMeta(apiKey, normalizedId) {
+async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT_API_BASE_URL) {
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json"
@@ -927,20 +929,20 @@ async function fetchRunningHubAppMeta(apiKey, normalizedId) {
   for (const endpoint of APP_META_FALLBACKS) {
     for (const query of queryVariants) {
       try {
-        const { result } = await fetchJson(buildParseUrl(endpoint, query), { method: "GET", headers });
-        const meta = buildAppMetaFromResult(result);
+        const { result } = await fetchJson(buildParseUrl(endpoint, query, apiBaseUrl), { method: "GET", headers });
+        const meta = buildAppMetaFromResult(result, apiBaseUrl);
         if (meta.previewImage) return meta;
       } catch (_) {}
     }
 
     for (const body of postVariants) {
       try {
-        const { result } = await fetchJson(`${API_BASE_URL}${endpoint}`, {
+        const { result } = await fetchJson(`${apiBaseUrl}${endpoint}`, {
           method: "POST",
           headers,
           body: JSON.stringify(body)
         });
-        const meta = buildAppMetaFromResult(result);
+        const meta = buildAppMetaFromResult(result, apiBaseUrl);
         if (meta.previewImage) return meta;
       } catch (_) {}
     }
@@ -982,14 +984,17 @@ function resolveMessage(result, fallback) {
 export async function fetchRunningHubAppPreview(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
+  const region = resolveRunningHubRegion(payload);
+  const { baseUrl } = getRunningHubRegionConfig(region);
   const normalizedId = normalizeAppId(payload.appId);
 
   if (!normalizedId) throw new Error("请先输入有效的应用 ID 或 URL");
   if (!apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
 
-  const meta = await fetchRunningHubAppMeta(apiKey, normalizedId);
+  const meta = await fetchRunningHubAppMeta(apiKey, normalizedId, baseUrl);
   return {
     ok: Boolean(meta && meta.previewImage),
+    region,
     appId: normalizedId,
     name: (meta && meta.name) || "",
     description: (meta && meta.description) || "",
@@ -1000,6 +1005,8 @@ export async function fetchRunningHubAppPreview(args = []) {
 export async function parseRunningHubApp(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
+  const region = resolveRunningHubRegion(payload);
+  const { baseUrl } = getRunningHubRegionConfig(region);
   const preferredName = String(payload.preferredName || "").trim();
   const normalizedId = normalizeAppId(payload.appId);
 
@@ -1015,7 +1022,7 @@ export async function parseRunningHubApp(args = []) {
 
   const reasons = [];
   let lastDebugRecord = null;
-  const appMetaPromise = fetchRunningHubAppMeta(apiKey, normalizedId).catch(() => ({ name: "", description: "", previewImage: "" }));
+  const appMetaPromise = fetchRunningHubAppMeta(apiKey, normalizedId, baseUrl).catch(() => ({ name: "", description: "", previewImage: "" }));
 
   const buildReturnPayload = async (parsed) => {
     const meta = await appMetaPromise;
@@ -1023,6 +1030,7 @@ export async function parseRunningHubApp(args = []) {
     return {
       ok: true,
       appId: normalizedId,
+      region,
       name: preferredName || merged.name || "未命名应用",
       description: merged.description || "",
       previewImage: merged.previewImage || "",
@@ -1033,7 +1041,7 @@ export async function parseRunningHubApp(args = []) {
 
   const tryHandleResult = (endpoint, result) => {
     const candidates = collectSourceCandidatesFromValue(result, 0, [], new Set());
-    const best = pickBestParsedPayload(candidates);
+    const best = pickBestParsedPayload(candidates, baseUrl);
     if (!best) return null;
 
     const nextPayload = {
@@ -1064,7 +1072,7 @@ export async function parseRunningHubApp(args = []) {
 
   for (const query of getVariants) {
     try {
-      const { ok, status, result } = await fetchJson(buildParseUrl(PARSE_ENDPOINT, query), { method: "GET", headers });
+      const { ok, status, result } = await fetchJson(buildParseUrl(PARSE_ENDPOINT, query, baseUrl), { method: "GET", headers });
       const parsed = tryHandleResult(PARSE_ENDPOINT, result);
       if (parsed) {
         return buildReturnPayload(parsed);
@@ -1089,7 +1097,7 @@ export async function parseRunningHubApp(args = []) {
 
   for (const body of postVariants) {
     try {
-      const { status, result } = await fetchJson(`${API_BASE_URL}${PARSE_ENDPOINT}`, {
+      const { status, result } = await fetchJson(`${baseUrl}${PARSE_ENDPOINT}`, {
         method: "POST",
         headers,
         body: JSON.stringify(body)
@@ -1105,7 +1113,7 @@ export async function parseRunningHubApp(args = []) {
   }
 
   for (const endpoint of PARSE_FALLBACKS) {
-    for (const url of buildFallbackUrls(endpoint, normalizedId)) {
+    for (const url of buildFallbackUrls(endpoint, normalizedId, baseUrl)) {
       try {
         const { ok, status, result } = await fetchJson(url, { method: "GET", headers });
         const parsed = tryHandleResult(endpoint, result);

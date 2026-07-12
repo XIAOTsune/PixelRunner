@@ -3,7 +3,10 @@
   const DONATION_LINKS = {
     wx: "wxp://f2f0xp-V9KpvqacwxxGZ3zXDCGI_z11NO-xT2ukCb4JHZyI",
     zfb: "https://qr.alipay.com/fkx12142r0sdwj4kizujk2f",
-    runninghub: "https://www.runninghub.cn",
+    runninghub: {
+      cn: "https://www.runninghub.cn",
+      global: "https://www.runninghub.ai"
+    },
     tutorial: "./pages/runninghub-guide.html"
   };
   const GLOW_DEFAULTS = {
@@ -223,7 +226,12 @@
 
     if (btnOpenRunningHubSite) {
       btnOpenRunningHubSite.addEventListener("click", () => {
-        void openExternalLink(DONATION_LINKS.runninghub, "RunningHub", "将使用系统默认浏览器打开 RunningHub 官网。");
+        const region = modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
+        void openExternalLink(
+          DONATION_LINKS.runninghub[region] || DONATION_LINKS.runninghub.cn,
+          "RunningHub",
+          "将使用系统默认浏览器打开当前区域的 RunningHub 官网。"
+        );
       });
     }
 

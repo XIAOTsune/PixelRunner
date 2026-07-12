@@ -5,7 +5,10 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
-  const RUNNINGHUB_TASK_DETAIL_URL = "https://www.runninghub.cn/bill-task";
+  const RUNNINGHUB_TASK_DETAIL_URLS = {
+    cn: "https://www.runninghub.cn/bill-task",
+    global: "https://www.runninghub.ai/bill-task"
+  };
   const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   const MODAL_CLOSE_ANIMATION_MS = 180;
   let runButtonCooldownUntil = 0;
@@ -709,7 +712,9 @@
     if (!task || typeof task !== "object") return "";
     const explicitUrl = String(task.detailUrl || task.taskDetailUrl || task.recordUrl || "").trim();
     if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
-    return isThirdPartyTaskRecord(task) ? GRS_CONSUMPTION_LOG_URL : RUNNINGHUB_TASK_DETAIL_URL;
+    if (isThirdPartyTaskRecord(task)) return GRS_CONSUMPTION_LOG_URL;
+    const region = modules.state.normalizeRunningHubRegion(task.region);
+    return RUNNINGHUB_TASK_DETAIL_URLS[region] || RUNNINGHUB_TASK_DETAIL_URLS.cn;
   }
 
   function canOpenTaskAction(task) {
@@ -1129,7 +1134,7 @@
     }
     return {
       method: "runninghub.fetchTaskStatus",
-      args: [{ apiKey: payload.apiKey, taskId: remoteTaskId, timeoutMs: 30000 }]
+      args: [{ apiKey: payload.apiKey, taskId: remoteTaskId, region: payload.region, timeoutMs: 30000 }]
     };
   }
 
@@ -1655,11 +1660,13 @@
           }
         : null,
       apiKey: state.settings.apiKey || "",
+      region: state.settings.runningHubRegion,
       inputs: normalizePayloadInputs(state.currentApp, state.formValues),
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
-        maxConcurrentTasks: state.settings.maxConcurrentTasks
+        maxConcurrentTasks: state.settings.maxConcurrentTasks,
+        runningHubRegion: state.settings.runningHubRegion
       }
     };
     if (instanceType) payload.instanceType = instanceType;
@@ -1725,6 +1732,8 @@
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
+      region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
+      apiKey: hasOwn("apiKey") ? String(patch.apiKey || "").trim() : "",
       queueMode: String(patch.queueMode || "").trim(),
       appName: String(patch.appName || "").trim(),
       status: hasOwn("status") ? String(patch.status || "running").trim() || "running" : undefined,
@@ -1757,6 +1766,8 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        region: nextTask.region || current.region || "cn",
+        apiKey: nextTask.apiKey || current.apiKey || "",
         queueMode: nextTask.queueMode || current.queueMode || "",
         appName: nextTask.appName || current.appName || "",
         status: nextTask.status || current.status || "running",
@@ -2298,11 +2309,13 @@
         inputs: Array.isArray(app.inputs) ? app.inputs : []
       },
       apiKey: modules.state.state.settings.apiKey || "",
+      region: modules.state.state.settings.runningHubRegion,
       inputs: normalizePayloadInputs(app, values),
       settings: {
         pollInterval: modules.state.state.settings.pollInterval,
         timeout: modules.state.state.settings.timeout,
-        maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
+        maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
+        runningHubRegion: modules.state.state.settings.runningHubRegion
       }
     };
     modules.state.state.lastRunPayload = payload;
@@ -2327,6 +2340,9 @@
     const app = findQuickEntryApp(entry);
     if (!app) throw new Error(`快捷入口引用的应用不存在：${entry.appRef && entry.appRef.appName ? entry.appRef.appName : entry.title}`);
     if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法运行快捷入口");
+    if (modules.state.normalizeRunningHubRegion(app.region) !== modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion)) {
+      throw new Error("该快捷入口属于另一个 RunningHub 区域，请先在设置页切换服务区域");
+    }
     if (!modules.state.state.settings.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
     if (!modules.state.resolveAppId(app)) throw new Error("快捷入口引用的应用缺少有效的 appId，请重新保存应用后再创建快捷入口");
     if (!canAcceptQueuedSubmission()) {
@@ -2606,6 +2622,8 @@
       taskId: localTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      region: payload.region,
+      apiKey: payload.apiKey,
       queueMode: "local",
       appName: payload.appName,
       status: "queued",
@@ -2657,9 +2675,20 @@
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
     let submissionAccountSnapshot = getCurrentAccountSnapshot();
-    if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
+    const payloadMatchesCurrentRunningHubAccount =
+      modules.state.normalizeRunningHubRegion(payload && payload.region) ===
+        modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion) &&
+      String((payload && payload.apiKey) || "") === String(modules.state.state.settings.apiKey || "");
+    if (!isThirdPartyTask && !payloadMatchesCurrentRunningHubAccount) {
+      submissionAccountSnapshot = { balance: null, coins: null, updatedAt: 0 };
+    } else if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
       try {
-        const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
+        const account = await modules.settings.refreshAccountSummary({
+          apiKey: payload.apiKey,
+          region: payload.region,
+          quiet: true,
+          force: true
+        });
         submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
       } catch (_) {
         submissionAccountSnapshot = getCurrentAccountSnapshot();
@@ -2669,6 +2698,8 @@
       taskId: tempTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      region: payload.region,
+      apiKey: payload.apiKey,
       queueMode: "",
       appName: payload.appName,
       status: "submitting",
@@ -2715,7 +2746,7 @@
 
       const pollResult = await modules.runtime.callHost(
         pollMethod,
-        [isThirdPartyTask ? { ...payload, taskId: remoteTaskId } : { apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
+        [isThirdPartyTask ? { ...payload, taskId: remoteTaskId } : { apiKey: payload.apiKey, taskId: remoteTaskId, region: payload.region, settings: payload.settings }],
         { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
       );
 
@@ -3266,7 +3297,11 @@
         const cancelMethod = isThirdPartyTask ? "thirdParty.grs.cancelTask" : "runninghub.cancelTask";
         const cancelPayload = isThirdPartyTask
           ? { apiKey: grs.apiKey, apiUrl: grs.apiUrl, taskId: remoteTaskId }
-          : { apiKey: modules.state.state.settings.apiKey, taskId: remoteTaskId };
+          : {
+              apiKey: String((currentTask && currentTask.apiKey) || modules.state.state.settings.apiKey || ""),
+              taskId: remoteTaskId,
+              region: (currentTask && currentTask.region) || modules.state.state.settings.runningHubRegion
+            };
         target.disabled = true;
         try {
           stopTaskStatusTracking(remoteTaskId);

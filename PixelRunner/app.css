@@ -4157,6 +4157,67 @@ button {
   gap: 5px;
 }
 
+.region-segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  width: 100%;
+  padding: 3px;
+  border: 1px solid var(--control-edge);
+  border-radius: 8px;
+  background: rgba(var(--surface-rgb), 0.42);
+}
+
+.region-segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.region-segmented-btn:hover,
+.region-segmented-btn:focus-visible {
+  color: var(--text-strong);
+  background: rgba(var(--surface-soft-rgb), 0.6);
+}
+
+.region-segmented-btn:focus-visible {
+  outline: 2px solid var(--cta-strong);
+  outline-offset: 1px;
+}
+
+.region-segmented-btn.is-active {
+  border-color: var(--accent-strong);
+  background: var(--accent-wash);
+  color: var(--text-strong);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.22);
+}
+
+.region-segmented-btn span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.region-segmented-btn small {
+  flex-shrink: 0;
+  color: inherit;
+  font-size: 9px;
+  opacity: 0.72;
+}
+
 .api-profile-chip {
   display: inline-flex;
   align-items: center;
