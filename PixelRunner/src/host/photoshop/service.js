@@ -12,6 +12,7 @@ import { runToolActionByName } from "./tool-actions.js";
 const DEFAULT_UPLOAD_TARGET_BYTES = 9_000_000;
 const DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 10_000_000;
 const DEFAULT_UPLOAD_QUALITY_STEPS = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+let captureDocumentPreviewInFlight = null;
 
 function getBoundsSize(bounds) {
   return {
@@ -589,7 +590,8 @@ async function createSelectionSnapshotChannel(action, documentId) {
 
 async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, targetSize, options = {}) {
   let pixels = null;
-  if (typeof imaging.getSelection === "function") {
+  let nativeSelectionError = null;
+  if (options.useSelectionChannel !== true && typeof imaging.getSelection === "function") {
     try {
       pixels = await getSelectionWithFallback(imaging, {
         documentID: Number(doc.id),
@@ -605,10 +607,14 @@ async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, t
       const base64 = extractEncodedBase64(encoded);
       if (!base64) throw new Error("Photoshop returned an empty selection mask");
       return buildDataUrl("image/png", base64);
+    } catch (error) {
+      nativeSelectionError = error;
+      console.warn("[PixelRunner/Photoshop] native selection mask capture unavailable, falling back to snapshot channel", error);
     } finally {
       try {
         pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
       } catch (_) {}
+      pixels = null;
     }
   }
 
@@ -649,7 +655,9 @@ async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, t
       format: "png"
     });
     const base64 = extractEncodedBase64(encoded);
-    return base64 ? buildDataUrl("image/png", base64) : "";
+    if (base64) return buildDataUrl("image/png", base64);
+    const nativeReason = nativeSelectionError && nativeSelectionError.message ? `；原生选区读取也失败：${nativeSelectionError.message}` : "";
+    throw new Error(`Photoshop 返回了空的选区蒙版${nativeReason}`);
   } finally {
     try {
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
@@ -896,6 +904,85 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     hasBase64: Boolean(asset.base64)
   });
   return asset;
+}
+
+function estimateBase64Bytes(base64) {
+  const text = String(base64 || "");
+  if (!text) return 0;
+  const padding = text.endsWith("==") ? 2 : text.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor(text.length * 3 / 4) - padding);
+}
+
+async function buildImagingUploadAsset(imaging, documentId, sourceBounds, targetSize, compressionOptions = {}) {
+  const targetBytes = Math.max(1, Math.floor(Number(compressionOptions.targetBytes) || DEFAULT_UPLOAD_TARGET_BYTES));
+  const hardLimitBytes = Math.max(targetBytes, Math.floor(Number(compressionOptions.hardLimitBytes) || DEFAULT_UPLOAD_HARD_LIMIT_BYTES));
+  const qualitySteps = Array.isArray(compressionOptions.qualitySteps) && compressionOptions.qualitySteps.length
+    ? compressionOptions.qualitySteps
+    : DEFAULT_UPLOAD_QUALITY_STEPS;
+  let pixels = null;
+  try {
+    pixels = await getPixelsWithFallback(imaging, {
+      documentID: Number(documentId),
+      sourceBounds,
+      targetSize,
+      componentSize: 8,
+      applyAlpha: true
+    });
+    if (!pixels || !pixels.imageData) throw new Error("Photoshop 未返回上下文像素数据");
+
+    const attempts = [];
+    let accepted = null;
+    let lastAttempt = null;
+    for (const rawQuality of qualitySteps) {
+      const quality = Math.max(1, Math.min(12, Math.floor(Number(rawQuality) || 8)));
+      const encoded = await imaging.encodeImageData({
+        imageData: pixels.imageData,
+        base64: true,
+        format: "jpeg",
+        quality
+      });
+      const base64 = extractEncodedBase64(encoded);
+      if (!base64) throw new Error("Photoshop 返回了空的上下文图像");
+      const attempt = {
+        quality,
+        bytes: estimateBase64Bytes(base64),
+        width: Math.max(1, Number(targetSize && targetSize.width) || 1),
+        height: Math.max(1, Number(targetSize && targetSize.height) || 1)
+      };
+      attempts.push(attempt);
+      lastAttempt = { ...attempt, base64 };
+      if (attempt.bytes <= targetBytes) {
+        accepted = lastAttempt;
+        break;
+      }
+    }
+
+    if (!accepted && lastAttempt && lastAttempt.bytes <= hardLimitBytes) accepted = lastAttempt;
+    if (!accepted) {
+      const error = new Error("上下文图像压缩后仍超过上传限制");
+      error.attempts = attempts;
+      error.targetBytes = targetBytes;
+      error.hardLimitBytes = hardLimitBytes;
+      throw error;
+    }
+
+    return {
+      mimeType: "image/jpeg",
+      base64: accepted.base64,
+      dataUrl: buildDataUrl("image/jpeg", accepted.base64),
+      bytes: accepted.bytes,
+      width: accepted.width,
+      height: accepted.height,
+      quality: accepted.quality,
+      targetBytes,
+      hardLimitBytes,
+      attempts
+    };
+  } finally {
+    try {
+      pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
+    } catch (_) {}
+  }
 }
 
 async function transformLayerScale(action, layerId, scaleXPercent, scaleYPercent) {
@@ -1183,7 +1270,7 @@ export async function deleteSelectionSnapshot(options = {}) {
   return { ok: true, deleted: true, documentId, channelName };
 }
 
-export async function captureDocumentPreview(options = {}) {
+async function captureDocumentPreviewInternal(options = {}) {
   console.log("[PixelRunner/Photoshop] captureDocumentPreview:start", options);
   const deps = await ensureDeps();
   const { photoshop } = deps;
@@ -1199,6 +1286,14 @@ export async function captureDocumentPreview(options = {}) {
   }
 
   const docInfo = getDocumentInfo(doc);
+  const expectedDocumentId = Number(options.expectedDocumentId) || 0;
+  if (expectedDocumentId > 0 && Number(docInfo.documentId) !== expectedDocumentId) {
+    throw new Error("Photoshop 当前文档已发生变化，请重新获取选区");
+  }
+  const expectedSelectionBounds = normalizeBounds(options.expectedSelectionBounds);
+  if (expectedSelectionBounds && !boundsNearlyEqual(docInfo.selectionBounds, expectedSelectionBounds)) {
+    throw new Error("Photoshop 当前选区已发生变化，请重新获取选区");
+  }
   const maxDimension = Math.max(256, Math.min(4096, Math.floor(Number(options.maxDimension) || 1536)));
   const quality = Math.max(20, Math.min(100, Math.floor(Number(options.quality) || 82)));
   const ignoreSelection = options.ignoreSelection === true || options.captureFullDocument === true;
@@ -1219,9 +1314,12 @@ export async function captureDocumentPreview(options = {}) {
         await activateDocument(app, action, Number(doc.id));
         selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
       }
-      const uploadAsset = await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
+      const uploadAsset = options.useImagingUpload === true
+        ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
+        : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
       let selectionMaskDataUrl = "";
       let selectionMaskShape = "none";
+      let selectionMaskError = "";
       if (selectionBounds && options.captureSelectionMask === true && action) {
         try {
           if (selectionSnapshotChannelName) {
@@ -1237,12 +1335,16 @@ export async function captureDocumentPreview(options = {}) {
               width: Math.max(1, Number(uploadAsset.width) || targetSize.width),
               height: Math.max(1, Number(uploadAsset.height) || targetSize.height)
             },
-            { selectionSnapshotChannelName }
+            {
+              selectionSnapshotChannelName,
+              useSelectionChannel: options.useSelectionChannel === true
+            }
           );
           if (selectionMaskDataUrl) selectionMaskShape = "selection-channel";
         } catch (error) {
           console.warn("[PixelRunner/Photoshop] selection mask capture unavailable", error);
           selectionMaskShape = "unavailable";
+          selectionMaskError = String(error && error.message ? error.message : error || "Photoshop 未返回选区蒙版").trim();
           if (selectionSnapshotChannelName) {
             await deleteChannelByName(action, selectionSnapshotChannelName);
             selectionSnapshotChannelName = "";
@@ -1252,25 +1354,33 @@ export async function captureDocumentPreview(options = {}) {
 
       let pixels = null;
       try {
-        pixels = await getPixelsWithFallback(imaging, {
-        documentID: Number(doc.id),
-        sourceBounds: captureBounds,
-        targetSize,
-        componentSize: 8,
-        applyAlpha: true
-      });
+        let base64 = "";
+        let previewWidth = targetSize.width;
+        let previewHeight = targetSize.height;
+        let previewQuality = quality;
+        if (options.useImagingUpload === true) {
+          base64 = String(uploadAsset.base64 || "");
+          previewWidth = Math.max(1, Number(uploadAsset.width) || targetSize.width);
+          previewHeight = Math.max(1, Number(uploadAsset.height) || targetSize.height);
+          previewQuality = Number(uploadAsset.quality) || quality;
+        } else {
+          pixels = await getPixelsWithFallback(imaging, {
+            documentID: Number(doc.id),
+            sourceBounds: captureBounds,
+            targetSize,
+            componentSize: 8,
+            applyAlpha: true
+          });
 
-        const encoded = await imaging.encodeImageData({
-        imageData: pixels.imageData,
-        base64: true,
-        format: "jpeg",
-        quality
-      });
-
-        const base64 = extractEncodedBase64(encoded);
-        if (!base64) {
-          throw new Error("Photoshop returned an empty capture payload");
+          const encoded = await imaging.encodeImageData({
+            imageData: pixels.imageData,
+            base64: true,
+            format: "jpeg",
+            quality
+          });
+          base64 = extractEncodedBase64(encoded);
         }
+        if (!base64) throw new Error("Photoshop returned an empty capture payload");
         const result = {
         ok: true,
         kind: "captured-document-image",
@@ -1282,14 +1392,15 @@ export async function captureDocumentPreview(options = {}) {
         selectionPadding,
         selectionMaskDataUrl,
         selectionMaskShape,
+        selectionMaskError,
         selectionSnapshotChannelName,
         capturedFromSelection: Boolean(selectionBounds),
-        width: targetSize.width,
-        height: targetSize.height,
+        width: previewWidth,
+        height: previewHeight,
         originalWidth: sourceWidth,
         originalHeight: sourceHeight,
         mimeType: "image/jpeg",
-        quality,
+        quality: previewQuality,
         maxDimension,
         base64,
         dataUrl: buildDataUrl("image/jpeg", base64),
@@ -1326,6 +1437,26 @@ export async function captureDocumentPreview(options = {}) {
       throw error;
     }
   }, { commandName: "PixelRunner Capture Preview" });
+}
+
+function boundsNearlyEqual(left, right, tolerance = 1) {
+  const leftBounds = normalizeBounds(left);
+  const rightBounds = normalizeBounds(right);
+  if (!leftBounds || !rightBounds) return false;
+  return ["left", "top", "right", "bottom"].every((key) => Math.abs(leftBounds[key] - rightBounds[key]) <= tolerance);
+}
+
+export async function captureDocumentPreview(options = {}) {
+  if (captureDocumentPreviewInFlight) {
+    throw new Error("Photoshop 正在捕获上一份图像，请稍候再试");
+  }
+  const operation = captureDocumentPreviewInternal(options);
+  captureDocumentPreviewInFlight = operation;
+  try {
+    return await operation;
+  } finally {
+    if (captureDocumentPreviewInFlight === operation) captureDocumentPreviewInFlight = null;
+  }
 }
 
 export async function runToolAction(payload = {}) {

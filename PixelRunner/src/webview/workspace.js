@@ -1857,6 +1857,9 @@
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     syncPrimaryRunningTask();
     updateRunButtonState();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
     return state.runningTasks.find((item) => String(item.taskId || "") === normalizedNextTaskId) || null;
   }
 

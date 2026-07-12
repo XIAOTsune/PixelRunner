@@ -4,6 +4,7 @@
   const DEFAULT_MASK_EXPANSION = 4;
   const DEFAULT_FEATHER = 12;
   let submissionInFlight = false;
+  let captureInFlight = null;
   let taskTimerHandle = 0;
 
   function getState() {
@@ -275,7 +276,8 @@
     if (normalized === "queued") return "排队中";
     if (normalized === "submitting") return "提交中";
     if (normalized === "submitted") return "已提交";
-    if (["running", "tracking", "remote-running"].includes(normalized)) return "生成中";
+    if (["running", "remote-running"].includes(normalized)) return "运行中";
+    if (normalized === "tracking") return "后台追踪";
     if (normalized === "downloading") return "下载中";
     if (normalized === "placing") return "回贴中";
     if (["succeeded", "success", "done"].includes(normalized)) return "已完成";
@@ -417,7 +419,7 @@
     return parsed;
   }
 
-  async function captureSelection() {
+  async function captureSelectionInternal() {
     const state = getState();
     if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法捕获 Photoshop 选区");
     const docInfo = await modules.workspace.refreshPhotoshopDocumentStatus({ quiet: true });
@@ -429,12 +431,27 @@
     setStatus("capturing", `正在捕获选区及周围 ${contextExpansion}px 上下文...`);
     const captured = await modules.runtime.callHost(
       "photoshop.captureDocumentPreview",
-      [{ maxDimension: 2048, quality: 90, selectionPadding: contextExpansion, captureSelectionMask: true, preserveSelectionChannel: true, forceMaxDimension: true }],
-      { timeoutMs: 45000 }
+      [{
+        maxDimension: 2048,
+        quality: 90,
+        selectionPadding: contextExpansion,
+        captureSelectionMask: true,
+        preserveSelectionChannel: true,
+        useImagingUpload: true,
+        forceMaxDimension: true,
+        expectedDocumentId: Number(docInfo.documentId) || 0,
+        expectedSelectionBounds: selectionBounds
+      }],
+      { timeoutMs: 120000 }
     );
     if (!captured || !captured.uploadDataUrl) throw new Error("Photoshop 未返回可上传的上下文图像");
     if (!captured.selectionMaskDataUrl) {
-      throw new Error("Photoshop 未能读取不规则选区蒙版，请重新建立选区后再试");
+      const maskError = String(captured.selectionMaskError || "").trim();
+      throw new Error(
+        maskError
+          ? `Photoshop 未能读取不规则选区蒙版：${maskError}`
+          : "Photoshop 未能读取不规则选区蒙版，请重新建立选区后再试"
+      );
     }
 
     const selection = {
@@ -459,6 +476,21 @@
     state.selection = selection;
     modules.ui.logToWorkspace(`创成式填充已捕获选区：${formatBounds(selectionBounds)}，上下文扩展 ${contextExpansion}px。`, "success");
     return selection;
+  }
+
+  function captureSelection() {
+    if (captureInFlight) return captureInFlight;
+    const operation = captureSelectionInternal();
+    captureInFlight = operation;
+    void operation.then(
+      () => {
+        if (captureInFlight === operation) captureInFlight = null;
+      },
+      () => {
+        if (captureInFlight === operation) captureInFlight = null;
+      }
+    );
+    return operation;
   }
 
   async function buildPayload(schema, selection, promptText) {
