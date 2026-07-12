@@ -23,6 +23,7 @@
     "package:release": "node ./scripts/package-test.mjs --release"
   },
   "devDependencies": {
-    "esbuild": "^0.25.3"
+    "esbuild": "^0.25.3",
+    "javascript-obfuscator": "^5.4.7"
   }
 }
