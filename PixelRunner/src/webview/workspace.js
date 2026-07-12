@@ -5,7 +5,10 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
-  const RUNNINGHUB_TASK_DETAIL_URL = "https://www.runninghub.cn/bill-task";
+  const RUNNINGHUB_TASK_DETAIL_URLS = {
+    cn: "https://www.runninghub.cn/bill-task",
+    global: "https://www.runninghub.ai/bill-task"
+  };
   const GRS_CONSUMPTION_LOG_URL = "https://grsai.ai/zh/dashboard/consumption-log";
   const MODAL_CLOSE_ANIMATION_MS = 180;
   let runButtonCooldownUntil = 0;
@@ -378,109 +381,9 @@
     return /(遮罩|蒙版|控制图|姿态|深度|法线|线稿|边缘|mask|control|pose|depth|normal|canny|edge|lineart|scribble|sketch|seg|segmentation|openpose)/i.test(getImageInputMarker(input));
   }
 
-  function shouldAutoFillImageInput(input) {
-    if (!input || isMainImageInput(input)) return false;
-    const emptyBehavior = getImageInputEmptyBehavior(input);
-    if (/^(copyprimary|copy-primary|copy_primary)$/.test(emptyBehavior)) return true;
-    if (emptyBehavior === "skip" || emptyBehavior === "require" || isControlImageInput(input)) return false;
-    if (["reference", "secondary", "style"].includes(getImageInputRole(input))) return true;
-    return /(参考|副图|辅图|风格图|参照|reference|ref|secondary|second|image2|img2|style)/i.test(getImageInputMarker(input));
-  }
-
-  function getImageInputPrimaryScore(input, index = 0) {
-    const marker = getImageInputMarker(input);
-    let score = 0;
-    if (isMainImageInput(input)) score += 80;
-    if (isControlImageInput(input)) score -= 80;
-    if (/(参考|副图|辅图|风格图|ref|reference|style)/i.test(marker)) score -= 40;
-    if (input && input.required) score += 8;
-    return score - index * 0.01;
-  }
-
-  function cloneImageFieldValue(value) {
-    if (!hasImageFieldValue(value)) return null;
-    if (value instanceof ArrayBuffer) return value.slice(0);
-    if (ArrayBuffer.isView(value)) {
-      return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-    }
-    if (hasImageAsset(value)) return cloneCaptureAsset(value);
-    if (Array.isArray(value)) return value.slice();
-    if (value && typeof value === "object") {
-      return {
-        ...value
-      };
-    }
-    return value;
-  }
-
-  function getAutoFillPrimaryImageInput(imageInputs, values) {
-    const mainInputs = imageInputs.filter(isMainImageInput);
-    const sourceInputs = mainInputs.length ? mainInputs : imageInputs;
-    const ranked = sourceInputs
-      .map((input, index) => ({
-        input,
-        index,
-        key: String((input && input.key) || "").trim(),
-        score: getImageInputPrimaryScore(input, index)
-      }))
-      .filter((item) => item.key && hasImageFieldValue(values[item.key]))
-      .filter((item) => mainInputs.length || item.score >= 0)
-      .sort((a, b) => b.score - a.score || a.index - b.index);
-    return ranked.length ? ranked[0].input : null;
-  }
-
-  function applyAutoFillEmptyImageInputs(app, formValues, options = {}) {
-    const settings = modules.state.state.settings || modules.state.DEFAULT_SETTINGS;
-
-    const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
-    const imageInputs = inputs.filter(isImageInput);
-    if (imageInputs.length < 2) return formValues;
-
-    const sourceValues = formValues && typeof formValues === "object" ? formValues : {};
-    const primaryInput = getAutoFillPrimaryImageInput(imageInputs, sourceValues);
-    if (!primaryInput) return formValues;
-
-    const primaryKey = String(primaryInput.key || "").trim();
-    const primaryValue = sourceValues[primaryKey];
-    const filledLabels = [];
-    const nextValues = { ...sourceValues };
-
-    imageInputs.forEach((input) => {
-      const key = String((input && input.key) || "").trim();
-      if (!key || key === primaryKey) return;
-      const explicitCopyPrimary = /^(copyprimary|copy-primary|copy_primary)$/.test(getImageInputEmptyBehavior(input));
-      if (!explicitCopyPrimary && settings.autoFillEmptyImageInputs !== true) return;
-      if (!shouldAutoFillImageInput(input)) return;
-      if (hasImageFieldValue(nextValues[key])) return;
-      const cloned = cloneImageFieldValue(primaryValue);
-      if (!hasImageFieldValue(cloned)) return;
-      nextValues[key] = cloned;
-      filledLabels.push(getImageInputLabel(input) || key);
-    });
-
-    if (filledLabels.length === 0) return formValues;
-
-    const primaryLabel = getImageInputLabel(primaryInput) || primaryKey;
-    if (options.mutateState) {
-      modules.state.state.formValues = {
-        ...modules.state.state.formValues,
-        ...nextValues
-      };
-      renderWorkspace();
-    }
-    if (!options.quiet && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(
-        `已自动复用“${primaryLabel}”补齐空图片输入：${filledLabels.join("、")}。`,
-        "info"
-      );
-    }
-
-    return nextValues;
-  }
-
   function normalizePayloadInputs(app, formValues) {
     const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
-    const source = applyAutoFillEmptyImageInputs(app, formValues);
+    const source = formValues && typeof formValues === "object" ? formValues : {};
     const out = { ...source };
     inputs.forEach((input) => {
       const key = String((input && input.key) || "").trim();
@@ -809,7 +712,9 @@
     if (!task || typeof task !== "object") return "";
     const explicitUrl = String(task.detailUrl || task.taskDetailUrl || task.recordUrl || "").trim();
     if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
-    return isThirdPartyTaskRecord(task) ? GRS_CONSUMPTION_LOG_URL : RUNNINGHUB_TASK_DETAIL_URL;
+    if (isThirdPartyTaskRecord(task)) return GRS_CONSUMPTION_LOG_URL;
+    const region = modules.state.normalizeRunningHubRegion(task.region);
+    return RUNNINGHUB_TASK_DETAIL_URLS[region] || RUNNINGHUB_TASK_DETAIL_URLS.cn;
   }
 
   function canOpenTaskAction(task) {
@@ -1229,7 +1134,7 @@
     }
     return {
       method: "runninghub.fetchTaskStatus",
-      args: [{ apiKey: payload.apiKey, taskId: remoteTaskId, timeoutMs: 30000 }]
+      args: [{ apiKey: payload.apiKey, taskId: remoteTaskId, region: payload.region, timeoutMs: 30000 }]
     };
   }
 
@@ -1755,12 +1660,13 @@
           }
         : null,
       apiKey: state.settings.apiKey || "",
+      region: state.settings.runningHubRegion,
       inputs: normalizePayloadInputs(state.currentApp, state.formValues),
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
         maxConcurrentTasks: state.settings.maxConcurrentTasks,
-        autoFillEmptyImageInputs: state.settings.autoFillEmptyImageInputs === true
+        runningHubRegion: state.settings.runningHubRegion
       }
     };
     if (instanceType) payload.instanceType = instanceType;
@@ -1782,8 +1688,7 @@
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
-        maxConcurrentTasks: state.settings.maxConcurrentTasks,
-        autoFillEmptyImageInputs: state.settings.autoFillEmptyImageInputs === true
+        maxConcurrentTasks: state.settings.maxConcurrentTasks
       },
       config: {
         apiUrl: grs.apiUrl || "https://grsaiapi.com",
@@ -1827,6 +1732,8 @@
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
+      region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
+      apiKey: hasOwn("apiKey") ? String(patch.apiKey || "").trim() : "",
       queueMode: String(patch.queueMode || "").trim(),
       appName: String(patch.appName || "").trim(),
       status: hasOwn("status") ? String(patch.status || "running").trim() || "running" : undefined,
@@ -1859,6 +1766,8 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        region: nextTask.region || current.region || "cn",
+        apiKey: nextTask.apiKey || current.apiKey || "",
         queueMode: nextTask.queueMode || current.queueMode || "",
         appName: nextTask.appName || current.appName || "",
         status: nextTask.status || current.status || "running",
@@ -1929,6 +1838,37 @@
     syncPrimaryRunningTask();
     updateRunButtonState();
     scheduleRunSubmissionFlush();
+  }
+
+  function clearCompletedRunningTasks() {
+    const state = modules.state.state;
+    const tasks = Array.isArray(state.runningTasks) ? state.runningTasks : [];
+    let removedCount = 0;
+    const keptTasks = [];
+
+    tasks.forEach((task) => {
+      if (task && isTaskTerminalStatus(task.status)) {
+        const taskId = String(task.taskId || "").trim();
+        const remoteTaskId = String(task.remoteTaskId || taskId).trim();
+        if (taskId) {
+          stopTaskStatusTracking(taskId);
+          pendingRunSubmissions.delete(taskId);
+          activeRunSubmissions.delete(taskId);
+        }
+        if (remoteTaskId && remoteTaskId !== taskId) stopTaskStatusTracking(remoteTaskId);
+        if (remoteTaskId) pendingAutoPlacements.delete(remoteTaskId);
+        removedCount += 1;
+        return;
+      }
+      if (task) keptTasks.push(task);
+    });
+
+    if (removedCount === 0) return 0;
+    state.runningTasks = keptTasks;
+    syncPrimaryRunningTask();
+    updateRunButtonState();
+    scheduleRunSubmissionFlush();
+    return removedCount;
   }
 
   function stopTaskStatusTracking(taskId = "") {
@@ -2318,7 +2258,7 @@
       }
     }
     collectFormValuesFromDom();
-    const effectiveValues = applyAutoFillEmptyImageInputs(app, state.formValues, { quiet: true });
+    const effectiveValues = state.formValues && typeof state.formValues === "object" ? state.formValues : {};
     const missing = (Array.isArray(app.inputs) ? app.inputs : [])
       .filter(isRequiredInput)
       .filter((input) => isMissingRequiredValue(input, effectiveValues[input.key]));
@@ -2326,7 +2266,7 @@
   }
 
   function validateAppValues(app, values) {
-    const effectiveValues = applyAutoFillEmptyImageInputs(app, values, { quiet: true });
+    const effectiveValues = values && typeof values === "object" ? values : {};
     const missing = (Array.isArray(app && app.inputs) ? app.inputs : [])
       .filter(isRequiredInput)
       .filter((input) => isMissingRequiredValue(input, effectiveValues[input.key]));
@@ -2369,12 +2309,13 @@
         inputs: Array.isArray(app.inputs) ? app.inputs : []
       },
       apiKey: modules.state.state.settings.apiKey || "",
+      region: modules.state.state.settings.runningHubRegion,
       inputs: normalizePayloadInputs(app, values),
       settings: {
         pollInterval: modules.state.state.settings.pollInterval,
         timeout: modules.state.state.settings.timeout,
         maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
-        autoFillEmptyImageInputs: modules.state.state.settings.autoFillEmptyImageInputs === true
+        runningHubRegion: modules.state.state.settings.runningHubRegion
       }
     };
     modules.state.state.lastRunPayload = payload;
@@ -2399,6 +2340,9 @@
     const app = findQuickEntryApp(entry);
     if (!app) throw new Error(`快捷入口引用的应用不存在：${entry.appRef && entry.appRef.appName ? entry.appRef.appName : entry.title}`);
     if (!modules.runtime.isPluginRuntime()) throw new Error("浏览器预览模式下无法运行快捷入口");
+    if (modules.state.normalizeRunningHubRegion(app.region) !== modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion)) {
+      throw new Error("该快捷入口属于另一个 RunningHub 区域，请先在设置页切换服务区域");
+    }
     if (!modules.state.state.settings.apiKey) throw new Error("请先在设置页保存 RunningHub API Key");
     if (!modules.state.resolveAppId(app)) throw new Error("快捷入口引用的应用缺少有效的 appId，请重新保存应用后再创建快捷入口");
     if (!canAcceptQueuedSubmission()) {
@@ -2678,6 +2622,8 @@
       taskId: localTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      region: payload.region,
+      apiKey: payload.apiKey,
       queueMode: "local",
       appName: payload.appName,
       status: "queued",
@@ -2729,9 +2675,20 @@
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
     let submissionAccountSnapshot = getCurrentAccountSnapshot();
-    if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
+    const payloadMatchesCurrentRunningHubAccount =
+      modules.state.normalizeRunningHubRegion(payload && payload.region) ===
+        modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion) &&
+      String((payload && payload.apiKey) || "") === String(modules.state.state.settings.apiKey || "");
+    if (!isThirdPartyTask && !payloadMatchesCurrentRunningHubAccount) {
+      submissionAccountSnapshot = { balance: null, coins: null, updatedAt: 0 };
+    } else if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
       try {
-        const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
+        const account = await modules.settings.refreshAccountSummary({
+          apiKey: payload.apiKey,
+          region: payload.region,
+          quiet: true,
+          force: true
+        });
         submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
       } catch (_) {
         submissionAccountSnapshot = getCurrentAccountSnapshot();
@@ -2741,6 +2698,8 @@
       taskId: tempTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      region: payload.region,
+      apiKey: payload.apiKey,
       queueMode: "",
       appName: payload.appName,
       status: "submitting",
@@ -2787,7 +2746,7 @@
 
       const pollResult = await modules.runtime.callHost(
         pollMethod,
-        [isThirdPartyTask ? { ...payload, taskId: remoteTaskId } : { apiKey: payload.apiKey, taskId: remoteTaskId, settings: payload.settings }],
+        [isThirdPartyTask ? { ...payload, taskId: remoteTaskId } : { apiKey: payload.apiKey, taskId: remoteTaskId, region: payload.region, settings: payload.settings }],
         { timeoutMs: Math.max(15000, Number(payload.settings.timeout || 180) * 1000 + 15000) }
       );
 
@@ -3338,7 +3297,11 @@
         const cancelMethod = isThirdPartyTask ? "thirdParty.grs.cancelTask" : "runninghub.cancelTask";
         const cancelPayload = isThirdPartyTask
           ? { apiKey: grs.apiKey, apiUrl: grs.apiUrl, taskId: remoteTaskId }
-          : { apiKey: modules.state.state.settings.apiKey, taskId: remoteTaskId };
+          : {
+              apiKey: String((currentTask && currentTask.apiKey) || modules.state.state.settings.apiKey || ""),
+              taskId: remoteTaskId,
+              region: (currentTask && currentTask.region) || modules.state.state.settings.runningHubRegion
+            };
         target.disabled = true;
         try {
           stopTaskStatusTracking(remoteTaskId);
@@ -3408,6 +3371,7 @@
     flushQueuedTasks,
     updateThirdPartyDynamicOptions,
     renderWorkspace,
+    clearCompletedRunningTasks,
     buildRunPayload,
     collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,

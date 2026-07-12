@@ -1,4 +1,5 @@
 import { parseRunningHubApp } from "./runninghub-parser.js";
+import { getRunningHubRegionConfig, resolveRunningHubRegion } from "./runninghub-region.js";
 
 const runninghubTaskControllers = new Map();
 const SAFE_EMPTY_IMAGE_PLACEHOLDER = {
@@ -144,15 +145,6 @@ function isControlImageInput(input) {
   return /(遮罩|蒙版|控制图|姿态|深度|法线|线稿|边缘|mask|control|pose|depth|normal|canny|edge|lineart|scribble|sketch|seg|segmentation|openpose)/i.test(getImageInputMarker(input));
 }
 
-function shouldAutoFillImageInput(input) {
-  if (!input || isMainImageInput(input)) return false;
-  const emptyBehavior = getImageInputEmptyBehavior(input);
-  if (/^(copyprimary|copy-primary|copy_primary)$/.test(emptyBehavior)) return true;
-  if (emptyBehavior === "skip" || emptyBehavior === "require" || isControlImageInput(input)) return false;
-  if (["reference", "secondary", "style"].includes(getImageInputRole(input))) return true;
-  return /(参考|副图|辅图|风格图|参照|reference|ref|secondary|second|image2|img2|style)/i.test(getImageInputMarker(input));
-}
-
 function getImageInputPrimaryScore(input, index = 0) {
   const marker = getImageInputMarker(input);
   let score = 0;
@@ -273,9 +265,10 @@ async function uploadImageValue(apiKey, imageValue, settings = {}) {
   const fileName = mimeType === "image/png" ? "image.png" : mimeType === "image/webp" ? "image.webp" : "image.jpg";
   const blob = new Blob([buffer], { type: mimeType });
   const timeoutMs = Math.max(5000, Number(settings.timeout || 180) * 1000);
+  const { baseUrl } = getRunningHubRegionConfig(resolveRunningHubRegion({ settings }));
   const endpoints = [
-    "https://www.runninghub.cn/openapi/v2/media/upload/binary",
-    "https://www.runninghub.cn/uc/openapi/upload"
+    `${baseUrl}/openapi/v2/media/upload/binary`,
+    `${baseUrl}/uc/openapi/upload`
   ];
 
   let lastError = null;
@@ -388,11 +381,6 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
   const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
   const values = inputValues && typeof inputValues === "object" ? inputValues : {};
   const imageInputs = inputs.filter(isImageLikeInput);
-  const autoFillEmptyImageInputs = settings.autoFillEmptyImageInputs === true;
-  const hasExplicitCopyPrimaryInput = inputs.some(
-    (input) => isImageLikeInput(input) && /^(copyprimary|copy-primary|copy_primary)$/.test(getImageInputEmptyBehavior(input))
-  );
-  const primaryImageInput = autoFillEmptyImageInputs || hasExplicitCopyPrimaryInput ? findPrimaryImageInput(inputs, values) : null;
   const placeholderAnchorInput = imageInputs.length >= 2 ? findPrimaryImageInput(inputs, values) : null;
   const uploadedImageValues = new Map();
   const normalizedValues = {};
@@ -419,28 +407,16 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     return imageSubmission.value;
   }
 
-  async function getPrimaryImageValue() {
-    if (!primaryImageInput || !primaryImageInput.key) return "";
-    if (uploadedImageValues.has(primaryImageInput.key)) return uploadedImageValues.get(primaryImageInput.key);
-    const normalized = await normalizeImageSubmission(
-      primaryImageInput.input,
-      values[primaryImageInput.key],
-      primaryImageInput.key
-    );
-    if (isFilledInputValue(normalized)) uploadedImageValues.set(primaryImageInput.key, normalized);
-    return normalized;
-  }
-
   async function getSafePlaceholderImageValue() {
     if (safePlaceholderImageValue) return safePlaceholderImageValue;
     safePlaceholderImageValue = await uploadImageValue(apiKey, SAFE_EMPTY_IMAGE_PLACEHOLDER, settings);
     return safePlaceholderImageValue;
   }
 
-  function shouldUseSafePlaceholder(input, key, imageRequiresValue, canCopyPrimaryImage) {
+  function shouldUseSafePlaceholder(input, key, imageRequiresValue) {
     if (!placeholderAnchorInput || !placeholderAnchorInput.key) return false;
     if (String(placeholderAnchorInput.key || "") === String(key || "")) return false;
-    if (imageRequiresValue || canCopyPrimaryImage) return false;
+    if (imageRequiresValue) return false;
     const emptyBehavior = getImageInputEmptyBehavior(input);
     if (emptyBehavior === "skip" || emptyBehavior === "require") return false;
     if (isMainImageInput(input) || isControlImageInput(input)) return false;
@@ -467,37 +443,9 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     const isImageInput = isImageLikeInput(input);
     const imageEmptyBehavior = isImageInput ? getImageInputEmptyBehavior(input) : "";
     const imageRequiresValue = Boolean(input && input.required) || imageEmptyBehavior === "require";
-    const canCopyPrimaryImage =
-      isImageInput &&
-      shouldAutoFillImageInput(input) &&
-      (autoFillEmptyImageInputs || /^(copyprimary|copy-primary|copy_primary)$/.test(imageEmptyBehavior));
     if (!isFilledInputValue(rawValue)) {
-      if (canCopyPrimaryImage) {
-        const primaryImageValue = await getPrimaryImageValue();
-        if (primaryImageValue && (!primaryImageInput || key !== primaryImageInput.key)) {
-          pushImagePayload(input, key, primaryImageValue);
-          console.log("[PixelRunner/RunningHub] image input empty, reusing primary image", {
-            key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key)
-          });
-          continue;
-        }
-      }
-
       if (isImageInput && !imageRequiresValue) {
-        if (canCopyPrimaryImage) {
-          const primaryImageValue = await getPrimaryImageValue();
-          if (primaryImageValue) {
-            pushImagePayload(input, key, primaryImageValue);
-            console.log("[PixelRunner/RunningHub] optional image empty, reusing primary image", {
-              key,
-              fieldName: String((input && (input.fieldName || input.name || key)) || key)
-            });
-            continue;
-          }
-        }
-
-        if (shouldUseSafePlaceholder(input, key, imageRequiresValue, canCopyPrimaryImage)) {
+        if (shouldUseSafePlaceholder(input, key, imageRequiresValue)) {
           const placeholderImageValue = await getSafePlaceholderImageValue();
           if (placeholderImageValue) {
             pushImagePayload(input, key, placeholderImageValue);
@@ -529,12 +477,15 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         if (imageRequiresValue) {
           throw new Error(`Missing required input: ${input.label || input.name || key}`);
         }
-        const primaryImageValue = canCopyPrimaryImage ? await getPrimaryImageValue() : "";
-        if (primaryImageValue) {
-          normalizedValue = primaryImageValue;
-          console.log("[PixelRunner/RunningHub] optional image normalized to primary image", {
+        const placeholderImageValue = shouldUseSafePlaceholder(input, key, imageRequiresValue)
+          ? await getSafePlaceholderImageValue()
+          : "";
+        if (placeholderImageValue) {
+          normalizedValue = placeholderImageValue;
+          console.log("[PixelRunner/RunningHub] optional image normalized to safe placeholder", {
             key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key)
+            fieldName: String((input && (input.fieldName || input.name || key)) || key),
+            size: "64x64"
           });
         } else continue;
       } else if (imageSubmission.mode === "upload") {
@@ -1012,11 +963,12 @@ async function runAiOptimizeInternal(payload = {}) {
   const appId = normalizeAppId(payload.appId);
   const image = payload.image;
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
+  const region = resolveRunningHubRegion(payload);
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!appId) throw new Error("AI optimize appId is missing");
   if (!image) throw new Error("AI optimize image is missing");
 
-  const parsedApp = await parseRunningHubApp([{ appId, apiKey, preferredName: "AI优化" }]);
+  const parsedApp = await parseRunningHubApp([{ appId, apiKey, preferredName: "AI优化", region }]);
   const inputs = Array.isArray(parsedApp && parsedApp.inputs) ? parsedApp.inputs : [];
   const imageInput = inputs.find((input) => isImageLikeInput(input));
   if (!imageInput) throw new Error("AI 优化应用未识别到图片输入项");
@@ -1038,10 +990,11 @@ async function runAiOptimizeInternal(payload = {}) {
       inputs
     },
     inputs: submissionInputs,
+    region,
     settings
   }]);
   const taskId = String((submitResult && submitResult.taskId) || "").trim();
-  const pollResult = await pollRunningHubTask([{ apiKey, taskId, settings }]);
+  const pollResult = await pollRunningHubTask([{ apiKey, taskId, region, settings }]);
   if (!pollResult || pollResult.failed) {
     throw new Error(String((pollResult && pollResult.message) || "AI 优化任务执行失败"));
   }
@@ -1433,7 +1386,8 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
     : null;
 
   try {
-    const response = await fetch("https://www.runninghub.cn/task/openapi/outputs", {
+    const { baseUrl } = getRunningHubRegionConfig(resolveRunningHubRegion(options));
+    const response = await fetch(`${baseUrl}/task/openapi/outputs`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -1525,6 +1479,9 @@ export async function submitRunningHubTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const app = payload.app && typeof payload.app === "object" ? payload.app : {};
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
+  const region = resolveRunningHubRegion(payload);
+  const { baseUrl } = getRunningHubRegionConfig(region);
+  settings.runningHubRegion = region;
   const apiKey = String(payload.apiKey || "").trim();
   const appId = normalizeAppId(app.appId || payload.appId);
   const instanceType = String(payload.instanceType || "").trim().toLowerCase() === "plus" ? "plus" : "";
@@ -1552,7 +1509,7 @@ export async function submitRunningHubTask(args = []) {
     try {
       console.log("[PixelRunner/RunningHub] submit body variant", Object.keys(body));
       const result = await fetchJsonWithTimeout(
-        "https://www.runninghub.cn/task/openapi/ai-app/run",
+        `${baseUrl}/task/openapi/ai-app/run`,
         {
           method: "POST",
           headers: {
@@ -1575,7 +1532,7 @@ export async function submitRunningHubTask(args = []) {
         );
       }
 
-      return { ok: true, taskId: String(taskId), result };
+      return { ok: true, taskId: String(taskId), region, result };
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] ai-app/run failed", {
         variant: Object.keys(body).join(","),
@@ -1596,7 +1553,7 @@ export async function submitRunningHubTask(args = []) {
         paramCount: Object.keys(nodeParams).length
       });
       const result = await fetchJsonWithTimeout(
-        "https://www.runninghub.cn/task/openapi/create",
+        `${baseUrl}/task/openapi/create`,
         {
           method: "POST",
           headers: {
@@ -1618,7 +1575,7 @@ export async function submitRunningHubTask(args = []) {
         );
       }
 
-      return { ok: true, taskId: String(taskId), result, mode: "legacy" };
+      return { ok: true, taskId: String(taskId), region, result, mode: "legacy" };
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] legacy submit failed", {
         message: error && error.message ? error.message : String(error || "")
@@ -1633,11 +1590,13 @@ export async function submitRunningHubTask(args = []) {
 export async function fetchRunningHubAccountStatus(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
+  const region = resolveRunningHubRegion(payload);
+  const { baseUrl } = getRunningHubRegionConfig(region);
   if (!apiKey) {
     return { ok: false, balance: null, coins: null };
   }
 
-  const result = await fetchJsonWithTimeout("https://www.runninghub.cn/uc/openapi/accountStatus", {
+  const result = await fetchJsonWithTimeout(`${baseUrl}/uc/openapi/accountStatus`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -1650,6 +1609,7 @@ export async function fetchRunningHubAccountStatus(args = []) {
   const account = data && data.accountStatus && typeof data.accountStatus === "object" ? data.accountStatus : data;
   return {
     ok: true,
+    region,
     balance: account.remainMoney ?? account.balance ?? account.amount ?? account.walletBalance ?? account.money ?? null,
     coins: account.remainCoins ?? account.coins ?? account.rhCoins ?? account.integral ?? null,
     result
@@ -1661,6 +1621,7 @@ export async function pollRunningHubTask(args = []) {
   const apiKey = String(payload.apiKey || "").trim();
   const taskId = String(payload.taskId || "").trim();
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
+  const region = resolveRunningHubRegion(payload);
 
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!taskId) throw new Error("RunningHub taskId is missing");
@@ -1669,7 +1630,8 @@ export async function pollRunningHubTask(args = []) {
   const timeoutMs = Math.max(10, Number(settings.timeout) || 180) * 1000;
   const startedAt = Date.now();
   const localController = typeof AbortController !== "undefined" ? new AbortController() : null;
-  runninghubTaskControllers.set(taskId, localController);
+  const controllerKey = `${region}:${taskId}`;
+  runninghubTaskControllers.set(controllerKey, localController);
 
   try {
     while (Date.now() - startedAt < timeoutMs) {
@@ -1679,6 +1641,7 @@ export async function pollRunningHubTask(args = []) {
 
       try {
         const snapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
+          region,
           signal: localController ? localController.signal : undefined,
           timeoutMs: 30000
         });
@@ -1765,6 +1728,7 @@ export async function pollRunningHubTask(args = []) {
       await sleep(pollIntervalMs);
     }
     const timeoutSnapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
+      region,
       signal: localController ? localController.signal : undefined,
       timeoutMs: 30000
     });
@@ -1821,7 +1785,7 @@ export async function pollRunningHubTask(args = []) {
       result: timeoutSnapshot.result || null
     };
   } finally {
-    runninghubTaskControllers.delete(taskId);
+    runninghubTaskControllers.delete(controllerKey);
   }
 }
 
@@ -1829,11 +1793,13 @@ export async function fetchRunningHubTaskStatus(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
   const taskId = String(payload.taskId || "").trim();
+  const region = resolveRunningHubRegion(payload);
 
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!taskId) throw new Error("RunningHub taskId is missing");
 
   const snapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
+    region,
     timeoutMs: Math.max(5000, Number(payload.timeoutMs) || 30000)
   });
   return buildTaskStatusResponse(taskId, snapshot);
@@ -1843,18 +1809,20 @@ export async function cancelRunningHubTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
   const taskId = String(payload.taskId || "").trim();
+  const region = resolveRunningHubRegion(payload);
+  const { baseUrl } = getRunningHubRegionConfig(region);
 
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!taskId) throw new Error("RunningHub taskId is missing");
 
-  const controller = runninghubTaskControllers.get(taskId);
+  const controller = runninghubTaskControllers.get(`${region}:${taskId}`);
   if (controller && typeof controller.abort === "function") {
     try {
       controller.abort();
     } catch (_) {}
   }
 
-  const result = await fetchJsonWithTimeout("https://www.runninghub.cn/task/openapi/cancel", {
+  const result = await fetchJsonWithTimeout(`${baseUrl}/task/openapi/cancel`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -1863,7 +1831,7 @@ export async function cancelRunningHubTask(args = []) {
     body: JSON.stringify({ apiKey, taskId })
   });
 
-  return { ok: true, taskId, result };
+  return { ok: true, taskId, region, result };
 }
 
 export async function runAiOptimizeTask(args = []) {

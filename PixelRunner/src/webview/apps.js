@@ -106,12 +106,24 @@
     return String(app.previewImage || app.thumbnail || app.preview || app.cover || app.coverUrl || app.image || app.imageUrl || app.icon || "").trim();
   }
 
+  function getCurrentRunningHubRegion() {
+    return modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
+  }
+
+  function getRegionApps() {
+    const region = getCurrentRunningHubRegion();
+    return (Array.isArray(modules.state.state.apps) ? modules.state.state.apps : []).filter(
+      (app) => modules.state.normalizeRunningHubRegion(app && app.region) === region
+    );
+  }
+
   async function hydrateMissingAppPreviews(options = {}) {
     const state = modules.state.state;
     if (appPreviewHydrationRunning || !modules.runtime.isPluginRuntime()) return;
     const apiKey = String(state.settings.apiKey || "").trim();
+    const region = getCurrentRunningHubRegion();
     if (!apiKey) return;
-    const candidates = (Array.isArray(state.apps) ? state.apps : [])
+    const candidates = getRegionApps()
       .filter((app) => app && String(app.appId || "").trim() && !getAppPreviewImage(app))
       .slice(0, 24);
     if (candidates.length === 0) return;
@@ -123,7 +135,7 @@
         try {
           const result = await modules.runtime.callHost(
             "runninghub.fetchAppPreview",
-            [{ appId: app.appId, apiKey }],
+            [{ appId: app.appId, apiKey, region }],
             { timeoutMs: 12000 }
           );
           const previewImage = getAppPreviewImage(result);
@@ -326,6 +338,7 @@
     const normalizedApps = modules.state.normalizeAppList(apps).map((item) => ({
       id: item.id,
       appId: item.appId,
+      region: item.region,
       name: item.name,
       description: item.description,
       previewImage: item.previewImage,
@@ -345,9 +358,10 @@
   function getVisibleApps() {
     const state = modules.state.state;
     const keyword = String(state.appManagerKeyword || "").trim();
+    const regionApps = getRegionApps();
     const list = !keyword
-      ? [...state.apps]
-      : state.apps.filter((item) => {
+      ? [...regionApps]
+      : regionApps.filter((item) => {
           const marker = `${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`;
           return modules.state.fuzzyMatchText(marker, keyword);
         });
@@ -396,17 +410,18 @@
     listEl.dataset.layout = layout;
 
     const keyword = String(state.appPickerKeyword || "").trim();
+    const regionApps = getRegionApps();
     const visibleApps = !keyword
-      ? state.apps
-      : state.apps.filter((item) => modules.state.fuzzyMatchText(`${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`, keyword));
+      ? regionApps
+      : regionApps.filter((item) => modules.state.fuzzyMatchText(`${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`, keyword));
 
-    if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${state.apps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
+    if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${regionApps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
     const quickEntryButton = `<button class="picker-item picker-item-special app-picker-special-card ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>框选后点击即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
     const thirdPartyButton = getThirdPartyPickerButton();
 
     if (visibleApps.length === 0) {
       listEl.innerHTML =
-        state.apps.length === 0
+        regionApps.length === 0
           ? `${quickEntryButton}${thirdPartyButton}<div class="picker-empty"><strong>还没有已保存应用</strong><p>点击上方“添加应用”创建一个。</p></div>`
           : `${quickEntryButton}${thirdPartyButton}<div class="picker-empty"><strong>没有匹配结果</strong><p>换个关键词再试试。</p></div>`;
       return;
@@ -428,12 +443,13 @@
     if (!listEl || !summaryEl) return;
 
     const visibleApps = getVisibleApps();
+    const regionApps = getRegionApps();
     const keyword = String(state.appManagerKeyword || "").trim();
-    runtime.setSummaryStatus(summaryEl, keyword ? `已保存应用：${visibleApps.length} / ${state.apps.length} 个` : `已保存应用：${state.apps.length} 个`, "info");
+    runtime.setSummaryStatus(summaryEl, keyword ? `已保存应用：${visibleApps.length} / ${regionApps.length} 个` : `已保存应用：${regionApps.length} 个`, "info");
 
     if (visibleApps.length === 0) {
       listEl.innerHTML =
-        state.apps.length === 0
+        regionApps.length === 0
           ? `<div class="picker-empty"><strong>还没有已保存应用</strong><p>输入应用 ID 或链接后解析并保存。</p></div>`
           : `<div class="picker-empty"><strong>没有匹配到应用</strong><p>调整搜索词后再试一次。</p></div>`;
       return;
@@ -502,7 +518,7 @@
       return setCurrentThirdPartyApp(options);
     }
     const nextApp = state.apps.find((item) => String(item.id) === String(appId));
-    if (!nextApp) return false;
+    if (!nextApp || modules.state.normalizeRunningHubRegion(nextApp.region) !== getCurrentRunningHubRegion()) return false;
 
     const previousWasThirdParty = modules.state.isThirdPartyApp(state.currentApp);
     state.currentApp = nextApp;
@@ -575,7 +591,8 @@
 
     state.currentApp = null;
     state.formValues = {};
-    if (state.apps[0] && !options.preserveEmpty) return setCurrentAppById(state.apps[0].id, { quiet: true, preserveWorkspaceMode: true });
+    const firstRegionApp = getRegionApps()[0] || null;
+    if (firstRegionApp && !options.preserveEmpty) return setCurrentAppById(firstRegionApp.id, { quiet: true, preserveWorkspaceMode: true });
 
     modules.workspace.renderWorkspace();
     if (!options.quiet) modules.ui.logToWorkspace("当前还没有可用的已保存应用。", "warn");
@@ -586,7 +603,7 @@
     await hydrateCurrentApp({ quiet: true, preserveEmpty: options.preserveEmpty });
     renderSavedAppsList();
     renderAppPickerList();
-    if (!options.quiet) modules.ui.logToWorkspace(`应用列表已刷新，共 ${modules.state.state.apps.length} 个应用。`);
+    if (!options.quiet) modules.ui.logToWorkspace(`应用列表已刷新，当前区域共 ${getRegionApps().length} 个应用。`);
   }
 
   async function refreshCurrentWorkspaceApp(options = {}) {
@@ -597,7 +614,7 @@
       return false;
     }
 
-    const alternateApp = state.apps.find((item) => String(item.id || "") !== String(currentApp.id || ""));
+    const alternateApp = getRegionApps().find((item) => String(item.id || "") !== String(currentApp.id || ""));
 
     if (alternateApp) {
       await setCurrentAppById(alternateApp.id, { quiet: true });
@@ -668,6 +685,9 @@
     return {
       id: modules.state.state.appPickerEditingAppId || runtime.createId("app"),
       appId,
+      region: modules.state.state.appPickerEditingAppId
+        ? modules.state.state.apps.find((item) => String(item.id) === String(modules.state.state.appPickerEditingAppId))?.region
+        : getCurrentRunningHubRegion(),
       name,
       description: String(runtime.getById("appPickerEditorDescriptionInput")?.value || "").trim(),
       previewImage: String(runtime.getById("appPickerEditorPreviewImageInput")?.value || "").trim(),
@@ -678,7 +698,13 @@
   async function saveAppRecord(formValue, options = {}) {
     const apps = modules.state.state.apps;
     const existingIndex = apps.findIndex((item) => String(item.id) === String(formValue.id));
-    const duplicateIndex = apps.findIndex((item) => String(item.appId) === String(formValue.appId) && String(item.id) !== String(formValue.id));
+    const formRegion = modules.state.normalizeRunningHubRegion(formValue.region);
+    const duplicateIndex = apps.findIndex(
+      (item) =>
+        String(item.appId) === String(formValue.appId) &&
+        modules.state.normalizeRunningHubRegion(item.region) === formRegion &&
+        String(item.id) !== String(formValue.id)
+    );
     const now = Date.now();
 
     const nextApp = modules.state.normalizeAppRecord({
@@ -951,7 +977,11 @@
       return { ok: true, appId: normalizedAppId, name: preferredName || "", description: "", inputs: [] };
     }
 
-    const result = await modules.runtime.callHost("runninghub.parseApp", [{ appId: normalizedAppId, apiKey, preferredName }], { timeoutMs: 45000 });
+    const result = await modules.runtime.callHost(
+      "runninghub.parseApp",
+      [{ appId: normalizedAppId, apiKey, preferredName, region: getCurrentRunningHubRegion() }],
+      { timeoutMs: 45000 }
+    );
 
     if (nameEl) nameEl.value = result && result.name ? result.name : preferredName;
     if (descriptionEl) descriptionEl.value = result && result.description ? result.description : "";
@@ -986,7 +1016,11 @@
       return { ok: true, appId: normalizedAppId, name: preferredName || "", description: "", inputs: [] };
     }
 
-    const result = await modules.runtime.callHost("runninghub.parseApp", [{ appId: normalizedAppId, apiKey, preferredName }], { timeoutMs: 45000 });
+    const result = await modules.runtime.callHost(
+      "runninghub.parseApp",
+      [{ appId: normalizedAppId, apiKey, preferredName, region: getCurrentRunningHubRegion() }],
+      { timeoutMs: 45000 }
+    );
 
     if (nameEl) nameEl.value = result && result.name ? result.name : preferredName;
     if (descriptionEl) descriptionEl.value = result && result.description ? result.description : "";
@@ -1008,6 +1042,9 @@
     return {
       id: modules.state.state.editingAppId || runtime.createId("app"),
       appId,
+      region: modules.state.state.editingAppId
+        ? modules.state.state.apps.find((item) => String(item.id) === String(modules.state.state.editingAppId))?.region
+        : getCurrentRunningHubRegion(),
       name,
       description: String(runtime.getById("appEditorDescriptionInput")?.value || "").trim(),
       previewImage: String(runtime.getById("appEditorPreviewImageInput")?.value || "").trim(),
@@ -1060,12 +1097,12 @@
     const existingIds = new Set(nextApps.map((item) => String(item.id || "")));
     const nameIndexMap = new Map();
     nextApps.forEach((app, index) => {
-      const key = String((app && (app.name || app.title)) || "").trim().toLowerCase();
+      const key = `${modules.state.normalizeRunningHubRegion(app && app.region)}:${String((app && (app.name || app.title)) || "").trim().toLowerCase()}`;
       if (key && !nameIndexMap.has(key)) nameIndexMap.set(key, index);
     });
 
     importedApps.forEach((app) => {
-      const key = String((app && (app.name || app.title)) || "").trim().toLowerCase();
+      const key = `${modules.state.normalizeRunningHubRegion(app && app.region)}:${String((app && (app.name || app.title)) || "").trim().toLowerCase()}`;
       const previousIndex = key ? nameIndexMap.get(key) : -1;
       const previous = previousIndex >= 0 ? nextApps[previousIndex] : null;
       const nextId = previous ? previous.id : app.id && !existingIds.has(String(app.id)) ? app.id : modules.runtime.createId("app");

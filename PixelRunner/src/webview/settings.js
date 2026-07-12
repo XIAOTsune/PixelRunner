@@ -1,6 +1,7 @@
 (function initSettingsModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   let accountRefreshPromise = null;
+  let accountRefreshGeneration = 0;
 
   function renderSettingsStatus(message, type = "info") {
     modules.runtime.setSummaryStatus(modules.runtime.getById("settingsStatusSummary"), message, type);
@@ -62,7 +63,12 @@
 
   async function refreshAccountSummary(options = {}) {
     const apiKey = String((options.apiKey != null ? options.apiKey : modules.state.state.settings.apiKey) || "").trim();
+    const region = modules.state.normalizeRunningHubRegion(
+      options.region != null ? options.region : modules.state.state.settings.runningHubRegion
+    );
     if (!apiKey || !modules.runtime.isPluginRuntime()) {
+      accountRefreshGeneration += 1;
+      accountRefreshPromise = null;
       updateAccountSummary(null);
       return null;
     }
@@ -71,24 +77,27 @@
       return accountRefreshPromise;
     }
 
-    accountRefreshPromise = modules.runtime
-      .callHost("runninghub.fetchAccountStatus", [{ apiKey }], { timeoutMs: 15000 })
+    const requestGeneration = accountRefreshGeneration + 1;
+    accountRefreshGeneration = requestGeneration;
+    const requestPromise = modules.runtime
+      .callHost("runninghub.fetchAccountStatus", [{ apiKey, region }], { timeoutMs: 15000 })
       .then((account) => {
-        updateAccountSummary(account);
+        if (requestGeneration === accountRefreshGeneration) updateAccountSummary(account);
         return account;
       })
       .catch((error) => {
         if (!options.quiet && modules.ui && typeof modules.ui.logToWorkspace === "function") {
           modules.ui.logToWorkspace(`余额刷新失败：${error.message || error}`, "warn");
         }
-        updateAccountSummary(null);
+        if (requestGeneration === accountRefreshGeneration) updateAccountSummary(null);
         return null;
       })
       .finally(() => {
-        accountRefreshPromise = null;
+        if (accountRefreshPromise === requestPromise) accountRefreshPromise = null;
       });
 
-    return accountRefreshPromise;
+    accountRefreshPromise = requestPromise;
+    return requestPromise;
   }
 
   function formatParseDebug(debugRecord) {
@@ -107,6 +116,7 @@
 
   function fillSettingsForm(settings) {
     if (modules.runtime.getById("settingsApiKeyInput")) modules.runtime.getById("settingsApiKeyInput").value = settings.apiKey || "";
+    renderRunningHubRegionControl(settings.runningHubRegion);
     renderApiProfileControls();
     if (modules.runtime.getById("settingsPollIntervalInput")) {
       modules.runtime.getById("settingsPollIntervalInput").value = String(
@@ -128,11 +138,8 @@
     }
     if (modules.runtime.getById("settingsAiOptimizeAppIdInput")) {
       modules.runtime.getById("settingsAiOptimizeAppIdInput").value = String(
-        settings.aiOptimizeAppId ?? modules.state.DEFAULT_AI_OPTIMIZE_APP_ID
+        settings.aiOptimizeAppId ?? modules.state.getDefaultAiOptimizeAppId(settings.runningHubRegion)
       );
-    }
-    if (modules.runtime.getById("settingsAutoFillEmptyImageInputs")) {
-      modules.runtime.getById("settingsAutoFillEmptyImageInputs").checked = settings.autoFillEmptyImageInputs === true;
     }
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
@@ -154,13 +161,28 @@
     return modules.state.getActiveApiProfile ? modules.state.getActiveApiProfile() : null;
   }
 
+  function getCurrentRunningHubRegion() {
+    return modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
+  }
+
+  function renderRunningHubRegionControl(region = getCurrentRunningHubRegion()) {
+    const normalized = modules.state.normalizeRunningHubRegion(region);
+    document.querySelectorAll("[data-runninghub-region]").forEach((button) => {
+      const isActive = modules.state.normalizeRunningHubRegion(button.getAttribute("data-runninghub-region")) === normalized;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  }
+
   function renderApiProfileControls() {
     const runtime = modules.runtime;
     const select = runtime.getById("settingsApiProfileSelect");
     const nameInput = runtime.getById("settingsApiProfileNameInput");
     const listEl = runtime.getById("apiProfileList");
     const deleteButton = runtime.getById("btnDeleteApiProfile");
-    const profiles = Array.isArray(modules.state.state.apiProfiles) ? modules.state.state.apiProfiles : [];
+    const region = getCurrentRunningHubRegion();
+    const profiles = (Array.isArray(modules.state.state.apiProfiles) ? modules.state.state.apiProfiles : [])
+      .filter((profile) => modules.state.normalizeRunningHubRegion(profile.region) === region);
     const active = getActiveApiProfile();
 
     if (select) {
@@ -197,17 +219,20 @@
 
   function applyActiveApiProfile(profile) {
     const normalized = modules.state.normalizeApiProfileRecord(profile || {}, 0);
+    modules.state.state.settings.runningHubRegion = normalized.region;
     modules.state.state.activeApiProfileId = normalized.id;
     modules.state.state.settings.activeApiProfileId = normalized.id;
     modules.state.state.settings.apiKey = normalized.apiKey;
     const keyInput = modules.runtime.getById("settingsApiKeyInput");
     if (keyInput) keyInput.value = normalized.apiKey;
+    renderRunningHubRegionControl(normalized.region);
     renderApiProfileControls();
   }
 
   function readApiProfilesFromUi(settings) {
     const profiles = modules.state.normalizeApiProfileList(modules.state.state.apiProfiles);
     const apiKey = String(settings.apiKey || "").trim();
+    const region = modules.state.normalizeRunningHubRegion(settings.runningHubRegion);
     const activeId = String(modules.state.state.activeApiProfileId || settings.activeApiProfileId || "").trim();
     const nameInput = modules.runtime.getById("settingsApiProfileNameInput");
     const profileName = String((nameInput && nameInput.value) || "").trim();
@@ -221,12 +246,13 @@
         ...profiles[existingIndex],
         name: profileName || profiles[existingIndex].name,
         apiKey,
+        region,
         updatedAt: now
       }, existingIndex);
       return { profiles: modules.state.normalizeApiProfileList(profiles), activeApiProfileId: profiles[existingIndex].id };
     }
 
-    const duplicate = profiles.find((item) => String(item.apiKey).trim() === apiKey);
+    const duplicate = profiles.find((item) => item.region === region && String(item.apiKey).trim() === apiKey);
     if (duplicate) {
       duplicate.name = profileName || duplicate.name;
       duplicate.updatedAt = now;
@@ -236,6 +262,7 @@
     const nextProfile = modules.state.normalizeApiProfileRecord({
       name: profileName || `API ${profiles.length + 1}`,
       apiKey,
+      region,
       createdAt: now,
       updatedAt: now
     }, profiles.length);
@@ -599,14 +626,20 @@
 
   function readSettingsForm() {
     modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
+    const runningHubRegion = getCurrentRunningHubRegion();
+    const aiOptimizeAppId = modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "";
     return modules.state.normalizeSettings({
       apiKey: modules.runtime.getById("settingsApiKeyInput")?.value || "",
+      runningHubRegion,
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
-      aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
-      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
+      aiOptimizeAppId,
+      aiOptimizeAppIds: {
+        ...(modules.state.state.settings.aiOptimizeAppIds || {}),
+        [runningHubRegion]: aiOptimizeAppId
+      },
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
@@ -614,17 +647,23 @@
   }
 
   function readAdvancedSettingsForm() {
+    const runningHubRegion = getCurrentRunningHubRegion();
+    const aiOptimizeAppId = modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "";
     return modules.state.normalizeSettings({
       ...modules.state.state.settings,
       pollInterval: modules.runtime.getById("settingsPollIntervalInput")?.value,
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
-      aiOptimizeAppId: modules.runtime.getById("settingsAiOptimizeAppIdInput")?.value || "",
-      autoFillEmptyImageInputs: modules.runtime.getById("settingsAutoFillEmptyImageInputs")?.checked === true,
+      aiOptimizeAppId,
+      aiOptimizeAppIds: {
+        ...(modules.state.state.settings.aiOptimizeAppIds || {}),
+        [runningHubRegion]: aiOptimizeAppId
+      },
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       apiKey: modules.state.state.settings.apiKey,
+      runningHubRegion: modules.state.state.settings.runningHubRegion,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.state.state.settings.activeApiProfileId || ""
     });
   }
@@ -638,9 +677,10 @@
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
         localQueueEnabled: nextSettings.localQueueEnabled,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
-        autoFillEmptyImageInputs: nextSettings.autoFillEmptyImageInputs,
+        aiOptimizeAppIds: nextSettings.aiOptimizeAppIds,
         appPickerLayout: nextSettings.appPickerLayout,
         plusModeEnabled: nextSettings.plusModeEnabled,
+        runningHubRegion: nextSettings.runningHubRegion,
         activeApiProfileId: nextSettings.activeApiProfileId,
         thirdParty
       })
@@ -693,32 +733,34 @@
     };
     const thirdParty = modules.state.normalizeThirdPartySettings(mergedThirdParty);
     modules.state.state.thirdPartySettings = thirdParty;
+    const runningHubRegion = modules.state.normalizeRunningHubRegion(rawSettings && rawSettings.runningHubRegion);
     const storedProfiles = modules.state.normalizeApiProfileList(
       Array.isArray(rawApiProfiles) ? rawApiProfiles : rawApiProfiles && Array.isArray(rawApiProfiles.profiles) ? rawApiProfiles.profiles : []
     );
     const migratedProfiles = storedProfiles.length || !apiKey
       ? storedProfiles
-      : modules.state.normalizeApiProfileList([{ name: "默认 API", apiKey }]);
+      : modules.state.normalizeApiProfileList([{ name: "默认 API", apiKey, region: runningHubRegion }]);
     const activeApiProfileId = String(
       (rawApiProfiles && rawApiProfiles.activeApiProfileId) ||
         (rawSettings && rawSettings.activeApiProfileId) ||
         ""
     ).trim();
     const activeProfile =
-      migratedProfiles.find((profile) => String(profile.id) === activeApiProfileId) ||
-      migratedProfiles.find((profile) => String(profile.apiKey) === apiKey) ||
-      migratedProfiles[0] ||
+      migratedProfiles.find((profile) => String(profile.id) === activeApiProfileId && profile.region === runningHubRegion) ||
+      migratedProfiles.find((profile) => String(profile.apiKey) === apiKey && profile.region === runningHubRegion) ||
+      migratedProfiles.find((profile) => profile.region === runningHubRegion) ||
       null;
     modules.state.state.apiProfiles = migratedProfiles;
     modules.state.state.activeApiProfileId = activeProfile ? activeProfile.id : "";
     return modules.state.normalizeSettings({
-      apiKey: activeProfile ? activeProfile.apiKey : apiKey,
+      apiKey: activeProfile ? activeProfile.apiKey : "",
+      runningHubRegion,
       pollInterval: rawSettings && rawSettings.pollInterval,
       timeout: rawSettings && rawSettings.timeout,
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
       localQueueEnabled: rawSettings ? rawSettings.localQueueEnabled : undefined,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
-      autoFillEmptyImageInputs: rawSettings ? rawSettings.autoFillEmptyImageInputs : undefined,
+      aiOptimizeAppIds: rawSettings && rawSettings.aiOptimizeAppIds,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
@@ -730,19 +772,23 @@
     const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
     const apiProfileState = readApiProfilesFromUi(normalized);
     const activeProfile =
-      apiProfileState.profiles.find((profile) => String(profile.id) === String(apiProfileState.activeApiProfileId)) ||
-      apiProfileState.profiles[0] ||
+      apiProfileState.profiles.find(
+        (profile) =>
+          String(profile.id) === String(apiProfileState.activeApiProfileId) &&
+          profile.region === normalized.runningHubRegion
+      ) ||
       null;
     const nextSettings = modules.state.normalizeSettings({
       ...normalized,
       apiKey: activeProfile ? activeProfile.apiKey : normalized.apiKey,
+      runningHubRegion: normalized.runningHubRegion,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
     });
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.API_KEY, nextSettings.apiKey);
     await modules.runtime.storageSetItem(
       modules.state.STORAGE_KEYS.API_PROFILES,
       JSON.stringify({
-        version: 1,
+        version: 2,
         activeApiProfileId: nextSettings.activeApiProfileId,
         profiles: apiProfileState.profiles
       })
@@ -833,6 +879,7 @@
     const newApiProfileButton = runtime.getById("btnNewApiProfile");
     const deleteApiProfileButton = runtime.getById("btnDeleteApiProfile");
     const apiProfileList = runtime.getById("apiProfileList");
+    const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const parseAppButton = runtime.getById("btnParseApp");
     const saveEditingAppButton = runtime.getById("btnSaveEditingApp");
@@ -862,12 +909,10 @@
       "settingsMaxConcurrentTasksInput",
       "settingsLocalQueueEnabledInput",
       "settingsAiOptimizeAppIdInput",
-      "settingsAutoFillEmptyImageInputs",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ];
     const immediateAdvancedFieldIds = new Set([
-      "settingsAutoFillEmptyImageInputs",
       "settingsLocalQueueEnabledInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
@@ -910,7 +955,10 @@
       const select = runtime.getById("settingsApiProfileSelect");
       const deleteButton = runtime.getById("btnDeleteApiProfile");
       if (keyInput) keyInput.value = "";
-      if (nameInput) nameInput.value = `API ${modules.state.state.apiProfiles.length + 1}`;
+      const regionCount = modules.state.state.apiProfiles.filter(
+        (profile) => profile.region === getCurrentRunningHubRegion()
+      ).length;
+      if (nameInput) nameInput.value = `API ${regionCount + 1}`;
       if (select) select.value = "";
       if (deleteButton) deleteButton.disabled = true;
       runtime.getById("apiProfileList")?.querySelectorAll(".api-profile-chip.is-active").forEach((button) => {
@@ -928,9 +976,55 @@
         activeApiProfileId: profile.id
       });
       await saveSettingsSnapshot(settings);
-      await refreshAccountSummary({ apiKey: settings.apiKey, quiet: true, force: true });
+      await refreshAccountSummary({ apiKey: settings.apiKey, region: settings.runningHubRegion, quiet: true, force: true });
       renderSettingsStatus(`已切换到 API 档案：${profile.name}`, "success");
     }
+
+    async function persistRunningHubRegion(region) {
+      const normalizedRegion = modules.state.normalizeRunningHubRegion(region);
+      if (normalizedRegion === getCurrentRunningHubRegion()) return;
+
+      modules.state.state.settings = modules.state.normalizeSettings({
+        ...modules.state.state.settings,
+        runningHubRegion: normalizedRegion
+      });
+      const nextProfile = modules.state.state.apiProfiles.find((profile) => profile.region === normalizedRegion) || null;
+      modules.state.state.activeApiProfileId = nextProfile ? nextProfile.id : "";
+      modules.state.state.settings.activeApiProfileId = nextProfile ? nextProfile.id : "";
+      modules.state.state.settings.apiKey = nextProfile ? nextProfile.apiKey : "";
+      renderRunningHubRegionControl(normalizedRegion);
+      fillSettingsForm(modules.state.state.settings);
+
+      const saved = await saveSettingsSnapshot(modules.state.state.settings);
+      await refreshAccountSummary({
+        apiKey: saved.apiKey,
+        region: saved.runningHubRegion,
+        quiet: true,
+        force: true
+      });
+      if (modules.apps && typeof modules.apps.hydrateCurrentApp === "function") {
+        await modules.apps.hydrateCurrentApp({ quiet: true });
+      }
+      renderSettingsStatus(
+        `已切换到 RunningHub ${normalizedRegion === modules.state.RUNNINGHUB_REGIONS.GLOBAL ? "国际版" : "国内版"}。`,
+        "success"
+      );
+    }
+
+    runningHubRegionButtons.forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.classList.contains("is-active")) return;
+        runningHubRegionButtons.forEach((item) => { item.disabled = true; });
+        try {
+          await persistRunningHubRegion(button.getAttribute("data-runninghub-region"));
+        } catch (error) {
+          renderSettingsStatus(`切换 RunningHub 区域失败：${error.message}`, "error");
+          renderRunningHubRegionControl();
+        } finally {
+          runningHubRegionButtons.forEach((item) => { item.disabled = false; });
+        }
+      });
+    });
 
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {
@@ -975,7 +1069,9 @@
         if (!active) return;
         const nextProfiles = modules.state.state.apiProfiles.filter((profile) => String(profile.id) !== String(active.id));
         modules.state.state.apiProfiles = modules.state.normalizeApiProfileList(nextProfiles);
-        const nextActive = modules.state.state.apiProfiles[0] || null;
+        const nextActive = modules.state.state.apiProfiles.find(
+          (profile) => profile.region === getCurrentRunningHubRegion()
+        ) || null;
         modules.state.state.activeApiProfileId = nextActive ? nextActive.id : "";
         modules.state.state.settings.apiKey = nextActive ? nextActive.apiKey : "";
         modules.state.state.settings.activeApiProfileId = nextActive ? nextActive.id : "";
@@ -984,7 +1080,12 @@
         if (keyInput) keyInput.value = nextActive ? nextActive.apiKey : "";
         try {
           await saveSettingsSnapshot(modules.state.state.settings);
-          await refreshAccountSummary({ apiKey: modules.state.state.settings.apiKey, quiet: true, force: true });
+          await refreshAccountSummary({
+            apiKey: modules.state.state.settings.apiKey,
+            region: modules.state.state.settings.runningHubRegion,
+            quiet: true,
+            force: true
+          });
           renderSettingsStatus(`已删除 API 档案：${active.name}`, "warn");
         } catch (error) {
           renderSettingsStatus(`删除 API 档案失败：${error.message}`, "error");
@@ -1142,7 +1243,7 @@
     if (resetAiOptimizeButton) {
       resetAiOptimizeButton.addEventListener("click", async () => {
         const input = runtime.getById("settingsAiOptimizeAppIdInput");
-        if (input) input.value = modules.state.DEFAULT_AI_OPTIMIZE_APP_ID;
+        if (input) input.value = modules.state.getDefaultAiOptimizeAppId(getCurrentRunningHubRegion());
         scheduleAdvancedSettingsSave("settingsAiOptimizeAppIdInput", { immediate: true });
       });
     }

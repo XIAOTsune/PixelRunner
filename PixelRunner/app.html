@@ -25,12 +25,6 @@
     <main id="appMain" class="panel-main">
       <section id="viewWorkspace" class="panel-view active">
         <div class="panel-header-strip workspace-header-strip">
-          <div class="panel-header-main">
-            <div class="panel-heading-group">
-              <p class="panel-eyebrow">任务工作台</p>
-              <h2 class="panel-title">RunningHub 任务工作台</h2>
-            </div>
-          </div>
           <div class="panel-header-side workspace-header-side">
             <div id="accountSummary" class="account-summary is-empty">
               <div class="metric-pill">
@@ -54,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.6.0</span>
+              <span class="version-text">v2.6.1</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -120,7 +114,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.6.0 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] PixelRunner 2.6.1 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -135,7 +129,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.6.0</span>
+            <span class="version-text">v2.6.1</span>
           </div>
         </div>
 
@@ -187,64 +181,64 @@
         </section>
 
         <div class="tool-group-grid">
-          <section class="surface-card">
+          <section class="surface-card layer-assist-card">
             <div class="card-head">
               <h3 class="card-title">图层辅助</h3>
               <span class="status-chip">3 项预置</span>
             </div>
-            <div class="tool-list">
-              <article class="tool-item">
+            <div class="tool-list layer-quick-list">
+              <article class="tool-item layer-quick-item" tabindex="0">
                 <div>
                   <h4>黑白观察层</h4>
                   <p>用于快速检查明暗和反差。</p>
                 </div>
-                <button id="btnObserver" class="mini-btn" type="button">创建</button>
+                <button id="btnObserver" class="mini-btn" type="button" title="创建黑白观察层。用于快速检查明暗和反差。">创建</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item layer-quick-item" tabindex="0">
                 <div>
                   <h4>中性灰图层</h4>
                   <p>预留 50% 灰加柔光的修图入口。</p>
                 </div>
-                <button id="btnNeutralGray" class="mini-btn" type="button">创建</button>
+                <button id="btnNeutralGray" class="mini-btn" type="button" title="创建中性灰图层。预留 50% 灰加柔光的修图入口。">创建</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item layer-quick-item" tabindex="0">
                 <div>
                   <h4>高低频</h4>
                   <p>分离为纹理层和颜色层，便于精修。</p>
                 </div>
-                <button id="btnFreqSep" class="mini-btn" type="button">创建</button>
+                <button id="btnFreqSep" class="mini-btn" type="button" title="创建高低频。分离为纹理层和颜色层，便于精修。">创建</button>
               </article>
             </div>
           </section>
 
-          <section class="surface-card">
+          <section class="surface-card compact-tool-card">
             <div class="card-head">
               <h3 class="card-title">滤镜与修复</h3>
               <span class="status-chip">4 项预置</span>
             </div>
-            <div class="tool-list">
-              <article class="tool-item">
+            <div class="tool-list compact-tool-list">
+              <article class="tool-item compact-tool-item" tabindex="0">
                 <div>
                   <h4>高斯模糊</h4>
                   <p>保留系统滤镜对话框入口。</p>
                 </div>
                 <button id="btnGaussianBlur" class="mini-btn" type="button">运行</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item compact-tool-item" tabindex="0">
                 <div>
                   <h4>锐化</h4>
                   <p>快速执行常用锐化动作。</p>
                 </div>
                 <button id="btnSharpen" class="mini-btn" type="button">运行</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item compact-tool-item" tabindex="0">
                 <div>
                   <h4>高反差保留</h4>
                   <p>为精修流程预留可配置入口。</p>
                 </div>
                 <button id="btnHighPass" class="mini-btn" type="button">运行</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item compact-tool-item" tabindex="0">
                 <div>
                   <h4>内容识别填充</h4>
                   <p>与选区上下文联动的修复动作。</p>
@@ -253,20 +247,20 @@
               </article>
             </div>
           </section>
-          <section class="surface-card">
+          <section class="surface-card compact-tool-card">
             <div class="card-head">
               <h3 class="card-title">合并操作</h3>
               <span class="status-chip">2 项预置</span>
             </div>
-            <div class="tool-list">
-              <article class="tool-item">
+            <div class="tool-list compact-tool-list">
+              <article class="tool-item compact-tool-item" tabindex="0">
                 <div>
                   <h4>选择并遮住</h4>
                   <p>打开 Photoshop 原生面板，需先存在选区。</p>
                 </div>
                 <button id="btnSelectAndMask" class="mini-btn" type="button">运行</button>
               </article>
-              <article class="tool-item">
+              <article class="tool-item compact-tool-item" tabindex="0">
                 <div>
                   <h4>盖印图层</h4>
                   <p>高频合并动作的快捷入口。</p>
@@ -288,7 +282,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.6.0</span>
+          <span class="version-text">v2.6.1</span>
           </div>
         </div>
 
@@ -298,6 +292,17 @@
               <h3 class="card-title">API 设置</h3>
             </div>
             <div class="form-stack">
+              <div class="field">
+                <span class="field-label">RunningHub 服务区域</span>
+                <div id="runningHubRegionControl" class="region-segmented" role="group" aria-label="RunningHub 服务区域">
+                  <button class="region-segmented-btn is-active" type="button" data-runninghub-region="cn" aria-pressed="true">
+                    <span>国内版</span><small>.cn</small>
+                  </button>
+                  <button class="region-segmented-btn" type="button" data-runninghub-region="global" aria-pressed="false">
+                    <span>国际版</span><small>.ai</small>
+                  </button>
+                </div>
+              </div>
               <label class="field">
                 <span class="field-label">RunningHub API Key</span>
                 <input id="settingsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
@@ -483,14 +488,6 @@
                 <span class="field-label">AI 优化应用 ID</span>
                 <input id="settingsAiOptimizeAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub AI优化应用 ID" />
               </label>
-              <div class="field toggle-field settings-toggle-field">
-                <span class="field-label">多图输入保护</span>
-                <label class="checkbox-line">
-                  <input id="settingsAutoFillEmptyImageInputs" type="checkbox" />
-                  <span>参考图或副图为空时，自动复用主图</span>
-                </label>
-                <span class="field-hint settings-field-hint">关闭时不自动复用主图，但提交多图应用前会为普通参考图、副图、image2 等空槽位填充不可见的 64x64 中性灰占位图，避免沿用 RunningHub 应用示例图；遮罩、控制图、深度图或姿态图不会自动补齐。</span>
-              </div>
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">应用切换密度</span>
                 <label class="checkbox-line">

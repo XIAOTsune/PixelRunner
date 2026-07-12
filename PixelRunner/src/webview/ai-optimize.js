@@ -22,6 +22,8 @@
     running: false,
     canceling: false,
     taskId: "",
+    taskApiKey: "",
+    taskRegion: "cn",
     taskStatus: "idle",
     taskDetail: "等待开始运行。",
     taskStartedAt: 0,
@@ -510,6 +512,7 @@
     if (clearButton) {
       clearButton.addEventListener("click", () => {
         state.taskId = "";
+        state.taskApiKey = "";
         state.taskStatus = "idle";
         state.taskDetail = "等待开始运行。";
         state.taskStartedAt = 0;
@@ -805,6 +808,8 @@
     state.running = false;
     state.canceling = false;
     state.taskId = "";
+    state.taskApiKey = "";
+    state.taskRegion = modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
     state.taskStatus = "idle";
     state.taskDetail = "等待开始运行。";
     state.taskStartedAt = 0;
@@ -838,14 +843,21 @@
 
   async function cancelTask() {
     const taskId = String(state.taskId || "").trim();
-    const apiKey = String(modules.state.state.settings.apiKey || "").trim();
+    const apiKey = String(state.taskApiKey || modules.state.state.settings.apiKey || "").trim();
+    const region = modules.state.normalizeRunningHubRegion(
+      state.taskRegion || modules.state.state.settings.runningHubRegion
+    );
     if (!state.running || !taskId || !apiKey || state.canceling) return;
 
     state.canceling = true;
     state.taskDetail = "正在取消 AI优化任务...";
     renderModal();
     try {
-      await modules.runtime.callHost("runninghub.cancelTask", [{ apiKey, taskId }], { timeoutMs: 20000 });
+      await modules.runtime.callHost(
+        "runninghub.cancelTask",
+        [{ apiKey, taskId, region }],
+        { timeoutMs: 20000 }
+      );
       state.running = false;
       state.canceling = false;
       state.taskStatus = "cancelled";
@@ -963,7 +975,10 @@
             modules.state.state.thirdPartySettings.enabled
         );
         const apiKey = String(modules.state.state.settings.apiKey || "").trim();
-        const aiOptimizeAppId = String(modules.state.state.settings.aiOptimizeAppId || modules.state.DEFAULT_AI_OPTIMIZE_APP_ID || "").trim();
+        const runningHubRegion = modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
+        const aiOptimizeAppId = String(
+          modules.state.state.settings.aiOptimizeAppId || modules.state.getDefaultAiOptimizeAppId(runningHubRegion)
+        ).trim();
         if (!useThirdPartyOptimize && !apiKey) {
           setStatus("请先在设置页保存 RunningHub API Key。", "warn");
           renderModal();
@@ -989,6 +1004,8 @@
         state.canceling = false;
         state.resultText = "";
         state.taskId = "";
+        state.taskApiKey = apiKey;
+        state.taskRegion = runningHubRegion;
         state.taskStatus = "running";
         state.taskStartedAt = Date.now();
         state.taskUpdatedAt = state.taskStartedAt;
@@ -1003,7 +1020,8 @@
         const settings = {
           pollInterval: modules.state.state.settings.pollInterval,
           timeout: modules.state.state.settings.timeout,
-          maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks
+          maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
+          runningHubRegion: modules.state.state.settings.runningHubRegion
         };
 
         try {
@@ -1039,6 +1057,7 @@
           const parsedApp = await modules.runtime.callHost("runninghub.parseApp", [{
             appId: aiOptimizeAppId,
             apiKey,
+            region: modules.state.state.settings.runningHubRegion,
             preferredName: "AI优化"
           }], {
             timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000)
@@ -1056,6 +1075,7 @@
 
           const submitPayload = {
             apiKey,
+            region: modules.state.state.settings.runningHubRegion,
             appId: aiOptimizeAppId,
             appName: "AI优化",
             app: {
@@ -1086,6 +1106,7 @@
           const pollResult = await modules.runtime.callHost("runninghub.pollTask", [{
             apiKey,
             taskId: state.taskId,
+            region: modules.state.state.settings.runningHubRegion,
             settings
           }], {
             timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000)

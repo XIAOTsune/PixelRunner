@@ -23,15 +23,34 @@
   };
 
   const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
+  const RUNNINGHUB_REGIONS = {
+    CN: "cn",
+    GLOBAL: "global"
+  };
+
+  function normalizeRunningHubRegion(value) {
+    const marker = String(value || "").trim().toLowerCase();
+    return ["global", "international", "intl", "overseas", "ai"].includes(marker)
+      ? RUNNINGHUB_REGIONS.GLOBAL
+      : RUNNINGHUB_REGIONS.CN;
+  }
+
+  function getDefaultAiOptimizeAppId(region) {
+    return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN ? DEFAULT_AI_OPTIMIZE_APP_ID : "";
+  }
 
   const DEFAULT_SETTINGS = {
     apiKey: "",
+    runningHubRegion: RUNNINGHUB_REGIONS.CN,
     pollInterval: 2,
     timeout: 180,
     maxConcurrentTasks: 3,
     localQueueEnabled: false,
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
-    autoFillEmptyImageInputs: false,
+    aiOptimizeAppIds: {
+      cn: DEFAULT_AI_OPTIMIZE_APP_ID,
+      global: ""
+    },
     appPickerLayout: "visual",
     plusModeEnabled: false
   };
@@ -162,18 +181,42 @@
 
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" ? settings : {};
+    const runningHubRegion = normalizeRunningHubRegion(source.runningHubRegion || source.region);
+    const sourceAiOptimizeAppIds = source.aiOptimizeAppIds && typeof source.aiOptimizeAppIds === "object"
+      ? source.aiOptimizeAppIds
+      : {};
+    const hasRegionalCnId = Object.prototype.hasOwnProperty.call(sourceAiOptimizeAppIds, RUNNINGHUB_REGIONS.CN);
+    const hasRegionalGlobalId = Object.prototype.hasOwnProperty.call(sourceAiOptimizeAppIds, RUNNINGHUB_REGIONS.GLOBAL);
+    const legacyAiOptimizeAppId = String(source.aiOptimizeAppId == null ? "" : source.aiOptimizeAppId).trim();
+    const aiOptimizeAppIds = {
+      cn: String(
+        hasRegionalCnId
+          ? sourceAiOptimizeAppIds.cn
+          : runningHubRegion === RUNNINGHUB_REGIONS.CN
+            ? legacyAiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID
+            : DEFAULT_AI_OPTIMIZE_APP_ID
+      ).trim(),
+      global: String(
+        hasRegionalGlobalId
+          ? sourceAiOptimizeAppIds.global
+          : runningHubRegion === RUNNINGHUB_REGIONS.GLOBAL
+            ? legacyAiOptimizeAppId
+            : ""
+      ).trim()
+    };
     const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
     const timeout = Math.min(600, Math.max(10, Math.floor(Number(source.timeout) || DEFAULT_SETTINGS.timeout)));
     const maxConcurrentTasks = Math.min(100, Math.max(1, Math.floor(Number(source.maxConcurrentTasks) || DEFAULT_SETTINGS.maxConcurrentTasks)));
 
     return {
       apiKey: String(source.apiKey || "").trim(),
+      runningHubRegion,
       pollInterval,
       timeout,
       maxConcurrentTasks,
       localQueueEnabled: source.localQueueEnabled === true,
-      aiOptimizeAppId: String(source.aiOptimizeAppId || DEFAULT_AI_OPTIMIZE_APP_ID).trim() || DEFAULT_AI_OPTIMIZE_APP_ID,
-      autoFillEmptyImageInputs: source.autoFillEmptyImageInputs === true,
+      aiOptimizeAppId: aiOptimizeAppIds[runningHubRegion],
+      aiOptimizeAppIds,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()
@@ -190,6 +233,7 @@
       id,
       name,
       apiKey,
+      region: normalizeRunningHubRegion(source.region || source.runningHubRegion),
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
     };
@@ -201,7 +245,7 @@
     return (Array.isArray(profiles) ? profiles : [])
       .map((item, index) => normalizeApiProfileRecord(item, index))
       .filter((item) => {
-        const key = item.apiKey.toLowerCase();
+        const key = `${item.region}:${item.apiKey.toLowerCase()}`;
         if (!item.apiKey || seenKeys.has(key)) return false;
         seenKeys.add(key);
         if (seenIds.has(item.id)) item.id = modules.runtime.createId("api");
@@ -212,7 +256,12 @@
 
   function getActiveApiProfile() {
     const activeId = String(state.activeApiProfileId || state.settings.activeApiProfileId || "").trim();
-    return state.apiProfiles.find((item) => String(item.id) === activeId) || state.apiProfiles[0] || null;
+    const region = normalizeRunningHubRegion(state.settings.runningHubRegion);
+    return (
+      state.apiProfiles.find((item) => String(item.id) === activeId && item.region === region) ||
+      state.apiProfiles.find((item) => item.region === region) ||
+      null
+    );
   }
 
   function normalizeModelList(models, fallback) {
@@ -443,6 +492,7 @@
     return {
       id,
       appId,
+      region: normalizeRunningHubRegion(source.region || source.runningHubRegion),
       name,
       description: String(source.description || "").trim(),
       previewImage,
@@ -594,6 +644,7 @@
   modules.state = {
     STORAGE_KEYS,
     DEFAULT_AI_OPTIMIZE_APP_ID,
+    RUNNINGHUB_REGIONS,
     DEFAULT_SETTINGS,
     DEFAULT_THIRD_PARTY_SETTINGS,
     THIRD_PARTY_APP_ID,
@@ -602,6 +653,8 @@
     DEFAULT_TEMPLATE_CATEGORY_NAME,
     state,
     normalizeTheme,
+    normalizeRunningHubRegion,
+    getDefaultAiOptimizeAppId,
     normalizeSettings,
     normalizeApiProfileRecord,
     normalizeApiProfileList,

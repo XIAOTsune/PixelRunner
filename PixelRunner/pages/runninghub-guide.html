@@ -839,13 +839,14 @@
           <div class="flow">
             <article class="flow-step" id="api-key">
               <div>
-                <h3>在消费级 API 控制台复制 API Key</h3>
-                <p>打开 RunningHub 的 <strong>消费级-会员 API 控制台</strong>，登录账号后进入密钥区域，复制自己的 API Key。当前直达地址是 <code>https://www.runninghub.cn/enterprise-api/consumerApi</code>。</p>
+                <h3>选择服务区域并复制对应 API Key</h3>
+                <p>国内版使用 <code>runninghub.cn</code>，国际版使用 <code>runninghub.ai</code>。先确认准备使用的站点，再打开该站点的 <strong>消费级-会员 API 控制台</strong>，登录并复制对应 API Key。</p>
                 <ul class="plain-list">
                   <li>目前官网右上角头像菜单里没有 API 控制台入口，建议直接使用上面的控制台网址。</li>
                   <li>消费级 API 调用会消耗账号里的 RH 币；如果看不到密钥或调用失败，先确认账号是否具备对应 API 权益。</li>
                   <li>如果 API Key 失效，回官网 API 控制台重新复制或重置新的 Key。</li>
                   <li>API Key 属于敏感信息，不建议发到公开群聊或截图里。</li>
+                  <li>国内版与国际版的 Key、余额和应用 ID 分开使用，不要跨区域混用。</li>
                 </ul>
                 <div class="inline-actions" style="margin-top: 12px;">
                   <a class="btn" href="https://www.runninghub.cn/enterprise-api/consumerApi" target="_blank" rel="noreferrer">
@@ -855,6 +856,14 @@
                   <a class="btn" href="https://www.runninghub.cn/runninghub-api-doc-cn/doc-8287334" target="_blank" rel="noreferrer">
                     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"></path></svg>
                     查看官方 API 文档
+                  </a>
+                  <a class="btn" href="https://www.runninghub.ai/enterprise-api/consumerApi" target="_blank" rel="noreferrer">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="m10 14 11-11"></path></svg>
+                    国际版 API 控制台
+                  </a>
+                  <a class="btn" href="https://www.runninghub.ai/runninghub-api-doc-en" target="_blank" rel="noreferrer">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z"></path></svg>
+                    国际版 API 文档
                   </a>
                 </div>
               </div>
@@ -873,9 +882,9 @@
             <article class="flow-step">
               <div>
                 <h3>在插件设置里保存 API Key</h3>
-                <p>回到 PixelRunner，打开 <span class="kbd">设置</span>。在 <strong>API 设置</strong> 中填写 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
+                <p>回到 PixelRunner，打开 <span class="kbd">设置</span>。先在 <strong>RunningHub 服务区域</strong> 选择“国内版”或“国际版”，再填写该区域的 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
                 <ul class="plain-list">
-                  <li>有多个账号时，可以用“新增”创建多个 API 档案，例如“主账号”“客户项目 A”。</li>
+                  <li>API 档案按区域分别显示；有多个账号时，可以用“新增”创建多个档案，例如“主账号”“客户项目 A”。</li>
                   <li>保存后，工作台右上角会尝试显示余额和 RH 币。</li>
                   <li>看不到余额时，先确认 Key 是否正确，再确认网络是否能访问 RunningHub。</li>
                 </ul>
@@ -888,7 +897,7 @@
             <article class="flow-step" id="app-add">
               <div>
                 <h3>在 RunningHub 找到要用的 AI 应用</h3>
-                <p>打开 <code>https://www.runninghub.cn/ai-apps</code>。页面前面通常是 <strong>精选应用</strong>，继续往下翻会看到 <strong>AI应用广场</strong>；也可以直接用页面里的搜索或筛选找到目标应用。</p>
+                <p>国内版打开 <code>https://www.runninghub.cn/ai-apps</code>，国际版打开 <code>https://www.runninghub.ai/ai-apps</code>。页面前面通常是 <strong>精选应用</strong>，继续往下翻会看到 <strong>AI应用广场</strong>；也可以直接用页面里的搜索或筛选找到目标应用。</p>
                 <ul class="plain-list">
                   <li>优先选择自己在网页端能正常打开、能手动试跑的应用。</li>
                   <li>打开应用详情页后，浏览器地址通常类似 <code>https://www.runninghub.cn/ai-detail/1937084629516193794</code>。</li>
@@ -899,6 +908,10 @@
                   <a class="btn" href="https://www.runninghub.cn/ai-apps" target="_blank" rel="noreferrer">
                     <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="m10 14 11-11"></path></svg>
                     打开 AI 应用页
+                  </a>
+                  <a class="btn" href="https://www.runninghub.ai/ai-apps" target="_blank" rel="noreferrer">
+                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><path d="M15 3h6v6"></path><path d="m10 14 11-11"></path></svg>
+                    国际版 AI 应用页
                   </a>
                 </div>
               </div>
