@@ -5535,8 +5535,8 @@ button {
   }
 
   .workspace-header-side {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 4px 6px;
+    grid-template-columns: minmax(0, 1fr) 30px max-content;
+    gap: 4px;
     width: 100%;
   }
 
@@ -5558,19 +5558,21 @@ button {
   }
 
   .workspace-header-actions {
-    gap: 4px;
+    gap: 3px;
+    min-width: max-content;
   }
 
   .workspace-header-actions .ghost-btn {
     min-height: 26px;
-    padding: 0 8px;
+    padding: 0 6px;
     border-radius: 11px;
     box-shadow: 2px 3px 0 var(--btn-shadow);
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .workspace-header-actions .version-text {
-    font-size: 11px;
+    display: inline;
+    font-size: 10px;
   }
 
   .workspace-header-side .sound-toggle-btn {
@@ -5857,7 +5859,7 @@ button {
   }
 
   .workspace-header-side {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) 30px max-content;
     align-items: center;
     gap: 3px;
   }
@@ -5867,7 +5869,7 @@ button {
   }
 
   .workspace-header-actions .version-text {
-    display: none;
+    display: inline;
   }
 }
 
