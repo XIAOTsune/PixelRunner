@@ -3,6 +3,8 @@
   const DEFAULT_CONTEXT_EXPANSION = 128;
   const DEFAULT_MASK_EXPANSION = 4;
   const DEFAULT_FEATHER = 12;
+  const FEATHER_BLUR_PASSES = 3;
+  const FEATHER_CONTEXT_SAFETY_PIXELS = 2;
   let submissionInFlight = false;
   let captureInFlight = null;
   let taskTimerHandle = 0;
@@ -46,6 +48,14 @@
     const values = ["left", "top", "right", "bottom"].map((key) => Number(bounds[key]));
     if (!values.every(Number.isFinite) || values[2] <= values[0] || values[3] <= values[1]) return null;
     return { left: values[0], top: values[1], right: values[2], bottom: values[3] };
+  }
+
+  function getCaptureContextPadding(contextExpansion, maskExpansion, feather) {
+    const requestedPadding = Math.max(0, Number(contextExpansion) || 0);
+    const safeFeather = Math.max(0, Number(feather) || 0);
+    const maskSafetyPadding = Math.max(0, Number(maskExpansion) || 0) +
+      (safeFeather > 0 ? Math.ceil(safeFeather) + FEATHER_CONTEXT_SAFETY_PIXELS : 0);
+    return Math.max(requestedPadding, maskSafetyPadding);
   }
 
   function formatBounds(bounds) {
@@ -161,6 +171,68 @@
     return output;
   }
 
+  function boxBlurAlphaMask(source, width, height, radius) {
+    const safeRadius = Math.max(0, Math.min(Math.max(width, height), Math.round(Number(radius) || 0)));
+    if (!safeRadius) return new Uint8ClampedArray(source);
+
+    const horizontal = new Uint8ClampedArray(source.length);
+    const output = new Uint8ClampedArray(source.length);
+    const windowSize = safeRadius * 2 + 1;
+
+    for (let y = 0; y < height; y += 1) {
+      const rowOffset = y * width;
+      let sum = 0;
+      for (let x = 0; x <= safeRadius && x < width; x += 1) sum += source[rowOffset + x];
+      for (let x = 0; x < width; x += 1) {
+        horizontal[rowOffset + x] = Math.round(sum / windowSize);
+        const removeIndex = x - safeRadius;
+        const addIndex = x + safeRadius + 1;
+        if (removeIndex >= 0) sum -= source[rowOffset + removeIndex];
+        if (addIndex < width) sum += source[rowOffset + addIndex];
+      }
+    }
+
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      for (let y = 0; y <= safeRadius && y < height; y += 1) sum += horizontal[y * width + x];
+      for (let y = 0; y < height; y += 1) {
+        output[y * width + x] = Math.round(sum / windowSize);
+        const removeIndex = y - safeRadius;
+        const addIndex = y + safeRadius + 1;
+        if (removeIndex >= 0) sum -= horizontal[removeIndex * width + x];
+        if (addIndex < height) sum += horizontal[addIndex * width + x];
+      }
+    }
+
+    return output;
+  }
+
+  function buildFeatheredAlpha(source, width, height, radius) {
+    const safeRadius = Math.max(0, Number(radius) || 0);
+    if (!safeRadius) return new Uint8ClampedArray(source);
+    const passRadius = Math.max(1, Math.ceil(safeRadius / FEATHER_BLUR_PASSES));
+    let blurred = new Uint8ClampedArray(source);
+    for (let pass = 0; pass < FEATHER_BLUR_PASSES; pass += 1) {
+      blurred = boxBlurAlphaMask(blurred, width, height, passRadius);
+    }
+    return blurred;
+  }
+
+  function buildOutwardFeatherAlpha(source, width, height, radius) {
+    const safeRadius = Math.max(0, Number(radius) || 0);
+    if (!safeRadius) return new Uint8ClampedArray(source);
+
+    // Pre-expand by half the feather so the original edge stays in the high-alpha part of the blur.
+    const preExpansion = Math.max(1, Math.ceil(safeRadius / 2));
+    const expanded = dilateAlphaMask(source, width, height, preExpansion);
+    const blurred = buildFeatheredAlpha(expanded, width, height, preExpansion);
+    const output = new Uint8ClampedArray(source.length);
+    for (let index = 0; index < output.length; index += 1) {
+      output[index] = Math.max(source[index], blurred[index]);
+    }
+    return output;
+  }
+
   async function buildMaskVariants(selection) {
     const rawMask = selection && selection.maskAsset && selection.maskAsset.dataUrl ? selection.maskAsset : null;
     if (!rawMask || !rawMask.dataUrl) {
@@ -200,37 +272,14 @@
       alphaMask[index / 4] = Math.min(luminance, sourceData.data[index + 3]);
     }
 
-    const maskCanvas = document.createElement("canvas");
-    maskCanvas.width = width;
-    maskCanvas.height = height;
-    const maskContext = maskCanvas.getContext("2d");
-    const expandedCanvas = document.createElement("canvas");
-    expandedCanvas.width = width;
-    expandedCanvas.height = height;
-    const expandedContext = expandedCanvas.getContext("2d", { willReadFrequently: true });
     const scale = Math.min(
       width / Math.max(1, selection.contextBounds.right - selection.contextBounds.left),
       height / Math.max(1, selection.contextBounds.bottom - selection.contextBounds.top)
     );
-    const expansion = getConfiguredMaskExpansion() * scale;
-    const feather = getConfiguredFeather() * scale;
+    const expansion = Math.max(0, numberOrDefault(selection && selection.maskExpansion, getConfiguredMaskExpansion())) * scale;
+    const feather = Math.max(0, numberOrDefault(selection && selection.feather, getConfiguredFeather())) * scale;
     const expandedAlpha = dilateAlphaMask(alphaMask, width, height, expansion);
-    const maskData = maskContext.createImageData(width, height);
-    for (let pixelIndex = 0; pixelIndex < expandedAlpha.length; pixelIndex += 1) {
-      const dataIndex = pixelIndex * 4;
-      maskData.data[dataIndex] = 255;
-      maskData.data[dataIndex + 1] = 255;
-      maskData.data[dataIndex + 2] = 255;
-      maskData.data[dataIndex + 3] = expandedAlpha[pixelIndex];
-    }
-    maskContext.putImageData(maskData, 0, 0);
-
-    expandedContext.clearRect(0, 0, width, height);
-    expandedContext.filter = feather > 0 ? `blur(${Math.max(0.5, feather)}px)` : "none";
-    expandedContext.drawImage(maskCanvas, 0, 0);
-    expandedContext.filter = "none";
-
-    const expandedData = expandedContext.getImageData(0, 0, width, height);
+    const featheredAlpha = buildOutwardFeatherAlpha(expandedAlpha, width, height, feather);
     const apiCanvas = document.createElement("canvas");
     apiCanvas.width = width;
     apiCanvas.height = height;
@@ -241,16 +290,17 @@
     placementCanvas.height = height;
     const placementContext = placementCanvas.getContext("2d");
     const placementData = placementContext.createImageData(width, height);
-    for (let index = 0; index < expandedData.data.length; index += 4) {
-      const alpha = expandedData.data[index + 3];
-      apiData.data[index] = alpha;
-      apiData.data[index + 1] = alpha;
-      apiData.data[index + 2] = alpha;
-      apiData.data[index + 3] = 255;
-      placementData.data[index] = 255;
-      placementData.data[index + 1] = 255;
-      placementData.data[index + 2] = 255;
-      placementData.data[index + 3] = alpha;
+    for (let index = 0; index < featheredAlpha.length; index += 1) {
+      const dataIndex = index * 4;
+      const alpha = featheredAlpha[index];
+      apiData.data[dataIndex] = alpha;
+      apiData.data[dataIndex + 1] = alpha;
+      apiData.data[dataIndex + 2] = alpha;
+      apiData.data[dataIndex + 3] = 255;
+      placementData.data[dataIndex] = 255;
+      placementData.data[dataIndex + 1] = 255;
+      placementData.data[dataIndex + 2] = 255;
+      placementData.data[dataIndex + 3] = alpha;
     }
     apiContext.putImageData(apiData, 0, 0);
     placementContext.putImageData(placementData, 0, 0);
@@ -403,7 +453,7 @@
   async function loadSchema() {
     const state = getState();
     const appId = getConfiguredAppId();
-    if (!appId) throw new Error("请先在高级设置中填写创成式填充应用 ID");
+    if (!appId) throw new Error("请先在设置页的创成式填充设置中填写应用 ID");
     if (state.schema && state.schemaLoadedForAppId === appId) return state.schema;
     if (!modules.runtime.isPluginRuntime()) {
       state.schema = {
@@ -444,14 +494,24 @@
     if (!selectionBounds) throw new Error("请先在 Photoshop 中框选要生成的区域");
 
     const contextExpansion = getConfiguredContextExpansion();
-    setStatus("capturing", `正在捕获选区及周围 ${contextExpansion}px 上下文...`);
+    const maskExpansion = getConfiguredMaskExpansion();
+    const feather = getConfiguredFeather();
+    const selectionPadding = getCaptureContextPadding(
+      contextExpansion,
+      maskExpansion,
+      feather
+    );
+    const captureMessage = selectionPadding > contextExpansion
+      ? `正在捕获选区及周围 ${selectionPadding}px 上下文（已为向外羽化预留安全边距）...`
+      : `正在捕获选区及周围 ${selectionPadding}px 上下文...`;
+    setStatus("capturing", captureMessage);
     const captured = await modules.runtime.callHost(
       "photoshop.captureDocumentPreview",
       [{
         maxDimension: 1536,
         maxPixels: 2000000,
         quality: 90,
-        selectionPadding: contextExpansion,
+        selectionPadding,
         captureSelectionMask: true,
         generativeFillCapture: true,
         expectedDocumentId: Number(docInfo.documentId) || 0,
@@ -474,7 +534,10 @@
       documentTitle: String(docInfo.title || "Untitled"),
       selectionBounds,
       contextBounds: cloneBounds(captured.contextBounds) || selectionBounds,
-      selectionPadding: contextExpansion,
+      selectionPadding,
+      requestedContextExpansion: contextExpansion,
+      maskExpansion,
+      feather,
       selectionSnapshotChannelName: String(captured.selectionSnapshotChannelName || ""),
       capturedAt: Date.now(),
       asset: captured,
@@ -490,7 +553,10 @@
         : null
     };
     state.selection = selection;
-    modules.ui.logToWorkspace(`创成式填充已捕获选区：${formatBounds(selectionBounds)}，上下文扩展 ${contextExpansion}px。`, "success");
+    modules.ui.logToWorkspace(
+      `创成式填充已捕获选区：${formatBounds(selectionBounds)}，上下文扩展 ${selectionPadding}px，向外羽化 ${feather}px。`,
+      "success"
+    );
     return selection;
   }
 
@@ -548,8 +614,8 @@
         selectionBounds: selection.selectionBounds,
         contextBounds: selection.contextBounds,
         selectionPadding: selection.selectionPadding,
-        maskExpansion: getConfiguredMaskExpansion(),
-        feather: getConfiguredFeather(),
+        maskExpansion: Math.max(0, numberOrDefault(selection.maskExpansion, getConfiguredMaskExpansion())),
+        feather: Math.max(0, numberOrDefault(selection.feather, getConfiguredFeather())),
         maskShape: maskVariants.shape,
         placementMaskDataUrl: maskVariants.placementMask ? maskVariants.placementMask.dataUrl : "",
         selectionSnapshotChannelName: String(selection.selectionSnapshotChannelName || ""),
@@ -568,7 +634,7 @@
       return false;
     }
     if (!getConfiguredAppId()) {
-      setStatus("error", "请先在高级设置中填写创成式填充应用 ID");
+      setStatus("error", "请先在设置页的创成式填充设置中填写应用 ID");
       return false;
     }
     if (!String(modules.state.state.settings.apiKey || "").trim()) {
@@ -611,8 +677,8 @@
 
   async function enterMode() {
     if (!getConfiguredAppId()) {
-      modules.ui.logToWorkspace("请先在高级设置中填写创成式填充应用 ID。", "warn");
-      modules.settings && modules.settings.renderSettingsStatus && modules.settings.renderSettingsStatus("请先在高级设置中填写创成式填充应用 ID。", "warn");
+      modules.ui.logToWorkspace("请先在设置页的创成式填充设置中填写应用 ID。", "warn");
+      modules.settings && modules.settings.renderSettingsStatus && modules.settings.renderSettingsStatus("请先在设置页的创成式填充设置中填写应用 ID。", "warn");
       return false;
     }
     const state = getState();
@@ -731,6 +797,7 @@
   modules.generativeFill = {
     DEFAULT_CONTEXT_EXPANSION,
     dilateAlphaMask,
+    buildOutwardFeatherAlpha,
     enterMode,
     exitMode,
     captureSelection,

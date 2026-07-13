@@ -970,19 +970,26 @@
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ]);
+    const generativeFillSettingFieldIds = new Set([
+      "settingsGenerativeFillAppIdInput",
+      "settingsGenerativeFillContextInput",
+      "settingsGenerativeFillMaskExpansionInput",
+      "settingsGenerativeFillFeatherInput"
+    ]);
     let advancedSaveTimer = null;
 
     bindAppManagerControls();
 
     function scheduleAdvancedSettingsSave(sourceId, options = {}) {
+      const sectionLabel = generativeFillSettingFieldIds.has(sourceId) ? "创成式填充设置" : "高级设置";
       const run = async () => {
         advancedSaveTimer = null;
         try {
           await saveAdvancedSettingsSnapshot({ quiet: true });
-          renderSettingsStatus("高级设置已自动保存并立即生效。", "success");
+          renderSettingsStatus(`${sectionLabel}已自动保存并立即生效。`, "success");
         } catch (error) {
-          renderSettingsStatus(`高级设置自动保存失败：${error.message}`, "error");
-          modules.ui.logToWorkspace(`高级设置自动保存失败：${error.message}`, "error");
+          renderSettingsStatus(`${sectionLabel}自动保存失败：${error.message}`, "error");
+          modules.ui.logToWorkspace(`${sectionLabel}自动保存失败：${error.message}`, "error");
         }
       };
 
@@ -996,7 +1003,7 @@
         return;
       }
 
-      renderSettingsStatus("高级设置将在停止输入后自动保存。", "pending");
+      renderSettingsStatus(`${sectionLabel}将在停止输入后自动保存。`, "pending");
       advancedSaveTimer = window.setTimeout(run, 450);
     }
 
