@@ -967,6 +967,10 @@
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsLocalQueueEnabledInput",
+      "settingsGenerativeFillAppIdInput",
+      "settingsGenerativeFillContextInput",
+      "settingsGenerativeFillMaskExpansionInput",
+      "settingsGenerativeFillFeatherInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ]);

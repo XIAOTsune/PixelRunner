@@ -63,7 +63,7 @@
     },
     generativeFillContextExpansion: 128,
     generativeFillMaskExpansion: 4,
-    generativeFillFeather: 12,
+    generativeFillFeather: 24,
     appPickerLayout: "visual",
     plusModeEnabled: false
   };

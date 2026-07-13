@@ -2,7 +2,7 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const DEFAULT_CONTEXT_EXPANSION = 128;
   const DEFAULT_MASK_EXPANSION = 4;
-  const DEFAULT_FEATHER = 12;
+  const DEFAULT_FEATHER = 24;
   const FEATHER_BLUR_PASSES = 3;
   const FEATHER_CONTEXT_SAFETY_PIXELS = 2;
   let submissionInFlight = false;
