@@ -521,11 +521,16 @@ function expandBoundsWithinDocument(bounds, padding, docInfo) {
   }, docInfo);
 }
 
-function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension) {
+function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, maxPixels = 0) {
   const width = Math.max(1, Number(sourceWidth) || 1);
   const height = Math.max(1, Number(sourceHeight) || 1);
   const limitedMax = Math.max(256, Math.min(4096, Math.floor(Number(maxDimension) || 1536)));
-  const ratio = Math.min(1, limitedMax / Math.max(width, height));
+  const limitedPixels = Math.max(0, Math.floor(Number(maxPixels) || 0));
+  const dimensionRatio = Math.min(1, limitedMax / Math.max(width, height));
+  const pixelRatio = limitedPixels > 0
+    ? Math.min(1, Math.sqrt(limitedPixels / Math.max(1, width * height)))
+    : 1;
+  const ratio = Math.min(dimensionRatio, pixelRatio);
   return {
     width: Math.max(1, Math.round(width * ratio)),
     height: Math.max(1, Math.round(height * ratio))
@@ -536,23 +541,18 @@ async function getPixelsWithFallback(imaging, options) {
   try {
     return await imaging.getPixels(options);
   } catch (error) {
+    if (!Object.prototype.hasOwnProperty.call(options, "componentSize")) throw error;
     const fallbackOptions = { ...options };
     delete fallbackOptions.componentSize;
     return imaging.getPixels(fallbackOptions);
   }
 }
 
-async function getSelectionWithFallback(imaging, options) {
+async function getSelectionPixels(imaging, options) {
   if (!imaging || typeof imaging.getSelection !== "function") {
-    throw new Error("Photoshop selection imaging API is unavailable");
+    throw new Error("当前 Photoshop 版本不支持读取不规则选区蒙版");
   }
-  try {
-    return await imaging.getSelection(options);
-  } catch (error) {
-    const fallbackOptions = { ...options };
-    delete fallbackOptions.componentSize;
-    return imaging.getSelection(fallbackOptions);
-  }
+  return imaging.getSelection(options);
 }
 
 async function selectCompositeChannel(action) {
@@ -588,67 +588,16 @@ async function createSelectionSnapshotChannel(action, documentId) {
   return channelName;
 }
 
-async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, targetSize, options = {}) {
+async function captureSelectionMaskDataUrl(imaging, doc, sourceBounds, targetSize) {
   let pixels = null;
-  let nativeSelectionError = null;
-  if (options.useSelectionChannel !== true && typeof imaging.getSelection === "function") {
-    try {
-      pixels = await getSelectionWithFallback(imaging, {
-        documentID: Number(doc.id),
-        sourceBounds,
-        targetSize,
-        componentSize: 8
-      });
-      const encoded = await imaging.encodeImageData({
-        imageData: pixels.imageData,
-        base64: true,
-        format: "png"
-      });
-      const base64 = extractEncodedBase64(encoded);
-      if (!base64) throw new Error("Photoshop returned an empty selection mask");
-      return buildDataUrl("image/png", base64);
-    } catch (error) {
-      nativeSelectionError = error;
-      console.warn("[PixelRunner/Photoshop] native selection mask capture unavailable, falling back to snapshot channel", error);
-    } finally {
-      try {
-        pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
-      } catch (_) {}
-      pixels = null;
-    }
-  }
-
-  const preservedChannelName = String(options.selectionSnapshotChannelName || "").trim();
-  const channelName = preservedChannelName || `PixelRunner GF Mask ${Date.now()}`;
-  pixels = null;
   try {
-    if (!preservedChannelName) {
-      await action.batchPlay([{
-        _obj: "duplicate",
-        _target: [{ _ref: "channel", _property: "selection" }],
-        name: channelName,
-        _options: { dialogOptions: "dontDisplay" }
-      }], {});
-    }
-    await action.batchPlay([{
-      _obj: "select",
-      _target: [{ _ref: "channel", _name: channelName }],
-      makeVisible: false,
-      _options: { dialogOptions: "dontDisplay" }
-    }], {});
-
-    const alphaChannel = Array.from(doc.channels || []).find((channel) => String(channel && channel.name || "") === channelName);
-    const channelID = Number(alphaChannel && alphaChannel.id) || 0;
-    if (!(channelID > 0)) throw new Error("Photoshop did not expose the stored selection channel");
-
-    pixels = await getPixelsWithFallback(imaging, {
+    pixels = await getSelectionPixels(imaging, {
       documentID: Number(doc.id),
-      channelID,
       sourceBounds,
       targetSize,
-      componentSize: 8,
-      applyAlpha: false
+      componentSize: 8
     });
+    if (!pixels || !pixels.imageData) throw new Error("Photoshop 未返回当前选区像素数据");
     const encoded = await imaging.encodeImageData({
       imageData: pixels.imageData,
       base64: true,
@@ -656,14 +605,350 @@ async function captureSelectionMaskDataUrl(action, imaging, doc, sourceBounds, t
     });
     const base64 = extractEncodedBase64(encoded);
     if (base64) return buildDataUrl("image/png", base64);
-    const nativeReason = nativeSelectionError && nativeSelectionError.message ? `；原生选区读取也失败：${nativeSelectionError.message}` : "";
-    throw new Error(`Photoshop 返回了空的选区蒙版${nativeReason}`);
+    throw new Error("Photoshop 返回了空的选区蒙版");
   } finally {
     try {
       pixels && pixels.imageData && typeof pixels.imageData.dispose === "function" && pixels.imageData.dispose();
     } catch (_) {}
-    if (!preservedChannelName) await deleteChannelByName(action, channelName);
-    await selectCompositeChannel(action);
+  }
+}
+
+async function createTemporarySelectionMaskLayer(action) {
+  const layerName = `PixelRunner GF Mask ${Date.now()} ${Math.random().toString(36).slice(2, 7)}`;
+  const result = await action.batchPlay([{
+    _obj: "make",
+    _target: [{ _ref: "contentLayer" }],
+    using: {
+      _obj: "contentLayer",
+      name: layerName,
+      type: {
+        _obj: "solidColorLayer",
+        color: {
+          _obj: "RGBColor",
+          red: 255,
+          grain: 255,
+          blue: 255
+        }
+      }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+
+  let layerId = Number(result && result[0] && result[0].layerID) || 0;
+  let descriptor = layerId > 0 ? await getLayerDescriptorById(action, layerId) : null;
+  if (String(descriptor && descriptor.name || "") !== layerName) {
+    const descriptorResult = await action.batchPlay([{
+      _obj: "get",
+      _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    descriptor = descriptorResult && descriptorResult[0] ? descriptorResult[0] : null;
+    layerId = Number(descriptor && descriptor.layerID) || 0;
+  }
+  if (!(layerId > 0) || String(descriptor && descriptor.name || "") !== layerName) {
+    throw new Error("Photoshop 返回的临时蒙版图层身份不一致，已停止捕获");
+  }
+  await selectLayerById(action, layerId);
+  return { layerId, layerName };
+}
+
+async function getLayerDescriptorById(action, layerId) {
+  const result = await action.batchPlay([{
+    _obj: "get",
+    _target: [{ _ref: "layer", _id: Number(layerId) }],
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  return result && result[0] ? result[0] : null;
+}
+
+async function createTransparentMaskDocument(app, action, name, targetSize, resolution) {
+  const width = Math.max(1, Math.round(Number(targetSize && targetSize.width) || 1));
+  const height = Math.max(1, Math.round(Number(targetSize && targetSize.height) || 1));
+  const resolutionValue = Number(resolution && (resolution._value ?? resolution.value ?? resolution));
+  const safeResolution = Math.max(1, Number.isFinite(resolutionValue) ? resolutionValue : 72);
+  if (app && app.documents && typeof app.documents.add === "function") {
+    try {
+      const created = await app.documents.add({
+        width,
+        height,
+        resolution: safeResolution,
+        name,
+        mode: "RGBColorMode",
+        fill: "transparent"
+      });
+      if (created) return created;
+    } catch (error) {
+      console.warn("[PixelRunner/Photoshop] DOM temporary mask document creation failed; using BatchPlay", error);
+    }
+  }
+
+  await action.batchPlay([{
+    _obj: "make",
+    new: { _class: "document" },
+    using: {
+      _obj: "document",
+      name,
+      mode: { _class: "RGBColorMode" },
+      width: { _unit: "pixelsUnit", _value: width },
+      height: { _unit: "pixelsUnit", _value: height },
+      resolution: { _unit: "densityUnit", _value: safeResolution },
+      pixelScaleFactor: 1,
+      fill: { _enum: "fill", _value: "transparent" }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  const created = app && app.activeDocument ? app.activeDocument : null;
+  if (!created) throw new Error("Photoshop 未能创建临时蒙版文档");
+  return created;
+}
+
+async function exportDocumentAsPng(storage, action, docRef, filePrefix = "pixelrunner-selection-mask") {
+  const tempFolder = await storage.localFileSystem.getTemporaryFolder();
+  const tempFile = await tempFolder.createFile(`${filePrefix}-${Date.now()}.png`, { overwrite: true });
+  try {
+    const sessionToken = await storage.localFileSystem.createSessionToken(tempFile);
+    await action.batchPlay([{
+      _obj: "save",
+      as: {
+        _obj: "PNGFormat",
+        method: { _enum: "PNGMethod", _value: "quick" }
+      },
+      in: { _path: sessionToken, _kind: "local" },
+      documentID: Number(docRef && docRef.id),
+      copy: true,
+      lowerCase: true,
+      saveStage: { _enum: "saveStageType", _value: "saveStageOS" },
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    const rawBuffer = await tempFile.read({ format: storage.formats.binary });
+    const arrayBuffer = rawBuffer instanceof ArrayBuffer
+      ? rawBuffer
+      : ArrayBuffer.isView(rawBuffer)
+        ? rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength)
+        : new Uint8Array(rawBuffer || []).buffer;
+    if (!arrayBuffer.byteLength) throw new Error("Photoshop 导出了空的选区蒙版 PNG");
+    return arrayBuffer;
+  } finally {
+    await deleteFileQuietly(tempFile);
+  }
+}
+
+async function positionMaskLayerInTargetDocument(action, layerId, selectionBounds, sourceBounds, targetSize) {
+  const sourceWidth = Math.max(1, Number(sourceBounds.right) - Number(sourceBounds.left));
+  const sourceHeight = Math.max(1, Number(sourceBounds.bottom) - Number(sourceBounds.top));
+  const targetWidth = Math.max(1, Number(targetSize && targetSize.width) || 1);
+  const targetHeight = Math.max(1, Number(targetSize && targetSize.height) || 1);
+  const scaleX = targetWidth / sourceWidth;
+  const scaleY = targetHeight / sourceHeight;
+
+  if (Math.abs(scaleX - 1) > 0.0001 || Math.abs(scaleY - 1) > 0.0001) {
+    await transformLayerScale(action, layerId, scaleX * 100, scaleY * 100);
+  }
+
+  const descriptor = await getLayerDescriptorById(action, layerId);
+  const transformedBounds = normalizeBounds(descriptor && descriptor.bounds);
+  const targetSelectionBounds = {
+    left: (Number(selectionBounds.left) - Number(sourceBounds.left)) * scaleX,
+    top: (Number(selectionBounds.top) - Number(sourceBounds.top)) * scaleY,
+    right: (Number(selectionBounds.right) - Number(sourceBounds.left)) * scaleX,
+    bottom: (Number(selectionBounds.bottom) - Number(sourceBounds.top)) * scaleY
+  };
+  const currentCenter = transformedBounds
+    ? getBoundsCenter(transformedBounds)
+    : getBoundsCenter(selectionBounds);
+  if (!transformedBounds) {
+    console.warn("[PixelRunner/Photoshop] temporary mask is outside the target canvas; positioning from selection center");
+  }
+  const targetCenter = getBoundsCenter(targetSelectionBounds);
+  const dx = targetCenter.x - currentCenter.x;
+  const dy = targetCenter.y - currentCenter.y;
+  if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+    await transformLayerOffset(action, layerId, dx, dy);
+  }
+}
+
+async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBounds, targetSize, quality, options = {}) {
+  const { photoshop, storage } = deps;
+  const app = photoshop.app;
+  const imaging = photoshop.imaging;
+  const action = photoshop.action;
+  if (!imaging || typeof imaging.getPixels !== "function" || typeof imaging.encodeImageData !== "function") {
+    throw new Error("Photoshop imaging API is unavailable");
+  }
+  const documentId = Number(doc && doc.id) || 0;
+  const originalLayer = doc && doc.activeLayers && doc.activeLayers[0];
+  const originalLayerId = Number(originalLayer && originalLayer.id) || 0;
+  let maskLayerId = 0;
+  let maskLayerName = "";
+  let maskDocument = null;
+  let selectionMaskDataUrl = "";
+  const selectionMaskBounds = normalizeBounds(sourceBounds);
+  const selectionMaskWidth = Math.max(1, Number(targetSize && targetSize.width) || 1);
+  const selectionMaskHeight = Math.max(1, Number(targetSize && targetSize.height) || 1);
+  console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-export-start", {
+    documentId,
+    selectionBounds,
+    sourceBounds,
+    targetSize
+  });
+  try {
+    await activateDocument(app, action, documentId);
+    const temporaryLayer = await createTemporarySelectionMaskLayer(action);
+    maskLayerId = temporaryLayer.layerId;
+    maskLayerName = temporaryLayer.layerName;
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-layer-created", JSON.stringify({
+      maskLayerId,
+      maskLayerName
+    }));
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-apply-start");
+    await applyLayerMaskFromSelection(action);
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-apply-complete");
+    const sourceMaskLayer = doc && doc.activeLayers && doc.activeLayers[0];
+    if (!sourceMaskLayer || Number(sourceMaskLayer.id) !== maskLayerId || typeof sourceMaskLayer.duplicate !== "function") {
+      throw new Error("Photoshop 未能访问临时选区蒙版图层");
+    }
+
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-position-start", JSON.stringify({ maskLayerId }));
+    await positionMaskLayerInTargetDocument(action, maskLayerId, selectionBounds, sourceBounds, targetSize);
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-position-complete");
+
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-document-start");
+    maskDocument = await createTransparentMaskDocument(
+      app,
+      action,
+      `PixelRunner GF Export ${Date.now()}`,
+      targetSize,
+      doc && doc.resolution
+    );
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-document-created", JSON.stringify({
+      documentId: Number(maskDocument && maskDocument.id) || 0,
+      width: selectionMaskWidth,
+      height: selectionMaskHeight
+    }));
+
+    await activateDocument(app, action, documentId);
+    await selectLayerById(action, maskLayerId);
+    const duplicatedLayer = await sourceMaskLayer.duplicate(maskDocument);
+    await activateDocument(app, action, Number(maskDocument.id));
+    const duplicatedLayerId = Number(duplicatedLayer && duplicatedLayer.id)
+      || Number(maskDocument.activeLayers && maskDocument.activeLayers[0] && maskDocument.activeLayers[0].id)
+      || 0;
+    if (!(duplicatedLayerId > 0)) throw new Error("Photoshop 未能复制临时选区蒙版图层");
+    await selectLayerById(action, duplicatedLayerId);
+
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-export-file-start");
+    const maskBuffer = await exportDocumentAsPng(storage, action, maskDocument);
+    selectionMaskDataUrl = buildDataUrl("image/png", arrayBufferToBase64(maskBuffer));
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-export-file-complete", JSON.stringify({
+      bytes: maskBuffer.byteLength,
+      width: selectionMaskWidth,
+      height: selectionMaskHeight,
+      sourceBounds: selectionMaskBounds
+    }));
+  } finally {
+    if (maskDocument) {
+      try {
+        await closeDocumentWithoutSaving(action, maskDocument);
+      } catch (error) {
+        console.warn("[PixelRunner/Photoshop] failed to close temporary selection mask document", error);
+      }
+      maskDocument = null;
+    }
+    try {
+      await activateDocument(app, action, documentId);
+    } catch (_) {}
+    if (maskLayerId > 0) {
+      try {
+        const descriptor = await getLayerDescriptorById(action, maskLayerId);
+        if (String(descriptor && descriptor.name || "") === maskLayerName) {
+          await deleteLayerById(action, maskLayerId);
+        } else {
+          console.warn("[PixelRunner/Photoshop] skipped temporary layer cleanup because identity changed", JSON.stringify({
+            maskLayerId,
+            expectedName: maskLayerName,
+            actualName: String(descriptor && descriptor.name || "")
+          }));
+        }
+      } catch (error) {
+        console.warn("[PixelRunner/Photoshop] failed to delete temporary selection mask layer", error);
+      }
+    }
+    if (originalLayerId > 0) {
+      try {
+        await selectLayerById(action, originalLayerId);
+      } catch (_) {}
+    }
+  }
+  console.log("[PixelRunner/Photoshop] generativeFillCapture:mask-export-complete");
+
+  let contextPixels = null;
+  console.log("[PixelRunner/Photoshop] generativeFillCapture:context-start", {
+    documentId,
+    sourceBounds,
+    targetSize
+  });
+  try {
+    contextPixels = await imaging.getPixels({
+      documentID: Number(documentId),
+      sourceBounds,
+      targetSize,
+      componentSize: 8,
+      applyAlpha: true
+    });
+    if (!contextPixels || !contextPixels.imageData) {
+      throw new Error("Photoshop 未返回上下文像素数据");
+    }
+    const encodedContext = await imaging.encodeImageData({
+      imageData: contextPixels.imageData,
+      base64: true,
+      format: "jpeg",
+      quality
+    });
+    const contextBase64 = extractEncodedBase64(encodedContext);
+    if (!contextBase64) throw new Error("Photoshop 返回了空的上下文图像");
+
+    const bytes = estimateBase64Bytes(contextBase64);
+    const hardLimitBytes = Math.max(
+      DEFAULT_UPLOAD_TARGET_BYTES,
+      Math.floor(Number(options.hardLimitBytes) || DEFAULT_UPLOAD_HARD_LIMIT_BYTES)
+    );
+    if (bytes > hardLimitBytes) {
+      throw new Error(`上下文图像超过上传限制（${bytes} > ${hardLimitBytes} bytes），请缩小选区后重试`);
+    }
+    console.log("[PixelRunner/Photoshop] generativeFillCapture:context-complete", JSON.stringify({
+      bytes,
+      width: Number(contextPixels.imageData.width) || 0,
+      height: Number(contextPixels.imageData.height) || 0,
+      sourceBounds: contextPixels.sourceBounds || null
+    }));
+    return {
+      selectionMaskDataUrl,
+      selectionMaskBounds,
+      selectionMaskWidth,
+      selectionMaskHeight,
+      uploadAsset: {
+        mimeType: "image/jpeg",
+        base64: contextBase64,
+        dataUrl: buildDataUrl("image/jpeg", contextBase64),
+        bytes,
+        width: Math.max(1, Number(targetSize && targetSize.width) || 1),
+        height: Math.max(1, Number(targetSize && targetSize.height) || 1),
+        quality,
+        targetBytes: DEFAULT_UPLOAD_TARGET_BYTES,
+        hardLimitBytes,
+        attempts: [{
+          quality,
+          bytes,
+          width: Math.max(1, Number(targetSize && targetSize.width) || 1),
+          height: Math.max(1, Number(targetSize && targetSize.height) || 1)
+        }]
+      }
+    };
+  } finally {
+    try {
+      contextPixels && contextPixels.imageData && typeof contextPixels.imageData.dispose === "function" && contextPixels.imageData.dispose();
+    } catch (_) {}
+    contextPixels = null;
   }
 }
 
@@ -921,13 +1206,14 @@ async function buildImagingUploadAsset(imaging, documentId, sourceBounds, target
     : DEFAULT_UPLOAD_QUALITY_STEPS;
   let pixels = null;
   try {
-    pixels = await getPixelsWithFallback(imaging, {
+    const pixelOptions = {
       documentID: Number(documentId),
       sourceBounds,
       targetSize,
-      componentSize: 8,
       applyAlpha: true
-    });
+    };
+    if (compressionOptions.omitComponentSize !== true) pixelOptions.componentSize = 8;
+    pixels = await getPixelsWithFallback(imaging, pixelOptions);
     if (!pixels || !pixels.imageData) throw new Error("Photoshop 未返回上下文像素数据");
 
     const attempts = [];
@@ -1306,8 +1592,68 @@ async function captureDocumentPreviewInternal(options = {}) {
   const captureBounds = contextBounds;
   const sourceWidth = Math.max(1, Number(captureBounds.right) - Number(captureBounds.left));
   const sourceHeight = Math.max(1, Number(captureBounds.bottom) - Number(captureBounds.top));
-  const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension);
+  const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, options.maxPixels);
   return core.executeAsModal(async () => {
+    if (options.generativeFillCapture === true || options.readOnlySelectionCapture === true) {
+      if (!selectionBounds || options.captureSelectionMask !== true) {
+        throw new Error("创成式填充需要有效的 Photoshop 选区");
+      }
+      const capturedAssets = await captureGenerativeFillAssets(
+        deps,
+        doc,
+        selectionBounds,
+        captureBounds,
+        targetSize,
+        quality,
+        options
+      );
+        const uploadAsset = capturedAssets.uploadAsset;
+        const result = {
+          ok: true,
+          kind: "captured-document-image",
+          source: "photoshop-document",
+          document: docInfo,
+          documentId: docInfo.documentId,
+          selectionBounds,
+          contextBounds,
+          selectionPadding,
+          selectionMaskDataUrl: capturedAssets.selectionMaskDataUrl,
+          selectionMaskBounds: capturedAssets.selectionMaskBounds,
+          selectionMaskWidth: capturedAssets.selectionMaskWidth,
+          selectionMaskHeight: capturedAssets.selectionMaskHeight,
+          selectionMaskShape: "selection-layer-alpha",
+          selectionMaskError: "",
+          selectionSnapshotChannelName: "",
+          capturedFromSelection: true,
+          width: uploadAsset.width,
+          height: uploadAsset.height,
+          originalWidth: sourceWidth,
+          originalHeight: sourceHeight,
+          mimeType: uploadAsset.mimeType,
+          quality: uploadAsset.quality,
+          maxDimension,
+          base64: uploadAsset.base64,
+          dataUrl: uploadAsset.dataUrl,
+          uploadMimeType: uploadAsset.mimeType,
+          uploadBase64: uploadAsset.base64,
+          uploadDataUrl: uploadAsset.dataUrl,
+          uploadBytes: uploadAsset.bytes,
+          uploadWidth: uploadAsset.width,
+          uploadHeight: uploadAsset.height,
+          uploadQuality: uploadAsset.quality,
+          uploadTargetBytes: uploadAsset.targetBytes,
+          uploadHardLimitBytes: uploadAsset.hardLimitBytes,
+          compressionAttempts: uploadAsset.attempts
+        };
+        console.log("[PixelRunner/Photoshop] generativeFillCapture:success", {
+          documentId: result.documentId,
+          width: result.width,
+          height: result.height,
+          uploadBytes: result.uploadBytes
+        });
+        return result;
+    }
+
     let selectionSnapshotChannelName = "";
     try {
       if (selectionBounds && options.preserveSelectionChannel === true && action) {
@@ -1327,17 +1673,12 @@ async function captureDocumentPreviewInternal(options = {}) {
             await loadSelectionFromChannel(action, selectionSnapshotChannelName);
           }
           selectionMaskDataUrl = await captureSelectionMaskDataUrl(
-            action,
             imaging,
             doc,
             captureBounds,
             {
               width: Math.max(1, Number(uploadAsset.width) || targetSize.width),
               height: Math.max(1, Number(uploadAsset.height) || targetSize.height)
-            },
-            {
-              selectionSnapshotChannelName,
-              useSelectionChannel: options.useSelectionChannel === true
             }
           );
           if (selectionMaskDataUrl) selectionMaskShape = "selection-channel";

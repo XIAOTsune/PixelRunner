@@ -175,13 +175,29 @@
     sourceCanvas.height = height;
     const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
     if (!sourceContext) return { apiMask: rawMask, placementMask: rawMask, shape: rawMask.shape || "unknown" };
-    sourceContext.drawImage(image, 0, 0, width, height);
+    const maskSourceBounds = cloneBounds(rawMask.sourceBounds);
+    const contextBounds = cloneBounds(selection.contextBounds);
+    if (maskSourceBounds && contextBounds) {
+      const contextWidth = Math.max(1, contextBounds.right - contextBounds.left);
+      const contextHeight = Math.max(1, contextBounds.bottom - contextBounds.top);
+      const scaleX = width / contextWidth;
+      const scaleY = height / contextHeight;
+      sourceContext.drawImage(
+        image,
+        (maskSourceBounds.left - contextBounds.left) * scaleX,
+        (maskSourceBounds.top - contextBounds.top) * scaleY,
+        Math.max(1, (maskSourceBounds.right - maskSourceBounds.left) * scaleX),
+        Math.max(1, (maskSourceBounds.bottom - maskSourceBounds.top) * scaleY)
+      );
+    } else {
+      sourceContext.drawImage(image, 0, 0, width, height);
+    }
     const sourceData = sourceContext.getImageData(0, 0, width, height);
 
     const alphaMask = new Uint8ClampedArray(width * height);
     for (let index = 0; index < sourceData.data.length; index += 4) {
       const luminance = Math.max(sourceData.data[index], sourceData.data[index + 1], sourceData.data[index + 2]);
-      alphaMask[index / 4] = luminance;
+      alphaMask[index / 4] = Math.min(luminance, sourceData.data[index + 3]);
     }
 
     const maskCanvas = document.createElement("canvas");
@@ -432,13 +448,12 @@
     const captured = await modules.runtime.callHost(
       "photoshop.captureDocumentPreview",
       [{
-        maxDimension: 2048,
+        maxDimension: 1536,
+        maxPixels: 2000000,
         quality: 90,
         selectionPadding: contextExpansion,
         captureSelectionMask: true,
-        preserveSelectionChannel: true,
-        useImagingUpload: true,
-        forceMaxDimension: true,
+        generativeFillCapture: true,
         expectedDocumentId: Number(docInfo.documentId) || 0,
         expectedSelectionBounds: selectionBounds
       }],
@@ -467,8 +482,9 @@
         ? {
             dataUrl: captured.selectionMaskDataUrl,
             ...parseDataUrl(captured.selectionMaskDataUrl),
-            width: Number(captured.uploadWidth) || null,
-            height: Number(captured.uploadHeight) || null,
+            width: Number(captured.selectionMaskWidth) || Number(captured.uploadWidth) || null,
+            height: Number(captured.selectionMaskHeight) || Number(captured.uploadHeight) || null,
+            sourceBounds: cloneBounds(captured.selectionMaskBounds),
             shape: String(captured.selectionMaskShape || "selection-channel")
           }
         : null
