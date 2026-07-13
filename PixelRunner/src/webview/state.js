@@ -63,7 +63,8 @@
     },
     generativeFillContextExpansion: 128,
     generativeFillMaskExpansion: 4,
-    generativeFillFeather: 24,
+    generativeFillFeather: 36,
+    generativeFillColorCorrectionEnabled: true,
     appPickerLayout: "visual",
     plusModeEnabled: false
   };
@@ -279,6 +280,7 @@
       generativeFillContextExpansion,
       generativeFillMaskExpansion,
       generativeFillFeather,
+      generativeFillColorCorrectionEnabled: source.generativeFillColorCorrectionEnabled !== false,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()

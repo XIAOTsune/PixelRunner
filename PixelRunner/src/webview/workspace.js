@@ -5,6 +5,20 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
+  const GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS = Object.freeze({
+    mode: "natural",
+    totalStrength: 64,
+    luminanceStrength: 70,
+    colorStrength: 68,
+    saturationStrength: 0,
+    contrastStrength: 0,
+    featherRadius: 0,
+    createBackupLayer: true,
+    pixelPipelineEnabled: true,
+    alignmentEnabled: false,
+    alignmentScaleEnabled: false,
+    localAlignmentEnabled: false
+  });
   const RUNNINGHUB_TASK_DETAIL_URLS = {
     cn: "https://www.runninghub.cn/bill-task",
     global: "https://www.runninghub.ai/bill-task"
@@ -2442,6 +2456,27 @@
 
   function buildAutoPlacementHostRequest(result) {
     const payload = buildAutoPlacementPayload(result);
+    const generativeFill = result && result.sourceDocument && result.sourceDocument.generativeFill &&
+      typeof result.sourceDocument.generativeFill === "object"
+      ? result.sourceDocument.generativeFill
+      : null;
+    if (generativeFill) {
+      if (generativeFill.autoColorCorrection === false) {
+        return {
+          method: "photoshop.placeResultFromUrl",
+          payload,
+          timeoutMs: 60000
+        };
+      }
+      return {
+        method: "photoshop.placeResultWithBlendMatch",
+        payload: {
+          ...payload,
+          blendMatch: GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS
+        },
+        timeoutMs: 150000
+      };
+    }
     const blendMatchSettings = modules.blendMatch && typeof modules.blendMatch.getSettings === "function"
       ? modules.blendMatch.getSettings()
       : null;
@@ -2460,6 +2495,12 @@
       },
       timeoutMs: 150000
     };
+  }
+
+  function getAutoPlacementFusionSuffix(result, fusionResponse) {
+    if (!fusionResponse || fusionResponse.ok !== true || fusionResponse.skipped) return "";
+    const generativeFill = result && result.sourceDocument && result.sourceDocument.generativeFill;
+    return generativeFill ? "，明度与色彩自动校正完成" : "，融合校色完成";
   }
 
   function isAutoPlacementBlockedError(error) {
@@ -2546,7 +2587,7 @@
             status: "succeeded",
             detail:
               response && response.documentId
-                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}。`
+                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${getAutoPlacementFusionSuffix(queued, fusionResponse)}。`
                 : "任务已完成，并已在 Photoshop 空闲后自动贴回。",
             finishedAt: Date.now()
           });
@@ -2639,7 +2680,11 @@
     const placementSummary = sourceDocument && sourceDocument.selectionBounds
       ? `已按原选区 ${formatSelectionLabel(sourceDocument.selectionBounds)} 自动贴回`
       : "已自动贴回源文档";
-    modules.ui.logToWorkspace(`${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || placementPayload.layerName}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}`, "success");
+    const fallbackLayerName = buildAutoPlacementPayload(result).layerName;
+    modules.ui.logToWorkspace(
+      `${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || fallbackLayerName}${getAutoPlacementFusionSuffix(result, fusionResponse)}`,
+      "success"
+    );
     return {
       ...response,
       blendMatch: fusionResponse || null

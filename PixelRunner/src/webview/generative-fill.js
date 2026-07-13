@@ -2,9 +2,14 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const DEFAULT_CONTEXT_EXPANSION = 128;
   const DEFAULT_MASK_EXPANSION = 4;
-  const DEFAULT_FEATHER = 24;
+  const DEFAULT_FEATHER = 36;
   const FEATHER_BLUR_PASSES = 3;
   const FEATHER_CONTEXT_SAFETY_PIXELS = 2;
+  const FEATHER_ALPHA_CURVE = Uint8ClampedArray.from({ length: 256 }, (_, value) => {
+    const normalized = value / 255;
+    const flattened = 0.5 + Math.asin(normalized * 2 - 1) / Math.PI;
+    return Math.round(flattened * 255);
+  });
   let submissionInFlight = false;
   let captureInFlight = null;
   let taskTimerHandle = 0;
@@ -222,13 +227,13 @@
     const safeRadius = Math.max(0, Number(radius) || 0);
     if (!safeRadius) return new Uint8ClampedArray(source);
 
-    // Pre-expand by half the feather so the original edge stays in the high-alpha part of the blur.
+    // Center the blur outside the protected edge, then flatten its S-curve into a broader transition.
     const preExpansion = Math.max(1, Math.ceil(safeRadius / 2));
     const expanded = dilateAlphaMask(source, width, height, preExpansion);
     const blurred = buildFeatheredAlpha(expanded, width, height, preExpansion);
     const output = new Uint8ClampedArray(source.length);
     for (let index = 0; index < output.length; index += 1) {
-      output[index] = Math.max(source[index], blurred[index]);
+      output[index] = Math.max(source[index], FEATHER_ALPHA_CURVE[blurred[index]]);
     }
     return output;
   }
@@ -619,6 +624,7 @@
         maskShape: maskVariants.shape,
         placementMaskDataUrl: maskVariants.placementMask ? maskVariants.placementMask.dataUrl : "",
         selectionSnapshotChannelName: String(selection.selectionSnapshotChannelName || ""),
+        autoColorCorrection: modules.state.state.settings.generativeFillColorCorrectionEnabled !== false,
         useCurrentSelectionMask: true
       }
     };

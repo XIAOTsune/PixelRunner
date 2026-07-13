@@ -161,6 +161,10 @@
         settings.generativeFillMaskExpansion ?? modules.state.DEFAULT_SETTINGS.generativeFillMaskExpansion
       );
     }
+    if (modules.runtime.getById("settingsGenerativeFillColorCorrectionInput")) {
+      modules.runtime.getById("settingsGenerativeFillColorCorrectionInput").checked =
+        settings.generativeFillColorCorrectionEnabled !== false;
+    }
     if (modules.runtime.getById("settingsAppPickerLayoutInput")) {
       modules.runtime.getById("settingsAppPickerLayoutInput").checked = String(settings.appPickerLayout || "") === "compact";
     }
@@ -669,6 +673,7 @@
       generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
       generativeFillContextExpansion: modules.runtime.getById("settingsGenerativeFillContextInput")?.value,
       generativeFillMaskExpansion: modules.runtime.getById("settingsGenerativeFillMaskExpansionInput")?.value,
+      generativeFillColorCorrectionEnabled: modules.runtime.getById("settingsGenerativeFillColorCorrectionInput")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       activeApiProfileId: modules.state.state.activeApiProfileId || modules.runtime.getById("settingsApiProfileSelect")?.value || ""
@@ -698,6 +703,7 @@
       generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
       generativeFillContextExpansion: modules.runtime.getById("settingsGenerativeFillContextInput")?.value,
       generativeFillMaskExpansion: modules.runtime.getById("settingsGenerativeFillMaskExpansionInput")?.value,
+      generativeFillColorCorrectionEnabled: modules.runtime.getById("settingsGenerativeFillColorCorrectionInput")?.checked === true,
       appPickerLayout: modules.runtime.getById("settingsAppPickerLayoutInput")?.checked === true ? "compact" : "visual",
       plusModeEnabled: modules.runtime.getById("settingsPlusModeEnabledInput")?.checked === true,
       apiKey: modules.state.state.settings.apiKey,
@@ -721,6 +727,7 @@
         generativeFillContextExpansion: nextSettings.generativeFillContextExpansion,
         generativeFillMaskExpansion: nextSettings.generativeFillMaskExpansion,
         generativeFillFeather: nextSettings.generativeFillFeather,
+        generativeFillColorCorrectionEnabled: nextSettings.generativeFillColorCorrectionEnabled,
         appPickerLayout: nextSettings.appPickerLayout,
         plusModeEnabled: nextSettings.plusModeEnabled,
         runningHubRegion: nextSettings.runningHubRegion,
@@ -809,6 +816,7 @@
       generativeFillContextExpansion: rawSettings && rawSettings.generativeFillContextExpansion,
       generativeFillMaskExpansion: rawSettings && rawSettings.generativeFillMaskExpansion,
       generativeFillFeather: rawSettings && rawSettings.generativeFillFeather,
+      generativeFillColorCorrectionEnabled: rawSettings ? rawSettings.generativeFillColorCorrectionEnabled : undefined,
       appPickerLayout: rawSettings && rawSettings.appPickerLayout,
       plusModeEnabled: rawSettings ? rawSettings.plusModeEnabled : undefined,
       activeApiProfileId: activeProfile ? activeProfile.id : ""
@@ -859,12 +867,12 @@
   async function saveAdvancedSettingsSnapshot(options = {}) {
     const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
     const nextSettings = readAdvancedSettingsForm();
-    await writeSettingsStorage(nextSettings, thirdParty);
     modules.state.state.activeApiProfileId = nextSettings.activeApiProfileId;
     applySettingsSnapshot(nextSettings, thirdParty, {
       diagnosticsMessage: "高级设置已自动同步。",
       skipFillForm: true
     });
+    await writeSettingsStorage(nextSettings, thirdParty);
     if (!options.quiet) {
       renderSettingsStatus("高级设置已自动保存并立即生效。", "success");
     }
@@ -962,15 +970,13 @@
       "settingsGenerativeFillContextInput",
       "settingsGenerativeFillMaskExpansionInput",
       "settingsGenerativeFillFeatherInput",
+      "settingsGenerativeFillColorCorrectionInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsLocalQueueEnabledInput",
-      "settingsGenerativeFillAppIdInput",
-      "settingsGenerativeFillContextInput",
-      "settingsGenerativeFillMaskExpansionInput",
-      "settingsGenerativeFillFeatherInput",
+      "settingsGenerativeFillColorCorrectionInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
     ]);
@@ -978,9 +984,11 @@
       "settingsGenerativeFillAppIdInput",
       "settingsGenerativeFillContextInput",
       "settingsGenerativeFillMaskExpansionInput",
-      "settingsGenerativeFillFeatherInput"
+      "settingsGenerativeFillFeatherInput",
+      "settingsGenerativeFillColorCorrectionInput"
     ]);
     let advancedSaveTimer = null;
+    let advancedSaveQueue = Promise.resolve();
 
     bindAppManagerControls();
 
@@ -989,7 +997,11 @@
       const run = async () => {
         advancedSaveTimer = null;
         try {
-          await saveAdvancedSettingsSnapshot({ quiet: true });
+          const saveOperation = advancedSaveQueue
+            .catch(() => {})
+            .then(() => saveAdvancedSettingsSnapshot({ quiet: true }));
+          advancedSaveQueue = saveOperation;
+          await saveOperation;
           renderSettingsStatus(`${sectionLabel}已自动保存并立即生效。`, "success");
         } catch (error) {
           renderSettingsStatus(`${sectionLabel}自动保存失败：${error.message}`, "error");
@@ -1246,6 +1258,9 @@
       if (!element) return;
       const eventName = element.type === "checkbox" ? "change" : "input";
       element.addEventListener(eventName, () => {
+        if (generativeFillSettingFieldIds.has(id)) {
+          modules.state.state.settings = readAdvancedSettingsForm();
+        }
         if (id === "settingsMaxConcurrentTasksInput") {
           const previewSettings = modules.state.normalizeSettings({
             ...modules.state.state.settings,
@@ -1315,7 +1330,9 @@
     if (resetGenerativeFillButton) {
       resetGenerativeFillButton.addEventListener("click", async () => {
         const input = runtime.getById("settingsGenerativeFillAppIdInput");
+        const colorCorrectionInput = runtime.getById("settingsGenerativeFillColorCorrectionInput");
         if (input) input.value = modules.state.getDefaultGenerativeFillAppId(getCurrentRunningHubRegion());
+        if (colorCorrectionInput) colorCorrectionInput.checked = true;
         scheduleAdvancedSettingsSave("settingsGenerativeFillAppIdInput", { immediate: true });
       });
     }

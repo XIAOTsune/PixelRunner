@@ -2305,20 +2305,32 @@
   }
 
   async function applyAutoPlacementFusion(placementResponse, resultContext = {}) {
-    if (!localState.settings.autoEnabled || !placementResponse || !placementResponse.layerId || !modules.runtime.isPluginRuntime()) {
+    const hasBundledFusion = Boolean(
+      placementResponse && Object.prototype.hasOwnProperty.call(placementResponse, "blendMatchFusion")
+    );
+    if ((!localState.settings.autoEnabled && !hasBundledFusion) || !placementResponse || !placementResponse.layerId || !modules.runtime.isPluginRuntime()) {
       return null;
     }
     const taskId = String((resultContext && resultContext.taskId) || "").trim();
-    modules.ui.logToWorkspace(`[融合校色] 自动贴回后开始融合${taskId ? `：${taskId}` : ""}。`, "info");
-    if (Object.prototype.hasOwnProperty.call(placementResponse, "blendMatchFusion")) {
+    const generativeFillCorrection = Boolean(
+      resultContext && resultContext.sourceDocument && resultContext.sourceDocument.generativeFill
+    );
+    const operationLabel = generativeFillCorrection ? "创成式填充自动校色" : "融合校色";
+    modules.ui.logToWorkspace(`[${operationLabel}] 自动贴回后开始处理${taskId ? `：${taskId}` : ""}。`, "info");
+    if (hasBundledFusion) {
       const fusion = placementResponse.blendMatchFusion;
       const logs = Array.isArray(fusion && fusion.logs) ? fusion.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
       const bundledError = String(fusion && fusion.error || "").trim();
+      const bundledMessage = fusion && fusion.skipped
+        ? (fusion.message || `[${operationLabel}] 已跳过处理。`)
+        : (generativeFillCorrection
+            ? "[创成式填充自动校色] 明度与色彩校正完成。"
+            : (fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。"));
       modules.ui.logToWorkspace(
         bundledError
-          ? `[融合校色] 自动融合失败，已保留原返图：${bundledError}`
-          : (fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。"),
+          ? `[${operationLabel}] 处理失败，已保留原返图：${bundledError}`
+          : bundledMessage,
         bundledError || (fusion && fusion.skipped) ? "warn" : "success"
       );
       return fusion;
