@@ -57,6 +57,46 @@ export async function placeResultIntoPhotoshop(args = []) {
   return photoshopService.placeImageFromUrl(payload);
 }
 
+export async function placeResultAndBlendIntoPhotoshop(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const blendMatch = payload.blendMatch && typeof payload.blendMatch === "object"
+    ? payload.blendMatch
+    : null;
+  const placementStartedAt = Date.now();
+  console.log("[PixelRunner/Host] auto placement stage start placeResult");
+  const placement = await placeResultIntoPhotoshop(args);
+  console.log(`[PixelRunner/Host] auto placement stage success placeResult durationMs=${Date.now() - placementStartedAt}`);
+  const layerId = Number(placement && placement.layerId) || 0;
+  if (!blendMatch || !layerId) return placement;
+
+  const photoshopService = getPhotoshopService();
+  const fusionStartedAt = Date.now();
+  console.log(`[PixelRunner/Host] auto placement stage start blendMatch layerId=${layerId}`);
+  try {
+    const fusion = await photoshopService.runToolAction({
+      ...blendMatch,
+      action: "blendMatch",
+      layerId
+    });
+    console.log(`[PixelRunner/Host] auto placement stage success blendMatch layerId=${layerId} durationMs=${Date.now() - fusionStartedAt}`);
+    return {
+      ...placement,
+      blendMatchFusion: fusion
+    };
+  } catch (error) {
+    console.error(
+      `[PixelRunner/Host] auto placement stage failure blendMatch layerId=${layerId} durationMs=${Date.now() - fusionStartedAt} error=${String(error && error.message ? error.message : error || "自动融合失败")}`
+    );
+    return {
+      ...placement,
+      blendMatchFusion: {
+        ok: false,
+        error: String(error && error.message ? error.message : error || "自动融合失败")
+      }
+    };
+  }
+}
+
 export async function deletePhotoshopSelectionSnapshot(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const photoshopService = getPhotoshopService();

@@ -21,9 +21,63 @@ import {
   capturePhotoshopDocumentPreview,
   deletePhotoshopSelectionSnapshot,
   getPhotoshopDocumentInfo,
+  placeResultAndBlendIntoPhotoshop,
   placeResultIntoPhotoshop,
   runPhotoshopToolAction
 } from "./photoshop-bridge.js";
+
+let photoshopBridgeTail = Promise.resolve();
+let photoshopBridgeQueueDepth = 0;
+let photoshopBridgeSequence = 0;
+
+function getPhotoshopBridgeLabel(message) {
+  const method = String(message && message.method || "photoshop.unknown");
+  const payload = message && message.args && message.args[0] && typeof message.args[0] === "object"
+    ? message.args[0]
+    : {};
+  if (method === "photoshop.runToolAction") {
+    const action = String(payload.action || "unknown").trim();
+    return `${method}:${action}`;
+  }
+  if (method === "photoshop.placeResultWithBlendMatch") {
+    return `${method}:placeResult+blendMatch`;
+  }
+  return method;
+}
+
+function enqueuePhotoshopBridgeOperation(message, operation) {
+  const queuedAt = Date.now();
+  const sequence = ++photoshopBridgeSequence;
+  const requestId = String(message && message.id || "");
+  const label = getPhotoshopBridgeLabel(message);
+  photoshopBridgeQueueDepth += 1;
+  const run = photoshopBridgeTail
+    .catch(() => undefined)
+    .then(async () => {
+      const waitedMs = Date.now() - queuedAt;
+      const startedAt = Date.now();
+      console.log(
+        `[PixelRunner/Host] Photoshop bridge start #${sequence} ${label} id=${requestId} waitedMs=${waitedMs} queueDepth=${photoshopBridgeQueueDepth}`
+      );
+      try {
+        const result = await operation();
+        console.log(
+          `[PixelRunner/Host] Photoshop bridge success #${sequence} ${label} id=${requestId} waitedMs=${waitedMs} durationMs=${Date.now() - startedAt}`
+        );
+        return result;
+      } catch (error) {
+        console.error(
+          `[PixelRunner/Host] Photoshop bridge failure #${sequence} ${label} id=${requestId} waitedMs=${waitedMs} durationMs=${Date.now() - startedAt} error=${String(error && error.message ? error.message : error || "Unknown error")}`
+        );
+        throw error;
+      } finally {
+        photoshopBridgeQueueDepth = Math.max(0, photoshopBridgeQueueDepth - 1);
+      }
+    });
+
+  photoshopBridgeTail = run.then(() => undefined, () => undefined);
+  return run;
+}
 
 function getPhotoshopVersionInfo() {
   try {
@@ -74,6 +128,7 @@ async function handleBridgeRequest(message, responseTarget) {
   if (!message || typeof message !== "object" || !message.method) return;
   if (!responseTarget) return;
 
+  const requestStartedAt = Date.now();
   try {
     console.log("[PixelRunner/Host] bridge request", message.method, message.id || "");
     let result = null;
@@ -134,19 +189,22 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await runThirdPartyGrsPromptOptimize(message.args);
         break;
       case "photoshop.getActiveDocumentInfo":
-        result = await getPhotoshopDocumentInfo();
+        result = await enqueuePhotoshopBridgeOperation(message, () => getPhotoshopDocumentInfo());
         break;
       case "photoshop.captureDocumentPreview":
-        result = await capturePhotoshopDocumentPreview(message.args);
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args));
         break;
       case "photoshop.deleteSelectionSnapshot":
-        result = await deletePhotoshopSelectionSnapshot(message.args);
+        result = await enqueuePhotoshopBridgeOperation(message, () => deletePhotoshopSelectionSnapshot(message.args));
         break;
       case "photoshop.runToolAction":
-        result = await runPhotoshopToolAction(message.args);
+        result = await enqueuePhotoshopBridgeOperation(message, () => runPhotoshopToolAction(message.args));
         break;
       case "photoshop.placeResultFromUrl":
-        result = await placeResultIntoPhotoshop(message.args);
+        result = await enqueuePhotoshopBridgeOperation(message, () => placeResultIntoPhotoshop(message.args));
+        break;
+      case "photoshop.placeResultWithBlendMatch":
+        result = await enqueuePhotoshopBridgeOperation(message, () => placeResultAndBlendIntoPhotoshop(message.args));
         break;
       case "shell.openExternal":
         result = await openExternalUrl(message.args);
@@ -161,13 +219,15 @@ async function handleBridgeRequest(message, responseTarget) {
         throw new Error(`Unknown bridge method: ${message.method}`);
     }
 
-    console.log("[PixelRunner/Host] bridge success", message.method, {
-      id: message.id || "",
-      hasResult: result !== null && result !== undefined
-    });
+    console.log(
+      `[PixelRunner/Host] bridge success ${message.method} ${message.id || ""} durationMs=${Date.now() - requestStartedAt} hasResult=${result !== null && result !== undefined}`
+    );
     postBridgeResponse(responseTarget, createBridgeResponse(message, result, null));
   } catch (error) {
-    console.error("[PixelRunner/Host] bridge error", message.method, error);
+    console.error(
+      `[PixelRunner/Host] bridge error ${message.method} ${message.id || ""} durationMs=${Date.now() - requestStartedAt}`,
+      error
+    );
     postBridgeResponse(responseTarget, createBridgeResponse(message, null, error));
   }
 }

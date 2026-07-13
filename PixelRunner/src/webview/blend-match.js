@@ -2310,6 +2310,19 @@
     }
     const taskId = String((resultContext && resultContext.taskId) || "").trim();
     modules.ui.logToWorkspace(`[融合校色] 自动贴回后开始融合${taskId ? `：${taskId}` : ""}。`, "info");
+    if (Object.prototype.hasOwnProperty.call(placementResponse, "blendMatchFusion")) {
+      const fusion = placementResponse.blendMatchFusion;
+      const logs = Array.isArray(fusion && fusion.logs) ? fusion.logs : [];
+      logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
+      const bundledError = String(fusion && fusion.error || "").trim();
+      modules.ui.logToWorkspace(
+        bundledError
+          ? `[融合校色] 自动融合失败，已保留原返图：${bundledError}`
+          : (fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。"),
+        bundledError || (fusion && fusion.skipped) ? "warn" : "success"
+      );
+      return fusion;
+    }
     const payload = {
       action: "blendMatch",
       ...localState.settings,

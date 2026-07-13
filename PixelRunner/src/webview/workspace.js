@@ -2440,6 +2440,28 @@
     };
   }
 
+  function buildAutoPlacementHostRequest(result) {
+    const payload = buildAutoPlacementPayload(result);
+    const blendMatchSettings = modules.blendMatch && typeof modules.blendMatch.getSettings === "function"
+      ? modules.blendMatch.getSettings()
+      : null;
+    if (!blendMatchSettings || !blendMatchSettings.autoEnabled) {
+      return {
+        method: "photoshop.placeResultFromUrl",
+        payload,
+        timeoutMs: 60000
+      };
+    }
+    return {
+      method: "photoshop.placeResultWithBlendMatch",
+      payload: {
+        ...payload,
+        blendMatch: blendMatchSettings
+      },
+      timeoutMs: 150000
+    };
+  }
+
   function isAutoPlacementBlockedError(error) {
     const message = String((error && error.message) || error || "").toLowerCase();
     if (!message) return false;
@@ -2510,8 +2532,8 @@
     try {
       for (const [taskId, queued] of Array.from(pendingAutoPlacements.entries())) {
         try {
-          const placementPayload = buildAutoPlacementPayload(queued);
-          const response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+          const placementRequest = buildAutoPlacementHostRequest(queued);
+          const response = await modules.runtime.callHost(placementRequest.method, [placementRequest.payload], { timeoutMs: placementRequest.timeoutMs });
           const fusionResponse = modules.blendMatch && typeof modules.blendMatch.applyAutoPlacementFusion === "function"
             ? await modules.blendMatch.applyAutoPlacementFusion(response, queued)
             : null;
@@ -2588,10 +2610,10 @@
       return null;
     }
     await refreshPhotoshopDocumentStatus({ quiet: true });
-    const placementPayload = buildAutoPlacementPayload(result);
+    const placementRequest = buildAutoPlacementHostRequest(result);
     let response = null;
     try {
-      response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+      response = await modules.runtime.callHost(placementRequest.method, [placementRequest.payload], { timeoutMs: placementRequest.timeoutMs });
     } catch (error) {
       if (isAutoPlacementRetryableError(error)) {
         queueAutoPlacement(result);
