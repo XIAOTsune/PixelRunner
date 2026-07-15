@@ -24,6 +24,8 @@
 
   const DEFAULT_AI_OPTIMIZE_APP_ID = "2042544874578251778";
   const DEFAULT_GENERATIVE_FILL_APP_ID = "2072190882207584257";
+  const DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID = "2077336528350871553";
+  const DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID = "2077331388482748417";
   const RUNNINGHUB_REGIONS = {
     CN: "cn",
     GLOBAL: "global"
@@ -37,11 +39,15 @@
   }
 
   function getDefaultAiOptimizeAppId(region) {
-    return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN ? DEFAULT_AI_OPTIMIZE_APP_ID : "";
+    return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN
+      ? DEFAULT_AI_OPTIMIZE_APP_ID
+      : DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID;
   }
 
   function getDefaultGenerativeFillAppId(region) {
-    return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN ? DEFAULT_GENERATIVE_FILL_APP_ID : "";
+    return normalizeRunningHubRegion(region) === RUNNINGHUB_REGIONS.CN
+      ? DEFAULT_GENERATIVE_FILL_APP_ID
+      : DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID;
   }
 
   const DEFAULT_SETTINGS = {
@@ -54,12 +60,12 @@
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
     aiOptimizeAppIds: {
       cn: DEFAULT_AI_OPTIMIZE_APP_ID,
-      global: ""
+      global: DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID
     },
     generativeFillAppId: DEFAULT_GENERATIVE_FILL_APP_ID,
     generativeFillAppIds: {
       cn: DEFAULT_GENERATIVE_FILL_APP_ID,
-      global: ""
+      global: DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID
     },
     generativeFillContextExpansion: 128,
     generativeFillMaskExpansion: 4,
@@ -223,11 +229,11 @@
             : DEFAULT_AI_OPTIMIZE_APP_ID
       ).trim(),
       global: String(
-        hasRegionalGlobalId
+        hasRegionalGlobalId && String(sourceAiOptimizeAppIds.global || "").trim()
           ? sourceAiOptimizeAppIds.global
           : runningHubRegion === RUNNINGHUB_REGIONS.GLOBAL
-            ? legacyAiOptimizeAppId
-            : ""
+            ? legacyAiOptimizeAppId || DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID
+            : DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID
       ).trim()
     };
     const sourceGenerativeFillAppIds = source.generativeFillAppIds && typeof source.generativeFillAppIds === "object"
@@ -245,11 +251,11 @@
             : DEFAULT_GENERATIVE_FILL_APP_ID
       ).trim(),
       global: String(
-        hasGenerativeFillGlobalId
+        hasGenerativeFillGlobalId && String(sourceGenerativeFillAppIds.global || "").trim()
           ? sourceGenerativeFillAppIds.global
           : runningHubRegion === RUNNINGHUB_REGIONS.GLOBAL
-            ? legacyGenerativeFillAppId
-            : ""
+            ? legacyGenerativeFillAppId || DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID
+            : DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID
       ).trim()
     };
     const pollInterval = Math.min(15, Math.max(1, Math.floor(Number(source.pollInterval) || DEFAULT_SETTINGS.pollInterval)));
@@ -711,6 +717,8 @@
     STORAGE_KEYS,
     DEFAULT_AI_OPTIMIZE_APP_ID,
     DEFAULT_GENERATIVE_FILL_APP_ID,
+    DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID,
+    DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID,
     RUNNINGHUB_REGIONS,
     DEFAULT_SETTINGS,
     DEFAULT_THIRD_PARTY_SETTINGS,

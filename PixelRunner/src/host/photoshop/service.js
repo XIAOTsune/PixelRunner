@@ -1,4 +1,10 @@
-import { base64ToArrayBuffer, ensureDeps, fetchBinary, parseDataUrl } from "./deps.js";
+import {
+  base64ToArrayBuffer,
+  detectImageFileType,
+  ensureDeps,
+  fetchBinaryWithMetadata,
+  parseDataUrl
+} from "./deps.js";
 import {
   activateDocument,
   buildDataUrl,
@@ -13,6 +19,17 @@ const DEFAULT_UPLOAD_TARGET_BYTES = 9_000_000;
 const DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 10_000_000;
 const DEFAULT_UPLOAD_QUALITY_STEPS = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 let captureDocumentPreviewInFlight = null;
+
+function getUrlHost(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    return new URL(text).host;
+  } catch (_) {
+    const match = text.match(/^https?:\/\/([^/?#]+)/i);
+    return match ? match[1] : "";
+  }
+}
 
 function getBoundsSize(bounds) {
   return {
@@ -1820,14 +1837,30 @@ export async function placeImageFromUrl(payload) {
   if (!app || !app.activeDocument) throw new Error("No active Photoshop document");
 
   let buffer = null;
+  let sourceMimeType = "";
+  let responseUrl = url;
   if (dataUrl) {
     const parsed = parseDataUrl(dataUrl);
     if (!parsed || !parsed.base64) throw new Error("Result dataUrl is not a valid base64 image");
     buffer = base64ToArrayBuffer(parsed.base64);
+    sourceMimeType = parsed.mimeType;
   } else if (base64) {
     buffer = base64ToArrayBuffer(base64);
   } else {
-    buffer = await fetchBinary(url);
+    const downloaded = await fetchBinaryWithMetadata(url);
+    buffer = downloaded.buffer;
+    sourceMimeType = downloaded.mimeType;
+    responseUrl = downloaded.responseUrl || url;
+  }
+  const resultFileType = detectImageFileType(buffer, {
+    mimeType: sourceMimeType,
+    responseUrl,
+    sourceUrl: url
+  });
+  if (!resultFileType) {
+    throw new Error(
+      `RunningHub 返回内容不是可识别的图片（MIME: ${sourceMimeType || "未知"}，大小: ${buffer && buffer.byteLength || 0} 字节）`
+    );
   }
   const pngInfo = await parsePngInfo(buffer);
   const preserveCanvasBounds = options.preserveCanvasBounds === true;
@@ -1858,7 +1891,16 @@ export async function placeImageFromUrl(payload) {
   const fs = storage.localFileSystem;
   const formats = storage.formats;
   const tempFolder = await fs.getTemporaryFolder();
-  const tempFile = await tempFolder.createFile("pixelrunner-result.png", { overwrite: true });
+  const tempFileName = `pixelrunner-result.${resultFileType.extension}`;
+  console.log("[PixelRunner/Photoshop] result image ready for placement", {
+    sourceHost: getUrlHost(url),
+    responseHost: getUrlHost(responseUrl),
+    mimeType: sourceMimeType || resultFileType.mimeType,
+    byteLength: placementBuffer.byteLength,
+    fileName: tempFileName,
+    detectedBy: resultFileType.detectedBy
+  });
+  const tempFile = await tempFolder.createFile(tempFileName, { overwrite: true });
   await tempFile.write(placementBuffer, { format: formats.binary });
   const sessionToken = await fs.createSessionToken(tempFile);
   const placementMaskDataUrl = String(options.placementMaskDataUrl || "").trim();
@@ -1933,7 +1975,14 @@ export async function placeImageFromUrl(payload) {
     } else if (isTransparentPngResult && isFullBoundsTarget && normalizedMode === "stretch") {
       placementMode = "original";
     }
-    await placeSessionToken(action, sessionToken);
+    try {
+      await placeSessionToken(action, sessionToken);
+    } catch (error) {
+      const message = String(error && error.message ? error.message : error || "未知错误");
+      throw new Error(
+        `Photoshop 无法打开 RunningHub 结果图（${resultFileType.extension.toUpperCase()}，${placementBuffer.byteLength} 字节）：${message}`
+      );
+    }
 
     if (effectiveTargetBounds) {
       await alignPlacedLayerToBounds(activeTargetDocument || app.activeDocument, action, effectiveTargetBounds, {
@@ -2021,6 +2070,7 @@ export async function placeImageFromUrl(payload) {
     targetBounds,
     placementMode,
     appliedMaskMode,
+    resultFormat: resultFileType.extension,
     resultImage: sanitizePngInfo(pngInfo)
   };
 }

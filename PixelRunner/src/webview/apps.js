@@ -118,6 +118,12 @@
     return modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
   }
 
+  function getPreferredParsedAppName(value, region = getCurrentRunningHubRegion()) {
+    const name = String(value || "").trim();
+    if (modules.state.normalizeRunningHubRegion(region) !== modules.state.RUNNINGHUB_REGIONS.GLOBAL) return name;
+    return /[\u3400-\u9fff]/.test(name) ? name : "";
+  }
+
   function getRegionApps() {
     const region = getCurrentRunningHubRegion();
     return (Array.isArray(modules.state.state.apps) ? modules.state.state.apps : []).filter(
@@ -1029,7 +1035,7 @@
 
     if (inputEl) inputEl.value = normalizedAppId;
 
-    const preferredName = String(nameEl?.value || "").trim();
+    const preferredName = getPreferredParsedAppName(nameEl?.value);
     const apiKey = String(modules.state.state.settings.apiKey || "").trim();
     const statusEl = runtime.getById("appEditorStatus");
     runtime.setSummaryStatus(statusEl, `正在解析应用 ${normalizedAppId}...`, "info");
@@ -1069,7 +1075,7 @@
 
     if (inputEl) inputEl.value = normalizedAppId;
 
-    const preferredName = String(nameEl?.value || "").trim();
+    const preferredName = getPreferredParsedAppName(nameEl?.value);
     const apiKey = String(modules.state.state.settings.apiKey || "").trim();
     setPickerEditorStatus(`正在解析应用 ${normalizedAppId}...`, "info");
 

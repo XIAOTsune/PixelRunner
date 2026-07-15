@@ -636,49 +636,148 @@ function dedupeCandidates(candidates) {
     });
 }
 
-function collectAppNameCandidates(value, depth = 0, bucket = [], seen = new Set(), parentKey = "") {
+const APP_NAME_KEY_WEIGHTS = {
+  webappname: 50,
+  appname: 46,
+  workflowname: 44,
+  displayname: 42,
+  title: 38,
+  name: 34
+};
+
+const CHINESE_APP_NAME_KEYS = new Set([
+  "webappnamecn",
+  "webappnamezh",
+  "webappnamezhcn",
+  "appnamecn",
+  "appnamezh",
+  "appnamezhcn",
+  "workflownamecn",
+  "workflownamezh",
+  "displaynamecn",
+  "displaynamezh",
+  "titlecn",
+  "titlezh",
+  "titlezhcn",
+  "namecn",
+  "namezh",
+  "namezhcn",
+  "cnname",
+  "zhname",
+  "chinesename"
+]);
+
+const CHINESE_LOCALE_KEYS = new Set(["cn", "zh", "zhcn", "zhhans", "chinese"]);
+
+function containsChineseText(value) {
+  return /[\u3400-\u9fff]/.test(String(value || ""));
+}
+
+function isGenericAppNameKey(key) {
+  return Object.prototype.hasOwnProperty.call(APP_NAME_KEY_WEIGHTS, key);
+}
+
+function collectAppNameCandidates(value, depth = 0, bucket = [], seen = new Set(), parentKey = "", nameContext = false) {
   if (depth > 8 || value === undefined || value === null) return bucket;
 
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     const key = normalizeFieldToken(parentKey);
-    if (["name", "title", "appname", "webappname", "workflowname", "displayname"].includes(key)) {
+    const explicitChineseKey = CHINESE_APP_NAME_KEYS.has(key);
+    const chineseLocaleKey = nameContext && CHINESE_LOCALE_KEYS.has(key);
+    if (isGenericAppNameKey(key) || explicitChineseKey || chineseLocaleKey) {
       const text = String(value).trim();
-      if (text && !seen.has(text.toLowerCase())) {
-        seen.add(text.toLowerCase());
-        const weights = { webappname: 50, appname: 46, workflowname: 44, displayname: 42, title: 38, name: 34 };
-        bucket.push({ value: text, depth, score: (weights[key] || 20) + Math.min(12, text.length) - depth });
+      const marker = `${key}:${text.toLowerCase()}`;
+      if (text && !seen.has(marker)) {
+        seen.add(marker);
+        const hasChinese = containsChineseText(text);
+        bucket.push({
+          value: text,
+          depth,
+          hasChinese,
+          explicitChineseKey,
+          chineseLocaleKey,
+          score:
+            (APP_NAME_KEY_WEIGHTS[key] || 40) +
+            (explicitChineseKey || chineseLocaleKey ? 120 : hasChinese ? 48 : 0) +
+            Math.min(12, text.length) -
+            depth
+        });
       }
     }
 
     if (typeof value === "string") {
       const parsed = parseJsonFromEscapedText(value);
-      if (parsed !== undefined) collectAppNameCandidates(parsed, depth + 1, bucket, seen, "");
+      if (parsed !== undefined) collectAppNameCandidates(parsed, depth + 1, bucket, seen, "", nameContext);
     }
     return bucket;
   }
 
   if (Array.isArray(value)) {
-    value.slice(0, 30).forEach((item) => collectAppNameCandidates(item, depth + 1, bucket, seen, parentKey));
+    value.slice(0, 30).forEach((item) => collectAppNameCandidates(item, depth + 1, bucket, seen, parentKey, nameContext));
     return bucket;
   }
 
   if (typeof value !== "object") return bucket;
 
-  ["webappName", "appName", "workflowName", "displayName", "title", "name"].forEach((key) => {
-    if (value[key] !== undefined) collectAppNameCandidates(value[key], depth, bucket, seen, key);
+  [
+    "webappNameCn",
+    "webappNameZh",
+    "appNameCn",
+    "appNameZh",
+    "workflowNameCn",
+    "workflowNameZh",
+    "displayNameCn",
+    "displayNameZh",
+    "titleCn",
+    "titleZh",
+    "nameCn",
+    "nameZh",
+    "chineseName",
+    "webappName",
+    "appName",
+    "workflowName",
+    "displayName",
+    "title",
+    "name"
+  ].forEach((key) => {
+    if (value[key] !== undefined) {
+      const normalizedKey = normalizeFieldToken(key);
+      collectAppNameCandidates(
+        value[key],
+        depth,
+        bucket,
+        seen,
+        key,
+        isGenericAppNameKey(normalizedKey) || CHINESE_APP_NAME_KEYS.has(normalizedKey)
+      );
+    }
   });
 
-  Object.entries(value).forEach(([key, child]) => collectAppNameCandidates(child, depth + 1, bucket, seen, key));
+  Object.entries(value).forEach(([key, child]) => {
+    const normalizedKey = normalizeFieldToken(key);
+    collectAppNameCandidates(
+      child,
+      depth + 1,
+      bucket,
+      seen,
+      key,
+      nameContext || isGenericAppNameKey(normalizedKey) || CHINESE_APP_NAME_KEYS.has(normalizedKey)
+    );
+  });
   return bucket;
 }
 
 function resolveBestAppName(data) {
   const candidates = collectAppNameCandidates(data, 0, [], new Set(), "");
-  candidates.sort((a, b) => {
+  const sortCandidates = (items) => items.sort((a, b) => {
     if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
     return (a.depth || 0) - (b.depth || 0);
   });
-  return candidates[0] && candidates[0].value ? candidates[0].value : "未命名应用";
+  const chineseCandidates = candidates.filter(
+    (item) => item.hasChinese && (item.explicitChineseKey || item.chineseLocaleKey || Number(item.depth) <= 3)
+  );
+  const preferred = sortCandidates(chineseCandidates)[0] || sortCandidates(candidates)[0] || null;
+  return preferred && preferred.value ? preferred.value : "未命名应用";
 }
 
 function collectImageUrlCandidates(value, depth = 0, bucket = [], seen = new Set(), parentKey = "", apiBaseUrl = DEFAULT_API_BASE_URL) {
@@ -730,6 +829,12 @@ function mergeParsedAppMeta(base, meta) {
     next.previewImage = String(source.previewImage || "").trim();
   }
   if ((!String(next.name || "").trim() || next.name === "未命名应用") && String(source.name || "").trim()) {
+    next.name = String(source.name || "").trim();
+  } else if (
+    String(source.name || "").trim() !== "未命名应用" &&
+    containsChineseText(source.name) &&
+    !containsChineseText(next.name)
+  ) {
     next.name = String(source.name || "").trim();
   }
   if (!String(next.description || "").trim() && String(source.description || "").trim()) {
@@ -908,7 +1013,8 @@ function buildFallbackUrls(endpoint, normalizedId, apiBaseUrl = DEFAULT_API_BASE
 async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT_API_BASE_URL) {
   const headers = {
     Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Accept-Language": "zh-CN,zh;q=0.9"
   };
   const queryVariants = [
     { webappId: normalizedId },
@@ -925,12 +1031,29 @@ async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT
     { apiKey, appId: normalizedId },
     { apiKey, id: normalizedId }
   ];
+  let bestMeta = { name: "", description: "", previewImage: "" };
+
+  const rememberMeta = (meta) => {
+    if (!meta || typeof meta !== "object") return;
+    const currentName = String(bestMeta.name || "").trim();
+    const nextName = String(meta.name || "").trim();
+    const shouldUseName =
+      nextName &&
+      nextName !== "未命名应用" &&
+      (!currentName || currentName === "未命名应用" || (containsChineseText(nextName) && !containsChineseText(currentName)));
+    bestMeta = {
+      name: shouldUseName ? nextName : currentName,
+      description: String(bestMeta.description || meta.description || "").trim(),
+      previewImage: String(bestMeta.previewImage || meta.previewImage || "").trim()
+    };
+  };
 
   for (const endpoint of APP_META_FALLBACKS) {
     for (const query of queryVariants) {
       try {
         const { result } = await fetchJson(buildParseUrl(endpoint, query, apiBaseUrl), { method: "GET", headers });
         const meta = buildAppMetaFromResult(result, apiBaseUrl);
+        rememberMeta(meta);
         if (meta.previewImage) return meta;
       } catch (_) {}
     }
@@ -943,12 +1066,13 @@ async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT
           body: JSON.stringify(body)
         });
         const meta = buildAppMetaFromResult(result, apiBaseUrl);
+        rememberMeta(meta);
         if (meta.previewImage) return meta;
       } catch (_) {}
     }
   }
 
-  return { name: "", description: "", previewImage: "" };
+  return bestMeta;
 }
 
 function buildDebugRecord(endpoint, appId, result, best) {
@@ -1060,7 +1184,8 @@ export async function parseRunningHubApp(args = []) {
 
   const headers = {
     Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Accept-Language": "zh-CN,zh;q=0.9"
   };
 
   const getVariants = [

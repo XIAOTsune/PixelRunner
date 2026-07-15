@@ -837,6 +837,8 @@ function scoreOutputUrlCandidate(url, source = {}, key = "") {
     source.mimeType,
     source.mime_type,
     source.mediaType,
+    source.outputType,
+    source.output_type,
     source.type,
     source.format,
     source.fileName,
@@ -1427,7 +1429,9 @@ function isAbortLikeMessage(message) {
   );
 }
 
-async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
+const runninghubTaskQueryVersions = new Map();
+
+async function fetchTaskSnapshotRequest(apiKey, taskId, options = {}) {
   const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 30000);
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timer = controller
@@ -1440,13 +1444,13 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
 
   try {
     const { baseUrl } = getRunningHubRegionConfig(resolveRunningHubRegion(options));
-    const response = await fetch(`${baseUrl}/task/openapi/outputs`, {
+    const response = await fetch(`${baseUrl}${options.pathname}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ apiKey, taskId }),
+      body: JSON.stringify(options.includeApiKey ? { apiKey, taskId } : { taskId }),
       signal: controller ? controller.signal : options.signal
     });
     const text = await response.text();
@@ -1469,6 +1473,89 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+async function fetchTaskV2Snapshot(apiKey, taskId, options = {}) {
+  return fetchTaskSnapshotRequest(apiKey, taskId, {
+    ...options,
+    pathname: "/openapi/v2/query",
+    includeApiKey: false
+  });
+}
+
+async function fetchTaskOutputsV1Snapshot(apiKey, taskId, options = {}) {
+  return fetchTaskSnapshotRequest(apiKey, taskId, {
+    ...options,
+    pathname: "/task/openapi/outputs",
+    includeApiKey: true
+  });
+}
+
+function getTaskSnapshotPayload(snapshot) {
+  const result = snapshot && snapshot.result;
+  return (result && (result.data || result.result)) || result;
+}
+
+function classifyV2Fallback(snapshot) {
+  const payload = getTaskSnapshotPayload(snapshot);
+  const status = extractTaskStatus(payload);
+  const outputUrl = extractOutputUrl(payload);
+  if (outputUrl || isPendingStatus(status) || isFailedStatus(status)) return "";
+
+  const httpStatus = Number(snapshot && snapshot.status) || 0;
+  if ([404, 405, 410, 501].includes(httpStatus)) return "unsupported";
+
+  const result = snapshot && snapshot.result;
+  const message = String(
+    extractBestFailureMessageText(result) || extractMessageText(result) || ""
+  ).trim();
+  const apiCode = getApiCode(result);
+  if (
+    !snapshot ||
+    (!snapshot.ok && !isTransientHttpStatus(httpStatus)) ||
+    (!status && apiCode !== null && apiCode !== 0 && apiCode !== 200)
+  ) {
+    return /not found|unsupported|not support|does not exist|不存在|未找到|不支持/i.test(message)
+      ? "unsupported"
+      : "api-error";
+  }
+
+  // A successful V2 status without results can occur while older tasks only expose V1 outputs.
+  if (isSucceededStatus(status) || (!status && snapshot.ok)) return "missing-results";
+  return "";
+}
+
+async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
+  const region = resolveRunningHubRegion(options);
+  if (runninghubTaskQueryVersions.get(region) === "v1") {
+    return fetchTaskOutputsV1Snapshot(apiKey, taskId, options);
+  }
+
+  const v2Snapshot = await fetchTaskV2Snapshot(apiKey, taskId, options);
+  const fallbackReason = classifyV2Fallback(v2Snapshot);
+  if (!fallbackReason) {
+    runninghubTaskQueryVersions.set(region, "v2");
+    return v2Snapshot;
+  }
+
+  const v1Snapshot = await fetchTaskOutputsV1Snapshot(apiKey, taskId, options);
+  const v1Payload = getTaskSnapshotPayload(v1Snapshot);
+  const v1Recognized = Boolean(
+    v1Snapshot && v1Snapshot.ok && (extractOutputUrl(v1Payload) || extractTaskStatus(v1Payload))
+  );
+
+  if (fallbackReason === "unsupported") {
+    runninghubTaskQueryVersions.set(region, "v1");
+    console.info("[PixelRunner/RunningHub] V2 task query unavailable; using V1 compatibility endpoint", {
+      region,
+      httpStatus: v2Snapshot && v2Snapshot.status
+    });
+  }
+
+  if (v1Recognized || !v2Snapshot || !v2Snapshot.ok || fallbackReason !== "missing-results") {
+    return v1Snapshot;
+  }
+  return v2Snapshot;
 }
 
 function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options = {}) {
