@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PixelRunner RunningHub 使用文档</title>
+  <title>像素起子（小T修图助手）RunningHub 使用文档</title>
   <style>
     :root {
       --bg: #f6f8fc;
@@ -748,10 +748,10 @@
   <main class="page" id="main">
     <header class="hero">
       <section class="hero-main">
-        <p class="eyebrow">PixelRunner 本地帮助中心</p>
-        <h1>PixelRunner 连接 RunningHub，从第一次配置到返图</h1>
+        <p class="eyebrow">像素起子本地帮助中心</p>
+        <h1>像素起子连接 RunningHub，从第一次配置到返图</h1>
         <p class="lead">
-          这份文档按 RunningHub 当前官网入口和 PixelRunner 的实际使用顺序整理：先到消费级 API 控制台复制 API Key，再从 AI 应用页找到合适应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
+          这份文档按 RunningHub 当前官网入口和像素起子的实际使用顺序整理：先到消费级 API 控制台复制 API Key，再从 AI 应用页找到合适应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
         </p>
         <div class="hero-actions">
           <a class="btn primary" href="#first-run">
@@ -773,7 +773,7 @@
         <h2>先确认这 4 件事</h2>
         <ul class="status-list">
           <li><span class="dot"></span><span><strong>RunningHub 账号</strong><br />需要能登录官网，并能进入消费级 API 控制台复制 API Key。</span></li>
-          <li><span class="dot"></span><span><strong>钱包有 RH 币</strong><br />消费级 API 会消耗账号 RH 币，网站任务和 API 调用共享并发限制。</span></li>
+          <li><span class="dot"></span><span><strong>钱包有可用余额</strong><br />国内版以 RH 币 / R 计费，国际版以美元计费，网站任务和 API 调用共享并发限制。</span></li>
           <li><span class="dot"></span><span><strong>Photoshop 已打开文档</strong><br />需要捕获当前文档或选区时，必须先打开图像。</span></li>
           <li><span class="dot"></span><span><strong>准备一个 AI 应用</strong><br />从 RunningHub 的 AI 应用页下翻到广场，或直接搜索需要的应用。</span></li>
         </ul>
@@ -843,7 +843,7 @@
                 <p>国内版使用 <code>runninghub.cn</code>，国际版使用 <code>runninghub.ai</code>。先确认准备使用的站点，再打开该站点的 <strong>消费级-会员 API 控制台</strong>，登录并复制对应 API Key。</p>
                 <ul class="plain-list">
                   <li>目前官网右上角头像菜单里没有 API 控制台入口，建议直接使用上面的控制台网址。</li>
-                  <li>消费级 API 调用会消耗账号里的 RH 币；如果看不到密钥或调用失败，先确认账号是否具备对应 API 权益。</li>
+                  <li>消费级 API 调用会消耗对应区域账号的余额；国内版显示 RH 币 / R，国际版显示美元 `$`。</li>
                   <li>如果 API Key 失效，回官网 API 控制台重新复制或重置新的 Key。</li>
                   <li>API Key 属于敏感信息，不建议发到公开群聊或截图里。</li>
                   <li>国内版与国际版的 Key、余额和应用 ID 分开使用，不要跨区域混用。</li>
@@ -872,7 +872,7 @@
             <article class="flow-step">
               <div>
                 <h3>充值或确认钱包余额</h3>
-                <p>PixelRunner 调用的是 RunningHub 云端任务。消费级 API 会消耗账号 RH 币，且官网运行任务和 API 调用任务共享同一套并发限制。建议第一次运行前先在官网确认余额，避免插件里看起来提交了，但云端直接因为余额不足失败。</p>
+                <p>像素起子调用的是 RunningHub 云端任务。国内版消耗 RH 币 / R，国际版消耗美元余额，且官网运行任务和 API 调用任务共享同一套并发限制。建议第一次运行前先在官网确认对应区域的余额。</p>
                 <div class="notice">
                   <strong>经验判断：</strong>如果一点击运行就很快失败，优先查余额、会员/API 权益和 API Key；如果等了很久才失败，再看应用拥挤、并发限制、网络或内容审核。
                 </div>
@@ -882,10 +882,10 @@
             <article class="flow-step">
               <div>
                 <h3>在插件设置里保存 API Key</h3>
-                <p>回到 PixelRunner，打开 <span class="kbd">设置</span>。先在 <strong>RunningHub 服务区域</strong> 选择“国内版”或“国际版”，再填写该区域的 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
+                <p>回到像素起子，打开 <span class="kbd">设置</span>。先在 <strong>RunningHub 服务区域</strong> 选择“国内版”或“国际版”，再填写该区域的 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
                 <ul class="plain-list">
                   <li>API 档案按区域分别显示；有多个账号时，可以用“新增”创建多个档案，例如“主账号”“客户项目 A”。</li>
-                  <li>保存后，工作台右上角会尝试显示余额和 RH 币。</li>
+                  <li>保存后，工作台右上角会尝试显示余额；国际版余额使用美元符号 `$`。</li>
                   <li>看不到余额时，先确认 Key 是否正确，再确认网络是否能访问 RunningHub。</li>
                 </ul>
                 <div class="notice success">
@@ -901,7 +901,7 @@
                 <ul class="plain-list">
                   <li>优先选择自己在网页端能正常打开、能手动试跑的应用。</li>
                   <li>打开应用详情页后，浏览器地址通常类似 <code>https://www.runninghub.cn/ai-detail/1937084629516193794</code>。</li>
-                  <li>详情页末尾那串数字就是 <strong>webappId / 应用 ID</strong>；PixelRunner 可以直接粘完整链接，也可以只粘这串数字。</li>
+                  <li>详情页末尾那串数字就是 <strong>webappId / 应用 ID</strong>；像素起子可以直接粘完整链接，也可以只粘这串数字。</li>
                   <li>如果官网入口从 <span class="kbd">AI 应用</span> 跳到新版页面，仍然以详情页链接里的 <code>ai-detail/数字</code> 为准。</li>
                 </ul>
                 <div class="inline-actions" style="margin-top: 12px;">
@@ -919,8 +919,8 @@
 
             <article class="flow-step">
               <div>
-                <h3>把 AI 应用保存到 PixelRunner</h3>
-                <p>回到 PixelRunner，进入 <span class="kbd">工作台</span>，在“选择应用”区域点击 <strong>切换</strong>，再点击弹窗里的 <strong>添加应用</strong>。把 RunningHub 应用 ID 或完整应用链接粘进去，点击 <strong>解析</strong>，确认名称后点击 <strong>保存应用</strong>。</p>
+                <h3>把 AI 应用保存到像素起子</h3>
+                <p>回到像素起子，进入 <span class="kbd">工作台</span>，在“选择应用”区域点击 <strong>切换</strong>，再点击弹窗里的 <strong>添加应用</strong>。把 RunningHub 应用 ID 或完整应用链接粘进去，点击 <strong>解析</strong>，确认名称后点击 <strong>保存应用</strong>。</p>
                 <ul class="plain-list">
                   <li>解析成功后，应用会出现在“已保存应用”列表中。</li>
                   <li>应用保存后会自动切换到工作台，表单会按该应用的输入项生成。</li>
@@ -1046,7 +1046,7 @@
                   <td>整套配置备份</td>
                   <td>设置 / 资料包导入导出 / 导出资料包</td>
                   <td>导出的 JSON 文件可以再用“导入资料包”恢复</td>
-                  <td>用于换电脑、分享配置、恢复应用和模板最方便。</td>
+                  <td>国内版与国际版应用会分区备份，同名应用不会互相覆盖。</td>
                 </tr>
               </tbody>
             </table>
@@ -1137,7 +1137,7 @@
           <div class="problem-grid">
             <article class="issue-card" data-level="error">
               <h3>余额不足</h3>
-              <p>工作台右上余额为空或过低时，先去 RunningHub 官网确认 RH 币和消费级 API 权益。余额不足是最常见的失败原因之一。</p>
+              <p>工作台右上余额为空或过低时，先去当前 RunningHub 区域官网确认余额和消费级 API 权益。国内版查 RH 币 / R，国际版查美元余额。</p>
             </article>
             <article class="issue-card" data-level="error">
               <h3>API Key 未保存或失效</h3>
@@ -1242,7 +1242,7 @@
     </div>
 
     <footer class="footer">
-      <p>这是一份随 PixelRunner 一起打包的本地文档。教程按钮会打开本页，遇到问题时可以先按目录快速定位。</p>
+      <p>这是一份随像素起子一起打包的本地文档。教程按钮会打开本页，遇到问题时可以先按目录快速定位。</p>
     </footer>
   </main>
 

@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { obfuscateReleaseBundle } from "./release-obfuscation.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +27,7 @@ async function readNormalized(filePath) {
   return normalizeBundleText(await readFile(filePath, "utf8"));
 }
 
-async function assertBundleMatches({ name, entryPoint, outfile, buildOptions, bundleKind }) {
+async function assertBundleMatches({ name, entryPoint, outfile, buildOptions }) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "pixelrunner-dist-sync-"));
   const tempOutfile = path.join(tempDir, path.basename(outfile));
 
@@ -39,10 +38,6 @@ async function assertBundleMatches({ name, entryPoint, outfile, buildOptions, bu
       entryPoints: [entryPoint],
       outfile: tempOutfile
     });
-    if (releaseMode) {
-      await obfuscateReleaseBundle(tempOutfile, bundleKind);
-    }
-
     const currentText = await readNormalized(outfile);
     const generatedText = await readNormalized(tempOutfile);
 
@@ -64,8 +59,7 @@ async function main() {
     buildOptions: {
       format: "iife",
       globalName: "PixelRunnerWebviewBundle"
-    },
-    bundleKind: "webview"
+    }
   });
 
   await assertBundleMatches({
@@ -77,8 +71,7 @@ async function main() {
       globalName: "PixelRunnerHostBundle",
       platform: "browser",
       external: ["photoshop", "uxp"]
-    },
-    bundleKind: "host"
+    }
   });
 
   console.log("PixelRunner dist bundles are in sync with src.");

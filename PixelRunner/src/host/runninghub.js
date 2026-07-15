@@ -763,9 +763,10 @@ function extractTaskCoinsCharge(payload) {
   ]);
 }
 
-function formatBalanceChargeDisplay(charge) {
+function formatBalanceChargeDisplay(charge, region = "cn") {
   const parsed = parseChargeValue(charge);
   if (parsed === null) return "";
+  if (resolveRunningHubRegion({ region }) === "global") return `-$${parsed.toFixed(3)}`;
   return `-${parsed.toFixed(3)}R`;
 }
 
@@ -775,74 +776,128 @@ function formatCoinsChargeDisplay(charge) {
   return Number.isInteger(parsed) ? `-${parsed}RH` : `-${parsed.toFixed(3)}RH`;
 }
 
-function formatTaskChargeDisplay(balanceCharge, coinsCharge) {
+function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn") {
   const parts = [];
-  const balanceText = formatBalanceChargeDisplay(balanceCharge);
+  const balanceText = formatBalanceChargeDisplay(balanceCharge, region);
   const coinsText = formatCoinsChargeDisplay(coinsCharge);
   if (balanceText) parts.push(balanceText);
   if (coinsText) parts.push(coinsText);
   return parts.join(" · ");
 }
 
-function extractOutputUrl(payload) {
-  if (!payload) return "";
-  if (typeof payload === "string") {
-    return /^https?:\/\//i.test(payload) ? payload : "";
+const OUTPUT_URL_KEYS = [
+  "fileUrl",
+  "file_url",
+  "url",
+  "downloadUrl",
+  "download_url",
+  "imageUrl",
+  "image_url",
+  "resultUrl",
+  "result_url",
+  "outputUrl",
+  "output_url",
+  "originUrl",
+  "origin_url",
+  "ossUrl",
+  "oss_url"
+];
+
+const OUTPUT_NESTED_KEYS = [
+  "outputs",
+  "output",
+  "data",
+  "result",
+  "results",
+  "list",
+  "items",
+  "files",
+  "fileList",
+  "images",
+  "imageList",
+  "nodeOutputs",
+  "nodeOutputList"
+];
+
+function parseNestedOutputJson(value) {
+  const text = String(value || "").trim();
+  if (!text || text.length > 500000 || !["{", "["].includes(text[0])) return null;
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return null;
   }
+}
+
+function scoreOutputUrlCandidate(url, source = {}, key = "") {
+  const marker = [
+    key,
+    source.fileType,
+    source.file_type,
+    source.mimeType,
+    source.mime_type,
+    source.mediaType,
+    source.outputType,
+    source.output_type,
+    source.type,
+    source.format,
+    source.fileName,
+    source.file_name,
+    source.filename,
+    source.name
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  const normalizedUrl = String(url || "").toLowerCase();
+  let score = 0;
+  if (/image|\b(?:png|jpe?g|webp|gif|bmp|tiff?|avif|heic)\b/.test(marker)) score += 120;
+  if (/\.(?:png|jpe?g|webp|gif|bmp|tiff?|avif|heic)(?:[?#]|$)/i.test(normalizedUrl)) score += 100;
+  if (/imageurl|image_url/.test(String(key || "").toLowerCase())) score += 60;
+  if (/video|audio|text|json|zip|archive|\b(?:mp4|mov|webm|mp3|wav|txt|json|zip)\b/.test(marker)) score -= 100;
+  if (/\.(?:mp4|mov|webm|mp3|wav|txt|json|zip)(?:[?#]|$)/i.test(normalizedUrl)) score -= 80;
+  return score;
+}
+
+function collectOutputUrlCandidates(payload, depth = 0, seen = new Set(), candidates = []) {
+  if (!payload || depth > 8) return candidates;
+  if (typeof payload === "string") {
+    const text = payload.trim();
+    if (/^https?:\/\//i.test(text)) {
+      candidates.push({ url: text, score: scoreOutputUrlCandidate(text), order: candidates.length });
+      return candidates;
+    }
+    const parsed = parseNestedOutputJson(text);
+    if (parsed) collectOutputUrlCandidates(parsed, depth + 1, seen, candidates);
+    return candidates;
+  }
+  if (typeof payload !== "object" || seen.has(payload)) return candidates;
+  seen.add(payload);
 
   if (Array.isArray(payload)) {
-    for (const item of payload) {
-      const url = extractOutputUrl(item);
-      if (url) return url;
-    }
-    return "";
+    payload.forEach((item) => collectOutputUrlCandidates(item, depth + 1, seen, candidates));
+    return candidates;
   }
 
-  if (typeof payload === "object") {
-    const directKeys = [
-      "fileUrl",
-      "file_url",
-      "url",
-      "downloadUrl",
-      "download_url",
-      "imageUrl",
-      "image_url",
-      "resultUrl",
-      "result_url",
-      "outputUrl",
-      "output_url",
-      "originUrl",
-      "origin_url",
-      "ossUrl",
-      "oss_url"
-    ];
-    for (const key of directKeys) {
-      const value = payload[key];
-      if (typeof value === "string" && /^https?:\/\//i.test(value)) return value;
-    }
+  OUTPUT_URL_KEYS.forEach((key) => {
+    const value = payload[key];
+    if (typeof value !== "string") return;
+    const url = value.trim();
+    if (!/^https?:\/\//i.test(url)) return;
+    candidates.push({
+      url,
+      score: scoreOutputUrlCandidate(url, payload, key),
+      order: candidates.length
+    });
+  });
+  OUTPUT_NESTED_KEYS.forEach((key) => {
+    collectOutputUrlCandidates(payload[key], depth + 1, seen, candidates);
+  });
+  return candidates;
+}
 
-    const nestedKeys = [
-      "outputs",
-      "output",
-      "data",
-      "result",
-      "results",
-      "list",
-      "items",
-      "files",
-      "fileList",
-      "images",
-      "imageList",
-      "nodeOutputs",
-      "nodeOutputList"
-    ];
-    for (const key of nestedKeys) {
-      const url = extractOutputUrl(payload[key]);
-      if (url) return url;
-    }
-  }
-
-  return "";
+function extractOutputUrl(payload) {
+  const candidates = collectOutputUrlCandidates(payload);
+  if (candidates.length === 0) return "";
+  candidates.sort((left, right) => right.score - left.score || left.order - right.order);
+  return candidates[0].url;
 }
 
 function looksLikeTxtUrl(value) {
@@ -1374,7 +1429,9 @@ function isAbortLikeMessage(message) {
   );
 }
 
-async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
+const runninghubTaskQueryVersions = new Map();
+
+async function fetchTaskSnapshotRequest(apiKey, taskId, options = {}) {
   const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 30000);
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timer = controller
@@ -1387,13 +1444,13 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
 
   try {
     const { baseUrl } = getRunningHubRegionConfig(resolveRunningHubRegion(options));
-    const response = await fetch(`${baseUrl}/task/openapi/outputs`, {
+    const response = await fetch(`${baseUrl}${options.pathname}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ apiKey, taskId }),
+      body: JSON.stringify(options.includeApiKey ? { apiKey, taskId } : { taskId }),
       signal: controller ? controller.signal : options.signal
     });
     const text = await response.text();
@@ -1418,7 +1475,90 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
   }
 }
 
-function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "") {
+async function fetchTaskV2Snapshot(apiKey, taskId, options = {}) {
+  return fetchTaskSnapshotRequest(apiKey, taskId, {
+    ...options,
+    pathname: "/openapi/v2/query",
+    includeApiKey: false
+  });
+}
+
+async function fetchTaskOutputsV1Snapshot(apiKey, taskId, options = {}) {
+  return fetchTaskSnapshotRequest(apiKey, taskId, {
+    ...options,
+    pathname: "/task/openapi/outputs",
+    includeApiKey: true
+  });
+}
+
+function getTaskSnapshotPayload(snapshot) {
+  const result = snapshot && snapshot.result;
+  return (result && (result.data || result.result)) || result;
+}
+
+function classifyV2Fallback(snapshot) {
+  const payload = getTaskSnapshotPayload(snapshot);
+  const status = extractTaskStatus(payload);
+  const outputUrl = extractOutputUrl(payload);
+  if (outputUrl || isPendingStatus(status) || isFailedStatus(status)) return "";
+
+  const httpStatus = Number(snapshot && snapshot.status) || 0;
+  if ([404, 405, 410, 501].includes(httpStatus)) return "unsupported";
+
+  const result = snapshot && snapshot.result;
+  const message = String(
+    extractBestFailureMessageText(result) || extractMessageText(result) || ""
+  ).trim();
+  const apiCode = getApiCode(result);
+  if (
+    !snapshot ||
+    (!snapshot.ok && !isTransientHttpStatus(httpStatus)) ||
+    (!status && apiCode !== null && apiCode !== 0 && apiCode !== 200)
+  ) {
+    return /not found|unsupported|not support|does not exist|不存在|未找到|不支持/i.test(message)
+      ? "unsupported"
+      : "api-error";
+  }
+
+  // A successful V2 status without results can occur while older tasks only expose V1 outputs.
+  if (isSucceededStatus(status) || (!status && snapshot.ok)) return "missing-results";
+  return "";
+}
+
+async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
+  const region = resolveRunningHubRegion(options);
+  if (runninghubTaskQueryVersions.get(region) === "v1") {
+    return fetchTaskOutputsV1Snapshot(apiKey, taskId, options);
+  }
+
+  const v2Snapshot = await fetchTaskV2Snapshot(apiKey, taskId, options);
+  const fallbackReason = classifyV2Fallback(v2Snapshot);
+  if (!fallbackReason) {
+    runninghubTaskQueryVersions.set(region, "v2");
+    return v2Snapshot;
+  }
+
+  const v1Snapshot = await fetchTaskOutputsV1Snapshot(apiKey, taskId, options);
+  const v1Payload = getTaskSnapshotPayload(v1Snapshot);
+  const v1Recognized = Boolean(
+    v1Snapshot && v1Snapshot.ok && (extractOutputUrl(v1Payload) || extractTaskStatus(v1Payload))
+  );
+
+  if (fallbackReason === "unsupported") {
+    runninghubTaskQueryVersions.set(region, "v1");
+    console.info("[PixelRunner/RunningHub] V2 task query unavailable; using V1 compatibility endpoint", {
+      region,
+      httpStatus: v2Snapshot && v2Snapshot.status
+    });
+  }
+
+  if (v1Recognized || !v2Snapshot || !v2Snapshot.ok || fallbackReason !== "missing-results") {
+    return v1Snapshot;
+  }
+  return v2Snapshot;
+}
+
+function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options = {}) {
   const result = snapshot && snapshot.result;
   const payloadData = (result && (result.data || result.result)) || result;
   const status = extractTaskStatus(payloadData);
@@ -1466,7 +1606,7 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "") {
     charge: balanceCharge,
     balanceCharge,
     coinsCharge,
-    chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge),
+    chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, options.region),
     message,
     stillRunning,
     failed,
@@ -1612,6 +1752,7 @@ export async function fetchRunningHubAccountStatus(args = []) {
     region,
     balance: account.remainMoney ?? account.balance ?? account.amount ?? account.walletBalance ?? account.money ?? null,
     coins: account.remainCoins ?? account.coins ?? account.rhCoins ?? account.integral ?? null,
+    currency: String(account.currency || (region === "global" ? "USD" : "R")).trim(),
     result
   };
 }
@@ -1679,12 +1820,12 @@ export async function pollRunningHubTask(args = []) {
             charge: balanceCharge,
             balanceCharge,
             coinsCharge,
-            chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge),
+            chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, region),
             result
           };
         }
 
-        const statusResponse = buildTaskStatusResponse(taskId, snapshot);
+        const statusResponse = buildTaskStatusResponse(taskId, snapshot, "", { region });
         const status = statusResponse.status || extractTaskStatus(payloadData);
         if (statusResponse.failed || isFailedStatus(status)) {
           const failedStatus = statusResponse.failed
@@ -1692,7 +1833,8 @@ export async function pollRunningHubTask(args = []) {
             : buildTaskStatusResponse(
                 taskId,
                 snapshot,
-                normalizeCloudFailureMessage(`Task failed (${status})`, { provider: "RunningHub", status })
+                normalizeCloudFailureMessage(`Task failed (${status})`, { provider: "RunningHub", status }),
+                { region }
               );
           return {
             ok: false,
@@ -1738,7 +1880,8 @@ export async function pollRunningHubTask(args = []) {
     const timeoutStatus = buildTaskStatusResponse(
       taskId,
       timeoutSnapshot,
-      normalizeCloudFailureMessage("Task polling timed out", { provider: "RunningHub", status: "TIMEOUT" })
+      normalizeCloudFailureMessage("Task polling timed out", { provider: "RunningHub", status: "TIMEOUT" }),
+      { region }
     );
     if (timeoutStatus.outputUrl) {
       return {
@@ -1802,7 +1945,7 @@ export async function fetchRunningHubTaskStatus(args = []) {
     region,
     timeoutMs: Math.max(5000, Number(payload.timeoutMs) || 30000)
   });
-  return buildTaskStatusResponse(taskId, snapshot);
+  return buildTaskStatusResponse(taskId, snapshot, "", { region });
 }
 
 export async function cancelRunningHubTask(args = []) {

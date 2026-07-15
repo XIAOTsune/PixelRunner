@@ -2,7 +2,6 @@ import { build, context } from "esbuild";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { obfuscateReleaseBundle } from "./release-obfuscation.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,10 +69,6 @@ async function runBuild() {
   await cleanBundleArtifacts();
   await build(webviewConfig);
   await build(hostConfig);
-  if (releaseMode) {
-    await obfuscateReleaseBundle(webviewConfig.outfile, "webview");
-    await obfuscateReleaseBundle(hostConfig.outfile, "host");
-  }
   console.log(`PixelRunner ${releaseMode ? "release" : "development"} bundles built successfully.`);
 }
 

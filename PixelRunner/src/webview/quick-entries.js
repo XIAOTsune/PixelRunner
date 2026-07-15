@@ -112,12 +112,12 @@
 
   async function loadWorkspaceModeFromStorage() {
     const mode = String(await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE) || "").trim();
-    modules.state.state.workspaceMode = mode === "quick" ? "quick" : "app";
+    modules.state.state.workspaceMode = ["quick", "generative-fill"].includes(mode) ? mode : "app";
     return modules.state.state.workspaceMode;
   }
 
   async function setWorkspaceMode(mode, options = {}) {
-    modules.state.state.workspaceMode = mode === "quick" ? "quick" : "app";
+    modules.state.state.workspaceMode = ["quick", "generative-fill"].includes(mode) ? mode : "app";
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_MODE, modules.state.state.workspaceMode);
     if (!options.skipRender && modules.workspace && typeof modules.workspace.renderWorkspace === "function") {
       modules.workspace.renderWorkspace();

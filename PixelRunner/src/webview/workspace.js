@@ -5,6 +5,20 @@
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
+  const GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS = Object.freeze({
+    mode: "natural",
+    totalStrength: 64,
+    luminanceStrength: 70,
+    colorStrength: 68,
+    saturationStrength: 0,
+    contrastStrength: 0,
+    featherRadius: 0,
+    createBackupLayer: true,
+    pixelPipelineEnabled: true,
+    alignmentEnabled: false,
+    alignmentScaleEnabled: false,
+    localAlignmentEnabled: false
+  });
   const RUNNINGHUB_TASK_DETAIL_URLS = {
     cn: "https://www.runninghub.cn/bill-task",
     global: "https://www.runninghub.ai/bill-task"
@@ -205,7 +219,7 @@
   function getResultDefaultLayerName() {
     const state = modules.state.state;
     const appName = String((state.lastResult && state.lastResult.appName) || (state.currentApp && state.currentApp.name) || "Result").trim();
-    return `PixelRunner - ${appName}`;
+    return `像素起子 - ${appName}`;
   }
 
   function formatSelectionLabel(selectionBounds) {
@@ -885,7 +899,9 @@
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
     const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
     const parts = [];
-    if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(3)}R`);
+    const isGlobalRunningHub = !isThirdPartyTaskRecord(task) &&
+      modules.state.normalizeRunningHubRegion(task.region) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
+    if (balanceCharge !== null) parts.push(isGlobalRunningHub ? `-$${balanceCharge.toFixed(3)}` : `-${balanceCharge.toFixed(3)}R`);
     if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
     return parts.join(" · ");
   }
@@ -934,6 +950,8 @@
     return {
       balance: Number.isFinite(Number(accountSummary.balance)) ? Number(accountSummary.balance) : null,
       coins: Number.isFinite(Number(accountSummary.coins)) ? Number(accountSummary.coins) : null,
+      region: modules.state.normalizeRunningHubRegion(accountSummary.region || modules.state.state.settings.runningHubRegion),
+      currency: String(accountSummary.currency || "").trim(),
       updatedAt: Number(accountSummary.updatedAt) || 0
     };
   }
@@ -957,7 +975,11 @@
       charge: balanceCharge,
       balanceCharge,
       coinsCharge,
-      chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+      chargeDisplay: formatTaskChargeDisplay({
+        balanceCharge,
+        coinsCharge,
+        region: (afterAccount && afterAccount.region) || (beforeAccount && beforeAccount.region)
+      })
     };
   }
 
@@ -981,7 +1003,13 @@
       charge: balanceCharge,
       balanceCharge,
       coinsCharge,
-      chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+      chargeDisplay: formatTaskChargeDisplay({
+        balanceCharge,
+        coinsCharge,
+        provider: task && task.provider,
+        appName: task && task.appName,
+        region: task && task.region
+      })
     };
   }
 
@@ -1248,9 +1276,11 @@
     const cooldownActive = isRunCooldownActive();
     const cooldownSeconds = Math.max(1, Math.ceil((runButtonCooldownUntil - Date.now()) / 1000));
     const quickMode = state.workspaceMode === "quick";
+    const generativeFillMode = state.workspaceMode === "generative-fill";
 
     if (runButton) {
-      runButton.disabled = quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runButton.hidden = generativeFillMode;
+      runButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       if (quickMode) {
         runButton.textContent = "点击快捷入口运行";
       } else if (!hasCurrentApp) {
@@ -1271,8 +1301,8 @@
     if (runPlusButton) {
       const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
       const plusModeEnabled = state.settings && state.settings.plusModeEnabled === true;
-      runPlusButton.hidden = !plusModeEnabled;
-      runPlusButton.disabled = quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runPlusButton.hidden = generativeFillMode || !plusModeEnabled;
+      runPlusButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
       runPlusButton.setAttribute(
         "aria-label",
@@ -1281,7 +1311,9 @@
     }
 
     if (taskStatusSummary) {
-      if (quickMode) {
+      if (generativeFillMode) {
+        taskStatusSummary.textContent = "创成式填充：使用上方紧凑操作栏提交任务。";
+      } else if (quickMode) {
         taskStatusSummary.textContent =
           activeCount > 0
             ? `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个${queuedCount ? `，本地排队 ${queuedCount} 个` : ""}。`
@@ -1477,15 +1509,19 @@
     const workspaceInputArea = runtime.getById("workspaceInputArea");
     const createQuickEntryButton = runtime.getById("btnCreateQuickEntry");
     const quickMode = state.workspaceMode === "quick";
+    const generativeFillMode = state.workspaceMode === "generative-fill";
+    const workspaceGrid = document.querySelector(".workspace-grid-classic");
 
     if (appPickerMeta) {
       appPickerMeta.innerHTML = quickMode ? renderQuickModeMeta() : renderAppMeta(state.currentApp);
     }
 
     document.body.classList.toggle("workspace-mode-quick", quickMode);
+    document.body.classList.toggle("workspace-mode-generative-fill", generativeFillMode);
+    if (workspaceGrid) workspaceGrid.hidden = generativeFillMode;
     if (workspaceInputArea) workspaceInputArea.classList.toggle("workspace-quick-card", quickMode);
     if (createQuickEntryButton) {
-      createQuickEntryButton.hidden = quickMode;
+      createQuickEntryButton.hidden = quickMode || generativeFillMode;
       createQuickEntryButton.disabled = !state.currentApp;
     }
 
@@ -1507,6 +1543,9 @@
     updateRunButtonState();
     if (modules.settings && typeof modules.settings.refreshThemeSkin === "function") {
       modules.settings.refreshThemeSkin();
+    }
+    if (modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
     }
   }
 
@@ -1732,6 +1771,7 @@
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
+      kind: String(patch.kind || "").trim(),
       region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
       apiKey: hasOwn("apiKey") ? String(patch.apiKey || "").trim() : "",
       queueMode: String(patch.queueMode || "").trim(),
@@ -1766,10 +1806,12 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        kind: nextTask.kind || current.kind || "",
         region: nextTask.region || current.region || "cn",
         apiKey: nextTask.apiKey || current.apiKey || "",
         queueMode: nextTask.queueMode || current.queueMode || "",
         appName: nextTask.appName || current.appName || "",
+        sourceDocument: nextTask.sourceDocument || current.sourceDocument || null,
         status: nextTask.status || current.status || "running",
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
@@ -1793,10 +1835,31 @@
     }
 
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
+    const storedTask = state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+    const cleanupStatus = String(storedTask && storedTask.status || "").trim().toLowerCase();
+    const cleanupGenerativeFill = storedTask && storedTask.sourceDocument && storedTask.sourceDocument.generativeFill;
+    const cleanupChannelName = String(cleanupGenerativeFill && cleanupGenerativeFill.selectionSnapshotChannelName || "").trim();
+    if (
+      modules.runtime.isPluginRuntime() &&
+      cleanupChannelName &&
+      ["failed", "error", "cancelled", "canceled", "timeout"].includes(cleanupStatus)
+    ) {
+      void modules.runtime.callHost(
+        "photoshop.deleteSelectionSnapshot",
+        [{
+          documentId: Number(storedTask.sourceDocument.documentId) || 0,
+          selectionSnapshotChannelName: cleanupChannelName
+        }],
+        { timeoutMs: 15000 }
+      ).catch(() => {});
+    }
     syncPrimaryRunningTask();
     updateRunButtonState();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
     if (nextTask.status && isTaskTerminalStatus(nextTask.status)) scheduleRunSubmissionFlush();
-    return state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+    return storedTask;
   }
 
   function replaceRunningTaskId(currentTaskId, nextTaskPatch = {}) {
@@ -1822,6 +1885,9 @@
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     syncPrimaryRunningTask();
     updateRunButtonState();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
     return state.runningTasks.find((item) => String(item.taskId || "") === normalizedNextTaskId) || null;
   }
 
@@ -1838,6 +1904,9 @@
     syncPrimaryRunningTask();
     updateRunButtonState();
     scheduleRunSubmissionFlush();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
   }
 
   function clearCompletedRunningTasks() {
@@ -1868,6 +1937,9 @@
     syncPrimaryRunningTask();
     updateRunButtonState();
     scheduleRunSubmissionFlush();
+    if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
+      modules.generativeFill.render();
+    }
     return removedCount;
   }
 
@@ -2372,8 +2444,11 @@
   function buildAutoPlacementPayload(result) {
     const sourceDocument = result && result.sourceDocument && typeof result.sourceDocument === "object" ? result.sourceDocument : null;
     const selectionBounds = sourceDocument && sourceDocument.selectionBounds ? sourceDocument.selectionBounds : null;
+    const generativeFill = sourceDocument && sourceDocument.generativeFill && typeof sourceDocument.generativeFill === "object"
+      ? sourceDocument.generativeFill
+      : null;
     const documentBounds = getDocumentCanvasBounds(sourceDocument);
-    const targetBounds = selectionBounds || documentBounds || null;
+    const targetBounds = (generativeFill && generativeFill.contextBounds) || selectionBounds || documentBounds || null;
     const useFullDocumentBounds = !selectionBounds && !!documentBounds;
     return {
       url: result && result.outputUrl ? result.outputUrl : "",
@@ -2381,9 +2456,65 @@
       targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
       targetBounds,
       applyMask: Boolean(selectionBounds),
-      fitMode: useFullDocumentBounds ? "stretch" : "contain",
-      layerName: getResultDefaultLayerName()
+      fitMode: generativeFill || useFullDocumentBounds ? "stretch" : "contain",
+      preserveCanvasBounds: Boolean(generativeFill),
+      placementMaskDataUrl: generativeFill ? String(generativeFill.placementMaskDataUrl || "") : "",
+      selectionSnapshotChannelName: generativeFill ? String(generativeFill.selectionSnapshotChannelName || "") : "",
+      selectionMaskExpansion: generativeFill ? Number(generativeFill.maskExpansion) || 0 : 0,
+      selectionMaskFeather: generativeFill ? Number(generativeFill.feather) || 0 : 0,
+      requirePlacementMask: Boolean(generativeFill),
+      maskFallbackBounds: generativeFill ? null : selectionBounds,
+      layerName: generativeFill ? "创成式填充" : getResultDefaultLayerName()
     };
+  }
+
+  function buildAutoPlacementHostRequest(result) {
+    const payload = buildAutoPlacementPayload(result);
+    const generativeFill = result && result.sourceDocument && result.sourceDocument.generativeFill &&
+      typeof result.sourceDocument.generativeFill === "object"
+      ? result.sourceDocument.generativeFill
+      : null;
+    if (generativeFill) {
+      if (generativeFill.autoColorCorrection === false) {
+        return {
+          method: "photoshop.placeResultFromUrl",
+          payload,
+          timeoutMs: 60000
+        };
+      }
+      return {
+        method: "photoshop.placeResultWithBlendMatch",
+        payload: {
+          ...payload,
+          blendMatch: GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS
+        },
+        timeoutMs: 150000
+      };
+    }
+    const blendMatchSettings = modules.blendMatch && typeof modules.blendMatch.getSettings === "function"
+      ? modules.blendMatch.getSettings()
+      : null;
+    if (!blendMatchSettings || !blendMatchSettings.autoEnabled) {
+      return {
+        method: "photoshop.placeResultFromUrl",
+        payload,
+        timeoutMs: 60000
+      };
+    }
+    return {
+      method: "photoshop.placeResultWithBlendMatch",
+      payload: {
+        ...payload,
+        blendMatch: blendMatchSettings
+      },
+      timeoutMs: 150000
+    };
+  }
+
+  function getAutoPlacementFusionSuffix(result, fusionResponse) {
+    if (!fusionResponse || fusionResponse.ok !== true || fusionResponse.skipped) return "";
+    const generativeFill = result && result.sourceDocument && result.sourceDocument.generativeFill;
+    return generativeFill ? "，明度与色彩自动校正完成" : "，融合校色完成";
   }
 
   function isAutoPlacementBlockedError(error) {
@@ -2456,8 +2587,8 @@
     try {
       for (const [taskId, queued] of Array.from(pendingAutoPlacements.entries())) {
         try {
-          const placementPayload = buildAutoPlacementPayload(queued);
-          const response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+          const placementRequest = buildAutoPlacementHostRequest(queued);
+          const response = await modules.runtime.callHost(placementRequest.method, [placementRequest.payload], { timeoutMs: placementRequest.timeoutMs });
           const fusionResponse = modules.blendMatch && typeof modules.blendMatch.applyAutoPlacementFusion === "function"
             ? await modules.blendMatch.applyAutoPlacementFusion(response, queued)
             : null;
@@ -2470,7 +2601,7 @@
             status: "succeeded",
             detail:
               response && response.documentId
-                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}。`
+                ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${getAutoPlacementFusionSuffix(queued, fusionResponse)}。`
                 : "任务已完成，并已在 Photoshop 空闲后自动贴回。",
             finishedAt: Date.now()
           });
@@ -2534,10 +2665,10 @@
       return null;
     }
     await refreshPhotoshopDocumentStatus({ quiet: true });
-    const placementPayload = buildAutoPlacementPayload(result);
+    const placementRequest = buildAutoPlacementHostRequest(result);
     let response = null;
     try {
-      response = await modules.runtime.callHost("photoshop.placeResultFromUrl", [placementPayload], { timeoutMs: 60000 });
+      response = await modules.runtime.callHost(placementRequest.method, [placementRequest.payload], { timeoutMs: placementRequest.timeoutMs });
     } catch (error) {
       if (isAutoPlacementRetryableError(error)) {
         queueAutoPlacement(result);
@@ -2563,7 +2694,11 @@
     const placementSummary = sourceDocument && sourceDocument.selectionBounds
       ? `已按原选区 ${formatSelectionLabel(sourceDocument.selectionBounds)} 自动贴回`
       : "已自动贴回源文档";
-    modules.ui.logToWorkspace(`${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || placementPayload.layerName}${fusionResponse && fusionResponse.ok ? "，融合校色完成" : ""}`, "success");
+    const fallbackLayerName = buildAutoPlacementPayload(result).layerName;
+    modules.ui.logToWorkspace(
+      `${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || fallbackLayerName}${getAutoPlacementFusionSuffix(result, fusionResponse)}`,
+      "success"
+    );
     return {
       ...response,
       blendMatch: fusionResponse || null
@@ -2622,6 +2757,7 @@
       taskId: localTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      kind: payload.kind || "",
       region: payload.region,
       apiKey: payload.apiKey,
       queueMode: "local",
@@ -3373,6 +3509,7 @@
     renderWorkspace,
     clearCompletedRunningTasks,
     buildRunPayload,
+    enqueueRunTaskFlow,
     collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,
     restoreWorkspaceFormSnapshot,

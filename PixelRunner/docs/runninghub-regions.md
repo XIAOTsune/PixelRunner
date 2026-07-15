@@ -1,6 +1,6 @@
 # RunningHub 国内版与国际版 API 接入
 
-更新日期：2026-07-12
+更新日期：2026-07-15
 
 ## 结论
 
@@ -10,6 +10,7 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 
 国内版与国际版应视为两套独立配置。API Key、账户余额以及 AI 应用/工作流 ID 都应与区域一起保存；
 用户切换区域时，插件应切换到该区域的 API 档案和应用列表。
+国内版余额扣费使用 `R`，国际版余额扣费使用美元符号 `$`。
 
 ## 接口映射
 
@@ -18,8 +19,8 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 | AI 应用提交 | `POST /task/openapi/ai-app/run` | `apiKey`, `webappId`, `nodeInfoList`, 可选 `instanceType` |
 | 工作流提交（兼容） | `POST /task/openapi/create` | `apiKey`, `workflowId`, `nodeParams` |
 | V2 文件上传 | `POST /openapi/v2/media/upload/binary` | Bearer 鉴权，multipart 字段 `file` |
-| 查询输出 | `POST /task/openapi/outputs` | `apiKey`, `taskId` |
-| 查询状态 | `POST /task/openapi/status` | `apiKey`, `taskId` |
+| V2 查询任务结果 | `POST /openapi/v2/query` | Bearer 鉴权，`taskId`；返回 `status`、`results[].url`、`results[].outputType` |
+| V1 查询输出（兼容） | `POST /task/openapi/outputs` | `apiKey`, `taskId`；仅在 V2 不可用或已完成但无结果时回退 |
 | 取消任务 | `POST /task/openapi/cancel` | `apiKey`, `taskId` |
 | 查询账户 | `POST /uc/openapi/accountStatus` | 请求体字段为小写 `apikey` |
 
@@ -30,13 +31,18 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 
 - 区域值使用 `cn` 和 `global`，旧配置默认迁移为 `cn`。
 - API 档案和应用记录都保存区域；相同 Key 或应用 ID 可以分别存在于两个区域。
+- 本地应用存储与资料包均使用 `appsByRegion.cn/global` 分区；旧资料包中无区域信息的应用默认归入 `cn`。
 - 提交时把区域复制到任务载荷，后续轮询和取消始终使用任务原区域。
 - `.ai` 域名必须同时加入 UXP 的 `webview.domains` 和 `network.domains`。
-- 国际版 AI 优化需要填写国际站存在且已成功运行过的 AI 应用 ID，国内版默认应用 ID 不保证跨站存在。
+- 返图会使用 `rh-images.xiaoyaoyou.com`、`rh-hk-images.xiaoyaoyou.com`、香港 COS 或北京 COS 域名；这些 CDN 必须加入 UXP 的 WebView 和网络权限。
+- V2 结果可能是 PNG、JPG 或 WebP；下载时必须按字节签名和响应 MIME 确定临时文件扩展名，不能一律写成 `.png`。
+- 国际版 AI 优化默认应用 ID 为 `2077336528350871553`，创成式填充默认应用 ID 为 `2077331388482748417`；用户保存的非空自定义 ID 优先。
+- 应用解析默认请求中文元数据，并优先使用响应中的中文名称字段；国际版已有纯英文名称在重新解析时会更新为平台中文原名，用户手动填写的中文名称仍优先。
 
 ## 官方资料
 
 - 国际版 API 文档目录：https://www.runninghub.ai/runninghub-api-doc-en
+- 国内版 V2 查询任务结果：https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306.md
 - 适合机器读取的文档索引：https://www.runninghub.ai/runninghub-api-doc-en/llms.txt
 - 使用说明：https://www.runninghub.ai/runninghub-api-doc-en/doc-6333420.md
 - AI 应用提交：https://www.runninghub.ai/runninghub-api-doc-en/api-279102846.md
