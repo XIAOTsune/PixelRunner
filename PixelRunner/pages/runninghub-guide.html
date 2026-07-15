@@ -773,7 +773,7 @@
         <h2>先确认这 4 件事</h2>
         <ul class="status-list">
           <li><span class="dot"></span><span><strong>RunningHub 账号</strong><br />需要能登录官网，并能进入消费级 API 控制台复制 API Key。</span></li>
-          <li><span class="dot"></span><span><strong>钱包有 RH 币</strong><br />消费级 API 会消耗账号 RH 币，网站任务和 API 调用共享并发限制。</span></li>
+          <li><span class="dot"></span><span><strong>钱包有可用余额</strong><br />国内版以 RH 币 / R 计费，国际版以美元计费，网站任务和 API 调用共享并发限制。</span></li>
           <li><span class="dot"></span><span><strong>Photoshop 已打开文档</strong><br />需要捕获当前文档或选区时，必须先打开图像。</span></li>
           <li><span class="dot"></span><span><strong>准备一个 AI 应用</strong><br />从 RunningHub 的 AI 应用页下翻到广场，或直接搜索需要的应用。</span></li>
         </ul>
@@ -843,7 +843,7 @@
                 <p>国内版使用 <code>runninghub.cn</code>，国际版使用 <code>runninghub.ai</code>。先确认准备使用的站点，再打开该站点的 <strong>消费级-会员 API 控制台</strong>，登录并复制对应 API Key。</p>
                 <ul class="plain-list">
                   <li>目前官网右上角头像菜单里没有 API 控制台入口，建议直接使用上面的控制台网址。</li>
-                  <li>消费级 API 调用会消耗账号里的 RH 币；如果看不到密钥或调用失败，先确认账号是否具备对应 API 权益。</li>
+                  <li>消费级 API 调用会消耗对应区域账号的余额；国内版显示 RH 币 / R，国际版显示美元 `$`。</li>
                   <li>如果 API Key 失效，回官网 API 控制台重新复制或重置新的 Key。</li>
                   <li>API Key 属于敏感信息，不建议发到公开群聊或截图里。</li>
                   <li>国内版与国际版的 Key、余额和应用 ID 分开使用，不要跨区域混用。</li>
@@ -872,7 +872,7 @@
             <article class="flow-step">
               <div>
                 <h3>充值或确认钱包余额</h3>
-                <p>像素起子调用的是 RunningHub 云端任务。消费级 API 会消耗账号 RH 币，且官网运行任务和 API 调用任务共享同一套并发限制。建议第一次运行前先在官网确认余额，避免插件里看起来提交了，但云端直接因为余额不足失败。</p>
+                <p>像素起子调用的是 RunningHub 云端任务。国内版消耗 RH 币 / R，国际版消耗美元余额，且官网运行任务和 API 调用任务共享同一套并发限制。建议第一次运行前先在官网确认对应区域的余额。</p>
                 <div class="notice">
                   <strong>经验判断：</strong>如果一点击运行就很快失败，优先查余额、会员/API 权益和 API Key；如果等了很久才失败，再看应用拥挤、并发限制、网络或内容审核。
                 </div>
@@ -885,7 +885,7 @@
                 <p>回到像素起子，打开 <span class="kbd">设置</span>。先在 <strong>RunningHub 服务区域</strong> 选择“国内版”或“国际版”，再填写该区域的 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
                 <ul class="plain-list">
                   <li>API 档案按区域分别显示；有多个账号时，可以用“新增”创建多个档案，例如“主账号”“客户项目 A”。</li>
-                  <li>保存后，工作台右上角会尝试显示余额和 RH 币。</li>
+                  <li>保存后，工作台右上角会尝试显示余额；国际版余额使用美元符号 `$`。</li>
                   <li>看不到余额时，先确认 Key 是否正确，再确认网络是否能访问 RunningHub。</li>
                 </ul>
                 <div class="notice success">
@@ -1046,7 +1046,7 @@
                   <td>整套配置备份</td>
                   <td>设置 / 资料包导入导出 / 导出资料包</td>
                   <td>导出的 JSON 文件可以再用“导入资料包”恢复</td>
-                  <td>用于换电脑、分享配置、恢复应用和模板最方便。</td>
+                  <td>国内版与国际版应用会分区备份，同名应用不会互相覆盖。</td>
                 </tr>
               </tbody>
             </table>
@@ -1137,7 +1137,7 @@
           <div class="problem-grid">
             <article class="issue-card" data-level="error">
               <h3>余额不足</h3>
-              <p>工作台右上余额为空或过低时，先去 RunningHub 官网确认 RH 币和消费级 API 权益。余额不足是最常见的失败原因之一。</p>
+              <p>工作台右上余额为空或过低时，先去当前 RunningHub 区域官网确认余额和消费级 API 权益。国内版查 RH 币 / R，国际版查美元余额。</p>
             </article>
             <article class="issue-card" data-level="error">
               <h3>API Key 未保存或失效</h3>

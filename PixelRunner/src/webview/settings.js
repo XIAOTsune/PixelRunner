@@ -36,12 +36,22 @@
     if (!balanceEl || !coinsEl || !summaryEl) return;
 
     const hasAccount = account && account.ok;
-    balanceEl.textContent = hasAccount && account.balance != null ? String(account.balance) : "--";
+    const region = modules.state.normalizeRunningHubRegion(
+      hasAccount && account.region ? account.region : modules.state.state.settings.runningHubRegion
+    );
+    const currency = String((hasAccount && account.currency) || (region === modules.state.RUNNINGHUB_REGIONS.GLOBAL ? "USD" : "R")).trim();
+    balanceEl.textContent = hasAccount && account.balance != null
+      ? region === modules.state.RUNNINGHUB_REGIONS.GLOBAL
+        ? `$${account.balance}`
+        : String(account.balance)
+      : "--";
     coinsEl.textContent = hasAccount && account.coins != null ? String(account.coins) : "--";
     summaryEl.classList.toggle("is-empty", !hasAccount);
     modules.state.state.accountSummary = {
       balance: hasAccount && account.balance != null ? Number(account.balance) : null,
       coins: hasAccount && account.coins != null ? Number(account.coins) : null,
+      region,
+      currency,
       updatedAt: Date.now()
     };
   }

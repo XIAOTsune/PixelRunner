@@ -255,12 +255,17 @@
   }
 
   function buildTemplateBundle(templates) {
+    const apps = sanitizeAppsForBundle(modules.state.state.apps);
     return {
       schema: "pixelrunner.bundle",
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       name: "像素起子资料包",
-      apps: sanitizeAppsForBundle(modules.state.state.apps),
+      apps,
+      appsByRegion: {
+        cn: apps.filter((app) => app.region === modules.state.RUNNINGHUB_REGIONS.CN),
+        global: apps.filter((app) => app.region === modules.state.RUNNINGHUB_REGIONS.GLOBAL)
+      },
       templateCategories: Array.isArray(modules.state.state.templateCategories) ? modules.state.state.templateCategories : [],
       templates: sanitizeTemplatesForBundle(templates),
       quickEntries: sanitizeQuickEntriesForBundle(modules.state.state.quickEntries)
@@ -297,6 +302,7 @@
     return modules.state.normalizeAppList(apps).map((app) => ({
       id: app.id,
       appId: app.appId,
+      region: modules.state.normalizeRunningHubRegion(app.region),
       name: app.name,
       description: app.description,
       previewImage: app.previewImage,
@@ -814,8 +820,10 @@
     };
   }
 
-  function getAppNameKey(app) {
-    return String((app && (app.name || app.title)) || "").trim().toLowerCase();
+  function getAppMergeKey(app) {
+    const region = modules.state.normalizeRunningHubRegion(app && (app.region || app.runningHubRegion));
+    const name = String((app && (app.name || app.title)) || "").trim().toLowerCase();
+    return name ? `${region}:${name}` : "";
   }
 
   function mergeImportedApps(importedApps) {
@@ -823,13 +831,13 @@
     const existingIds = new Set(currentApps.map((item) => String(item.id || "")));
     const nameIndexMap = new Map();
     currentApps.forEach((app, index) => {
-      const key = getAppNameKey(app);
+      const key = getAppMergeKey(app);
       if (key && !nameIndexMap.has(key)) nameIndexMap.set(key, index);
     });
     let added = 0;
     let replaced = 0;
     modules.state.normalizeAppList(importedApps).forEach((app) => {
-      const key = getAppNameKey(app);
+      const key = getAppMergeKey(app);
       const previousIndex = key ? nameIndexMap.get(key) : -1;
       const previous = previousIndex >= 0 ? currentApps[previousIndex] : null;
       const nextId = previous ? previous.id : app.id && !existingIds.has(String(app.id)) ? app.id : modules.runtime.createId("app");
@@ -857,12 +865,37 @@
     };
   }
 
+  function parseBundleApps(parsed) {
+    const appsByRegion = parsed && parsed.appsByRegion && typeof parsed.appsByRegion === "object"
+      ? parsed.appsByRegion
+      : null;
+    if (appsByRegion) {
+      const regionalApps = [];
+      [modules.state.RUNNINGHUB_REGIONS.CN, modules.state.RUNNINGHUB_REGIONS.GLOBAL].forEach((region) => {
+        (Array.isArray(appsByRegion[region]) ? appsByRegion[region] : []).forEach((app) => {
+          if (!app || typeof app !== "object") return;
+          regionalApps.push({ ...app, region });
+        });
+      });
+      return regionalApps;
+    }
+
+    const fallbackRegion = modules.state.normalizeRunningHubRegion(
+      parsed && (parsed.region || parsed.runningHubRegion)
+    );
+    return (Array.isArray(parsed && parsed.apps) ? parsed.apps : []).map((app) => {
+      if (!app || typeof app !== "object") return app;
+      const hasRegion = String(app.region || app.runningHubRegion || "").trim();
+      return hasRegion ? app : { ...app, region: fallbackRegion };
+    });
+  }
+
   function parseTransferPackageText(text) {
     const parsed = JSON.parse(String(text || "").trim());
     if (parsed && typeof parsed === "object" && parsed.schema === "pixelrunner.bundle") {
       return {
         kind: "bundle",
-        apps: Array.isArray(parsed.apps) ? parsed.apps : [],
+        apps: parseBundleApps(parsed),
         templateCategories: Array.isArray(parsed.templateCategories)
           ? parsed.templateCategories
           : Array.isArray(parsed.promptTemplateCategories)

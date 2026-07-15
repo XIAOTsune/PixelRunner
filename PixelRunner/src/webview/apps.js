@@ -330,16 +330,50 @@
     const runtime = modules.runtime;
     const keys = modules.state.STORAGE_KEYS;
     const primaryRaw = await runtime.storageGetItem(keys.APPS);
-    const primaryApps = modules.state.normalizeAppList(runtime.readJsonText(primaryRaw, []));
+    const primaryPayload = runtime.readJsonText(primaryRaw, []);
+    const primaryApps = normalizeStoredApps(primaryPayload);
     if (primaryApps.length > 0) return primaryApps;
 
     for (const legacyKey of keys.LEGACY_APPS) {
       const legacyRaw = await runtime.storageGetItem(legacyKey);
-      const legacyApps = modules.state.normalizeAppList(runtime.readJsonText(legacyRaw, []));
+      const legacyApps = normalizeStoredApps(runtime.readJsonText(legacyRaw, []));
       if (legacyApps.length > 0) return legacyApps;
     }
 
     return [];
+  }
+
+  function normalizeStoredApps(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return modules.state.normalizeAppList(Array.isArray(payload) ? payload : []);
+    }
+
+    const appsByRegion = payload.appsByRegion && typeof payload.appsByRegion === "object"
+      ? payload.appsByRegion
+      : null;
+    if (appsByRegion) {
+      const regionalApps = [];
+      [modules.state.RUNNINGHUB_REGIONS.CN, modules.state.RUNNINGHUB_REGIONS.GLOBAL].forEach((region) => {
+        (Array.isArray(appsByRegion[region]) ? appsByRegion[region] : []).forEach((app) => {
+          if (!app || typeof app !== "object") return;
+          regionalApps.push({ ...app, region });
+        });
+      });
+      return modules.state.normalizeAppList(regionalApps);
+    }
+
+    return modules.state.normalizeAppList(Array.isArray(payload.apps) ? payload.apps : []);
+  }
+
+  function buildRegionalAppStoragePayload(apps) {
+    const normalized = modules.state.normalizeAppList(apps);
+    return {
+      version: 3,
+      appsByRegion: {
+        cn: normalized.filter((app) => modules.state.normalizeRunningHubRegion(app.region) === modules.state.RUNNINGHUB_REGIONS.CN),
+        global: normalized.filter((app) => modules.state.normalizeRunningHubRegion(app.region) === modules.state.RUNNINGHUB_REGIONS.GLOBAL)
+      }
+    };
   }
 
   async function saveAppsToStorage(apps, options = {}) {
@@ -355,7 +389,10 @@
       updatedAt: item.updatedAt || Date.now()
     }));
 
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.APPS, JSON.stringify(normalizedApps));
+    await modules.runtime.storageSetItem(
+      modules.state.STORAGE_KEYS.APPS,
+      JSON.stringify(buildRegionalAppStoragePayload(normalizedApps))
+    );
     modules.state.state.apps = normalizedApps;
     await hydrateCurrentApp({ quiet: true, preserveEmpty: options.preserveEmpty });
     renderSavedAppsList();

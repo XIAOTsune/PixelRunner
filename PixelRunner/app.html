@@ -342,12 +342,12 @@
             <div class="card-head">
               <div>
                 <h3 class="card-title">资料包导入导出</h3>
-                <p class="subtle-note">资料包会打包应用、提示词分类、提示词预设和快捷入口。导入旧版资料包时，旧提示词会自动进入“默认分类”。</p>
+                <p class="subtle-note">资料包会打包应用、提示词分类、提示词预设和快捷入口。RunningHub 国内版与国际版应用会分区保存，导入旧版资料包时无区域信息的应用会归入国内版。</p>
               </div>
             </div>
             <div class="bundle-guide">
-              <span>导出用于备份或分享当前配置</span>
-              <span>导入会按名称合并，已有内容优先覆盖更新</span>
+              <span>导出会同时备份两个区域的应用</span>
+              <span>导入按“区域 + 名称”合并，同名应用不会串区</span>
               <span>新版分类完全兼容旧模板 JSON</span>
             </div>
             <div class="action-row">
@@ -827,8 +827,9 @@
       </div>
 
       <div class="action-row donation-shortcuts">
-        <button id="btnOpenRunningHubSite" class="secondary-btn" type="button">打开 RunningHub</button>
-        <button id="btnOpenTutorialSite" class="secondary-btn" type="button">打开教程</button>
+        <button id="btnOpenRunningHubCnSite" class="secondary-btn" type="button">打开国内站</button>
+        <button id="btnOpenRunningHubGlobalSite" class="secondary-btn" type="button">打开国际站</button>
+        <button id="btnOpenTutorialSite" class="secondary-btn donation-tutorial-shortcut" type="button">打开教程</button>
       </div>
 
       <div class="donation-grid">

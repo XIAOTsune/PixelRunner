@@ -125,7 +125,8 @@
     const donationCards = ["donationWxCard", "donationZfbCard"]
       .map((id) => runtime.getById(id))
       .filter(Boolean);
-    const btnOpenRunningHubSite = runtime.getById("btnOpenRunningHubSite");
+    const btnOpenRunningHubCnSite = runtime.getById("btnOpenRunningHubCnSite");
+    const btnOpenRunningHubGlobalSite = runtime.getById("btnOpenRunningHubGlobalSite");
     const btnOpenTutorialSite = runtime.getById("btnOpenTutorialSite");
 
     const setDonationStatus = (message, type = "info") => {
@@ -224,16 +225,19 @@
       });
     });
 
-    if (btnOpenRunningHubSite) {
-      btnOpenRunningHubSite.addEventListener("click", () => {
-        const region = modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);
+    [
+      { button: btnOpenRunningHubCnSite, region: "cn", label: "RunningHub 国内站" },
+      { button: btnOpenRunningHubGlobalSite, region: "global", label: "RunningHub 国际站" }
+    ].forEach(({ button, region, label }) => {
+      if (!button) return;
+      button.addEventListener("click", () => {
         void openExternalLink(
           DONATION_LINKS.runninghub[region] || DONATION_LINKS.runninghub.cn,
-          "RunningHub",
-          "将使用系统默认浏览器打开当前区域的 RunningHub 官网。"
+          label,
+          `将使用系统默认浏览器打开 ${label}。`
         );
       });
-    }
+    });
 
     if (btnOpenTutorialSite) {
       btnOpenTutorialSite.addEventListener("click", () => {

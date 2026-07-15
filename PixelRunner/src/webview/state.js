@@ -127,6 +127,8 @@
     accountSummary: {
       balance: null,
       coins: null,
+      region: RUNNINGHUB_REGIONS.CN,
+      currency: "R",
       updatedAt: 0
     },
     hostRuntime: null,

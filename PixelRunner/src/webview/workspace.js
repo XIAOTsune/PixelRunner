@@ -899,7 +899,9 @@
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
     const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
     const parts = [];
-    if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(3)}R`);
+    const isGlobalRunningHub = !isThirdPartyTaskRecord(task) &&
+      modules.state.normalizeRunningHubRegion(task.region) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
+    if (balanceCharge !== null) parts.push(isGlobalRunningHub ? `-$${balanceCharge.toFixed(3)}` : `-${balanceCharge.toFixed(3)}R`);
     if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
     return parts.join(" · ");
   }
@@ -948,6 +950,8 @@
     return {
       balance: Number.isFinite(Number(accountSummary.balance)) ? Number(accountSummary.balance) : null,
       coins: Number.isFinite(Number(accountSummary.coins)) ? Number(accountSummary.coins) : null,
+      region: modules.state.normalizeRunningHubRegion(accountSummary.region || modules.state.state.settings.runningHubRegion),
+      currency: String(accountSummary.currency || "").trim(),
       updatedAt: Number(accountSummary.updatedAt) || 0
     };
   }
@@ -971,7 +975,11 @@
       charge: balanceCharge,
       balanceCharge,
       coinsCharge,
-      chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+      chargeDisplay: formatTaskChargeDisplay({
+        balanceCharge,
+        coinsCharge,
+        region: (afterAccount && afterAccount.region) || (beforeAccount && beforeAccount.region)
+      })
     };
   }
 
@@ -995,7 +1003,13 @@
       charge: balanceCharge,
       balanceCharge,
       coinsCharge,
-      chargeDisplay: formatTaskChargeDisplay({ balanceCharge, coinsCharge })
+      chargeDisplay: formatTaskChargeDisplay({
+        balanceCharge,
+        coinsCharge,
+        provider: task && task.provider,
+        appName: task && task.appName,
+        region: task && task.region
+      })
     };
   }
 
