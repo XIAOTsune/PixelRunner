@@ -14,13 +14,15 @@
   },
   "type": "module",
   "scripts": {
+    "test": "npm run test:bundle-compat",
+    "test:bundle-compat": "node ./scripts/test-bundle-compat.mjs",
     "build": "node ./scripts/build.mjs",
     "build:watch": "node ./scripts/build.mjs --watch",
     "build:release": "node ./scripts/build.mjs --release",
     "check:dist": "node ./scripts/check-dist-sync.mjs",
     "check:dist:release": "node ./scripts/check-dist-sync.mjs --release",
-    "package:test": "npm run check:dist && node ./scripts/package-test.mjs",
-    "package:release": "node ./scripts/package-test.mjs --release"
+    "package:test": "npm test && npm run check:dist && node ./scripts/package-test.mjs",
+    "package:release": "npm test && node ./scripts/package-test.mjs --release"
   },
   "devDependencies": {
     "esbuild": "^0.25.3",

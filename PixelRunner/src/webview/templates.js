@@ -1,3 +1,5 @@
+import { parseTransferPackageText as parseCompatibleTransferPackageText } from "./bundle-compat.js";
+
 (function initTemplatesModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const PROMPT_WARN_CHARS = 4000;
@@ -865,55 +867,11 @@
     };
   }
 
-  function parseBundleApps(parsed) {
-    const appsByRegion = parsed && parsed.appsByRegion && typeof parsed.appsByRegion === "object"
-      ? parsed.appsByRegion
-      : null;
-    if (appsByRegion) {
-      const regionalApps = [];
-      [modules.state.RUNNINGHUB_REGIONS.CN, modules.state.RUNNINGHUB_REGIONS.GLOBAL].forEach((region) => {
-        (Array.isArray(appsByRegion[region]) ? appsByRegion[region] : []).forEach((app) => {
-          if (!app || typeof app !== "object") return;
-          regionalApps.push({ ...app, region });
-        });
-      });
-      return regionalApps;
-    }
-
-    const fallbackRegion = modules.state.normalizeRunningHubRegion(
-      parsed && (parsed.region || parsed.runningHubRegion)
-    );
-    return (Array.isArray(parsed && parsed.apps) ? parsed.apps : []).map((app) => {
-      if (!app || typeof app !== "object") return app;
-      const hasRegion = String(app.region || app.runningHubRegion || "").trim();
-      return hasRegion ? app : { ...app, region: fallbackRegion };
-    });
-  }
-
   function parseTransferPackageText(text) {
-    const parsed = JSON.parse(String(text || "").trim());
-    if (parsed && typeof parsed === "object" && parsed.schema === "pixelrunner.bundle") {
-      return {
-        kind: "bundle",
-        apps: parseBundleApps(parsed),
-        templateCategories: Array.isArray(parsed.templateCategories)
-          ? parsed.templateCategories
-          : Array.isArray(parsed.promptTemplateCategories)
-            ? parsed.promptTemplateCategories
-            : Array.isArray(parsed.categories)
-              ? parsed.categories
-              : [],
-        templates: Array.isArray(parsed.templates) ? parsed.templates : [],
-        quickEntries: Array.isArray(parsed.quickEntries) ? parsed.quickEntries : []
-      };
-    }
-    return {
-      kind: "templates",
-      apps: [],
-      templateCategories: parsed && typeof parsed === "object" && Array.isArray(parsed.templateCategories) ? parsed.templateCategories : [],
-      templates: parsed && typeof parsed === "object" && Array.isArray(parsed.templates) ? parsed.templates : parsed,
-      quickEntries: []
-    };
+    return parseCompatibleTransferPackageText(text, {
+      regions: modules.state.RUNNINGHUB_REGIONS,
+      normalizeRegion: modules.state.normalizeRunningHubRegion
+    });
   }
 
   function parseImportedTemplatesText(text) {

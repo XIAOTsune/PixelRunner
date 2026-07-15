@@ -1,0 +1,78 @@
+{
+  "schema": "pixelrunner.bundle",
+  "version": 2,
+  "exportedAt": "2026-06-03T02:48:18.000Z",
+  "name": "PixelRunner 资料包",
+  "apps": [
+    {
+      "id": "app-v2-example",
+      "appId": "2043884236624629761",
+      "name": "旧版示例应用",
+      "description": "",
+      "previewImage": "https://example.com/preview.jpg",
+      "inputs": [
+        {
+          "key": "31:image",
+          "name": "上传图像",
+          "label": "上传图像",
+          "type": "image",
+          "required": true
+        },
+        {
+          "key": "21:text",
+          "name": "输入文本",
+          "label": "输入文本",
+          "type": "text",
+          "required": true,
+          "default": "自然磨皮"
+        }
+      ],
+      "createdAt": 1776135003609,
+      "updatedAt": 1776135003609
+    }
+  ],
+  "templateCategories": [
+    {
+      "id": "default",
+      "name": "默认分类",
+      "createdAt": 1779324441803,
+      "updatedAt": 1779324441803
+    }
+  ],
+  "templates": [
+    {
+      "id": "tpl-v2-example",
+      "title": "树叶",
+      "content": "在人物周围添加适量飘落树叶。",
+      "categoryId": "default",
+      "createdAt": 1779685016776,
+      "updatedAt": 1779685016776
+    }
+  ],
+  "quickEntries": [
+    {
+      "id": "quick-v2-example",
+      "title": "三次元磨皮",
+      "appRef": {
+        "savedAppId": "app-v2-example",
+        "appId": "2043884236624629761",
+        "appName": "旧版示例应用"
+      },
+      "inputValues": {
+        "21:text": "自然磨皮"
+      },
+      "imageBindings": [
+        {
+          "inputKey": "31:image",
+          "source": "selectionRequired"
+        }
+      ],
+      "meta": {
+        "createdAt": 1777950977233,
+        "updatedAt": 1779328865157,
+        "lastRunAt": 0,
+        "runCount": 0
+      }
+    }
+  ]
+}
