@@ -14,8 +14,9 @@
   },
   "type": "module",
   "scripts": {
-    "test": "npm run test:bundle-compat",
+    "test": "npm run test:bundle-compat && npm run test:file-transfer",
     "test:bundle-compat": "node ./scripts/test-bundle-compat.mjs",
+    "test:file-transfer": "node ./scripts/test-file-transfer.mjs",
     "build": "node ./scripts/build.mjs",
     "build:watch": "node ./scripts/build.mjs --watch",
     "build:release": "node ./scripts/build.mjs --release",

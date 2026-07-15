@@ -16,6 +16,7 @@ import {
   submitThirdPartyGrsTask
 } from "./third-party-grs.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
+import { openTextFile, saveTextFile } from "./files.js";
 import { openExternalUrl, openLocalPath, resolveTutorialPath } from "./shell.js";
 import {
   capturePhotoshopDocumentPreview,
@@ -145,6 +146,12 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "storage.setItem":
         result = writeHostStorage(message.args && message.args[0], message.args && message.args[1]);
+        break;
+      case "file.saveText":
+        result = await saveTextFile(message.args);
+        break;
+      case "file.openText":
+        result = await openTextFile(message.args);
         break;
       case "runninghub.submitTask":
         result = await submitRunningHubTask(message.args);

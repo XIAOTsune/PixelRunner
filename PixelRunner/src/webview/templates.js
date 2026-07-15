@@ -775,10 +775,13 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   }
 
   function exportTemplatesToTextarea() {
+    const text = JSON.stringify(buildTemplateBundle(modules.state.state.templates), null, 2);
     const input = modules.runtime.getById("templateTransferInput");
-    if (!input) return;
-    input.dataset.userEdited = "";
-    input.value = JSON.stringify(buildTemplateBundle(modules.state.state.templates), null, 2);
+    if (input) {
+      input.dataset.userEdited = "";
+      input.value = text;
+    }
+    return text;
   }
 
   function mergeImportedTemplates(importedTemplates) {
@@ -882,10 +885,8 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     return templates;
   }
 
-  async function importTemplatesFromTextarea() {
-    const input = modules.runtime.getById("templateTransferInput");
-    if (!input) return;
-    const text = String(input.value || "").trim();
+  async function importTransferPackageText(rawText) {
+    const text = String(rawText || "").trim();
     if (!text) throw new Error("请先粘贴模板 JSON");
 
     const transfer = parseTransferPackageText(text);
@@ -917,8 +918,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     await saveTemplatesToStorage(mergedTemplates.templates);
     if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
 
-    input.dataset.userEdited = "";
-    input.value = JSON.stringify(buildTemplateBundle(modules.state.state.templates), null, 2);
+    exportTemplatesToTextarea();
     return {
       appsAdded: mergedApps.added,
       appsReplaced: mergedApps.replaced,
@@ -933,9 +933,15 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     };
   }
 
+  async function importTemplatesFromTextarea() {
+    const input = modules.runtime.getById("templateTransferInput");
+    if (!input) throw new Error("当前页面没有可用的资料包文本输入框");
+    return importTransferPackageText(input.value);
+  }
+
   async function exportTemplatesAsJson() {
-    exportTemplatesToTextarea();
-    const text = String(modules.runtime.getById("templateTransferInput")?.value || "");
+    const text = exportTemplatesToTextarea();
+    if (!text) throw new Error("没有生成可导出的资料包内容");
     const result = await modules.runtime.saveTextFile(buildTemplateExportFilename(), text, {
       mimeType: "application/json",
       extension: ".json",
@@ -946,6 +952,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (result.outcome === "unsupported") {
       throw new Error("当前环境不支持导出文件");
     }
+    if (!(Number(result.byteLength) > 0)) throw new Error("资料包文件写入失败：文件大小为 0 字节");
 
     modules.runtime.setSummaryStatus(
       modules.runtime.getById("templateStatusSummary"),
@@ -969,10 +976,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       throw new Error("当前环境不支持导入文件");
     }
 
-    const input = modules.runtime.getById("templateTransferInput");
-    if (input) input.value = String(result.text || "");
-
-    const summary = await importTemplatesFromTextarea();
+    const summary = await importTransferPackageText(result.text);
     const message =
       summary.kind === "bundle"
         ? `资料包 JSON 已导入：应用新增 ${summary.appsAdded} 个、覆盖 ${summary.appsReplaced} 个；提示词新增 ${summary.added} 条、覆盖 ${summary.replaced} 条；快捷入口新增 ${summary.quickEntriesAdded} 个、覆盖 ${summary.quickEntriesReplaced} 个。`
@@ -1558,6 +1562,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     saveTemplateCategoriesToStorage,
     renderTemplateCategoryControls,
     importTemplatesFromTextarea,
+    importTransferPackageText,
     exportTemplatesToTextarea,
     importTemplatesFromJsonFile,
     exportTemplatesAsJson,

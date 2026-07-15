@@ -148,17 +148,62 @@
       : null;
   }
 
+  function getUtf8ByteLength(value) {
+    let length = 0;
+    for (const character of String(value == null ? "" : value)) {
+      const codePoint = character.codePointAt(0);
+      if (codePoint <= 0x7f) length += 1;
+      else if (codePoint <= 0x7ff) length += 2;
+      else if (codePoint <= 0xffff) length += 3;
+      else length += 4;
+    }
+    return length;
+  }
+
+  function getUxpUtf8Options() {
+    const format = global && global.uxp && global.uxp.storage && global.uxp.storage.formats
+      ? global.uxp.storage.formats.utf8
+      : null;
+    return format ? { format } : null;
+  }
+
+  function hasHostMessageBridge() {
+    return Boolean(global && global.uxpHost && typeof global.uxpHost.postMessage === "function");
+  }
+
   async function saveTextFile(defaultName, text, options = {}) {
     const filename = String(defaultName || "export.txt").trim() || "export.txt";
     const content = String(text == null ? "" : text);
+    if (!content) throw new Error("没有可导出的文件内容");
+
+    if (hasHostMessageBridge()) {
+      return callHost(
+        "file.saveText",
+        [{
+          filename,
+          content,
+          extension: String(options.extension || ".txt"),
+          mimeType: String(options.mimeType || "text/plain")
+        }],
+        { timeoutMs: 600000 }
+      );
+    }
+
     const fileSystem = getUxpFileSystem();
     if (fileSystem && typeof fileSystem.getFileForSaving === "function") {
       const entry = await fileSystem.getFileForSaving(filename);
       if (!entry) return { outcome: "cancelled", savedPath: "" };
-      await entry.write(content);
+      const utf8Options = getUxpUtf8Options();
+      if (!utf8Options) throw new Error("当前 UXP 版本未提供 UTF-8 文件格式");
+      await entry.write(content, utf8Options);
+      const persisted = typeof entry.read === "function" ? String(await entry.read(utf8Options)) : "";
+      if (persisted !== content) {
+        throw new Error(`资料包写入校验失败：预计 ${getUtf8ByteLength(content)} 字节，实际 ${getUtf8ByteLength(persisted)} 字节`);
+      }
       return {
         outcome: "saved",
-        savedPath: String(entry.nativePath || entry.name || filename)
+        savedPath: String(entry.nativePath || entry.name || filename),
+        byteLength: getUtf8ByteLength(persisted)
       };
     }
 
@@ -177,7 +222,15 @@
         const writable = await handle.createWritable();
         await writable.write(content);
         await writable.close();
-        return { outcome: "saved", savedPath: String(handle.name || filename) };
+        const savedFile = typeof handle.getFile === "function" ? await handle.getFile() : null;
+        if (savedFile && Number(savedFile.size) !== getUtf8ByteLength(content)) {
+          throw new Error(`资料包写入校验失败：预计 ${getUtf8ByteLength(content)} 字节，实际 ${Number(savedFile.size) || 0} 字节`);
+        }
+        return {
+          outcome: "saved",
+          savedPath: String(handle.name || filename),
+          byteLength: savedFile ? Number(savedFile.size) || 0 : getUtf8ByteLength(content)
+        };
       } catch (error) {
         if (error && error.name === "AbortError") return { outcome: "cancelled", savedPath: "" };
         throw error;
@@ -195,19 +248,32 @@
       anchor.click();
       document.body.removeChild(anchor);
       global.setTimeout(() => global.URL.revokeObjectURL(href), 0);
-      return { outcome: "saved", savedPath: filename };
+      return { outcome: "saved", savedPath: filename, byteLength: getUtf8ByteLength(content) };
     }
 
     return { outcome: "unsupported", savedPath: "" };
   }
 
   async function openTextFile(options = {}) {
+    if (hasHostMessageBridge()) {
+      return callHost(
+        "file.openText",
+        [{
+          extension: String(options.extension || ".txt"),
+          mimeType: String(options.mimeType || "text/plain")
+        }],
+        { timeoutMs: 600000 }
+      );
+    }
+
     const fileSystem = getUxpFileSystem();
     if (fileSystem && typeof fileSystem.getFileForOpening === "function") {
       const picked = await fileSystem.getFileForOpening();
       const entry = Array.isArray(picked) ? picked[0] : picked;
       if (!entry) return { outcome: "cancelled", name: "", text: "" };
-      const text = await entry.read();
+      const utf8Options = getUxpUtf8Options();
+      if (!utf8Options) throw new Error("当前 UXP 版本未提供 UTF-8 文件格式");
+      const text = await entry.read(utf8Options);
       return {
         outcome: "loaded",
         name: String(entry.name || ""),
