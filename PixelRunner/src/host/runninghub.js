@@ -631,27 +631,13 @@ function parseChargeValue(value) {
   return Number.isFinite(parsed) ? Number(parsed.toFixed(3)) : null;
 }
 
-function sumTaskChargeValues(payload, keys = []) {
-  const candidates = collectCandidateValues(
-    payload,
-    (key) => {
-      const normalized = String(key || "").trim().toLowerCase();
-      return keys.includes(normalized);
-    }
-  );
-
-  let total = 0;
-  let matched = false;
-  for (const candidate of candidates) {
-    const parsed = parseChargeValue(candidate);
-    if (parsed === null) continue;
-    total += Math.abs(parsed);
-    matched = true;
-  }
-  return matched ? Number(total.toFixed(3)) : null;
+function getTaskChargeComponent(key) {
+  if (key.startsWith("thirdparty")) return "third-party";
+  if (key.startsWith("model")) return "model";
+  return "task";
 }
 
-function collectTaskChargeValuesByKey(payload, keys = [], out = new Map()) {
+function collectTaskChargeValuesByComponent(payload, keys = [], out = new Map()) {
   collectCandidateValues(
     payload,
     (key, value) => {
@@ -659,9 +645,10 @@ function collectTaskChargeValuesByKey(payload, keys = [], out = new Map()) {
       if (!keys.includes(normalized)) return false;
       const parsed = parseChargeValue(value);
       if (parsed === null) return false;
-      const current = out.get(normalized);
+      const component = getTaskChargeComponent(normalized);
+      const current = out.get(component);
       const nextValue = Math.abs(parsed);
-      out.set(normalized, current === undefined ? nextValue : Math.max(current, nextValue));
+      out.set(component, current === undefined ? nextValue : Math.max(current, nextValue));
       return false;
     }
   );
@@ -669,17 +656,15 @@ function collectTaskChargeValuesByKey(payload, keys = [], out = new Map()) {
 }
 
 function extractTaskChargeByKeys(payload, keys = []) {
-  if (Array.isArray(payload)) {
-    const valuesByKey = new Map();
-    payload.forEach((item) => collectTaskChargeValuesByKey(item, keys, valuesByKey));
-    if (valuesByKey.size === 0) return null;
-    const total = Array.from(valuesByKey.values()).reduce((sum, value) => sum + value, 0);
-    return Number(total.toFixed(3));
-  }
-  return sumTaskChargeValues(payload, keys);
+  // RunningHub repeats task-level charge fields on output items. Deduplicate each
+  // semantic component across the full response, including nested result arrays.
+  const valuesByComponent = collectTaskChargeValuesByComponent(payload, keys);
+  if (valuesByComponent.size === 0) return null;
+  const total = Array.from(valuesByComponent.values()).reduce((sum, value) => sum + value, 0);
+  return Number(total.toFixed(3));
 }
 
-function extractTaskBalanceCharge(payload) {
+export function extractTaskBalanceCharge(payload) {
   return extractTaskChargeByKeys(payload, [
     "consume",
     "consumefee",
@@ -716,7 +701,7 @@ function extractTaskBalanceCharge(payload) {
   ]);
 }
 
-function extractTaskCoinsCharge(payload) {
+export function extractTaskCoinsCharge(payload) {
   return extractTaskChargeByKeys(payload, [
     "consumecoins",
     "thirdpartyconsumecoins",
@@ -776,7 +761,7 @@ function formatCoinsChargeDisplay(charge) {
   return Number.isInteger(parsed) ? `-${parsed}RH` : `-${parsed.toFixed(3)}RH`;
 }
 
-function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn") {
+export function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn") {
   const parts = [];
   const balanceText = formatBalanceChargeDisplay(balanceCharge, region);
   const coinsText = formatCoinsChargeDisplay(coinsCharge);
