@@ -31,6 +31,7 @@
   let accountSettlementChain = Promise.resolve(null);
   let autoPlacementRetryTimer = 0;
   let autoPlacementProcessing = false;
+  let captureInProgress = false;
   const taskTrackingTimers = new Map();
   const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
@@ -2275,6 +2276,21 @@
     return asset;
   }
 
+  function pauseAutoPlacementRetry() {
+    if (autoPlacementRetryTimer) {
+      window.clearTimeout(autoPlacementRetryTimer);
+      autoPlacementRetryTimer = 0;
+    }
+    captureInProgress = true;
+  }
+
+  function resumeAutoPlacementRetry() {
+    captureInProgress = false;
+    if (pendingAutoPlacements.size > 0) {
+      schedulePendingAutoPlacementRetry(2000);
+    }
+  }
+
   async function handleCaptureFieldClick(actionTarget) {
     const key = actionTarget && actionTarget.getAttribute("data-form-key");
     if (!key) return;
@@ -2290,6 +2306,7 @@
     if (triggerButton) triggerButton.disabled = true;
     if (card) card.dataset.captureBusy = "true";
 
+    pauseAutoPlacementRetry();
     try {
       logImageCaptureTrace("收到点击事件", {
         key,
@@ -2303,6 +2320,7 @@
     } catch (error) {
       modules.ui.logToWorkspace(`图像捕获失败：${error.message}`, "error");
     } finally {
+      resumeAutoPlacementRetry();
       if (card) delete card.dataset.captureBusy;
       if (triggerButton) triggerButton.disabled = false;
     }
@@ -2575,7 +2593,7 @@
   }
 
   function schedulePendingAutoPlacementRetry(delayMs = 4000) {
-    if (autoPlacementRetryTimer || pendingAutoPlacements.size === 0) return;
+    if (autoPlacementRetryTimer || pendingAutoPlacements.size === 0 || captureInProgress) return;
     autoPlacementRetryTimer = window.setTimeout(() => {
       autoPlacementRetryTimer = 0;
       void flushPendingAutoPlacements();
@@ -2596,7 +2614,7 @@
   }
 
   async function flushPendingAutoPlacements() {
-    if (autoPlacementProcessing || pendingAutoPlacements.size === 0 || !modules.runtime.isPluginRuntime()) return;
+    if (autoPlacementProcessing || pendingAutoPlacements.size === 0 || !modules.runtime.isPluginRuntime() || captureInProgress) return;
     autoPlacementProcessing = true;
     try {
       for (const [taskId, queued] of Array.from(pendingAutoPlacements.entries())) {
@@ -3536,6 +3554,8 @@
     captureWorkspaceFormSnapshot,
     restoreWorkspaceFormSnapshot,
     bindWorkspaceActions,
-    refreshPhotoshopDocumentStatus
+    refreshPhotoshopDocumentStatus,
+    pauseAutoPlacementRetry,
+    resumeAutoPlacementRetry
   };
 })(window);

@@ -567,14 +567,23 @@
 
   function captureSelection() {
     if (captureInFlight) return captureInFlight;
+    if (modules.workspace && typeof modules.workspace.pauseAutoPlacementRetry === "function") {
+      modules.workspace.pauseAutoPlacementRetry();
+    }
     const operation = captureSelectionInternal();
     captureInFlight = operation;
     void operation.then(
       () => {
         if (captureInFlight === operation) captureInFlight = null;
+        if (modules.workspace && typeof modules.workspace.resumeAutoPlacementRetry === "function") {
+          modules.workspace.resumeAutoPlacementRetry();
+        }
       },
       () => {
         if (captureInFlight === operation) captureInFlight = null;
+        if (modules.workspace && typeof modules.workspace.resumeAutoPlacementRetry === "function") {
+          modules.workspace.resumeAutoPlacementRetry();
+        }
       }
     );
     return operation;
