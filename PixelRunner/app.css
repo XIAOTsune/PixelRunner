@@ -1485,6 +1485,45 @@ button {
   min-width: 0;
 }
 
+.workspace-third-party-summary {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.workspace-third-party-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workspace-third-party-copy .workspace-quick-count {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-third-party-settings-btn {
+  flex: 0 0 30px;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.workspace-third-party-settings-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .workspace-app-placeholder {
   color: var(--muted);
   font-size: 13px;

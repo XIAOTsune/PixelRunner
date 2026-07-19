@@ -1,3 +1,17 @@
+import {
+  GRS_CHAT_MODEL_IDS,
+  GRS_IMAGE_MODEL_IDS,
+  GRS_REGIONS,
+  getGrsApiUrl,
+  getGrsImageModelCapabilities,
+  getGrsImageModelLabel,
+  getGrsRegionConfig,
+  isGrsGptImageModel as isSharedGrsGptImageModel,
+  isGrsNanoBananaModel as isSharedGrsNanoBananaModel,
+  normalizeGrsModelId as normalizeSharedGrsModelId,
+  normalizeGrsRegion
+} from "../shared/grs-config.js";
+
 (function initStateModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
 
@@ -79,9 +93,10 @@
     enabled: false,
     provider: "grs",
     grs: {
-      apiUrl: "https://grsaiapi.com",
+      region: GRS_REGIONS.CN,
+      apiUrl: getGrsApiUrl(GRS_REGIONS.CN),
       apiKey: "",
-      imageModels: ["gpt-image-2", "gpt-image-2-vip", "nano-banana-pro", "nano-banana", "nano-banana-2"],
+      imageModels: [...GRS_IMAGE_MODEL_IDS],
       chatModel: "gpt-5.5",
       selectedModel: "gpt-image-2",
       aspectRatio: "auto",
@@ -92,9 +107,6 @@
 
   const THIRD_PARTY_APP_ID = "__pixelrunner_third_party_api__";
   const GENERATIVE_FILL_APP_ID = "__pixelrunner_generative_fill__";
-
-  const GRS_COMMON_BANANA_RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"];
-  const GRS_GPT_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536", "1774x887", "887x1774"];
 
   const DEFAULT_THEME = {
     preset: "classic",
@@ -354,20 +366,37 @@
     const source = settings && typeof settings === "object" ? settings : {};
     const grsSource = source.grs && typeof source.grs === "object" ? source.grs : {};
     const fallback = DEFAULT_THIRD_PARTY_SETTINGS.grs;
-    const imageModels = normalizeModelList(grsSource.imageModels || grsSource.models, fallback.imageModels);
-    const selectedModel = String(grsSource.selectedModel || imageModels[0] || fallback.selectedModel).trim();
+    const storedModels = Array.isArray(grsSource.imageModels || grsSource.models)
+      ? (grsSource.imageModels || grsSource.models)
+      : String(grsSource.imageModels || grsSource.models || "").split(",");
+    const requestedModel = normalizeSharedGrsModelId(grsSource.selectedModel || fallback.selectedModel);
+    const imageModels = normalizeModelList([...fallback.imageModels, ...storedModels, requestedModel], fallback.imageModels)
+      .map(normalizeSharedGrsModelId)
+      .filter((model, index, models) => Boolean(model) && models.indexOf(model) === index);
+    const selectedModel = requestedModel || imageModels[0] || fallback.selectedModel;
+    const capabilities = getGrsImageModelCapabilities(selectedModel);
+    const requestedAspectRatio = String(grsSource.aspectRatio || fallback.aspectRatio).trim();
+    const requestedResolution = String(grsSource.resolution || fallback.resolution).trim();
+    const aspectRatio = capabilities.aspectRatios.includes(requestedAspectRatio) || capabilities.allowCustomAspectRatio
+      ? requestedAspectRatio
+      : capabilities.defaultAspectRatio;
+    const resolution = capabilities.resolutions.includes(requestedResolution)
+      ? requestedResolution
+      : capabilities.defaultResolution;
+    const region = normalizeGrsRegion(grsSource.region, grsSource.apiUrl);
     return {
       enabled: Boolean(source.enabled),
       provider: "grs",
       grs: {
-        apiUrl: String(grsSource.apiUrl || fallback.apiUrl).trim() || fallback.apiUrl,
+        region,
+        apiUrl: getGrsApiUrl(region),
         apiKey: String(grsSource.apiKey || "").trim(),
         imageModels,
         chatModel: String(grsSource.chatModel || fallback.chatModel).trim() || fallback.chatModel,
         selectedModel: selectedModel || fallback.selectedModel,
-        aspectRatio: String(grsSource.aspectRatio || fallback.aspectRatio).trim() || fallback.aspectRatio,
-        resolution: String(grsSource.resolution || fallback.resolution).trim() || fallback.resolution,
-        adapter: String(grsSource.adapter || fallback.adapter).trim() || fallback.adapter
+        aspectRatio: aspectRatio || capabilities.defaultAspectRatio,
+        resolution: resolution || capabilities.defaultResolution,
+        adapter: fallback.adapter
       }
     };
   }
@@ -377,23 +406,7 @@
   }
 
   function normalizeGrsModelId(value) {
-    const text = String(value || "").trim().toLowerCase();
-    const compact = text.replace(/[\s_-]/g, "");
-    const aliases = {
-      gptimage2: "gpt-image-2",
-      gptimage2vip: "gpt-image-2-vip",
-      nanobanana: "nano-banana",
-      nanobananapro: "nano-banana-pro",
-      nanobananafast: "nano-banana-fast",
-      nanobanana2: "nano-banana-2",
-      nanobanana2cl: "nano-banana-2-cl",
-      nanobananaprocl: "nano-banana-pro-cl",
-      nanobanana24kcl: "nano-banana-2-4k-cl",
-      nanobananaprovip: "nano-banana-pro-vip",
-      nanobananapro4kvip: "nano-banana-pro-4k-vip",
-      nanobananaprovt: "nano-banana-pro-vt"
-    };
-    return aliases[compact] || text;
+    return normalizeSharedGrsModelId(value);
   }
 
   function normalizeSearchText(value) {
@@ -423,44 +436,15 @@
   }
 
   function isGrsNanoBananaModel(value) {
-    return /^nano-banana(?:$|-)/i.test(normalizeGrsModelId(value));
+    return isSharedGrsNanoBananaModel(value);
   }
 
   function isGrsGptImageModel(value) {
-    return /^gpt-image-2(?:-vip)?$/i.test(normalizeGrsModelId(value));
+    return isSharedGrsGptImageModel(value);
   }
 
   function getThirdPartyModelCapabilities(model) {
-    const normalized = normalizeGrsModelId(model);
-    if (isGrsGptImageModel(normalized)) {
-      return {
-        model: normalized,
-        aspectRatios: GRS_GPT_IMAGE_SIZES,
-        resolutions: normalized === "gpt-image-2-vip" ? ["1K", "2K", "4K"] : ["1K"],
-        allowCustomAspectRatio: false,
-        defaultAspectRatio: "1024x1024",
-        defaultResolution: "1K"
-      };
-    }
-    if (isGrsNanoBananaModel(normalized)) {
-      const hasHighResolution = /(?:^nano-banana-(?:2|pro)|4k|vip)/i.test(normalized);
-      return {
-        model: normalized,
-        aspectRatios: GRS_COMMON_BANANA_RATIOS,
-        resolutions: hasHighResolution ? ["1K", "2K", "4K"] : ["1K"],
-        allowCustomAspectRatio: true,
-        defaultAspectRatio: "auto",
-        defaultResolution: "1K"
-      };
-    }
-    return {
-      model: normalized,
-      aspectRatios: ["1:1"],
-      resolutions: ["1K"],
-      allowCustomAspectRatio: false,
-      defaultAspectRatio: "1:1",
-      defaultResolution: "1K"
-    };
+    return getGrsImageModelCapabilities(model);
   }
 
   function getThirdPartyApp() {
@@ -477,7 +461,14 @@
         { key: "mainImage", label: "主图", name: "主图", type: "image", required: false },
         { key: "referenceImage", label: "参考图", name: "参考图", type: "image", required: false },
         { key: "prompt", label: "提示词", name: "提示词", type: "textarea", required: true },
-        { key: "model", label: "模型", name: "模型", type: "select", required: true, options: grs.imageModels },
+        {
+          key: "model",
+          label: "模型",
+          name: "模型",
+          type: "select",
+          required: true,
+          options: grs.imageModels.map((model) => ({ value: model, label: getGrsImageModelLabel(model) }))
+        },
         {
           key: "aspectRatio",
           label: "比例",
@@ -720,6 +711,9 @@
     DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID,
     DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID,
     RUNNINGHUB_REGIONS,
+    GRS_REGIONS,
+    GRS_CHAT_MODEL_IDS,
+    GRS_IMAGE_MODEL_IDS,
     DEFAULT_SETTINGS,
     DEFAULT_THIRD_PARTY_SETTINGS,
     THIRD_PARTY_APP_ID,
@@ -730,6 +724,10 @@
     state,
     normalizeTheme,
     normalizeRunningHubRegion,
+    normalizeGrsRegion,
+    getGrsRegionConfig,
+    getGrsApiUrl,
+    getGrsImageModelLabel,
     getDefaultAiOptimizeAppId,
     getDefaultGenerativeFillAppId,
     normalizeSettings,

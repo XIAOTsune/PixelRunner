@@ -549,7 +549,9 @@
     if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
     if (modules.state.isThirdPartyApp(app)) {
       const grs = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs ? modules.state.state.thirdPartySettings.grs : {};
-      return `<div class="workspace-app-summary"><div class="workspace-app-name">第三方 API</div><span class="workspace-quick-count">GRS · ${runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></div>`;
+      const region = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
+      const selectedModel = modules.state.state.formValues?.model || grs.selectedModel || "未选择模型";
+      return `<div class="workspace-app-summary workspace-third-party-summary"><div class="workspace-third-party-copy"><div class="workspace-app-name">第三方 API</div><span class="workspace-quick-count">GRS · ${runtime.escapeHtml(region.label)} · ${runtime.escapeHtml(String(selectedModel))}</span></div><button class="mini-btn workspace-third-party-settings-btn" type="button" data-action="open-third-party-settings" title="打开第三方设置" aria-label="打开第三方设置"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.4 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2V9.55h.3A1.7 1.7 0 0 0 4 8.4a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.46 3.6l.06.06A1.7 1.7 0 0 0 8.4 4a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 9.8 2.3V2h4.05v.3A1.7 1.7 0 0 0 15 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.4a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.3v4.05h-.3A1.7 1.7 0 0 0 19.4 15Z"></path></svg></button></div>`;
     }
     return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
   }
@@ -1717,9 +1719,13 @@
   function buildThirdPartyRunPayload() {
     const state = modules.state.state;
     const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
+    const region = modules.state.normalizeGrsRegion(grs.region, grs.apiUrl);
+    const apiUrl = modules.state.getGrsApiUrl(region);
     const payload = {
       provider: "grs",
       adapter: grs.adapter || "grs-image-generate",
+      region,
+      apiUrl,
       appId: modules.state.THIRD_PARTY_APP_ID,
       appName: "第三方 API",
       app: state.currentApp,
@@ -1731,7 +1737,8 @@
         maxConcurrentTasks: state.settings.maxConcurrentTasks
       },
       config: {
-        apiUrl: grs.apiUrl || "https://grsaiapi.com",
+        region,
+        apiUrl,
         apiKey: grs.apiKey || "",
         chatModel: grs.chatModel || "",
         adapter: grs.adapter || "grs-image-generate"
@@ -1774,6 +1781,7 @@
       provider: String(patch.provider || "").trim(),
       kind: String(patch.kind || "").trim(),
       region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
+      apiUrl: hasOwn("apiUrl") ? String(patch.apiUrl || "").trim() : "",
       apiKey: hasOwn("apiKey") ? String(patch.apiKey || "").trim() : "",
       queueMode: String(patch.queueMode || "").trim(),
       appName: String(patch.appName || "").trim(),
@@ -1809,6 +1817,7 @@
         provider: nextTask.provider || current.provider || "",
         kind: nextTask.kind || current.kind || "",
         region: nextTask.region || current.region || "cn",
+        apiUrl: nextTask.apiUrl || current.apiUrl || "",
         apiKey: nextTask.apiKey || current.apiKey || "",
         queueMode: nextTask.queueMode || current.queueMode || "",
         appName: nextTask.appName || current.appName || "",
@@ -2791,6 +2800,7 @@
       provider: payload.provider || "",
       kind: payload.kind || "",
       region: payload.region,
+      apiUrl: payload.apiUrl || (payload.config && payload.config.apiUrl) || "",
       apiKey: payload.apiKey,
       queueMode: "local",
       appName: payload.appName,
@@ -2867,6 +2877,7 @@
       remoteTaskId: "",
       provider: payload.provider || "",
       region: payload.region,
+      apiUrl: payload.apiUrl || (payload.config && payload.config.apiUrl) || "",
       apiKey: payload.apiKey,
       queueMode: "",
       appName: payload.appName,
@@ -3118,6 +3129,7 @@
   function bindWorkspaceActions() {
     const runButton = modules.runtime.getById("btnRun");
     const runPlusButton = modules.runtime.getById("btnRunPlus");
+    const appPickerMeta = modules.runtime.getById("appPickerMeta");
     const dynamicInputContainer = modules.runtime.getById("dynamicInputContainer");
     const createQuickEntryButton = modules.runtime.getById("btnCreateQuickEntry");
     const quickEntryNameTitle = modules.runtime.getById("quickEntryNameTitle");
@@ -3156,6 +3168,27 @@
 
     function closeQuickEntryNoticeModal() {
       setModalOpen("quickEntryNoticeModal", false);
+    }
+
+    function openThirdPartySettings() {
+      modules.ui.setActiveView("tabSettings");
+      const details = modules.runtime.getById("thirdPartySettingsDetails");
+      if (details) details.open = true;
+      window.setTimeout(() => {
+        const control = modules.runtime.getById("thirdPartyGrsRegionControl");
+        if (control && typeof control.scrollIntoView === "function") control.scrollIntoView({ block: "center" });
+        const activeButton = control && control.querySelector(".region-segmented-btn.is-active");
+        if (activeButton && typeof activeButton.focus === "function") activeButton.focus();
+      }, 0);
+    }
+
+    if (appPickerMeta) {
+      appPickerMeta.addEventListener("click", (event) => {
+        const target = event.target && event.target.closest('[data-action="open-third-party-settings"]');
+        if (!target || !appPickerMeta.contains(target)) return;
+        event.preventDefault();
+        openThirdPartySettings();
+      });
     }
 
     function openQuickEntryNameModal() {
@@ -3469,10 +3502,14 @@
           return;
         }
         const isThirdPartyTask = currentTask && String(currentTask.appName || "") === "第三方 API";
-        const grs = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs ? modules.state.state.thirdPartySettings.grs : {};
         const cancelMethod = isThirdPartyTask ? "thirdParty.grs.cancelTask" : "runninghub.cancelTask";
         const cancelPayload = isThirdPartyTask
-          ? { apiKey: grs.apiKey, apiUrl: grs.apiUrl, taskId: remoteTaskId }
+          ? {
+              apiKey: String((currentTask && currentTask.apiKey) || modules.state.state.thirdPartySettings?.grs?.apiKey || ""),
+              apiUrl: String((currentTask && currentTask.apiUrl) || modules.state.state.thirdPartySettings?.grs?.apiUrl || ""),
+              region: (currentTask && currentTask.region) || modules.state.state.thirdPartySettings?.grs?.region,
+              taskId: remoteTaskId
+            }
           : {
               apiKey: String((currentTask && currentTask.apiKey) || modules.state.state.settings.apiKey || ""),
               taskId: remoteTaskId,

@@ -478,7 +478,7 @@
             </div>
           </details>
 
-          <details class="surface-card settings-collapsible">
+          <details id="thirdPartySettingsDetails" class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">第三方支持</summary>
             <div class="form-stack collapsible-body">
               <label class="field toggle-field">
@@ -489,10 +489,17 @@
                 </label>
               </label>
               <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">GRS API URL</span>
-                  <input id="thirdPartyGrsApiUrlInput" class="field-input" type="url" placeholder="https://grsaiapi.com" />
-                </label>
+                <div class="field">
+                  <span class="field-label">GRS 服务节点</span>
+                  <div id="thirdPartyGrsRegionControl" class="region-segmented" role="group" aria-label="GRS 服务节点">
+                    <button class="region-segmented-btn is-active" type="button" data-grs-region="cn" aria-pressed="true">
+                      <span>国内节点</span><small>直连</small>
+                    </button>
+                    <button class="region-segmented-btn" type="button" data-grs-region="global" aria-pressed="false">
+                      <span>国际节点</span><small>海外</small>
+                    </button>
+                  </div>
+                </div>
                 <label class="field">
                   <span class="field-label">GRS API Key</span>
                   <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
@@ -500,62 +507,26 @@
               </div>
               <div class="dual-grid">
                 <label class="field">
-                  <span class="field-label">生图模型列表</span>
-                  <input id="thirdPartyGrsImageModelsInput" class="field-input" type="text" placeholder="gpt-image-2, nano-banana-pro" />
-                </label>
-                <label class="field">
-                  <span class="field-label">AI 优化文本模型</span>
-                  <input id="thirdPartyGrsChatModelInput" class="field-input" type="text" placeholder="gpt-5.5" />
-                </label>
-              </div>
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">默认模型</span>
+                  <span class="field-label">默认生图模型</span>
                   <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
                 </label>
                 <label class="field">
-                  <span class="field-label">默认比例</span>
-                  <select id="thirdPartyGrsDefaultRatioInput" class="field-input">
-                    <option value="auto">auto</option>
-                    <option value="1:1">1:1</option>
-                    <option value="16:9">16:9</option>
-                    <option value="9:16">9:16</option>
-                    <option value="4:3">4:3</option>
-                    <option value="3:4">3:4</option>
-                    <option value="3:2">3:2</option>
-                    <option value="2:3">2:3</option>
-                    <option value="21:9">21:9</option>
-                    <option value="9:21">9:21</option>
-                    <option value="1024x1024">1024x1024</option>
-                    <option value="1536x1024">1536x1024</option>
-                    <option value="1024x1536">1024x1536</option>
-                    <option value="1774x887">1774x887</option>
-                    <option value="887x1774">887x1774</option>
-                  </select>
+                  <span class="field-label">AI 优化文本模型</span>
+                  <select id="thirdPartyGrsChatModelInput" class="field-input"></select>
                 </label>
               </div>
               <div class="dual-grid">
                 <label class="field">
-                  <span class="field-label">默认分辨率</span>
-                  <select id="thirdPartyGrsDefaultResolutionInput" class="field-input">
-                    <option value="1K">1K</option>
-                    <option value="2K">2K</option>
-                    <option value="4K">4K</option>
-                    <option value="1024x1024">1024x1024</option>
-                    <option value="1536x1024">1536x1024</option>
-                    <option value="1024x1536">1024x1536</option>
-                  </select>
+                  <span class="field-label">默认比例</span>
+                  <select id="thirdPartyGrsDefaultRatioInput" class="field-input"></select>
                 </label>
                 <label class="field">
-                  <span class="field-label">请求适配器</span>
-                  <select id="thirdPartyGrsAdapterInput" class="field-input">
-                    <option value="grs-image-generate">GRS 原生图片生成</option>
-                    <option value="grs-image-openai">GRS OpenAI 图片兼容</option>
-                  </select>
+                  <span class="field-label">默认分辨率</span>
+                  <select id="thirdPartyGrsDefaultResolutionInput" class="field-input"></select>
                 </label>
               </div>
               <div class="action-row">
-                <button id="btnScanThirdPartyGrsModels" class="secondary-btn" type="button">扫描 GRS 模型</button>
+                <button id="btnSaveThirdPartySettings" class="primary-btn" type="button">保存第三方设置</button>
               </div>
               <div id="thirdPartyStatusSummary" class="summary-strip">启用后，工作台应用切换中会出现固定的第三方 API 卡片。</div>
             </div>

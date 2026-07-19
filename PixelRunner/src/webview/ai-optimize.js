@@ -1034,6 +1034,7 @@
               "thirdParty.grs.optimizePrompt",
               [{
                 config: {
+                  region: grs.region,
                   apiUrl: grs.apiUrl,
                   apiKey: grs.apiKey,
                   chatModel: grs.chatModel

@@ -14,10 +14,11 @@
   },
   "type": "module",
   "scripts": {
-    "test": "npm run test:bundle-compat && npm run test:file-transfer && npm run test:runninghub-charge",
+    "test": "npm run test:bundle-compat && npm run test:file-transfer && npm run test:runninghub-charge && npm run test:grs",
     "test:bundle-compat": "node ./scripts/test-bundle-compat.mjs",
     "test:file-transfer": "node ./scripts/test-file-transfer.mjs",
     "test:runninghub-charge": "node ./scripts/test-runninghub-charge.mjs",
+    "test:grs": "node ./scripts/test-grs-config.mjs",
     "build": "node ./scripts/build.mjs",
     "build:watch": "node ./scripts/build.mjs --watch",
     "build:release": "node ./scripts/build.mjs --release",

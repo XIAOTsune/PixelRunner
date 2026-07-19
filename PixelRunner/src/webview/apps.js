@@ -98,7 +98,8 @@
     const state = modules.state.state;
     const isActive = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
     const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
-    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS 生图快捷入口</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
+    const region = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
+    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS · ${modules.runtime.escapeHtml(region.label)}</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
   }
 
   function getGenerativeFillPickerButton() {

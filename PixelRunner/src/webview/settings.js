@@ -208,6 +208,26 @@
     });
   }
 
+  function getSelectedGrsRegion() {
+    const activeButton = document.querySelector("[data-grs-region].is-active");
+    const stored = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs
+      ? modules.state.state.thirdPartySettings.grs
+      : modules.state.DEFAULT_THIRD_PARTY_SETTINGS.grs;
+    return modules.state.normalizeGrsRegion(
+      activeButton ? activeButton.getAttribute("data-grs-region") : stored.region,
+      stored.apiUrl
+    );
+  }
+
+  function renderGrsRegionControl(region = getSelectedGrsRegion()) {
+    const normalized = modules.state.normalizeGrsRegion(region);
+    document.querySelectorAll("[data-grs-region]").forEach((button) => {
+      const isActive = modules.state.normalizeGrsRegion(button.getAttribute("data-grs-region")) === normalized;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  }
+
   function renderApiProfileControls() {
     const runtime = modules.runtime;
     const select = runtime.getById("settingsApiProfileSelect");
@@ -309,10 +329,43 @@
     const list = Array.isArray(models) && models.length ? models : modules.state.DEFAULT_THIRD_PARTY_SETTINGS.grs.imageModels;
     const value = String(selected || list[0] || "").trim();
     select.innerHTML = list
-      .map((model) => `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(String(model))}</option>`)
+      .map((model) => `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(modules.state.getGrsImageModelLabel(model))}</option>`)
       .join("");
     if (value && !list.includes(value)) {
       select.insertAdjacentHTML("afterbegin", `<option value="${modules.runtime.escapeHtml(value)}" selected>${modules.runtime.escapeHtml(value)}</option>`);
+    }
+  }
+
+  function fillThirdPartyChatModelSelect(selected) {
+    const select = modules.runtime.getById("thirdPartyGrsChatModelInput");
+    if (!select) return;
+    const value = String(selected || modules.state.GRS_CHAT_MODEL_IDS[0] || "").trim();
+    const models = [...modules.state.GRS_CHAT_MODEL_IDS];
+    if (value && !models.includes(value)) models.unshift(value);
+    select.innerHTML = models
+      .map((model) => `<option value="${modules.runtime.escapeHtml(model)}" ${model === value ? "selected" : ""}>${modules.runtime.escapeHtml(model)}</option>`)
+      .join("");
+  }
+
+  function fillThirdPartyCapabilitySelects(model, selectedAspectRatio, selectedResolution) {
+    const capabilities = modules.state.getThirdPartyModelCapabilities(model);
+    const ratioSelect = modules.runtime.getById("thirdPartyGrsDefaultRatioInput");
+    const resolutionSelect = modules.runtime.getById("thirdPartyGrsDefaultResolutionInput");
+    const ratio = capabilities.aspectRatios.includes(String(selectedAspectRatio || ""))
+      ? String(selectedAspectRatio)
+      : capabilities.defaultAspectRatio;
+    const resolution = capabilities.resolutions.includes(String(selectedResolution || ""))
+      ? String(selectedResolution)
+      : capabilities.defaultResolution;
+    if (ratioSelect) {
+      ratioSelect.innerHTML = capabilities.aspectRatios
+        .map((value) => `<option value="${modules.runtime.escapeHtml(value)}" ${value === ratio ? "selected" : ""}>${modules.runtime.escapeHtml(value)}</option>`)
+        .join("");
+    }
+    if (resolutionSelect) {
+      resolutionSelect.innerHTML = capabilities.resolutions
+        .map((value) => `<option value="${modules.runtime.escapeHtml(value)}" ${value === resolution ? "selected" : ""}>${modules.runtime.escapeHtml(value)}</option>`)
+        .join("");
     }
   }
 
@@ -320,14 +373,20 @@
     const normalized = modules.state.normalizeThirdPartySettings(settings);
     const grs = normalized.grs;
     if (modules.runtime.getById("thirdPartyEnabledInput")) modules.runtime.getById("thirdPartyEnabledInput").checked = Boolean(normalized.enabled);
-    if (modules.runtime.getById("thirdPartyGrsApiUrlInput")) modules.runtime.getById("thirdPartyGrsApiUrlInput").value = grs.apiUrl || "";
+    renderGrsRegionControl(grs.region);
     if (modules.runtime.getById("thirdPartyGrsApiKeyInput")) modules.runtime.getById("thirdPartyGrsApiKeyInput").value = grs.apiKey || "";
-    if (modules.runtime.getById("thirdPartyGrsImageModelsInput")) modules.runtime.getById("thirdPartyGrsImageModelsInput").value = grs.imageModels.join(", ");
-    if (modules.runtime.getById("thirdPartyGrsChatModelInput")) modules.runtime.getById("thirdPartyGrsChatModelInput").value = grs.chatModel || "";
-    if (modules.runtime.getById("thirdPartyGrsDefaultRatioInput")) modules.runtime.getById("thirdPartyGrsDefaultRatioInput").value = grs.aspectRatio || "1:1";
-    if (modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")) modules.runtime.getById("thirdPartyGrsDefaultResolutionInput").value = grs.resolution || "1K";
-    if (modules.runtime.getById("thirdPartyGrsAdapterInput")) modules.runtime.getById("thirdPartyGrsAdapterInput").value = grs.adapter || "grs-image-generate";
     fillThirdPartyModelSelect(grs.imageModels, grs.selectedModel);
+    fillThirdPartyChatModelSelect(grs.chatModel);
+    fillThirdPartyCapabilitySelects(grs.selectedModel, grs.aspectRatio, grs.resolution);
+    const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
+    const regionConfig = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
+    modules.runtime.setSummaryStatus(
+      statusEl,
+      normalized.enabled
+        ? `GRS 已启用 · ${regionConfig.label} · ${grs.selectedModel}`
+        : `GRS 未启用 · 当前配置为 ${regionConfig.label}`,
+      normalized.enabled ? "success" : "info"
+    );
   }
 
   function readThirdPartySettingsForm() {
@@ -335,14 +394,13 @@
       enabled: Boolean(modules.runtime.getById("thirdPartyEnabledInput")?.checked),
       provider: "grs",
       grs: {
-        apiUrl: modules.runtime.getById("thirdPartyGrsApiUrlInput")?.value || "",
+        region: getSelectedGrsRegion(),
         apiKey: modules.runtime.getById("thirdPartyGrsApiKeyInput")?.value || "",
-        imageModels: modules.runtime.getById("thirdPartyGrsImageModelsInput")?.value || "",
+        imageModels: modules.state.state.thirdPartySettings?.grs?.imageModels || modules.state.GRS_IMAGE_MODEL_IDS,
         chatModel: modules.runtime.getById("thirdPartyGrsChatModelInput")?.value || "",
         selectedModel: modules.runtime.getById("thirdPartyGrsDefaultModelInput")?.value || "",
         aspectRatio: modules.runtime.getById("thirdPartyGrsDefaultRatioInput")?.value || "",
-        resolution: modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")?.value || "",
-        adapter: modules.runtime.getById("thirdPartyGrsAdapterInput")?.value || ""
+        resolution: modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")?.value || ""
       }
     });
   }
@@ -946,6 +1004,7 @@
     const deleteApiProfileButton = runtime.getById("btnDeleteApiProfile");
     const apiProfileList = runtime.getById("apiProfileList");
     const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
+    const grsRegionButtons = Array.from(document.querySelectorAll("[data-grs-region]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const resetGenerativeFillButton = runtime.getById("btnResetGenerativeFillAppId");
     const parseAppButton = runtime.getById("btnParseApp");
@@ -954,21 +1013,18 @@
     const saveTemplateButton = runtime.getById("btnSaveTemplate");
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
-    const scanThirdPartyModelsButton = runtime.getById("btnScanThirdPartyGrsModels");
+    const saveThirdPartySettingsButton = runtime.getById("btnSaveThirdPartySettings");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
       "settingsApiKeyInput",
       "settingsApiProfileNameInput",
       "thirdPartyEnabledInput",
-      "thirdPartyGrsApiUrlInput",
       "thirdPartyGrsApiKeyInput",
-      "thirdPartyGrsImageModelsInput",
       "thirdPartyGrsChatModelInput",
       "thirdPartyGrsDefaultModelInput",
       "thirdPartyGrsDefaultRatioInput",
-      "thirdPartyGrsDefaultResolutionInput",
-      "thirdPartyGrsAdapterInput"
+      "thirdPartyGrsDefaultResolutionInput"
     ];
     const advancedSettingFieldIds = [
       "settingsPollIntervalInput",
@@ -1112,6 +1168,28 @@
       });
     });
 
+    grsRegionButtons.forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (button.classList.contains("is-active")) return;
+        const previousThirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
+        grsRegionButtons.forEach((item) => { item.disabled = true; });
+        const statusEl = runtime.getById("thirdPartyStatusSummary");
+        try {
+          renderGrsRegionControl(button.getAttribute("data-grs-region"));
+          runtime.setSummaryStatus(statusEl, "正在切换 GRS 服务节点...", "info");
+          await saveSettingsSnapshot(readSettingsForm());
+          const regionConfig = modules.state.getGrsRegionConfig(modules.state.state.thirdPartySettings.grs.region);
+          runtime.setSummaryStatus(statusEl, `已切换到 GRS ${regionConfig.label}。`, "success");
+        } catch (error) {
+          modules.state.state.thirdPartySettings = previousThirdParty;
+          fillThirdPartySettingsForm(previousThirdParty);
+          runtime.setSummaryStatus(statusEl, `切换 GRS 节点失败：${error.message}`, "error");
+        } finally {
+          grsRegionButtons.forEach((item) => { item.disabled = false; });
+        }
+      });
+    });
+
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {
         const profile = modules.state.state.apiProfiles.find((item) => String(item.id) === String(apiProfileSelect.value));
@@ -1247,10 +1325,13 @@
     fieldIds.forEach((id) => {
       const element = runtime.getById(id);
       if (!element) return;
-      if (id === "thirdPartyGrsImageModelsInput") {
-        element.addEventListener("input", () => {
-          const snapshot = readThirdPartySettingsForm();
-          fillThirdPartyModelSelect(snapshot.grs.imageModels, snapshot.grs.selectedModel);
+      if (id === "thirdPartyGrsDefaultModelInput") {
+        element.addEventListener("change", () => {
+          fillThirdPartyCapabilitySelects(
+            element.value,
+            runtime.getById("thirdPartyGrsDefaultRatioInput")?.value,
+            runtime.getById("thirdPartyGrsDefaultResolutionInput")?.value
+          );
         });
       }
       if (id === "thirdPartyEnabledInput") {
@@ -1262,6 +1343,24 @@
       }
       element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
     });
+
+    if (saveThirdPartySettingsButton) {
+      saveThirdPartySettingsButton.addEventListener("click", async () => {
+        const statusEl = runtime.getById("thirdPartyStatusSummary");
+        saveThirdPartySettingsButton.disabled = true;
+        runtime.setSummaryStatus(statusEl, "正在保存第三方设置...", "info");
+        try {
+          await saveSettingsSnapshot(readSettingsForm());
+          const grs = modules.state.state.thirdPartySettings.grs;
+          const regionConfig = modules.state.getGrsRegionConfig(grs.region);
+          runtime.setSummaryStatus(statusEl, `第三方设置已保存 · ${regionConfig.label} · ${grs.selectedModel}`, "success");
+        } catch (error) {
+          runtime.setSummaryStatus(statusEl, `第三方设置保存失败：${error.message}`, "error");
+        } finally {
+          saveThirdPartySettingsButton.disabled = false;
+        }
+      });
+    }
 
     advancedSettingFieldIds.forEach((id) => {
       const element = runtime.getById(id);
@@ -1427,43 +1526,6 @@
             runtime: modules.state.state.hostRuntime,
             hasApiKey: Boolean(modules.state.state.settings.apiKey)
           });
-        }
-      });
-    }
-
-    if (scanThirdPartyModelsButton) {
-      scanThirdPartyModelsButton.addEventListener("click", async () => {
-        scanThirdPartyModelsButton.disabled = true;
-        const statusEl = runtime.getById("thirdPartyStatusSummary");
-        runtime.setSummaryStatus(statusEl, "正在扫描 GRS 生图模型...", "info");
-        try {
-          const snapshot = readThirdPartySettingsForm();
-          if (!modules.runtime.isPluginRuntime()) {
-            runtime.setSummaryStatus(statusEl, "浏览器预览模式无法访问 GRS，请在 UXP 插件内扫描。", "warn");
-            return;
-          }
-          const result = await modules.runtime.callHost(
-            "thirdParty.grs.listModels",
-            [{ apiUrl: snapshot.grs.apiUrl, apiKey: snapshot.grs.apiKey, kind: "image" }],
-            { timeoutMs: 45000 }
-          );
-          const models = Array.isArray(result && result.models) ? result.models : [];
-          if (!models.length) throw new Error("未获取到可用生图模型");
-          const nextSettings = modules.state.normalizeThirdPartySettings({
-            ...snapshot,
-            grs: {
-              ...snapshot.grs,
-              imageModels: models,
-              selectedModel: models.includes(snapshot.grs.selectedModel) ? snapshot.grs.selectedModel : models[0]
-            }
-          });
-          modules.state.state.thirdPartySettings = nextSettings;
-          fillThirdPartySettingsForm(nextSettings);
-          runtime.setSummaryStatus(statusEl, `已获取 ${models.length} 个 GRS 生图模型，记得保存设置。`, "success");
-        } catch (error) {
-          runtime.setSummaryStatus(statusEl, `扫描失败：${error.message}`, "error");
-        } finally {
-          scanThirdPartyModelsButton.disabled = false;
         }
       });
     }

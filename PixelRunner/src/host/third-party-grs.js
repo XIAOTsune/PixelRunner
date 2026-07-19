@@ -1,34 +1,21 @@
+import {
+  GRS_CHAT_MODEL_IDS,
+  GRS_IMAGE_MODEL_IDS,
+  GRS_REGIONS,
+  getGrsApiUrl as getSharedGrsApiUrl,
+  getGrsImageModelCapabilities,
+  isGrsGptImageModel as isSharedGrsGptImageModel,
+  isGrsNanoBananaModel as isSharedGrsNanoBananaModel,
+  normalizeGrsModelId as normalizeSharedGrsModelId
+} from "../shared/grs-config.js";
+
 const grsTaskControllers = new Map();
 const grsImmediateResults = new Map();
 const grsTaskMeta = new Map();
 
-const DEFAULT_GRS_HOST = "https://grsaiapi.com";
-const DEFAULT_GRS_IMAGE_MODELS = [
-  "gpt-image-2",
-  "gpt-image-2-vip",
-  "nano-banana-pro",
-  "nano-banana",
-  "nano-banana-fast",
-  "nano-banana-2",
-  "nano-banana-2-cl",
-  "nano-banana-pro-cl",
-  "nano-banana-2-4k-cl",
-  "nano-banana-pro-vip",
-  "nano-banana-pro-4k-vip",
-  "nano-banana-pro-vt"
-];
-const DEFAULT_GRS_CHAT_MODELS = [
-  "gpt-5.5",
-  "gpt-5.4",
-  "gpt-5",
-  "gpt-5-mini",
-  "gemini-3.1-pro",
-  "gemini-3.1-flash-lite",
-  "gemini-3-flash",
-  "gemini-3-pro",
-  "gemini-2.5-flash",
-  "gemini-2.5-pro"
-];
+const DEFAULT_GRS_HOST = getSharedGrsApiUrl(GRS_REGIONS.CN);
+const DEFAULT_GRS_IMAGE_MODELS = [...GRS_IMAGE_MODEL_IDS];
+const DEFAULT_GRS_CHAT_MODELS = [...GRS_CHAT_MODEL_IDS];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
@@ -57,65 +44,16 @@ function parseSseJsonLines(text) {
   return rows;
 }
 
-function normalizeModelId(value) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  return text.replace(/^models\//i, "").replace(/^model\//i, "");
-}
-
-function modelCompareKey(value) {
-  const stripped = normalizeModelId(value);
-  const lower = stripped.toLowerCase();
-  const compact = lower.replace(/[\s_-]/g, "");
-  const aliasMap = {
-    gptimage2: "gpt-image-2",
-    gptimage2vip: "gpt-image-2-vip",
-    nanobanana: "nano-banana",
-    nanobananopro: "nano-banana-pro",
-    nanobananofast: "nano-banana-fast",
-    nanobanana2: "nano-banana-2",
-    nanobanana2cl: "nano-banana-2-cl",
-    nanobananaprocl: "nano-banana-pro-cl",
-    nanobanana24kcl: "nano-banana-2-4k-cl",
-    nanobananaprovip: "nano-banana-pro-vip",
-    nanobananapro4kvip: "nano-banana-pro-4k-vip",
-    nanobananaprovt: "nano-banana-pro-vt"
-  };
-  return aliasMap[compact] || lower;
-}
-
 function normalizeGrsOutboundModel(value) {
-  return modelCompareKey(value);
+  return normalizeSharedGrsModelId(value);
 }
 
 function isGrsGptImageModel(value) {
-  return /^gpt-image-2(?:-vip)?$/i.test(normalizeGrsOutboundModel(value));
+  return isSharedGrsGptImageModel(value);
 }
 
 function isGrsNanoBananaModel(value) {
-  return /^nano-banana(?:$|-)/i.test(normalizeGrsOutboundModel(value));
-}
-
-function isGrsImageModel(value) {
-  return isGrsGptImageModel(value) || isGrsNanoBananaModel(value);
-}
-
-function isGrsChatModel(value) {
-  const model = normalizeGrsOutboundModel(value);
-  return /^(gpt-5(?:\.[0-9]+)?(?:-mini)?|gpt-4\.1(?:-mini)?|gpt-4o(?:-mini)?|gemini-(?:3(?:\.1)?|2\.5)(?:-[a-z0-9.-]+)?|deepseek-chat|qwen(?:[-+].*)?|claude-3-5-sonnet)$/i.test(model);
-}
-
-function uniqueModels(values) {
-  const seen = new Set();
-  const result = [];
-  for (const value of values || []) {
-    const text = normalizeModelId(value);
-    const key = modelCompareKey(text);
-    if (!text || seen.has(key)) continue;
-    seen.add(key);
-    result.push(key);
-  }
-  return result;
+  return isSharedGrsNanoBananaModel(value);
 }
 
 function getGrsHost(apiUrl) {
@@ -125,6 +63,13 @@ function getGrsHost(apiUrl) {
   } catch (_) {
     return DEFAULT_GRS_HOST;
   }
+}
+
+function resolveGrsApiUrl(payload = {}) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const config = source.config && typeof source.config === "object" ? source.config : {};
+  const legacyApiUrl = String(source.apiUrl || config.apiUrl || "").trim();
+  return getSharedGrsApiUrl(source.region || config.region, legacyApiUrl);
 }
 
 function getEndpoint(apiUrl, path) {
@@ -665,17 +610,20 @@ async function fetchJson(url, options = {}, timeoutMs = 30000, controller = null
 
 function resolveAspectRatio(model, value) {
   const text = String(value || "").trim();
-  if (text && text !== "auto") return text;
-  return isGrsGptImageModel(model) ? "1024x1024" : "auto";
+  const capabilities = getGrsImageModelCapabilities(model);
+  if (capabilities.aspectRatios.includes(text)) return text;
+  if (text && capabilities.allowCustomAspectRatio) return text;
+  return capabilities.defaultAspectRatio;
 }
 
 function resolveResolution(model, value) {
-  const text = String(value || "").trim();
-  if (text && text !== "auto") return text;
-  return isGrsNanoBananaModel(model) ? "1K" : "1024x1024";
+  const text = String(value || "").trim().toUpperCase();
+  const capabilities = getGrsImageModelCapabilities(model);
+  const matched = capabilities.resolutions.find((resolution) => resolution.toUpperCase() === text);
+  return matched || capabilities.defaultResolution;
 }
 
-function buildImageRequestBody(payload, imageUrls) {
+export function buildThirdPartyGrsImageRequest(payload, imageUrls = []) {
   const inputs = payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
   const model = normalizeGrsOutboundModel(inputs.model || "gpt-image-2");
   const prompt = String(inputs.prompt || "").trim();
@@ -690,28 +638,30 @@ function buildImageRequestBody(payload, imageUrls) {
         model,
         prompt,
         image: imageUrls,
-        size: resolution || "1024x1024",
+        size: aspectRatio || "1024x1024",
         response_format: "url"
       }
     };
   }
 
   if (isGrsNanoBananaModel(model)) {
-    const imageSize = /^(\d+k)$/i.test(resolution) ? resolution.toUpperCase() : "1K";
+    const capabilities = getGrsImageModelCapabilities(model);
+    const body = {
+      model,
+      prompt,
+      urls: imageUrls,
+      aspectRatio,
+      webHook: "-1",
+      shutProgress: true
+    };
+    if (capabilities.supportsImageSize) {
+      body.imageSize = /^(\d+k)$/i.test(resolution) ? resolution.toUpperCase() : capabilities.defaultResolution;
+    }
     return {
       endpointPath: "/v1/draw/nano-banana",
       resultEndpointPath: "/v1/draw/result",
       resultMethod: "POST",
-      body: {
-        model,
-        prompt,
-        urls: imageUrls,
-        aspectRatio,
-        imageSize,
-        webHook: "-1",
-        shutProgress: true,
-        cdn: "zh"
-      }
+      body
     };
   }
 
@@ -725,10 +675,8 @@ function buildImageRequestBody(payload, imageUrls) {
         prompt,
         urls: imageUrls,
         aspectRatio,
-        imageSize: resolution || "1K",
         webHook: "-1",
-        shutProgress: true,
-        cdn: "zh"
+        shutProgress: true
       }
     };
   }
@@ -772,7 +720,7 @@ export async function submitThirdPartyGrsTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const config = payload.config && typeof payload.config === "object" ? payload.config : {};
   const inputs = payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
-  const apiUrl = String(config.apiUrl || DEFAULT_GRS_HOST).trim() || DEFAULT_GRS_HOST;
+  const apiUrl = resolveGrsApiUrl(payload);
   const apiKey = String(config.apiKey || "").trim();
   const timeoutMs = Math.max(10000, Number(payload.settings && payload.settings.timeout || 180) * 1000);
 
@@ -789,7 +737,7 @@ export async function submitThirdPartyGrsTask(args = []) {
     imageUrls.push(await uploadImageToGrs(apiUrl, apiKey, imageValue));
   }
 
-  const request = buildImageRequestBody(payload, imageUrls);
+  const request = buildThirdPartyGrsImageRequest(payload, imageUrls);
   const endpoint = getEndpoint(apiUrl, request.endpointPath);
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const { json, rawText } = await fetchJson(
@@ -868,7 +816,7 @@ async function fetchGrsTaskResult(apiUrl, apiKey, taskId, meta = {}, controller 
 export async function pollThirdPartyGrsTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || (payload.config && payload.config.apiKey) || "").trim();
-  const apiUrl = String(payload.apiUrl || (payload.config && payload.config.apiUrl) || DEFAULT_GRS_HOST).trim() || DEFAULT_GRS_HOST;
+  const apiUrl = resolveGrsApiUrl(payload);
   const taskId = String(payload.taskId || "").trim();
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
   if (!apiKey) throw new Error("请先在第三方支持中配置 GRS API Key");
@@ -914,7 +862,7 @@ export async function pollThirdPartyGrsTask(args = []) {
 export async function fetchThirdPartyGrsTaskStatus(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || (payload.config && payload.config.apiKey) || "").trim();
-  const apiUrl = String(payload.apiUrl || (payload.config && payload.config.apiUrl) || DEFAULT_GRS_HOST).trim() || DEFAULT_GRS_HOST;
+  const apiUrl = resolveGrsApiUrl(payload);
   const taskId = String(payload.taskId || "").trim();
   if (!apiKey) throw new Error("请先在第三方支持中配置 GRS API Key");
   if (!taskId) throw new Error("GRS taskId is missing");
@@ -948,41 +896,11 @@ export async function cancelThirdPartyGrsTask(args = []) {
   return { ok: true, taskId };
 }
 
-function collectModelIds(value, output, depth = 0) {
-  if (depth > 5 || value == null) return;
-  if (typeof value === "string") {
-    const model = normalizeModelId(value);
-    if (model) output.push(model);
-    return;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item) => collectModelIds(item, output, depth + 1));
-    return;
-  }
-  if (typeof value !== "object") return;
-  const raw = value.id || value.name || value.model;
-  if (raw) output.push(normalizeModelId(raw));
-  ["data", "models", "items", "result", "results", "list"].forEach((key) => collectModelIds(value[key], output, depth + 1));
-}
-
 export async function listThirdPartyGrsModels(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
-  const apiUrl = String(payload.apiUrl || DEFAULT_GRS_HOST).trim() || DEFAULT_GRS_HOST;
-  const apiKey = String(payload.apiKey || "").trim();
   const kind = String(payload.kind || "image").trim();
-  if (!apiKey) throw new Error("请先填写 GRS API Key");
-
   const fallback = kind === "chat" ? DEFAULT_GRS_CHAT_MODELS : DEFAULT_GRS_IMAGE_MODELS;
-  const url = `${getGrsHost(apiUrl)}/v1/models`;
-  try {
-    const { json } = await fetchJson(url, { method: "GET", headers: authHeaders(apiKey) }, 30000);
-    const models = [];
-    collectModelIds(json, models);
-    const filtered = uniqueModels(models).filter(kind === "chat" ? isGrsChatModel : isGrsImageModel);
-    return { models: filtered.length ? filtered : fallback };
-  } catch (error) {
-    return { models: fallback, warning: error && error.message ? error.message : String(error || "") };
-  }
+  return { models: [...fallback], source: "builtin" };
 }
 
 function extractChatText(json, rawText = "") {
@@ -1003,7 +921,7 @@ function extractChatText(json, rawText = "") {
 export async function runThirdPartyGrsPromptOptimize(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const config = payload.config && typeof payload.config === "object" ? payload.config : {};
-  const apiUrl = String(config.apiUrl || DEFAULT_GRS_HOST).trim() || DEFAULT_GRS_HOST;
+  const apiUrl = resolveGrsApiUrl(payload);
   const apiKey = String(config.apiKey || "").trim();
   const model = normalizeGrsOutboundModel(config.chatModel || DEFAULT_GRS_CHAT_MODELS[0]);
   const prompt = String(payload.prompt || "").trim();
