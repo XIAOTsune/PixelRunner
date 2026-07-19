@@ -168,8 +168,10 @@
       "domains": [
         "https://www.runninghub.cn",
         "https://runninghub.cn",
+        "https://*.runninghub.cn",
         "https://www.runninghub.ai",
         "https://runninghub.ai",
+        "https://*.runninghub.ai",
         "https://rh-images.xiaoyaoyou.com",
         "https://rh-hk-images.xiaoyaoyou.com",
         "https://*.xiaoyaoyou.com",

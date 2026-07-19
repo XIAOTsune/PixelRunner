@@ -40,7 +40,7 @@ export async function runPhotoshopToolAction(args = []) {
   return photoshopService.runToolAction(payload);
 }
 
-export async function placeResultIntoPhotoshop(args = []) {
+export async function placeResultIntoPhotoshop(args = [], runtime = {}) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const url = String(payload.url || "").trim();
   const dataUrl = String(payload.dataUrl || "").trim();
@@ -54,17 +54,17 @@ export async function placeResultIntoPhotoshop(args = []) {
     throw new Error("Photoshop host service is unavailable");
   }
 
-  return photoshopService.placeImageFromUrl(payload);
+  return photoshopService.placeImageFromUrl(payload, runtime);
 }
 
-export async function placeResultAndBlendIntoPhotoshop(args = []) {
+export async function placeResultAndBlendIntoPhotoshop(args = [], runtime = {}) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const blendMatch = payload.blendMatch && typeof payload.blendMatch === "object"
     ? payload.blendMatch
     : null;
   const placementStartedAt = Date.now();
   console.log("[PixelRunner/Host] auto placement stage start placeResult");
-  const placement = await placeResultIntoPhotoshop(args);
+  const placement = await placeResultIntoPhotoshop(args, runtime);
   console.log(`[PixelRunner/Host] auto placement stage success placeResult durationMs=${Date.now() - placementStartedAt}`);
   const layerId = Number(placement && placement.layerId) || 0;
   if (!blendMatch || !layerId) return placement;
@@ -73,11 +73,14 @@ export async function placeResultAndBlendIntoPhotoshop(args = []) {
   const fusionStartedAt = Date.now();
   console.log(`[PixelRunner/Host] auto placement stage start blendMatch layerId=${layerId}`);
   try {
-    const fusion = await photoshopService.runToolAction({
+    const runFusion = () => photoshopService.runToolAction({
       ...blendMatch,
       action: "blendMatch",
       layerId
     });
+    const fusion = runtime && typeof runtime.enqueuePhotoshopOperation === "function"
+      ? await runtime.enqueuePhotoshopOperation(runFusion, { stage: "blendMatch" })
+      : await runFusion();
     console.log(`[PixelRunner/Host] auto placement stage success blendMatch layerId=${layerId} durationMs=${Date.now() - fusionStartedAt}`);
     return {
       ...placement,

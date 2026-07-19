@@ -26,16 +26,35 @@ function getResponseMimeType(response) {
   }
 }
 
-export async function fetchBinaryWithMetadata(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download result (HTTP ${response.status})`);
+export async function fetchBinaryWithMetadata(url, options = {}) {
+  const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 120000);
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timedOut = false;
+  const timer = controller
+    ? setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs)
+    : 0;
+
+  try {
+    const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    if (!response.ok) {
+      throw new Error(`Failed to download result (HTTP ${response.status})`);
+    }
+    return {
+      buffer: await response.arrayBuffer(),
+      mimeType: getResponseMimeType(response),
+      responseUrl: String(response.url || url || "").trim()
+    };
+  } catch (error) {
+    if (timedOut) {
+      throw new Error(`Failed to download result (timeout after ${Math.round(timeoutMs / 1000)}s)`);
+    }
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  return {
-    buffer: await response.arrayBuffer(),
-    mimeType: getResponseMimeType(response),
-    responseUrl: String(response.url || url || "").trim()
-  };
 }
 
 export async function fetchBinary(url) {

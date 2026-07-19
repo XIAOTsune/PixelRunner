@@ -1940,6 +1940,21 @@ button {
   color: var(--text-strong);
 }
 
+.running-task-retry-btn {
+  --btn-edge: rgba(214, 171, 83, 0.78);
+  --btn-shadow: rgba(91, 67, 24, 0.9);
+  min-width: 48px;
+  color: #fff2cf;
+  background: rgba(111, 85, 29, 0.72);
+}
+
+.running-task-retry-btn:hover,
+.running-task-retry-btn:focus-visible {
+  border-color: #f1c76a;
+  color: #fff9e8;
+  background: rgba(133, 99, 31, 0.88);
+}
+
 .running-task-empty {
   padding: 10px 12px;
   border-radius: 14px;

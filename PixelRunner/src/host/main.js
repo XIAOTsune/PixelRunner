@@ -27,7 +27,19 @@ import {
   runPhotoshopToolAction
 } from "./photoshop-bridge.js";
 
-let photoshopBridgeTail = Promise.resolve();
+// Result downloads run outside this queue; only Photoshop-critical stages are serialized here.
+const PHOTOSHOP_BRIDGE_PRIORITY = Object.freeze({
+  CAPTURE: 100,
+  DOCUMENT_INFO: 80,
+  STANDARD: 60,
+  PLACEMENT: 30,
+  BLEND_MATCH: 20
+});
+const PLACEMENT_JOB_CACHE_MS = 5 * 60 * 1000;
+const photoshopBridgeQueue = [];
+const photoshopPlacementJobs = new Map();
+let photoshopBridgeActive = false;
+let photoshopBridgeDrainScheduled = false;
 let photoshopBridgeQueueDepth = 0;
 let photoshopBridgeSequence = 0;
 
@@ -46,38 +58,122 @@ function getPhotoshopBridgeLabel(message) {
   return method;
 }
 
-function enqueuePhotoshopBridgeOperation(message, operation) {
+function schedulePhotoshopBridgeDrain() {
+  if (photoshopBridgeActive || photoshopBridgeDrainScheduled || photoshopBridgeQueue.length === 0) return;
+  photoshopBridgeDrainScheduled = true;
+  setTimeout(() => {
+    photoshopBridgeDrainScheduled = false;
+    void drainPhotoshopBridgeQueue();
+  }, 0);
+}
+
+async function drainPhotoshopBridgeQueue() {
+  if (photoshopBridgeActive || photoshopBridgeQueue.length === 0) return;
+  photoshopBridgeQueue.sort((left, right) => right.priority - left.priority || left.sequence - right.sequence);
+  const entry = photoshopBridgeQueue.shift();
+  photoshopBridgeActive = true;
+  const waitedMs = Date.now() - entry.queuedAt;
+  const startedAt = Date.now();
+  console.log(
+    `[PixelRunner/Host] Photoshop bridge start #${entry.sequence} ${entry.label} id=${entry.requestId} waitedMs=${waitedMs} queueDepth=${photoshopBridgeQueueDepth} priority=${entry.priority}`
+  );
+  try {
+    const result = await entry.operation();
+    console.log(
+      `[PixelRunner/Host] Photoshop bridge success #${entry.sequence} ${entry.label} id=${entry.requestId} waitedMs=${waitedMs} durationMs=${Date.now() - startedAt}`
+    );
+    entry.resolve(result);
+  } catch (error) {
+    console.error(
+      `[PixelRunner/Host] Photoshop bridge failure #${entry.sequence} ${entry.label} id=${entry.requestId} waitedMs=${waitedMs} durationMs=${Date.now() - startedAt} error=${String(error && error.message ? error.message : error || "Unknown error")}`
+    );
+    entry.reject(error);
+  } finally {
+    photoshopBridgeQueueDepth = Math.max(0, photoshopBridgeQueueDepth - 1);
+    photoshopBridgeActive = false;
+    schedulePhotoshopBridgeDrain();
+  }
+}
+
+function enqueuePhotoshopBridgeOperation(message, operation, options = {}) {
   const queuedAt = Date.now();
   const sequence = ++photoshopBridgeSequence;
   const requestId = String(message && message.id || "");
-  const label = getPhotoshopBridgeLabel(message);
+  const label = String(options.label || getPhotoshopBridgeLabel(message));
+  const priority = Number.isFinite(Number(options.priority))
+    ? Number(options.priority)
+    : PHOTOSHOP_BRIDGE_PRIORITY.STANDARD;
   photoshopBridgeQueueDepth += 1;
-  const run = photoshopBridgeTail
-    .catch(() => undefined)
-    .then(async () => {
-      const waitedMs = Date.now() - queuedAt;
-      const startedAt = Date.now();
-      console.log(
-        `[PixelRunner/Host] Photoshop bridge start #${sequence} ${label} id=${requestId} waitedMs=${waitedMs} queueDepth=${photoshopBridgeQueueDepth}`
-      );
-      try {
-        const result = await operation();
-        console.log(
-          `[PixelRunner/Host] Photoshop bridge success #${sequence} ${label} id=${requestId} waitedMs=${waitedMs} durationMs=${Date.now() - startedAt}`
-        );
-        return result;
-      } catch (error) {
-        console.error(
-          `[PixelRunner/Host] Photoshop bridge failure #${sequence} ${label} id=${requestId} waitedMs=${waitedMs} durationMs=${Date.now() - startedAt} error=${String(error && error.message ? error.message : error || "Unknown error")}`
-        );
-        throw error;
-      } finally {
-        photoshopBridgeQueueDepth = Math.max(0, photoshopBridgeQueueDepth - 1);
-      }
+  return new Promise((resolve, reject) => {
+    photoshopBridgeQueue.push({
+      queuedAt,
+      sequence,
+      requestId,
+      label,
+      priority,
+      operation,
+      resolve,
+      reject
     });
+    schedulePhotoshopBridgeDrain();
+  });
+}
 
-  photoshopBridgeTail = run.then(() => undefined, () => undefined);
-  return run;
+function getPhotoshopPlacementJobKey(message) {
+  const payload = message && message.args && message.args[0] && typeof message.args[0] === "object"
+    ? message.args[0]
+    : {};
+  const taskId = String(payload.taskId || "").trim();
+  return taskId ? `task:${taskId}` : "";
+}
+
+function cleanupPhotoshopPlacementJobs() {
+  const expiredBefore = Date.now() - PLACEMENT_JOB_CACHE_MS;
+  for (const [key, job] of photoshopPlacementJobs.entries()) {
+    if (job.completedAt > 0 && job.completedAt < expiredBefore) photoshopPlacementJobs.delete(key);
+  }
+}
+
+function runDeduplicatedPhotoshopPlacement(message, operation) {
+  // A WebView timeout does not cancel host work, so retries must reuse the same placement job.
+  cleanupPhotoshopPlacementJobs();
+  const key = getPhotoshopPlacementJobKey(message);
+  if (!key) return operation();
+  const existing = photoshopPlacementJobs.get(key);
+  if (existing) {
+    console.log(`[PixelRunner/Host] reuse Photoshop placement job ${key} completed=${existing.completedAt > 0}`);
+    return existing.promise;
+  }
+
+  const job = { promise: null, completedAt: 0 };
+  job.promise = Promise.resolve()
+    .then(operation)
+    .then(
+      (result) => {
+        job.completedAt = Date.now();
+        return result;
+      },
+      (error) => {
+        if (photoshopPlacementJobs.get(key) === job) photoshopPlacementJobs.delete(key);
+        throw error;
+      }
+    );
+  photoshopPlacementJobs.set(key, job);
+  return job.promise;
+}
+
+function createPhotoshopPlacementRuntime(message) {
+  const baseLabel = getPhotoshopBridgeLabel(message);
+  return {
+    enqueuePhotoshopOperation(operation, context = {}) {
+      const stage = String(context.stage || "placing");
+      const isBlendMatch = stage === "blendMatch";
+      return enqueuePhotoshopBridgeOperation(message, operation, {
+        label: `${baseLabel}:${stage}`,
+        priority: isBlendMatch ? PHOTOSHOP_BRIDGE_PRIORITY.BLEND_MATCH : PHOTOSHOP_BRIDGE_PRIORITY.PLACEMENT
+      });
+    }
+  };
 }
 
 function getPhotoshopVersionInfo() {
@@ -196,22 +292,36 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await runThirdPartyGrsPromptOptimize(message.args);
         break;
       case "photoshop.getActiveDocumentInfo":
-        result = await enqueuePhotoshopBridgeOperation(message, () => getPhotoshopDocumentInfo());
+        result = await enqueuePhotoshopBridgeOperation(message, () => getPhotoshopDocumentInfo(), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.DOCUMENT_INFO
+        });
         break;
       case "photoshop.captureDocumentPreview":
-        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args));
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
         break;
       case "photoshop.deleteSelectionSnapshot":
-        result = await enqueuePhotoshopBridgeOperation(message, () => deletePhotoshopSelectionSnapshot(message.args));
+        result = await enqueuePhotoshopBridgeOperation(message, () => deletePhotoshopSelectionSnapshot(message.args), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.STANDARD
+        });
         break;
       case "photoshop.runToolAction":
-        result = await enqueuePhotoshopBridgeOperation(message, () => runPhotoshopToolAction(message.args));
+        result = await enqueuePhotoshopBridgeOperation(message, () => runPhotoshopToolAction(message.args), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.STANDARD
+        });
         break;
       case "photoshop.placeResultFromUrl":
-        result = await enqueuePhotoshopBridgeOperation(message, () => placeResultIntoPhotoshop(message.args));
+        result = await runDeduplicatedPhotoshopPlacement(
+          message,
+          () => placeResultIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
+        );
         break;
       case "photoshop.placeResultWithBlendMatch":
-        result = await enqueuePhotoshopBridgeOperation(message, () => placeResultAndBlendIntoPhotoshop(message.args));
+        result = await runDeduplicatedPhotoshopPlacement(
+          message,
+          () => placeResultAndBlendIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
+        );
         break;
       case "shell.openExternal":
         result = await openExternalUrl(message.args);

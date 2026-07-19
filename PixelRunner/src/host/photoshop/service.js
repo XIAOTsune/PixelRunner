@@ -1822,7 +1822,7 @@ export async function runToolAction(payload = {}) {
   return runToolActionByName(payload, context);
 }
 
-export async function placeImageFromUrl(payload) {
+export async function placeImageFromUrl(payload, runtime = {}) {
   const options = payload && typeof payload === "object" ? payload : {};
   const url = String(options.url || "").trim();
   const dataUrl = String(options.dataUrl || "").trim();
@@ -1847,7 +1847,9 @@ export async function placeImageFromUrl(payload) {
   } else if (base64) {
     buffer = base64ToArrayBuffer(base64);
   } else {
-    const downloaded = await fetchBinaryWithMetadata(url);
+    const downloaded = await fetchBinaryWithMetadata(url, {
+      timeoutMs: Math.max(30000, Number(options.downloadTimeoutMs) || 120000)
+    });
     buffer = downloaded.buffer;
     sourceMimeType = downloaded.mimeType;
     responseUrl = downloaded.responseUrl || url;
@@ -1891,7 +1893,11 @@ export async function placeImageFromUrl(payload) {
   const fs = storage.localFileSystem;
   const formats = storage.formats;
   const tempFolder = await fs.getTemporaryFolder();
-  const tempFileName = `pixelrunner-result.${resultFileType.extension}`;
+  const placementFileKey = String(options.taskId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(-64) || `placement-${Date.now()}`;
+  const tempFileName = `pixelrunner-result-${placementFileKey}.${resultFileType.extension}`;
   console.log("[PixelRunner/Photoshop] result image ready for placement", {
     sourceHost: getUrlHost(url),
     responseHost: getUrlHost(responseUrl),
@@ -1901,8 +1907,19 @@ export async function placeImageFromUrl(payload) {
     detectedBy: resultFileType.detectedBy
   });
   const tempFile = await tempFolder.createFile(tempFileName, { overwrite: true });
-  await tempFile.write(placementBuffer, { format: formats.binary });
-  const sessionToken = await fs.createSessionToken(tempFile);
+  try {
+    await tempFile.write(placementBuffer, { format: formats.binary });
+  } catch (error) {
+    await deleteFileQuietly(tempFile);
+    throw error;
+  }
+  let sessionToken = "";
+  try {
+    sessionToken = await fs.createSessionToken(tempFile);
+  } catch (error) {
+    await deleteFileQuietly(tempFile);
+    throw error;
+  }
   const placementMaskDataUrl = String(options.placementMaskDataUrl || "").trim();
   const requirePlacementMask = options.requirePlacementMask === true;
   const selectionSnapshotChannelName = String(options.selectionSnapshotChannelName || "").trim();
@@ -1910,16 +1927,23 @@ export async function placeImageFromUrl(payload) {
   const selectionMaskFeather = Math.max(0, Math.min(128, Number(options.selectionMaskFeather) || 0));
   let placementMaskSessionToken = "";
   let placementMaskInfo = null;
+  let placementMaskFile = null;
   if (placementMaskDataUrl) {
-    const parsedMask = parseDataUrl(placementMaskDataUrl);
-    if (!parsedMask || !parsedMask.base64) throw new Error("Placement mask is not a valid base64 image");
-    const maskBuffer = base64ToArrayBuffer(parsedMask.base64);
-    placementMaskInfo = await parsePngInfo(maskBuffer);
-    const maskFile = await tempFolder.createFile("pixelrunner-result-mask.png", { overwrite: true });
-    await maskFile.write(maskBuffer, { format: formats.binary });
-    placementMaskSessionToken = await fs.createSessionToken(maskFile);
+    try {
+      const parsedMask = parseDataUrl(placementMaskDataUrl);
+      if (!parsedMask || !parsedMask.base64) throw new Error("Placement mask is not a valid base64 image");
+      const maskBuffer = base64ToArrayBuffer(parsedMask.base64);
+      placementMaskInfo = await parsePngInfo(maskBuffer);
+      placementMaskFile = await tempFolder.createFile(`pixelrunner-result-mask-${placementFileKey}.png`, { overwrite: true });
+      await placementMaskFile.write(maskBuffer, { format: formats.binary });
+      placementMaskSessionToken = await fs.createSessionToken(placementMaskFile);
+    } catch (error) {
+      await Promise.all([deleteFileQuietly(tempFile), deleteFileQuietly(placementMaskFile)]);
+      throw error;
+    }
   }
   if (requirePlacementMask && !selectionSnapshotChannelName && !placementMaskSessionToken) {
+    await Promise.all([deleteFileQuietly(tempFile), deleteFileQuietly(placementMaskFile)]);
     throw new Error("创成式填充缺少不规则选区蒙版，已停止回贴以避免生成矩形蒙版");
   }
   const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
@@ -1936,7 +1960,8 @@ export async function placeImageFromUrl(payload) {
           : "contain";
   let appliedMaskMode = "none";
 
-  await core.executeAsModal(async () => {
+  const commitPlacement = async () => {
+    await core.executeAsModal(async () => {
     const activeTargetDocument = await activateDocument(app, action, targetDocumentId);
     const targetDocInfo = getDocumentInfo(activeTargetDocument || app.activeDocument);
     const documentBounds = targetDocInfo && targetDocInfo.hasActiveDocument
@@ -2054,23 +2079,38 @@ export async function placeImageFromUrl(payload) {
       opacity: options.opacity,
       blendMode: options.blendMode
     });
-  }, { commandName: "Place PixelRunner Result" });
+    }, { commandName: "Place PixelRunner Result" });
 
-  const layerName = await renameActiveLayer(options.layerName);
-  const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
-  const layerId = Number(activeLayer && activeLayer.id) || 0;
-  const latestInfo = getDocumentInfo(app.activeDocument);
-  return {
-    ok: true,
-    placed: true,
-    documentId: Number(latestInfo.documentId) || 0,
-    layerId,
-    layerName: layerName || null,
-    document: latestInfo,
-    targetBounds,
-    placementMode,
-    appliedMaskMode,
-    resultFormat: resultFileType.extension,
-    resultImage: sanitizePngInfo(pngInfo)
+    const layerName = await renameActiveLayer(options.layerName);
+    const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    const layerId = Number(activeLayer && activeLayer.id) || 0;
+    const latestInfo = getDocumentInfo(app.activeDocument);
+    return {
+      ok: true,
+      placed: true,
+      documentId: Number(latestInfo.documentId) || 0,
+      layerId,
+      layerName: layerName || null,
+      document: latestInfo,
+      targetBounds,
+      placementMode,
+      appliedMaskMode,
+      resultFormat: resultFileType.extension,
+      resultImage: sanitizePngInfo(pngInfo)
+    };
   };
+
+  const enqueuePhotoshopOperation = runtime && typeof runtime.enqueuePhotoshopOperation === "function"
+    ? runtime.enqueuePhotoshopOperation
+    : null;
+  try {
+    return await (enqueuePhotoshopOperation
+      ? enqueuePhotoshopOperation(commitPlacement, { stage: "placing" })
+      : commitPlacement());
+  } finally {
+    await Promise.all([
+      deleteFileQuietly(tempFile),
+      deleteFileQuietly(placementMaskFile)
+    ]);
+  }
 }
