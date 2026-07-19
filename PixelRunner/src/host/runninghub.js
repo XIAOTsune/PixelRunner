@@ -878,11 +878,17 @@ function collectOutputUrlCandidates(payload, depth = 0, seen = new Set(), candid
   return candidates;
 }
 
-function extractOutputUrl(payload) {
+export function extractOutputUrl(payload) {
   const candidates = collectOutputUrlCandidates(payload);
   if (candidates.length === 0) return "";
   candidates.sort((left, right) => right.score - left.score || left.order - right.order);
   return candidates[0].url;
+}
+
+export function extractReadyOutputUrl(payload) {
+  const status = extractTaskStatus(payload);
+  if (isPendingStatus(status) || isFailedStatus(status)) return "";
+  return extractOutputUrl(payload);
 }
 
 function looksLikeTxtUrl(value) {
@@ -1488,12 +1494,17 @@ function classifyV2Fallback(snapshot) {
   if (outputUrl || isPendingStatus(status) || isFailedStatus(status)) return "";
 
   const httpStatus = Number(snapshot && snapshot.status) || 0;
-  if ([404, 405, 410, 501].includes(httpStatus)) return "unsupported";
-
   const result = snapshot && snapshot.result;
   const message = String(
     extractBestFailureMessageText(result) || extractMessageText(result) || ""
   ).trim();
+  if ([405, 410, 501].includes(httpStatus)) return "unsupported";
+  if (
+    httpStatus === 404 &&
+    /(?:endpoint|route|path|api).*(?:not found|unsupported|not support)|(?:not found|unsupported|not support).*(?:endpoint|route|path|api)|接口.*(?:不存在|未找到|不支持)/i.test(message)
+  ) {
+    return "unsupported";
+  }
   const apiCode = getApiCode(result);
   if (
     !snapshot ||
@@ -1547,7 +1558,7 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const result = snapshot && snapshot.result;
   const payloadData = (result && (result.data || result.result)) || result;
   const status = extractTaskStatus(payloadData);
-  const outputUrl = extractOutputUrl(payloadData);
+  const outputUrl = extractReadyOutputUrl(payloadData);
   const balanceCharge = extractTaskBalanceCharge(payloadData || result);
   const coinsCharge = extractTaskCoinsCharge(payloadData || result);
   const rawMessage = String(
@@ -1793,7 +1804,7 @@ export async function pollRunningHubTask(args = []) {
         }
 
         const payloadData = (result && (result.data || result.result)) || result;
-        const outputUrl = extractOutputUrl(payloadData);
+        const outputUrl = extractReadyOutputUrl(payloadData);
         if (outputUrl) {
           const balanceCharge = extractTaskBalanceCharge(payloadData || result);
           const coinsCharge = extractTaskCoinsCharge(payloadData || result);

@@ -2007,11 +2007,15 @@
           taskId: remoteTaskId,
           remoteTaskId,
           appName: payload.appName,
-        status: "succeeded",
-        detail:
-          placementResponse && placementResponse.documentId
-            ? `后台追踪确认完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}。`
-            : "后台追踪确认完成，可继续查看结果。"
+          status: "succeeded",
+          detail:
+            placementResponse && placementResponse.documentId
+              ? `后台追踪确认完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}。`
+              : placementResponse && placementResponse.placed
+                ? "后台追踪确认完成，并已自动贴回 Photoshop。"
+                : modules.runtime.isPluginRuntime()
+                  ? "后台追踪确认完成，但 Photoshop 未返回有效的贴回确认。"
+                  : "后台追踪确认完成，浏览器预览模式不会自动贴回 Photoshop。"
       });
     } catch (placementError) {
       const placementMessage =
@@ -2556,7 +2560,17 @@
       message.includes("enotfound") ||
       message.includes("etimedout") ||
       message.includes("socket") ||
-      message.includes("temporarily unavailable")
+      message.includes("temporarily unavailable") ||
+      message.includes("domain is not allowed") ||
+      message.includes("domain not allowed") ||
+      message.includes("not allowed by") ||
+      message.includes("network permission") ||
+      message.includes("network access") ||
+      message.includes("plugin manifest") ||
+      message.includes("request is not permitted") ||
+      /(?:permission|access).*(?:denied|not permitted|not allowed)/.test(message) ||
+      /(?:网络|域名|访问).*(?:权限|不允许|拒绝|禁止)/.test(message) ||
+      message.includes("返回内容不是可识别的图片")
     );
   }
 
@@ -2962,6 +2976,7 @@
       });
       modules.ui.logToWorkspace(`任务已完成，结果地址：${pollResult.outputUrl}`, "success");
       let placementResponse = null;
+      let placementFailureMessage = "";
       try {
         placementResponse = await autoPlaceResult({
           appName: payload.appName,
@@ -2984,6 +2999,7 @@
           placementError && placementError.message
             ? placementError.message
             : String(placementError || "自动贴回 Photoshop 失败");
+        placementFailureMessage = placementMessage;
         modules.ui.logToWorkspace(`任务已完成，但自动贴回失败：${placementMessage}`, "warn");
       }
       upsertRunningTask({
@@ -2994,7 +3010,13 @@
         detail:
           placementResponse && placementResponse.documentId
             ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}${placementResponse.blendMatch && placementResponse.blendMatch.ok ? "，融合校色完成" : ""}。`
-            : "任务已完成，可在任务结果地址基础上手动继续处理。"
+            : placementResponse && placementResponse.placed
+              ? "任务已完成，并已自动贴回 Photoshop。"
+              : placementFailureMessage
+                ? `任务已完成，但自动贴回失败：${placementFailureMessage}`
+                : modules.runtime.isPluginRuntime()
+                  ? "任务已完成，但 Photoshop 未返回有效的贴回确认。"
+                  : "任务已完成，浏览器预览模式不会自动贴回 Photoshop。"
       });
     } catch (error) {
       const message = error && error.message ? error.message : String(error || "任务执行失败");

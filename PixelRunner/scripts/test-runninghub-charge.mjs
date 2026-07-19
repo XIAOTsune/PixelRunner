@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import {
   extractTaskBalanceCharge,
   extractTaskCoinsCharge,
+  extractOutputUrl,
+  extractReadyOutputUrl,
+  fetchRunningHubTaskStatus,
   formatTaskChargeDisplay,
   submitRunningHubTask
 } from "../src/host/runninghub.js";
@@ -22,6 +25,26 @@ const duplicatedNestedOutputs = {
 
 assertCharge(duplicatedNestedOutputs, 0.125, 8);
 assert.equal(formatTaskChargeDisplay(0.125, 8, "global"), "-$0.125 · -8RH");
+
+const globalRunningPreview = {
+  taskId: "global-preview-task",
+  status: "RUNNING",
+  results: [
+    { url: "https://preview.example.com/intermediate.jpg", outputType: "jpg" }
+  ]
+};
+assert.equal(extractOutputUrl(globalRunningPreview), "https://preview.example.com/intermediate.jpg");
+assert.equal(extractReadyOutputUrl(globalRunningPreview), "");
+
+const globalFinishedOutputs = {
+  taskId: "global-finished-task",
+  status: "SUCCESS",
+  results: [
+    { url: "https://example.com/result.txt", outputType: "txt" },
+    { url: "https://rh-hk-images.example.com/final?id=1", outputType: "webp" }
+  ]
+};
+assert.equal(extractReadyOutputUrl(globalFinishedOutputs), "https://rh-hk-images.example.com/final?id=1");
 
 assertCharge({
   billing: {
@@ -60,7 +83,17 @@ assertCharge(duplicatedPlusOutputs, 0.25, 16);
 
 const originalFetch = globalThis.fetch;
 const submittedRequests = [];
+let globalTaskSnapshot = null;
 globalThis.fetch = async (url, options = {}) => {
+  if (String(url).endsWith("/openapi/v2/query")) {
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify(globalTaskSnapshot);
+      }
+    };
+  }
   submittedRequests.push({ url: String(url), body: JSON.parse(String(options.body || "{}")) });
   return {
     ok: true,
@@ -88,6 +121,26 @@ try {
   assert.equal(submittedRequests[0].url, "https://www.runninghub.ai/task/openapi/ai-app/run");
   assert.equal(Object.hasOwn(submittedRequests[0].body, "instanceType"), false);
   assert.equal(submittedRequests[1].body.instanceType, "plus");
+
+  globalTaskSnapshot = globalRunningPreview;
+  const runningStatus = await fetchRunningHubTaskStatus([{
+    apiKey: "global-test-key",
+    region: "global",
+    taskId: globalRunningPreview.taskId
+  }]);
+  assert.equal(runningStatus.status, "RUNNING");
+  assert.equal(runningStatus.outputUrl, "");
+  assert.equal(runningStatus.stillRunning, true);
+
+  globalTaskSnapshot = globalFinishedOutputs;
+  const finishedStatus = await fetchRunningHubTaskStatus([{
+    apiKey: "global-test-key",
+    region: "global",
+    taskId: globalFinishedOutputs.taskId
+  }]);
+  assert.equal(finishedStatus.status, "SUCCESS");
+  assert.equal(finishedStatus.outputUrl, "https://rh-hk-images.example.com/final?id=1");
+  assert.equal(finishedStatus.stillRunning, false);
 } finally {
   globalThis.fetch = originalFetch;
 }
