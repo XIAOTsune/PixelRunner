@@ -1,6 +1,6 @@
 const DEFAULT_LOCAL_UPSCALE_BASE_URL = "http://127.0.0.1:17836";
 export const LOCAL_UPSCALE_PROTOCOL_VERSION = "2";
-export const LOCAL_UPSCALE_BUILD_ID = "PixelRunnerV2.7.3-local-ai";
+export const LOCAL_UPSCALE_BUILD_ID = "PixelRunnerV2.7.3-local-ai-native-cli";
 
 export function normalizeLocalUpscaleBaseUrl(value) {
   const raw = String(value || DEFAULT_LOCAL_UPSCALE_BASE_URL).trim();

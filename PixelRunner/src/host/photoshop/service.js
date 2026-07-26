@@ -10,8 +10,7 @@ import {
   buildDataUrl,
   ensureActiveDocument,
   getDocumentInfo,
-  normalizeBounds,
-  renameActiveLayer
+  normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
 
@@ -1830,10 +1829,12 @@ export async function captureDocumentPreview(options = {}) {
 }
 
 function createLocalUpscaleFileKey(value) {
-  return String(value || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+  const source = String(value || "")
     .replace(/[^a-z0-9_-]+/gi, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(-64) || `upscale-${Date.now()}`;
+    .slice(-16);
+  const taskToken = source.split("-").filter(Boolean).at(-1) || Math.random().toString(36).slice(2, 8);
+  return `${Date.now().toString(36)}-${taskToken.slice(-8)}`;
 }
 
 function createSiblingNativePath(nativePath, filename) {
@@ -1870,16 +1871,16 @@ export async function captureDocumentForLocalUpscale(options = {}) {
   return core.executeAsModal(async () => {
     let tempDoc = null;
     try {
-      tempDoc = await doc.duplicate(`PixelRunner Local Upscale ${fileKey}`);
+      tempDoc = await doc.duplicate("PR 超分");
       try {
         await tempDoc.flatten();
       } catch (_) {}
 
       const sourceSize = getDocumentPixelSize(tempDoc);
-      const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `pixelrunner-local-upscale-source-${fileKey}`);
+      const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `PR-S-${fileKey}`);
       const outputPath = createSiblingNativePath(
         exported.nativePath,
-        `pixelrunner-local-upscale-result-${fileKey}.png`
+        `PR-U-${fileKey}.png`
       );
       if (!outputPath) {
         await deleteFileQuietly(exported.file);
@@ -2087,6 +2088,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
           ? "original"
           : "contain";
   let appliedMaskMode = "none";
+  let placedLayerId = 0;
+  let placedLayerName = null;
 
   const commitPlacement = async () => {
     await core.executeAsModal(async () => {
@@ -2207,11 +2210,29 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       opacity: options.opacity,
       blendMode: options.blendMode
     });
+    const activeResultLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    placedLayerId = Number(activeResultLayer && activeResultLayer.id) || 0;
+    const requestedLayerName = String(options.layerName || "").trim();
+    if (requestedLayerName && activeResultLayer) {
+      try {
+        activeResultLayer.name = requestedLayerName;
+      } catch (_) {}
+      if (String(activeResultLayer.name || "").trim() !== requestedLayerName) {
+        try {
+          await action.batchPlay([{
+            _obj: "set",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            to: { _obj: "layer", name: requestedLayerName }
+          }], {});
+        } catch (_) {}
+      }
+      placedLayerName = String(activeResultLayer.name || requestedLayerName).trim() || requestedLayerName;
+    }
     }, { commandName: "Place PixelRunner Result" });
 
-    const layerName = await renameActiveLayer(options.layerName);
+    const layerName = placedLayerName;
     const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
-    const layerId = Number(activeLayer && activeLayer.id) || 0;
+    const layerId = placedLayerId || Number(activeLayer && activeLayer.id) || 0;
     const latestInfo = getDocumentInfo(app.activeDocument);
     return {
       ok: true,
@@ -2245,7 +2266,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
 
 async function exportDocumentAsPngFile(storage, action, docRef, filePrefix = "pixelrunner-local-upscale") {
   const tempFolder = await storage.localFileSystem.getTemporaryFolder();
-  const tempFile = await tempFolder.createFile(`${filePrefix}-${Date.now()}.png`, { overwrite: true });
+  const tempFile = await tempFolder.createFile(`${filePrefix}.png`, { overwrite: true });
   try {
     const sessionToken = await storage.localFileSystem.createSessionToken(tempFile);
     await action.batchPlay([{

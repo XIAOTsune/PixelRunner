@@ -101,7 +101,7 @@ export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = 
     preserveCanvasBounds: true,
     applyMask: false,
     cleanupLocalSource: true,
-    layerName: "本地超分 · Real-ESRGAN x4plus · 原生 4x 智能对象"
+    layerName: "超分 x4"
   }, runtime);
 }
 

@@ -2,7 +2,7 @@ Option Explicit
 
 Dim shell, fileSystem, rootPath, serverPath
 Const RequiredProtocolVersion = "2"
-Const RequiredBuildId = "PixelRunnerV2.7.3-local-ai"
+Const RequiredBuildId = "PixelRunnerV2.7.3-local-ai-native-cli"
 Set shell = CreateObject("WScript.Shell")
 Set fileSystem = CreateObject("Scripting.FileSystemObject")
 rootPath = fileSystem.GetParentFolderName(WScript.ScriptFullName)

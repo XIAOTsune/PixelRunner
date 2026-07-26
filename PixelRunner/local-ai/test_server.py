@@ -1,4 +1,4 @@
-"""Focused tests for the local service's version contract and diagnostic coordinates."""
+"""Focused tests for the local service's direct-engine contract and diagnostics."""
 
 from __future__ import annotations
 
@@ -38,31 +38,15 @@ class LocalAiServerTests(unittest.TestCase):
         self.assertEqual(tiles[-1]["engineRight"], 1200)
         self.assertEqual(tiles[-1]["engineBottom"], 800)
 
-    def test_external_tile_plan_uses_overlap_without_scaled_coordinates(self) -> None:
-        tiles = server.build_external_tile_plan(300, 200, 128, 64)
-        self.assertEqual(len(tiles), 6)
-        self.assertEqual(tiles[1].core_left, 128)
-        self.assertEqual(tiles[1].source_left, 64)
-        self.assertEqual(tiles[1].source_right, 300)
-        self.assertEqual(tiles[-1].core_right, 300)
-        self.assertEqual(tiles[-1].source_bottom, 200)
-        described = server.describe_external_tile_coordinates(300, 200, 128)
-        self.assertEqual(described[1]["engineLeft"], 512)
-        self.assertEqual(described[1]["sourceLeft"], 64)
-
-    def test_png_codec_preserves_rgb_pixels(self) -> None:
+    def test_png_visible_pixel_guard_rejects_black_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_dir:
             path = Path(temporary_dir) / "sample.png"
-            pixels = bytearray((
-                1, 2, 3,
-                4, 5, 6,
-                7, 8, 9,
-                10, 11, 12,
-            ))
+            server.write_png_rgb(path, 2, 2, bytearray(12))
+            self.assertFalse(server.png_contains_visible_pixels(path))
+            pixels = bytearray(12)
+            pixels[9] = 1
             server.write_png_rgb(path, 2, 2, pixels)
-            width, height, decoded = server.read_png_rgb(path)
-            self.assertEqual((width, height), (2, 2))
-            self.assertEqual(decoded, pixels)
+            self.assertTrue(server.png_contains_visible_pixels(path))
 
     def test_debug_metadata_records_all_pipeline_sizes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -89,8 +73,8 @@ class LocalAiServerTests(unittest.TestCase):
             self.assertEqual(metadata["engineOutput"]["width"], 24000)
             self.assertEqual(metadata["placement"]["height"], 4000)
             self.assertEqual(metadata["nativeTileCoordinates"][1]["engineLeft"], 512)
-            self.assertEqual(metadata["engineTilePolicy"], "external-overlap")
-            self.assertEqual(metadata["externalTileCoordinates"][1]["sourceLeft"], 64)
+            self.assertEqual(metadata["engineTilePolicy"], "native-cli")
+            self.assertNotIn("externalTileCoordinates", metadata)
             self.assertEqual(json.loads(json.dumps(metadata))["engineScale"], 4)
 
     def test_debug_artifacts_survive_before_and_after_engine_failure(self) -> None:
@@ -119,30 +103,6 @@ class LocalAiServerTests(unittest.TestCase):
             output_path.write_bytes(b"partial-engine-output")
             self.assertTrue(service._preserve_debug_engine_output(job, required=False))
             self.assertEqual((job.debug_dir / "engine-output.png").read_bytes(), b"partial-engine-output")
-
-    def test_visible_input_tile_cannot_become_successful_black_output(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            root = Path(temporary_dir)
-            work_dir = root / "work"
-            output_dir = work_dir / "output"
-            output_dir.mkdir(parents=True)
-            plan = server.build_external_tile_plan(4, 4, 4, 0)
-            tile = plan[0]
-            server.write_png_rgb(output_dir / tile.filename, 16, 16, bytearray(16 * 16 * 3))
-            job = server.Job(
-                job_id="black-tile-job",
-                input_path=root / "source.png",
-                output_path=root / "result.png",
-                scale=1,
-                tile=4,
-                tta=False,
-                input_dimensions=(4, 4),
-                input_has_visible_pixels=True,
-                visible_input_tiles={tile.filename},
-            )
-            service = object.__new__(server.LocalUpscaleService)
-            with self.assertRaisesRegex(ValueError, "全黑分块"):
-                service._stitch_external_tile_outputs(job, work_dir, plan)
 
     def test_version_handshake_rejects_old_protocol(self) -> None:
         with self.assertRaisesRegex(ValueError, "协议版本"):

@@ -5,7 +5,7 @@
   const ENGINE_START_TIMEOUT_MS = 25000;
   const LOCAL_AI_BASE_URL = "http://127.0.0.1:17836";
   const LOCAL_AI_PROTOCOL_VERSION = "2";
-  const LOCAL_AI_BUILD_ID = "PixelRunnerV2.7.3-local-ai";
+  const LOCAL_AI_BUILD_ID = "PixelRunnerV2.7.3-local-ai-native-cli";
   const STATUS_LABELS = {
     queued: "正在排队",
     running: "正在推理",

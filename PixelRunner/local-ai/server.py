@@ -32,8 +32,8 @@ NATIVE_MODEL_SCALE = 4
 DEFAULT_TILE_SIZE = 128
 SERVICE_VERSION = "2.7.3"
 PROTOCOL_VERSION = "2"
-BUILD_ID = "PixelRunnerV2.7.3-local-ai"
-ENGINE_SCALE_POLICY = "external-overlap-native-x4-only"
+BUILD_ID = "PixelRunnerV2.7.3-local-ai-native-cli"
+ENGINE_SCALE_POLICY = "native-cli-tile-x4-only"
 DEBUG_ENVIRONMENT_VARIABLE = "PIXELRUNNER_LOCAL_AI_DEBUG"
 EXTERNAL_TILE_OVERLAP = 64
 EXTERNAL_ENGINE_TILE_SIZE = 0
@@ -424,12 +424,7 @@ class LocalUpscaleService:
             "scale": job.scale,
             "engineScale": NATIVE_MODEL_SCALE,
             "tile": job.tile,
-            "engineTilePolicy": "external-overlap",
-            "externalOverlap": EXTERNAL_TILE_OVERLAP,
-            "visibleInputTileCount": len(job.visible_input_tiles),
-            "externalTileCoordinates": describe_external_tile_coordinates(
-                job.input_dimensions[0], job.input_dimensions[1], job.tile
-            ) if job.input_dimensions else [],
+            "engineTilePolicy": "native-cli",
             "nativeTileCoordinates": build_native_tile_coordinates(
                 job.input_dimensions[0], job.input_dimensions[1], job.tile, NATIVE_MODEL_SCALE
             ) if job.input_dimensions else [],
@@ -724,26 +719,34 @@ class LocalUpscaleService:
             job.completed_at = time.time()
             self._write_debug_metadata(job)
             return
-        job.command = []
-        if not self._prepare_debug_artifacts(job):
-            return
-        job.status = "running"
-        job.progress = 28
-        job.message = "正在准备带重叠的外部分块"
-        job.started_at = time.time()
-        self._write_debug_metadata(job)
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-        work_dir: Path | None = None
         try:
-            work_dir, plan, command = self._prepare_external_tiles(job)
-            job.command = command
+            input_dimensions = read_png_dimensions(job.input_path)
+            if not input_dimensions:
+                raise ValueError("无法读取本地超分输入 PNG 尺寸")
+            job.input_dimensions = input_dimensions
+            engine_input_path = job.debug_dir / "input.png" if job.debug and job.debug_dir else job.input_path
+            job.command = [
+                str(self.engine_path),
+                "-i", str(engine_input_path),
+                "-o", str(job.output_path),
+                "-n", self.model,
+                "-s", str(NATIVE_MODEL_SCALE),
+                "-t", str(job.tile),
+                "-m", str(self.models_path),
+                "-f", "png",
+            ]
+            if job.tta:
+                job.command.append("-x")
             if not self._prepare_debug_artifacts(job):
                 return
             job.progress = 52
-            job.message = "正在使用 Vulkan 原生 4x 外部分块推理"
+            job.message = "正在使用 Vulkan 原生 4x 分块推理"
+            job.status = "running"
+            job.started_at = time.time()
             self._write_debug_metadata(job)
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             process = subprocess.Popen(
-                command,
+                job.command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -778,12 +781,17 @@ class LocalUpscaleService:
                 job.message = job.error
             else:
                 job.progress = 84
-                job.message = "正在按整数坐标拼接外部分块"
+                job.message = "正在验证原生引擎输出"
                 self._write_debug_metadata(job)
-                actual_size = self._stitch_external_tile_outputs(job, work_dir, plan)
+                actual_size = read_png_dimensions(job.output_path)
                 expected_size = job.input_dimensions
                 job.engine_output_dimensions = actual_size
-                if expected_size and actual_size:
+                if not actual_size:
+                    job.status = "failed"
+                    job.progress = 100
+                    job.error = "Real-ESRGAN 未生成可识别的 PNG 输出"
+                    job.message = job.error
+                elif expected_size:
                     expected_width = expected_size[0] * NATIVE_MODEL_SCALE
                     expected_height = expected_size[1] * NATIVE_MODEL_SCALE
                     if actual_size != (expected_width, expected_height):
@@ -795,17 +803,21 @@ class LocalUpscaleService:
                             f"实际 {actual_size[0]} x {actual_size[1]}"
                         )
                         job.message = job.error
-                        job.completed_at = time.time()
-                        return
-                if not self._preserve_debug_engine_output(job):
+                if job.status != "failed" and png_contains_visible_pixels(job.input_path) and not png_contains_visible_pixels(job.output_path):
+                    job.status = "failed"
+                    job.progress = 100
+                    job.error = "Real-ESRGAN 返回全黑图像，已停止回贴"
+                    job.message = job.error
+                if job.status != "failed" and not self._preserve_debug_engine_output(job):
                     return
-                job.status = "succeeded"
-                job.progress = 100
-                job.message = "推理完成"
-                try:
-                    job.input_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                if job.status != "failed":
+                    job.status = "succeeded"
+                    job.progress = 100
+                    job.message = "推理完成"
+                    try:
+                        job.input_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
         except InterruptedError:
             job.status = "cancelled"
             job.progress = 0
@@ -818,8 +830,6 @@ class LocalUpscaleService:
         finally:
             # A failed black-image or validation result is still useful diagnostic evidence.
             self._preserve_debug_engine_output(job, required=False)
-            if work_dir:
-                shutil.rmtree(work_dir, ignore_errors=True)
             job.completed_at = time.time()
             self._write_debug_metadata(job)
 
@@ -835,6 +845,69 @@ def read_png_dimensions(path: Path) -> tuple[int, int] | None:
         return (width, height) if width > 0 and height > 0 else None
     except OSError:
         return None
+
+
+def png_contains_visible_pixels(path: Path) -> bool:
+    """Detect an all-black PNG without reconstructing or retaining its pixel buffer."""
+    try:
+        with path.open("rb") as source:
+            if source.read(8) != PNG_SIGNATURE:
+                raise ValueError("不是 PNG 文件")
+            width = height = bit_depth = color_type = compression = filter_method = interlace = 0
+            components = row_size = 0
+            decoded_buffer = bytearray()
+            decoder = zlib.decompressobj()
+            rows_seen = 0
+            saw_iend = False
+
+            def consume(decoded: bytes) -> bool:
+                nonlocal rows_seen
+                decoded_buffer.extend(decoded)
+                while row_size and len(decoded_buffer) >= row_size:
+                    # Filter bytes may be non-zero even when every reconstructed pixel is black.
+                    if any(decoded_buffer[1:row_size]):
+                        return True
+                    del decoded_buffer[:row_size]
+                    rows_seen += 1
+                return False
+
+            while True:
+                raw_length = source.read(4)
+                if not raw_length:
+                    break
+                if len(raw_length) != 4:
+                    raise ValueError("PNG 数据不完整")
+                length = struct.unpack(">I", raw_length)[0]
+                kind = source.read(4)
+                payload = source.read(length)
+                raw_crc = source.read(4)
+                if len(kind) != 4 or len(payload) != length or len(raw_crc) != 4:
+                    raise ValueError("PNG 数据不完整")
+                if struct.unpack(">I", raw_crc)[0] != (zlib.crc32(kind + payload) & 0xFFFFFFFF):
+                    raise ValueError("PNG 校验失败")
+                if kind == b"IHDR":
+                    if len(payload) != 13:
+                        raise ValueError("PNG IHDR 无效")
+                    width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(">IIBBBBB", payload)
+                    if bit_depth != 8 or color_type not in {0, 2, 6} or compression != 0 or filter_method != 0 or interlace != 0:
+                        raise ValueError("PNG 像素格式不受支持")
+                    components = {0: 1, 2: 3, 6: 4}[color_type]
+                    row_size = width * components + 1
+                elif kind == b"IDAT":
+                    if not row_size:
+                        raise ValueError("PNG 缺少 IHDR")
+                    if consume(decoder.decompress(payload)):
+                        return True
+                elif kind == b"IEND":
+                    saw_iend = True
+                    break
+            if consume(decoder.flush()):
+                return True
+            if not saw_iend or rows_seen != height or decoded_buffer:
+                raise ValueError("PNG 像素数据不完整")
+            return False
+    except (OSError, struct.error, zlib.error) as error:
+        raise ValueError(f"无法验证 PNG 输出：{error}") from error
 
 
 class RequestHandler(BaseHTTPRequestHandler):
