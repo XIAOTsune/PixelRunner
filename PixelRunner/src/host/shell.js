@@ -1,4 +1,5 @@
 const TUTORIAL_RELATIVE_PATH = ["pages", "runninghub-guide.html"];
+const LOCAL_UPSCALE_LAUNCHER_RELATIVE_PATH = ["local-ai", "start-local-ai.vbs"];
 
 function getUxpModule() {
   if (typeof require !== "function") {
@@ -77,6 +78,42 @@ export async function resolveTutorialPath() {
   return { ok: false, path: "", url: "" };
 }
 
+export async function resolveLocalUpscaleLauncherPath() {
+  try {
+    const { storage } = getUxpModule();
+    const localFileSystem = storage && storage.localFileSystem;
+    if (!localFileSystem || typeof localFileSystem.getPluginFolder !== "function") {
+      return { ok: false, path: "" };
+    }
+
+    const pluginFolder = await localFileSystem.getPluginFolder();
+    if (!pluginFolder) return { ok: false, path: "" };
+
+    if (typeof pluginFolder.getEntry === "function") {
+      try {
+        const localAiFolder = await pluginFolder.getEntry(LOCAL_UPSCALE_LAUNCHER_RELATIVE_PATH[0]);
+        if (localAiFolder && typeof localAiFolder.getEntry === "function") {
+          const launcherEntry = await localAiFolder.getEntry(LOCAL_UPSCALE_LAUNCHER_RELATIVE_PATH[1]);
+          if (launcherEntry && launcherEntry.nativePath) {
+            return { ok: true, path: String(launcherEntry.nativePath), url: "" };
+          }
+        }
+      } catch (_) {
+        // Fallback to nativePath join below.
+      }
+    }
+
+    if (pluginFolder.nativePath) {
+      const path = joinNativePath(pluginFolder.nativePath, LOCAL_UPSCALE_LAUNCHER_RELATIVE_PATH);
+      return { ok: true, path, url: "" };
+    }
+  } catch (_) {
+    return { ok: false, path: "", url: "" };
+  }
+
+  return { ok: false, path: "", url: "" };
+}
+
 export async function openExternalUrl(args = []) {
   const [url, developerText] = Array.isArray(args) ? args : [];
   const targetUrl = String(url || "").trim();
@@ -126,4 +163,17 @@ export async function openLocalPath(args = []) {
     url: createFileUrlFromPath(targetPath),
     via: "openPath"
   };
+}
+
+export async function startLocalUpscaleEngine(args = []) {
+  const [developerText] = Array.isArray(args) ? args : [];
+  const launcher = await resolveLocalUpscaleLauncherPath();
+  if (!launcher.ok || !launcher.path) {
+    throw new Error("未找到 PixelRunner Local AI 启动脚本");
+  }
+
+  return openLocalPath([
+    launcher.path,
+    String(developerText || "PixelRunner 需要启动随插件附带的本地超分引擎。")
+  ]);
 }

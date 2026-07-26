@@ -30,6 +30,7 @@ function getIncludedEntries(version, channel) {
     "app.css",
     "icons",
     "assets",
+    "local-ai",
     "pages",
     "video"
   ];
@@ -79,26 +80,6 @@ async function hardenReleasePackage(packageDir) {
   await writeFile(indexPath, indexText.replace(/\s+uxpAllowInspector="true"/g, ""), "utf8");
 }
 
-async function createReleaseZip(packageDirName) {
-  const packageDir = path.join(releaseRoot, packageDirName);
-  const zipPath = path.join(releaseRoot, `${packageDirName}.zip`);
-  await rm(zipPath, { force: true });
-
-  if (process.platform === "win32") {
-    const tarPath = path.join(
-      process.env.SystemRoot || "C:\\Windows",
-      "System32",
-      "tar.exe"
-    );
-
-    await runCommand(tarPath, ["-a", "-cf", zipPath, "-C", releaseRoot, packageDirName]);
-  } else {
-    await runCommand("zip", ["-r", zipPath, packageDirName], { cwd: releaseRoot });
-  }
-
-  console.log(`PixelRunner release zip created at: ${zipPath}`);
-}
-
 async function main() {
   const version = await readManifestVersion();
   const channel = getBuildChannel();
@@ -130,12 +111,13 @@ async function main() {
     await rm(path.join(packageDir, docName), { force: true });
     await rm(path.join(packageDir, "assets", "space-fx", docName), { force: true });
   }
+  await rm(path.join(packageDir, "local-ai", "__pycache__"), { recursive: true, force: true });
+  // The bundled NCNN executable supports the tested x4plus model only.
+  await rm(path.join(packageDir, "local-ai", "engine", "models", "realesrgan-x2plus.param"), { force: true });
+  await rm(path.join(packageDir, "local-ai", "engine", "models", "realesrgan-x2plus.bin"), { force: true });
 
   console.log(`PixelRunner ${channel} package created at: ${packageDir}`);
 
-  if (channel === "release") {
-    await createReleaseZip(packageDirName);
-  }
 }
 
 main().catch((error) => {

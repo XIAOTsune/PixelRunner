@@ -30,6 +30,16 @@ export async function capturePhotoshopDocumentPreview(args = []) {
   return photoshopService.captureDocumentPreview(payload);
 }
 
+export async function capturePhotoshopDocumentForLocalUpscale(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const photoshopService = getPhotoshopService();
+  if (typeof photoshopService.captureDocumentForLocalUpscale !== "function") {
+    throw new Error("Photoshop host service is unavailable");
+  }
+
+  return photoshopService.captureDocumentForLocalUpscale(payload);
+}
+
 export async function runPhotoshopToolAction(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const photoshopService = getPhotoshopService();
@@ -55,6 +65,44 @@ export async function placeResultIntoPhotoshop(args = [], runtime = {}) {
   }
 
   return photoshopService.placeImageFromUrl(payload, runtime);
+}
+
+export async function openLocalUpscaleResultInPhotoshop(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const photoshopService = getPhotoshopService();
+  if (typeof photoshopService.openImageFromUrl !== "function") {
+    throw new Error("Photoshop host service is unavailable");
+  }
+
+  return photoshopService.openImageFromUrl(payload);
+}
+
+export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = {}) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const filePath = String(payload.filePath || "").trim();
+  const targetDocumentId = Number(payload.targetDocumentId) || 0;
+  const targetWidth = Math.max(1, Math.round(Number(payload.targetWidth) || 0));
+  const targetHeight = Math.max(1, Math.round(Number(payload.targetHeight) || 0));
+  if (!filePath || !targetDocumentId || !targetWidth || !targetHeight) {
+    throw new Error("本地超分回贴缺少结果文件或目标文档信息");
+  }
+
+  const photoshopService = getPhotoshopService();
+  if (typeof photoshopService.placeImageFromUrl !== "function") {
+    throw new Error("Photoshop host service is unavailable");
+  }
+
+  return photoshopService.placeImageFromUrl({
+    filePath,
+    taskId: payload.taskId,
+    targetDocumentId,
+    targetBounds: { left: 0, top: 0, right: targetWidth, bottom: targetHeight },
+    fitMode: "stretch",
+    preserveCanvasBounds: true,
+    applyMask: false,
+    cleanupLocalSource: true,
+    layerName: "本地超分 · Real-ESRGAN x4plus · 原生 4x 智能对象"
+  }, runtime);
 }
 
 export async function placeResultAndBlendIntoPhotoshop(args = [], runtime = {}) {

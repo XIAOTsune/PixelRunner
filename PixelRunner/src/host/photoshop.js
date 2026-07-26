@@ -1,7 +1,9 @@
 import {
+  captureDocumentForLocalUpscale,
   captureDocumentPreview,
   deleteSelectionSnapshot,
   getActiveDocumentInfo,
+  openImageFromUrl,
   placeImageFromUrl,
   runToolAction
 } from "./photoshop/service.js";
@@ -10,9 +12,11 @@ import {
   global.PixelRunnerHost = global.PixelRunnerHost || {};
   global.PixelRunnerHost.photoshop = {
     getActiveDocumentInfo,
+    captureDocumentForLocalUpscale,
     captureDocumentPreview,
     deleteSelectionSnapshot,
     runToolAction,
-    placeImageFromUrl
+    placeImageFromUrl,
+    openImageFromUrl
   };
 })(window);

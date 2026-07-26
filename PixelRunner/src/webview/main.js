@@ -15,6 +15,7 @@ function initializePixelRunnerApp() {
   modules.ui.bindTabs();
   modules.ui.bindTactileFeedback();
   modules.ui.bindToolActions();
+  modules.localUpscale.bindActions();
   modules.blendMatch.bindBlendMatchActions();
   modules.spaceFx.bindSpaceFxActions();
   modules.apps.bindAppPicker();
@@ -39,13 +40,14 @@ function initializePixelRunnerApp() {
       modules.templates.renderSavedTemplatesList();
       modules.workspace.renderWorkspace();
       modules.ui.setActiveView("tabWorkspace");
+      modules.localUpscale.initialize();
       if (modules.runtime.isPluginRuntime()) {
         modules.workspace.refreshPhotoshopDocumentStatus({ quiet: true });
       }
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.7.2"
+        version: "2.7.3"
       });
     })
     .catch((error) => {

@@ -48,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.7.2</span>
+              <span class="version-text">v2.7.3</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -116,7 +116,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子（小T修图助手）2.7.2 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子（小T修图助手）2.7.3 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -131,7 +131,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.7.2</span>
+            <span class="version-text">v2.7.3</span>
           </div>
         </div>
 
@@ -180,6 +180,20 @@
             <span>AI 返图后立即融合校色</span>
           </label>
           <div id="blendMatchStatus" class="summary-strip">等待选择返图图层</div>
+        </section>
+
+        <section class="surface-card tool-local-upscale-card">
+          <div class="tool-local-upscale-launcher">
+            <div class="tool-local-upscale-summary-main">
+              <div class="tool-local-upscale-header-line">
+                <h3 class="card-title">本地超分</h3>
+                <span id="localUpscaleQuickBadge" class="status-chip">检测本地引擎</span>
+              </div>
+              <p class="subtle-note">Real-ESRGAN x4plus · 同尺寸增强并回贴为新图层。</p>
+            </div>
+            <button id="btnOpenLocalUpscalePanel" class="primary-btn local-upscale-open-btn" type="button">打开本地超分</button>
+          </div>
+          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">等待检测 PixelRunner Local AI</div>
         </section>
 
         <div class="tool-group-grid">
@@ -284,7 +298,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.7.2</span>
+          <span class="version-text">v2.7.3</span>
           </div>
         </div>
 
@@ -1230,6 +1244,63 @@
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>
         <button id="btnBlendMatchCancel" class="secondary-btn" type="button">取消</button>
         <button id="btnBlendMatchApply" class="primary-btn" type="button">分析并融合</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="localUpscaleModal" class="overlay-modal">
+    <div id="localUpscaleBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card local-upscale-modal-card" aria-labelledby="localUpscaleTitle">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 id="localUpscaleTitle" class="card-title">本地超分</h3>
+        </div>
+        <button id="localUpscaleModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="local-upscale-engine-panel">
+        <div class="local-upscale-engine-head">
+          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">正在检测本地引擎</span>
+          <button id="btnRefreshLocalUpscaleEngine" class="mini-btn" type="button">重新检测</button>
+        </div>
+        <span id="localUpscaleEngineMeta" class="local-upscale-engine-meta">PixelRunner Local AI · Real-ESRGAN x4plus</span>
+      </div>
+
+      <div class="local-upscale-controls">
+        <label class="field local-upscale-field">
+          <span class="field-label">显存分块</span>
+          <select id="localUpscaleTileInput" class="field-input">
+            <option value="128" selected>128 px · 兼容模式</option>
+            <option value="256">256 px · 标准</option>
+            <option value="512">512 px · 高显存</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="freq-sep-check-field local-upscale-tta-field">
+        <input id="localUpscaleTtaInput" type="checkbox" />
+        <span>高质量 TTA</span>
+      </label>
+
+      <label class="freq-sep-check-field local-upscale-tta-field">
+        <input id="localUpscaleDebugInput" type="checkbox" />
+        <span>保留诊断文件</span>
+      </label>
+
+      <div id="localUpscaleProgressPanel" class="local-upscale-progress-panel" data-state="idle">
+        <div class="local-upscale-progress-head">
+          <span id="localUpscaleProgressLabel">等待开始</span>
+          <span id="localUpscaleProgressMeta">完整画布 · 原生 4x</span>
+        </div>
+        <div class="local-upscale-progress-track" aria-hidden="true"><span id="localUpscaleProgressBar"></span></div>
+      </div>
+
+      <div id="localUpscaleHint" class="summary-strip" role="status" aria-live="polite">导出完整可见合成图，以原生 4x 推理后回贴为智能对象图层。</div>
+
+      <div class="action-row local-upscale-actions">
+        <button id="btnCancelLocalUpscale" class="secondary-btn" type="button" disabled>取消任务</button>
+        <button id="btnStartLocalUpscale" class="primary-btn" type="button">开始增强</button>
       </div>
     </section>
   </div>
