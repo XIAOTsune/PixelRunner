@@ -26,6 +26,10 @@
     running: false,
     engineStarting: false,
     engineStartPromise: null,
+    engineSessionActive: false,
+    engineSessionId: 0,
+    shutdownPromise: null,
+    shutdownBeaconSent: false,
     currentJobId: "",
     currentCapture: null,
     pollTimer: 0
@@ -64,6 +68,16 @@
     let options = { headers: { Accept: "application/json" } };
     if (method === "localUpscale.getHealth") {
       path = "/v1/health";
+    } else if (method === "localUpscale.stopEngine") {
+      path = "/v1/shutdown";
+      options = {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          protocolVersion: LOCAL_AI_PROTOCOL_VERSION,
+          buildId: LOCAL_AI_BUILD_ID
+        })
+      };
     } else if (method === "localUpscale.submitJob") {
       path = "/v1/jobs";
       options = {
@@ -217,9 +231,70 @@
   }
 
   function closePanel() {
-    if (state.running) return;
+    state.engineSessionActive = false;
+    state.engineSessionId += 1;
+    clearPollTimer();
+    state.currentJobId = "";
+    state.currentCapture = null;
+    setRunning(false);
+    void stopEngine();
     if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
       modules.workspace.setModalOpen("localUpscaleModal", false);
+    }
+  }
+
+  function isCurrentEngineSession(sessionId) {
+    return state.engineSessionActive && state.engineSessionId === sessionId;
+  }
+
+  async function stopEngine() {
+    if (state.shutdownPromise) return state.shutdownPromise;
+    clearPollTimer();
+    state.shutdownPromise = (async () => {
+      try {
+        await callLocalUpscaleService("localUpscale.stopEngine", [], { timeoutMs: 8000 });
+      } catch (error) {
+        // A service that failed to start or has already exited needs no further cleanup.
+        console.warn("[PixelRunner/WebView] localUpscale shutdown unavailable", error);
+      } finally {
+        state.engine = null;
+        state.engineReady = false;
+        setRunning(false);
+      }
+    })();
+    try {
+      return await state.shutdownPromise;
+    } finally {
+      state.shutdownPromise = null;
+    }
+  }
+
+  function sendShutdownBeacon() {
+    if (!state.engineSessionActive || state.shutdownBeaconSent || !modules.runtime.isPluginRuntime()) return;
+    state.engineSessionActive = false;
+    state.shutdownBeaconSent = true;
+    clearPollTimer();
+    const payload = JSON.stringify({
+      protocolVersion: LOCAL_AI_PROTOCOL_VERSION,
+      buildId: LOCAL_AI_BUILD_ID
+    });
+    try {
+      if (global.navigator && typeof global.navigator.sendBeacon === "function") {
+        const body = typeof Blob === "function"
+          ? new Blob([payload], { type: "application/json" })
+          : payload;
+        if (global.navigator.sendBeacon(`${LOCAL_AI_BASE_URL}/v1/shutdown`, body)) return;
+      }
+      if (typeof global.fetch === "function") {
+        void global.fetch(`${LOCAL_AI_BASE_URL}/v1/shutdown`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true
+        });
+      }
+    } catch (_) {
+      // The host may already be tearing down its WebView.
     }
   }
 
@@ -252,6 +327,7 @@
     if (state.engineStartPromise) return state.engineStartPromise;
 
     state.engineStartPromise = (async () => {
+      const sessionId = state.engineSessionId;
       state.engineStarting = true;
       setRunning(state.running);
       setStatus("正在启动 PixelRunner Local AI...", "info");
@@ -267,6 +343,10 @@
         while (Date.now() < deadline) {
           try {
             const health = await getEngineHealth();
+            if (!isCurrentEngineSession(sessionId)) {
+              await stopEngine();
+              return null;
+            }
             markEngineReady(health);
             return health;
           } catch (error) {
@@ -341,9 +421,11 @@
   }
 
   async function pollCurrentJob() {
-    if (!state.running || !state.currentJobId) return;
+    if (!state.running || !state.currentJobId || !state.engineSessionActive) return;
+    const jobId = state.currentJobId;
     try {
-      const job = await callLocalUpscaleService("localUpscale.getJob", [{ jobId: state.currentJobId }], { timeoutMs: 15000 });
+      const job = await callLocalUpscaleService("localUpscale.getJob", [{ jobId }], { timeoutMs: 15000 });
+      if (!state.running || state.currentJobId !== jobId || !state.engineSessionActive) return;
       const status = normalizeStatus(job && job.status);
       const progress = Number(job && job.progress);
       const label = STATUS_LABELS[status] || "正在处理";
@@ -379,7 +461,9 @@
       setStatus("浏览器预览模式下不可执行本地超分。", "warn");
       return;
     }
+    const sessionId = state.engineSessionId;
     if (!state.engineReady && !await ensureEngineReady(true)) return;
+    if (!isCurrentEngineSession(sessionId)) return;
 
     const tileInput = getById("localUpscaleTileInput");
     const ttaInput = getById("localUpscaleTtaInput");
@@ -400,6 +484,7 @@
       if (!capture || !capture.inputPath || !capture.outputPath) {
         throw new Error("Photoshop 未返回本地超分源文件");
       }
+      if (!isCurrentEngineSession(sessionId)) return;
       state.currentCapture = capture;
       const sourceSize = `${Math.round(Number(capture.width) || 0)} x ${Math.round(Number(capture.height) || 0)}`;
       setProgress("正在提交本地引擎", `${sourceSize} · 原生 4x`, 28, "running");
@@ -414,6 +499,7 @@
         targetWidth: capture.targetWidth,
         targetHeight: capture.targetHeight
       }], { timeoutMs: 20000 });
+      if (!isCurrentEngineSession(sessionId)) return;
       const jobId = String(job && job.jobId || state.currentJobId).trim();
       if (!jobId) throw new Error("本地引擎未返回任务编号");
       state.currentJobId = jobId;
@@ -421,6 +507,7 @@
       setProgress("正在排队", `${sourceSize} · 原生 4x`, 36, "running");
       schedulePoll();
     } catch (error) {
+      if (!isCurrentEngineSession(sessionId)) return;
       setProgress("本地超分失败", String(error.message || error), 100, "error");
       setStatus(`本地超分失败：${error.message}`, "error");
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
@@ -451,6 +538,9 @@
   }
 
   function openPanel() {
+    state.engineSessionActive = true;
+    state.shutdownBeaconSent = false;
+    state.engineSessionId += 1;
     if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
       modules.workspace.setModalOpen("localUpscaleModal", true);
     }
@@ -473,6 +563,8 @@
     document.addEventListener("click", (event) => {
       if (event.target && event.target.closest("#localUpscaleBackdrop")) closePanel();
     });
+    global.addEventListener("pagehide", sendShutdownBeacon);
+    global.addEventListener("beforeunload", sendShutdownBeacon);
     setRunning(false);
   }
 

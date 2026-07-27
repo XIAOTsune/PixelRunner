@@ -9,6 +9,7 @@ import {
   normalizeLocalUpscaleBaseUrl,
   normalizeLocalUpscaleJob,
   recordLocalUpscalePlacement,
+  stopLocalUpscaleEngine,
   submitLocalUpscaleJob
 } from "../src/host/local-upscale.js";
 
@@ -16,10 +17,12 @@ const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.me
 const hiddenLauncher = await readFile(new URL("../local-ai/start-local-ai.vbs", import.meta.url), "utf8");
 const localService = await readFile(new URL("../local-ai/server.py", import.meta.url), "utf8");
 const localUpscaleWebview = await readFile(new URL("../src/webview/local-upscale.js", import.meta.url), "utf8");
+const localUpscaleShell = await readFile(new URL("../src/host/shell.js", import.meta.url), "utf8");
 const photoshopBridge = await readFile(new URL("../src/host/photoshop-bridge.js", import.meta.url), "utf8");
 const photoshopService = await readFile(new URL("../src/host/photoshop/service.js", import.meta.url), "utf8");
 assert.equal(manifest.requiredPermissions.network.domains, "all");
 assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".vbs"));
+assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".app"));
 assert.match(hiddenLauncher, /IsServiceCompatible/);
 assert.match(hiddenLauncher, /pyw -3/);
 assert.match(localService, /NATIVE_MODEL_SCALE = 4/);
@@ -32,6 +35,11 @@ assert.match(localService, /build_native_tile_coordinates/);
 assert.match(localService, /engine-output\.png/);
 assert.match(localService, /metadata\.json/);
 assert.match(localService, /protocolVersion/);
+assert.match(localService, /\/v1\/shutdown/);
+assert.match(localUpscaleWebview, /localUpscale\.stopEngine/);
+assert.match(localUpscaleWebview, /pagehide/);
+assert.match(localUpscaleWebview, /if \(!isCurrentEngineSession\(sessionId\)\) return;/);
+assert.match(localUpscaleShell, /PixelRunner Local AI\.app/);
 assert.match(hiddenLauncher, /IsServiceCompatible/);
 assert.match(hiddenLauncher, /PixelRunnerV2\.7\.3-local-ai-native-cli/);
 assert.match(localUpscaleWebview, /photoshop\.placeLocalUpscaleResult/);
@@ -122,6 +130,7 @@ globalThis.fetch = async (url, options = {}) => {
   const path = new URL(String(url)).pathname;
   const responseByPath = {
     "/v1/health": { ok: true, ready: true, model: "realesrgan-x4plus", gpuName: "Test GPU", protocolVersion: LOCAL_UPSCALE_PROTOCOL_VERSION, buildId: LOCAL_UPSCALE_BUILD_ID },
+    "/v1/shutdown": { ok: true, shuttingDown: true, protocolVersion: LOCAL_UPSCALE_PROTOCOL_VERSION, buildId: LOCAL_UPSCALE_BUILD_ID },
     "/v1/jobs": { ok: true, jobId: "local-upscale-test", status: "queued", protocolVersion: LOCAL_UPSCALE_PROTOCOL_VERSION, buildId: LOCAL_UPSCALE_BUILD_ID },
     "/v1/jobs/local-upscale-test": { ok: true, jobId: "local-upscale-test", status: "succeeded", resultPath: "C:\\temp\\output.png", protocolVersion: LOCAL_UPSCALE_PROTOCOL_VERSION, buildId: LOCAL_UPSCALE_BUILD_ID },
     "/v1/jobs/local-upscale-test/cancel": { ok: true, jobId: "local-upscale-test", status: "cancelled", protocolVersion: LOCAL_UPSCALE_PROTOCOL_VERSION, buildId: LOCAL_UPSCALE_BUILD_ID },
@@ -141,6 +150,11 @@ try {
   assert.equal(health.ready, true);
   assert.equal(health.baseUrl, "http://127.0.0.1:17836");
 
+  const stopped = await stopLocalUpscaleEngine();
+  assert.equal(stopped.shuttingDown, true);
+  assert.equal(calls[1].options.method, "POST");
+  assert.equal(JSON.parse(calls[1].options.body).protocolVersion, LOCAL_UPSCALE_PROTOCOL_VERSION);
+
   const submitted = await submitLocalUpscaleJob([{
     jobId: "local-upscale-test",
     inputPath: "C:\\temp\\input.png",
@@ -149,11 +163,11 @@ try {
     tile: 128
   }]);
   assert.equal(submitted.status, "queued");
-  assert.equal(calls[1].options.method, "POST");
-  assert.equal(JSON.parse(calls[1].options.body).scale, 1);
-  assert.equal(JSON.parse(calls[1].options.body).tile, 128);
-  assert.equal(JSON.parse(calls[1].options.body).protocolVersion, LOCAL_UPSCALE_PROTOCOL_VERSION);
-  assert.equal(JSON.parse(calls[1].options.body).buildId, LOCAL_UPSCALE_BUILD_ID);
+  assert.equal(calls[2].options.method, "POST");
+  assert.equal(JSON.parse(calls[2].options.body).scale, 1);
+  assert.equal(JSON.parse(calls[2].options.body).tile, 128);
+  assert.equal(JSON.parse(calls[2].options.body).protocolVersion, LOCAL_UPSCALE_PROTOCOL_VERSION);
+  assert.equal(JSON.parse(calls[2].options.body).buildId, LOCAL_UPSCALE_BUILD_ID);
 
   const job = await getLocalUpscaleJob([{ jobId: "local-upscale-test" }]);
   assert.equal(job.status, "succeeded");
@@ -161,7 +175,7 @@ try {
 
   const cancelled = await cancelLocalUpscaleJob([{ jobId: "local-upscale-test" }]);
   assert.equal(cancelled.status, "cancelled");
-  assert.equal(calls[3].options.method, "POST");
+  assert.equal(calls[4].options.method, "POST");
 
   const placement = await recordLocalUpscalePlacement([{
     jobId: "local-upscale-test",
@@ -171,8 +185,8 @@ try {
     documentId: 7
   }]);
   assert.equal(placement.status, "succeeded");
-  assert.equal(calls[4].options.method, "POST");
-  assert.equal(JSON.parse(calls[4].options.body).width, 6000);
+  assert.equal(calls[5].options.method, "POST");
+  assert.equal(JSON.parse(calls[5].options.body).width, 6000);
 } finally {
   globalThis.fetch = originalFetch;
 }

@@ -46,8 +46,7 @@ VULKAN_FAILURE_PATTERN = re.compile(
 
 def write_service_log(message: str) -> None:
     try:
-        base = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or Path.home())
-        log_dir = base / "PixelRunner" / "local-ai"
+        log_dir = get_local_ai_root()
         log_dir.mkdir(parents=True, exist_ok=True)
         with (log_dir / "service.log").open("a", encoding="utf-8") as output:
             output.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
@@ -56,7 +55,12 @@ def write_service_log(message: str) -> None:
 
 
 def get_local_ai_root() -> Path:
-    base = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or Path.home())
+    if os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("TEMP") or Path.home())
+        return base / "PixelRunner" / "local-ai"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "PixelRunner" / "local-ai"
+    base = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
     return base / "PixelRunner" / "local-ai"
 
 
@@ -359,6 +363,9 @@ class LocalUpscaleService:
         self.jobs: dict[str, Job] = {}
         self.jobs_lock = threading.Lock()
         self.work_queue: queue.Queue[str] = queue.Queue()
+        self.shutdown_event = threading.Event()
+        self.shutdown_lock = threading.Lock()
+        self.http_server: LocalAiHttpServer | None = None
         self.worker = threading.Thread(target=self._work, name="pixelrunner-realesrgan", daemon=True)
         self.worker.start()
 
@@ -587,12 +594,51 @@ class LocalUpscaleService:
         self._write_debug_metadata(job)
         return job
 
+    def attach_http_server(self, server: "LocalAiHttpServer") -> None:
+        self.http_server = server
+
+    def request_shutdown(self) -> dict[str, Any]:
+        """Stop queued work, terminate the native child, then release the loopback port."""
+        with self.shutdown_lock:
+            already_requested = self.shutdown_event.is_set()
+            self.shutdown_event.set()
+
+        with self.jobs_lock:
+            job_ids = list(self.jobs)
+        for job_id in job_ids:
+            self.cancel_job(job_id)
+
+        server = self.http_server
+        if server and not already_requested:
+            threading.Thread(
+                target=self._shutdown_http_server,
+                name="pixelrunner-local-ai-shutdown",
+                daemon=True,
+            ).start()
+
+        return {
+            "ok": True,
+            "shuttingDown": True,
+            "protocolVersion": PROTOCOL_VERSION,
+            "buildId": BUILD_ID,
+        }
+
+    def _shutdown_http_server(self) -> None:
+        # Finish the HTTP response before ThreadingHTTPServer stops accepting requests.
+        time.sleep(0.05)
+        server = self.http_server
+        if server:
+            server.shutdown()
+
     def _work(self) -> None:
-        while True:
-            job_id = self.work_queue.get()
+        while not self.shutdown_event.is_set():
+            try:
+                job_id = self.work_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
             try:
                 job = self.get_job(job_id)
-                if not job or job.cancelled:
+                if not job or job.cancelled or self.shutdown_event.is_set():
                     continue
                 self._run_job(job)
             finally:
@@ -720,6 +766,8 @@ class LocalUpscaleService:
             self._write_debug_metadata(job)
             return
         try:
+            if job.cancelled or self.shutdown_event.is_set():
+                raise InterruptedError("任务已取消")
             input_dimensions = read_png_dimensions(job.input_path)
             if not input_dimensions:
                 raise ValueError("无法读取本地超分输入 PNG 尺寸")
@@ -756,6 +804,9 @@ class LocalUpscaleService:
             )
             with self.jobs_lock:
                 job.process = process
+                should_terminate = job.cancelled or self.shutdown_event.is_set()
+            if should_terminate and process.poll() is None:
+                process.terminate()
             output, stderr = process.communicate()
             self._write_debug_process_output(job, output or "", stderr or "")
             with self.jobs_lock:
@@ -973,6 +1024,11 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urlparse(self.path).path
         try:
+            if path == "/v1/shutdown":
+                payload = self._read_json()
+                self.service._require_matching_protocol(payload)
+                self._send_json(HTTPStatus.OK, self.service.request_shutdown())
+                return
             if path == "/v1/jobs":
                 job = self.service.create_job(self._read_json())
                 self._send_json(HTTPStatus.ACCEPTED, job.public())
@@ -1045,6 +1101,7 @@ def main() -> int:
     except OSError as error:
         write_service_log(f"Port {args.port} is unavailable: {error}")
         return 0 if getattr(error, "winerror", 0) == 10048 or getattr(error, "errno", 0) == 98 else 1
+    service.attach_http_server(server)
     print(f"PixelRunner Local AI listening on http://{args.host}:{args.port}")
     print(json.dumps(service.health(), ensure_ascii=False))
     write_service_log(f"Listening on http://{args.host}:{args.port}; engine={service.engine_path}")
@@ -1053,6 +1110,7 @@ def main() -> int:
     except KeyboardInterrupt:
         return 0
     finally:
+        service.request_shutdown()
         server.server_close()
 
 

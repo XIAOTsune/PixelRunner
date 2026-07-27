@@ -116,6 +116,39 @@ class LocalAiServerTests(unittest.TestCase):
                 "buildId": "old-build",
             })
 
+    def test_shutdown_cancels_native_child_and_marks_service(self) -> None:
+        class FakeProcess:
+            def __init__(self) -> None:
+                self.terminated = False
+
+            def poll(self) -> None:
+                return None
+
+            def terminate(self) -> None:
+                self.terminated = True
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            service = server.LocalUpscaleService(root / "engine", root / "models", "realesrgan-x4plus")
+            process = FakeProcess()
+            job = server.Job(
+                job_id="shutdown-job-001",
+                input_path=root / "source.png",
+                output_path=root / "result.png",
+                scale=1,
+                tile=128,
+                tta=False,
+                status="running",
+                process=process,
+            )
+            with service.jobs_lock:
+                service.jobs[job.job_id] = job
+            result = service.request_shutdown()
+            self.assertTrue(result["shuttingDown"])
+            self.assertTrue(service.shutdown_event.is_set())
+            self.assertTrue(job.cancelled)
+            self.assertTrue(process.terminated)
+
 
 if __name__ == "__main__":
     unittest.main()

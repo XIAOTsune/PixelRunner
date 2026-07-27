@@ -28,6 +28,7 @@ import {
   getLocalUpscaleHealth,
   getLocalUpscaleJob,
   recordLocalUpscalePlacement,
+  stopLocalUpscaleEngine,
   submitLocalUpscaleJob
 } from "./local-upscale.js";
 import {
@@ -269,6 +270,9 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "localUpscale.startEngine":
         result = await startLocalUpscaleEngine(message.args);
+        break;
+      case "localUpscale.stopEngine":
+        result = await stopLocalUpscaleEngine(message.args);
         break;
       case "localUpscale.submitJob":
         result = await submitLocalUpscaleJob(message.args);

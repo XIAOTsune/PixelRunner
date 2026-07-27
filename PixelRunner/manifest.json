@@ -131,7 +131,7 @@
     "localFileSystem": "fullAccess",
     "launchProcess": {
       "schemes": ["https", "file"],
-      "extensions": [".html", ".htm", ".cmd", ".vbs"]
+      "extensions": [".html", ".htm", ".cmd", ".vbs", ".app"]
     },
     "webview": {
       "allow": "yes",

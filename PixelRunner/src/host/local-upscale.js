@@ -108,6 +108,20 @@ export async function getLocalUpscaleHealth(args = []) {
   };
 }
 
+export async function stopLocalUpscaleEngine(args = []) {
+  const baseUrl = getBaseUrl(args);
+  const payload = await requestJson(`${baseUrl}/v1/shutdown`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      protocolVersion: LOCAL_UPSCALE_PROTOCOL_VERSION,
+      buildId: LOCAL_UPSCALE_BUILD_ID
+    })
+  });
+  assertCompatibleService(payload);
+  return { ...payload, baseUrl };
+}
+
 export async function submitLocalUpscaleJob(args = []) {
   const request = normalizeLocalUpscaleJob(normalizeArgs(args));
   const baseUrl = getBaseUrl(args);
