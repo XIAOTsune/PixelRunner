@@ -4,23 +4,23 @@
   const DEFAULT_SETTINGS = {
     autoEnabled: false,
     mode: "balanced",
-    totalStrength: 78,
+    totalStrength: 100,
     toneStrength: 78,
     colorMatchStrength: 76,
     luminanceStrength: 82,
     colorStrength: 76,
     saturationStrength: 62,
     contrastStrength: 58,
-    featherRadius: 16,
+    featherRadius: 72,
     createBackupLayer: true,
     pixelPipelineEnabled: true,
     alignmentEnabled: true,
     alignmentMaxOffset: 120,
     alignmentScaleEnabled: true,
-    alignmentFlex: 63,
-    alignmentMaxScale: 2.5,
-    alignmentMaxRotation: 1.75,
-    alignmentMaxStretch: 2.5,
+    alignmentFlex: 56,
+    alignmentMaxScale: 2.24,
+    alignmentMaxRotation: 1.56,
+    alignmentMaxStretch: 2.24,
     localAlignmentEnabled: true,
     previewMaxEdge: 512
   };
@@ -47,7 +47,8 @@
   };
   const MODE_PRESETS = {
     natural: { toneStrength: 68, colorMatchStrength: 62, alignmentMaxOffset: 72, alignmentFlex: 30 },
-    balanced: { toneStrength: 78, colorMatchStrength: 76, alignmentMaxOffset: 96, alignmentFlex: 44 },
+    // Color modes must not silently reduce the baseline correction range.
+    balanced: { toneStrength: 78, colorMatchStrength: 76, alignmentMaxOffset: 120, alignmentFlex: 56 },
     strong: { toneStrength: 90, colorMatchStrength: 86, alignmentMaxOffset: 120, alignmentFlex: 56 }
   };
 
@@ -116,7 +117,7 @@
       colorStrength: detailed.colorStrength,
       saturationStrength: detailed.saturationStrength,
       contrastStrength: detailed.contrastStrength,
-      featherRadius: clampNumber(source.featherRadius, 0, 64, DEFAULT_SETTINGS.featherRadius),
+      featherRadius: clampNumber(source.featherRadius, 0, 128, DEFAULT_SETTINGS.featherRadius),
       createBackupLayer: source.createBackupLayer !== false,
       pixelPipelineEnabled: true,
       alignmentEnabled: source.alignmentEnabled !== false,
@@ -272,7 +273,7 @@
     renderSettings();
     void persistSettings();
     if (modules.ui && modules.ui.logToWorkspace) {
-      modules.ui.logToWorkspace("融合校色参数已重置为中等偏上默认值。", "info");
+      modules.ui.logToWorkspace("融合校色参数已重置为均衡默认值。", "info");
     }
   }
 
@@ -338,8 +339,8 @@
       const seed = getLatestGpuAlignmentSeed(localState.preview.previewCacheKey);
       setPreviewOverlay(
         "compact",
-        seed ? "正在完成校验" : "CPU 快速回退",
-        seed ? "复用 GPU 全局结果并生成共享内容掩膜" : "保守平移校验与共享区域分析",
+        seed ? "正在完成校验" : "CPU 高精度加速",
+        seed ? "复用 GPU 全局结果并生成共享内容掩膜" : "缩略图定位后进行精细对齐",
         { status: "pending" }
       );
       return;
@@ -422,19 +423,28 @@
 
     const applyButton = getById("btnBlendMatchApply");
     if (applyButton) {
-      const waitingForPreview = Boolean(localState.previewBusy);
+      const canApplyFromPreviewCache = Boolean(
+        localState.preview &&
+        localState.preview.previewCacheKey &&
+        localState.preview.sampleHash &&
+        localState.preview.configHash
+      );
+      const waitingForPreview = Boolean(localState.previewBusy && !canApplyFromPreviewCache);
       const waitingForPlan = Boolean(localState.previewPlanBusy || (localState.preview && localState.preview.planPending));
-      applyButton.disabled = Boolean(localState.busy || waitingForPreview || waitingForPlan);
+      const canApplyDirectly = canApplyFromPreviewCache && (localState.previewBusy || waitingForPlan);
+      applyButton.disabled = Boolean(localState.busy || waitingForPreview);
       applyButton.textContent = localState.busy
         ? "融合中"
-        : waitingForPreview
+        : canApplyDirectly
+          ? "直接融合"
+          : waitingForPreview
           ? "预览准备中"
           : waitingForPlan
             ? "分析中"
             : localState.preview && localState.preview.planHydrationError
               ? "分析并融合"
           : "分析并融合";
-      applyButton.setAttribute("aria-busy", localState.busy || waitingForPlan ? "true" : "false");
+      applyButton.setAttribute("aria-busy", localState.busy ? "true" : "false");
     }
   }
 
@@ -1849,6 +1859,7 @@
       planId: planResult.planId || previous.planId || "",
       previewCacheKey: planResult.previewCacheKey || previous.previewCacheKey || "",
       planPending: false,
+      planHydrationDeferred: false,
       planHydrated: true,
       planValidation: planResult.planValidation || previous.planValidation || null
     };
@@ -1871,6 +1882,19 @@
     schedulePreviewRender({ immediate: true });
     updatePreviewControls();
     return true;
+  }
+
+  function deferCpuPreviewPlanUntilApply(sampleResult) {
+    if (!sampleResult || !localState.preview || localState.preview.previewCacheKey !== sampleResult.previewCacheKey) return;
+    localState.preview = {
+      ...localState.preview,
+      planPending: false,
+      planHydrationDeferred: true
+    };
+    setPreviewReadyState("快速预览");
+    if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+      modules.ui.logToWorkspace("[融合校色] CPU 最终 plan 改为在点击融合时构建；将复用当前 raw sample，不重新 Photoshop 采样。", "info");
+    }
   }
 
   async function hydratePreviewPlanFromHost(sampleResult, startedAt, gpuPlan = null) {
@@ -2108,7 +2132,7 @@
     }
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
       if (result && result.planPending) {
-        modules.ui.logToWorkspace(`[融合校色] 快速 preview 已准备：CPU planId 暂无，previewCacheKey=${result.previewCacheKey || "无"}；后台继续补齐可信 CPU BlendMatchPlan。`, "info");
+        modules.ui.logToWorkspace(`[融合校色] 快速 preview 已准备：raw sample 已缓存，previewCacheKey=${result.previewCacheKey || "无"}；可直接融合，最终 plan 会复用该采样。`, "info");
       } else {
         modules.ui.logToWorkspace(`[融合校色] preview planId 准备完成：${result && result.planId || "无"}，previewCacheKey=${result && result.previewCacheKey || "无"}。`, "info");
       }
@@ -2316,7 +2340,16 @@
           modules.ui.logToWorkspace(`[融合校色] WebGL2 未启动：${localState.alignmentGpuUnavailableReason || "WebGL2 对齐不可用"}；将构建 CPU fallback plan。`, "warn");
         }
       }
-      await hydratePreviewPlanFromHost(sampleResult, startedAt, gpuResult && gpuResult.gpuPlan || null);
+      if (localState.busy) {
+        deferCpuPreviewPlanUntilApply(sampleResult);
+        if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
+          modules.ui.logToWorkspace("[融合校色] 已启动直接融合，跳过后续预览 plan 补齐以避免重复分析。", "info");
+        }
+      } else if (gpuResult && gpuResult.gpuPlan) {
+        await hydratePreviewPlanFromHost(sampleResult, startedAt, gpuResult.gpuPlan);
+      } else {
+        deferCpuPreviewPlanUntilApply(sampleResult);
+      }
     } catch (error) {
       const message = error && error.message ? error.message : "预览刷新失败";
       try {
@@ -2346,6 +2379,9 @@
     const applyButton = getById("btnBlendMatchApply");
     if (applyButton) applyButton.disabled = true;
     modules.ui.logToWorkspace("[融合校色] 准备使用当前活动图层作为 AI 返图图层。", "info");
+    if (localState.preview && localState.preview.planHydrationDeferred) {
+      modules.ui.logToWorkspace("[融合校色] 直接融合：复用预览 raw sample 构建最终可信 plan，不等待后台预览分析。", "info");
+    }
 
     try {
       const result = await modules.runtime.callHost("photoshop.runToolAction", [buildPayload({ includePreviewCache: true })], { timeoutMs: 90000 });
