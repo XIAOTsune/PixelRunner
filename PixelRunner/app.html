@@ -1196,8 +1196,6 @@
             <option value="natural">自然</option>
             <option value="balanced" selected>均衡</option>
             <option value="strong">强融合</option>
-            <option value="colorOnly">仅校色</option>
-            <option value="edgeOnly">仅边缘</option>
           </select>
         </label>
 
@@ -1206,24 +1204,8 @@
           <input id="blendMatchTotalInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="78" />
         </label>
         <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">明暗匹配</span><span id="blendMatchToneValue">78</span></span>
-          <input id="blendMatchToneInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="78" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">色彩匹配</span><span id="blendMatchColorMatchValue">76</span></span>
-          <input id="blendMatchColorMatchInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="76" />
-        </label>
-        <label class="field blend-match-field">
           <span class="glow-param-line"><span class="field-label">羽化半径</span><span><span id="blendMatchFeatherValue">16</span> px</span></span>
           <input id="blendMatchFeatherInput" class="field-input glow-strength-slider" type="range" min="0" max="64" step="1" value="16" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">最大对齐</span><span><span id="blendMatchAlignValue">120</span> px</span></span>
-          <input id="blendMatchAlignInput" class="field-input glow-strength-slider" type="range" min="1" max="320" step="1" value="120" />
-        </label>
-        <label class="field blend-match-field">
-          <span class="glow-param-line"><span class="field-label">形变余量</span><span id="blendMatchAlignmentFlexValue">63</span></span>
-          <input id="blendMatchAlignmentFlexInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="63" />
         </label>
       </div>
 
@@ -1238,7 +1220,7 @@
         </label>
       </div>
 
-      <div class="summary-strip">默认使用插件内部融合路径；颜色匹配和快速对齐在插件内完成，Photoshop 仅保留可编辑羽化蒙版。</div>
+      <div class="summary-strip">融合风格会自动设置色调、色彩和对齐范围；新增或替换内容不参与颜色推断。</div>
 
       <div class="action-row blend-match-actions">
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>

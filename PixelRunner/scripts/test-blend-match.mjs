@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { computeSharedContentReference, estimateTranslationReference } from "../src/shared/blend-match-reference.js";
-import { buildTrustedGpuBlendMatchPlanFromSamples } from "../src/host/photoshop/blend-match.js";
+import { buildConservativeCpuFallbackAlignment, buildCpuBlendMatchPlanFromSamples, buildTrustedGpuBlendMatchPlanFromSamples } from "../src/host/photoshop/blend-match.js";
 
 function makeSample(width, height, color = [92, 118, 144, 255]) {
   const data = new Uint8Array(width * height * 4);
@@ -40,6 +40,33 @@ function shiftSample(sample, dx, dy) {
   return output;
 }
 
+function buildStats(sample) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let luma = 0;
+  const count = sample.width * sample.height;
+  for (let index = 0; index < sample.data.length; index += 4) {
+    r += sample.data[index];
+    g += sample.data[index + 1];
+    b += sample.data[index + 2];
+    luma += sample.data[index] * 0.2126 + sample.data[index + 1] * 0.7152 + sample.data[index + 2] * 0.0722;
+  }
+  return {
+    count,
+    meanR: r / count,
+    meanG: g / count,
+    meanB: b / count,
+    meanLuma: luma / count,
+    weightedMeanR: r / count,
+    weightedMeanG: g / count,
+    weightedMeanB: b / count,
+    weightedMeanLuma: luma / count,
+    weightedMeanSat: 0.2,
+    detailEnergy: 3
+  };
+}
+
 const globalSource = makeSample(48, 40, [80, 105, 130, 255]);
 const globalReference = makeSample(48, 40, [104, 129, 154, 255]);
 const globalMask = computeSharedContentReference(globalSource, globalReference);
@@ -64,6 +91,26 @@ paintRect(replacementReference, 3, 3, 45, 37, [230, 20, 20, 255]);
 const replacementMask = computeSharedContentReference(replacementSource, replacementReference);
 assert.ok(replacementMask.sharedRatio < 0.45, "large replacement must trigger conservative shared-area rejection");
 
+const garmentReference = makeSample(96, 112, [104, 112, 126, 255]);
+const garmentSource = makeSample(96, 112, [124, 132, 146, 255]);
+paintRect(garmentReference, 28, 18, 69, 88, [112, 20, 48, 255]);
+paintRect(garmentSource, 28, 18, 69, 88, [224, 104, 132, 255]);
+paintRect(garmentSource, 38, 28, 59, 79, [194, 132, 116, 255]);
+const garmentMask = computeSharedContentReference(garmentSource, garmentReference);
+assert.ok(garmentMask.mask[56 * 96 + 48] < 0.22, `smooth changed garment interior must be excluded, got ${garmentMask.mask[56 * 96 + 48]}`);
+assert.ok(garmentMask.mask[100 * 96 + 10] > 0.72, "unchanged background with a global cast must remain color evidence");
+let allRed = 0;
+let sharedRed = 0;
+let sharedWeight = 0;
+for (let pixel = 0; pixel < garmentMask.mask.length; pixel += 1) {
+  allRed += garmentSource.data[pixel * 4];
+  sharedRed += garmentSource.data[pixel * 4] * garmentMask.mask[pixel];
+  sharedWeight += garmentMask.mask[pixel];
+}
+allRed /= garmentMask.mask.length;
+sharedRed /= sharedWeight;
+assert.ok(Math.abs(sharedRed - 124) < Math.abs(allRed - 124) * 0.45, "replacement colors must not drag shared-region color statistics");
+
 const alphaSource = makeSample(48, 40);
 const alphaReference = makeSample(48, 40);
 paintRect(alphaReference, 0, 0, 5, 40, [92, 118, 144, 0]);
@@ -78,6 +125,15 @@ const translatedSource = shiftSample(translatedReference, 3, -2);
 const referenceTransform = estimateTranslationReference(translatedSource, translatedReference, 5);
 assert.ok(Math.abs(referenceTransform.dx - 3) <= 1 && Math.abs(referenceTransform.dy + 2) <= 1, JSON.stringify(referenceTransform));
 assert.ok(referenceTransform.confidence > 0.05, "textured translation should be measurable");
+
+const fastCpuTransform = buildConservativeCpuFallbackAlignment(
+  { ...translatedSource, scaleX: 1, scaleY: 1 },
+  { ...translatedReference, scaleX: 1, scaleY: 1 },
+  { alignmentMaxOffset: 16 }
+);
+assert.equal(fastCpuTransform.search.fullCpuSearch, false, "preview fallback must not run the full affine/grid CPU search");
+assert.equal(fastCpuTransform.search.source, "cpu-translation-proxy");
+assert.ok(Math.abs(fastCpuTransform.sampleDx - 3) <= 1 && Math.abs(fastCpuTransform.sampleDy + 2) <= 1, JSON.stringify(fastCpuTransform));
 
 const lowTexture = { width: 32, height: 32, data: new Uint8Array(32 * 32 * 4).fill(128) };
 for (let index = 3; index < lowTexture.data.length; index += 4) lowTexture.data[index] = 255;
@@ -124,6 +180,47 @@ const trustedGpuPlan = buildTrustedGpuBlendMatchPlanFromSamples({
 assert.ok(trustedGpuPlan.plan, `qualified GPU plan should not run CPU alignment fallback: ${trustedGpuPlan.reason}`);
 assert.equal(trustedGpuPlan.plan.alignment.backend, "webgl2");
 assert.equal(trustedGpuPlan.plan.alignment.trusted, true);
+
+const cpuFallbackSource = { ...garmentSource, scaleX: 1, scaleY: 1, stats: buildStats(garmentSource) };
+const cpuFallbackReference = { ...garmentReference, scaleX: 1, scaleY: 1, stats: buildStats(garmentReference) };
+const cpuFallbackPlan = buildCpuBlendMatchPlanFromSamples({
+  documentId: 9,
+  layerId: 43,
+  layerName: "changed garment",
+  bounds: { left: 0, top: 0, right: garmentSource.width, bottom: garmentSource.height },
+  previewCacheKey: "cpu-fallback-fixture",
+  config: {
+    mode: "balanced", totalStrength: 78, luminanceStrength: 82, colorStrength: 76,
+    saturationStrength: 62, contrastStrength: 58, featherRadius: 16,
+    alignmentEnabled: true, alignmentMaxOffset: 16, alignmentMaxScale: 2.5,
+    alignmentMaxRotation: 1.75, alignmentMaxStretch: 2.5, localAlignmentEnabled: true,
+    localMeshStrength: 0.58, localMeshMaxOffset: 6, previewMaxEdge: 512
+  },
+  sourceSample: cpuFallbackSource,
+  referenceSample: cpuFallbackReference,
+  fastFallback: true
+});
+assert.equal(cpuFallbackPlan.alignment.search.fullCpuSearch, false);
+assert.ok(cpuFallbackPlan.sharedMask && cpuFallbackPlan.sharedMask.excludedRatio > 0.12, "CPU ColorPlan must carry a shared-content mask");
+assert.ok(cpuFallbackPlan.color.profile && cpuFallbackPlan.color.profile.sharedMask, "CPU ColorPlan must report shared-mask statistics");
+
+const hugeReplacementSource = makeSample(64, 64);
+const hugeReplacementReference = makeSample(64, 64);
+paintRect(hugeReplacementSource, 3, 3, 61, 61, [235, 40, 90, 255]);
+const hugeReplacementPlan = buildCpuBlendMatchPlanFromSamples({
+  documentId: 9,
+  layerId: 44,
+  layerName: "mostly replaced",
+  bounds: { left: 0, top: 0, right: 64, bottom: 64 },
+  previewCacheKey: "mostly-replaced-fixture",
+  config: cpuFallbackPlan.config,
+  sourceSample: { ...hugeReplacementSource, scaleX: 1, scaleY: 1, stats: buildStats(hugeReplacementSource) },
+  referenceSample: { ...hugeReplacementReference, scaleX: 1, scaleY: 1, stats: buildStats(hugeReplacementReference) },
+  fastFallback: true
+});
+assert.equal(hugeReplacementPlan.alignment.colorInferenceLimited, true, "very small shared area must stop color inference");
+assert.equal(hugeReplacementPlan.color.profile, null);
+assert.deepEqual(hugeReplacementPlan.color.corrections.colorBalance, { cyanRed: 0, magentaGreen: 0, yellowBlue: 0 });
 
 let webglSkipReason = "WebGL2 integration unavailable in Node";
 if (typeof OffscreenCanvas === "function") {

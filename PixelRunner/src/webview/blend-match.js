@@ -43,9 +43,12 @@
   const MODE_LABELS = {
     natural: "自然",
     balanced: "均衡",
-    strong: "强融合",
-    colorOnly: "仅校色",
-    edgeOnly: "仅边缘"
+    strong: "强融合"
+  };
+  const MODE_PRESETS = {
+    natural: { toneStrength: 68, colorMatchStrength: 62, alignmentMaxOffset: 72, alignmentFlex: 30 },
+    balanced: { toneStrength: 78, colorMatchStrength: 76, alignmentMaxOffset: 96, alignmentFlex: 44 },
+    strong: { toneStrength: 90, colorMatchStrength: 86, alignmentMaxOffset: 120, alignmentFlex: 56 }
   };
 
   const localState = {
@@ -88,33 +91,15 @@
 
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" ? settings : {};
-    const mode = Object.prototype.hasOwnProperty.call(MODE_LABELS, String(source.mode || ""))
-      ? String(source.mode)
+    const requestedMode = String(source.mode || "");
+    const migratedMode = requestedMode === "edgeOnly" ? "natural" : requestedMode === "colorOnly" ? "balanced" : requestedMode;
+    const mode = Object.prototype.hasOwnProperty.call(MODE_LABELS, migratedMode)
+      ? migratedMode
       : DEFAULT_SETTINGS.mode;
-    const edgeOnly = mode === "edgeOnly";
-    const colorOnly = mode === "colorOnly";
-    const toneStrength = edgeOnly || colorOnly
-      ? 0
-      : clampNumber(
-          source.toneStrength ?? source.luminanceStrength,
-          0,
-          100,
-          DEFAULT_SETTINGS.toneStrength
-        );
-    const colorMatchStrength = edgeOnly
-      ? 0
-      : clampNumber(
-          source.colorMatchStrength ?? source.colorStrength,
-          0,
-          100,
-          DEFAULT_SETTINGS.colorMatchStrength
-        );
-    const alignmentFlex = clampNumber(
-      source.alignmentFlex ?? ((Number(source.alignmentMaxScale) || DEFAULT_SETTINGS.alignmentMaxScale) / 4) * 100,
-      0,
-      100,
-      DEFAULT_SETTINGS.alignmentFlex
-    );
+    const preset = MODE_PRESETS[mode];
+    const toneStrength = preset.toneStrength;
+    const colorMatchStrength = preset.colorMatchStrength;
+    const alignmentFlex = preset.alignmentFlex;
     const detailed = deriveDetailedSettings({
       toneStrength,
       colorMatchStrength,
@@ -135,7 +120,7 @@
       createBackupLayer: source.createBackupLayer !== false,
       pixelPipelineEnabled: true,
       alignmentEnabled: source.alignmentEnabled !== false,
-      alignmentMaxOffset: clampNumber(source.alignmentMaxOffset, 1, 320, DEFAULT_SETTINGS.alignmentMaxOffset),
+      alignmentMaxOffset: preset.alignmentMaxOffset,
       alignmentScaleEnabled: detailed.alignmentScaleEnabled,
       alignmentFlex,
       alignmentMaxScale: detailed.alignmentMaxScale,
@@ -342,8 +327,8 @@
     if (localState.preview && localState.preview.planHydrationError) {
       setPreviewOverlay(
         "compact",
-        "将于融合时完成分析",
-        "预览可继续查看，Apply 会复用采样并补建 CPU plan",
+        "预览可继续使用",
+        "融合时会复用采样并完成保守校验",
         { status: "warn" }
       );
       return;
@@ -353,8 +338,8 @@
       const seed = getLatestGpuAlignmentSeed(localState.preview.previewCacheKey);
       setPreviewOverlay(
         "compact",
-        seed ? "GPU 已提供候选" : "正在分析对齐",
-        seed ? "CPU 正在验证 hint-only alignment seed" : "后台准备可信 CPU BlendMatchPlan",
+        seed ? "正在完成校验" : "CPU 快速回退",
+        seed ? "复用 GPU 全局结果并生成共享内容掩膜" : "保守平移校验与共享区域分析",
         { status: "pending" }
       );
       return;
@@ -362,8 +347,8 @@
     if (localState.previewGpuDiagnosticBusy && localState.preview) {
       setPreviewOverlay(
         "gpu",
-        "GPU 诊断中",
-        "仅做 shadow validation，不影响最终 Apply",
+        "GPU 分析中",
+        "正在计算对齐与共享区域",
         { status: "info" }
       );
       return;

@@ -35,6 +35,8 @@ function buildGradient(sample) {
 function estimateStructuralTone(source, reference, sourceGradient, referenceGradient) {
   let sourceSum = 0;
   let referenceSum = 0;
+  const sourceRgb = [0, 0, 0];
+  const referenceRgb = [0, 0, 0];
   let weight = 0;
   for (let pixel = 0; pixel < source.width * source.height; pixel += 1) {
     const index = pixel * 4;
@@ -43,14 +45,24 @@ function estimateStructuralTone(source, reference, sourceGradient, referenceGrad
     const sourceEdge = sourceGradient.magnitude[pixel];
     const referenceEdge = referenceGradient.magnitude[pixel];
     const edgeAgreement = Math.min(sourceEdge, referenceEdge) / Math.max(1, Math.max(sourceEdge, referenceEdge));
-    const currentWeight = sourceAlpha * referenceAlpha * (0.15 + edgeAgreement * 0.85);
+    const currentWeight = sourceAlpha * referenceAlpha * (0.04 + edgeAgreement * 0.96);
     sourceSum += luma(source.data, index) * currentWeight;
     referenceSum += luma(reference.data, index) * currentWeight;
+    for (let channel = 0; channel < 3; channel += 1) {
+      sourceRgb[channel] += source.data[index + channel] * currentWeight;
+      referenceRgb[channel] += reference.data[index + channel] * currentWeight;
+    }
     weight += currentWeight;
   }
   const sourceMean = sourceSum / Math.max(1, weight);
   const referenceMean = referenceSum / Math.max(1, weight);
-  return { gain: clamp(referenceMean / Math.max(1, sourceMean), 0.72, 1.34), weight };
+  const gain = clamp(referenceMean / Math.max(1, sourceMean), 0.72, 1.34);
+  const offsets = sourceRgb.map((value, channel) => {
+    const sourceChannelMean = value / Math.max(1, weight);
+    const referenceChannelMean = referenceRgb[channel] / Math.max(1, weight);
+    return clamp(referenceChannelMean - sourceChannelMean * gain, -36, 36);
+  });
+  return { gain, offsets, weight };
 }
 
 function softenMask(mask, width, height) {
@@ -82,7 +94,7 @@ export function computeSharedContentReference(source, reference) {
   const referenceGradient = buildGradient(reference);
   const tone = estimateStructuralTone(source, reference, sourceGradient, referenceGradient);
   const changed = new Float32Array(width * height);
-  const residualHigh = new Float32Array(width * height);
+  const residualCue = new Float32Array(width * height);
   const shared = new Float32Array(width * height);
   let alphaMismatchCount = 0;
   let structuralMismatchCount = 0;
@@ -96,25 +108,43 @@ export function computeSharedContentReference(source, reference) {
     const edge = Math.max(sourceEdge, referenceEdge);
     const edgeAgreement = Math.min(sourceEdge, referenceEdge) / Math.max(1, edge);
     const direction = (sourceGradient.gx[pixel] * referenceGradient.gx[pixel] + sourceGradient.gy[pixel] * referenceGradient.gy[pixel]) / Math.max(1, sourceEdge * referenceEdge);
-    const sourceValue = luma(source.data, index) * tone.gain;
+    const normalizedSource = [0, 1, 2].map((channel) => clamp(source.data[index + channel] * tone.gain + tone.offsets[channel], 0, 255));
+    const referenceRgb = [reference.data[index], reference.data[index + 1], reference.data[index + 2]];
+    const sourceValue = 0.2126 * normalizedSource[0] + 0.7152 * normalizedSource[1] + 0.0722 * normalizedSource[2];
     const residual = Math.abs(sourceValue - luma(reference.data, index));
+    const sourceOpponent = [normalizedSource[0] - normalizedSource[1], normalizedSource[2] - normalizedSource[1]];
+    const referenceOpponent = [referenceRgb[0] - referenceRgb[1], referenceRgb[2] - referenceRgb[1]];
+    const chromaResidual = Math.hypot(sourceOpponent[0] - referenceOpponent[0], sourceOpponent[1] - referenceOpponent[1]);
     const structuralMismatch = edge > 12 && (edgeAgreement < 0.38 || direction < 0.12);
-    residualHigh[pixel] = residual > 24 ? 1 : 0;
-    changed[pixel] = residualHigh[pixel] && (structuralMismatch || alphaMismatch) ? 1 : 0;
+    const lumaCue = clamp((residual - 12) / 34, 0, 1);
+    const colorCue = clamp((chromaResidual - 16) / 52, 0, 1) * 0.86;
+    residualCue[pixel] = Math.max(lumaCue, colorCue);
+    changed[pixel] = residualCue[pixel] * (structuralMismatch || alphaMismatch ? 1 : 0);
     if (alphaMismatch) alphaMismatchCount += 1;
     if (structuralMismatch) structuralMismatchCount += 1;
   }
-  // Grow only from a structural/alpha change into an already high-residual
-  // connected area. This catches a uniformly colored inserted object without
-  // treating a global tone shift as changed content.
-  for (let iteration = 0; iteration < 8; iteration += 1) {
+  // Multi-scale geodesic growth fills smooth interiors of inserted/replaced
+  // objects, but it can only travel through a persistent normalized residual.
+  for (const step of [1, 2, 4, 8, 16, 32, 64]) {
     const next = new Float32Array(changed);
-    for (let y = 1; y < height - 1; y += 1) {
-      for (let x = 1; x < width - 1; x += 1) {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
         const pixel = y * width + x;
-        if (!residualHigh[pixel] || changed[pixel]) continue;
-        const adjacent = changed[pixel - 1] + changed[pixel + 1] + changed[pixel - width] + changed[pixel + width];
-        if (adjacent > 0) next[pixel] = 1;
+        if (residualCue[pixel] < 0.22 || changed[pixel] >= 0.92) continue;
+        let support = 0;
+        let samples = 0;
+        for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+          for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+            if (!offsetX && !offsetY) continue;
+            const sampleX = x + offsetX * step;
+            const sampleY = y + offsetY * step;
+            if (sampleX < 0 || sampleY < 0 || sampleX >= width || sampleY >= height) continue;
+            support += changed[sampleY * width + sampleX];
+            samples += 1;
+          }
+        }
+        const neighbourhood = support / Math.max(1, samples);
+        if (neighbourhood > 0.035) next[pixel] = Math.max(changed[pixel], residualCue[pixel] * clamp(neighbourhood * 3.2, 0, 1));
       }
     }
     changed.set(next);
@@ -131,10 +161,11 @@ export function computeSharedContentReference(source, reference) {
         }
       }
       const index = pixel * 4;
-      shared[pixel] = alpha(source.data, index) * alpha(reference.data, index) * (changed[pixel] && neighbourhoodChanges >= 3 ? 0 : 1);
+      const persistentChange = neighbourhoodChanges >= 2 ? clamp(changed[pixel] * 1.5, 0, 1) : 0;
+      shared[pixel] = alpha(source.data, index) * alpha(reference.data, index) * (1 - persistentChange);
     }
   }
-  const softMask = softenMask(shared, width, height);
+  const softMask = softenMask(softenMask(shared, width, height), width, height);
   const effectiveWeight = softMask.reduce((sum, value) => sum + value, 0);
   const sharedRatio = effectiveWeight / Math.max(1, softMask.length);
   return {

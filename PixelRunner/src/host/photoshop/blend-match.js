@@ -1,5 +1,6 @@
 import { activateDocument, getDocumentInfo, normalizeBounds } from "./document.js";
 import { ensureDeps } from "./deps.js";
+import { computeSharedContentReference, estimateTranslationReference } from "../../shared/blend-match-reference.js";
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
   mode: "balanced",
@@ -1017,6 +1018,156 @@ function normalizeGpuSharedMask(sharedMask, width, height) {
   };
 }
 
+function encodeSharedMask(mask) {
+  const bytes = new Uint8Array(mask.length);
+  let binary = "";
+  let effectiveWeight = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    const value = Math.max(0, Math.min(1, Number(mask[index]) || 0));
+    bytes[index] = Math.round(value * 255);
+    effectiveWeight += value;
+  }
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return { base64: btoa(binary), effectiveWeight };
+}
+
+function buildCpuSharedContentMask(sourceSample, referenceSample, alignment) {
+  const alignedSource = applyGlobalAndLocalWarp(sourceSample, alignment, sourceSample) || sourceSample;
+  const result = computeSharedContentReference(alignedSource, referenceSample);
+  const encoded = encodeSharedMask(result.mask);
+  return {
+    width: result.width,
+    height: result.height,
+    base64: encoded.base64,
+    maskHash: hashSharedMaskBase64(encoded.base64),
+    sharedRatio: Number(result.sharedRatio.toFixed(6)),
+    excludedRatio: Number(result.excludedRatio.toFixed(6)),
+    effectiveWeight: Number(encoded.effectiveWeight.toFixed(3)),
+    exclusionReasons: Array.isArray(result.exclusionReasons) ? result.exclusionReasons.slice(0, 8) : []
+  };
+}
+
+function resizeSampleForFastAlignment(sample, maxEdge = 144) {
+  const sourceWidth = Math.max(1, Number(sample && sample.width) || 1);
+  const sourceHeight = Math.max(1, Number(sample && sample.height) || 1);
+  const ratio = Math.min(1, Math.max(32 / Math.max(sourceWidth, sourceHeight), maxEdge / Math.max(sourceWidth, sourceHeight)));
+  if (ratio >= 0.999) return { ...sample, factorX: 1, factorY: 1 };
+  const width = Math.max(32, Math.round(sourceWidth * ratio));
+  const height = Math.max(32, Math.round(sourceHeight * ratio));
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = ((y + 0.5) * sourceHeight / height) - 0.5;
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = ((x + 0.5) * sourceWidth / width) - 0.5;
+      sampleRgbaBilinear(sample.data, sourceWidth, sourceHeight, sourceX, sourceY, data, (y * width + x) * 4);
+    }
+  }
+  return { width, height, data, factorX: sourceWidth / width, factorY: sourceHeight / height };
+}
+
+function buildCpuAlignmentFromGpuGlobalSeed(seed, sourceSample) {
+  if (!seed || typeof seed !== "object") return null;
+  const score = Number(seed.score);
+  const secondScore = Number(seed.secondScore);
+  const scoreGap = Number(seed.scoreGap);
+  const confidence = Math.max(0, Math.min(1, Number(seed.confidence) || 0));
+  const sampleCount = Math.max(0, Math.floor(Number(seed.sampleCount) || 0));
+  if (!Number.isFinite(score) || !Number.isFinite(secondScore) || !Number.isFinite(scoreGap)) return null;
+  if (confidence < 0.12 || score < 0.16 || scoreGap < 0.002 || sampleCount < 32) return null;
+  const sampleDx = Number(seed.sampleDx) || 0;
+  const sampleDy = Number(seed.sampleDy) || 0;
+  const sampleScaleX = Math.max(0.94, Math.min(1.06, Number(seed.sampleScaleX || seed.sampleScale) || 1));
+  const sampleScaleY = Math.max(0.94, Math.min(1.06, Number(seed.sampleScaleY || seed.sampleScale) || 1));
+  const sampleRotation = Math.max(-2, Math.min(2, Number(seed.sampleRotation) || 0));
+  const docDx = -sampleDx * (Number(sourceSample.scaleX) || 1);
+  const docDy = -sampleDy * (Number(sourceSample.scaleY) || 1);
+  const applied = Math.abs(docDx) >= 0.35 || Math.abs(docDy) >= 0.35 || Math.abs(sampleScaleX - 1) >= 0.001 || Math.abs(sampleScaleY - 1) >= 0.001 || Math.abs(sampleRotation) >= 0.03;
+  return {
+    applied,
+    dx: applied ? Number(docDx.toFixed(2)) : 0,
+    dy: applied ? Number(docDy.toFixed(2)) : 0,
+    scalePercent: applied ? Number((((sampleScaleX + sampleScaleY) * 50).toFixed(3))) : 100,
+    scaleXPercent: applied ? Number((sampleScaleX * 100).toFixed(3)) : 100,
+    scaleYPercent: applied ? Number((sampleScaleY * 100).toFixed(3)) : 100,
+    rotation: applied ? Number(sampleRotation.toFixed(3)) : 0,
+    sampleDx,
+    sampleDy,
+    sampleScale: (sampleScaleX + sampleScaleY) / 2,
+    sampleScaleX,
+    sampleScaleY,
+    sampleRotation,
+    confidence,
+    score,
+    secondScore,
+    scoreGap,
+    sampleCount,
+    backend: "cpu",
+    trusted: true,
+    reason: applied ? "gpu-global-seed-fast-fallback" : "gpu-seed-already-aligned",
+    local: { enabled: false, applied: false, tiles: [], validTiles: 0, totalTiles: 0, reason: "fast-fallback-global-only" },
+    localDeformation: false,
+    search: { fastFallback: true, source: "gpu-global-seed", fullCpuSearch: false }
+  };
+}
+
+export function buildConservativeCpuFallbackAlignment(sourceSample, referenceSample, config = {}, gpuGlobalSeed = null) {
+  const startedAt = getNowMs();
+  const seeded = buildCpuAlignmentFromGpuGlobalSeed(gpuGlobalSeed, sourceSample);
+  if (seeded) {
+    seeded.search.timings = { totalMs: Number((getNowMs() - startedAt).toFixed(1)) };
+    return seeded;
+  }
+  const sourceProxy = resizeSampleForFastAlignment(sourceSample);
+  const referenceProxy = resizeSampleForFastAlignment(referenceSample);
+  const sampleOffset = Math.max(1, Math.min(
+    Math.floor(Math.min(sourceSample.width, sourceSample.height) * 0.45),
+    Math.round((Number(config.alignmentMaxOffset) || DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset) / Math.max(Number(sourceSample.scaleX) || 1, Number(sourceSample.scaleY) || 1))
+  ));
+  const proxyOffset = Math.max(1, Math.min(10, Math.round(sampleOffset / Math.max(sourceProxy.factorX, sourceProxy.factorY))));
+  const measured = estimateTranslationReference(sourceProxy, referenceProxy, proxyOffset);
+  const sampleDx = measured.dx * sourceProxy.factorX;
+  const sampleDy = measured.dy * sourceProxy.factorY;
+  const docDx = -sampleDx * (Number(sourceSample.scaleX) || 1);
+  const docDy = -sampleDy * (Number(sourceSample.scaleY) || 1);
+  const confident = measured.sampleCount >= 48 && measured.score >= 0.24 && measured.scoreGap >= 0.004 && measured.confidence >= 0.08;
+  const significant = Math.abs(docDx) >= 0.35 || Math.abs(docDy) >= 0.35;
+  return {
+    applied: confident && significant,
+    dx: confident && significant ? Number(docDx.toFixed(2)) : 0,
+    dy: confident && significant ? Number(docDy.toFixed(2)) : 0,
+    scalePercent: 100,
+    scaleXPercent: 100,
+    scaleYPercent: 100,
+    rotation: 0,
+    sampleDx,
+    sampleDy,
+    sampleScale: 1,
+    sampleScaleX: 1,
+    sampleScaleY: 1,
+    sampleRotation: 0,
+    confidence: Number(measured.confidence) || 0,
+    score: Number(measured.score) || -1,
+    secondScore: Number(measured.secondScore) || -1,
+    scoreGap: Number(measured.scoreGap) || 0,
+    sampleCount: Number(measured.sampleCount) || 0,
+    backend: "cpu",
+    trusted: true,
+    reason: confident ? (significant ? "cpu-fast-translation" : "cpu-fast-already-aligned") : "cpu-fast-low-confidence-no-alignment",
+    local: { enabled: false, applied: false, tiles: [], validTiles: 0, totalTiles: 0, reason: "fast-fallback-global-only" },
+    localDeformation: false,
+    search: {
+      fastFallback: true,
+      source: "cpu-translation-proxy",
+      fullCpuSearch: false,
+      proxySize: { width: sourceProxy.width, height: sourceProxy.height },
+      proxyOffset,
+      timings: { totalMs: Number((getNowMs() - startedAt).toFixed(1)) }
+    }
+  };
+}
+
 function normalizeTrustedGpuAlignment(gpuPlan, sourceSample, config) {
   const source = gpuPlan && typeof gpuPlan === "object" ? gpuPlan : null;
   const alignment = source && source.alignment && typeof source.alignment === "object" ? source.alignment : source;
@@ -1211,7 +1362,7 @@ function buildBlendMatchPlan({
   };
 }
 
-function buildCpuBlendMatchPlanFromSamples(options) {
+export function buildCpuBlendMatchPlanFromSamples(options) {
   const {
     config,
     sourceSample,
@@ -1222,9 +1373,11 @@ function buildCpuBlendMatchPlanFromSamples(options) {
     logs = null,
     gpuAlignmentSeed = null,
     alignmentSeedCandidates = null,
-    seedTrust = ""
+    seedTrust = "",
+    fastFallback = false,
+    fallbackAlignmentSeed = null
   } = options || {};
-  const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+  let corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
   if (timing) timing.mark("plan 颜色统计");
   const effectiveAlignmentConfig = alignmentConfig && typeof alignmentConfig === "object"
     ? { ...alignmentConfig }
@@ -1234,11 +1387,46 @@ function buildCpuBlendMatchPlanFromSamples(options) {
     effectiveAlignmentConfig.alignmentSeedCandidates = Array.isArray(alignmentSeedCandidates) ? alignmentSeedCandidates.slice(0, 12) : [];
     effectiveAlignmentConfig.seedTrust = "hint-only";
   }
-  const alignment = existingAlignment
+  let alignment = existingAlignment
     ? cloneAlignmentResult(existingAlignment)
     : config.alignmentEnabled
-    ? estimateGradientAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config)
+    ? fastFallback
+      ? buildConservativeCpuFallbackAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config, fallbackAlignmentSeed || gpuAlignmentSeed)
+      : estimateGradientAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config)
     : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+  if (!alignment.sharedMask) {
+    const maskStartedAt = getNowMs();
+    alignment = {
+      ...alignment,
+      backend: "cpu",
+      trusted: true,
+      sharedMask: buildCpuSharedContentMask(sourceSample, referenceSample, alignment)
+    };
+    if (timing) {
+      timing.mark("plan CPU 共享掩膜", {
+        ms: Number((getNowMs() - maskStartedAt).toFixed(1)),
+        sharedRatio: Number(alignment.sharedMask.sharedRatio.toFixed(3)),
+        excludedRatio: Number(alignment.sharedMask.excludedRatio.toFixed(3))
+      });
+    }
+    if (Array.isArray(logs)) {
+      logs.push(`[融合校色] CPU shared mask：shared=${formatRatioPercent(alignment.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(alignment.sharedMask.excludedRatio)}，仅共享区域参与 ColorPlan。`);
+    }
+  }
+  const sharedRatio = Number(alignment.sharedMask && alignment.sharedMask.sharedRatio) || 0;
+  const excludedRatio = Number(alignment.sharedMask && alignment.sharedMask.excludedRatio) || 0;
+  const colorInferenceAllowed = sharedRatio >= 0.12 && excludedRatio <= 0.86;
+  if (!colorInferenceAllowed) {
+    corrections = buildCorrections(sourceSample.stats, sourceSample.stats, config);
+    alignment.colorInferenceLimited = true;
+    alignment.sharedMask.exclusionReasons = Array.from(new Set([
+      ...(alignment.sharedMask.exclusionReasons || []),
+      "color-inference-stopped"
+    ])).slice(0, 8);
+    if (Array.isArray(logs)) {
+      logs.push(`[融合校色] 共享区域不足：shared=${formatRatioPercent(sharedRatio)}，excluded=${formatRatioPercent(excludedRatio)}；停止颜色推断并使用零校正。`);
+    }
+  }
   const gpuSeedDiagnostics = alignment && alignment.search && alignment.search.gpuSeed ? alignment.search.gpuSeed : null;
   if (timing) {
     timing.mark("plan CPU 对齐", {
@@ -1275,7 +1463,7 @@ function buildCpuBlendMatchPlanFromSamples(options) {
   }
   const alignmentTimings = alignment && alignment.search && alignment.search.timings ? alignment.search.timings : null;
   const colorPlanStartedAt = getNowMs();
-  const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, alignment);
+  const colorProfile = colorInferenceAllowed ? buildInternalColorProfile(sourceSample, referenceSample, config, alignment) : null;
   const colorPlanMs = Number((getNowMs() - colorPlanStartedAt).toFixed(1));
   if (timing) {
     timing.mark("plan 颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
@@ -1283,6 +1471,10 @@ function buildCpuBlendMatchPlanFromSamples(options) {
   if (Array.isArray(logs) && alignmentTimings) {
     const hydrateAnalysisTotal = Number(alignmentTimings.totalMs || 0) + colorPlanMs;
     logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
+  }
+  if (Array.isArray(logs) && fastFallback) {
+    const fastTimings = alignment && alignment.search && alignment.search.timings || {};
+    logs.push(`[融合校色] CPU 保守快速回退：${alignment.reason || "unknown"}，translation=${formatMs(fastTimings.totalMs)}，fullCpuSearch=false。`);
   }
   return buildBlendMatchPlan({
     ...options,
@@ -6346,7 +6538,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     logs.push(`[融合校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
     logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
     logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan，WebView 将随后请求 host CPU plan 补齐；Apply 在 plan 准备完成前保持禁用。");
+    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan；WebView 优先提交 GPU plan，失败时 Host 只做保守 CPU 平移回退和共享掩膜分析。");
     actionTiming.logTo(logs, "[融合校色] 快速预览采样 host action 耗时");
 
     return {
@@ -6404,7 +6596,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     sourceSample,
     referenceSample,
     alignmentConfig: config,
-    timing: actionTiming
+    timing: actionTiming,
+    fastFallback: true
   });
   const cpuAlignment = getPlanAlignment(plan);
   const corrections = getPlanCorrections(plan);
@@ -6430,7 +6623,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
   logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
   logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-  logs.push("[融合校色] WebGL2 对齐仅作为预览诊断；可复用 plan 来自主机 CPU 完整分析。");
+  logs.push("[融合校色] WebGL2 plan 为生产首选；此无 GPU 路径使用保守 CPU 平移与共享内容掩膜。");
   actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
 
   return {
@@ -6529,6 +6722,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   }
 
   let plan = cache.plan || null;
+  let freshGpuFallbackAlignment = null;
   let validation = plan
     ? validateBlendMatchPlanForRequest(plan, {
         documentId: modalResult.documentId,
@@ -6551,6 +6745,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
     if (!gpuFresh) {
       logs.push("[融合校色] GPU plan 拒绝：previewCacheKey/sampleHash/configHash 不新鲜；将使用 CPU fallback。");
     } else {
+      freshGpuFallbackAlignment = cloneJsonValue(payloadGpuPlan.alignment || payloadGpuPlan);
       const gpuBuild = buildTrustedGpuBlendMatchPlanFromSamples({
         documentId: modalResult.documentId,
         layerId: modalResult.layerId,
@@ -6600,7 +6795,9 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       logs,
       gpuAlignmentSeed: effectiveGpuSeed,
       alignmentSeedCandidates: payloadSeedCandidates,
-      seedTrust: effectiveGpuSeed ? "hint-only" : ""
+      seedTrust: effectiveGpuSeed ? "hint-only" : "",
+      fastFallback: true,
+      fallbackAlignmentSeed: freshGpuFallbackAlignment
     });
     validation = { ok: true, reason: "rebuilt-from-preview-samples" };
     storeBlendMatchPreviewCache(modalResult.previewCacheKey, {
@@ -6610,7 +6807,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       plan,
       planId: plan.planId
     });
-    logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    logs.push(`[融合校色] 保守 CPU BlendMatchPlan 已完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
     logs.push("[融合校色] CPU plan hydrate：命中 preview raw sample cache，未重新 Photoshop getPixels，未重新切换图层可见性。");
   } else {
     logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);

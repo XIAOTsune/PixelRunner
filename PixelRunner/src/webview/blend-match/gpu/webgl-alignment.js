@@ -283,6 +283,7 @@
     uniform vec4 uTransform;
     uniform float uRotation;
     uniform vec4 uTone;
+    uniform vec3 uToneOffset;
     out vec4 outColor;
     float luma(vec3 color) { return dot(color, vec3(0.2126, 0.7152, 0.0722)); }
     void main() {
@@ -302,12 +303,17 @@
       float edgeAgreement = min(sourceGrad.r, referenceGrad.r) / max(1.0, edge);
       float direction = clamp((sourceGrad.g * referenceGrad.g + sourceGrad.b * referenceGrad.b) / max(0.001, sourceGrad.r * referenceGrad.r), -1.0, 1.0);
       float structural = smoothstep(5.0, 24.0, edge) * (0.25 + edgeAgreement * 0.45 + max(0.0, direction) * 0.3);
-      vec3 normalizedSource = clamp(source.rgb * uTone.xyz + uTone.www, 0.0, 1.0);
-      float residual = abs(luma(normalizedSource) - luma(reference.rgb));
+      vec3 normalizedSource = clamp(source.rgb * uTone.xyz + uToneOffset, 0.0, 1.0);
+      float lumaResidual = abs(luma(normalizedSource) - luma(reference.rgb));
+      vec2 sourceOpponent = vec2(normalizedSource.r - normalizedSource.g, normalizedSource.b - normalizedSource.g);
+      vec2 referenceOpponent = vec2(reference.r - reference.g, reference.b - reference.g);
+      float chromaResidual = length(sourceOpponent - referenceOpponent);
+      float residualCue = max(smoothstep(0.045, 0.18, lumaResidual), smoothstep(0.06, 0.25, chromaResidual) * 0.86);
       float structuralMismatch = (1.0 - edgeAgreement) * smoothstep(5.0, 24.0, edge) + (1.0 - max(0.0, direction)) * 0.35;
-      float changed = smoothstep(0.09, 0.24, residual) * smoothstep(0.22, 0.72, structuralMismatch);
+      float alphaMismatch = smoothstep(0.08, 0.28, abs(source.a - reference.a));
+      float changed = residualCue * max(alphaMismatch, smoothstep(0.18, 0.68, structuralMismatch));
       float shared = alphaAgreement * (1.0 - changed) * (0.3 + structural * 0.7);
-      outColor = vec4(shared, changed, structural, alphaAgreement);
+      outColor = vec4(shared, changed, residualCue, alphaAgreement);
     }
   `;
 
@@ -317,18 +323,25 @@
     uniform sampler2D uMask;
     uniform ivec2 uSize;
     uniform int uRadius;
+    uniform int uStep;
     out vec4 outColor;
     void main() {
       ivec2 pixel = ivec2(gl_FragCoord.xy);
-      vec4 sum = vec4(0.0); float count = 0.0;
+      vec4 center = texelFetch(uMask, pixel, 0);
+      vec4 sum = vec4(0.0); float count = 0.0; float changedSupport = 0.0;
       for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
         if (abs(x) > uRadius || abs(y) > uRadius) continue;
-        sum += texelFetch(uMask, clamp(pixel + ivec2(x, y), ivec2(0), uSize - ivec2(1)), 0); count += 1.0;
+        vec4 sampleValue = texelFetch(uMask, clamp(pixel + ivec2(x, y) * uStep, ivec2(0), uSize - ivec2(1)), 0);
+        sum += sampleValue; changedSupport += sampleValue.g; count += 1.0;
       }
       vec4 averaged = sum / max(1.0, count);
-      float shared = mix(texelFetch(uMask, pixel, 0).r, averaged.r, 0.68);
-      // Requiring neighbouring support suppresses isolated hair/skin/noise residuals.
-      outColor = vec4(smoothstep(0.06, 0.42, shared), averaged.g, averaged.b, averaged.a);
+      float neighbourhood = (changedSupport - center.g) / max(1.0, count - 1.0);
+      float propagated = center.b > 0.22 ? center.b * smoothstep(0.025, 0.30, neighbourhood) : 0.0;
+      float changed = max(center.g, propagated);
+      float shared = center.a * (1.0 - smoothstep(0.16, 0.70, changed));
+      // The final short-range blend keeps hair/skin texture from producing hard holes.
+      shared = mix(shared, averaged.r, uStep == 1 ? 0.18 : 0.0);
+      outColor = vec4(clamp(shared, 0.0, 1.0), changed, center.b, center.a);
     }
   `;
 
@@ -554,8 +567,8 @@
         reduce: queryLocations(gl, this.programs.reduce, ["uInput", "uInputSize"]),
         summary: queryLocations(gl, this.programs.summary, ["uMoments", "uDirection"]),
         topK: queryLocations(gl, this.programs.topK, ["uScores", "uExcluded", "uExcludedCount", "uInputWidth", "uTaggedInput"]),
-        mask: queryLocations(gl, this.programs.mask, ["uSource", "uReference", "uSourceGrad", "uReferenceGrad", "uSize", "uTransform", "uRotation", "uTone"]),
-        maskSmooth: queryLocations(gl, this.programs.maskSmooth, ["uMask", "uSize", "uRadius"])
+        mask: queryLocations(gl, this.programs.mask, ["uSource", "uReference", "uSourceGrad", "uReferenceGrad", "uSize", "uTransform", "uRotation", "uTone", "uToneOffset"]),
+        maskSmooth: queryLocations(gl, this.programs.maskSmooth, ["uMask", "uSize", "uRadius", "uStep"])
       };
       this.vertexBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
@@ -1126,6 +1139,9 @@
       const sourceLuma = Math.max(1, Number(sourceStats.weightedMeanLuma || sourceStats.meanLuma) || 128);
       const referenceLuma = Math.max(1, Number(referenceStats.weightedMeanLuma || referenceStats.meanLuma) || 128);
       const gain = Math.max(0.72, Math.min(1.34, referenceLuma / sourceLuma));
+      const sourceMeans = [sourceStats.weightedMeanR || sourceStats.meanR, sourceStats.weightedMeanG || sourceStats.meanG, sourceStats.weightedMeanB || sourceStats.meanB];
+      const referenceMeans = [referenceStats.weightedMeanR || referenceStats.meanR, referenceStats.weightedMeanG || referenceStats.meanG, referenceStats.weightedMeanB || referenceStats.meanB];
+      const toneOffsets = sourceMeans.map((value, channel) => Math.max(-36, Math.min(36, (Number(referenceMeans[channel]) || 0) - (Number(value) || 0) * gain)) / 255);
       gl.bindVertexArray(this.vao);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.maskTarget.framebuffer);
       gl.viewport(0, 0, width, height);
@@ -1140,13 +1156,24 @@
       gl.uniform4f(this.locations.mask.uTransform, Number(transform.dx) || 0, Number(transform.dy) || 0, Number(transform.scaleX || transform.scale) || 1, Number(transform.scaleY || transform.scale) || 1);
       gl.uniform1f(this.locations.mask.uRotation, (Number(transform.rotation) || 0) * Math.PI / 180);
       gl.uniform4f(this.locations.mask.uTone, gain, gain, gain, 0);
+      gl.uniform3f(this.locations.mask.uToneOffset, toneOffsets[0], toneOffsets[1], toneOffsets[2]);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       let source = this.maskTarget;
-      for (const radius of [1, 2]) {
+      const growthSteps = [
+        { radius: 2, step: 1 },
+        { radius: 1, step: 2 },
+        { radius: 1, step: 4 },
+        { radius: 1, step: 8 },
+        { radius: 1, step: 16 },
+        { radius: 1, step: 32 },
+        { radius: 1, step: 64 },
+        { radius: 2, step: 1 }
+      ].filter((entry) => entry.step <= Math.max(1, Math.floor(Math.max(width, height) / 3)));
+      for (const { radius, step } of growthSteps) {
         const target = source === this.maskTarget ? this.maskSmoothTarget : this.maskTarget;
         gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer); gl.viewport(0, 0, width, height);
         gl.useProgram(this.programs.maskSmooth); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, source.texture);
-        gl.uniform1i(this.locations.maskSmooth.uMask, 0); gl.uniform2i(this.locations.maskSmooth.uSize, width, height); gl.uniform1i(this.locations.maskSmooth.uRadius, radius);
+        gl.uniform1i(this.locations.maskSmooth.uMask, 0); gl.uniform2i(this.locations.maskSmooth.uSize, width, height); gl.uniform1i(this.locations.maskSmooth.uRadius, radius); gl.uniform1i(this.locations.maskSmooth.uStep, step);
         gl.drawArrays(gl.TRIANGLES, 0, 3); source = target;
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, source.framebuffer);
@@ -1162,11 +1189,15 @@
       let hash = 2166136261;
       for (let index = 0; index < base64.length; index += 1) { hash ^= base64.charCodeAt(index); hash = Math.imul(hash, 16777619); }
       const sharedRatio = sharedWeight / Math.max(1, bytes.length);
+      const exclusionReasons = [];
+      if (1 - sharedRatio > 0.02) exclusionReasons.push("normalized-structural-residual");
+      if (sharedRatio < 0.08) exclusionReasons.push("shared-region-too-small");
+      else if (sharedRatio < 0.18) exclusionReasons.push("content-exclusion-high");
       return {
         width, height, base64, maskHash: `fnv1a-${(hash >>> 0).toString(16)}`,
         sharedRatio: Number(sharedRatio.toFixed(6)), excludedRatio: Number((1 - sharedRatio).toFixed(6)),
         effectiveWeight: Number(sharedWeight.toFixed(3)),
-        exclusionReasons: sharedRatio < 0.08 ? ["shared-region-too-small"] : sharedRatio < 0.18 ? ["content-exclusion-high"] : []
+        exclusionReasons
       };
     }
 
