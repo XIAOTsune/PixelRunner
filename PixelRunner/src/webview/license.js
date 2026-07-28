@@ -17,6 +17,7 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
     deviceCode: "",
     activationCode: "",
     verification: { active: false, reason: "NOT_ACTIVATED", license: null },
+    storageError: "",
     removeConfirmationPending: false,
     removeConfirmationTimer: 0,
     bound: false
@@ -27,11 +28,13 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
   }
 
   function getStatusLabel() {
+    if (state.storageError) return "授权无效";
     if (state.verification.active) return "已激活（此设备）";
     return state.activationCode ? "授权无效" : "未激活";
   }
 
   function getStatusType() {
+    if (state.storageError) return "warn";
     if (state.verification.active) return "success";
     return state.activationCode ? "warn" : "info";
   }
@@ -77,28 +80,55 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
     });
   }
 
-  async function initialize() {
-    const storedInstallationId = String(await modules.runtime.storageGetItem(INSTALLATION_ID_STORAGE_KEY) || "").trim();
-    state.installationId = isValidInstallationId(storedInstallationId)
-      ? storedInstallationId
-      : generateInstallationId();
-    if (state.installationId !== storedInstallationId) {
-      await modules.runtime.storageSetItem(INSTALLATION_ID_STORAGE_KEY, state.installationId);
-    }
-    state.deviceCode = deriveDeviceCode(state.installationId);
-    state.activationCode = String(await modules.runtime.storageGetItem(ACTIVATION_STORAGE_KEY) || "").trim();
-    state.verification = state.activationCode
-      ? verifyActivationCode(state.activationCode, { deviceCode: state.deviceCode, keyring: LICENSE_PUBLIC_KEYS })
-      : { active: false, reason: "NOT_ACTIVATED", license: null };
+  const HOST_STORAGE_OPTIONS = Object.freeze({ requireHost: true });
+
+  async function readLicenseStorage(key) {
+    return modules.runtime.storageGetItem(key, HOST_STORAGE_OPTIONS);
+  }
+
+  async function writeLicenseStorage(key, value) {
+    const expectedValue = String(value == null ? "" : value);
+    await modules.runtime.storageSetItem(key, expectedValue, HOST_STORAGE_OPTIONS);
+    const actualValue = String(await readLicenseStorage(key) || "");
+    if (actualValue !== expectedValue) throw new Error("授权存储回读校验失败");
+  }
+
+  function showStorageError(error) {
+    state.storageError = String(error && error.message || "Host 授权存储不可用");
+    state.activationCode = "";
+    state.verification = { active: false, reason: "STORAGE_UNAVAILABLE", license: null };
     render();
-    if (!state.verification.active && state.activationCode) {
-      setLicenseMessage("授权无法在此设备上验证。请复制当前设备代码后联系开发者重新签发。", "warn");
-    } else if (!state.verification.active) {
-      setLicenseMessage("此设备尚未激活。", "info");
-    } else {
-      setLicenseMessage("此设备已激活，授权功能可用。", "success");
+    setLicenseMessage("无法访问授权存储。请关闭并重新打开 Photoshop 后重试激活。", "warn");
+  }
+
+  async function initialize() {
+    try {
+      state.storageError = "";
+      const storedInstallationId = String(await readLicenseStorage(INSTALLATION_ID_STORAGE_KEY) || "").trim();
+      state.installationId = isValidInstallationId(storedInstallationId)
+        ? storedInstallationId
+        : generateInstallationId();
+      if (state.installationId !== storedInstallationId) {
+        await writeLicenseStorage(INSTALLATION_ID_STORAGE_KEY, state.installationId);
+      }
+      state.deviceCode = deriveDeviceCode(state.installationId);
+      state.activationCode = String(await readLicenseStorage(ACTIVATION_STORAGE_KEY) || "").trim();
+      state.verification = state.activationCode
+        ? verifyActivationCode(state.activationCode, { deviceCode: state.deviceCode, keyring: LICENSE_PUBLIC_KEYS })
+        : { active: false, reason: "NOT_ACTIVATED", license: null };
+      render();
+      if (!state.verification.active && state.activationCode) {
+        setLicenseMessage("授权无法在此设备上验证。请复制当前设备代码后联系开发者重新签发。", "warn");
+      } else if (!state.verification.active) {
+        setLicenseMessage("此设备尚未激活。", "info");
+      } else {
+        setLicenseMessage("此设备已激活，授权功能可用。", "success");
+      }
+      return state.verification;
+    } catch (error) {
+      showStorageError(error);
+      return state.verification;
     }
-    return state.verification;
   }
 
   function closeFeaturePrompt() {
@@ -122,7 +152,11 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
     const title = getById("licenseFeatureTitle");
     const hint = getById("licenseFeatureHint");
     if (title) title.textContent = `${label}需要授权`;
-    if (hint) hint.textContent = "请前往授权与设备，复制设备代码后联系开发者激活。";
+    if (hint) {
+      hint.textContent = state.storageError
+        ? "无法访问授权存储。请关闭并重新打开 Photoshop 后重试。"
+        : "请前往授权与设备，复制设备代码后联系开发者激活。";
+    }
     if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
       modules.workspace.setModalOpen("licenseFeatureModal", true);
     }
@@ -172,7 +206,13 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
       setLicenseMessage(getActivationErrorMessage(verification.reason), "warn");
       return false;
     }
-    await modules.runtime.storageSetItem(ACTIVATION_STORAGE_KEY, verification.license.activationCode);
+    try {
+      await writeLicenseStorage(ACTIVATION_STORAGE_KEY, verification.license.activationCode);
+    } catch (error) {
+      showStorageError(error);
+      return false;
+    }
+    state.storageError = "";
     state.activationCode = verification.license.activationCode;
     state.verification = verification;
     if (input) input.value = "";
@@ -198,7 +238,14 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
       state.removeConfirmationTimer = global.setTimeout(resetRemovalConfirmation, 8000);
       return;
     }
-    await modules.runtime.storageSetItem(ACTIVATION_STORAGE_KEY, "");
+    try {
+      await writeLicenseStorage(ACTIVATION_STORAGE_KEY, "");
+    } catch (error) {
+      resetRemovalConfirmation();
+      showStorageError(error);
+      return;
+    }
+    state.storageError = "";
     state.activationCode = "";
     state.verification = { active: false, reason: "NOT_ACTIVATED", license: null };
     resetRemovalConfirmation();

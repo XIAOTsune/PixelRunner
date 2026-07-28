@@ -78,6 +78,22 @@ assert.equal(validVerification.active, true, "valid Ed25519 license verifies loc
 assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "localUpscale", "spaceFx"]);
 assert.equal(isFeatureUnlocked(validVerification, "glow"), true);
 
+const textEncoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextEncoder");
+const textDecoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextDecoder");
+try {
+  Object.defineProperty(globalThis, "TextEncoder", { configurable: true, value: undefined });
+  Object.defineProperty(globalThis, "TextDecoder", { configurable: true, value: undefined });
+  const hostCompatibleCode = issueLicense({ deviceCode, licenseId: "PR-UXP-兼容-2026" });
+  const hostCompatibleVerification = verifyActivationCode(hostCompatibleCode, { deviceCode, keyring: testKeyring });
+  assert.equal(hostCompatibleVerification.active, true, "UXP Host verifies licenses without TextEncoder or TextDecoder");
+  assert.equal(hostCompatibleVerification.license.licenseId, "PR-UXP-兼容-2026", "manual UTF-8 codec preserves Unicode payloads");
+} finally {
+  if (textEncoderDescriptor) Object.defineProperty(globalThis, "TextEncoder", textEncoderDescriptor);
+  else delete globalThis.TextEncoder;
+  if (textDecoderDescriptor) Object.defineProperty(globalThis, "TextDecoder", textDecoderDescriptor);
+  else delete globalThis.TextDecoder;
+}
+
 const splitValid = validCode.split(".");
 const tamperedCode = `${splitValid[0]}.${splitValid[1]}.${splitValid[2].replace(/^./, splitValid[2][0] === "A" ? "B" : "A")}`;
 assert.equal(verifyActivationCode(tamperedCode, { deviceCode, keyring: testKeyring }).reason, "SIGNATURE_INVALID", "tampering is rejected");

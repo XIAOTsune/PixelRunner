@@ -43,6 +43,7 @@ import {
   runPhotoshopToolAction
 } from "./photoshop-bridge.js";
 import { createHostLicenseEnforcer } from "./license-enforcement.js";
+import { createHostLicenseStorage } from "./license-storage.js";
 
 // Result downloads run outside this queue; only Photoshop-critical stages are serialized here.
 const PHOTOSHOP_BRIDGE_PRIORITY = Object.freeze({
@@ -210,21 +211,17 @@ function getPhotoshopVersionInfo() {
   }
 }
 
+const hostLicenseStorage = createHostLicenseStorage(() => {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage;
+});
+
 function readHostStorage(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch (_) {
-    return null;
-  }
+  return hostLicenseStorage.getItem(key);
 }
 
 function writeHostStorage(key, value) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return hostLicenseStorage.setItem(key, value);
 }
 
 const hostLicenseEnforcer = createHostLicenseEnforcer({

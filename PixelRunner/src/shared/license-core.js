@@ -27,7 +27,99 @@ const PAYLOAD_FIELDS = [
 const CROCKFORD_BASE32 = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function encodeUtf8(value) {
-  return new TextEncoder().encode(String(value == null ? "" : value));
+  const text = String(value == null ? "" : value);
+  const output = [];
+  for (let index = 0; index < text.length; index += 1) {
+    let codePoint = text.charCodeAt(index);
+    if (codePoint >= 0xd800 && codePoint <= 0xdbff) {
+      const next = text.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (next - 0xdc00);
+        index += 1;
+      } else {
+        codePoint = 0xfffd;
+      }
+    } else if (codePoint >= 0xdc00 && codePoint <= 0xdfff) {
+      codePoint = 0xfffd;
+    }
+
+    if (codePoint <= 0x7f) {
+      output.push(codePoint);
+    } else if (codePoint <= 0x7ff) {
+      output.push(0xc0 | codePoint >> 6, 0x80 | codePoint & 0x3f);
+    } else if (codePoint <= 0xffff) {
+      output.push(0xe0 | codePoint >> 12, 0x80 | codePoint >> 6 & 0x3f, 0x80 | codePoint & 0x3f);
+    } else {
+      output.push(
+        0xf0 | codePoint >> 18,
+        0x80 | codePoint >> 12 & 0x3f,
+        0x80 | codePoint >> 6 & 0x3f,
+        0x80 | codePoint & 0x3f
+      );
+    }
+  }
+  return new Uint8Array(output);
+}
+
+function decodeUtf8(value) {
+  const bytes = value instanceof Uint8Array ? value : new Uint8Array(value || []);
+  let output = "";
+  for (let index = 0; index < bytes.length;) {
+    const first = bytes[index];
+    let codePoint;
+    let length;
+    let minimum;
+    if (first <= 0x7f) {
+      codePoint = first;
+      length = 1;
+      minimum = 0;
+    } else if (first >= 0xc2 && first <= 0xdf) {
+      codePoint = first & 0x1f;
+      length = 2;
+      minimum = 0x80;
+    } else if (first >= 0xe0 && first <= 0xef) {
+      codePoint = first & 0x0f;
+      length = 3;
+      minimum = 0x800;
+    } else if (first >= 0xf0 && first <= 0xf4) {
+      codePoint = first & 0x07;
+      length = 4;
+      minimum = 0x10000;
+    } else {
+      output += "\ufffd";
+      index += 1;
+      continue;
+    }
+
+    if (index + length > bytes.length) {
+      output += "\ufffd";
+      index += 1;
+      continue;
+    }
+    let valid = true;
+    for (let offset = 1; offset < length; offset += 1) {
+      const continuation = bytes[index + offset];
+      if ((continuation & 0xc0) !== 0x80) {
+        valid = false;
+        break;
+      }
+      codePoint = codePoint << 6 | continuation & 0x3f;
+    }
+    if (!valid || codePoint < minimum || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
+      output += "\ufffd";
+      index += 1;
+      continue;
+    }
+
+    if (codePoint <= 0xffff) {
+      output += String.fromCharCode(codePoint);
+    } else {
+      const adjusted = codePoint - 0x10000;
+      output += String.fromCharCode(0xd800 + (adjusted >> 10), 0xdc00 + (adjusted & 0x3ff));
+    }
+    index += length;
+  }
+  return output;
 }
 
 function bytesToBase64(bytes) {
@@ -203,7 +295,7 @@ export function parseActivationCode(code) {
   const parts = compact.split(".");
   if (parts.length !== 3 || parts[0] !== LICENSE_PREFIX) return { ok: false, reason: "FORMAT_INVALID" };
   try {
-    const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[1])));
+    const payload = JSON.parse(decodeUtf8(base64UrlDecode(parts[1])));
     const signature = base64UrlDecode(parts[2]);
     if (signature.length !== nacl.sign.signatureLength) return { ok: false, reason: "SIGNATURE_INVALID" };
     const normalized = normalizeLicensePayload(payload);
