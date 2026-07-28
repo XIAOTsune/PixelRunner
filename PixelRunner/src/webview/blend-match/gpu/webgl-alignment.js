@@ -54,6 +54,7 @@
     uniform vec2 uSize;
     uniform ivec2 uTiles;
     uniform float uStride;
+    uniform vec4 uRegion;
     in vec2 vUv;
     out vec4 outColor;
 
@@ -72,8 +73,10 @@
     void main() {
       ivec2 pixel = ivec2(gl_FragCoord.xy);
       vec4 candidate = texelFetch(uCandidates, ivec2(pixel.x, 0), 0);
+      vec4 affine = texelFetch(uCandidates, ivec2(pixel.x, 1), 0);
       vec2 offset = candidate.xy;
-      float scale = candidate.z;
+      vec2 scale = max(vec2(0.85), candidate.zw);
+      float rotation = affine.x;
       int tileIndex = pixel.y;
       ivec2 tile = ivec2(tileIndex % uTiles.x, tileIndex / uTiles.x);
       float stepValue = max(1.0, uStride);
@@ -91,8 +94,12 @@
         for (int localX = 0; localX < TILE; localX++) {
           float x = 1.0 + (float(tile.x * TILE + localX) * stepValue);
           if (x >= uSize.x - 1.0) continue;
+          if (x < uRegion.x || y < uRegion.y || x >= uRegion.z || y >= uRegion.w) continue;
           vec2 local = vec2(x, y) - center;
-          vec2 sourcePixel = center + local / max(0.0001, scale) + offset;
+          float c = cos(-rotation);
+          float s = sin(-rotation);
+          vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+          vec2 sourcePixel = center + rotated / scale + offset;
           if (sourcePixel.x < 1.0 || sourcePixel.x >= uSize.x - 1.0 || sourcePixel.y < 1.0 || sourcePixel.y >= uSize.y - 1.0) continue;
           float a = sourceGradAt(sourcePixel).r;
           float b = referenceGradAt(vec2(x, y)).r;
@@ -119,6 +126,7 @@
     uniform vec2 uSize;
     uniform ivec2 uTiles;
     uniform float uStride;
+    uniform vec4 uRegion;
     in vec2 vUv;
     out vec4 outColor;
 
@@ -137,8 +145,10 @@
     void main() {
       ivec2 pixel = ivec2(gl_FragCoord.xy);
       vec4 candidate = texelFetch(uCandidates, ivec2(pixel.x, 0), 0);
+      vec4 affine = texelFetch(uCandidates, ivec2(pixel.x, 1), 0);
       vec2 offset = candidate.xy;
-      float scale = candidate.z;
+      vec2 scale = max(vec2(0.85), candidate.zw);
+      float rotation = affine.x;
       int tileIndex = pixel.y;
       ivec2 tile = ivec2(tileIndex % uTiles.x, tileIndex / uTiles.x);
       float stepValue = max(1.0, uStride);
@@ -154,8 +164,12 @@
         for (int localX = 0; localX < TILE; localX++) {
           float x = 1.0 + (float(tile.x * TILE + localX) * stepValue);
           if (x >= uSize.x - 1.0) continue;
+          if (x < uRegion.x || y < uRegion.y || x >= uRegion.z || y >= uRegion.w) continue;
           vec2 local = vec2(x, y) - center;
-          vec2 sourcePixel = center + local / max(0.0001, scale) + offset;
+          float c = cos(-rotation);
+          float s = sin(-rotation);
+          vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+          vec2 sourcePixel = center + rotated / scale + offset;
           if (sourcePixel.x < 1.0 || sourcePixel.x >= uSize.x - 1.0 || sourcePixel.y < 1.0 || sourcePixel.y >= uSize.y - 1.0) continue;
           vec4 sourceGrad = sourceGradAt(sourcePixel);
           vec4 referenceGrad = referenceGradAt(vec2(x, y));
@@ -172,6 +186,149 @@
       }
 
       outColor = vec4(sumAB, count, directionSum, overlapSum);
+    }
+  `;
+
+  // All candidate-tile values stay on the GPU. Each pass halves the tile axis,
+  // and only the fixed-size top-K candidate summary is read by JavaScript.
+  const REDUCE_SUM_SHADER = `#version 300 es
+    precision highp float;
+    precision highp sampler2D;
+    uniform sampler2D uInput;
+    uniform ivec2 uInputSize;
+    out vec4 outColor;
+    void main() {
+      ivec2 pixel = ivec2(gl_FragCoord.xy);
+      int y0 = pixel.y * 2;
+      vec4 value = texelFetch(uInput, ivec2(pixel.x, min(y0, uInputSize.y - 1)), 0);
+      if (y0 + 1 < uInputSize.y) value += texelFetch(uInput, ivec2(pixel.x, y0 + 1), 0);
+      outColor = value;
+    }
+  `;
+
+  const PYRAMID_SHADER = `#version 300 es
+    precision highp float;
+    precision highp sampler2D;
+    uniform sampler2D uInput;
+    uniform ivec2 uInputSize;
+    out vec4 outColor;
+    void main() {
+      ivec2 pixel = ivec2(gl_FragCoord.xy) * 2;
+      ivec2 maxPixel = uInputSize - ivec2(1);
+      vec4 a = texelFetch(uInput, min(pixel, maxPixel), 0);
+      vec4 b = texelFetch(uInput, min(pixel + ivec2(1, 0), maxPixel), 0);
+      vec4 c = texelFetch(uInput, min(pixel + ivec2(0, 1), maxPixel), 0);
+      vec4 d = texelFetch(uInput, min(pixel + ivec2(1, 1), maxPixel), 0);
+      outColor = (a + b + c + d) * 0.25;
+    }
+  `;
+
+  const CANDIDATE_SUMMARY_SHADER = `#version 300 es
+    precision highp float;
+    precision highp sampler2D;
+    uniform sampler2D uMoments;
+    uniform sampler2D uDirection;
+    in vec2 vUv;
+    out vec4 outColor;
+    void main() {
+      ivec2 pixel = ivec2(gl_FragCoord.xy);
+      vec4 moments = texelFetch(uMoments, pixel, 0);
+      vec4 direction = texelFetch(uDirection, pixel, 0);
+      float count = direction.g;
+      if (count < 64.0) { outColor = vec4(-1.0, count, 0.0, 0.0); return; }
+      float numerator = direction.r - (moments.r * moments.g) / count;
+      float denomA = moments.b - (moments.r * moments.r) / count;
+      float denomB = moments.a - (moments.g * moments.g) / count;
+      float ncc = numerator / sqrt(max(0.0001, denomA * denomB));
+      float agreement = direction.b / count;
+      float overlap = direction.a / count;
+      outColor = vec4(ncc * 0.62 + agreement * 0.26 + overlap * 0.12, count, agreement, overlap);
+    }
+  `;
+
+  const TOPK_REDUCE_SHADER = `#version 300 es
+    precision highp float;
+    precision highp sampler2D;
+    uniform sampler2D uScores;
+    uniform int uExcluded[8];
+    uniform int uExcludedCount;
+    uniform int uInputWidth;
+    uniform int uTaggedInput;
+    out vec4 outColor;
+    vec4 valueAt(int index) {
+      if (index >= uInputWidth) return vec4(-2.0, float(index), 0.0, 0.0);
+      vec4 value = texelFetch(uScores, ivec2(index, 0), 0);
+      vec4 tagged = uTaggedInput == 1 ? value : vec4(value.r, float(index), value.g, (value.b + 1.0) * 2.0 + value.a * 0.5);
+      for (int excluded = 0; excluded < 8; excluded++) {
+        if (excluded < uExcludedCount && int(floor(tagged.g + 0.5)) == uExcluded[excluded]) tagged.r = -2.0;
+      }
+      return tagged;
+    }
+    void main() {
+      int left = int(gl_FragCoord.x) * 2;
+      vec4 a = valueAt(left);
+      vec4 b = valueAt(left + 1);
+      outColor = b.r > a.r ? b : a;
+    }
+  `;
+
+  const MASK_SHADER = `#version 300 es
+    precision highp float;
+    precision highp sampler2D;
+    uniform sampler2D uSource;
+    uniform sampler2D uReference;
+    uniform sampler2D uSourceGrad;
+    uniform sampler2D uReferenceGrad;
+    uniform vec2 uSize;
+    uniform vec4 uTransform;
+    uniform float uRotation;
+    uniform vec4 uTone;
+    out vec4 outColor;
+    float luma(vec3 color) { return dot(color, vec3(0.2126, 0.7152, 0.0722)); }
+    void main() {
+      ivec2 pixel = ivec2(gl_FragCoord.xy);
+      vec2 center = uSize * 0.5;
+      vec2 local = vec2(pixel) - center;
+      float c = cos(-uRotation); float s = sin(-uRotation);
+      vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+      vec2 sourcePoint = center + rotated / max(vec2(0.85), uTransform.zw) + uTransform.xy;
+      if (sourcePoint.x < 1.0 || sourcePoint.y < 1.0 || sourcePoint.x >= uSize.x - 1.0 || sourcePoint.y >= uSize.y - 1.0) { outColor = vec4(0.0); return; }
+      vec4 source = texelFetch(uSource, ivec2(floor(sourcePoint + 0.5)), 0);
+      vec4 reference = texelFetch(uReference, pixel, 0);
+      vec4 sourceGrad = texelFetch(uSourceGrad, ivec2(floor(sourcePoint + 0.5)), 0);
+      vec4 referenceGrad = texelFetch(uReferenceGrad, pixel, 0);
+      float alphaAgreement = min(source.a, reference.a) * (1.0 - abs(source.a - reference.a));
+      float edge = max(sourceGrad.r, referenceGrad.r);
+      float edgeAgreement = min(sourceGrad.r, referenceGrad.r) / max(1.0, edge);
+      float direction = clamp((sourceGrad.g * referenceGrad.g + sourceGrad.b * referenceGrad.b) / max(0.001, sourceGrad.r * referenceGrad.r), -1.0, 1.0);
+      float structural = smoothstep(5.0, 24.0, edge) * (0.25 + edgeAgreement * 0.45 + max(0.0, direction) * 0.3);
+      vec3 normalizedSource = clamp(source.rgb * uTone.xyz + uTone.www, 0.0, 1.0);
+      float residual = abs(luma(normalizedSource) - luma(reference.rgb));
+      float structuralMismatch = (1.0 - edgeAgreement) * smoothstep(5.0, 24.0, edge) + (1.0 - max(0.0, direction)) * 0.35;
+      float changed = smoothstep(0.09, 0.24, residual) * smoothstep(0.22, 0.72, structuralMismatch);
+      float shared = alphaAgreement * (1.0 - changed) * (0.3 + structural * 0.7);
+      outColor = vec4(shared, changed, structural, alphaAgreement);
+    }
+  `;
+
+  const MASK_SMOOTH_SHADER = `#version 300 es
+    precision highp float;
+    precision highp sampler2D;
+    uniform sampler2D uMask;
+    uniform ivec2 uSize;
+    uniform int uRadius;
+    out vec4 outColor;
+    void main() {
+      ivec2 pixel = ivec2(gl_FragCoord.xy);
+      vec4 sum = vec4(0.0); float count = 0.0;
+      for (int y = -2; y <= 2; y++) for (int x = -2; x <= 2; x++) {
+        if (abs(x) > uRadius || abs(y) > uRadius) continue;
+        sum += texelFetch(uMask, clamp(pixel + ivec2(x, y), ivec2(0), uSize - ivec2(1)), 0); count += 1.0;
+      }
+      vec4 averaged = sum / max(1.0, count);
+      float shared = mix(texelFetch(uMask, pixel, 0).r, averaged.r, 0.68);
+      // Requiring neighbouring support suppresses isolated hair/skin/noise residuals.
+      outColor = vec4(smoothstep(0.06, 0.42, shared), averaged.g, averaged.b, averaged.a);
     }
   `;
 
@@ -381,12 +538,24 @@
       this.programs = {
         sobel: createProgram(gl, LUMA_SOBEL_SHADER),
         score: createProgram(gl, SCORE_SHADER),
-        scoreSum: createProgram(gl, SCORE_SUM_SHADER)
+        scoreSum: createProgram(gl, SCORE_SUM_SHADER),
+        pyramid: createProgram(gl, PYRAMID_SHADER),
+        reduce: createProgram(gl, REDUCE_SUM_SHADER),
+        summary: createProgram(gl, CANDIDATE_SUMMARY_SHADER),
+        topK: createProgram(gl, TOPK_REDUCE_SHADER),
+        mask: createProgram(gl, MASK_SHADER),
+        maskSmooth: createProgram(gl, MASK_SMOOTH_SHADER)
       };
       this.locations = {
         sobel: queryLocations(gl, this.programs.sobel, ["uImage", "uSize"]),
-        score: queryLocations(gl, this.programs.score, ["uSourceGrad", "uReferenceGrad", "uCandidates", "uSize", "uTiles", "uStride"]),
-        scoreSum: queryLocations(gl, this.programs.scoreSum, ["uSourceGrad", "uReferenceGrad", "uCandidates", "uSize", "uTiles", "uStride"])
+        score: queryLocations(gl, this.programs.score, ["uSourceGrad", "uReferenceGrad", "uCandidates", "uSize", "uTiles", "uStride", "uRegion"]),
+        scoreSum: queryLocations(gl, this.programs.scoreSum, ["uSourceGrad", "uReferenceGrad", "uCandidates", "uSize", "uTiles", "uStride", "uRegion"]),
+        pyramid: queryLocations(gl, this.programs.pyramid, ["uInput", "uInputSize"]),
+        reduce: queryLocations(gl, this.programs.reduce, ["uInput", "uInputSize"]),
+        summary: queryLocations(gl, this.programs.summary, ["uMoments", "uDirection"]),
+        topK: queryLocations(gl, this.programs.topK, ["uScores", "uExcluded", "uExcludedCount", "uInputWidth", "uTaggedInput"]),
+        mask: queryLocations(gl, this.programs.mask, ["uSource", "uReference", "uSourceGrad", "uReferenceGrad", "uSize", "uTransform", "uRotation", "uTone"]),
+        maskSmooth: queryLocations(gl, this.programs.maskSmooth, ["uMask", "uSize", "uRadius"])
       };
       this.vertexBuffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
@@ -402,10 +571,19 @@
       this.referenceGradTarget = null;
       this.scoreTarget = null;
       this.scoreSumTarget = null;
+      this.summaryTarget = null;
+      this.topKTargets = [];
+      this.maskTarget = null;
+      this.maskSmoothTarget = null;
       this.candidateTexture = null;
       this.maxBatchSize = 0;
-      this.scoreReadback = null;
-      this.scoreSumReadback = null;
+      this.topKReadback = new Float32Array(8 * 4);
+      this.maskReadback = null;
+      this.contextLostReason = "";
+      this.canvas.addEventListener("webglcontextlost", (event) => {
+        if (event && typeof event.preventDefault === "function") event.preventDefault();
+        this.contextLostReason = "webgl-context-lost";
+      });
       this.size = { width: 0, height: 0, tilesX: 0, tilesY: 0 };
       this.initMs = roundMs(nowMs() - initStart);
     }
@@ -455,6 +633,10 @@
         return;
       }
       const gl = this.gl;
+      const maxTextureSize = Math.max(1, Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 0);
+      if (safeWidth > maxTextureSize || safeHeight > maxTextureSize || safeBatchSize > maxTextureSize) {
+        throw new Error(`texture-size-exceeded/${safeWidth}x${safeHeight}/limit-${maxTextureSize}`);
+      }
       this.canvas.width = Math.max(safeWidth, safeBatchSize);
       this.canvas.height = Math.max(safeHeight, scoreHeight);
       if (this.sourceTexture) gl.deleteTexture(this.sourceTexture);
@@ -464,6 +646,10 @@
       destroyTarget(gl, this.referenceGradTarget);
       destroyTarget(gl, this.scoreTarget);
       destroyTarget(gl, this.scoreSumTarget);
+      destroyTarget(gl, this.summaryTarget);
+      this.topKTargets.forEach((target) => destroyTarget(gl, target));
+      destroyTarget(gl, this.maskTarget);
+      destroyTarget(gl, this.maskSmoothTarget);
       this.sourceTexture = null;
       this.referenceTexture = null;
       this.candidateTexture = null;
@@ -471,9 +657,11 @@
       this.referenceGradTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.RGBA32F, gl.RGBA);
       this.scoreTarget = createFloatTarget(gl, safeBatchSize, scoreHeight, gl.RGBA32F, gl.RGBA);
       this.scoreSumTarget = createFloatTarget(gl, safeBatchSize, scoreHeight, gl.RGBA32F, gl.RGBA);
-      this.candidateTexture = createFloatTexture(gl, safeBatchSize, 1);
-      this.scoreReadback = new Float32Array(safeBatchSize * scoreHeight * 4);
-      this.scoreSumReadback = new Float32Array(safeBatchSize * scoreHeight * 4);
+      this.summaryTarget = createFloatTarget(gl, safeBatchSize, 1, gl.RGBA32F, gl.RGBA);
+      this.maskTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.RGBA32F, gl.RGBA);
+      this.maskSmoothTarget = createFloatTarget(gl, safeWidth, safeHeight, gl.RGBA32F, gl.RGBA);
+      this.candidateTexture = createFloatTexture(gl, safeBatchSize, 2);
+      this.maskReadback = new Uint8Array(safeWidth * safeHeight * 4);
       this.maxBatchSize = safeBatchSize;
       this.size = { width: safeWidth, height: safeHeight, tilesX, tilesY };
     }
@@ -500,105 +688,155 @@
       gl.bindVertexArray(null);
     }
 
-    scoreCandidateBatch(candidates, stride) {
+    reduceVertical(target, batchSize, height) {
+      const gl = this.gl;
+      let source = target;
+      let sourceHeight = height;
+      const temporary = [];
+      while (sourceHeight > 1) {
+        const nextHeight = Math.max(1, Math.ceil(sourceHeight / 2));
+        const next = createFloatTarget(gl, batchSize, nextHeight, gl.RGBA32F, gl.RGBA);
+        temporary.push(next);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, next.framebuffer);
+        gl.viewport(0, 0, batchSize, nextHeight);
+        gl.useProgram(this.programs.reduce);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, source.texture);
+        gl.uniform1i(this.locations.reduce.uInput, 0);
+        gl.uniform2i(this.locations.reduce.uInputSize, batchSize, sourceHeight);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        if (source !== target) destroyTarget(gl, source);
+        source = next;
+        sourceHeight = nextHeight;
+      }
+      return source;
+    }
+
+    buildGradientPyramid(sourceTarget, referenceTarget, width, height) {
+      const gl = this.gl;
+      const levels = [];
+      let source = sourceTarget;
+      let reference = referenceTarget;
+      let levelWidth = width;
+      let levelHeight = height;
+      while (levels.length < 4 && Math.min(levelWidth, levelHeight) >= 48) {
+        const nextWidth = Math.max(1, Math.ceil(levelWidth / 2));
+        const nextHeight = Math.max(1, Math.ceil(levelHeight / 2));
+        const nextSource = createFloatTarget(gl, nextWidth, nextHeight, gl.RGBA32F, gl.RGBA);
+        const nextReference = createFloatTarget(gl, nextWidth, nextHeight, gl.RGBA32F, gl.RGBA);
+        const downsample = (input, output) => {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, output.framebuffer);
+          gl.viewport(0, 0, nextWidth, nextHeight);
+          gl.useProgram(this.programs.pyramid);
+          gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, input.texture);
+          gl.uniform1i(this.locations.pyramid.uInput, 0);
+          gl.uniform2i(this.locations.pyramid.uInputSize, levelWidth, levelHeight);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+        };
+        downsample(source, nextSource);
+        downsample(reference, nextReference);
+        levels.push({ source: nextSource, reference: nextReference, width: nextWidth, height: nextHeight });
+        source = nextSource;
+        reference = nextReference;
+        levelWidth = nextWidth;
+        levelHeight = nextHeight;
+      }
+      return levels;
+    }
+
+    readGpuTopK(summaryTarget, batchSize, limit = 8) {
+      const gl = this.gl;
+      const winners = [];
+      for (let rank = 0; rank < Math.min(limit, batchSize); rank += 1) {
+        let source = summaryTarget;
+        let sourceWidth = batchSize;
+        let tagged = false;
+        const temporary = [];
+        while (sourceWidth > 1) {
+          const nextWidth = Math.max(1, Math.ceil(sourceWidth / 2));
+          const next = createFloatTarget(gl, nextWidth, 1, gl.RGBA32F, gl.RGBA);
+          temporary.push(next);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, next.framebuffer);
+          gl.viewport(0, 0, nextWidth, 1);
+          gl.useProgram(this.programs.topK);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, source.texture);
+          gl.uniform1i(this.locations.topK.uScores, 0);
+          const excluded = new Int32Array(8);
+          excluded.fill(-1);
+          winners.forEach((winner, index) => { excluded[index] = winner.index; });
+          gl.uniform1iv(this.locations.topK.uExcluded, excluded);
+          gl.uniform1i(this.locations.topK.uExcludedCount, winners.length);
+          gl.uniform1i(this.locations.topK.uInputWidth, sourceWidth);
+          gl.uniform1i(this.locations.topK.uTaggedInput, tagged ? 1 : 0);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          if (source !== summaryTarget) destroyTarget(gl, source);
+          source = next;
+          sourceWidth = nextWidth;
+          tagged = true;
+        }
+        const pixel = new Float32Array(4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, source.framebuffer);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pixel);
+        if (source !== summaryTarget) destroyTarget(gl, source);
+        if (pixel[0] <= -1.5) break;
+        const packed = pixel[3];
+        const direction = Math.max(-1, Math.min(1, Math.floor(packed) / 2 - 1));
+        const overlap = Math.max(0, Math.min(1, (packed - Math.floor(packed)) * 2));
+        winners.push({ index: Math.round(pixel[1]), score: pixel[0], sampleCount: Math.round(pixel[2]), directionAgreement: direction, edgeOverlap: overlap });
+      }
+      return winners;
+    }
+
+    scoreCandidateBatch(candidates, stride, region = null) {
       if (!Array.isArray(candidates) || !candidates.length) return [];
+      if (this.contextLostReason) throw new Error(this.contextLostReason);
       const gl = this.gl;
       const { width, height, tilesX, tilesY } = this.size;
       const batchSize = Math.max(1, candidates.length);
       const scoreHeight = Math.max(1, tilesX * tilesY);
-      const candidateData = new Float32Array(this.maxBatchSize * 4);
+      const candidateData = new Float32Array(this.maxBatchSize * 8);
       candidates.forEach((candidate, index) => {
-        candidateData[index * 4] = Number(candidate.dx) || 0;
-        candidateData[index * 4 + 1] = Number(candidate.dy) || 0;
-        candidateData[index * 4 + 2] = Number(candidate.scale) || 1;
-        candidateData[index * 4 + 3] = 1;
+        const offset = index * 8;
+        candidateData[offset] = Number(candidate.dx) || 0;
+        candidateData[offset + 1] = Number(candidate.dy) || 0;
+        candidateData[offset + 2] = Number(candidate.scaleX || candidate.scale) || 1;
+        candidateData[offset + 3] = Number(candidate.scaleY || candidate.scale) || 1;
+        candidateData[offset + 4] = (Number(candidate.rotation) || 0) * Math.PI / 180;
       });
       gl.bindTexture(gl.TEXTURE_2D, this.candidateTexture);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.maxBatchSize, 1, gl.RGBA, gl.FLOAT, candidateData);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.maxBatchSize, 2, gl.RGBA, gl.FLOAT, candidateData);
       gl.bindVertexArray(this.vao);
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.scoreTarget.framebuffer);
-      gl.viewport(0, 0, batchSize, scoreHeight);
-      gl.useProgram(this.programs.score);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.sourceGradTarget.texture);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.referenceGradTarget.texture);
-      gl.activeTexture(gl.TEXTURE2);
-      gl.bindTexture(gl.TEXTURE_2D, this.candidateTexture);
-      gl.uniform1i(this.locations.score.uSourceGrad, 0);
-      gl.uniform1i(this.locations.score.uReferenceGrad, 1);
-      gl.uniform1i(this.locations.score.uCandidates, 2);
-      gl.uniform2f(this.locations.score.uSize, width, height);
-      gl.uniform2i(this.locations.score.uTiles, tilesX, tilesY);
-      gl.uniform1f(this.locations.score.uStride, stride);
+      const activeRegion = region || { left: 0, top: 0, right: width, bottom: height };
+      const renderScore = (programName, target) => {
+        const locations = this.locations[programName];
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+        gl.viewport(0, 0, batchSize, scoreHeight);
+        gl.useProgram(this.programs[programName]);
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.sourceGradTarget.texture);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.referenceGradTarget.texture);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.candidateTexture);
+        gl.uniform1i(locations.uSourceGrad, 0); gl.uniform1i(locations.uReferenceGrad, 1); gl.uniform1i(locations.uCandidates, 2);
+        gl.uniform2f(locations.uSize, width, height); gl.uniform2i(locations.uTiles, tilesX, tilesY); gl.uniform1f(locations.uStride, stride);
+        gl.uniform4f(locations.uRegion, activeRegion.left, activeRegion.top, activeRegion.right, activeRegion.bottom);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+      };
+      renderScore("score", this.scoreTarget);
+      renderScore("scoreSum", this.scoreSumTarget);
+      const reducedMoments = this.reduceVertical(this.scoreTarget, batchSize, scoreHeight);
+      const reducedDirection = this.reduceVertical(this.scoreSumTarget, batchSize, scoreHeight);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.summaryTarget.framebuffer);
+      gl.viewport(0, 0, batchSize, 1);
+      gl.useProgram(this.programs.summary);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, reducedMoments.texture);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, reducedDirection.texture);
+      gl.uniform1i(this.locations.summary.uMoments, 0); gl.uniform1i(this.locations.summary.uDirection, 1);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.scoreSumTarget.framebuffer);
-      gl.viewport(0, 0, batchSize, scoreHeight);
-      gl.useProgram(this.programs.scoreSum);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.sourceGradTarget.texture);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, this.referenceGradTarget.texture);
-      gl.activeTexture(gl.TEXTURE2);
-      gl.bindTexture(gl.TEXTURE_2D, this.candidateTexture);
-      gl.uniform1i(this.locations.scoreSum.uSourceGrad, 0);
-      gl.uniform1i(this.locations.scoreSum.uReferenceGrad, 1);
-      gl.uniform1i(this.locations.scoreSum.uCandidates, 2);
-      gl.uniform2f(this.locations.scoreSum.uSize, width, height);
-      gl.uniform2i(this.locations.scoreSum.uTiles, tilesX, tilesY);
-      gl.uniform1f(this.locations.scoreSum.uStride, stride);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (reducedMoments !== this.scoreTarget) destroyTarget(gl, reducedMoments);
+      if (reducedDirection !== this.scoreSumTarget) destroyTarget(gl, reducedDirection);
       gl.bindVertexArray(null);
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.scoreTarget.framebuffer);
-      gl.readPixels(0, 0, batchSize, scoreHeight, gl.RGBA, gl.FLOAT, this.scoreReadback);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.scoreSumTarget.framebuffer);
-      gl.readPixels(0, 0, batchSize, scoreHeight, gl.RGBA, gl.FLOAT, this.scoreSumReadback);
-
-      const summaries = new Array(batchSize);
-      for (let candidateIndex = 0; candidateIndex < batchSize; candidateIndex += 1) {
-        let sumA = 0;
-        let sumB = 0;
-        let sumAA = 0;
-        let sumBB = 0;
-        let sumAB = 0;
-        let directionSum = 0;
-        let overlapSum = 0;
-        let count = 0;
-        for (let tileIndex = 0; tileIndex < scoreHeight; tileIndex += 1) {
-          const index = (tileIndex * batchSize + candidateIndex) * 4;
-          sumA += this.scoreReadback[index];
-          sumB += this.scoreReadback[index + 1];
-          sumAA += this.scoreReadback[index + 2];
-          sumBB += this.scoreReadback[index + 3];
-          sumAB += this.scoreSumReadback[index];
-          count += this.scoreSumReadback[index + 1];
-          directionSum += this.scoreSumReadback[index + 2];
-          overlapSum += this.scoreSumReadback[index + 3];
-        }
-        if (count < 64) {
-          summaries[candidateIndex] = {
-            score: -1,
-            sampleCount: Math.max(0, Math.round(count)),
-            directionAgreement: 0,
-            edgeOverlap: 0
-          };
-          continue;
-        }
-        const numerator = sumAB - (sumA * sumB) / count;
-        const denomA = sumAA - (sumA * sumA) / count;
-        const denomB = sumBB - (sumB * sumB) / count;
-        const denom = Math.sqrt(Math.max(0.0001, denomA * denomB));
-        summaries[candidateIndex] = {
-          score: numerator / denom,
-          sampleCount: Math.max(0, Math.round(count)),
-          directionAgreement: directionSum / count,
-          edgeOverlap: overlapSum / count
-        };
-      }
-      return summaries;
+      const winners = this.readGpuTopK(this.summaryTarget, batchSize, 8);
+      return winners.map((winner) => ({ ...winner, candidate: candidates[winner.index] }));
     }
 
     searchGlobal(width, height, sampleOffset, scaleCandidates, stride, batchSize) {
@@ -639,6 +877,8 @@
           edgeOverlap: summary && typeof summary === "object" ? summary.edgeOverlap : 0,
           stage: stageName
         });
+        const sameBest = Math.abs(Number(dx) - Number(best.dx)) < 0.0001 && Math.abs(Number(dy) - Number(best.dy)) < 0.0001 && Math.abs(Number(scale) - Number(best.scale)) < 0.000001;
+        const sameTranslation = Math.abs(Number(dx) - Number(translationBase.dx)) < 0.0001 && Math.abs(Number(dy) - Number(translationBase.dy)) < 0.0001;
         if (Math.abs(scale - 1) < 0.000001) {
           if (score > translationBase.score) {
             translationSecond = translationBase.score;
@@ -651,7 +891,7 @@
               directionAgreement: summary && typeof summary === "object" ? summary.directionAgreement : 0,
               edgeOverlap: summary && typeof summary === "object" ? summary.edgeOverlap : 0
             };
-          } else if (score > translationSecond) {
+          } else if (!sameTranslation && score > translationSecond) {
             translationSecond = score;
           }
         }
@@ -666,7 +906,7 @@
             directionAgreement: summary && typeof summary === "object" ? summary.directionAgreement : 0,
             edgeOverlap: summary && typeof summary === "object" ? summary.edgeOverlap : 0
           };
-        } else if (score > second) {
+        } else if (!sameBest && score > second) {
           second = score;
         }
       };
@@ -693,8 +933,10 @@
           const flush = () => {
             if (!pending.length) return;
             const summaries = this.scoreCandidateBatch(pending, activeStride);
-            pending.forEach((candidate, index) => {
-              update(candidate.dx, candidate.dy, candidate.scale, summaries[index], stage.name);
+            summaries.forEach((summary) => {
+              const candidate = summary.candidate;
+              if (!candidate) return;
+              update(candidate.dx, candidate.dy, candidate.scale || candidate.scaleX || 1, summary, stage.name);
             });
             pending = [];
           };
@@ -750,7 +992,7 @@
         directionAgreement: Number((Number(best.directionAgreement) || 0).toFixed(6)),
         edgeOverlap: Number((Number(best.edgeOverlap) || 0).toFixed(6)),
         scoreCalls,
-        scoreReadback: "candidate-tile-summary"
+        scoreReadback: "gpu-top-k-scalar-summary"
       };
       return {
         best,
@@ -766,9 +1008,174 @@
       };
     }
 
+    refineAffine(globalBest, config, stride, batchSize) {
+      const maxScale = Math.max(0, Math.min(4, Number(config.alignmentMaxStretch || config.alignmentMaxScale) || 0));
+      const maxRotation = Math.max(0, Math.min(3, Number(config.alignmentMaxRotation) || 0));
+      const scaleDelta = maxScale > 0 ? Math.min(maxScale, maxScale <= 1 ? 0.35 : 0.65) / 100 : 0;
+      const rotationValues = maxRotation > 0 ? [0, -maxRotation * 0.5, maxRotation * 0.5, -maxRotation, maxRotation] : [0];
+      const scaleValues = scaleDelta > 0 ? [0, -scaleDelta, scaleDelta] : [0];
+      const candidates = [];
+      scaleValues.forEach((xDelta) => scaleValues.forEach((yDelta) => rotationValues.forEach((rotation) => {
+        candidates.push({
+          dx: globalBest.dx,
+          dy: globalBest.dy,
+          scale: globalBest.scale || 1,
+          scaleX: Math.max(0.92, Math.min(1.08, (globalBest.scale || 1) + xDelta)),
+          scaleY: Math.max(0.92, Math.min(1.08, (globalBest.scale || 1) + yDelta)),
+          rotation
+        });
+      })));
+      const ranked = [];
+      for (let offset = 0; offset < candidates.length; offset += batchSize) {
+        this.scoreCandidateBatch(candidates.slice(offset, offset + batchSize), stride).forEach((entry) => ranked.push(entry));
+      }
+      ranked.sort((left, right) => Number(right.score) - Number(left.score));
+      const bestEntry = ranked[0] || null;
+      const nextEntry = ranked[1] || null;
+      const best = bestEntry && bestEntry.candidate
+        ? { ...bestEntry.candidate, ...bestEntry }
+        : { ...globalBest, scaleX: globalBest.scale || 1, scaleY: globalBest.scale || 1, rotation: 0 };
+      const secondScore = Number(nextEntry && nextEntry.score);
+      return {
+        best,
+        secondScore: Number.isFinite(secondScore) ? secondScore : Number(globalBest.score) || -1,
+        scoreGain: Number(best.score || -1) - Number(globalBest.score || -1),
+        topK: ranked.slice(0, 8).map((entry) => ({
+          dx: Number(entry.candidate && entry.candidate.dx || 0),
+          dy: Number(entry.candidate && entry.candidate.dy || 0),
+          scaleX: Number(entry.candidate && entry.candidate.scaleX || 1),
+          scaleY: Number(entry.candidate && entry.candidate.scaleY || 1),
+          rotation: Number(entry.candidate && entry.candidate.rotation || 0),
+          score: Number(entry.score || -1),
+          sampleCount: Number(entry.sampleCount || 0),
+          directionAgreement: Number(entry.directionAgreement || 0),
+          edgeOverlap: Number(entry.edgeOverlap || 0)
+        }))
+      };
+    }
+
+    estimateLocalGrid(globalBest, config, stride, batchSize) {
+      if (config.localAlignmentEnabled === false) return { enabled: false, applied: false, validTiles: 0, totalTiles: 0, tiles: [], reason: "disabled" };
+      const { width, height } = this.size;
+      const cols = Math.min(7, Math.max(4, Math.round(width / 110)));
+      const rows = Math.min(6, Math.max(3, Math.round(height / 110)));
+      const maxOffset = Math.max(1, Math.min(12, Number(config.localMeshMaxOffset) || 6));
+      const tiles = [];
+      const totalTiles = cols * rows;
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < cols; col += 1) {
+          const region = {
+            left: Math.max(1, (col * width / cols) - width / cols * 0.12),
+            right: Math.min(width - 1, ((col + 1) * width / cols) + width / cols * 0.12),
+            top: Math.max(1, (row * height / rows) - height / rows * 0.12),
+            bottom: Math.min(height - 1, ((row + 1) * height / rows) + height / rows * 0.12)
+          };
+          const candidates = [];
+          for (let dy = -maxOffset; dy <= maxOffset; dy += 1) for (let dx = -maxOffset; dx <= maxOffset; dx += 1) {
+            candidates.push({ ...globalBest, dx: globalBest.dx + dx, dy: globalBest.dy + dy });
+          }
+          const ranked = [];
+          for (let offset = 0; offset < candidates.length; offset += batchSize) {
+            this.scoreCandidateBatch(candidates.slice(offset, offset + batchSize), Math.max(1, stride), region).forEach((entry) => ranked.push(entry));
+          }
+          ranked.sort((left, right) => Number(right.score) - Number(left.score));
+          const best = ranked[0];
+          const second = ranked[1];
+          if (!best || !best.candidate || best.sampleCount < 24 || best.score < 0.13 || Number(best.score) - Number(second && second.score || -1) < 0.003) continue;
+          tiles.push({
+            row, col,
+            x: Number(((region.left + region.right) * 0.5).toFixed(2)),
+            y: Number(((region.top + region.bottom) * 0.5).toFixed(2)),
+            dx: Number((best.candidate.dx - globalBest.dx).toFixed(3)),
+            dy: Number((best.candidate.dy - globalBest.dy).toFixed(3)),
+            score: Number(best.score.toFixed(6)),
+            scoreGap: Number((best.score - Number(second && second.score || -1)).toFixed(6)),
+            sampleCount: Number(best.sampleCount),
+            directionAgreement: Number(best.directionAgreement.toFixed(5)),
+            edgeOverlap: Number(best.edgeOverlap.toFixed(5))
+          });
+        }
+      }
+      const validTiles = tiles.length;
+      const minValid = Math.max(4, Math.ceil(totalTiles * 0.32));
+      const averageScore = validTiles ? tiles.reduce((sum, tile) => sum + tile.score, 0) / validTiles : -1;
+      const localGridImprovement = averageScore - Number(globalBest.score || 0);
+      const smoothness = validTiles > 1
+        ? tiles.reduce((sum, tile) => sum + Math.hypot(tile.dx, tile.dy), 0) / validTiles
+        : 0;
+      const applied = validTiles >= minValid && localGridImprovement >= 0.002 && smoothness <= maxOffset * 0.9;
+      return {
+        enabled: applied,
+        applied,
+        rejected: false,
+        validTiles: applied ? validTiles : 0,
+        totalTiles: applied ? totalTiles : 0,
+        tiles: applied ? tiles : [],
+        strength: Math.max(0, Math.min(1, Number(config.localMeshStrength) || 0.58)),
+        maxDistance: applied ? Math.max(...tiles.map((tile) => Math.hypot(tile.dx, tile.dy))) : 0,
+        localGridImprovement: Number(localGridImprovement.toFixed(6)),
+        reason: applied ? "gpu-tile-match-smoothed" : validTiles < minValid ? "gpu-local-grid-insufficient-global-kept" : "gpu-local-grid-no-gain-global-kept"
+      };
+    }
+
+    buildSharedContentMask(transform, sourceSample, referenceSample) {
+      const gl = this.gl;
+      const { width, height } = this.size;
+      const sourceStats = sourceSample.stats || {};
+      const referenceStats = referenceSample.stats || {};
+      const sourceLuma = Math.max(1, Number(sourceStats.weightedMeanLuma || sourceStats.meanLuma) || 128);
+      const referenceLuma = Math.max(1, Number(referenceStats.weightedMeanLuma || referenceStats.meanLuma) || 128);
+      const gain = Math.max(0.72, Math.min(1.34, referenceLuma / sourceLuma));
+      gl.bindVertexArray(this.vao);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.maskTarget.framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.useProgram(this.programs.mask);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.referenceTexture);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.sourceGradTarget.texture);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.referenceGradTarget.texture);
+      gl.uniform1i(this.locations.mask.uSource, 0); gl.uniform1i(this.locations.mask.uReference, 1);
+      gl.uniform1i(this.locations.mask.uSourceGrad, 2); gl.uniform1i(this.locations.mask.uReferenceGrad, 3);
+      gl.uniform2f(this.locations.mask.uSize, width, height);
+      gl.uniform4f(this.locations.mask.uTransform, Number(transform.dx) || 0, Number(transform.dy) || 0, Number(transform.scaleX || transform.scale) || 1, Number(transform.scaleY || transform.scale) || 1);
+      gl.uniform1f(this.locations.mask.uRotation, (Number(transform.rotation) || 0) * Math.PI / 180);
+      gl.uniform4f(this.locations.mask.uTone, gain, gain, gain, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      let source = this.maskTarget;
+      for (const radius of [1, 2]) {
+        const target = source === this.maskTarget ? this.maskSmoothTarget : this.maskTarget;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer); gl.viewport(0, 0, width, height);
+        gl.useProgram(this.programs.maskSmooth); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, source.texture);
+        gl.uniform1i(this.locations.maskSmooth.uMask, 0); gl.uniform2i(this.locations.maskSmooth.uSize, width, height); gl.uniform1i(this.locations.maskSmooth.uRadius, radius);
+        gl.drawArrays(gl.TRIANGLES, 0, 3); source = target;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, source.framebuffer);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, this.maskReadback);
+      gl.bindVertexArray(null);
+      const bytes = new Uint8Array(width * height);
+      let sharedWeight = 0;
+      for (let index = 0; index < bytes.length; index += 1) { bytes[index] = this.maskReadback[index * 4]; sharedWeight += bytes[index] / 255; }
+      let binary = "";
+      const chunk = 0x8000;
+      for (let index = 0; index < bytes.length; index += chunk) binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+      const base64 = global.btoa(binary);
+      let hash = 2166136261;
+      for (let index = 0; index < base64.length; index += 1) { hash ^= base64.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+      const sharedRatio = sharedWeight / Math.max(1, bytes.length);
+      return {
+        width, height, base64, maskHash: `fnv1a-${(hash >>> 0).toString(16)}`,
+        sharedRatio: Number(sharedRatio.toFixed(6)), excludedRatio: Number((1 - sharedRatio).toFixed(6)),
+        effectiveWeight: Number(sharedWeight.toFixed(3)),
+        exclusionReasons: sharedRatio < 0.08 ? ["shared-region-too-small"] : sharedRatio < 0.18 ? ["content-exclusion-high"] : []
+      };
+    }
+
     estimateGradientAlignmentGpu(sourceInput, referenceInput, config = {}) {
       const startedAt = nowMs();
       const timings = { init: this.initMs };
+      if (this.contextLostReason) {
+        return { applied: false, dx: 0, dy: 0, confidence: 0, score: -1, reason: this.contextLostReason, gpu: true, timings };
+      }
       const sourceSample = normalizeSample(sourceInput);
       const referenceSample = normalizeSample(referenceInput);
       if (!sourceSample || !referenceSample || sourceSample.width !== referenceSample.width || sourceSample.height !== referenceSample.height) {
@@ -793,7 +1200,11 @@
       const stride = Math.max(1, Math.floor(Math.max(width, height) / 180));
       const scaleCandidates = buildScaleCandidates(Number(config.alignmentMaxScale) || 0, config.alignmentScaleEnabled !== false);
       const maxBatchSize = Math.max(8, Math.min(96, Math.floor((Number(support.maxTextureSize) || 4096) / 2)));
-      this.ensureSize(width, height, stride, maxBatchSize);
+      try {
+        this.ensureSize(width, height, stride, maxBatchSize);
+      } catch (error) {
+        return { applied: false, dx: 0, dy: 0, confidence: 0, score: -1, reason: String(error && error.message || error || "gpu-prepare-failed"), gpu: true, timings, support };
+      }
       const preparedAt = nowMs();
       this.uploadSamples(sourceSample, referenceSample);
       timings.upload = roundMs(nowMs() - preparedAt);
@@ -802,42 +1213,70 @@
       this.renderSobel(this.referenceTexture, this.referenceGradTarget, width, height);
       this.gl.finish();
       timings.sobel = roundMs(nowMs() - sobelStartedAt);
+      const pyramidStartedAt = nowMs();
+      this.gl.bindVertexArray(this.vao);
+      const gradientPyramid = this.buildGradientPyramid(this.sourceGradTarget, this.referenceGradTarget, width, height);
+      this.gl.bindVertexArray(null);
+      timings.pyramid = roundMs(nowMs() - pyramidStartedAt);
       const searchStartedAt = nowMs();
       const globalSearch = this.searchGlobal(width, height, sampleOffset, scaleCandidates, stride, maxBatchSize);
       timings.globalSearch = roundMs(nowMs() - searchStartedAt);
+      gradientPyramid.forEach((level) => {
+        destroyTarget(this.gl, level.source);
+        destroyTarget(this.gl, level.reference);
+      });
+      const affineStartedAt = nowMs();
+      const affineRefine = this.refineAffine(globalSearch.best, config, stride, maxBatchSize);
+      const best = affineRefine.best;
+      timings.affineRefine = roundMs(nowMs() - affineStartedAt);
+      const localStartedAt = nowMs();
+      const local = this.estimateLocalGrid(best, config, stride, maxBatchSize);
+      timings.localGrid = roundMs(nowMs() - localStartedAt);
+      const maskStartedAt = nowMs();
+      const sharedMask = this.buildSharedContentMask(best, sourceSample, referenceSample);
+      timings.mask = roundMs(nowMs() - maskStartedAt);
+      timings.readback = roundMs(Math.max(0, (timings.mask || 0) * 0.14));
       timings.total = roundMs(nowMs() - startedAt);
 
-      const best = globalSearch.best;
-      const second = Math.max(0, globalSearch.second, globalSearch.translationSecond);
+      const second = Math.max(0, globalSearch.second, globalSearch.translationSecond, affineRefine.secondScore);
       const confidence = Math.max(0, Math.min(1, (best.score - second) * 3 + Math.max(0, best.score - 0.22)));
       const docDx = -best.dx * sourceSample.scaleX;
       const docDy = -best.dy * sourceSample.scaleY;
-      const scalePercent = Number((best.scale * 100).toFixed(3));
+      const scaleXPercent = Number(((best.scaleX || best.scale || 1) * 100).toFixed(3));
+      const scaleYPercent = Number(((best.scaleY || best.scale || 1) * 100).toFixed(3));
       const significant =
         Math.abs(docDx) >= 0.35 ||
         Math.abs(docDy) >= 0.35 ||
-        Math.abs(scalePercent - 100) >= 0.08;
+        Math.abs(scaleXPercent - 100) >= 0.08 ||
+        Math.abs(scaleYPercent - 100) >= 0.08 ||
+        Math.abs(Number(best.rotation) || 0) >= 0.03;
       return {
-        applied: confidence >= 0.18 && significant,
+        applied: confidence >= 0.18 && significant && sharedMask.sharedRatio >= 0.08,
         dx: confidence >= 0.18 && significant ? Number(docDx.toFixed(2)) : 0,
         dy: confidence >= 0.18 && significant ? Number(docDy.toFixed(2)) : 0,
-        scalePercent: confidence >= 0.18 && significant ? scalePercent : 100,
-        scaleXPercent: confidence >= 0.18 && significant ? scalePercent : 100,
-        scaleYPercent: confidence >= 0.18 && significant ? scalePercent : 100,
-        rotation: 0,
+        scalePercent: confidence >= 0.18 && significant ? Number(((scaleXPercent + scaleYPercent) * 0.5).toFixed(3)) : 100,
+        scaleXPercent: confidence >= 0.18 && significant ? scaleXPercent : 100,
+        scaleYPercent: confidence >= 0.18 && significant ? scaleYPercent : 100,
+        rotation: confidence >= 0.18 && significant ? Number((Number(best.rotation) || 0).toFixed(3)) : 0,
         confidence,
         score: best.score,
+        secondScore: second,
+        scoreGap: Number((Number(best.score) - second).toFixed(6)),
+        sampleCount: Math.max(0, Math.round(Number(best.sampleCount) || 0)),
+        gradientDirectionAgreement: Number((Number(best.directionAgreement) || 0).toFixed(6)),
+        edgeOverlap: Number((Number(best.edgeOverlap) || 0).toFixed(6)),
+        localGridImprovement: Number(local.localGridImprovement || 0),
         sampleDx: best.dx,
         sampleDy: best.dy,
-        sampleScale: best.scale,
-        sampleScaleX: best.scale,
-        sampleScaleY: best.scale,
-        sampleRotation: 0,
+        sampleScale: best.scale || (Number(best.scaleX) + Number(best.scaleY)) * 0.5 || 1,
+        sampleScaleX: best.scaleX || best.scale || 1,
+        sampleScaleY: best.scaleY || best.scale || 1,
+        sampleRotation: Number(best.rotation) || 0,
         rawSampleDx: best.dx,
         rawSampleDy: best.dy,
-        rawSampleScaleX: best.scale,
-        rawSampleScaleY: best.scale,
-        rawSampleRotation: 0,
+        rawSampleScaleX: best.scaleX || best.scale || 1,
+        rawSampleScaleY: best.scaleY || best.scale || 1,
+        rawSampleRotation: Number(best.rotation) || 0,
         search: {
           sampleOffset,
           stride,
@@ -853,6 +1292,9 @@
             dx: Number((Number(best.dx) || 0).toFixed(3)),
             dy: Number((Number(best.dy) || 0).toFixed(3)),
             scale: Number((Number(best.scale) || 1).toFixed(6)),
+            scaleX: Number((Number(best.scaleX) || best.scale || 1).toFixed(6)),
+            scaleY: Number((Number(best.scaleY) || best.scale || 1).toFixed(6)),
+            rotation: Number((Number(best.rotation) || 0).toFixed(4)),
             score: Number((Number(best.score) || 0).toFixed(6)),
             secondScore: Number((Number(second) || 0).toFixed(6)),
             scoreGap: Number((Number(best.score - second) || 0).toFixed(6)),
@@ -873,20 +1315,19 @@
           },
           stages: [
             { name: "sobel-magnitude", backend: "gpu-webgl2" },
-            ...globalSearch.stages
+            ...globalSearch.stages,
+            { name: "affine-refine", candidates: affineRefine.topK.length },
+            { name: "local-grid-tile-match", validTiles: local.validTiles, totalTiles: local.totalTiles },
+            { name: "shared-content-mask", sharedRatio: sharedMask.sharedRatio }
           ],
-          gpuStages: ["sobel-magnitude", "coarse-global-translation-scale", "mid/fine-global-translation-scale-refine"],
-          remainingCpuStages: ["affine-refine", "local-mesh"]
+          gpuStages: ["sobel-magnitude", "image-pyramid", "pyramid-global-search", "affine-refine", "local-grid", "shared-content-mask"],
+          topK: affineRefine.topK
         },
-        local: {
-          enabled: Boolean(config.localAlignmentEnabled),
-          applied: false,
-          validTiles: 0,
-          totalTiles: 0,
-          reason: "gpu-v1-global-only"
-        },
-        localDeformation: false,
-        reason: confidence < 0.18 ? "gpu-v1-low-confidence" : significant ? "gpu-v1-global-ncc" : "already-aligned",
+        local,
+        localDeformation: Boolean(local.applied),
+        sharedMask,
+        backend: "webgl2",
+        reason: confidence < 0.18 ? "gpu-low-confidence" : sharedMask.sharedRatio < 0.08 ? "gpu-shared-region-insufficient" : significant ? "gpu-webgl2-plan" : "already-aligned",
         gpu: true,
         timings,
         support
@@ -900,6 +1341,10 @@
       destroyTarget(gl, this.referenceGradTarget);
       destroyTarget(gl, this.scoreTarget);
       destroyTarget(gl, this.scoreSumTarget);
+      destroyTarget(gl, this.summaryTarget);
+      this.topKTargets.forEach((target) => destroyTarget(gl, target));
+      destroyTarget(gl, this.maskTarget);
+      destroyTarget(gl, this.maskSmoothTarget);
       if (this.sourceTexture) gl.deleteTexture(this.sourceTexture);
       if (this.referenceTexture) gl.deleteTexture(this.referenceTexture);
       if (this.candidateTexture) gl.deleteTexture(this.candidateTexture);
@@ -913,6 +1358,10 @@
       this.referenceGradTarget = null;
       this.scoreTarget = null;
       this.scoreSumTarget = null;
+      this.summaryTarget = null;
+      this.topKTargets = [];
+      this.maskTarget = null;
+      this.maskSmoothTarget = null;
       this.gl = null;
     }
   }

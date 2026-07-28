@@ -38,6 +38,21 @@ class LocalAiServerTests(unittest.TestCase):
         self.assertEqual(tiles[-1]["engineRight"], 1200)
         self.assertEqual(tiles[-1]["engineBottom"], 800)
 
+    def test_job_reports_confirmed_native_tile_progress(self) -> None:
+        job = server.Job(
+            job_id="tile-progress-001",
+            input_path=Path("source.png"),
+            output_path=Path("result.png"),
+            scale=1,
+            tile=128,
+            tta=False,
+            native_tile_total=6,
+            native_tile_completed=2,
+        )
+        public = job.public()
+        self.assertEqual(public["tileTotal"], 6)
+        self.assertEqual(public["tileCompleted"], 2)
+
     def test_png_visible_pixel_guard_rejects_black_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_dir:
             path = Path(temporary_dir) / "sample.png"

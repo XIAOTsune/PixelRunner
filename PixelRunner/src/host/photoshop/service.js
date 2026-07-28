@@ -1847,6 +1847,48 @@ function createSiblingNativePath(nativePath, filename) {
   return `${source.slice(0, lastSeparator + 1)}${targetName}`.replace(/[\\/]/g, separator);
 }
 
+const LOCAL_UPSCALE_MODEL_CONTEXT_PADDING = 64;
+
+function getLocalUpscaleSelectionPadding(selectionBounds, docInfo) {
+  const selectionWidth = Math.max(1, Number(selectionBounds.right) - Number(selectionBounds.left));
+  const selectionHeight = Math.max(1, Number(selectionBounds.bottom) - Number(selectionBounds.top));
+  const documentLongEdge = Math.max(1, Number(docInfo && docInfo.width) || 1, Number(docInfo && docInfo.height) || 1);
+  // Real-ESRGAN external tiles use a 64 px overlap. A small adaptive term keeps
+  // enough receptive-field context for very large documents without exporting
+  // an unexpectedly large portion of the canvas.
+  const adaptive = Math.ceil(Math.min(selectionWidth, selectionHeight, documentLongEdge) / 192);
+  return Math.max(LOCAL_UPSCALE_MODEL_CONTEXT_PADDING, Math.min(192, LOCAL_UPSCALE_MODEL_CONTEXT_PADDING + adaptive));
+}
+
+export function resolveLocalUpscaleCapturePlan(options = {}) {
+  const docInfo = options.document && typeof options.document === "object" ? options.document : options;
+  const documentBounds = {
+    left: 0,
+    top: 0,
+    right: Math.max(1, Number(docInfo && docInfo.width) || 1),
+    bottom: Math.max(1, Number(docInfo && docInfo.height) || 1)
+  };
+  const requestedMode = String(options.mode || options.captureMode || "auto").trim().toLowerCase();
+  const explicitSelection = requestedMode === "selection";
+  const forceFullDocument = requestedMode === "full" || requestedMode === "full-document";
+  const rawSelectionBounds = forceFullDocument ? null : normalizeBounds(options.selectionBounds || docInfo.selectionBounds);
+  const selectionBounds = rawSelectionBounds ? clampBoundsToDocument(rawSelectionBounds, docInfo) : null;
+  const selectionCoversDocument = selectionBounds && isFullDocumentBounds(selectionBounds, docInfo);
+  const useSelection = Boolean(selectionBounds && !selectionCoversDocument && !forceFullDocument);
+  if (explicitSelection && !useSelection) {
+    throw new Error(selectionCoversDocument ? "当前选区已覆盖整张画布，请选择整图超分" : "选区超分需要有效的 Photoshop 选区");
+  }
+  const padding = useSelection ? getLocalUpscaleSelectionPadding(selectionBounds, docInfo) : 0;
+  return {
+    captureMode: useSelection ? "selection" : "full",
+    useSelection,
+    selectionBounds: useSelection ? selectionBounds : null,
+    captureBounds: useSelection ? expandBoundsWithinDocument(selectionBounds, padding, docInfo) : documentBounds,
+    padding,
+    selectionCoversDocument: Boolean(selectionCoversDocument)
+  };
+}
+
 export async function captureDocumentForLocalUpscale(options = {}) {
   const deps = await ensureDeps();
   const { photoshop, storage } = deps;
@@ -1866,15 +1908,31 @@ export async function captureDocumentForLocalUpscale(options = {}) {
   }
 
   const targetSize = getDocumentPixelSize(doc);
+  const capturePlan = resolveLocalUpscaleCapturePlan({ ...options, document: docInfo });
+  const useSelection = capturePlan.useSelection;
+  const selectionBounds = capturePlan.selectionBounds;
 
   const fileKey = createLocalUpscaleFileKey(options.taskId);
   return core.executeAsModal(async () => {
     let tempDoc = null;
+    let selectionSnapshotChannelName = "";
+    const originalLayer = doc && doc.activeLayers && doc.activeLayers[0];
+    const originalLayerId = Number(originalLayer && originalLayer.id) || 0;
     try {
+      if (useSelection) {
+        await activateDocument(app, action, Number(doc.id));
+        selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
+      }
       tempDoc = await doc.duplicate("PR 超分");
       try {
         await tempDoc.flatten();
       } catch (_) {}
+
+      const padding = capturePlan.padding;
+      const captureBounds = capturePlan.captureBounds;
+      if (useSelection && typeof tempDoc.crop === "function") {
+        await tempDoc.crop(captureBounds);
+      }
 
       const sourceSize = getDocumentPixelSize(tempDoc);
       const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `PR-S-${fileKey}`);
@@ -1890,6 +1948,10 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         documentId: docInfo.documentId,
         width: sourceSize.width,
         height: sourceSize.height,
+        captureMode: useSelection ? "selection" : "full",
+        captureBounds,
+        selectionBounds,
+        padding,
         inputPath: exported.nativePath
       });
       return {
@@ -1899,6 +1961,13 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         documentId: docInfo.documentId,
         targetWidth: targetSize.width,
         targetHeight: targetSize.height,
+        targetBounds: captureBounds,
+        selectionBounds: useSelection ? selectionBounds : null,
+        captureBounds,
+        padding,
+        captureMode: useSelection ? "selection" : "full",
+        selectionSnapshotChannelName,
+        restoreActiveLayerId: originalLayerId,
         sourceScale: 1,
         inputPath: exported.nativePath,
         outputPath,
@@ -1906,8 +1975,20 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         height: sourceSize.height,
         mimeType: "image/png"
       };
+    } catch (error) {
+      if (selectionSnapshotChannelName) {
+        try {
+          await activateDocument(app, action, Number(doc.id));
+          await deleteChannelByName(action, selectionSnapshotChannelName);
+        } catch (_) {}
+      }
+      throw error;
     } finally {
       await closeDocumentWithoutSaving(action, tempDoc);
+      try {
+        await activateDocument(app, action, Number(doc.id));
+        if (originalLayerId > 0) await selectLayerById(action, originalLayerId);
+      } catch (_) {}
     }
   }, { commandName: "PixelRunner Export Local Upscale Source" });
 }
@@ -2048,6 +2129,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const selectionSnapshotChannelName = String(options.selectionSnapshotChannelName || "").trim();
   const selectionMaskExpansion = Math.max(0, Math.min(128, Number(options.selectionMaskExpansion) || 0));
   const selectionMaskFeather = Math.max(0, Math.min(128, Number(options.selectionMaskFeather) || 0));
+  const restoreActiveLayerId = Math.max(0, Number(options.restoreActiveLayerId) || 0);
   let placementMaskSessionToken = "";
   let placementMaskInfo = null;
   let placementMaskFile = null;
@@ -2158,9 +2240,18 @@ export async function placeImageFromUrl(payload, runtime = {}) {
         await refineActiveSelection(activeTargetDocument || app.activeDocument, action, selectionMaskExpansion, selectionMaskFeather);
         await selectLayerById(action, resultLayerId);
         await applyLayerMaskFromSelection(action);
+        // Feathering is only for the result mask. Reload the original channel so
+        // the caller keeps the exact selection state it had before upscaling.
+        await loadSelectionFromChannel(action, selectionSnapshotChannelName);
         await deleteChannelByName(action, selectionSnapshotChannelName);
         appliedMaskMode = "native-selection-snapshot";
       } catch (error) {
+        try {
+          await loadSelectionFromChannel(action, selectionSnapshotChannelName);
+        } catch (_) {}
+        try {
+          await deleteChannelByName(action, selectionSnapshotChannelName);
+        } catch (_) {}
         try {
           await selectLayerById(action, resultLayerId);
           await deleteLayerById(action, resultLayerId);
@@ -2227,6 +2318,13 @@ export async function placeImageFromUrl(payload, runtime = {}) {
         } catch (_) {}
       }
       placedLayerName = String(activeResultLayer.name || requestedLayerName).trim() || requestedLayerName;
+    }
+    if (restoreActiveLayerId > 0 && restoreActiveLayerId !== placedLayerId) {
+      try {
+        await selectLayerById(action, restoreActiveLayerId);
+      } catch (_) {
+        // A user may have removed the source layer while a remote result was in flight.
+      }
     }
     }, { commandName: "Place PixelRunner Result" });
 

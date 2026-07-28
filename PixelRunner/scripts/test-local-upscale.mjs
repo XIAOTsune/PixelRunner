@@ -12,6 +12,8 @@ import {
   stopLocalUpscaleEngine,
   submitLocalUpscaleJob
 } from "../src/host/local-upscale.js";
+import { resolveLocalUpscaleCapturePlan } from "../src/host/photoshop/service.js";
+import { buildLocalUpscalePlacementPayload } from "../src/host/photoshop-bridge.js";
 
 const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
 const hiddenLauncher = await readFile(new URL("../local-ai/start-local-ai.vbs", import.meta.url), "utf8");
@@ -46,7 +48,9 @@ assert.match(localUpscaleWebview, /photoshop\.placeLocalUpscaleResult/);
 assert.match(localUpscaleWebview, /scale: 1/);
 assert.match(photoshopBridge, /placeLocalUpscaleResultIntoPhotoshop/);
 assert.match(photoshopBridge, /cleanupLocalSource: true/);
-assert.match(photoshopBridge, /layerName: "超分 x4"/);
+assert.match(photoshopBridge, /超分 x4（选区）/);
+assert.match(photoshopService, /selectionMaskFeather/);
+assert.match(photoshopService, /Reload the original channel/);
 assert.match(photoshopService, /`PR-S-\$\{fileKey\}`/);
 assert.match(photoshopService, /`PR-U-\$\{fileKey\}\.png`/);
 assert.doesNotMatch(photoshopService, /pixelrunner-local-upscale-result-/);
@@ -54,6 +58,58 @@ assert.doesNotMatch(localService, /SUPPORTED_SCALES = \{2, 4\}/);
 assert.doesNotMatch(localUpscaleWebview, /data-local-upscale-scale/);
 const runJobSource = localService.slice(localService.indexOf("    def _run_job"), localService.indexOf("\ndef read_png_dimensions"));
 assert.doesNotMatch(runJobSource, /_prepare_external_tiles|_stitch_external_tile_outputs/);
+
+const fullCanvasPlan = resolveLocalUpscaleCapturePlan({
+  mode: "auto",
+  document: { width: 6000, height: 4000, selectionBounds: null }
+});
+assert.deepEqual(fullCanvasPlan.captureBounds, { left: 0, top: 0, right: 6000, bottom: 4000 });
+assert.equal(fullCanvasPlan.captureMode, "full");
+
+const rectangularSelectionPlan = resolveLocalUpscaleCapturePlan({
+  mode: "auto",
+  document: { width: 6000, height: 4000, selectionBounds: { left: 1100, top: 900, right: 1700, bottom: 1400 } }
+});
+assert.equal(rectangularSelectionPlan.captureMode, "selection");
+assert.deepEqual(rectangularSelectionPlan.selectionBounds, { left: 1100, top: 900, right: 1700, bottom: 1400 });
+assert.ok(rectangularSelectionPlan.padding >= 64);
+assert.ok(rectangularSelectionPlan.captureBounds.left < rectangularSelectionPlan.selectionBounds.left);
+assert.ok(rectangularSelectionPlan.captureBounds.right > rectangularSelectionPlan.selectionBounds.right);
+
+const edgeSelectionPlan = resolveLocalUpscaleCapturePlan({
+  mode: "selection",
+  document: { width: 1000, height: 800, selectionBounds: { left: 0, top: 4, right: 90, bottom: 120 } }
+});
+assert.equal(edgeSelectionPlan.captureBounds.left, 0);
+assert.equal(edgeSelectionPlan.captureBounds.top, 0);
+assert.ok(edgeSelectionPlan.captureBounds.right <= 1000);
+assert.ok(edgeSelectionPlan.captureBounds.bottom <= 800);
+assert.throws(
+  () => resolveLocalUpscaleCapturePlan({ mode: "selection", document: { width: 1000, height: 800, selectionBounds: null } }),
+  /有效.*选区/
+);
+assert.equal(resolveLocalUpscaleCapturePlan({
+  mode: "auto",
+  document: { width: 1000, height: 800, selectionBounds: { left: 0, top: 0, right: 1000, bottom: 800 } }
+}).captureMode, "full");
+
+const maskedPlacement = buildLocalUpscalePlacementPayload({
+  filePath: "C:\\temp\\output.png",
+  taskId: "local-upscale-test",
+  targetDocumentId: 7,
+  targetWidth: 6000,
+  targetHeight: 4000,
+  targetBounds: rectangularSelectionPlan.captureBounds,
+  captureMode: "selection",
+  selectionSnapshotChannelName: "PixelRunner selection snapshot",
+  restoreActiveLayerId: 42
+});
+assert.deepEqual(maskedPlacement.targetBounds, rectangularSelectionPlan.captureBounds);
+assert.equal(maskedPlacement.applyMask, true);
+assert.equal(maskedPlacement.requirePlacementMask, true);
+assert.equal(maskedPlacement.selectionMaskFeather, 24);
+assert.equal(maskedPlacement.restoreActiveLayerId, 42);
+assert.equal(maskedPlacement.layerName, "超分 x4（选区）");
 
 assert.equal(normalizeLocalUpscaleBaseUrl(), "http://127.0.0.1:17836");
 assert.equal(normalizeLocalUpscaleBaseUrl("http://localhost:19001/"), "http://localhost:19001");

@@ -326,6 +326,8 @@ class Job:
     command: list[str] = field(default_factory=list)
     input_dimensions: tuple[int, int] | None = None
     engine_output_dimensions: tuple[int, int] | None = None
+    native_tile_total: int = 0
+    native_tile_completed: int = 0
     input_has_visible_pixels: bool = False
     visible_input_tiles: set[str] = field(default_factory=set)
     placement: dict[str, Any] = field(default_factory=dict)
@@ -344,6 +346,8 @@ class Job:
             "sourceScale": self.scale,
             "engineScale": NATIVE_MODEL_SCALE,
             "tile": self.tile,
+            "tileTotal": self.native_tile_total,
+            "tileCompleted": self.native_tile_completed,
             "model": "realesrgan-x4plus",
             "debug": self.debug,
             "debugPath": str(self.debug_dir) if self.debug_dir else "",
@@ -553,6 +557,10 @@ class LocalUpscaleService:
             )
             self.jobs[job_id] = job
         job.input_dimensions = read_png_dimensions(job.input_path)
+        if job.input_dimensions:
+            job.native_tile_total = len(build_native_tile_coordinates(
+                job.input_dimensions[0], job.input_dimensions[1], job.tile, NATIVE_MODEL_SCALE
+            ))
         self._write_debug_metadata(job)
         self.work_queue.put(job_id)
         return job
@@ -831,6 +839,10 @@ class LocalUpscaleService:
                 job.error = f"Vulkan 推理失败：{detail or '显存或驱动错误'}"
                 job.message = job.error
             else:
+                # The bundled NCNN CLI owns its internal tile loop and does not expose
+                # per-tile callbacks. Mark tiles complete only once the native process
+                # has returned successfully rather than publishing an invented estimate.
+                job.native_tile_completed = job.native_tile_total
                 job.progress = 84
                 job.message = "正在验证原生引擎输出"
                 self._write_debug_metadata(job)

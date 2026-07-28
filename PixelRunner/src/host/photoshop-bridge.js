@@ -77,6 +77,31 @@ export async function openLocalUpscaleResultInPhotoshop(args = []) {
   return photoshopService.openImageFromUrl(payload);
 }
 
+export function buildLocalUpscalePlacementPayload(payload = {}) {
+  const targetWidth = Math.max(1, Math.round(Number(payload.targetWidth) || 0));
+  const targetHeight = Math.max(1, Math.round(Number(payload.targetHeight) || 0));
+  const targetBounds = payload.targetBounds && typeof payload.targetBounds === "object"
+    ? payload.targetBounds
+    : { left: 0, top: 0, right: targetWidth, bottom: targetHeight };
+  const selectionSnapshotChannelName = String(payload.selectionSnapshotChannelName || "").trim();
+  const captureMode = String(payload.captureMode || "full").trim();
+  return {
+    filePath: String(payload.filePath || "").trim(),
+    taskId: payload.taskId,
+    targetDocumentId: Number(payload.targetDocumentId) || 0,
+    targetBounds,
+    fitMode: "stretch",
+    preserveCanvasBounds: true,
+    applyMask: Boolean(selectionSnapshotChannelName),
+    requirePlacementMask: Boolean(selectionSnapshotChannelName),
+    selectionSnapshotChannelName,
+    selectionMaskFeather: selectionSnapshotChannelName ? 24 : 0,
+    restoreActiveLayerId: Math.max(0, Number(payload.restoreActiveLayerId) || 0),
+    cleanupLocalSource: true,
+    layerName: captureMode === "selection" ? "超分 x4（选区）" : "超分 x4"
+  };
+}
+
 export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = {}) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const filePath = String(payload.filePath || "").trim();
@@ -92,17 +117,21 @@ export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = 
     throw new Error("Photoshop host service is unavailable");
   }
 
-  return photoshopService.placeImageFromUrl({
-    filePath,
-    taskId: payload.taskId,
-    targetDocumentId,
-    targetBounds: { left: 0, top: 0, right: targetWidth, bottom: targetHeight },
-    fitMode: "stretch",
-    preserveCanvasBounds: true,
-    applyMask: false,
-    cleanupLocalSource: true,
-    layerName: "超分 x4"
-  }, runtime);
+  const selectionSnapshotChannelName = String(payload.selectionSnapshotChannelName || "").trim();
+  const placementPayload = buildLocalUpscalePlacementPayload(payload);
+  try {
+    return await photoshopService.placeImageFromUrl(placementPayload, runtime);
+  } catch (error) {
+    if (selectionSnapshotChannelName && typeof photoshopService.deleteSelectionSnapshot === "function") {
+      try {
+        await photoshopService.deleteSelectionSnapshot({
+          targetDocumentId,
+          selectionSnapshotChannelName
+        });
+      } catch (_) {}
+    }
+    throw error;
+  }
 }
 
 export async function placeResultAndBlendIntoPhotoshop(args = [], runtime = {}) {

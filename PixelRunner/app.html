@@ -1269,6 +1269,14 @@
 
       <div class="local-upscale-controls">
         <label class="field local-upscale-field">
+          <span class="field-label">处理范围</span>
+          <select id="localUpscaleModeInput" class="field-input" aria-label="本地超分处理范围">
+            <option value="auto" selected>自动（优先选区）</option>
+            <option value="full">整图</option>
+            <option value="selection">仅选区</option>
+          </select>
+        </label>
+        <label class="field local-upscale-field">
           <span class="field-label">显存分块</span>
           <select id="localUpscaleTileInput" class="field-input">
             <option value="128" selected>128 px · 兼容模式</option>
@@ -1291,12 +1299,12 @@
       <div id="localUpscaleProgressPanel" class="local-upscale-progress-panel" data-state="idle">
         <div class="local-upscale-progress-head">
           <span id="localUpscaleProgressLabel">等待开始</span>
-          <span id="localUpscaleProgressMeta">完整画布 · 原生 4x</span>
+          <span id="localUpscaleProgressMeta">自动范围 · 原生 4x</span>
         </div>
         <div class="local-upscale-progress-track" aria-hidden="true"><span id="localUpscaleProgressBar"></span></div>
       </div>
 
-      <div id="localUpscaleHint" class="summary-strip" role="status" aria-live="polite">导出完整可见合成图，以原生 4x 推理后回贴为智能对象图层。</div>
+      <div id="localUpscaleHint" class="summary-strip" role="status" aria-live="polite">自动检测选区；选区外会保留原像素。</div>
 
       <div class="action-row local-upscale-actions">
         <button id="btnCancelLocalUpscale" class="secondary-btn" type="button" disabled>取消任务</button>

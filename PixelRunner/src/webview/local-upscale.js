@@ -178,12 +178,50 @@
     if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(progress) || 0))}%`;
   }
 
+  function getCaptureLabel(capture) {
+    if (!capture || String(capture.captureMode || "") !== "selection") return "整图超分 · 原生 4x";
+    const bounds = capture.captureBounds || capture.targetBounds || {};
+    const width = Math.max(0, Math.round(Number(bounds.right) - Number(bounds.left)));
+    const height = Math.max(0, Math.round(Number(bounds.bottom) - Number(bounds.top)));
+    const padding = Math.max(0, Math.round(Number(capture.padding) || 0));
+    return `选区超分 · ${width} x ${height} · padding ${padding}px · 原生 4x`;
+  }
+
+  function getCaptureProgressLabel(capture) {
+    if (!capture || String(capture.captureMode || "") !== "selection") return "整图";
+    const bounds = capture.captureBounds || capture.targetBounds || {};
+    const width = Math.max(0, Math.round(Number(bounds.right) - Number(bounds.left)));
+    const height = Math.max(0, Math.round(Number(bounds.bottom) - Number(bounds.top)));
+    return `选区 ${width} x ${height}`;
+  }
+
+  function getTileProgressLabel(job) {
+    const total = Math.max(0, Math.floor(Number(job && job.tileTotal) || 0));
+    const completed = Math.max(0, Math.min(total, Math.floor(Number(job && job.tileCompleted) || 0)));
+    return total > 0 ? `分块 ${completed} / ${total}` : "分块准备中";
+  }
+
+  async function cleanupCaptureSelectionSnapshot(capture = state.currentCapture) {
+    const channelName = String(capture && capture.selectionSnapshotChannelName || "").trim();
+    const documentId = Number(capture && capture.documentId) || 0;
+    if (!channelName || !documentId || !modules.runtime.isPluginRuntime()) return;
+    try {
+      await modules.runtime.callHost("photoshop.deleteSelectionSnapshot", [{
+        targetDocumentId: documentId,
+        selectionSnapshotChannelName: channelName
+      }], { timeoutMs: 15000 });
+    } catch (error) {
+      console.warn("[PixelRunner/WebView] localUpscale selection snapshot cleanup unavailable", error);
+    }
+  }
+
   function setRunning(running) {
     state.running = Boolean(running);
     const controlsLocked = state.running || state.engineStarting;
     const startButton = getById("btnStartLocalUpscale");
     const cancelButton = getById("btnCancelLocalUpscale");
     const refreshButton = getById("btnRefreshLocalUpscaleEngine");
+    const modeInput = getById("localUpscaleModeInput");
     const tileInput = getById("localUpscaleTileInput");
     const ttaInput = getById("localUpscaleTtaInput");
     const debugInput = getById("localUpscaleDebugInput");
@@ -191,6 +229,7 @@
     if (cancelButton) cancelButton.disabled = !state.running || !state.currentJobId;
     if (refreshButton) refreshButton.disabled = controlsLocked;
     if (tileInput) tileInput.disabled = controlsLocked;
+    if (modeInput) modeInput.disabled = controlsLocked;
     if (ttaInput) ttaInput.disabled = controlsLocked;
     if (debugInput) debugInput.disabled = controlsLocked;
   }
@@ -218,7 +257,7 @@
     state.engineReady = true;
     setEngineMeta(health);
     setStatus(`本地引擎已就绪：${getEngineLabel(health)}`, "success");
-    setProgress("等待开始", "完整画布 · 原生 4x", 0, "idle");
+    setProgress("等待开始", "自动范围 · 原生 4x", 0, "idle");
   }
 
   function markEngineUnavailable(error) {
@@ -231,11 +270,13 @@
   }
 
   function closePanel() {
+    const capture = state.currentCapture;
     state.engineSessionActive = false;
     state.engineSessionId += 1;
     clearPollTimer();
     state.currentJobId = "";
     state.currentCapture = null;
+    void cleanupCaptureSelectionSnapshot(capture);
     setRunning(false);
     void stopEngine();
     if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
@@ -383,13 +424,19 @@
     if (!capture || !capture.documentId || !capture.targetWidth || !capture.targetHeight) {
       throw new Error("本地超分缺少原文档回贴信息");
     }
-    setProgress("正在回贴 Photoshop", "原文档新图层", 88, "running");
+    setProgress("正在回贴 Photoshop", getCaptureLabel(capture), 88, "running");
     const result = await modules.runtime.callHost("photoshop.placeLocalUpscaleResult", [{
       filePath: resultPath,
       taskId: state.currentJobId,
       targetDocumentId: capture.documentId,
       targetWidth: capture.targetWidth,
       targetHeight: capture.targetHeight,
+      targetBounds: capture.targetBounds,
+      captureBounds: capture.captureBounds,
+      captureMode: capture.captureMode,
+      padding: capture.padding,
+      selectionSnapshotChannelName: capture.selectionSnapshotChannelName,
+      restoreActiveLayerId: capture.restoreActiveLayerId,
     }], { timeoutMs: 360000 });
     const document = result && result.document ? result.document : {};
     const size = Number(document.width) && Number(document.height)
@@ -406,10 +453,10 @@
     } catch (error) {
       console.warn("[PixelRunner/WebView] localUpscale placement diagnostics unavailable", error);
     }
-    setProgress("超分完成", size, 100, "success");
-    setStatus(`已回贴到原文档的新图层：${size}`, "success");
+    setProgress("超分完成", `${getCaptureLabel(capture)} · ${size}`, 100, "success");
+    setStatus(`已回贴到原文档的新图层：${String(capture.captureMode) === "selection" ? "选区超分" : "整图超分"} · ${size}`, "success");
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`本地超分已完成，已回贴到原文档的新图层（${size}）。`, "success");
+      modules.ui.logToWorkspace(`本地超分已完成，${String(capture.captureMode) === "selection" ? "选区" : "整图"}结果已回贴到原文档新图层（${size}）。`, "success");
     }
   }
 
@@ -429,7 +476,10 @@
       const status = normalizeStatus(job && job.status);
       const progress = Number(job && job.progress);
       const label = STATUS_LABELS[status] || "正在处理";
-      const detail = String(job && (job.message || job.stage) || "原生 4x").trim();
+      const isInference = ["running", "processing"].includes(status);
+      const detail = isInference
+        ? `${getTileProgressLabel(job)} · Vulkan 4x`
+        : `${getCaptureProgressLabel(state.currentCapture)} · ${String(job && (job.message || job.stage) || "原生 4x").trim()}`;
       if (["succeeded", "success", "completed", "done"].includes(status)) {
         await finishSuccessfully(job);
         state.currentJobId = "";
@@ -449,8 +499,10 @@
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(`本地超分${wasCancelled ? "已取消" : `失败：${error.message}`}`, wasCancelled ? "info" : "error");
       }
+      const failedCapture = state.currentCapture;
       state.currentJobId = "";
       state.currentCapture = null;
+      await cleanupCaptureSelectionSnapshot(failedCapture);
       setRunning(false);
     }
   }
@@ -466,28 +518,34 @@
     if (!isCurrentEngineSession(sessionId)) return;
 
     const tileInput = getById("localUpscaleTileInput");
+    const modeInput = getById("localUpscaleModeInput");
     const ttaInput = getById("localUpscaleTtaInput");
     const debugInput = getById("localUpscaleDebugInput");
     const tile = Math.max(32, Math.min(1024, Math.floor(Number(tileInput && tileInput.value) || 128)));
     const tta = Boolean(ttaInput && ttaInput.checked);
     const debug = Boolean(debugInput && debugInput.checked);
+    const mode = String(modeInput && modeInput.value || "auto").trim() || "auto";
     state.currentJobId = modules.runtime.createId("local-upscale");
     setRunning(true);
-    setProgress("正在导出无损图像", "完整画布 · 原生 4x", 12, "running");
+    setProgress("正在导出无损图像", mode === "full" ? "整图超分 · 原生 4x" : "正在检测 Photoshop 选区 · 原生 4x", 12, "running");
     setStatus("正在从 Photoshop 导出无损 PNG...", "info");
 
     try {
       const capture = await modules.runtime.callHost("photoshop.captureLocalUpscaleSource", [{
         taskId: state.currentJobId,
-        expectedDocumentId: Number(modules.state.state.currentDocumentInfo && modules.state.state.currentDocumentInfo.documentId) || 0
+        expectedDocumentId: Number(modules.state.state.currentDocumentInfo && modules.state.state.currentDocumentInfo.documentId) || 0,
+        mode
       }], { timeoutMs: 300000 });
       if (!capture || !capture.inputPath || !capture.outputPath) {
         throw new Error("Photoshop 未返回本地超分源文件");
       }
-      if (!isCurrentEngineSession(sessionId)) return;
+      if (!isCurrentEngineSession(sessionId)) {
+        await cleanupCaptureSelectionSnapshot(capture);
+        return;
+      }
       state.currentCapture = capture;
       const sourceSize = `${Math.round(Number(capture.width) || 0)} x ${Math.round(Number(capture.height) || 0)}`;
-      setProgress("正在提交本地引擎", `${sourceSize} · 原生 4x`, 28, "running");
+      setProgress("正在提交本地引擎", `${getCaptureLabel(capture)} · 输入 ${sourceSize}`, 28, "running");
       const job = await callLocalUpscaleService("localUpscale.submitJob", [{
         jobId: state.currentJobId,
         inputPath: capture.inputPath,
@@ -499,12 +557,15 @@
         targetWidth: capture.targetWidth,
         targetHeight: capture.targetHeight
       }], { timeoutMs: 20000 });
-      if (!isCurrentEngineSession(sessionId)) return;
+      if (!isCurrentEngineSession(sessionId)) {
+        await cleanupCaptureSelectionSnapshot(capture);
+        return;
+      }
       const jobId = String(job && job.jobId || state.currentJobId).trim();
       if (!jobId) throw new Error("本地引擎未返回任务编号");
       state.currentJobId = jobId;
-      setStatus(`已提交本地超分：${sourceSize} · 原生 4x`, "info");
-      setProgress("正在排队", `${sourceSize} · 原生 4x`, 36, "running");
+      setStatus(`已提交${String(capture.captureMode) === "selection" ? "选区" : "整图"}超分：${sourceSize} · 原生 4x`, "info");
+      setProgress("正在排队", `${getCaptureLabel(capture)} · 输入 ${sourceSize}`, 36, "running");
       schedulePoll();
     } catch (error) {
       if (!isCurrentEngineSession(sessionId)) return;
@@ -513,8 +574,10 @@
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(`本地超分失败：${error.message}`, "error");
       }
+      const failedCapture = state.currentCapture;
       state.currentJobId = "";
       state.currentCapture = null;
+      await cleanupCaptureSelectionSnapshot(failedCapture);
       setRunning(false);
     }
   }
@@ -526,10 +589,12 @@
     try {
       await callLocalUpscaleService("localUpscale.cancelJob", [{ jobId }], { timeoutMs: 15000 });
       clearPollTimer();
+      const cancelledCapture = state.currentCapture;
       state.currentJobId = "";
       state.currentCapture = null;
+      await cleanupCaptureSelectionSnapshot(cancelledCapture);
       setRunning(false);
-      setProgress("已取消", "完整画布 · 原生 4x", 0, "idle");
+      setProgress("已取消", "自动范围 · 原生 4x", 0, "idle");
       setStatus("本地超分已取消。", "warn");
     } catch (error) {
       setStatus(`取消任务失败：${error.message}`, "error");

@@ -26,7 +26,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
 
 const BLEND_MATCH_PREVIEW_CACHE_TTL_MS = 120000;
 const BLEND_MATCH_PREVIEW_CACHE_LIMIT = 3;
-const BLEND_MATCH_PLAN_VERSION = 1;
+const BLEND_MATCH_PLAN_VERSION = 2;
 const BLEND_MATCH_COLOR_PLAN_VERSION = 1;
 const blendMatchPreviewCache = new Map();
 
@@ -274,6 +274,10 @@ function validateBlendMatchPlanForRequest(plan, request) {
   if (expectedPreviewCacheKey && String(plan.previewCacheKey || "") !== expectedPreviewCacheKey) {
     return { ok: false, reason: "preview-cache-key-mismatch" };
   }
+  const requestedSampleHash = String(request && request.sampleHash || "");
+  if (requestedSampleHash && String(plan.sampleHash || "") !== requestedSampleHash) {
+    return { ok: false, reason: "sample-mismatch" };
+  }
   const sourceSample = request && request.sourceSample;
   const referenceSample = request && request.referenceSample;
   if (sourceSample && referenceSample) {
@@ -282,13 +286,16 @@ function validateBlendMatchPlanForRequest(plan, request) {
       return { ok: false, reason: "sample-mismatch" };
     }
   }
-  if (!plan.alignment || plan.alignment.backend !== "cpu") {
-    return { ok: false, reason: "non-cpu-plan" };
+  if (!plan.alignment || !["cpu", "webgl2"].includes(String(plan.alignment.backend || ""))) {
+    return { ok: false, reason: "unsupported-plan-backend" };
+  }
+  if (plan.alignment.backend === "webgl2" && plan.alignment.trusted !== true) {
+    return { ok: false, reason: "untrusted-gpu-plan" };
   }
   return { ok: true, reason: "valid" };
 }
 
-function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewCacheKey, documentId, layerId, bounds, config }) {
+function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewCacheKey, sampleHash, documentId, layerId, bounds, config }) {
   const requestedPlanId = String(planId || "");
   const requestedPreviewCacheKey = String(previewCacheKey || "");
   let entry = requestedPlanId ? findBlendMatchPreviewCacheByPlanId(requestedPlanId) : null;
@@ -327,6 +334,7 @@ function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewC
     bounds,
     config,
     previewCacheKey: expectedPreviewCacheKey,
+    sampleHash,
     sourceSample: entry.sourceSample,
     referenceSample: entry.referenceSample
   });
@@ -939,6 +947,7 @@ function buildStableJsonHash(value) {
 
 function buildBlendMatchAlignmentHash(alignment) {
   const local = alignment && alignment.local ? alignment.local : null;
+  const sharedMask = alignment && alignment.sharedMask ? alignment.sharedMask : null;
   return buildStableJsonHash({
     backend: alignment && alignment.backend || "cpu",
     applied: Boolean(alignment && alignment.applied),
@@ -961,8 +970,90 @@ function buildBlendMatchAlignmentHash(alignment) {
           dx: Number(tile && tile.dx) || 0,
           dy: Number(tile && tile.dy) || 0
         }))
-      : []
+      : [],
+    sharedMaskHash: String(sharedMask && sharedMask.maskHash || ""),
+    sharedRatio: Number(sharedMask && sharedMask.sharedRatio) || 0
   });
+}
+
+function hashSharedMaskBase64(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16)}`;
+}
+
+function normalizeGpuSharedMask(sharedMask, width, height) {
+  if (!sharedMask || typeof sharedMask !== "object") return null;
+  const safeWidth = Math.max(1, Math.floor(Number(sharedMask.width) || 0));
+  const safeHeight = Math.max(1, Math.floor(Number(sharedMask.height) || 0));
+  const base64 = String(sharedMask.base64 || "");
+  if (safeWidth !== width || safeHeight !== height || !base64) return null;
+  let byteLength = 0;
+  try {
+    byteLength = atob(base64).length;
+  } catch (_) {
+    return null;
+  }
+  if (byteLength !== width * height) return null;
+  const maskHash = hashSharedMaskBase64(base64);
+  if (sharedMask.maskHash && String(sharedMask.maskHash) !== maskHash) return null;
+  const sharedRatio = Math.max(0, Math.min(1, Number(sharedMask.sharedRatio) || 0));
+  const excludedRatio = Math.max(0, Math.min(1, Number(sharedMask.excludedRatio) || 0));
+  return {
+    width,
+    height,
+    base64,
+    maskHash,
+    sharedRatio,
+    excludedRatio,
+    effectiveWeight: Math.max(0, Number(sharedMask.effectiveWeight) || 0),
+    exclusionReasons: Array.isArray(sharedMask.exclusionReasons)
+      ? sharedMask.exclusionReasons.map((reason) => String(reason)).slice(0, 8)
+      : []
+  };
+}
+
+function normalizeTrustedGpuAlignment(gpuPlan, sourceSample, config) {
+  const source = gpuPlan && typeof gpuPlan === "object" ? gpuPlan : null;
+  const alignment = source && source.alignment && typeof source.alignment === "object" ? source.alignment : source;
+  if (!alignment || String(alignment.backend || "") !== "webgl2") return { ok: false, reason: "gpu-backend-mismatch" };
+  const width = Math.max(1, Number(sourceSample && sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample && sourceSample.height) || 1);
+  const confidence = Math.max(0, Math.min(1, Number(alignment.confidence) || 0));
+  const score = Number(alignment.score);
+  const secondScore = Number(alignment.secondScore);
+  const scoreGap = Number(alignment.scoreGap);
+  const sampleCount = Math.max(0, Math.floor(Number(alignment.sampleCount) || 0));
+  const sharedMask = normalizeGpuSharedMask(source.sharedMask || alignment.sharedMask, width, height);
+  const local = alignment.local && typeof alignment.local === "object" ? alignment.local : {};
+  const localFailed = Boolean(local.rejected) || (config.localAlignmentEnabled !== false && local.enabled !== false && Number(local.totalTiles) > 0 && Number(local.validTiles) <= 0);
+  if (!Number.isFinite(score) || !Number.isFinite(secondScore) || !Number.isFinite(scoreGap)) return { ok: false, reason: "gpu-score-invalid" };
+  if (confidence < 0.18) return { ok: false, reason: "gpu-low-confidence" };
+  if (scoreGap < 0.004) return { ok: false, reason: "gpu-score-gap-too-small" };
+  if (sampleCount < 64) return { ok: false, reason: "gpu-insufficient-samples" };
+  if (!sharedMask || sharedMask.sharedRatio < 0.08 || sharedMask.excludedRatio > 0.86) return { ok: false, reason: "gpu-shared-region-insufficient" };
+  if (localFailed) return { ok: false, reason: "gpu-local-grid-unreliable" };
+  const safeAlignment = {
+    ...cloneAlignmentResult(alignment),
+    backend: "webgl2",
+    trusted: true,
+    confidence,
+    score,
+    secondScore,
+    scoreGap,
+    sampleCount,
+    sharedMask,
+    gpuMetadata: cloneJsonValue(source.metadata || alignment.gpuMetadata || {}),
+    local: {
+      ...cloneJsonValue(local),
+      tiles: Array.isArray(local.tiles) ? local.tiles.slice(0, 64) : []
+    }
+  };
+  return { ok: true, alignment: safeAlignment, sharedMask };
 }
 
 function summarizeColorProfile(profile) {
@@ -1102,9 +1193,13 @@ function buildBlendMatchPlan({
     },
     alignment: {
       ...(cloneAlignmentResult(alignment) || { applied: false, dx: 0, dy: 0, confidence: 0, reason: "missing" }),
-      backend: "cpu",
-      trusted: true
+      backend: String(alignment && alignment.backend || "cpu"),
+      trusted: alignment && alignment.backend === "webgl2" ? alignment.trusted === true : true
     },
+    sharedMask: cloneJsonValue(alignment && alignment.sharedMask || null),
+    gpuMetadata: alignment && alignment.backend === "webgl2"
+      ? cloneJsonValue(alignment.gpuMetadata || null)
+      : null,
     color: colorPlan,
     preview: {
       sourceTextureKey: "",
@@ -1716,7 +1811,58 @@ function buildBlendWeights(sourceChannels, referenceChannels, width, height) {
   return weights;
 }
 
-function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height) {
+function decodeSharedInlierMask(sharedMask, width, height) {
+  if (!sharedMask || typeof sharedMask !== "object") return null;
+  if (Math.max(1, Number(sharedMask.width) || 1) !== width || Math.max(1, Number(sharedMask.height) || 1) !== height) return null;
+  const encoded = String(sharedMask.base64 || "");
+  if (!encoded) return null;
+  try {
+    const binary = atob(encoded);
+    if (binary.length < width * height) return null;
+    const mask = new Float32Array(width * height);
+    for (let index = 0; index < mask.length; index += 1) mask[index] = binary.charCodeAt(index) / 255;
+    return mask;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function buildTrustedGpuBlendMatchPlanFromSamples(options) {
+  const {
+    config,
+    sourceSample,
+    referenceSample,
+    gpuPlan,
+    timing = null,
+    logs = null
+  } = options || {};
+  const normalized = normalizeTrustedGpuAlignment(gpuPlan, sourceSample, config || {});
+  if (!normalized.ok) return { plan: null, reason: normalized.reason };
+  const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+  if (timing) timing.mark("GPU plan 颜色统计");
+  const colorStartedAt = getNowMs();
+  const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, normalized.alignment);
+  if (timing) {
+    timing.mark("GPU plan ColorPlan", {
+      ms: Number((getNowMs() - colorStartedAt).toFixed(1)),
+      sharedRatio: Number(normalized.sharedMask.sharedRatio.toFixed(3))
+    });
+  }
+  if (!colorProfile) return { plan: null, reason: "gpu-color-plan-insufficient-shared-samples" };
+  const plan = buildBlendMatchPlan({
+    ...options,
+    alignment: normalized.alignment,
+    corrections,
+    colorProfile,
+    warnings: Array.isArray(options && options.warnings) ? options.warnings : []
+  });
+  if (Array.isArray(logs)) {
+    logs.push(`[融合校色] GPU plan 已可信接收：shared=${formatRatioPercent(normalized.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(normalized.sharedMask.excludedRatio)}，scoreGap=${formatFixed(normalized.alignment.scoreGap, 4)}，不执行 CPU shadow search。`);
+  }
+  return { plan, reason: "gpu-plan-trusted" };
+}
+
+function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height, sharedMask = null) {
   const length = width * height;
   const weights = new Float32Array(length);
   const sourceGrad = buildSobelMagnitude(sourceChannels.y, width, height);
@@ -1734,8 +1880,6 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       }
       const sourceY = sourceChannels.y[i];
       const refY = referenceChannels.y[i];
-      const diffY = Math.abs(sourceY - refY);
-      const diffChroma = Math.hypot(sourceChannels.u[i] - referenceChannels.u[i], sourceChannels.v[i] - referenceChannels.v[i]);
       const sourceEdge = sourceGrad[i];
       const refEdge = refGrad[i];
       const edge = Math.max(sourceEdge, refEdge);
@@ -1744,22 +1888,23 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       const saturation = Math.max(sourceChannels.saturation[i], referenceChannels.saturation[i]);
       const distance = Math.hypot(x - centerX, y - centerY) / maxDistance;
       const centerBias = 1 - Math.min(1, distance * 0.82);
-      const differenceCue = Math.min(1, (diffY * 0.72 + diffChroma * 0.45) / 48);
       const edgeCue = Math.min(1, edge / 42) * (0.45 + edgeAgreement * 0.55);
       const colorCue = Math.min(1, saturation * 2.4);
       const highlightPenalty = smoothstep(222, 252, Math.max(sourceY, refY)) * 0.68;
       const shadowPenalty = (1 - smoothstep(12, 38, Math.min(sourceY, refY))) * 0.62;
-      const flatBackgroundPenalty = edge < 6 && diffY < 7 && diffChroma < 7 ? 0.58 : 0;
-      let weight = alpha * (
+      const flatBackgroundPenalty = edge < 6 ? 0.58 : 0;
+      const sharedInlierWeight = sharedMask ? Math.max(0, Math.min(1, Number(sharedMask[i]) || 0)) : 1;
+      let existingSubjectWeight = (
         0.08 +
-        differenceCue * 0.42 +
         edgeCue * 0.36 +
         colorCue * 0.18 +
         midtone * 0.24 +
         centerBias * 0.16
       );
-      weight *= 1 - Math.min(0.82, highlightPenalty + shadowPenalty + flatBackgroundPenalty);
-      weights[i] = Math.max(0, weight);
+      existingSubjectWeight *= 1 - Math.min(0.82, highlightPenalty + shadowPenalty + flatBackgroundPenalty);
+      // New/deleted content never gets color-inference weight. The only inputs are
+      // the existing subject heuristic, alpha, and the shared-structure inlier mask.
+      weights[i] = Math.max(0, existingSubjectWeight * sharedInlierWeight * alpha);
     }
   }
   return weights;
@@ -2315,7 +2460,8 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const height = Math.max(1, Number(sourceSample.height) || 1);
   const sourceChannels = buildYuvChannels(alignedSource.data, width, height);
   const referenceChannels = buildYuvChannels(referenceSample.data, width, height);
-  const weights = buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height);
+  const sharedMask = decodeSharedInlierMask(alignment && alignment.sharedMask, width, height);
+  const weights = buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height, sharedMask);
   const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
   const luminanceAmount = total * Math.max(0, Math.min(1.15, Number(config && config.luminanceStrength) / 100 || 0));
   const colorAmount = total * Math.max(0, Math.min(1.2, Number(config && config.colorStrength) / 100 || 0));
@@ -2397,6 +2543,14 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
     toneCurve,
     significantMismatch,
     subjectWeight: sourceY.weight,
+    sharedMask: alignment && alignment.sharedMask ? {
+      sharedRatio: Number(alignment.sharedMask.sharedRatio) || 0,
+      excludedRatio: Number(alignment.sharedMask.excludedRatio) || 0,
+      effectiveWeight: Number(alignment.sharedMask.effectiveWeight) || 0,
+      exclusionReasons: Array.isArray(alignment.sharedMask.exclusionReasons)
+        ? alignment.sharedMask.exclusionReasons.slice(0, 8)
+        : []
+    } : null,
     weight: sourceY.weight,
     raw: {
       significantMismatch,
@@ -3380,37 +3534,34 @@ function buildAlignmentMask(sourceSample, referenceSample) {
   let covered = 0;
   let totalWeight = 0;
   let edgeEnergy = 0;
-  let diffEnergy = 0;
+  let sharedStructureEnergy = 0;
   for (let y = 1; y < height - 1; y += 1) {
     for (let x = 1; x < width - 1; x += 1) {
       if (x <= border || y <= border || x >= width - border - 1 || y >= height - border - 1) continue;
       const pixel = y * width + x;
       const a = alpha[pixel];
       if (a <= 0.06) continue;
-      const sourceIndex = pixel * 4;
-      const diff = (
-        Math.abs(sourceSample.data[sourceIndex] - referenceSample.data[sourceIndex]) +
-        Math.abs(sourceSample.data[sourceIndex + 1] - referenceSample.data[sourceIndex + 1]) +
-        Math.abs(sourceSample.data[sourceIndex + 2] - referenceSample.data[sourceIndex + 2])
-      ) / 3;
       const edge = Math.max(sourceField.mag[pixel], referenceField.mag[pixel]);
+      const edgeAgreement = Math.min(sourceField.mag[pixel], referenceField.mag[pixel]) / Math.max(1, edge);
       const alphaEdge = Math.max(
         Math.abs(alpha[pixel] - alpha[pixel - 1]),
         Math.abs(alpha[pixel] - alpha[pixel + 1]),
         Math.abs(alpha[pixel] - alpha[pixel - width]),
         Math.abs(alpha[pixel] - alpha[pixel + width])
       );
-      if (edge < minEdge && diff < 10 && alphaEdge < 0.18) continue;
+      if (edge < minEdge && alphaEdge < 0.18) continue;
       const edgeWeight = Math.min(1.8, edge / Math.max(1, minEdge * 1.6));
-      const diffWeight = Math.min(1.2, diff / 42);
       const alphaEdgeWeight = Math.min(1.4, alphaEdge * 3.2);
-      const weight = a * (0.16 + edgeWeight * 0.62 + diffWeight * 0.24 + alphaEdgeWeight * 0.54);
+      // Alignment confidence must come from alpha and structure agreement only.
+      // Raw RGB disagreement describes a possible color cast or content edit, not
+      // a more trustworthy alignment feature.
+      const weight = a * (0.12 + edgeWeight * (0.46 + edgeAgreement * 0.34) + alphaEdgeWeight * 0.48);
       if (weight <= 0.04) continue;
       mask[pixel] = weight;
       covered += 1;
       totalWeight += weight;
       edgeEnergy += edge * weight;
-      diffEnergy += diff * weight;
+      sharedStructureEnergy += edgeAgreement * weight;
     }
   }
   return {
@@ -3423,7 +3574,7 @@ function buildAlignmentMask(sourceSample, referenceSample) {
     coveredPixels: covered,
     totalWeight,
     meanEdgeEnergy: totalWeight > 0 ? edgeEnergy / totalWeight : 0,
-    meanDiffEnergy: totalWeight > 0 ? diffEnergy / totalWeight : 0,
+    meanSharedStructureAgreement: totalWeight > 0 ? sharedStructureEnergy / totalWeight : 0,
     reason: covered < Math.max(128, length * 0.006) ? "roi-too-small" : "ok"
   };
 }
@@ -5335,7 +5486,7 @@ function sanitizeMaskInfo(maskInfo) {
     coveredPixels: maskInfo.coveredPixels,
     totalWeight: maskInfo.totalWeight,
     meanEdgeEnergy: maskInfo.meanEdgeEnergy,
-    meanDiffEnergy: maskInfo.meanDiffEnergy,
+    meanSharedStructureAgreement: maskInfo.meanSharedStructureAgreement,
     reason: maskInfo.reason
   };
 }
@@ -5514,7 +5665,7 @@ async function runPixelAlignmentV2Flow({
 
   alignmentV2 = buildPixelAlignmentV2(sourceSample, referenceSample, config);
   const mask = alignmentV2.mask || {};
-  logs.push(`[融合校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，diff ${formatFixed(mask.meanDiffEnergy, 2)}。`);
+  logs.push(`[融合校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，共享结构 ${formatFixed(mask.meanSharedStructureAgreement, 3)}。`);
   if (alignmentV2.globalMotion) {
     const g = alignmentV2.globalMotion;
     logs.push(`[融合校色] v2 global motion：dx ${formatFixed(g.dx, 2)}px，dy ${formatFixed(g.dy, 2)}px，score ${formatFixed(g.score, 3)}，gap ${formatFixed(g.scoreGap, 3)}，${g.reliable ? "可靠" : `跳过 ${g.reason}`}。`);
@@ -5699,13 +5850,21 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       planId: requestedPlanId,
       previewCacheKey: requestedPreviewCacheKey,
       expectedPreviewCacheKey: previewCacheKey,
+      sampleHash: String(payload.sampleHash || ""),
       documentId: document.id,
       layerId: sourceLayerId,
       bounds: sourceBounds,
       config
     });
     const previewCache = resolvedPlan.validation.ok ? resolvedPlan.entry : null;
-    const previewSampleCache = !previewCache && resolvedPlan.entry && resolvedPlan.entry.sourceSample && resolvedPlan.entry.referenceSample
+    const staleIdentityOrSample = new Set([
+      "document-mismatch",
+      "layer-mismatch",
+      "bounds-mismatch",
+      "preview-cache-key-mismatch",
+      "sample-mismatch"
+    ]).has(resolvedPlan.validation.reason);
+    const previewSampleCache = !previewCache && !staleIdentityOrSample && resolvedPlan.entry && resolvedPlan.entry.sourceSample && resolvedPlan.entry.referenceSample
       ? resolvedPlan.entry
       : null;
 
@@ -5813,7 +5972,12 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       colorReason: colorPlanResolution.validation && colorPlanResolution.validation.reason || ""
     });
     logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，sampleCache=${previewSampleCacheUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
-    logs.push("[融合校色] Apply GPU seed 状态：never final；最终执行只消费 host CPU trusted BlendMatchPlan，GPU 仅可作为 hydrate hint。");
+    if (alignment.backend === "webgl2") {
+      const shared = alignment.sharedMask || {};
+      logs.push(`[融合校色] Apply 复用可信 WebGL2 plan：planId=${activePlan.planId}，shared=${formatRatioPercent(shared.sharedRatio)}，excluded=${formatRatioPercent(shared.excludedRatio)}；未执行 CPU shadow search。`);
+    } else {
+      logs.push("[融合校色] Apply 使用 CPU fallback BlendMatchPlan；WebGL2 plan 不可用或未达可信门槛。");
+    }
     logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
@@ -6149,6 +6313,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   const statsStartedAt = getNowMs();
   sourceSample.stats = buildStatsFromRgbaSafe(sourceSample.data);
   referenceSample.stats = buildStatsFromRgbaSafe(referenceSample.data);
+  const sampleHash = buildBlendMatchSampleHash(sourceSample, referenceSample);
+  const configHash = getBlendMatchAnalysisConfigKey(config);
   actionTiming.mark("modal 外颜色统计", {
     ms: Number((getNowMs() - statsStartedAt).toFixed(1)),
     sourceCount: sourceSample.stats.count,
@@ -6219,6 +6385,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       colorSummary: null,
       planId: "",
       previewCacheKey,
+      sampleHash,
+      configHash,
       planPending: true,
       fastPreview: true,
       config,
@@ -6285,6 +6453,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     colorSummary,
     planId: plan.planId,
     previewCacheKey,
+    sampleHash,
+    configHash,
     config,
     logs
   };
@@ -6304,6 +6474,9 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   const payloadSeedCandidates = Array.isArray(payload && payload.alignmentSeedCandidates)
     ? cloneJsonValue(payload.alignmentSeedCandidates.slice(0, 12))
     : [];
+  const payloadGpuPlan = payload && payload.gpuPlan && typeof payload.gpuPlan === "object"
+    ? cloneJsonValue(payload.gpuPlan)
+    : null;
 
   const modalResult = await core.executeAsModal(async () => {
     const docInfo = getDocumentInfo(document);
@@ -6368,6 +6541,46 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       })
     : { ok: false, reason: "missing-plan" };
 
+  if (!validation.ok && payloadGpuPlan) {
+    const expectedSampleHash = buildBlendMatchSampleHash(cache.sourceSample, cache.referenceSample);
+    const expectedConfigHash = getBlendMatchAnalysisConfigKey(config);
+    const gpuFresh =
+      String(payloadGpuPlan.previewCacheKey || "") === modalResult.previewCacheKey &&
+      String(payloadGpuPlan.sampleHash || "") === expectedSampleHash &&
+      String(payloadGpuPlan.configHash || "") === expectedConfigHash;
+    if (!gpuFresh) {
+      logs.push("[融合校色] GPU plan 拒绝：previewCacheKey/sampleHash/configHash 不新鲜；将使用 CPU fallback。");
+    } else {
+      const gpuBuild = buildTrustedGpuBlendMatchPlanFromSamples({
+        documentId: modalResult.documentId,
+        layerId: modalResult.layerId,
+        layerName: modalResult.layerName,
+        bounds: modalResult.bounds,
+        config,
+        previewCacheKey: modalResult.previewCacheKey,
+        sourceSample: cache.sourceSample,
+        referenceSample: cache.referenceSample,
+        gpuPlan: payloadGpuPlan,
+        timing: actionTiming,
+        logs
+      });
+      if (gpuBuild.plan) {
+        plan = gpuBuild.plan;
+        validation = { ok: true, reason: "trusted-webgl2-plan" };
+        storeBlendMatchPreviewCache(modalResult.previewCacheKey, {
+          sourceSample: cloneSampleForPreviewCache(cache.sourceSample),
+          referenceSample: cloneSampleForPreviewCache(cache.referenceSample),
+          alignment: getPlanAlignment(plan),
+          plan,
+          planId: plan.planId
+        });
+        logs.push(`[融合校色] GPU BlendMatchPlan 已缓存：planId ${plan.planId}，Host 仅完成新鲜度/结构校验和 ColorPlan 序列化。`);
+      } else {
+        logs.push(`[融合校色] GPU plan 未达可信门槛：${gpuBuild.reason || "unknown"}；将使用 CPU fallback。`);
+      }
+    }
+  }
+
   if (!validation.ok) {
     const sourceSample = cache.sourceSample;
     const referenceSample = cache.referenceSample;
@@ -6419,7 +6632,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
     bounds: modalResult.bounds,
     corrections,
     alignment,
-    cpuAlignment: alignment,
+    cpuAlignment: alignment && alignment.backend === "cpu" ? alignment : null,
     colorPlan,
     colorSummary,
     planId: plan.planId,
