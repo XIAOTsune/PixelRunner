@@ -15,6 +15,7 @@ import "./webview/blend-match/gpu/webgl-alignment.js";
 import "./webview/space-fx.js";
 import "./webview/blend-match.js";
 import "./webview/ui.js";
+import "./webview/local-upscale.js";
 import "./webview/sound.js";
 import "./webview/quick-entries.js";
 import "./webview/workspace.js";

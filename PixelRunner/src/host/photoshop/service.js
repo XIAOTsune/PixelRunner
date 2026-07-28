@@ -10,8 +10,7 @@ import {
   buildDataUrl,
   ensureActiveDocument,
   getDocumentInfo,
-  normalizeBounds,
-  renameActiveLayer
+  normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
 
@@ -997,6 +996,18 @@ async function deleteFileQuietly(file) {
   } catch (_) {}
 }
 
+async function getTemporaryFileByNativePath(fs, nativePath, missingMessage) {
+  const sourcePath = String(nativePath || "").trim();
+  const filename = sourcePath.split(/[\\/]/).pop() || "";
+  if (!sourcePath || !filename) throw new Error(missingMessage);
+  const tempFolder = await fs.getTemporaryFolder();
+  const file = await tempFolder.getEntry(filename);
+  const expectedPath = sourcePath.replace(/\\/g, "/").toLowerCase();
+  const actualPath = String(file && file.nativePath || "").replace(/\\/g, "/").toLowerCase();
+  if (!file || actualPath !== expectedPath) throw new Error(missingMessage);
+  return file;
+}
+
 async function resizeDocumentToLongEdge(action, docRef, maxEdge) {
   const limitedEdge = Math.max(256, Math.min(4096, Math.floor(Number(maxEdge) || 0)));
   if (!limitedEdge) return;
@@ -1817,6 +1828,171 @@ export async function captureDocumentPreview(options = {}) {
   }
 }
 
+function createLocalUpscaleFileKey(value) {
+  const source = String(value || "")
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(-16);
+  const taskToken = source.split("-").filter(Boolean).at(-1) || Math.random().toString(36).slice(2, 8);
+  return `${Date.now().toString(36)}-${taskToken.slice(-8)}`;
+}
+
+function createSiblingNativePath(nativePath, filename) {
+  const source = String(nativePath || "").trim();
+  const targetName = String(filename || "").trim();
+  if (!source || !targetName) return "";
+  const separator = source.includes("\\") && !source.includes("/") ? "\\" : "/";
+  const lastSeparator = Math.max(source.lastIndexOf("/"), source.lastIndexOf("\\"));
+  if (lastSeparator < 0) return "";
+  return `${source.slice(0, lastSeparator + 1)}${targetName}`.replace(/[\\/]/g, separator);
+}
+
+const LOCAL_UPSCALE_MODEL_CONTEXT_PADDING = 64;
+
+function getLocalUpscaleSelectionPadding(selectionBounds, docInfo) {
+  const selectionWidth = Math.max(1, Number(selectionBounds.right) - Number(selectionBounds.left));
+  const selectionHeight = Math.max(1, Number(selectionBounds.bottom) - Number(selectionBounds.top));
+  const documentLongEdge = Math.max(1, Number(docInfo && docInfo.width) || 1, Number(docInfo && docInfo.height) || 1);
+  // Real-ESRGAN external tiles use a 64 px overlap. A small adaptive term keeps
+  // enough receptive-field context for very large documents without exporting
+  // an unexpectedly large portion of the canvas.
+  const adaptive = Math.ceil(Math.min(selectionWidth, selectionHeight, documentLongEdge) / 192);
+  return Math.max(LOCAL_UPSCALE_MODEL_CONTEXT_PADDING, Math.min(192, LOCAL_UPSCALE_MODEL_CONTEXT_PADDING + adaptive));
+}
+
+export function resolveLocalUpscaleCapturePlan(options = {}) {
+  const docInfo = options.document && typeof options.document === "object" ? options.document : options;
+  const documentBounds = {
+    left: 0,
+    top: 0,
+    right: Math.max(1, Number(docInfo && docInfo.width) || 1),
+    bottom: Math.max(1, Number(docInfo && docInfo.height) || 1)
+  };
+  const requestedMode = String(options.mode || options.captureMode || "auto").trim().toLowerCase();
+  const explicitSelection = requestedMode === "selection";
+  const forceFullDocument = requestedMode === "full" || requestedMode === "full-document";
+  const rawSelectionBounds = forceFullDocument ? null : normalizeBounds(options.selectionBounds || docInfo.selectionBounds);
+  const selectionBounds = rawSelectionBounds ? clampBoundsToDocument(rawSelectionBounds, docInfo) : null;
+  const selectionCoversDocument = selectionBounds && isFullDocumentBounds(selectionBounds, docInfo);
+  const useSelection = Boolean(selectionBounds && !selectionCoversDocument && !forceFullDocument);
+  if (explicitSelection && !useSelection) {
+    throw new Error(selectionCoversDocument ? "当前选区已覆盖整张画布，请选择整图超分" : "选区超分需要有效的 Photoshop 选区");
+  }
+  const padding = useSelection ? getLocalUpscaleSelectionPadding(selectionBounds, docInfo) : 0;
+  return {
+    captureMode: useSelection ? "selection" : "full",
+    useSelection,
+    selectionBounds: useSelection ? selectionBounds : null,
+    captureBounds: useSelection ? expandBoundsWithinDocument(selectionBounds, padding, docInfo) : documentBounds,
+    padding,
+    selectionCoversDocument: Boolean(selectionCoversDocument)
+  };
+}
+
+export async function captureDocumentForLocalUpscale(options = {}) {
+  const deps = await ensureDeps();
+  const { photoshop, storage } = deps;
+  const app = photoshop.app;
+  const action = photoshop.action;
+  const core = photoshop.core;
+  const doc = app && app.activeDocument;
+  if (!doc) throw new Error("没有可用于本地超分的 Photoshop 文档");
+  if (!storage || !storage.localFileSystem || !action || !core) {
+    throw new Error("当前 Photoshop 版本未提供本地超分所需的文件导出能力");
+  }
+
+  const docInfo = getDocumentInfo(doc);
+  const expectedDocumentId = Number(options.expectedDocumentId) || 0;
+  if (expectedDocumentId > 0 && Number(docInfo.documentId) !== expectedDocumentId) {
+    throw new Error("Photoshop 当前文档已发生变化，请重新开始本地超分");
+  }
+
+  const targetSize = getDocumentPixelSize(doc);
+  const capturePlan = resolveLocalUpscaleCapturePlan({ ...options, document: docInfo });
+  const useSelection = capturePlan.useSelection;
+  const selectionBounds = capturePlan.selectionBounds;
+
+  const fileKey = createLocalUpscaleFileKey(options.taskId);
+  return core.executeAsModal(async () => {
+    let tempDoc = null;
+    let selectionSnapshotChannelName = "";
+    const originalLayer = doc && doc.activeLayers && doc.activeLayers[0];
+    const originalLayerId = Number(originalLayer && originalLayer.id) || 0;
+    try {
+      if (useSelection) {
+        await activateDocument(app, action, Number(doc.id));
+        selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
+      }
+      tempDoc = await doc.duplicate("PR 超分");
+      try {
+        await tempDoc.flatten();
+      } catch (_) {}
+
+      const padding = capturePlan.padding;
+      const captureBounds = capturePlan.captureBounds;
+      if (useSelection && typeof tempDoc.crop === "function") {
+        await tempDoc.crop(captureBounds);
+      }
+
+      const sourceSize = getDocumentPixelSize(tempDoc);
+      const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `PR-S-${fileKey}`);
+      const outputPath = createSiblingNativePath(
+        exported.nativePath,
+        `PR-U-${fileKey}.png`
+      );
+      if (!outputPath) {
+        await deleteFileQuietly(exported.file);
+        throw new Error("无法创建本地超分结果文件路径");
+      }
+      console.log("[PixelRunner/Photoshop] localUpscaleSource:success", {
+        documentId: docInfo.documentId,
+        width: sourceSize.width,
+        height: sourceSize.height,
+        captureMode: useSelection ? "selection" : "full",
+        captureBounds,
+        selectionBounds,
+        padding,
+        inputPath: exported.nativePath
+      });
+      return {
+        ok: true,
+        kind: "local-upscale-source",
+        document: docInfo,
+        documentId: docInfo.documentId,
+        targetWidth: targetSize.width,
+        targetHeight: targetSize.height,
+        targetBounds: captureBounds,
+        selectionBounds: useSelection ? selectionBounds : null,
+        captureBounds,
+        padding,
+        captureMode: useSelection ? "selection" : "full",
+        selectionSnapshotChannelName,
+        restoreActiveLayerId: originalLayerId,
+        sourceScale: 1,
+        inputPath: exported.nativePath,
+        outputPath,
+        width: sourceSize.width,
+        height: sourceSize.height,
+        mimeType: "image/png"
+      };
+    } catch (error) {
+      if (selectionSnapshotChannelName) {
+        try {
+          await activateDocument(app, action, Number(doc.id));
+          await deleteChannelByName(action, selectionSnapshotChannelName);
+        } catch (_) {}
+      }
+      throw error;
+    } finally {
+      await closeDocumentWithoutSaving(action, tempDoc);
+      try {
+        await activateDocument(app, action, Number(doc.id));
+        if (originalLayerId > 0) await selectLayerById(action, originalLayerId);
+      } catch (_) {}
+    }
+  }, { commandName: "PixelRunner Export Local Upscale Source" });
+}
+
 export async function runToolAction(payload = {}) {
   const context = await ensureActiveDocument();
   return runToolActionByName(payload, context);
@@ -1827,7 +2003,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const url = String(options.url || "").trim();
   const dataUrl = String(options.dataUrl || "").trim();
   const base64 = String(options.base64 || "").trim();
-  if (!url && !dataUrl && !base64) throw new Error("Result image is missing");
+  const filePath = String(options.filePath || "").trim();
+  if (!url && !dataUrl && !base64 && !filePath) throw new Error("Result image is missing");
 
   const { photoshop, storage } = await ensureDeps();
   const app = photoshop.app;
@@ -1839,6 +2016,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   let buffer = null;
   let sourceMimeType = "";
   let responseUrl = url;
+  let localSourceFile = null;
+  let localResultFileType = null;
   if (dataUrl) {
     const parsed = parseDataUrl(dataUrl);
     if (!parsed || !parsed.base64) throw new Error("Result dataUrl is not a valid base64 image");
@@ -1846,6 +2025,20 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     sourceMimeType = parsed.mimeType;
   } else if (base64) {
     buffer = base64ToArrayBuffer(base64);
+  } else if (filePath) {
+    localSourceFile = await getTemporaryFileByNativePath(
+      storage.localFileSystem,
+      filePath,
+      "未找到本地超分结果文件"
+    );
+    const filename = filePath.split(/[\\/]/).pop() || "";
+    const extension = (filename.match(/\.([a-z0-9]+)$/i) || [])[1];
+    if (String(extension || "").toLowerCase() !== "png") {
+      throw new Error("本地超分结果必须为 PNG 文件");
+    }
+    localResultFileType = { extension: "png", mimeType: "image/png", detectedBy: "local-temporary-file" };
+    sourceMimeType = "image/png";
+    responseUrl = filePath;
   } else {
     const downloaded = await fetchBinaryWithMetadata(url, {
       timeoutMs: Math.max(30000, Number(options.downloadTimeoutMs) || 120000)
@@ -1854,7 +2047,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     sourceMimeType = downloaded.mimeType;
     responseUrl = downloaded.responseUrl || url;
   }
-  const resultFileType = detectImageFileType(buffer, {
+  const resultFileType = localResultFileType || detectImageFileType(buffer, {
     mimeType: sourceMimeType,
     responseUrl,
     sourceUrl: url
@@ -1864,7 +2057,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       `RunningHub 返回内容不是可识别的图片（MIME: ${sourceMimeType || "未知"}，大小: ${buffer && buffer.byteLength || 0} 字节）`
     );
   }
-  const pngInfo = await parsePngInfo(buffer);
+  const pngInfo = buffer ? await parsePngInfo(buffer) : null;
   const preserveCanvasBounds = options.preserveCanvasBounds === true;
   const anchorTransparentCanvas = options.anchorTransparentCanvas === true;
   const pngAlphaBounds = pngInfo && pngInfo.alphaBounds ? pngInfo.alphaBounds : null;
@@ -1898,26 +2091,37 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     .replace(/^-+|-+$/g, "")
     .slice(-64) || `placement-${Date.now()}`;
   const tempFileName = `pixelrunner-result-${placementFileKey}.${resultFileType.extension}`;
+  let placementByteLength = Number(placementBuffer && placementBuffer.byteLength) || 0;
+  if (localSourceFile && typeof localSourceFile.getMetadata === "function") {
+    try {
+      const metadata = await localSourceFile.getMetadata();
+      placementByteLength = Math.max(0, Number(metadata && metadata.size) || placementByteLength);
+    } catch (_) {}
+  }
   console.log("[PixelRunner/Photoshop] result image ready for placement", {
     sourceHost: getUrlHost(url),
     responseHost: getUrlHost(responseUrl),
     mimeType: sourceMimeType || resultFileType.mimeType,
-    byteLength: placementBuffer.byteLength,
+    byteLength: placementByteLength,
     fileName: tempFileName,
     detectedBy: resultFileType.detectedBy
   });
-  const tempFile = await tempFolder.createFile(tempFileName, { overwrite: true });
-  try {
-    await tempFile.write(placementBuffer, { format: formats.binary });
-  } catch (error) {
-    await deleteFileQuietly(tempFile);
-    throw error;
+  let tempFile = localSourceFile;
+  const shouldDeleteTempFile = !localSourceFile || options.cleanupLocalSource === true;
+  if (!tempFile) {
+    tempFile = await tempFolder.createFile(tempFileName, { overwrite: true });
+    try {
+      await tempFile.write(placementBuffer, { format: formats.binary });
+    } catch (error) {
+      await deleteFileQuietly(tempFile);
+      throw error;
+    }
   }
   let sessionToken = "";
   try {
     sessionToken = await fs.createSessionToken(tempFile);
   } catch (error) {
-    await deleteFileQuietly(tempFile);
+    if (shouldDeleteTempFile) await deleteFileQuietly(tempFile);
     throw error;
   }
   const placementMaskDataUrl = String(options.placementMaskDataUrl || "").trim();
@@ -1925,6 +2129,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const selectionSnapshotChannelName = String(options.selectionSnapshotChannelName || "").trim();
   const selectionMaskExpansion = Math.max(0, Math.min(128, Number(options.selectionMaskExpansion) || 0));
   const selectionMaskFeather = Math.max(0, Math.min(128, Number(options.selectionMaskFeather) || 0));
+  const restoreActiveLayerId = Math.max(0, Number(options.restoreActiveLayerId) || 0);
   let placementMaskSessionToken = "";
   let placementMaskInfo = null;
   let placementMaskFile = null;
@@ -1938,12 +2143,18 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       await placementMaskFile.write(maskBuffer, { format: formats.binary });
       placementMaskSessionToken = await fs.createSessionToken(placementMaskFile);
     } catch (error) {
-      await Promise.all([deleteFileQuietly(tempFile), deleteFileQuietly(placementMaskFile)]);
+      await Promise.all([
+        shouldDeleteTempFile ? deleteFileQuietly(tempFile) : Promise.resolve(),
+        deleteFileQuietly(placementMaskFile)
+      ]);
       throw error;
     }
   }
   if (requirePlacementMask && !selectionSnapshotChannelName && !placementMaskSessionToken) {
-    await Promise.all([deleteFileQuietly(tempFile), deleteFileQuietly(placementMaskFile)]);
+    await Promise.all([
+      shouldDeleteTempFile ? deleteFileQuietly(tempFile) : Promise.resolve(),
+      deleteFileQuietly(placementMaskFile)
+    ]);
     throw new Error("创成式填充缺少不规则选区蒙版，已停止回贴以避免生成矩形蒙版");
   }
   const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
@@ -1959,6 +2170,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
           ? "original"
           : "contain";
   let appliedMaskMode = "none";
+  let placedLayerId = 0;
+  let placedLayerName = null;
 
   const commitPlacement = async () => {
     await core.executeAsModal(async () => {
@@ -2005,7 +2218,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     } catch (error) {
       const message = String(error && error.message ? error.message : error || "未知错误");
       throw new Error(
-        `Photoshop 无法打开 RunningHub 结果图（${resultFileType.extension.toUpperCase()}，${placementBuffer.byteLength} 字节）：${message}`
+        `Photoshop 无法打开结果图（${resultFileType.extension.toUpperCase()}，${placementByteLength} 字节）：${message}`
       );
     }
 
@@ -2027,9 +2240,18 @@ export async function placeImageFromUrl(payload, runtime = {}) {
         await refineActiveSelection(activeTargetDocument || app.activeDocument, action, selectionMaskExpansion, selectionMaskFeather);
         await selectLayerById(action, resultLayerId);
         await applyLayerMaskFromSelection(action);
+        // Feathering is only for the result mask. Reload the original channel so
+        // the caller keeps the exact selection state it had before upscaling.
+        await loadSelectionFromChannel(action, selectionSnapshotChannelName);
         await deleteChannelByName(action, selectionSnapshotChannelName);
         appliedMaskMode = "native-selection-snapshot";
       } catch (error) {
+        try {
+          await loadSelectionFromChannel(action, selectionSnapshotChannelName);
+        } catch (_) {}
+        try {
+          await deleteChannelByName(action, selectionSnapshotChannelName);
+        } catch (_) {}
         try {
           await selectLayerById(action, resultLayerId);
           await deleteLayerById(action, resultLayerId);
@@ -2079,11 +2301,36 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       opacity: options.opacity,
       blendMode: options.blendMode
     });
+    const activeResultLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+    placedLayerId = Number(activeResultLayer && activeResultLayer.id) || 0;
+    const requestedLayerName = String(options.layerName || "").trim();
+    if (requestedLayerName && activeResultLayer) {
+      try {
+        activeResultLayer.name = requestedLayerName;
+      } catch (_) {}
+      if (String(activeResultLayer.name || "").trim() !== requestedLayerName) {
+        try {
+          await action.batchPlay([{
+            _obj: "set",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            to: { _obj: "layer", name: requestedLayerName }
+          }], {});
+        } catch (_) {}
+      }
+      placedLayerName = String(activeResultLayer.name || requestedLayerName).trim() || requestedLayerName;
+    }
+    if (restoreActiveLayerId > 0 && restoreActiveLayerId !== placedLayerId) {
+      try {
+        await selectLayerById(action, restoreActiveLayerId);
+      } catch (_) {
+        // A user may have removed the source layer while a remote result was in flight.
+      }
+    }
     }, { commandName: "Place PixelRunner Result" });
 
-    const layerName = await renameActiveLayer(options.layerName);
+    const layerName = placedLayerName;
     const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
-    const layerId = Number(activeLayer && activeLayer.id) || 0;
+    const layerId = placedLayerId || Number(activeLayer && activeLayer.id) || 0;
     const latestInfo = getDocumentInfo(app.activeDocument);
     return {
       ok: true,
@@ -2109,8 +2356,122 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       : commitPlacement());
   } finally {
     await Promise.all([
-      deleteFileQuietly(tempFile),
+      shouldDeleteTempFile ? deleteFileQuietly(tempFile) : Promise.resolve(),
       deleteFileQuietly(placementMaskFile)
     ]);
+  }
+}
+
+async function exportDocumentAsPngFile(storage, action, docRef, filePrefix = "pixelrunner-local-upscale") {
+  const tempFolder = await storage.localFileSystem.getTemporaryFolder();
+  const tempFile = await tempFolder.createFile(`${filePrefix}.png`, { overwrite: true });
+  try {
+    const sessionToken = await storage.localFileSystem.createSessionToken(tempFile);
+    await action.batchPlay([{
+      _obj: "save",
+      as: {
+        _obj: "PNGFormat",
+        method: { _enum: "PNGMethod", _value: "quick" }
+      },
+      in: { _path: sessionToken, _kind: "local" },
+      documentID: Number(docRef && docRef.id),
+      copy: true,
+      lowerCase: true,
+      saveStage: { _enum: "saveStageType", _value: "saveStageOS" },
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+    const nativePath = String(tempFile.nativePath || "").trim();
+    if (!nativePath) throw new Error("Photoshop 未返回本地超分临时文件路径");
+    return { file: tempFile, nativePath };
+  } catch (error) {
+    await deleteFileQuietly(tempFile);
+    throw error;
+  }
+}
+
+export async function openImageFromUrl(payload = {}) {
+  const options = payload && typeof payload === "object" ? payload : {};
+  const url = String(options.url || "").trim();
+  const filePath = String(options.filePath || "").trim();
+  if (!url && !filePath) throw new Error("本地超分结果地址为空");
+
+  const { photoshop, storage } = await ensureDeps();
+  const app = photoshop.app;
+  const action = photoshop.action;
+  const core = photoshop.core;
+  if (!app || !action || !core || !storage || !storage.localFileSystem) {
+    throw new Error("当前 Photoshop 版本未提供本地超分结果导入能力");
+  }
+
+  const fs = storage.localFileSystem;
+  const tempFolder = await fs.getTemporaryFolder();
+  let tempFile = null;
+  let resultFileType = null;
+  let downloaded = null;
+
+  if (filePath) {
+    const filename = filePath.split(/[\\/]/).pop() || "";
+    const extensionMatch = filename.match(/\.([a-z0-9]+)$/i);
+    if (!filename || !extensionMatch) throw new Error("本地超分结果文件格式无效");
+    const directFile = await tempFolder.getEntry(filename);
+    const expectedPath = filePath.replace(/\\/g, "/").toLowerCase();
+    const actualPath = String(directFile && directFile.nativePath || "").replace(/\\/g, "/").toLowerCase();
+    if (!directFile || actualPath !== expectedPath) {
+      throw new Error("未找到本地超分结果文件");
+    }
+    tempFile = directFile;
+    resultFileType = { extension: extensionMatch[1].toLowerCase() };
+  } else {
+    downloaded = await fetchBinaryWithMetadata(url, {
+      timeoutMs: Math.max(30000, Number(options.downloadTimeoutMs) || 300000)
+    });
+    const buffer = downloaded.buffer;
+    resultFileType = detectImageFileType(buffer, {
+      mimeType: downloaded.mimeType,
+      responseUrl: downloaded.responseUrl || url,
+      sourceUrl: url
+    });
+    if (!resultFileType) {
+      throw new Error("本地超分服务返回的结果不是可识别的图像");
+    }
+    const fileKey = createLocalUpscaleFileKey(options.taskId);
+    tempFile = await tempFolder.createFile(
+      `pixelrunner-local-upscale-open-${fileKey}.${resultFileType.extension}`,
+      { overwrite: true }
+    );
+  }
+  try {
+    if (downloaded) await tempFile.write(downloaded.buffer, { format: storage.formats.binary });
+    await core.executeAsModal(async () => {
+      if (typeof app.open === "function") {
+        await app.open(tempFile);
+        return;
+      }
+      const sessionToken = await fs.createSessionToken(tempFile);
+      await action.batchPlay([{
+        _obj: "open",
+        null: { _path: sessionToken, _kind: "local" },
+        _options: { dialogOptions: "dontDisplay" }
+      }], {});
+    }, { commandName: "Open PixelRunner Local Upscale Result" });
+
+    const openedDocument = app.activeDocument;
+    const document = getDocumentInfo(openedDocument);
+    if (!document || !document.hasActiveDocument) throw new Error("Photoshop 未能打开本地超分结果");
+    console.log("[PixelRunner/Photoshop] localUpscaleResult:opened", {
+      documentId: document.documentId,
+      width: document.width,
+      height: document.height,
+      format: resultFileType.extension
+    });
+    return {
+      ok: true,
+      opened: true,
+      document,
+      resultFormat: resultFileType.extension
+    };
+  } catch (error) {
+    await deleteFileQuietly(tempFile);
+    throw error;
   }
 }

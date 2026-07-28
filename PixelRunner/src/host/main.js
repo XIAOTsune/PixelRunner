@@ -17,11 +17,27 @@ import {
 } from "./third-party-grs.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
 import { openTextFile, saveTextFile } from "./files.js";
-import { openExternalUrl, openLocalPath, resolveTutorialPath } from "./shell.js";
+import {
+  openExternalUrl,
+  openLocalPath,
+  resolveTutorialPath,
+  startLocalUpscaleEngine
+} from "./shell.js";
+import {
+  cancelLocalUpscaleJob,
+  getLocalUpscaleHealth,
+  getLocalUpscaleJob,
+  recordLocalUpscalePlacement,
+  stopLocalUpscaleEngine,
+  submitLocalUpscaleJob
+} from "./local-upscale.js";
 import {
   capturePhotoshopDocumentPreview,
+  capturePhotoshopDocumentForLocalUpscale,
   deletePhotoshopSelectionSnapshot,
   getPhotoshopDocumentInfo,
+  openLocalUpscaleResultInPhotoshop,
+  placeLocalUpscaleResultIntoPhotoshop,
   placeResultAndBlendIntoPhotoshop,
   placeResultIntoPhotoshop,
   runPhotoshopToolAction
@@ -249,6 +265,27 @@ async function handleBridgeRequest(message, responseTarget) {
       case "file.openText":
         result = await openTextFile(message.args);
         break;
+      case "localUpscale.getHealth":
+        result = await getLocalUpscaleHealth(message.args);
+        break;
+      case "localUpscale.startEngine":
+        result = await startLocalUpscaleEngine(message.args);
+        break;
+      case "localUpscale.stopEngine":
+        result = await stopLocalUpscaleEngine(message.args);
+        break;
+      case "localUpscale.submitJob":
+        result = await submitLocalUpscaleJob(message.args);
+        break;
+      case "localUpscale.getJob":
+        result = await getLocalUpscaleJob(message.args);
+        break;
+      case "localUpscale.cancelJob":
+        result = await cancelLocalUpscaleJob(message.args);
+        break;
+      case "localUpscale.recordPlacement":
+        result = await recordLocalUpscalePlacement(message.args);
+        break;
       case "runninghub.submitTask":
         result = await submitRunningHubTask(message.args);
         break;
@@ -301,6 +338,11 @@ async function handleBridgeRequest(message, responseTarget) {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;
+      case "photoshop.captureLocalUpscaleSource":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentForLocalUpscale(message.args), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
       case "photoshop.deleteSelectionSnapshot":
         result = await enqueuePhotoshopBridgeOperation(message, () => deletePhotoshopSelectionSnapshot(message.args), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.STANDARD
@@ -321,6 +363,17 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await runDeduplicatedPhotoshopPlacement(
           message,
           () => placeResultAndBlendIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
+        );
+        break;
+      case "photoshop.openLocalUpscaleResult":
+        result = await enqueuePhotoshopBridgeOperation(message, () => openLocalUpscaleResultInPhotoshop(message.args), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.PLACEMENT
+        });
+        break;
+      case "photoshop.placeLocalUpscaleResult":
+        result = await runDeduplicatedPhotoshopPlacement(
+          message,
+          () => placeLocalUpscaleResultIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
         );
         break;
       case "shell.openExternal":

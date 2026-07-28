@@ -1,4 +1,8 @@
 const TUTORIAL_RELATIVE_PATH = ["pages", "runninghub-guide.html"];
+const LOCAL_UPSCALE_LAUNCHERS = Object.freeze({
+  win32: ["local-ai", "start-local-ai.vbs"],
+  darwin: ["local-ai", "macos", "PixelRunner Local AI.app"]
+});
 
 function getUxpModule() {
   if (typeof require !== "function") {
@@ -77,6 +81,68 @@ export async function resolveTutorialPath() {
   return { ok: false, path: "", url: "" };
 }
 
+function getHostPlatform() {
+  try {
+    const os = typeof require === "function" ? require("os") : null;
+    if (os && typeof os.platform === "function") {
+      const platform = String(os.platform() || "").toLowerCase();
+      if (platform) return platform;
+    }
+  } catch (_) {
+    // UXP hosts without the Node-style os module fall back to their user agent.
+  }
+  const userAgent = typeof navigator !== "undefined" ? String(navigator.userAgent || "") : "";
+  return /macintosh|mac os x/i.test(userAgent) ? "darwin" : "win32";
+}
+
+function getLocalUpscaleLauncherRelativePath() {
+  const platform = getHostPlatform();
+  return {
+    platform,
+    path: LOCAL_UPSCALE_LAUNCHERS[platform] || LOCAL_UPSCALE_LAUNCHERS.win32
+  };
+}
+
+export async function resolveLocalUpscaleLauncherPath() {
+  const launcherInfo = getLocalUpscaleLauncherRelativePath();
+  const launcherPath = launcherInfo.path;
+  try {
+    const { storage } = getUxpModule();
+    const localFileSystem = storage && storage.localFileSystem;
+    if (!localFileSystem || typeof localFileSystem.getPluginFolder !== "function") {
+      return { ok: false, path: "", url: "", platform: launcherInfo.platform };
+    }
+
+    const pluginFolder = await localFileSystem.getPluginFolder();
+    if (!pluginFolder) return { ok: false, path: "", url: "", platform: launcherInfo.platform };
+
+    if (typeof pluginFolder.getEntry === "function") {
+      try {
+        let launcherEntry = pluginFolder;
+        for (const segment of launcherPath) {
+          if (!launcherEntry || typeof launcherEntry.getEntry !== "function") throw new Error("launcher entry unavailable");
+          launcherEntry = await launcherEntry.getEntry(segment);
+        }
+        if (launcherEntry && launcherEntry.nativePath) {
+          return { ok: true, path: String(launcherEntry.nativePath), url: "", platform: launcherInfo.platform };
+        }
+        return { ok: false, path: "", url: "", platform: launcherInfo.platform };
+      } catch (_) {
+        return { ok: false, path: "", url: "", platform: launcherInfo.platform };
+      }
+    }
+
+    if (pluginFolder.nativePath) {
+      const path = joinNativePath(pluginFolder.nativePath, launcherPath);
+      return { ok: true, path, url: "", platform: launcherInfo.platform };
+    }
+  } catch (_) {
+    return { ok: false, path: "", url: "", platform: launcherInfo.platform };
+  }
+
+  return { ok: false, path: "", url: "", platform: launcherInfo.platform };
+}
+
 export async function openExternalUrl(args = []) {
   const [url, developerText] = Array.isArray(args) ? args : [];
   const targetUrl = String(url || "").trim();
@@ -126,4 +192,20 @@ export async function openLocalPath(args = []) {
     url: createFileUrlFromPath(targetPath),
     via: "openPath"
   };
+}
+
+export async function startLocalUpscaleEngine(args = []) {
+  const [developerText] = Array.isArray(args) ? args : [];
+  const launcher = await resolveLocalUpscaleLauncherPath();
+  if (!launcher.ok || !launcher.path) {
+    if (launcher.platform === "darwin") {
+      throw new Error("未找到 macOS 本地超分 companion app；当前安装包不含 Apple Silicon 引擎。");
+    }
+    throw new Error("未找到 PixelRunner Local AI 启动脚本");
+  }
+
+  return openLocalPath([
+    launcher.path,
+    String(developerText || "PixelRunner 需要启动随插件附带的本地超分引擎。")
+  ]);
 }

@@ -1,5 +1,6 @@
 import { activateDocument, getDocumentInfo, normalizeBounds } from "./document.js";
 import { ensureDeps } from "./deps.js";
+import { computeSharedContentReference, estimateTranslationReference } from "../../shared/blend-match-reference.js";
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
   mode: "balanced",
@@ -26,7 +27,7 @@ const DEFAULT_BLEND_MATCH_CONFIG = {
 
 const BLEND_MATCH_PREVIEW_CACHE_TTL_MS = 120000;
 const BLEND_MATCH_PREVIEW_CACHE_LIMIT = 3;
-const BLEND_MATCH_PLAN_VERSION = 1;
+const BLEND_MATCH_PLAN_VERSION = 2;
 const BLEND_MATCH_COLOR_PLAN_VERSION = 1;
 const blendMatchPreviewCache = new Map();
 
@@ -274,6 +275,10 @@ function validateBlendMatchPlanForRequest(plan, request) {
   if (expectedPreviewCacheKey && String(plan.previewCacheKey || "") !== expectedPreviewCacheKey) {
     return { ok: false, reason: "preview-cache-key-mismatch" };
   }
+  const requestedSampleHash = String(request && request.sampleHash || "");
+  if (requestedSampleHash && String(plan.sampleHash || "") !== requestedSampleHash) {
+    return { ok: false, reason: "sample-mismatch" };
+  }
   const sourceSample = request && request.sourceSample;
   const referenceSample = request && request.referenceSample;
   if (sourceSample && referenceSample) {
@@ -282,13 +287,16 @@ function validateBlendMatchPlanForRequest(plan, request) {
       return { ok: false, reason: "sample-mismatch" };
     }
   }
-  if (!plan.alignment || plan.alignment.backend !== "cpu") {
-    return { ok: false, reason: "non-cpu-plan" };
+  if (!plan.alignment || !["cpu", "webgl2"].includes(String(plan.alignment.backend || ""))) {
+    return { ok: false, reason: "unsupported-plan-backend" };
+  }
+  if (plan.alignment.backend === "webgl2" && plan.alignment.trusted !== true) {
+    return { ok: false, reason: "untrusted-gpu-plan" };
   }
   return { ok: true, reason: "valid" };
 }
 
-function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewCacheKey, documentId, layerId, bounds, config }) {
+function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewCacheKey, sampleHash, documentId, layerId, bounds, config }) {
   const requestedPlanId = String(planId || "");
   const requestedPreviewCacheKey = String(previewCacheKey || "");
   let entry = requestedPlanId ? findBlendMatchPreviewCacheByPlanId(requestedPlanId) : null;
@@ -327,6 +335,7 @@ function resolveBlendMatchCachedPlan({ planId, previewCacheKey, expectedPreviewC
     bounds,
     config,
     previewCacheKey: expectedPreviewCacheKey,
+    sampleHash,
     sourceSample: entry.sourceSample,
     referenceSample: entry.referenceSample
   });
@@ -939,6 +948,7 @@ function buildStableJsonHash(value) {
 
 function buildBlendMatchAlignmentHash(alignment) {
   const local = alignment && alignment.local ? alignment.local : null;
+  const sharedMask = alignment && alignment.sharedMask ? alignment.sharedMask : null;
   return buildStableJsonHash({
     backend: alignment && alignment.backend || "cpu",
     applied: Boolean(alignment && alignment.applied),
@@ -961,8 +971,240 @@ function buildBlendMatchAlignmentHash(alignment) {
           dx: Number(tile && tile.dx) || 0,
           dy: Number(tile && tile.dy) || 0
         }))
-      : []
+      : [],
+    sharedMaskHash: String(sharedMask && sharedMask.maskHash || ""),
+    sharedRatio: Number(sharedMask && sharedMask.sharedRatio) || 0
   });
+}
+
+function hashSharedMaskBase64(value) {
+  const text = String(value || "");
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16)}`;
+}
+
+function normalizeGpuSharedMask(sharedMask, width, height) {
+  if (!sharedMask || typeof sharedMask !== "object") return null;
+  const safeWidth = Math.max(1, Math.floor(Number(sharedMask.width) || 0));
+  const safeHeight = Math.max(1, Math.floor(Number(sharedMask.height) || 0));
+  const base64 = String(sharedMask.base64 || "");
+  if (safeWidth !== width || safeHeight !== height || !base64) return null;
+  let byteLength = 0;
+  try {
+    byteLength = atob(base64).length;
+  } catch (_) {
+    return null;
+  }
+  if (byteLength !== width * height) return null;
+  const maskHash = hashSharedMaskBase64(base64);
+  if (sharedMask.maskHash && String(sharedMask.maskHash) !== maskHash) return null;
+  const sharedRatio = Math.max(0, Math.min(1, Number(sharedMask.sharedRatio) || 0));
+  const excludedRatio = Math.max(0, Math.min(1, Number(sharedMask.excludedRatio) || 0));
+  return {
+    width,
+    height,
+    base64,
+    maskHash,
+    sharedRatio,
+    excludedRatio,
+    effectiveWeight: Math.max(0, Number(sharedMask.effectiveWeight) || 0),
+    exclusionReasons: Array.isArray(sharedMask.exclusionReasons)
+      ? sharedMask.exclusionReasons.map((reason) => String(reason)).slice(0, 8)
+      : []
+  };
+}
+
+function encodeSharedMask(mask) {
+  const bytes = new Uint8Array(mask.length);
+  let binary = "";
+  let effectiveWeight = 0;
+  for (let index = 0; index < bytes.length; index += 1) {
+    const value = Math.max(0, Math.min(1, Number(mask[index]) || 0));
+    bytes[index] = Math.round(value * 255);
+    effectiveWeight += value;
+  }
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return { base64: btoa(binary), effectiveWeight };
+}
+
+function buildCpuSharedContentMask(sourceSample, referenceSample, alignment) {
+  const alignedSource = applyGlobalAndLocalWarp(sourceSample, alignment, sourceSample) || sourceSample;
+  const result = computeSharedContentReference(alignedSource, referenceSample);
+  const encoded = encodeSharedMask(result.mask);
+  return {
+    width: result.width,
+    height: result.height,
+    base64: encoded.base64,
+    maskHash: hashSharedMaskBase64(encoded.base64),
+    sharedRatio: Number(result.sharedRatio.toFixed(6)),
+    excludedRatio: Number(result.excludedRatio.toFixed(6)),
+    effectiveWeight: Number(encoded.effectiveWeight.toFixed(3)),
+    exclusionReasons: Array.isArray(result.exclusionReasons) ? result.exclusionReasons.slice(0, 8) : []
+  };
+}
+
+function resizeSampleForFastAlignment(sample, maxEdge = 144) {
+  const sourceWidth = Math.max(1, Number(sample && sample.width) || 1);
+  const sourceHeight = Math.max(1, Number(sample && sample.height) || 1);
+  const ratio = Math.min(1, Math.max(32 / Math.max(sourceWidth, sourceHeight), maxEdge / Math.max(sourceWidth, sourceHeight)));
+  if (ratio >= 0.999) return { ...sample, factorX: 1, factorY: 1 };
+  const width = Math.max(32, Math.round(sourceWidth * ratio));
+  const height = Math.max(32, Math.round(sourceHeight * ratio));
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const sourceY = ((y + 0.5) * sourceHeight / height) - 0.5;
+    for (let x = 0; x < width; x += 1) {
+      const sourceX = ((x + 0.5) * sourceWidth / width) - 0.5;
+      sampleRgbaBilinear(sample.data, sourceWidth, sourceHeight, sourceX, sourceY, data, (y * width + x) * 4);
+    }
+  }
+  return { width, height, data, factorX: sourceWidth / width, factorY: sourceHeight / height };
+}
+
+function buildCpuAlignmentFromGpuGlobalSeed(seed, sourceSample) {
+  if (!seed || typeof seed !== "object") return null;
+  const score = Number(seed.score);
+  const secondScore = Number(seed.secondScore);
+  const scoreGap = Number(seed.scoreGap);
+  const confidence = Math.max(0, Math.min(1, Number(seed.confidence) || 0));
+  const sampleCount = Math.max(0, Math.floor(Number(seed.sampleCount) || 0));
+  if (!Number.isFinite(score) || !Number.isFinite(secondScore) || !Number.isFinite(scoreGap)) return null;
+  if (confidence < 0.12 || score < 0.16 || scoreGap < 0.002 || sampleCount < 32) return null;
+  const sampleDx = Number(seed.sampleDx) || 0;
+  const sampleDy = Number(seed.sampleDy) || 0;
+  const sampleScaleX = Math.max(0.94, Math.min(1.06, Number(seed.sampleScaleX || seed.sampleScale) || 1));
+  const sampleScaleY = Math.max(0.94, Math.min(1.06, Number(seed.sampleScaleY || seed.sampleScale) || 1));
+  const sampleRotation = Math.max(-2, Math.min(2, Number(seed.sampleRotation) || 0));
+  const docDx = -sampleDx * (Number(sourceSample.scaleX) || 1);
+  const docDy = -sampleDy * (Number(sourceSample.scaleY) || 1);
+  const applied = Math.abs(docDx) >= 0.35 || Math.abs(docDy) >= 0.35 || Math.abs(sampleScaleX - 1) >= 0.001 || Math.abs(sampleScaleY - 1) >= 0.001 || Math.abs(sampleRotation) >= 0.03;
+  return {
+    applied,
+    dx: applied ? Number(docDx.toFixed(2)) : 0,
+    dy: applied ? Number(docDy.toFixed(2)) : 0,
+    scalePercent: applied ? Number((((sampleScaleX + sampleScaleY) * 50).toFixed(3))) : 100,
+    scaleXPercent: applied ? Number((sampleScaleX * 100).toFixed(3)) : 100,
+    scaleYPercent: applied ? Number((sampleScaleY * 100).toFixed(3)) : 100,
+    rotation: applied ? Number(sampleRotation.toFixed(3)) : 0,
+    sampleDx,
+    sampleDy,
+    sampleScale: (sampleScaleX + sampleScaleY) / 2,
+    sampleScaleX,
+    sampleScaleY,
+    sampleRotation,
+    confidence,
+    score,
+    secondScore,
+    scoreGap,
+    sampleCount,
+    backend: "cpu",
+    trusted: true,
+    reason: applied ? "gpu-global-seed-fast-fallback" : "gpu-seed-already-aligned",
+    local: { enabled: false, applied: false, tiles: [], validTiles: 0, totalTiles: 0, reason: "fast-fallback-global-only" },
+    localDeformation: false,
+    search: { fastFallback: true, source: "gpu-global-seed", fullCpuSearch: false }
+  };
+}
+
+export function buildConservativeCpuFallbackAlignment(sourceSample, referenceSample, config = {}, gpuGlobalSeed = null) {
+  const startedAt = getNowMs();
+  const seeded = buildCpuAlignmentFromGpuGlobalSeed(gpuGlobalSeed, sourceSample);
+  if (seeded) {
+    seeded.search.timings = { totalMs: Number((getNowMs() - startedAt).toFixed(1)) };
+    return seeded;
+  }
+  const sourceProxy = resizeSampleForFastAlignment(sourceSample);
+  const referenceProxy = resizeSampleForFastAlignment(referenceSample);
+  const sampleOffset = Math.max(1, Math.min(
+    Math.floor(Math.min(sourceSample.width, sourceSample.height) * 0.45),
+    Math.round((Number(config.alignmentMaxOffset) || DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset) / Math.max(Number(sourceSample.scaleX) || 1, Number(sourceSample.scaleY) || 1))
+  ));
+  const proxyOffset = Math.max(1, Math.min(10, Math.round(sampleOffset / Math.max(sourceProxy.factorX, sourceProxy.factorY))));
+  const measured = estimateTranslationReference(sourceProxy, referenceProxy, proxyOffset);
+  const sampleDx = measured.dx * sourceProxy.factorX;
+  const sampleDy = measured.dy * sourceProxy.factorY;
+  const docDx = -sampleDx * (Number(sourceSample.scaleX) || 1);
+  const docDy = -sampleDy * (Number(sourceSample.scaleY) || 1);
+  const confident = measured.sampleCount >= 48 && measured.score >= 0.24 && measured.scoreGap >= 0.004 && measured.confidence >= 0.08;
+  const significant = Math.abs(docDx) >= 0.35 || Math.abs(docDy) >= 0.35;
+  return {
+    applied: confident && significant,
+    dx: confident && significant ? Number(docDx.toFixed(2)) : 0,
+    dy: confident && significant ? Number(docDy.toFixed(2)) : 0,
+    scalePercent: 100,
+    scaleXPercent: 100,
+    scaleYPercent: 100,
+    rotation: 0,
+    sampleDx,
+    sampleDy,
+    sampleScale: 1,
+    sampleScaleX: 1,
+    sampleScaleY: 1,
+    sampleRotation: 0,
+    confidence: Number(measured.confidence) || 0,
+    score: Number(measured.score) || -1,
+    secondScore: Number(measured.secondScore) || -1,
+    scoreGap: Number(measured.scoreGap) || 0,
+    sampleCount: Number(measured.sampleCount) || 0,
+    backend: "cpu",
+    trusted: true,
+    reason: confident ? (significant ? "cpu-fast-translation" : "cpu-fast-already-aligned") : "cpu-fast-low-confidence-no-alignment",
+    local: { enabled: false, applied: false, tiles: [], validTiles: 0, totalTiles: 0, reason: "fast-fallback-global-only" },
+    localDeformation: false,
+    search: {
+      fastFallback: true,
+      source: "cpu-translation-proxy",
+      fullCpuSearch: false,
+      proxySize: { width: sourceProxy.width, height: sourceProxy.height },
+      proxyOffset,
+      timings: { totalMs: Number((getNowMs() - startedAt).toFixed(1)) }
+    }
+  };
+}
+
+function normalizeTrustedGpuAlignment(gpuPlan, sourceSample, config) {
+  const source = gpuPlan && typeof gpuPlan === "object" ? gpuPlan : null;
+  const alignment = source && source.alignment && typeof source.alignment === "object" ? source.alignment : source;
+  if (!alignment || String(alignment.backend || "") !== "webgl2") return { ok: false, reason: "gpu-backend-mismatch" };
+  const width = Math.max(1, Number(sourceSample && sourceSample.width) || 1);
+  const height = Math.max(1, Number(sourceSample && sourceSample.height) || 1);
+  const confidence = Math.max(0, Math.min(1, Number(alignment.confidence) || 0));
+  const score = Number(alignment.score);
+  const secondScore = Number(alignment.secondScore);
+  const scoreGap = Number(alignment.scoreGap);
+  const sampleCount = Math.max(0, Math.floor(Number(alignment.sampleCount) || 0));
+  const sharedMask = normalizeGpuSharedMask(source.sharedMask || alignment.sharedMask, width, height);
+  const local = alignment.local && typeof alignment.local === "object" ? alignment.local : {};
+  const localFailed = Boolean(local.rejected) || (config.localAlignmentEnabled !== false && local.enabled !== false && Number(local.totalTiles) > 0 && Number(local.validTiles) <= 0);
+  if (!Number.isFinite(score) || !Number.isFinite(secondScore) || !Number.isFinite(scoreGap)) return { ok: false, reason: "gpu-score-invalid" };
+  if (confidence < 0.18) return { ok: false, reason: "gpu-low-confidence" };
+  if (scoreGap < 0.004) return { ok: false, reason: "gpu-score-gap-too-small" };
+  if (sampleCount < 64) return { ok: false, reason: "gpu-insufficient-samples" };
+  if (!sharedMask || sharedMask.sharedRatio < 0.08 || sharedMask.excludedRatio > 0.86) return { ok: false, reason: "gpu-shared-region-insufficient" };
+  if (localFailed) return { ok: false, reason: "gpu-local-grid-unreliable" };
+  const safeAlignment = {
+    ...cloneAlignmentResult(alignment),
+    backend: "webgl2",
+    trusted: true,
+    confidence,
+    score,
+    secondScore,
+    scoreGap,
+    sampleCount,
+    sharedMask,
+    gpuMetadata: cloneJsonValue(source.metadata || alignment.gpuMetadata || {}),
+    local: {
+      ...cloneJsonValue(local),
+      tiles: Array.isArray(local.tiles) ? local.tiles.slice(0, 64) : []
+    }
+  };
+  return { ok: true, alignment: safeAlignment, sharedMask };
 }
 
 function summarizeColorProfile(profile) {
@@ -970,6 +1212,8 @@ function summarizeColorProfile(profile) {
   return {
     method: profile.significantMismatch ? "enhanced-tone-chroma-profile" : "protected-tone-chroma-profile",
     significantMismatch: Boolean(profile.significantMismatch),
+    mismatchSeverity: Number((Number(profile.mismatchSeverity) || 0).toFixed(4)),
+    evidenceReliability: Number((Number(profile.evidenceReliability) || 0).toFixed(4)),
     subjectWeight: Math.round(Number(profile.subjectWeight || profile.weight) || 0),
     midDelta: Number((Number(profile.midDelta) || 0).toFixed(3)),
     shadowDelta: Number((Number(profile.shadowDelta) || 0).toFixed(3)),
@@ -1102,9 +1346,13 @@ function buildBlendMatchPlan({
     },
     alignment: {
       ...(cloneAlignmentResult(alignment) || { applied: false, dx: 0, dy: 0, confidence: 0, reason: "missing" }),
-      backend: "cpu",
-      trusted: true
+      backend: String(alignment && alignment.backend || "cpu"),
+      trusted: alignment && alignment.backend === "webgl2" ? alignment.trusted === true : true
     },
+    sharedMask: cloneJsonValue(alignment && alignment.sharedMask || null),
+    gpuMetadata: alignment && alignment.backend === "webgl2"
+      ? cloneJsonValue(alignment.gpuMetadata || null)
+      : null,
     color: colorPlan,
     preview: {
       sourceTextureKey: "",
@@ -1116,7 +1364,7 @@ function buildBlendMatchPlan({
   };
 }
 
-function buildCpuBlendMatchPlanFromSamples(options) {
+export function buildCpuBlendMatchPlanFromSamples(options) {
   const {
     config,
     sourceSample,
@@ -1127,9 +1375,11 @@ function buildCpuBlendMatchPlanFromSamples(options) {
     logs = null,
     gpuAlignmentSeed = null,
     alignmentSeedCandidates = null,
-    seedTrust = ""
+    seedTrust = "",
+    fastFallback = false,
+    fallbackAlignmentSeed = null
   } = options || {};
-  const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+  let corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
   if (timing) timing.mark("plan 颜色统计");
   const effectiveAlignmentConfig = alignmentConfig && typeof alignmentConfig === "object"
     ? { ...alignmentConfig }
@@ -1139,11 +1389,46 @@ function buildCpuBlendMatchPlanFromSamples(options) {
     effectiveAlignmentConfig.alignmentSeedCandidates = Array.isArray(alignmentSeedCandidates) ? alignmentSeedCandidates.slice(0, 12) : [];
     effectiveAlignmentConfig.seedTrust = "hint-only";
   }
-  const alignment = existingAlignment
+  let alignment = existingAlignment
     ? cloneAlignmentResult(existingAlignment)
     : config.alignmentEnabled
-    ? estimateGradientAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config)
+    ? fastFallback
+      ? buildConservativeCpuFallbackAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config, fallbackAlignmentSeed || gpuAlignmentSeed)
+      : estimateGradientAlignment(sourceSample, referenceSample, effectiveAlignmentConfig || config)
     : { applied: false, dx: 0, dy: 0, confidence: 0, reason: "disabled" };
+  if (!alignment.sharedMask) {
+    const maskStartedAt = getNowMs();
+    alignment = {
+      ...alignment,
+      backend: "cpu",
+      trusted: true,
+      sharedMask: buildCpuSharedContentMask(sourceSample, referenceSample, alignment)
+    };
+    if (timing) {
+      timing.mark("plan CPU 共享掩膜", {
+        ms: Number((getNowMs() - maskStartedAt).toFixed(1)),
+        sharedRatio: Number(alignment.sharedMask.sharedRatio.toFixed(3)),
+        excludedRatio: Number(alignment.sharedMask.excludedRatio.toFixed(3))
+      });
+    }
+    if (Array.isArray(logs)) {
+      logs.push(`[融合校色] CPU shared mask：shared=${formatRatioPercent(alignment.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(alignment.sharedMask.excludedRatio)}，仅共享区域参与 ColorPlan。`);
+    }
+  }
+  const sharedRatio = Number(alignment.sharedMask && alignment.sharedMask.sharedRatio) || 0;
+  const excludedRatio = Number(alignment.sharedMask && alignment.sharedMask.excludedRatio) || 0;
+  const colorInferenceAllowed = sharedRatio >= 0.12 && excludedRatio <= 0.86;
+  if (!colorInferenceAllowed) {
+    corrections = buildCorrections(sourceSample.stats, sourceSample.stats, config);
+    alignment.colorInferenceLimited = true;
+    alignment.sharedMask.exclusionReasons = Array.from(new Set([
+      ...(alignment.sharedMask.exclusionReasons || []),
+      "color-inference-stopped"
+    ])).slice(0, 8);
+    if (Array.isArray(logs)) {
+      logs.push(`[融合校色] 共享区域不足：shared=${formatRatioPercent(sharedRatio)}，excluded=${formatRatioPercent(excludedRatio)}；停止颜色推断并使用零校正。`);
+    }
+  }
   const gpuSeedDiagnostics = alignment && alignment.search && alignment.search.gpuSeed ? alignment.search.gpuSeed : null;
   if (timing) {
     timing.mark("plan CPU 对齐", {
@@ -1180,14 +1465,21 @@ function buildCpuBlendMatchPlanFromSamples(options) {
   }
   const alignmentTimings = alignment && alignment.search && alignment.search.timings ? alignment.search.timings : null;
   const colorPlanStartedAt = getNowMs();
-  const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, alignment);
+  const colorProfile = colorInferenceAllowed ? buildInternalColorProfile(sourceSample, referenceSample, config, alignment) : null;
   const colorPlanMs = Number((getNowMs() - colorPlanStartedAt).toFixed(1));
   if (timing) {
     timing.mark("plan 颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
   }
+  if (Array.isArray(logs) && colorProfile) {
+    logs.push(`[融合校色] ColorPlan 稳健配对统计：mismatch=${formatFixed(colorProfile.mismatchSeverity, 4)}，evidence=${formatFixed(colorProfile.evidenceReliability, 4)}，weight=${Math.round(colorProfile.subjectWeight || 0)}，shared=${formatRatioPercent(colorProfile.sharedMask && colorProfile.sharedMask.sharedRatio)}。`);
+  }
   if (Array.isArray(logs) && alignmentTimings) {
     const hydrateAnalysisTotal = Number(alignmentTimings.totalMs || 0) + colorPlanMs;
     logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
+  }
+  if (Array.isArray(logs) && fastFallback) {
+    const fastTimings = alignment && alignment.search && alignment.search.timings || {};
+    logs.push(`[融合校色] CPU 保守快速回退：${alignment.reason || "unknown"}，translation=${formatMs(fastTimings.totalMs)}，fullCpuSearch=false。`);
   }
   return buildBlendMatchPlan({
     ...options,
@@ -1716,7 +2008,58 @@ function buildBlendWeights(sourceChannels, referenceChannels, width, height) {
   return weights;
 }
 
-function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height) {
+function decodeSharedInlierMask(sharedMask, width, height) {
+  if (!sharedMask || typeof sharedMask !== "object") return null;
+  if (Math.max(1, Number(sharedMask.width) || 1) !== width || Math.max(1, Number(sharedMask.height) || 1) !== height) return null;
+  const encoded = String(sharedMask.base64 || "");
+  if (!encoded) return null;
+  try {
+    const binary = atob(encoded);
+    if (binary.length < width * height) return null;
+    const mask = new Float32Array(width * height);
+    for (let index = 0; index < mask.length; index += 1) mask[index] = binary.charCodeAt(index) / 255;
+    return mask;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function buildTrustedGpuBlendMatchPlanFromSamples(options) {
+  const {
+    config,
+    sourceSample,
+    referenceSample,
+    gpuPlan,
+    timing = null,
+    logs = null
+  } = options || {};
+  const normalized = normalizeTrustedGpuAlignment(gpuPlan, sourceSample, config || {});
+  if (!normalized.ok) return { plan: null, reason: normalized.reason };
+  const corrections = buildCorrections(sourceSample.stats, referenceSample.stats, config);
+  if (timing) timing.mark("GPU plan 颜色统计");
+  const colorStartedAt = getNowMs();
+  const colorProfile = buildInternalColorProfile(sourceSample, referenceSample, config, normalized.alignment);
+  if (timing) {
+    timing.mark("GPU plan ColorPlan", {
+      ms: Number((getNowMs() - colorStartedAt).toFixed(1)),
+      sharedRatio: Number(normalized.sharedMask.sharedRatio.toFixed(3))
+    });
+  }
+  if (!colorProfile) return { plan: null, reason: "gpu-color-plan-insufficient-shared-samples" };
+  const plan = buildBlendMatchPlan({
+    ...options,
+    alignment: normalized.alignment,
+    corrections,
+    colorProfile,
+    warnings: Array.isArray(options && options.warnings) ? options.warnings : []
+  });
+  if (Array.isArray(logs)) {
+    logs.push(`[融合校色] GPU plan 已可信接收：shared=${formatRatioPercent(normalized.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(normalized.sharedMask.excludedRatio)}，scoreGap=${formatFixed(normalized.alignment.scoreGap, 4)}，不执行 CPU shadow search。`);
+  }
+  return { plan, reason: "gpu-plan-trusted" };
+}
+
+function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height, sharedMask = null) {
   const length = width * height;
   const weights = new Float32Array(length);
   const sourceGrad = buildSobelMagnitude(sourceChannels.y, width, height);
@@ -1734,8 +2077,6 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       }
       const sourceY = sourceChannels.y[i];
       const refY = referenceChannels.y[i];
-      const diffY = Math.abs(sourceY - refY);
-      const diffChroma = Math.hypot(sourceChannels.u[i] - referenceChannels.u[i], sourceChannels.v[i] - referenceChannels.v[i]);
       const sourceEdge = sourceGrad[i];
       const refEdge = refGrad[i];
       const edge = Math.max(sourceEdge, refEdge);
@@ -1744,22 +2085,23 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       const saturation = Math.max(sourceChannels.saturation[i], referenceChannels.saturation[i]);
       const distance = Math.hypot(x - centerX, y - centerY) / maxDistance;
       const centerBias = 1 - Math.min(1, distance * 0.82);
-      const differenceCue = Math.min(1, (diffY * 0.72 + diffChroma * 0.45) / 48);
       const edgeCue = Math.min(1, edge / 42) * (0.45 + edgeAgreement * 0.55);
       const colorCue = Math.min(1, saturation * 2.4);
       const highlightPenalty = smoothstep(222, 252, Math.max(sourceY, refY)) * 0.68;
       const shadowPenalty = (1 - smoothstep(12, 38, Math.min(sourceY, refY))) * 0.62;
-      const flatBackgroundPenalty = edge < 6 && diffY < 7 && diffChroma < 7 ? 0.58 : 0;
-      let weight = alpha * (
+      const flatBackgroundPenalty = edge < 6 ? 0.58 : 0;
+      const sharedInlierWeight = sharedMask ? Math.max(0, Math.min(1, Number(sharedMask[i]) || 0)) : 1;
+      let existingSubjectWeight = (
         0.08 +
-        differenceCue * 0.42 +
         edgeCue * 0.36 +
         colorCue * 0.18 +
         midtone * 0.24 +
         centerBias * 0.16
       );
-      weight *= 1 - Math.min(0.82, highlightPenalty + shadowPenalty + flatBackgroundPenalty);
-      weights[i] = Math.max(0, weight);
+      existingSubjectWeight *= 1 - Math.min(0.82, highlightPenalty + shadowPenalty + flatBackgroundPenalty);
+      // New/deleted content never gets color-inference weight. The only inputs are
+      // the existing subject heuristic, alpha, and the shared-structure inlier mask.
+      weights[i] = Math.max(0, existingSubjectWeight * sharedInlierWeight * alpha);
     }
   }
   return weights;
@@ -1874,6 +2216,56 @@ function weightedPercentiles(values, weights, percentiles, predicate, min = 0, m
   };
 }
 
+function weightedRobustMappedStats(length, weights, predicate, getValue, min, max, bins, minClipRadius) {
+  const values = new Float32Array(Math.max(0, Number(length) || 0));
+  for (let i = 0; i < values.length; i += 1) {
+    if (predicate && !predicate(i)) continue;
+    values[i] = Number(getValue(i)) || 0;
+  }
+  const quantiles = weightedPercentiles(values, weights, [0.2, 0.5, 0.8], predicate, min, max, bins);
+  if (!quantiles) return { center: 0, mean: 0, median: 0, spread: 0, weight: 0 };
+  const low = Number(quantiles.values[0.2]) || 0;
+  const median = Number(quantiles.values[0.5]) || 0;
+  const high = Number(quantiles.values[0.8]) || 0;
+  const spread = Math.max(0, (high - low) / 1.6);
+  const clipRadius = Math.max(Number(minClipRadius) || 0, spread * 2.25);
+  let clippedSum = 0;
+  let rawSum = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < values.length; i += 1) {
+    if (predicate && !predicate(i)) continue;
+    const weight = weights ? Number(weights[i]) || 0 : 1;
+    if (weight <= 0) continue;
+    const value = values[i];
+    clippedSum += Math.max(median - clipRadius, Math.min(median + clipRadius, value)) * weight;
+    rawSum += value * weight;
+    totalWeight += weight;
+  }
+  return {
+    center: totalWeight > 0 ? clippedSum / totalWeight : median,
+    mean: totalWeight > 0 ? rawSum / totalWeight : median,
+    median,
+    spread,
+    weight: totalWeight
+  };
+}
+
+function weightedRobustPairedDelta(referenceValues, sourceValues, weights, predicate, options = {}) {
+  const length = Math.min(referenceValues.length, sourceValues.length);
+  const optionMin = Number(options.min);
+  const optionMax = Number(options.max);
+  return weightedRobustMappedStats(
+    length,
+    weights,
+    predicate,
+    (index) => (Number(referenceValues[index]) || 0) - (Number(sourceValues[index]) || 0),
+    Number.isFinite(optionMin) ? optionMin : -255,
+    Number.isFinite(optionMax) ? optionMax : 255,
+    Number(options.bins) || 511,
+    Number(options.minClipRadius) || 3
+  );
+}
+
 function weightedChromaStats(uValues, vValues, weights, predicate) {
   let sum = 0;
   let sumSq = 0;
@@ -1898,41 +2290,53 @@ function weightedChromaStats(uValues, vValues, weights, predicate) {
   };
 }
 
-function getColorProfileLimits(config, significantMismatch) {
+function getColorProfileLimits(config, mismatchSeverity) {
   const mode = String(config && config.mode || "balanced");
   const strong = mode === "strong";
   const natural = mode === "natural";
-  return {
-    toneCap: significantMismatch ? (strong ? 76 : natural ? 44 : 62) : (strong ? 52 : natural ? 30 : 42),
-    shadowCap: significantMismatch ? (strong ? 38 : natural ? 22 : 30) : (strong ? 26 : natural ? 14 : 20),
-    colorCap: significantMismatch ? (strong ? 64 : natural ? 40 : 54) : (strong ? 44 : natural ? 28 : 36),
-    chromaMin: significantMismatch ? (strong ? 0.68 : natural ? 0.82 : 0.76) : (strong ? 0.82 : natural ? 0.9 : 0.86),
-    chromaMax: significantMismatch ? (strong ? 1.46 : natural ? 1.2 : 1.34) : (strong ? 1.22 : natural ? 1.1 : 1.16),
-    saturationMin: significantMismatch ? (strong ? 0.78 : natural ? 0.88 : 0.82) : (strong ? 0.86 : natural ? 0.94 : 0.9),
-    saturationMax: significantMismatch ? (strong ? 1.3 : natural ? 1.16 : 1.24) : (strong ? 1.16 : natural ? 1.08 : 1.12)
-  };
+  const severity = Math.max(0, Math.min(1, Number(mismatchSeverity) || 0));
+  const protectedLimits = strong
+    ? { toneCap: 52, shadowCap: 26, colorCap: 44, chromaMin: 0.82, chromaMax: 1.22, saturationMin: 0.86, saturationMax: 1.16 }
+    : natural
+      ? { toneCap: 30, shadowCap: 14, colorCap: 28, chromaMin: 0.9, chromaMax: 1.1, saturationMin: 0.94, saturationMax: 1.08 }
+      : { toneCap: 42, shadowCap: 20, colorCap: 36, chromaMin: 0.86, chromaMax: 1.16, saturationMin: 0.9, saturationMax: 1.12 };
+  const enhancedLimits = strong
+    ? { toneCap: 76, shadowCap: 38, colorCap: 64, chromaMin: 0.68, chromaMax: 1.46, saturationMin: 0.78, saturationMax: 1.3 }
+    : natural
+      ? { toneCap: 44, shadowCap: 22, colorCap: 40, chromaMin: 0.82, chromaMax: 1.2, saturationMin: 0.88, saturationMax: 1.16 }
+      : { toneCap: 62, shadowCap: 30, colorCap: 54, chromaMin: 0.76, chromaMax: 1.34, saturationMin: 0.82, saturationMax: 1.24 };
+  const limits = {};
+  for (const key of Object.keys(protectedLimits)) {
+    limits[key] = lerp(protectedLimits[key], enhancedLimits[key], severity);
+  }
+  return limits;
 }
 
-function buildToneCurveProfile(sourceChannels, referenceChannels, weights, predicate, toneStrength, limits, significantMismatch) {
+function buildToneCurveProfile(sourceChannels, referenceChannels, weights, predicate, toneStrength, limits, mismatchSeverity) {
   const sourceTone = weightedPercentiles(sourceChannels.y, weights, [0.1, 0.5, 0.9], predicate, 0, 255, 256);
-  const referenceTone = weightedPercentiles(referenceChannels.y, weights, [0.1, 0.5, 0.9], predicate, 0, 255, 256);
-  if (!sourceTone || !referenceTone || sourceTone.weight <= 12 || referenceTone.weight <= 12) return null;
+  if (!sourceTone || sourceTone.weight <= 12) return null;
   const source = [
     Number(sourceTone.values[0.1]) || 0,
     Number(sourceTone.values[0.5]) || 0,
     Number(sourceTone.values[0.9]) || 0
   ];
-  const reference = [
-    Number(referenceTone.values[0.1]) || 0,
-    Number(referenceTone.values[0.5]) || 0,
-    Number(referenceTone.values[0.9]) || 0
-  ];
+  const allDelta = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, predicate);
+  const shadowCeiling = lerp(source[0], source[1], 0.62);
+  const highlightFloor = lerp(source[1], source[2], 0.38);
+  const midFloor = lerp(source[0], source[1], 0.18);
+  const midCeiling = lerp(source[1], source[2], 0.82);
+  const shadowDeltaStats = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, (index) => (!predicate || predicate(index)) && sourceChannels.y[index] <= shadowCeiling);
+  const midDeltaStats = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, (index) => (!predicate || predicate(index)) && sourceChannels.y[index] >= midFloor && sourceChannels.y[index] <= midCeiling);
+  const highlightDeltaStats = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, (index) => (!predicate || predicate(index)) && sourceChannels.y[index] >= highlightFloor);
+  const rawDeltas = [shadowDeltaStats, midDeltaStats, highlightDeltaStats].map((item) => item.weight > 12 ? item.center : allDelta.center);
+  const reference = source.map((value, index) => Math.max(0, Math.min(255, value + rawDeltas[index])));
   const cap = Math.max(1, Number(limits && limits.toneCap) || 42);
   const shadowCap = Math.max(1, Number(limits && limits.shadowCap) || 20);
-  const curveStrength = Math.max(0, Math.min(significantMismatch ? 0.88 : 0.7, Number(toneStrength) || 0));
-  const delta10 = Math.max(-shadowCap, Math.min(shadowCap, (reference[0] - source[0]) * curveStrength));
-  const delta50 = Math.max(-cap, Math.min(cap, (reference[1] - source[1]) * curveStrength));
-  const delta90 = Math.max(-shadowCap, Math.min(shadowCap, (reference[2] - source[2]) * curveStrength));
+  const severity = Math.max(0, Math.min(1, Number(mismatchSeverity) || 0));
+  const curveStrength = Math.max(0, Math.min(lerp(0.7, 0.88, severity), Number(toneStrength) || 0));
+  const delta10 = Math.max(-shadowCap, Math.min(shadowCap, rawDeltas[0] * curveStrength));
+  const delta50 = Math.max(-cap, Math.min(cap, rawDeltas[1] * curveStrength));
+  const delta90 = Math.max(-shadowCap, Math.min(shadowCap, rawDeltas[2] * curveStrength));
   const meanAbsDelta = (Math.abs(delta10) + Math.abs(delta50) + Math.abs(delta90)) / 3;
   if (meanAbsDelta < 0.35) return null;
   return {
@@ -1942,7 +2346,7 @@ function buildToneCurveProfile(sourceChannels, referenceChannels, weights, predi
     shadowDelta: delta10,
     midDelta: delta50,
     highlightDelta: delta90,
-    mix: significantMismatch ? 0.82 : 0.58,
+    mix: lerp(0.58, 0.82, severity),
     weight: sourceTone.weight
   };
 }
@@ -2315,7 +2719,8 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const height = Math.max(1, Number(sourceSample.height) || 1);
   const sourceChannels = buildYuvChannels(alignedSource.data, width, height);
   const referenceChannels = buildYuvChannels(referenceSample.data, width, height);
-  const weights = buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height);
+  const sharedMask = decodeSharedInlierMask(alignment && alignment.sharedMask, width, height);
+  const weights = buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width, height, sharedMask);
   const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
   const luminanceAmount = total * Math.max(0, Math.min(1.15, Number(config && config.luminanceStrength) / 100 || 0));
   const colorAmount = total * Math.max(0, Math.min(1.2, Number(config && config.colorStrength) / 100 || 0));
@@ -2351,39 +2756,75 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const referenceSat = weightedStatsWhere(referenceChannels.saturation, weights, validMid);
   const sourceChroma = weightedChromaStats(sourceChannels.u, sourceChannels.v, weights, validMid);
   const referenceChroma = weightedChromaStats(referenceChannels.u, referenceChannels.v, weights, validMid);
-  const lumaDeltaRaw = referenceY.mean - sourceY.mean;
-  const chromaDeltaRaw = Math.hypot(referenceU.mean - sourceU.mean, referenceV.mean - sourceV.mean);
-  const saturationDeltaRaw = referenceSat.mean - sourceSat.mean;
-  const chromaRatioRaw = sourceChroma.mean > 1 ? referenceChroma.mean / sourceChroma.mean : 1;
-  const significantMismatch =
-    Math.abs(lumaDeltaRaw) > 18 ||
-    chromaDeltaRaw > 16 ||
-    Math.abs(saturationDeltaRaw) > 0.12 ||
-    chromaRatioRaw > 1.24 ||
-    chromaRatioRaw < 0.78;
-  const limits = getColorProfileLimits(config, significantMismatch);
-  const toneStrength = Math.min(significantMismatch ? 0.88 : 0.72, luminanceAmount * (significantMismatch ? 0.98 : 0.82));
-  const colorStrength = Math.min(significantMismatch ? 0.92 : 0.82, colorAmount * (significantMismatch ? 1.02 : 0.86));
-  const saturationStrength = significantMismatch ? saturationAmount * 1.24 : saturationAmount;
+  const lumaDeltaStats = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, validMid);
+  const shadowDeltaStats = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, validShadow);
+  const highlightDeltaStats = weightedRobustPairedDelta(referenceChannels.y, sourceChannels.y, weights, validHighlight);
+  const uDeltaStats = weightedRobustPairedDelta(referenceChannels.u, sourceChannels.u, weights, validMid);
+  const vDeltaStats = weightedRobustPairedDelta(referenceChannels.v, sourceChannels.v, weights, validMid);
+  const neutralUDeltaStats = weightedRobustPairedDelta(referenceChannels.u, sourceChannels.u, weights, validNeutral);
+  const neutralVDeltaStats = weightedRobustPairedDelta(referenceChannels.v, sourceChannels.v, weights, validNeutral);
+  const saturationDeltaStats = weightedRobustPairedDelta(referenceChannels.saturation, sourceChannels.saturation, weights, validMid, {
+    min: -1,
+    max: 1,
+    bins: 401,
+    minClipRadius: 0.025
+  });
+  const chromaRatioStats = weightedRobustMappedStats(
+    sourceChannels.u.length,
+    weights,
+    (index) => validMid(index) && Math.hypot(sourceChannels.u[index], sourceChannels.v[index]) > 4 && Math.hypot(referenceChannels.u[index], referenceChannels.v[index]) > 4,
+    (index) => Math.log(
+      Math.hypot(referenceChannels.u[index], referenceChannels.v[index]) /
+      Math.max(4, Math.hypot(sourceChannels.u[index], sourceChannels.v[index]))
+    ),
+    -1.2,
+    1.2,
+    481,
+    0.04
+  );
+  const lumaDeltaRaw = lumaDeltaStats.center;
+  const uRawDelta = uDeltaStats.center;
+  const vRawDelta = vDeltaStats.center;
+  const chromaDeltaRaw = Math.hypot(uRawDelta, vRawDelta);
+  const saturationDeltaRaw = saturationDeltaStats.center;
+  const chromaRatioRaw = chromaRatioStats.weight > 12
+    ? Math.exp(chromaRatioStats.center)
+    : sourceChroma.mean > 1 ? referenceChroma.mean / sourceChroma.mean : 1;
+  const mismatchSeverity = Math.max(
+    smoothstep(9, 30, Math.abs(lumaDeltaRaw)),
+    smoothstep(7, 28, chromaDeltaRaw),
+    smoothstep(0.045, 0.18, Math.abs(saturationDeltaRaw)),
+    smoothstep(0.06, 0.3, Math.abs(Math.log(Math.max(0.01, chromaRatioRaw))))
+  );
+  const significantMismatch = mismatchSeverity >= 0.5;
+  const reportedSharedRatio = alignment && alignment.sharedMask
+    ? Math.max(0, Math.min(1, Number(alignment.sharedMask.sharedRatio) || 0))
+    : 1;
+  const evidenceReliability = (
+    lerp(0.72, 1, smoothstep(0.14, 0.5, reportedSharedRatio)) *
+    lerp(0.82, 1, smoothstep(18, 96, sourceY.weight))
+  );
+  const limits = getColorProfileLimits(config, mismatchSeverity);
+  const toneStrength = Math.min(lerp(0.72, 0.88, mismatchSeverity), luminanceAmount * lerp(0.82, 0.98, mismatchSeverity)) * evidenceReliability;
+  const colorStrength = Math.min(lerp(0.82, 0.92, mismatchSeverity), colorAmount * lerp(0.86, 1.02, mismatchSeverity)) * evidenceReliability;
+  const saturationStrength = saturationAmount * lerp(1, 1.24, mismatchSeverity) * evidenceReliability;
   const midDelta = Math.max(-limits.toneCap, Math.min(limits.toneCap, lumaDeltaRaw * toneStrength));
-  const shadowRawDelta = referenceShadowY.weight > 16 ? referenceShadowY.mean - sourceShadowY.mean : lumaDeltaRaw;
-  const highlightRawDelta = referenceHighlightY.weight > 16 ? referenceHighlightY.mean - sourceHighlightY.mean : lumaDeltaRaw;
+  const shadowRawDelta = shadowDeltaStats.weight > 16 ? shadowDeltaStats.center : lumaDeltaRaw;
+  const highlightRawDelta = highlightDeltaStats.weight > 16 ? highlightDeltaStats.center : lumaDeltaRaw;
   const shadowDelta = Math.max(-limits.shadowCap, Math.min(limits.shadowCap, (shadowRawDelta * 0.52 + lumaDeltaRaw * 0.24) * toneStrength));
   const highlightDelta = Math.max(-limits.shadowCap, Math.min(limits.shadowCap, (highlightRawDelta * 0.48 + lumaDeltaRaw * 0.2) * toneStrength));
   const neutralWeight = Math.min(sourceNeutralU.weight, referenceNeutralU.weight);
-  const neutralMix = neutralWeight > 18 ? (significantMismatch ? 0.54 : 0.38) : 0;
-  const neutralRawU = neutralWeight > 18 ? referenceNeutralU.mean - sourceNeutralU.mean : 0;
-  const neutralRawV = neutralWeight > 18 ? referenceNeutralV.mean - sourceNeutralV.mean : 0;
-  const uRawDelta = referenceU.mean - sourceU.mean;
-  const vRawDelta = referenceV.mean - sourceV.mean;
+  const neutralMix = neutralWeight > 18 ? lerp(0.38, 0.54, mismatchSeverity) : 0;
+  const neutralRawU = neutralWeight > 18 ? neutralUDeltaStats.center : 0;
+  const neutralRawV = neutralWeight > 18 ? neutralVDeltaStats.center : 0;
   const uDelta = Math.max(-limits.colorCap, Math.min(limits.colorCap, (uRawDelta * (1 - neutralMix * 0.45) + neutralRawU * neutralMix * 0.45) * colorStrength));
   const vDelta = Math.max(-limits.colorCap, Math.min(limits.colorCap, (vRawDelta * (1 - neutralMix * 0.45) + neutralRawV * neutralMix * 0.45) * colorStrength));
   const neutralUDelta = Math.max(-limits.colorCap * 0.5, Math.min(limits.colorCap * 0.5, neutralRawU * neutralMix * colorStrength));
   const neutralVDelta = Math.max(-limits.colorCap * 0.5, Math.min(limits.colorCap * 0.5, neutralRawV * neutralMix * colorStrength));
   const saturationFactor = Math.max(limits.saturationMin, Math.min(limits.saturationMax, 1 + saturationDeltaRaw * 1.28 * saturationStrength));
-  const rawChromaScale = sourceChroma.mean > 1 ? referenceChroma.mean / sourceChroma.mean : 1;
+  const rawChromaScale = chromaRatioRaw;
   const chromaScale = Math.max(limits.chromaMin, Math.min(limits.chromaMax, 1 + (rawChromaScale - 1) * colorStrength));
-  const toneCurve = buildToneCurveProfile(sourceChannels, referenceChannels, weights, validAny, toneStrength, limits, significantMismatch);
+  const toneCurve = buildToneCurveProfile(sourceChannels, referenceChannels, weights, validAny, toneStrength, limits, mismatchSeverity);
   return {
     midDelta,
     shadowDelta,
@@ -2396,14 +2837,35 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
     saturationFactor,
     toneCurve,
     significantMismatch,
+    mismatchSeverity,
+    evidenceReliability,
     subjectWeight: sourceY.weight,
+    sharedMask: alignment && alignment.sharedMask ? {
+      sharedRatio: Number(alignment.sharedMask.sharedRatio) || 0,
+      excludedRatio: Number(alignment.sharedMask.excludedRatio) || 0,
+      effectiveWeight: Number(alignment.sharedMask.effectiveWeight) || 0,
+      exclusionReasons: Array.isArray(alignment.sharedMask.exclusionReasons)
+        ? alignment.sharedMask.exclusionReasons.slice(0, 8)
+        : []
+    } : null,
     weight: sourceY.weight,
     raw: {
       significantMismatch,
+      mismatchSeverity,
+      evidenceReliability,
       lumaDeltaRaw,
       chromaDeltaRaw,
       saturationDeltaRaw,
       chromaRatioRaw,
+      lumaDeltaStats,
+      shadowDeltaStats,
+      highlightDeltaStats,
+      uDeltaStats,
+      vDeltaStats,
+      neutralUDeltaStats,
+      neutralVDeltaStats,
+      saturationDeltaStats,
+      chromaRatioStats,
       sourceY,
       referenceY,
       sourceShadowY,
@@ -3380,37 +3842,34 @@ function buildAlignmentMask(sourceSample, referenceSample) {
   let covered = 0;
   let totalWeight = 0;
   let edgeEnergy = 0;
-  let diffEnergy = 0;
+  let sharedStructureEnergy = 0;
   for (let y = 1; y < height - 1; y += 1) {
     for (let x = 1; x < width - 1; x += 1) {
       if (x <= border || y <= border || x >= width - border - 1 || y >= height - border - 1) continue;
       const pixel = y * width + x;
       const a = alpha[pixel];
       if (a <= 0.06) continue;
-      const sourceIndex = pixel * 4;
-      const diff = (
-        Math.abs(sourceSample.data[sourceIndex] - referenceSample.data[sourceIndex]) +
-        Math.abs(sourceSample.data[sourceIndex + 1] - referenceSample.data[sourceIndex + 1]) +
-        Math.abs(sourceSample.data[sourceIndex + 2] - referenceSample.data[sourceIndex + 2])
-      ) / 3;
       const edge = Math.max(sourceField.mag[pixel], referenceField.mag[pixel]);
+      const edgeAgreement = Math.min(sourceField.mag[pixel], referenceField.mag[pixel]) / Math.max(1, edge);
       const alphaEdge = Math.max(
         Math.abs(alpha[pixel] - alpha[pixel - 1]),
         Math.abs(alpha[pixel] - alpha[pixel + 1]),
         Math.abs(alpha[pixel] - alpha[pixel - width]),
         Math.abs(alpha[pixel] - alpha[pixel + width])
       );
-      if (edge < minEdge && diff < 10 && alphaEdge < 0.18) continue;
+      if (edge < minEdge && alphaEdge < 0.18) continue;
       const edgeWeight = Math.min(1.8, edge / Math.max(1, minEdge * 1.6));
-      const diffWeight = Math.min(1.2, diff / 42);
       const alphaEdgeWeight = Math.min(1.4, alphaEdge * 3.2);
-      const weight = a * (0.16 + edgeWeight * 0.62 + diffWeight * 0.24 + alphaEdgeWeight * 0.54);
+      // Alignment confidence must come from alpha and structure agreement only.
+      // Raw RGB disagreement describes a possible color cast or content edit, not
+      // a more trustworthy alignment feature.
+      const weight = a * (0.12 + edgeWeight * (0.46 + edgeAgreement * 0.34) + alphaEdgeWeight * 0.48);
       if (weight <= 0.04) continue;
       mask[pixel] = weight;
       covered += 1;
       totalWeight += weight;
       edgeEnergy += edge * weight;
-      diffEnergy += diff * weight;
+      sharedStructureEnergy += edgeAgreement * weight;
     }
   }
   return {
@@ -3423,7 +3882,7 @@ function buildAlignmentMask(sourceSample, referenceSample) {
     coveredPixels: covered,
     totalWeight,
     meanEdgeEnergy: totalWeight > 0 ? edgeEnergy / totalWeight : 0,
-    meanDiffEnergy: totalWeight > 0 ? diffEnergy / totalWeight : 0,
+    meanSharedStructureAgreement: totalWeight > 0 ? sharedStructureEnergy / totalWeight : 0,
     reason: covered < Math.max(128, length * 0.006) ? "roi-too-small" : "ok"
   };
 }
@@ -5335,7 +5794,7 @@ function sanitizeMaskInfo(maskInfo) {
     coveredPixels: maskInfo.coveredPixels,
     totalWeight: maskInfo.totalWeight,
     meanEdgeEnergy: maskInfo.meanEdgeEnergy,
-    meanDiffEnergy: maskInfo.meanDiffEnergy,
+    meanSharedStructureAgreement: maskInfo.meanSharedStructureAgreement,
     reason: maskInfo.reason
   };
 }
@@ -5514,7 +5973,7 @@ async function runPixelAlignmentV2Flow({
 
   alignmentV2 = buildPixelAlignmentV2(sourceSample, referenceSample, config);
   const mask = alignmentV2.mask || {};
-  logs.push(`[融合校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，diff ${formatFixed(mask.meanDiffEnergy, 2)}。`);
+  logs.push(`[融合校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，共享结构 ${formatFixed(mask.meanSharedStructureAgreement, 3)}。`);
   if (alignmentV2.globalMotion) {
     const g = alignmentV2.globalMotion;
     logs.push(`[融合校色] v2 global motion：dx ${formatFixed(g.dx, 2)}px，dy ${formatFixed(g.dy, 2)}px，score ${formatFixed(g.score, 3)}，gap ${formatFixed(g.scoreGap, 3)}，${g.reliable ? "可靠" : `跳过 ${g.reason}`}。`);
@@ -5699,13 +6158,21 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       planId: requestedPlanId,
       previewCacheKey: requestedPreviewCacheKey,
       expectedPreviewCacheKey: previewCacheKey,
+      sampleHash: String(payload.sampleHash || ""),
       documentId: document.id,
       layerId: sourceLayerId,
       bounds: sourceBounds,
       config
     });
     const previewCache = resolvedPlan.validation.ok ? resolvedPlan.entry : null;
-    const previewSampleCache = !previewCache && resolvedPlan.entry && resolvedPlan.entry.sourceSample && resolvedPlan.entry.referenceSample
+    const staleIdentityOrSample = new Set([
+      "document-mismatch",
+      "layer-mismatch",
+      "bounds-mismatch",
+      "preview-cache-key-mismatch",
+      "sample-mismatch"
+    ]).has(resolvedPlan.validation.reason);
+    const previewSampleCache = !previewCache && !staleIdentityOrSample && resolvedPlan.entry && resolvedPlan.entry.sourceSample && resolvedPlan.entry.referenceSample
       ? resolvedPlan.entry
       : null;
 
@@ -5813,7 +6280,12 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       colorReason: colorPlanResolution.validation && colorPlanResolution.validation.reason || ""
     });
     logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，sampleCache=${previewSampleCacheUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
-    logs.push("[融合校色] Apply GPU seed 状态：never final；最终执行只消费 host CPU trusted BlendMatchPlan，GPU 仅可作为 hydrate hint。");
+    if (alignment.backend === "webgl2") {
+      const shared = alignment.sharedMask || {};
+      logs.push(`[融合校色] Apply 复用可信 WebGL2 plan：planId=${activePlan.planId}，shared=${formatRatioPercent(shared.sharedRatio)}，excluded=${formatRatioPercent(shared.excludedRatio)}；未执行 CPU shadow search。`);
+    } else {
+      logs.push("[融合校色] Apply 使用 CPU fallback BlendMatchPlan；WebGL2 plan 不可用或未达可信门槛。");
+    }
     logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
@@ -6149,6 +6621,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   const statsStartedAt = getNowMs();
   sourceSample.stats = buildStatsFromRgbaSafe(sourceSample.data);
   referenceSample.stats = buildStatsFromRgbaSafe(referenceSample.data);
+  const sampleHash = buildBlendMatchSampleHash(sourceSample, referenceSample);
+  const configHash = getBlendMatchAnalysisConfigKey(config);
   actionTiming.mark("modal 外颜色统计", {
     ms: Number((getNowMs() - statsStartedAt).toFixed(1)),
     sourceCount: sourceSample.stats.count,
@@ -6180,7 +6654,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     logs.push(`[融合校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
     logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
     logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan，WebView 将随后请求 host CPU plan 补齐；Apply 在 plan 准备完成前保持禁用。");
+    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan；WebView 优先提交 GPU plan，失败时 Host 只做保守 CPU 平移回退和共享掩膜分析。");
     actionTiming.logTo(logs, "[融合校色] 快速预览采样 host action 耗时");
 
     return {
@@ -6219,6 +6693,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       colorSummary: null,
       planId: "",
       previewCacheKey,
+      sampleHash,
+      configHash,
       planPending: true,
       fastPreview: true,
       config,
@@ -6236,7 +6712,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     sourceSample,
     referenceSample,
     alignmentConfig: config,
-    timing: actionTiming
+    timing: actionTiming,
+    fastFallback: true
   });
   const cpuAlignment = getPlanAlignment(plan);
   const corrections = getPlanCorrections(plan);
@@ -6262,7 +6739,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
   logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
   logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-  logs.push("[融合校色] WebGL2 对齐仅作为预览诊断；可复用 plan 来自主机 CPU 完整分析。");
+  logs.push("[融合校色] WebGL2 plan 为生产首选；此无 GPU 路径使用保守 CPU 平移与共享内容掩膜。");
   actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
 
   return {
@@ -6285,6 +6762,8 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     colorSummary,
     planId: plan.planId,
     previewCacheKey,
+    sampleHash,
+    configHash,
     config,
     logs
   };
@@ -6304,6 +6783,9 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   const payloadSeedCandidates = Array.isArray(payload && payload.alignmentSeedCandidates)
     ? cloneJsonValue(payload.alignmentSeedCandidates.slice(0, 12))
     : [];
+  const payloadGpuPlan = payload && payload.gpuPlan && typeof payload.gpuPlan === "object"
+    ? cloneJsonValue(payload.gpuPlan)
+    : null;
 
   const modalResult = await core.executeAsModal(async () => {
     const docInfo = getDocumentInfo(document);
@@ -6356,6 +6838,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   }
 
   let plan = cache.plan || null;
+  let freshGpuFallbackAlignment = null;
   let validation = plan
     ? validateBlendMatchPlanForRequest(plan, {
         documentId: modalResult.documentId,
@@ -6367,6 +6850,47 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
         referenceSample: cache.referenceSample
       })
     : { ok: false, reason: "missing-plan" };
+
+  if (!validation.ok && payloadGpuPlan) {
+    const expectedSampleHash = buildBlendMatchSampleHash(cache.sourceSample, cache.referenceSample);
+    const expectedConfigHash = getBlendMatchAnalysisConfigKey(config);
+    const gpuFresh =
+      String(payloadGpuPlan.previewCacheKey || "") === modalResult.previewCacheKey &&
+      String(payloadGpuPlan.sampleHash || "") === expectedSampleHash &&
+      String(payloadGpuPlan.configHash || "") === expectedConfigHash;
+    if (!gpuFresh) {
+      logs.push("[融合校色] GPU plan 拒绝：previewCacheKey/sampleHash/configHash 不新鲜；将使用 CPU fallback。");
+    } else {
+      freshGpuFallbackAlignment = cloneJsonValue(payloadGpuPlan.alignment || payloadGpuPlan);
+      const gpuBuild = buildTrustedGpuBlendMatchPlanFromSamples({
+        documentId: modalResult.documentId,
+        layerId: modalResult.layerId,
+        layerName: modalResult.layerName,
+        bounds: modalResult.bounds,
+        config,
+        previewCacheKey: modalResult.previewCacheKey,
+        sourceSample: cache.sourceSample,
+        referenceSample: cache.referenceSample,
+        gpuPlan: payloadGpuPlan,
+        timing: actionTiming,
+        logs
+      });
+      if (gpuBuild.plan) {
+        plan = gpuBuild.plan;
+        validation = { ok: true, reason: "trusted-webgl2-plan" };
+        storeBlendMatchPreviewCache(modalResult.previewCacheKey, {
+          sourceSample: cloneSampleForPreviewCache(cache.sourceSample),
+          referenceSample: cloneSampleForPreviewCache(cache.referenceSample),
+          alignment: getPlanAlignment(plan),
+          plan,
+          planId: plan.planId
+        });
+        logs.push(`[融合校色] GPU BlendMatchPlan 已缓存：planId ${plan.planId}，Host 仅完成新鲜度/结构校验和 ColorPlan 序列化。`);
+      } else {
+        logs.push(`[融合校色] GPU plan 未达可信门槛：${gpuBuild.reason || "unknown"}；将使用 CPU fallback。`);
+      }
+    }
+  }
 
   if (!validation.ok) {
     const sourceSample = cache.sourceSample;
@@ -6387,7 +6911,9 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       logs,
       gpuAlignmentSeed: effectiveGpuSeed,
       alignmentSeedCandidates: payloadSeedCandidates,
-      seedTrust: effectiveGpuSeed ? "hint-only" : ""
+      seedTrust: effectiveGpuSeed ? "hint-only" : "",
+      fastFallback: true,
+      fallbackAlignmentSeed: freshGpuFallbackAlignment
     });
     validation = { ok: true, reason: "rebuilt-from-preview-samples" };
     storeBlendMatchPreviewCache(modalResult.previewCacheKey, {
@@ -6397,7 +6923,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       plan,
       planId: plan.planId
     });
-    logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    logs.push(`[融合校色] 保守 CPU BlendMatchPlan 已完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
     logs.push("[融合校色] CPU plan hydrate：命中 preview raw sample cache，未重新 Photoshop getPixels，未重新切换图层可见性。");
   } else {
     logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);
@@ -6419,7 +6945,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
     bounds: modalResult.bounds,
     corrections,
     alignment,
-    cpuAlignment: alignment,
+    cpuAlignment: alignment && alignment.backend === "cpu" ? alignment : null,
     colorPlan,
     colorSummary,
     planId: plan.planId,
