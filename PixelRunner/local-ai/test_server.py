@@ -53,6 +53,11 @@ class LocalAiServerTests(unittest.TestCase):
         self.assertEqual(public["tileTotal"], 6)
         self.assertEqual(public["tileCompleted"], 2)
 
+    def test_native_cli_percent_maps_to_confirmed_progress(self) -> None:
+        self.assertEqual(server.parse_native_inference_progress("6.25%", 16), (6.25, 1))
+        self.assertEqual(server.parse_native_inference_progress(" 37.33%\n", 150), (37.33, 56))
+        self.assertIsNone(server.parse_native_inference_progress("queueC=2", 16))
+
     def test_png_visible_pixel_guard_rejects_black_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_dir:
             path = Path(temporary_dir) / "sample.png"

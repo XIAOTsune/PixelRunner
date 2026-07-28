@@ -6709,6 +6709,7 @@ button {
 
 .local-upscale-progress-meta {
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .local-upscale-progress-track {

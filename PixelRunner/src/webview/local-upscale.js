@@ -152,12 +152,12 @@
     const quickHint = getById("localUpscaleQuickHint");
     if (status) {
       status.textContent = String(message || "");
-      status.dataset.tone = tone;
+      status.dataset.status = tone;
     }
     if (hint) modules.runtime.setSummaryStatus(hint, String(message || ""), tone);
     if (quickBadge) {
       quickBadge.textContent = tone === "success" ? "本地引擎已就绪" : tone === "error" ? "本地引擎未连接" : "检测本地引擎";
-      quickBadge.dataset.tone = tone;
+      quickBadge.dataset.status = tone;
     }
     if (quickHint) modules.runtime.setSummaryStatus(quickHint, String(message || ""), tone);
   }
@@ -195,10 +195,15 @@
     return `选区 ${width} x ${height}`;
   }
 
-  function getTileProgressLabel(job) {
-    const total = Math.max(0, Math.floor(Number(job && job.tileTotal) || 0));
-    const completed = Math.max(0, Math.min(total, Math.floor(Number(job && job.tileCompleted) || 0)));
-    return total > 0 ? `分块 ${completed} / ${total}` : "分块准备中";
+  function getInferenceProgress(job) {
+    const value = Number(job && job.inferencePercent);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+  }
+
+  function formatInferenceProgress(job) {
+    const percent = getInferenceProgress(job);
+    if (percent === null) return "正在准备推理";
+    return `推理 ${percent.toFixed(2)}%`;
   }
 
   async function cleanupCaptureSelectionSnapshot(capture = state.currentCapture) {
@@ -260,13 +265,23 @@
     setProgress("等待开始", "自动范围 · 原生 4x", 0, "idle");
   }
 
-  function markEngineUnavailable(error) {
-    const message = String(error && error.message || error || "本地引擎未就绪");
+  function markEngineUnavailable(error, options = {}) {
+    const startupFailed = options.startupFailed === true;
     state.engine = null;
     state.engineReady = false;
     setEngineMeta(null);
-    setStatus(`未连接本地引擎：${message}`, "error");
-    setProgress("等待本地引擎", "正在启动 PixelRunner Local AI", 0, "error");
+    setStatus(
+      startupFailed
+        ? "本地模型暂未启动成功；点击“重新检测”会再次启动。"
+        : "本地模型尚未启动；打开本地超分后会自动启动并加载。",
+      startupFailed ? "warn" : "info"
+    );
+    const quickBadge = getById("localUpscaleQuickBadge");
+    if (quickBadge) quickBadge.textContent = startupFailed ? "可重新启动" : "打开后自动启动";
+    const meta = getById("localUpscaleEngineMeta");
+    if (meta) meta.textContent = "Real-ESRGAN x4plus · 打开面板后自动加载";
+    setProgress("等待启动", "打开面板后自动加载本地模型", 0, "idle");
+    if (startupFailed) console.warn("[PixelRunner/WebView] local upscale engine start failed", error);
   }
 
   function closePanel() {
@@ -397,8 +412,8 @@
         }
         throw lastError || new Error("PixelRunner Local AI 启动超时");
       } catch (error) {
-        markEngineUnavailable(error);
-        setProgress("本地引擎未启动", "请检查插件目录中的 local-ai 日志", 0, "error");
+        markEngineUnavailable(error, { startupFailed: true });
+        setProgress("等待重新启动", "点击“重新检测”再次启动本地模型", 0, "idle");
         return null;
       } finally {
         state.engineStarting = false;
@@ -475,10 +490,11 @@
       if (!state.running || state.currentJobId !== jobId || !state.engineSessionActive) return;
       const status = normalizeStatus(job && job.status);
       const progress = Number(job && job.progress);
+      const inferenceProgress = getInferenceProgress(job);
       const label = STATUS_LABELS[status] || "正在处理";
       const isInference = ["running", "processing"].includes(status);
       const detail = isInference
-        ? `${getTileProgressLabel(job)} · Vulkan 4x`
+        ? `${formatInferenceProgress(job)} · Vulkan 4x`
         : `${getCaptureProgressLabel(state.currentCapture)} · ${String(job && (job.message || job.stage) || "原生 4x").trim()}`;
       if (["succeeded", "success", "completed", "done"].includes(status)) {
         await finishSuccessfully(job);
@@ -490,7 +506,7 @@
       if (["failed", "error", "cancelled", "canceled"].includes(status)) {
         throw new Error(String(job && (job.error || job.message) || label));
       }
-      setProgress(label, detail, Number.isFinite(progress) ? progress : 54, "running");
+      setProgress(label, detail, isInference && inferenceProgress !== null ? inferenceProgress : Number.isFinite(progress) ? progress : 0, "running");
       schedulePoll();
     } catch (error) {
       const wasCancelled = /取消/.test(String(error && error.message || ""));

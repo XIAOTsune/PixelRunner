@@ -187,13 +187,13 @@
             <div class="tool-local-upscale-summary-main">
               <div class="tool-local-upscale-header-line">
                 <h3 class="card-title">本地超分</h3>
-                <span id="localUpscaleQuickBadge" class="status-chip">检测本地引擎</span>
+                <span id="localUpscaleQuickBadge" class="status-chip">打开后自动启动</span>
               </div>
               <p class="subtle-note">Real-ESRGAN x4plus · 同尺寸增强并回贴为新图层。</p>
             </div>
             <button id="btnOpenLocalUpscalePanel" class="primary-btn local-upscale-open-btn" type="button">打开本地超分</button>
           </div>
-          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">等待检测 PixelRunner Local AI</div>
+          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">点击“打开本地超分”会自动启动并加载本地模型。</div>
         </section>
 
         <div class="tool-group-grid">
@@ -1243,10 +1243,10 @@
 
       <div class="local-upscale-engine-panel">
         <div class="local-upscale-engine-head">
-          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">正在检测本地引擎</span>
+          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">等待启动本地模型</span>
           <button id="btnRefreshLocalUpscaleEngine" class="mini-btn" type="button">重新检测</button>
         </div>
-        <span id="localUpscaleEngineMeta" class="local-upscale-engine-meta">PixelRunner Local AI · Real-ESRGAN x4plus</span>
+        <span id="localUpscaleEngineMeta" class="local-upscale-engine-meta">Real-ESRGAN x4plus · 打开面板后自动加载</span>
       </div>
 
       <div class="local-upscale-controls">

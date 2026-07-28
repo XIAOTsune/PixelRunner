@@ -42,6 +42,7 @@ VULKAN_FAILURE_PATTERN = re.compile(
     r"(?:vk[A-Za-z0-9_]*\s+failed|out of memory|failed to (?:allocate|create|load))",
     re.IGNORECASE,
 )
+NATIVE_PROGRESS_PATTERN = re.compile(r"^\s*(\d{1,3}(?:\.\d+)?)%\s*$")
 
 
 def write_service_log(message: str) -> None:
@@ -92,6 +93,16 @@ def build_native_tile_coordinates(width: int, height: int, tile: int, engine_sca
                 "engineBottom": bottom * safe_scale,
             })
     return coordinates
+
+
+def parse_native_inference_progress(line: str, tile_total: int) -> tuple[float, int] | None:
+    match = NATIVE_PROGRESS_PATTERN.fullmatch(str(line or "").strip())
+    if not match:
+        return None
+    percent = max(0.0, min(100.0, float(match.group(1))))
+    total = max(0, int(tile_total))
+    completed = max(0, min(total, int(round(total * percent / 100.0)))) if total else 0
+    return percent, completed
 
 
 @dataclass(frozen=True)
@@ -328,6 +339,7 @@ class Job:
     engine_output_dimensions: tuple[int, int] | None = None
     native_tile_total: int = 0
     native_tile_completed: int = 0
+    native_inference_percent: float = 0.0
     input_has_visible_pixels: bool = False
     visible_input_tiles: set[str] = field(default_factory=set)
     placement: dict[str, Any] = field(default_factory=dict)
@@ -348,6 +360,7 @@ class Job:
             "tile": self.tile,
             "tileTotal": self.native_tile_total,
             "tileCompleted": self.native_tile_completed,
+            "inferencePercent": round(self.native_inference_percent, 2),
             "model": "realesrgan-x4plus",
             "debug": self.debug,
             "debugPath": str(self.debug_dir) if self.debug_dir else "",
@@ -795,7 +808,8 @@ class LocalUpscaleService:
                 job.command.append("-x")
             if not self._prepare_debug_artifacts(job):
                 return
-            job.progress = 52
+            job.progress = 0
+            job.native_inference_percent = 0.0
             job.message = "正在使用 Vulkan 原生 4x 分块推理"
             job.status = "running"
             job.started_at = time.time()
@@ -804,10 +818,11 @@ class LocalUpscaleService:
             process = subprocess.Popen(
                 job.command,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                bufsize=1,
                 creationflags=creationflags,
             )
             with self.jobs_lock:
@@ -815,8 +830,25 @@ class LocalUpscaleService:
                 should_terminate = job.cancelled or self.shutdown_event.is_set()
             if should_terminate and process.poll() is None:
                 process.terminate()
-            output, stderr = process.communicate()
-            self._write_debug_process_output(job, output or "", stderr or "")
+            output_lines: list[str] = []
+            if process.stdout:
+                for line in process.stdout:
+                    output_lines.append(line)
+                    native_progress = parse_native_inference_progress(line, job.native_tile_total)
+                    if native_progress:
+                        percent, completed = native_progress
+                        with self.jobs_lock:
+                            job.native_inference_percent = max(job.native_inference_percent, percent)
+                            job.native_tile_completed = max(job.native_tile_completed, completed)
+                            job.progress = int(round(job.native_inference_percent))
+                            job.message = f"Vulkan 原生 4x 推理 {job.native_inference_percent:.2f}%"
+                process.stdout.close()
+            process.wait()
+            output = "".join(output_lines)
+            stderr = ""
+            # NCNN writes both diagnostics and progress to stderr. The streams are
+            # merged only so progress cannot deadlock behind an unread pipe.
+            self._write_debug_process_output(job, "", output)
             with self.jobs_lock:
                 job.process = None
             if job.cancelled:
@@ -839,11 +871,11 @@ class LocalUpscaleService:
                 job.error = f"Vulkan 推理失败：{detail or '显存或驱动错误'}"
                 job.message = job.error
             else:
-                # The bundled NCNN CLI owns its internal tile loop and does not expose
-                # per-tile callbacks. Mark tiles complete only once the native process
-                # has returned successfully rather than publishing an invented estimate.
+                # Keep the tile counters for diagnostics, while the public UI follows
+                # the native percentage that was streamed by NCNN.
                 job.native_tile_completed = job.native_tile_total
-                job.progress = 84
+                job.native_inference_percent = 100.0
+                job.progress = 100
                 job.message = "正在验证原生引擎输出"
                 self._write_debug_metadata(job)
                 actual_size = read_png_dimensions(job.output_path)

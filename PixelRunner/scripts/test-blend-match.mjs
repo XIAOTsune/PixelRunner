@@ -67,6 +67,45 @@ function buildStats(sample) {
   };
 }
 
+const colorConsistencyConfig = {
+  mode: "balanced", totalStrength: 78, luminanceStrength: 82, colorStrength: 76,
+  saturationStrength: 62, contrastStrength: 58, featherRadius: 16,
+  alignmentEnabled: true, alignmentMaxOffset: 12, alignmentMaxScale: 2.5,
+  alignmentMaxRotation: 1.75, alignmentMaxStretch: 2.5, localAlignmentEnabled: true,
+  localMeshStrength: 0.58, localMeshMaxOffset: 6, previewMaxEdge: 512
+};
+
+function buildAllSharedColorPlan(source, reference, cacheKey) {
+  const mask = new Uint8Array(source.width * source.height).fill(255);
+  return buildCpuBlendMatchPlanFromSamples({
+    documentId: 11,
+    layerId: 51,
+    layerName: "color consistency fixture",
+    bounds: { left: 0, top: 0, right: source.width, bottom: source.height },
+    previewCacheKey: cacheKey,
+    config: colorConsistencyConfig,
+    sourceSample: { ...source, scaleX: 1, scaleY: 1, stats: buildStats(source) },
+    referenceSample: { ...reference, scaleX: 1, scaleY: 1, stats: buildStats(reference) },
+    existingAlignment: {
+      backend: "cpu",
+      trusted: true,
+      applied: false,
+      dx: 0,
+      dy: 0,
+      confidence: 1,
+      reason: "deterministic-all-shared-fixture",
+      sharedMask: {
+        width: source.width,
+        height: source.height,
+        base64: Buffer.from(mask).toString("base64"),
+        sharedRatio: 1,
+        excludedRatio: 0,
+        effectiveWeight: mask.length
+      }
+    }
+  });
+}
+
 const globalSource = makeSample(48, 40, [80, 105, 130, 255]);
 const globalReference = makeSample(48, 40, [104, 129, 154, 255]);
 const globalMask = computeSharedContentReference(globalSource, globalReference);
@@ -221,6 +260,29 @@ const hugeReplacementPlan = buildCpuBlendMatchPlanFromSamples({
 assert.equal(hugeReplacementPlan.alignment.colorInferenceLimited, true, "very small shared area must stop color inference");
 assert.equal(hugeReplacementPlan.color.profile, null);
 assert.deepEqual(hugeReplacementPlan.color.corrections.colorBalance, { cyanRed: 0, magentaGreen: 0, yellowBlue: 0 });
+
+const stableColorSource = makeSample(96, 80, [82, 106, 132, 255]);
+const stableColorReference = makeSample(96, 80, [105, 129, 155, 255]);
+const stableColorPlan = buildAllSharedColorPlan(stableColorSource, stableColorReference, "stable-color-baseline");
+const residualOutlierSource = makeSample(96, 80, [82, 106, 132, 255]);
+paintRect(residualOutlierSource, 26, 17, 64, 54, [244, 58, 122, 255]);
+const residualOutlierPlan = buildAllSharedColorPlan(residualOutlierSource, stableColorReference, "stable-color-residual-outlier");
+const stableProfile = stableColorPlan.color.profile;
+const residualProfile = residualOutlierPlan.color.profile;
+assert.ok(stableProfile && residualProfile, "robust shared-region ColorPlans must be available");
+assert.ok(Math.abs(residualProfile.midDelta - stableProfile.midDelta) < 1.5, "a minority changed region must not drag global luminance correction");
+assert.ok(Math.abs(residualProfile.uDelta - stableProfile.uDelta) < 1.5, "a minority changed region must not drag blue/yellow correction");
+assert.ok(Math.abs(residualProfile.vDelta - stableProfile.vDelta) < 1.5, "a minority changed region must not drag red/cyan correction");
+assert.ok(Math.abs(residualProfile.saturationFactor - stableProfile.saturationFactor) < 0.025, "a high-saturation changed region must not drag saturation correction");
+
+const thresholdSource = makeSample(72, 64, [92, 108, 124, 255]);
+const thresholdReferenceLow = makeSample(72, 64, [109, 125, 141, 255]);
+const thresholdReferenceHigh = makeSample(72, 64, [111, 127, 143, 255]);
+const thresholdLowProfile = buildAllSharedColorPlan(thresholdSource, thresholdReferenceLow, "continuous-threshold-low").color.profile;
+const thresholdHighProfile = buildAllSharedColorPlan(thresholdSource, thresholdReferenceHigh, "continuous-threshold-high").color.profile;
+assert.ok(thresholdHighProfile.mismatchSeverity > thresholdLowProfile.mismatchSeverity, "mismatch response should increase continuously");
+assert.ok(Math.abs(thresholdHighProfile.midDelta - thresholdLowProfile.midDelta) < 3, "nearby casts must not trigger a discontinuous strategy jump");
+assert.ok(thresholdLowProfile.evidenceReliability > 0.98 && thresholdHighProfile.evidenceReliability > 0.98, "full shared evidence should retain correction strength");
 
 let webglSkipReason = "WebGL2 integration unavailable in Node";
 if (typeof OffscreenCanvas === "function") {
