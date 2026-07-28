@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>像素起子激活码生成器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101821;
+      --surface: #18232f;
+      --surface-raised: #202e3c;
+      --border: #46586a;
+      --text: #f3f7fb;
+      --muted: #b1bdc9;
+      --accent: #41c77b;
+      --accent-ink: #0d2117;
+      --warn: #ffd28a;
+      --warn-bg: #4b3b24;
+      --success-bg: #173b29;
+      --focus: #85d8ff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { min-width: 320px; min-height: 100dvh; margin: 0; background: var(--bg); color: var(--text); }
+    .page { width: min(100%, 680px); margin: 0 auto; padding: 24px 16px 32px; }
+    .tool-shell { overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+    .tool-header, .tool-section, .tool-footer { padding: 18px; }
+    .tool-section, .tool-footer { border-top: 1px solid var(--border); }
+    .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 12px; font-weight: 700; }
+    h1 { margin: 0; font-size: 24px; line-height: 1.2; letter-spacing: 0; }
+    .intro, .field-hint, .tool-footer { color: var(--muted); font-size: 14px; line-height: 1.55; }
+    .intro { margin: 10px 0 0; }
+    .field { display: grid; gap: 7px; }
+    label { color: var(--text); font-size: 14px; font-weight: 700; }
+    input, textarea, button { font: inherit; }
+    input, textarea {
+      width: 100%; min-height: 46px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: #111c27; color: var(--text); font-size: 16px; line-height: 1.4;
+    }
+    textarea { min-height: 132px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+    input:focus-visible, textarea:focus-visible, button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    button { min-height: 46px; padding: 0 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); cursor: pointer; font-weight: 700; }
+    button:hover { border-color: var(--focus); }
+    .primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+    .status { margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: #111c27; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .status[data-kind="success"] { border-color: var(--accent); background: var(--success-bg); color: #dcffe9; }
+    .status[data-kind="warn"] { border-color: var(--warn); background: var(--warn-bg); color: #fff0d2; }
+    .tool-footer { padding-top: 14px; padding-bottom: 14px; }
+    @media (max-width: 560px) {
+      .page { padding: 0; }
+      .tool-shell { min-height: 100dvh; border-width: 0; border-radius: 0; }
+      .tool-header, .tool-section, .tool-footer { padding: 16px; }
+      .actions > button { flex: 1 1 140px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="tool-shell" aria-labelledby="issuerTitle">
+      <header class="tool-header">
+        <p class="eyebrow">PixelRunner</p>
+        <h1 id="issuerTitle">像素起子激活码生成器</h1>
+        <p class="intro">输入用户设备代码，生成可直接发送的永久激活码。</p>
+      </header>
+      <section class="tool-section" aria-label="生成激活码">
+        <div class="field">
+          <label for="issuerDeviceCode">用户设备代码</label>
+          <input id="issuerDeviceCode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="PR2-XXXX-XXXX-XXXX-XXXX-XXXX" />
+          <p class="field-hint">每次生成都会自动创建许可证编号，并签入当前签发时间。</p>
+        </div>
+        <div class="actions">
+          <button id="btnGenerateActivationCode" class="primary" type="button">生成激活码</button>
+          <button id="btnCopyActivationCode" type="button">复制激活码</button>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label for="issuerActivationCode">激活码</label>
+          <textarea id="issuerActivationCode" readonly aria-label="生成的激活码"></textarea>
+        </div>
+        <p id="issuerStatus" class="status" data-kind="info" role="status" aria-live="polite">填写设备代码后即可生成，激活码固定解锁四项功能。</p>
+      </section>
+      <footer class="tool-footer">此个人工具完全离线运行。旧许可证泄露后无法远程撤销；设备迁移只能按新设备代码重新签发。</footer>
+    </section>
+  </main>
+  <script>__PIXELRUNNER_ISSUER_BUNDLE__</script>
+</body>
+</html>

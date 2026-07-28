@@ -29,6 +29,31 @@ feature IDs are `glow`, `spaceFx`, `blendMatch`, and `localUpscale`.
 
 ## Developer Workflow
 
+For the normal external-key workflow, run `npm run build:license-issuer` and
+open the root `license-issuer.html` file. It loads no network resources and
+asks for the same external PKCS#8 PEM when a code is issued. The page checks
+that the selected private key matches the chosen built-in `keyId`; it keeps the
+key only in page memory.
+
+For a developer's own offline phone or computer, a deliberately simplified
+self-contained page can be generated with one device-code field. It creates a
+license ID and signs the current `issuedAt` time automatically, always
+unlocking all four supported features:
+
+```powershell
+npm run build:personal-license-issuer -- `
+  --private-key-file C:\Users\Developer\.pixelrunner\keys\pixelrunner-ed25519-private.pem `
+  --out .\像素起子激活码生成器.html `
+  --allow-embedded-private-key
+```
+
+The explicit final flag is required because this output embeds the private key.
+Treat that HTML as a high-sensitivity personal signing device: do not commit,
+sync, send, publish, include it in a release, or open it on an untrusted
+computer. The build script still requires the source PEM to be outside the
+repository and does not print key material. The release package does not use
+this file.
+
 Generate an Ed25519 key pair only into an explicit path outside this repository:
 
 ```powershell
