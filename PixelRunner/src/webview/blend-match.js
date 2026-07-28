@@ -242,6 +242,7 @@
   }
 
   function openPanel() {
+    if (modules.license && !modules.license.requireFeature("blendMatch")) return;
     if (modules.workspace && typeof modules.workspace.setModalOpen === "function") {
       modules.workspace.setModalOpen("blendMatchModal", true);
     } else {
@@ -2258,6 +2259,7 @@
   }
 
   async function refreshPreview() {
+    if (modules.license && !modules.license.requireFeature("blendMatch")) return;
     if (localState.previewBusy || !modules.runtime.isPluginRuntime()) return;
     localState.previewBusy = true;
     localState.latestGpuAlignmentSeed = null;
@@ -2368,6 +2370,7 @@
   }
 
   async function runBlendMatch() {
+    if (modules.license && !modules.license.requireFeature("blendMatch")) return;
     if (localState.busy) return;
     if (!modules.runtime.isPluginRuntime()) {
       modules.ui.logToWorkspace("浏览器预览模式下不会执行融合校色。", "info");
@@ -2407,6 +2410,7 @@
   }
 
   async function applyAutoPlacementFusion(placementResponse, resultContext = {}) {
+    if (modules.license && !modules.license.isFeatureUnlocked("blendMatch")) return null;
     const hasBundledFusion = Boolean(
       placementResponse && Object.prototype.hasOwnProperty.call(placementResponse, "blendMatchFusion")
     );

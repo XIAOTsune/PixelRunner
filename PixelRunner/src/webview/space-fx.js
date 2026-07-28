@@ -1397,10 +1397,13 @@
   }
 
   async function captureSource() {
+    if (modules.license && !modules.license.requireFeature("spaceFx")) {
+      throw new Error("空间特效需要授权");
+    }
     if (!modules.runtime.isPluginRuntime()) {
       throw new Error("浏览器预览模式下不可捕获 Photoshop 图像");
     }
-    const captured = await modules.runtime.callHost("photoshop.captureDocumentPreview", [{
+    const captured = await modules.runtime.callHost("photoshop.captureLicensedSpaceFxPreview", [{
       maxDimension: CAPTURE_MAX_DIMENSION,
       ignoreSelection: true,
       quality: 92,
@@ -1448,6 +1451,7 @@
   }
 
   async function openSpaceFxModal() {
+    if (modules.license && !modules.license.requireFeature("spaceFx")) return;
     modules.workspace.setModalOpen("spaceFxModal", true);
     syncControls();
     updateSpaceFxWorkbenchLayout();
@@ -1471,9 +1475,12 @@
   }
 
   async function placeDataUrl(dataUrl, layerName, opacity = 100, blendMode = "normal") {
+    if (modules.license && !modules.license.requireFeature("spaceFx")) {
+      throw new Error("空间特效需要授权");
+    }
     if (!state.captured) throw new Error("缺少捕获图像信息");
     const bounds = getFullDocumentBounds(state.captured, state.lastRender && state.lastRender.width, state.lastRender && state.lastRender.height);
-    return modules.runtime.callHost("photoshop.placeResultFromUrl", [{
+    return modules.runtime.callHost("photoshop.placeLicensedSpaceFxResult", [{
       dataUrl,
       targetDocumentId: state.captured.documentId,
       sourceDocumentId: state.captured.documentId,
@@ -1489,6 +1496,7 @@
   }
 
   async function applySpaceFx() {
+    if (modules.license && !modules.license.requireFeature("spaceFx")) return;
     const applyButton = getById("btnSpaceFxApply");
     if (!state.captured || !state.sourceImage) {
       setStatus("请先捕获图像并生成预览。", "warn");
@@ -1518,6 +1526,7 @@
   }
 
   async function applyDisplacementMap() {
+    if (modules.license && !modules.license.requireFeature("spaceFx")) return;
     const mapButton = getById("btnSpaceFxMap");
     if (!state.captured || !state.sourceImage) {
       setStatus("请先捕获图像并生成预览。", "warn");

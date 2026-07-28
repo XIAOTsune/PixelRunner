@@ -141,10 +141,11 @@
               <div class="tool-glow-header-line">
                 <h3 class="card-title">辉光</h3>
                 <span id="glowStrengthValue" class="status-chip">自然 47%</span>
+                <span class="status-chip license-tool-status" data-license-status-for="glow">已锁定</span>
               </div>
               <p class="subtle-note">点击打开独立预览面板，实时调节高光辉光，再确认生成最终结果层。</p>
             </div>
-            <button id="btnOpenGlowPanel" class="primary-btn glow-open-btn" type="button">打开辉光面板</button>
+            <button id="btnOpenGlowPanel" class="primary-btn glow-open-btn" type="button" data-license-feature="glow">打开辉光面板</button>
           </div>
           <div id="glowQuickHint" class="summary-strip">默认参数已切换为当前这组更自然的高光辉光手感。</div>
         </section>
@@ -155,10 +156,11 @@
               <div class="tool-space-fx-header-line">
                 <h3 class="card-title">空间特效</h3>
                 <span id="spaceFxPresetBadge" class="status-chip">热浪</span>
+                <span class="status-chip license-tool-status" data-license-status-for="spaceFx">已锁定</span>
               </div>
               <p class="subtle-note">生成热浪、气流、刀光等本地空间扭曲效果，实时预览后输出可编辑结果层。</p>
             </div>
-            <button id="btnOpenSpaceFxPanel" class="primary-btn space-fx-open-btn" type="button">打开空间特效</button>
+            <button id="btnOpenSpaceFxPanel" class="primary-btn space-fx-open-btn" type="button" data-license-feature="spaceFx">打开空间特效</button>
           </div>
           <div id="spaceFxQuickHint" class="summary-strip">点击预览图放置特效中心，滚轮可放大预览，拖动可查看局部。</div>
         </section>
@@ -169,10 +171,11 @@
               <div class="tool-blend-match-header-line">
                 <h3 class="card-title">融合校色</h3>
                 <span id="blendMatchModeBadge" class="status-chip">均衡</span>
+                <span class="status-chip license-tool-status" data-license-status-for="blendMatch">已锁定</span>
               </div>
               <p class="subtle-note">隐藏当前返图图层后采样原图参考，生成更匹配明度、色彩和边缘过渡的融合结果层。</p>
             </div>
-            <button id="btnOpenBlendMatchPanel" class="primary-btn blend-match-open-btn" type="button">打开融合校色</button>
+            <button id="btnOpenBlendMatchPanel" class="primary-btn blend-match-open-btn" type="button" data-license-feature="blendMatch">打开融合校色</button>
           </div>
           <div id="blendMatchQuickHint" class="summary-strip">模式 均衡 / 强度 78% / 羽化 16px</div>
           <label class="freq-sep-check-field blend-match-auto-field">
@@ -188,10 +191,11 @@
               <div class="tool-local-upscale-header-line">
                 <h3 class="card-title">本地超分</h3>
                 <span id="localUpscaleQuickBadge" class="status-chip">打开后自动启动</span>
+                <span class="status-chip license-tool-status" data-license-status-for="localUpscale">已锁定</span>
               </div>
               <p class="subtle-note">Real-ESRGAN x4plus · 同尺寸增强并回贴为新图层。</p>
             </div>
-            <button id="btnOpenLocalUpscalePanel" class="primary-btn local-upscale-open-btn" type="button">打开本地超分</button>
+            <button id="btnOpenLocalUpscalePanel" class="primary-btn local-upscale-open-btn" type="button" data-license-feature="localUpscale">打开本地超分</button>
           </div>
           <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">点击“打开本地超分”会自动启动并加载本地模型。</div>
         </section>
@@ -351,6 +355,41 @@
               <div id="settingsStatusSummary" class="summary-strip">设置尚未加载</div>
             </div>
           </section>
+
+          <details id="licenseSettingsDetails" class="surface-card settings-collapsible license-settings-card">
+            <summary class="settings-collapse-summary">
+              <span>授权与设备</span>
+              <span id="licenseStatusBadge" class="status-chip license-status-badge" data-status="info">未激活</span>
+            </summary>
+            <div class="form-stack collapsible-body">
+              <label class="field">
+                <span class="field-label">设备代码</span>
+                <input id="licenseDeviceCode" class="field-input license-device-code" type="text" readonly aria-label="设备代码" />
+                <span class="field-hint settings-field-hint">此代码只代表本次插件安装，不读取硬件序列号或机器指纹。</span>
+              </label>
+              <div class="action-row license-device-actions">
+                <button id="btnCopyLicenseDeviceCode" class="secondary-btn" type="button">复制设备代码</button>
+              </div>
+              <label class="field">
+                <span class="field-label">激活码</span>
+                <textarea id="licenseActivationCode" class="field-input license-activation-input" rows="3" autocomplete="off" spellcheck="false" placeholder="粘贴开发者提供的激活码"></textarea>
+              </label>
+              <div class="action-row license-action-row">
+                <button id="btnActivateLicense" class="primary-btn" type="button">激活</button>
+                <button id="btnRemoveLicense" class="secondary-btn license-remove-btn" type="button">移除本机授权</button>
+              </div>
+              <div id="licenseActiveDetails" class="license-active-details" hidden>
+                <div id="licenseActiveDetailsText"></div>
+              </div>
+              <div id="licenseStatusSummary" class="summary-strip" role="status" aria-live="polite">此设备尚未激活。</div>
+              <div class="license-contact-note">
+                <span>联系插件开发者小T激活</span>
+                <span>QQ：1048855084</span>
+                <span>激活价格：29.9 元</span>
+                <span>激活后可使用：辉光、空间特效、融合校色、本地超分</span>
+              </div>
+            </div>
+          </details>
 
           <section class="surface-card bundle-transfer-card">
             <div class="card-head">
@@ -548,6 +587,23 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="licenseFeatureModal" class="overlay-modal" aria-hidden="true">
+    <div id="licenseFeatureBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card license-feature-modal-card" aria-labelledby="licenseFeatureTitle">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">授权</p>
+          <h3 id="licenseFeatureTitle" class="card-title">该功能需要授权</h3>
+        </div>
+        <button id="licenseFeatureModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+      <p id="licenseFeatureHint" class="subtle-note">请前往授权与设备，复制设备代码后联系开发者激活。</p>
+      <div class="action-row">
+        <button id="btnOpenLicenseSettings" class="primary-btn" type="button">前往授权与设备</button>
+      </div>
+    </section>
   </div>
 
   <div id="appPickerModal" class="overlay-modal">

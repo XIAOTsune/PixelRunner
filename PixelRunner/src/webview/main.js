@@ -25,9 +25,11 @@ function initializePixelRunnerApp() {
   modules.ui.bindPlaceholderActions();
   modules.templates.bindTemplateActions();
   modules.settings.bindSettingsActions();
+  modules.license.bindActions();
   modules.sound.initialize();
 
   modules.settings.initializeSettings()
+    .then(() => modules.license.initialize())
     .then(() =>
       Promise.all([
         modules.apps.refreshWorkspaceApps({ quiet: true }),

@@ -69,6 +69,13 @@ async function runBuild() {
   await cleanBundleArtifacts();
   await build(webviewConfig);
   await build(hostConfig);
+  if (releaseMode) {
+    // Obfuscation is a release-only friction layer. It does not encrypt code
+    // and is intentionally kept out of development and hot runtime paths.
+    const { obfuscateReleaseBundle } = await import("./release-obfuscation.mjs");
+    await obfuscateReleaseBundle(webviewConfig.outfile, "webview");
+    await obfuscateReleaseBundle(hostConfig.outfile, "host");
+  }
   console.log(`PixelRunner ${releaseMode ? "release" : "development"} bundles built successfully.`);
 }
 

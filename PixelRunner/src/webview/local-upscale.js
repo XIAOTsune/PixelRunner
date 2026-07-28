@@ -355,6 +355,12 @@
   }
 
   async function refreshEngineHealth(options = {}) {
+    if (modules.license && !modules.license.isFeatureUnlocked("localUpscale")) {
+      state.engine = null;
+      state.engineReady = false;
+      setRunning(false);
+      return null;
+    }
     const quiet = options.quiet === true;
     if (!modules.runtime.isPluginRuntime()) {
       state.engine = null;
@@ -379,6 +385,7 @@
   }
 
   async function startEngineAndWait() {
+    if (modules.license && !modules.license.requireFeature("localUpscale")) return null;
     if (state.engineReady) return state.engine;
     if (state.engineStartPromise) return state.engineStartPromise;
 
@@ -524,6 +531,7 @@
   }
 
   async function startUpscale() {
+    if (modules.license && !modules.license.requireFeature("localUpscale")) return;
     if (state.running) return;
     if (!modules.runtime.isPluginRuntime()) {
       setStatus("浏览器预览模式下不可执行本地超分。", "warn");
@@ -619,6 +627,7 @@
   }
 
   function openPanel() {
+    if (modules.license && !modules.license.requireFeature("localUpscale")) return;
     state.engineSessionActive = true;
     state.shutdownBeaconSent = false;
     state.engineSessionId += 1;
@@ -650,7 +659,9 @@
   }
 
   function initialize() {
-    void refreshEngineHealth({ quiet: true });
+    if (!modules.license || modules.license.isFeatureUnlocked("localUpscale")) {
+      void refreshEngineHealth({ quiet: true });
+    }
   }
 
   modules.localUpscale = {

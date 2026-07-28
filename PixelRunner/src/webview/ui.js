@@ -556,7 +556,10 @@
     const GLOW_PREVIEW_MAX_DIMENSION = 3000;
 
     const captureGlowCpuSource = async (maxDimension = GLOW_PREVIEW_MAX_DIMENSION) => {
-      const captured = await runtime.callHost("photoshop.captureDocumentPreview", [{
+      if (modules.license && !modules.license.requireFeature("glow")) {
+        throw new Error("辉光需要授权");
+      }
+      const captured = await runtime.callHost("photoshop.captureLicensedGlowPreview", [{
         maxDimension,
         ignoreSelection: true,
         quality: 92,
@@ -650,6 +653,9 @@
     };
 
     const callGlowCpuPreviewAction = async (action) => {
+      if (modules.license && !modules.license.requireFeature("glow")) {
+        throw new Error("辉光需要授权");
+      }
       const state = readGlowState();
       if (action === "glowPreviewStart" || !glowCpuSourceAsset) {
         glowCpuSourceAsset = await captureGlowCpuSource(GLOW_PREVIEW_MAX_DIMENSION);
@@ -721,6 +727,9 @@
     };
 
     const commitGlowCpuResult = async () => {
+      if (modules.license && !modules.license.requireFeature("glow")) {
+        throw new Error("辉光需要授权");
+      }
       const state = readGlowState();
       const layerName = `Glow ${state.strength}%`;
       const commitStrength = state.style === "none" ? 0 : state.strength;
@@ -742,7 +751,7 @@
         );
       }
       const documentInfo = glowCpuSourceAsset.document || {};
-      const result = await runtime.callHost("photoshop.placeResultFromUrl", [{
+      const result = await runtime.callHost("photoshop.placeLicensedGlowResult", [{
         dataUrl: glowResult.glowLayerDataUrl,
         targetDocumentId: glowCpuSourceAsset.documentId,
         targetBounds: {
@@ -913,6 +922,7 @@
     };
 
     const openGlowModal = async () => {
+      if (modules.license && !modules.license.requireFeature("glow")) return;
       glowPreviewOpen = true;
       glowLastPreviewSignature = "";
       glowLastPreviewQuality = "";

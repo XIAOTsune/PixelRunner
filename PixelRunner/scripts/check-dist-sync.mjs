@@ -38,6 +38,10 @@ async function assertBundleMatches({ name, entryPoint, outfile, buildOptions }) 
       entryPoints: [entryPoint],
       outfile: tempOutfile
     });
+    if (releaseMode) {
+      const { obfuscateReleaseBundle } = await import("./release-obfuscation.mjs");
+      await obfuscateReleaseBundle(tempOutfile, name.includes("host") ? "host" : "webview");
+    }
     const currentText = await readNormalized(outfile);
     const generatedText = await readNormalized(tempOutfile);
 
