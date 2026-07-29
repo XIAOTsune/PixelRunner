@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import errno
 import json
 import sys
 import tempfile
@@ -19,6 +20,33 @@ SPEC.loader.exec_module(server)
 
 
 class LocalAiServerTests(unittest.TestCase):
+    def test_port_candidates_cover_fallback_range(self) -> None:
+        self.assertEqual(server.build_port_candidates(17836, 17839), [17836, 17837, 17838, 17839])
+        with self.assertRaisesRegex(ValueError, "端口范围"):
+            server.build_port_candidates(17840, 17836)
+        with self.assertRaisesRegex(ValueError, "最多允许"):
+            server.build_port_candidates(17000, 17100)
+
+    def test_server_binding_skips_an_occupied_port(self) -> None:
+        attempts = []
+
+        class FakeServer:
+            def __init__(self, address, _handler) -> None:
+                attempts.append(address)
+                if address[1] == 17836:
+                    raise OSError(errno.EADDRINUSE, "address already in use")
+                self.server_address = address
+
+        bound = server.bind_first_available_http_server(
+            "127.0.0.1",
+            [17836, 17837, 17838],
+            server.RequestHandler,
+            FakeServer,
+        )
+        self.assertIsNotNone(bound)
+        self.assertEqual(bound.server_address, ("127.0.0.1", 17837))
+        self.assertEqual(attempts, [("127.0.0.1", 17836), ("127.0.0.1", 17837)])
+
     def test_native_tile_coordinates_use_engine_scale_once(self) -> None:
         tiles = server.build_native_tile_coordinates(300, 200, 128, 4)
         self.assertEqual(len(tiles), 6)

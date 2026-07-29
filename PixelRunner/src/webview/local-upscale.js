@@ -3,7 +3,16 @@
   const POLL_INTERVAL_MS = 900;
   const ENGINE_START_POLL_INTERVAL_MS = 700;
   const ENGINE_START_TIMEOUT_MS = 25000;
-  const LOCAL_AI_BASE_URL = "http://127.0.0.1:17836";
+  const ENGINE_DISCOVERY_TIMEOUT_MS = 2500;
+  const LOCAL_AI_PORT_START = 17836;
+  const LOCAL_AI_PORT_END = 17845;
+  const LOCAL_AI_BASE_URLS = Object.freeze(
+    Array.from(
+      { length: LOCAL_AI_PORT_END - LOCAL_AI_PORT_START + 1 },
+      (_, index) => `http://127.0.0.1:${LOCAL_AI_PORT_START + index}`
+    )
+  );
+  const LOCAL_AI_BASE_URL = LOCAL_AI_BASE_URLS[0];
   const LOCAL_AI_PROTOCOL_VERSION = "2";
   const LOCAL_AI_BUILD_ID = "PixelRunnerV2.7.3-local-ai-native-cli";
   const STATUS_LABELS = {
@@ -30,6 +39,7 @@
     engineSessionId: 0,
     shutdownPromise: null,
     shutdownBeaconSent: false,
+    baseUrl: LOCAL_AI_BASE_URL,
     currentJobId: "",
     currentCapture: null,
     pollTimer: 0
@@ -48,6 +58,18 @@
     return payload && typeof payload === "object" ? payload : {};
   }
 
+  function normalizeLocalAiBaseUrl(value) {
+    const candidate = String(value || "").trim().replace(/\/$/, "").toLowerCase();
+    return LOCAL_AI_BASE_URLS.includes(candidate) ? candidate : LOCAL_AI_BASE_URL;
+  }
+
+  function buildLocalUpscaleArgs(payload = {}, baseUrl = state.baseUrl) {
+    return [{
+      ...(payload && typeof payload === "object" ? payload : {}),
+      baseUrl: normalizeLocalAiBaseUrl(baseUrl)
+    }];
+  }
+
   function assertCompatibleEngine(payload) {
     const protocolVersion = String(payload && payload.protocolVersion || "").trim();
     const buildId = String(payload && payload.buildId || "").trim();
@@ -64,6 +86,7 @@
   async function requestLocalAiFromWebview(method, args = []) {
     if (typeof global.fetch !== "function") throw new Error("WebView fetch 不可用");
     const payload = getLocalUpscalePayload(args);
+    const baseUrl = normalizeLocalAiBaseUrl(payload.baseUrl);
     let path = "";
     let options = { headers: { Accept: "application/json" } };
     if (method === "localUpscale.getHealth") {
@@ -109,7 +132,7 @@
       throw new Error("不支持的本地超分请求");
     }
 
-    const response = await global.fetch(`${LOCAL_AI_BASE_URL}${path}`, options);
+    const response = await global.fetch(`${baseUrl}${path}`, options);
     let result = null;
     try {
       result = await response.json();
@@ -120,9 +143,9 @@
     const responsePayload = result && typeof result === "object" ? result : {};
     assertCompatibleEngine(responsePayload);
     if (method === "localUpscale.getJob" && responsePayload.resultPath && !responsePayload.resultUrl) {
-      responsePayload.resultUrl = `${LOCAL_AI_BASE_URL}${path}/result`;
+      responsePayload.resultUrl = `${baseUrl}${path}/result`;
     }
-    return responsePayload;
+    return { ...responsePayload, baseUrl };
   }
 
   async function callLocalUpscaleService(method, args = [], options = {}) {
@@ -195,6 +218,26 @@
     return `选区 ${width} x ${height}`;
   }
 
+  function getNativeFilename(value) {
+    return String(value || "").trim().split(/[\\/]/).pop() || "";
+  }
+
+  function resolveLocalUpscaleResultSource(job, capture) {
+    const reportedPath = String(job && job.resultPath || "").trim();
+    const expectedPath = String(capture && capture.outputPath || "").trim();
+    const resultUrl = String(job && job.resultUrl || "").trim();
+    const reportedFilename = getNativeFilename(reportedPath).toLowerCase();
+    const expectedFilename = getNativeFilename(expectedPath).toLowerCase();
+    if (reportedFilename && expectedFilename && reportedFilename !== expectedFilename) {
+      throw new Error("本地引擎返回的结果文件与当前任务不匹配，请重新运行本地超分");
+    }
+    if (!reportedPath && !resultUrl) throw new Error("本地引擎未返回超分结果文件");
+    return {
+      filePath: expectedPath || reportedPath,
+      resultUrl
+    };
+  }
+
   function getInferenceProgress(job) {
     const value = Number(job && job.inferencePercent);
     return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
@@ -249,17 +292,44 @@
     return new Promise((resolve) => global.setTimeout(resolve, delayMs));
   }
 
-  async function getEngineHealth() {
-    const health = await callLocalUpscaleService("localUpscale.getHealth", [], { timeoutMs: 8000 });
+  async function getEngineHealth(baseUrl = state.baseUrl) {
+    const normalizedBaseUrl = normalizeLocalAiBaseUrl(baseUrl);
+    const health = await callLocalUpscaleService(
+      "localUpscale.getHealth",
+      buildLocalUpscaleArgs({}, normalizedBaseUrl),
+      { timeoutMs: ENGINE_DISCOVERY_TIMEOUT_MS }
+    );
     if (!health || health.ok === false || health.ready === false) {
       throw new Error(String(health && (health.message || health.error) || "本地引擎未就绪"));
     }
-    return health;
+    return { ...health, baseUrl: normalizeLocalAiBaseUrl(health.baseUrl || normalizedBaseUrl) };
+  }
+
+  function discoverCompatibleEngine() {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let remaining = LOCAL_AI_BASE_URLS.length;
+      let lastError = null;
+      LOCAL_AI_BASE_URLS.forEach((baseUrl) => {
+        getEngineHealth(baseUrl).then((health) => {
+          if (settled) return;
+          settled = true;
+          resolve(health);
+        }).catch((error) => {
+          lastError = error;
+          remaining -= 1;
+          if (!settled && remaining === 0) {
+            reject(lastError || new Error("未找到可用的 PixelRunner Local AI 服务"));
+          }
+        });
+      });
+    });
   }
 
   function markEngineReady(health) {
     state.engine = health;
     state.engineReady = true;
+    state.baseUrl = normalizeLocalAiBaseUrl(health && health.baseUrl);
     setEngineMeta(health);
     setStatus(`本地引擎已就绪：${getEngineLabel(health)}`, "success");
     setProgress("等待开始", "自动范围 · 原生 4x", 0, "idle");
@@ -269,6 +339,7 @@
     const startupFailed = options.startupFailed === true;
     state.engine = null;
     state.engineReady = false;
+    state.baseUrl = LOCAL_AI_BASE_URL;
     setEngineMeta(null);
     setStatus(
       startupFailed
@@ -306,15 +377,21 @@
   async function stopEngine() {
     if (state.shutdownPromise) return state.shutdownPromise;
     clearPollTimer();
+    const activeBaseUrl = state.baseUrl;
     state.shutdownPromise = (async () => {
       try {
-        await callLocalUpscaleService("localUpscale.stopEngine", [], { timeoutMs: 8000 });
+        await callLocalUpscaleService(
+          "localUpscale.stopEngine",
+          buildLocalUpscaleArgs({}, activeBaseUrl),
+          { timeoutMs: 8000 }
+        );
       } catch (error) {
         // A service that failed to start or has already exited needs no further cleanup.
         console.warn("[PixelRunner/WebView] localUpscale shutdown unavailable", error);
       } finally {
         state.engine = null;
         state.engineReady = false;
+        state.baseUrl = LOCAL_AI_BASE_URL;
         setRunning(false);
       }
     })();
@@ -330,6 +407,7 @@
     state.engineSessionActive = false;
     state.shutdownBeaconSent = true;
     clearPollTimer();
+    const activeBaseUrl = normalizeLocalAiBaseUrl(state.baseUrl);
     const payload = JSON.stringify({
       protocolVersion: LOCAL_AI_PROTOCOL_VERSION,
       buildId: LOCAL_AI_BUILD_ID
@@ -339,10 +417,10 @@
         const body = typeof Blob === "function"
           ? new Blob([payload], { type: "application/json" })
           : payload;
-        if (global.navigator.sendBeacon(`${LOCAL_AI_BASE_URL}/v1/shutdown`, body)) return;
+        if (global.navigator.sendBeacon(`${activeBaseUrl}/v1/shutdown`, body)) return;
       }
       if (typeof global.fetch === "function") {
-        void global.fetch(`${LOCAL_AI_BASE_URL}/v1/shutdown`, {
+        void global.fetch(`${activeBaseUrl}/v1/shutdown`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: payload,
@@ -373,7 +451,7 @@
 
     if (!quiet) setStatus("正在检测 PixelRunner Local AI...", "info");
     try {
-      const health = await getEngineHealth();
+      const health = await discoverCompatibleEngine();
       markEngineReady(health);
       setRunning(state.running);
       return health;
@@ -405,7 +483,7 @@
         let lastError = null;
         while (Date.now() < deadline) {
           try {
-            const health = await getEngineHealth();
+            const health = await discoverCompatibleEngine();
             if (!isCurrentEngineSession(sessionId)) {
               await stopEngine();
               return null;
@@ -440,15 +518,15 @@
   }
 
   async function finishSuccessfully(job) {
-    const resultPath = String(job && job.resultPath || "").trim();
     const capture = state.currentCapture;
-    if (!resultPath) throw new Error("本地引擎未返回超分结果文件");
     if (!capture || !capture.documentId || !capture.targetWidth || !capture.targetHeight) {
       throw new Error("本地超分缺少原文档回贴信息");
     }
+    const resultSource = resolveLocalUpscaleResultSource(job, capture);
     setProgress("正在回贴 Photoshop", getCaptureLabel(capture), 88, "running");
     const result = await modules.runtime.callHost("photoshop.placeLocalUpscaleResult", [{
-      filePath: resultPath,
+      filePath: resultSource.filePath,
+      url: resultSource.resultUrl,
       taskId: state.currentJobId,
       targetDocumentId: capture.documentId,
       targetWidth: capture.targetWidth,
@@ -464,14 +542,15 @@
     const size = Number(document.width) && Number(document.height)
       ? `${Math.round(Number(document.width))} x ${Math.round(Number(document.height))}`
       : `${Math.round(Number(capture.targetWidth))} x ${Math.round(Number(capture.targetHeight))}`;
+    if (result && result.document) modules.state.state.currentDocumentInfo = result.document;
     try {
-      await callLocalUpscaleService("localUpscale.recordPlacement", [{
+      await callLocalUpscaleService("localUpscale.recordPlacement", buildLocalUpscaleArgs({
         jobId: state.currentJobId,
         width: Number(document.width) || Number(capture.targetWidth) || 0,
         height: Number(document.height) || Number(capture.targetHeight) || 0,
         layerId: Number(result && result.layerId) || 0,
         documentId: Number(document.documentId) || Number(capture.documentId) || 0
-      }], { timeoutMs: 15000 });
+      }), { timeoutMs: 15000 });
     } catch (error) {
       console.warn("[PixelRunner/WebView] localUpscale placement diagnostics unavailable", error);
     }
@@ -493,7 +572,11 @@
     if (!state.running || !state.currentJobId || !state.engineSessionActive) return;
     const jobId = state.currentJobId;
     try {
-      const job = await callLocalUpscaleService("localUpscale.getJob", [{ jobId }], { timeoutMs: 15000 });
+      const job = await callLocalUpscaleService(
+        "localUpscale.getJob",
+        buildLocalUpscaleArgs({ jobId }),
+        { timeoutMs: 15000 }
+      );
       if (!state.running || state.currentJobId !== jobId || !state.engineSessionActive) return;
       const status = normalizeStatus(job && job.status);
       const progress = Number(job && job.progress);
@@ -555,9 +638,16 @@
     setStatus("正在从 Photoshop 导出无损 PNG...", "info");
 
     try {
+      const activeDocumentInfo = modules.workspace && typeof modules.workspace.refreshPhotoshopDocumentStatus === "function"
+        ? await modules.workspace.refreshPhotoshopDocumentStatus({ quiet: true })
+        : modules.state.state.currentDocumentInfo;
+      if (!activeDocumentInfo || !activeDocumentInfo.hasActiveDocument || !(Number(activeDocumentInfo.documentId) > 0)) {
+        throw new Error("没有可用于本地超分的 Photoshop 文档，请打开文档后重试");
+      }
+      if (!isCurrentEngineSession(sessionId)) return;
       const capture = await modules.runtime.callHost("photoshop.captureLocalUpscaleSource", [{
         taskId: state.currentJobId,
-        expectedDocumentId: Number(modules.state.state.currentDocumentInfo && modules.state.state.currentDocumentInfo.documentId) || 0,
+        expectedDocumentId: Number(activeDocumentInfo.documentId),
         mode
       }], { timeoutMs: 300000 });
       if (!capture || !capture.inputPath || !capture.outputPath) {
@@ -570,7 +660,7 @@
       state.currentCapture = capture;
       const sourceSize = `${Math.round(Number(capture.width) || 0)} x ${Math.round(Number(capture.height) || 0)}`;
       setProgress("正在提交本地引擎", `${getCaptureLabel(capture)} · 输入 ${sourceSize}`, 28, "running");
-      const job = await callLocalUpscaleService("localUpscale.submitJob", [{
+      const job = await callLocalUpscaleService("localUpscale.submitJob", buildLocalUpscaleArgs({
         jobId: state.currentJobId,
         inputPath: capture.inputPath,
         outputPath: capture.outputPath,
@@ -580,7 +670,7 @@
         debug,
         targetWidth: capture.targetWidth,
         targetHeight: capture.targetHeight
-      }], { timeoutMs: 20000 });
+      }), { timeoutMs: 20000 });
       if (!isCurrentEngineSession(sessionId)) {
         await cleanupCaptureSelectionSnapshot(capture);
         return;
@@ -611,7 +701,11 @@
     const jobId = state.currentJobId;
     setProgress("正在取消", "等待本地引擎停止", 60, "running");
     try {
-      await callLocalUpscaleService("localUpscale.cancelJob", [{ jobId }], { timeoutMs: 15000 });
+      await callLocalUpscaleService(
+        "localUpscale.cancelJob",
+        buildLocalUpscaleArgs({ jobId }),
+        { timeoutMs: 15000 }
+      );
       clearPollTimer();
       const cancelledCapture = state.currentCapture;
       state.currentJobId = "";

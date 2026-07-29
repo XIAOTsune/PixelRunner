@@ -1,4 +1,12 @@
-const DEFAULT_LOCAL_UPSCALE_BASE_URL = "http://127.0.0.1:17836";
+export const LOCAL_UPSCALE_PORT_START = 17836;
+export const LOCAL_UPSCALE_PORT_END = 17845;
+export const LOCAL_UPSCALE_BASE_URLS = Object.freeze(
+  Array.from(
+    { length: LOCAL_UPSCALE_PORT_END - LOCAL_UPSCALE_PORT_START + 1 },
+    (_, index) => `http://127.0.0.1:${LOCAL_UPSCALE_PORT_START + index}`
+  )
+);
+const DEFAULT_LOCAL_UPSCALE_BASE_URL = LOCAL_UPSCALE_BASE_URLS[0];
 export const LOCAL_UPSCALE_PROTOCOL_VERSION = "2";
 export const LOCAL_UPSCALE_BUILD_ID = "PixelRunnerV2.7.3-local-ai-native-cli";
 
@@ -14,7 +22,14 @@ export function normalizeLocalUpscaleBaseUrl(value) {
   if (parsed.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(hostname)) {
     throw new Error("本地超分服务仅允许使用 http://127.0.0.1 或 http://localhost");
   }
-  return parsed.toString().replace(/\/$/, "");
+  const port = Number(parsed.port || 80);
+  if (port < LOCAL_UPSCALE_PORT_START || port > LOCAL_UPSCALE_PORT_END) {
+    throw new Error(`本地超分服务端口仅允许 ${LOCAL_UPSCALE_PORT_START}-${LOCAL_UPSCALE_PORT_END}`);
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash || !["", "/"].includes(parsed.pathname)) {
+    throw new Error("本地超分服务地址无效");
+  }
+  return `http://${hostname}:${port}`;
 }
 
 export function normalizeLocalUpscaleJob(payload = {}) {

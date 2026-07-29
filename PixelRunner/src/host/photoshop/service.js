@@ -589,7 +589,47 @@ async function deleteChannelByName(action, channelName) {
       _target: [{ _ref: "channel", _name: channelName }],
       _options: { dialogOptions: "dontDisplay" }
     }], {});
-  } catch (_) {}
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+export function documentHasChannelNamed(docRef, channelName) {
+  const name = String(channelName || "").trim();
+  if (!docRef || !name) return false;
+  let channels;
+  try {
+    channels = docRef.channels;
+  } catch (_) {
+    return null;
+  }
+  if (!channels) return null;
+  try {
+    let list = null;
+    if (Array.isArray(channels)) {
+      list = channels;
+    } else if (typeof channels[Symbol.iterator] === "function") {
+      list = Array.from(channels);
+    } else if (Number.isFinite(Number(channels.length))) {
+      list = Array.from({ length: Number(channels.length) }, (_, index) => channels[index]).filter(Boolean);
+    }
+    if (!list) return null;
+    return list.some((channel) => String(channel && channel.name || "").trim() === name);
+  } catch (_) {
+    return null;
+  }
+}
+
+const cleanedSelectionSnapshotKeys = new Set();
+
+function getSelectionSnapshotKey(documentId, channelName) {
+  return `${Number(documentId) || 0}:${String(channelName || "").trim()}`;
+}
+
+function rememberCleanedSelectionSnapshot(documentId, channelName) {
+  if (cleanedSelectionSnapshotKeys.size >= 256) cleanedSelectionSnapshotKeys.clear();
+  cleanedSelectionSnapshotKeys.add(getSelectionSnapshotKey(documentId, channelName));
 }
 
 async function createSelectionSnapshotChannel(action, documentId) {
@@ -1572,16 +1612,23 @@ export async function deleteSelectionSnapshot(options = {}) {
   const channelName = String(options.selectionSnapshotChannelName || options.channelName || "").trim();
   const documentId = Number(options.targetDocumentId || options.documentId || 0);
   if (!channelName || !(documentId > 0)) return { ok: true, deleted: false };
+  const cleanupKey = getSelectionSnapshotKey(documentId, channelName);
+  if (cleanedSelectionSnapshotKeys.has(cleanupKey)) {
+    return { ok: true, deleted: false, documentId, channelName };
+  }
   const { photoshop } = await ensureDeps();
   const app = photoshop.app;
   const action = photoshop.action;
   const core = photoshop.core;
+  let deleted = false;
   await core.executeAsModal(async () => {
-    await activateDocument(app, action, documentId);
-    await deleteChannelByName(action, channelName);
+    const targetDocument = await activateDocument(app, action, documentId);
+    const channelExists = documentHasChannelNamed(targetDocument || app.activeDocument, channelName);
+    if (channelExists !== false) deleted = await deleteChannelByName(action, channelName);
+    if (deleted || channelExists === false) rememberCleanedSelectionSnapshot(documentId, channelName);
     await selectCompositeChannel(action);
   }, { commandName: "Cleanup Generative Fill Selection" });
-  return { ok: true, deleted: true, documentId, channelName };
+  return { ok: true, deleted, documentId, channelName };
 }
 
 async function captureDocumentPreviewInternal(options = {}) {
@@ -2243,14 +2290,18 @@ export async function placeImageFromUrl(payload, runtime = {}) {
         // Feathering is only for the result mask. Reload the original channel so
         // the caller keeps the exact selection state it had before upscaling.
         await loadSelectionFromChannel(action, selectionSnapshotChannelName);
-        await deleteChannelByName(action, selectionSnapshotChannelName);
+        if (await deleteChannelByName(action, selectionSnapshotChannelName)) {
+          rememberCleanedSelectionSnapshot(targetDocumentId, selectionSnapshotChannelName);
+        }
         appliedMaskMode = "native-selection-snapshot";
       } catch (error) {
         try {
           await loadSelectionFromChannel(action, selectionSnapshotChannelName);
         } catch (_) {}
         try {
-          await deleteChannelByName(action, selectionSnapshotChannelName);
+          if (await deleteChannelByName(action, selectionSnapshotChannelName)) {
+            rememberCleanedSelectionSnapshot(targetDocumentId, selectionSnapshotChannelName);
+          }
         } catch (_) {}
         try {
           await selectLayerById(action, resultLayerId);

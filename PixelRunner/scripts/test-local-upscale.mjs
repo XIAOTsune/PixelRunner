@@ -4,7 +4,10 @@ import {
   cancelLocalUpscaleJob,
   getLocalUpscaleHealth,
   getLocalUpscaleJob,
+  LOCAL_UPSCALE_BASE_URLS,
   LOCAL_UPSCALE_BUILD_ID,
+  LOCAL_UPSCALE_PORT_END,
+  LOCAL_UPSCALE_PORT_START,
   LOCAL_UPSCALE_PROTOCOL_VERSION,
   normalizeLocalUpscaleBaseUrl,
   normalizeLocalUpscaleJob,
@@ -12,8 +15,8 @@ import {
   stopLocalUpscaleEngine,
   submitLocalUpscaleJob
 } from "../src/host/local-upscale.js";
-import { resolveLocalUpscaleCapturePlan } from "../src/host/photoshop/service.js";
-import { buildLocalUpscalePlacementPayload } from "../src/host/photoshop-bridge.js";
+import { documentHasChannelNamed, resolveLocalUpscaleCapturePlan } from "../src/host/photoshop/service.js";
+import { buildLocalUpscalePlacementPayload, placeLocalUpscaleResultIntoPhotoshop } from "../src/host/photoshop-bridge.js";
 
 const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
 const hiddenLauncher = await readFile(new URL("../local-ai/start-local-ai.vbs", import.meta.url), "utf8");
@@ -23,7 +26,13 @@ const localUpscaleShell = await readFile(new URL("../src/host/shell.js", import.
 const photoshopBridge = await readFile(new URL("../src/host/photoshop-bridge.js", import.meta.url), "utf8");
 const photoshopService = await readFile(new URL("../src/host/photoshop/service.js", import.meta.url), "utf8");
 assert.ok(Array.isArray(manifest.requiredPermissions.network.domains));
-assert.ok(manifest.requiredPermissions.network.domains.includes("http://127.0.0.1:17836"));
+assert.equal(LOCAL_UPSCALE_PORT_START, 17836);
+assert.equal(LOCAL_UPSCALE_PORT_END, 17845);
+assert.equal(LOCAL_UPSCALE_BASE_URLS.length, 10);
+for (const baseUrl of LOCAL_UPSCALE_BASE_URLS) {
+  assert.ok(manifest.requiredPermissions.network.domains.includes(baseUrl));
+  assert.ok(manifest.requiredPermissions.webview.domains.includes(baseUrl));
+}
 assert.ok(manifest.requiredPermissions.network.domains.includes("https://*.runninghub.cn"));
 assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".vbs"));
 assert.ok(!manifest.requiredPermissions.launchProcess.extensions.includes(".app"));
@@ -40,15 +49,25 @@ assert.match(localService, /engine-output\.png/);
 assert.match(localService, /metadata\.json/);
 assert.match(localService, /protocolVersion/);
 assert.match(localService, /\/v1\/shutdown/);
+assert.match(localService, /build_port_candidates/);
+assert.match(localService, /--port-end/);
 assert.match(localService, /parse_native_inference_progress/);
 assert.match(localService, /"inferencePercent"/);
 assert.match(localUpscaleWebview, /localUpscale\.stopEngine/);
+assert.match(localUpscaleWebview, /discoverCompatibleEngine/);
+assert.match(localUpscaleWebview, /buildLocalUpscaleArgs/);
+assert.match(localUpscaleWebview, /LOCAL_AI_PORT_END = 17845/);
 assert.match(localUpscaleWebview, /pagehide/);
 assert.match(localUpscaleWebview, /if \(!isCurrentEngineSession\(sessionId\)\) return;/);
 assert.match(localUpscaleShell, /PixelRunner Local AI\.app/);
 assert.match(hiddenLauncher, /IsServiceCompatible/);
+assert.match(hiddenLauncher, /For port = FirstPort To LastPort/);
+assert.match(hiddenLauncher, /--port-end/);
 assert.match(hiddenLauncher, /PixelRunnerV2\.7\.3-local-ai-native-cli/);
 assert.match(localUpscaleWebview, /photoshop\.placeLocalUpscaleResult/);
+assert.match(localUpscaleWebview, /refreshPhotoshopDocumentStatus/);
+assert.match(localUpscaleWebview, /capture && capture\.outputPath/);
+assert.match(localUpscaleWebview, /resultSource\.resultUrl/);
 assert.match(localUpscaleWebview, /scale: 1/);
 assert.match(localUpscaleWebview, /job && job\.inferencePercent/);
 assert.doesNotMatch(localUpscaleWebview, /getTileProgressLabel/);
@@ -58,6 +77,7 @@ assert.match(photoshopBridge, /cleanupLocalSource: true/);
 assert.match(photoshopBridge, /超分 x4（选区）/);
 assert.match(photoshopService, /selectionMaskFeather/);
 assert.match(photoshopService, /Reload the original channel/);
+assert.match(photoshopService, /cleanedSelectionSnapshotKeys\.has\(cleanupKey\)/);
 assert.match(photoshopService, /`PR-S-\$\{fileKey\}`/);
 assert.match(photoshopService, /`PR-U-\$\{fileKey\}\.png`/);
 assert.doesNotMatch(photoshopService, /pixelrunner-local-upscale-result-/);
@@ -102,6 +122,7 @@ assert.equal(resolveLocalUpscaleCapturePlan({
 
 const maskedPlacement = buildLocalUpscalePlacementPayload({
   filePath: "C:\\temp\\output.png",
+  url: "http://127.0.0.1:17836/v1/jobs/local-upscale-test/result",
   taskId: "local-upscale-test",
   targetDocumentId: 7,
   targetWidth: 6000,
@@ -117,11 +138,56 @@ assert.equal(maskedPlacement.requirePlacementMask, true);
 assert.equal(maskedPlacement.selectionMaskFeather, 24);
 assert.equal(maskedPlacement.restoreActiveLayerId, 42);
 assert.equal(maskedPlacement.layerName, "超分 x4（选区）");
+assert.equal(maskedPlacement.url, "http://127.0.0.1:17836/v1/jobs/local-upscale-test/result");
+
+assert.equal(documentHasChannelNamed({ channels: [{ name: "RGB" }, { name: "PixelRunner selection snapshot" }] }, "PixelRunner selection snapshot"), true);
+assert.equal(documentHasChannelNamed({ channels: [{ name: "RGB" }] }, "PixelRunner selection snapshot"), false);
+assert.equal(documentHasChannelNamed({}, "PixelRunner selection snapshot"), null);
+
+const originalWindow = globalThis.window;
+const localPlacementCalls = [];
+let snapshotCleanupCalls = 0;
+globalThis.window = {
+  PixelRunnerHost: {
+    photoshop: {
+      async placeImageFromUrl(request) {
+        localPlacementCalls.push(request);
+        if (request.filePath) throw new Error("未找到本地超分结果文件");
+        return { ok: true, placed: true, documentId: 7 };
+      },
+      async deleteSelectionSnapshot() {
+        snapshotCleanupCalls += 1;
+      }
+    }
+  }
+};
+try {
+  const recoveredPlacement = await placeLocalUpscaleResultIntoPhotoshop([{
+    filePath: "C:\\temp\\output.png",
+    url: "http://127.0.0.1:17836/v1/jobs/local-upscale-test/result",
+    taskId: "local-upscale-test",
+    targetDocumentId: 7,
+    targetWidth: 6000,
+    targetHeight: 4000,
+    selectionSnapshotChannelName: "PixelRunner selection snapshot"
+  }]);
+  assert.equal(recoveredPlacement.placed, true);
+  assert.equal(localPlacementCalls.length, 2);
+  assert.equal(localPlacementCalls[0].filePath, "C:\\temp\\output.png");
+  assert.equal(localPlacementCalls[1].filePath, "");
+  assert.equal(localPlacementCalls[1].url, "http://127.0.0.1:17836/v1/jobs/local-upscale-test/result");
+  assert.equal(snapshotCleanupCalls, 0);
+} finally {
+  if (originalWindow === undefined) delete globalThis.window;
+  else globalThis.window = originalWindow;
+}
 
 assert.equal(normalizeLocalUpscaleBaseUrl(), "http://127.0.0.1:17836");
-assert.equal(normalizeLocalUpscaleBaseUrl("http://localhost:19001/"), "http://localhost:19001");
+assert.equal(normalizeLocalUpscaleBaseUrl("http://localhost:17845/"), "http://localhost:17845");
 assert.throws(() => normalizeLocalUpscaleBaseUrl("https://example.com"), /仅允许/);
 assert.throws(() => normalizeLocalUpscaleBaseUrl("http://192.168.1.2:17836"), /仅允许/);
+assert.throws(() => normalizeLocalUpscaleBaseUrl("http://127.0.0.1:17835"), /端口仅允许/);
+assert.throws(() => normalizeLocalUpscaleBaseUrl("http://127.0.0.1:17846"), /端口仅允许/);
 
 assert.deepEqual(
   normalizeLocalUpscaleJob({

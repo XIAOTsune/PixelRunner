@@ -1,6 +1,6 @@
 # PixelRunner Local AI
 
-This companion service runs `realesrgan-x4plus` through the official NCNN Vulkan executable. It deliberately listens only on `127.0.0.1:17836`; the Photoshop plugin will not send images to a remote server.
+This companion service runs `realesrgan-x4plus` through the official NCNN Vulkan executable. It deliberately listens only on `127.0.0.1` and automatically selects the first available port in `17836-17845`; the Photoshop plugin will not send images to a remote server.
 
 The plugin preserves the original Photoshop canvas. It exports the complete visible composite without downsampling, runs the model at its native 4x scale, and places the result back as one smart-object layer fitted once to the original canvas. The service intentionally never passes `-s 2` to `realesrgan-x4plus`. Each job invokes the native CLI once with the selected `-t` value, so no external PNG tile decode, crop, stitch, or re-encode step runs after inference. The default 128 px tile is conservative for integrated GPUs; 256 px and 512 px are available for more VRAM.
 

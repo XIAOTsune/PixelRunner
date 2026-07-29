@@ -14,7 +14,10 @@ const webviewDomains = manifest.requiredPermissions.webview.domains;
 
 assert.ok(Array.isArray(networkDomains), "release compatibility requires an explicit network domain list");
 assert.deepEqual([...networkDomains].sort(), [...webviewDomains].sort(), "network and WebView domain allowlists must stay aligned");
-assert.ok(networkDomains.includes("http://127.0.0.1:17836"), "local upscale loopback endpoint remains allowed");
+for (let port = 17836; port <= 17845; port += 1) {
+  assert.ok(networkDomains.includes(`http://127.0.0.1:${port}`), `local upscale loopback port ${port} remains allowed`);
+  assert.ok(networkDomains.includes(`http://localhost:${port}`), `local upscale localhost port ${port} remains allowed`);
+}
 assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".vbs"), "Windows Local AI launcher remains allowed");
 assert.ok(!manifest.requiredPermissions.launchProcess.extensions.includes(".app"), "Windows-only release must not request an unavailable macOS companion");
 
