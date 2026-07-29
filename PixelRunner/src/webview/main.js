@@ -25,9 +25,11 @@ function initializePixelRunnerApp() {
   modules.ui.bindPlaceholderActions();
   modules.templates.bindTemplateActions();
   modules.settings.bindSettingsActions();
+  modules.license.bindActions();
   modules.sound.initialize();
 
   modules.settings.initializeSettings()
+    .then(() => modules.license.initialize())
     .then(() =>
       Promise.all([
         modules.apps.refreshWorkspaceApps({ quiet: true }),
@@ -47,7 +49,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.7.3"
+        version: "2.8.0"
       });
     })
     .catch((error) => {

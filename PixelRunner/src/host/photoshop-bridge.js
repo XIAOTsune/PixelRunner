@@ -87,6 +87,7 @@ export function buildLocalUpscalePlacementPayload(payload = {}) {
   const captureMode = String(payload.captureMode || "full").trim();
   return {
     filePath: String(payload.filePath || "").trim(),
+    url: String(payload.url || "").trim(),
     taskId: payload.taskId,
     targetDocumentId: Number(payload.targetDocumentId) || 0,
     targetBounds,
@@ -105,10 +106,11 @@ export function buildLocalUpscalePlacementPayload(payload = {}) {
 export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = {}) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const filePath = String(payload.filePath || "").trim();
+  const resultUrl = String(payload.url || "").trim();
   const targetDocumentId = Number(payload.targetDocumentId) || 0;
   const targetWidth = Math.max(1, Math.round(Number(payload.targetWidth) || 0));
   const targetHeight = Math.max(1, Math.round(Number(payload.targetHeight) || 0));
-  if (!filePath || !targetDocumentId || !targetWidth || !targetHeight) {
+  if ((!filePath && !resultUrl) || !targetDocumentId || !targetWidth || !targetHeight) {
     throw new Error("本地超分回贴缺少结果文件或目标文档信息");
   }
 
@@ -120,7 +122,17 @@ export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = 
   const selectionSnapshotChannelName = String(payload.selectionSnapshotChannelName || "").trim();
   const placementPayload = buildLocalUpscalePlacementPayload(payload);
   try {
-    return await photoshopService.placeImageFromUrl(placementPayload, runtime);
+    try {
+      return await photoshopService.placeImageFromUrl(placementPayload, runtime);
+    } catch (error) {
+      const message = String(error && error.message || error || "");
+      if (!filePath || !resultUrl || !message.includes("未找到本地超分结果文件")) throw error;
+      return await photoshopService.placeImageFromUrl({
+        ...placementPayload,
+        filePath: "",
+        url: resultUrl
+      }, runtime);
+    }
   } catch (error) {
     if (selectionSnapshotChannelName && typeof photoshopService.deleteSelectionSnapshot === "function") {
       try {

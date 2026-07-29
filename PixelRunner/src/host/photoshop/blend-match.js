@@ -4,12 +4,12 @@ import { computeSharedContentReference, estimateTranslationReference } from "../
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
   mode: "balanced",
-  totalStrength: 78,
+  totalStrength: 100,
   luminanceStrength: 82,
   colorStrength: 76,
   saturationStrength: 62,
   contrastStrength: 58,
-  featherRadius: 16,
+  featherRadius: 72,
   createBackupLayer: true,
   pixelPipelineEnabled: true,
   alignmentEnabled: true,
@@ -105,11 +105,17 @@ function buildUnsupportedBitsError(docInfo) {
   return new Error(`融合校色支持 8 位和 16 位 RGB 文档，当前文档为 ${bitsLabel}，请切换到 8 位或 16 位后再使用。`);
 }
 
-function getBlendMatchConfig(payload = {}) {
+export function getBlendMatchConfig(payload = {}) {
   const mode = String(payload.mode || DEFAULT_BLEND_MATCH_CONFIG.mode).trim() || DEFAULT_BLEND_MATCH_CONFIG.mode;
   const modeBoost = mode === "strong" ? 1.16 : mode === "natural" ? 0.82 : 1;
   const edgeOnly = mode === "edgeOnly";
   const colorOnly = mode === "colorOnly";
+  const requestedAlignmentMaxOffset = clampNumber(payload.alignmentMaxOffset, 1, 320, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset);
+  // Old WebView settings persisted 96px for balanced. Keep its color character,
+  // while preserving the baseline 120px structural-search envelope.
+  const alignmentMaxOffset = mode === "balanced"
+    ? Math.max(DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset, requestedAlignmentMaxOffset)
+    : requestedAlignmentMaxOffset;
   return {
     mode,
     totalStrength: clampNumber(payload.totalStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.totalStrength),
@@ -117,11 +123,11 @@ function getBlendMatchConfig(payload = {}) {
     colorStrength: edgeOnly ? 0 : clampNumber(payload.colorStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.colorStrength) * modeBoost,
     saturationStrength: edgeOnly ? 0 : clampNumber(payload.saturationStrength, -100, 100, DEFAULT_BLEND_MATCH_CONFIG.saturationStrength) * modeBoost,
     contrastStrength: edgeOnly || colorOnly ? 0 : clampNumber(payload.contrastStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.contrastStrength) * modeBoost,
-    featherRadius: clampNumber(payload.featherRadius, 0, 64, DEFAULT_BLEND_MATCH_CONFIG.featherRadius),
+    featherRadius: clampNumber(payload.featherRadius, 0, 128, DEFAULT_BLEND_MATCH_CONFIG.featherRadius),
     createBackupLayer: payload.createBackupLayer !== false,
     pixelPipelineEnabled: payload.pixelPipelineEnabled !== false && payload.pixelCorrectionEnabled !== false,
     alignmentEnabled: payload.alignmentEnabled !== false,
-    alignmentMaxOffset: clampNumber(payload.alignmentMaxOffset, 1, 320, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset),
+    alignmentMaxOffset,
     alignmentScaleEnabled: payload.alignmentScaleEnabled !== false,
     alignmentMaxScale: clampNumber(payload.alignmentMaxScale, 0, 4, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxScale),
     alignmentMaxRotation: clampNumber(payload.alignmentMaxRotation, 0, 3, DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxRotation),
@@ -1475,7 +1481,11 @@ export function buildCpuBlendMatchPlanFromSamples(options) {
   }
   if (Array.isArray(logs) && alignmentTimings) {
     const hydrateAnalysisTotal = Number(alignmentTimings.totalMs || 0) + colorPlanMs;
-    logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
+    logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，pyramid=${formatMs(alignmentTimings.pyramidMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
+  }
+  const cpuPyramid = alignment && alignment.search && alignment.search.cpuPyramid;
+  if (Array.isArray(logs) && cpuPyramid && cpuPyramid.used) {
+    logs.push(`[融合校色] CPU 金字塔定位：${cpuPyramid.accepted ? "已接受缩略图定位并原尺寸精修" : "缩略图定位不可靠，已执行完整全范围搜索"}，proxy=${cpuPyramid.proxySize ? `${cpuPyramid.proxySize.width}x${cpuPyramid.proxySize.height}` : "n/a"}，reason=${cpuPyramid.reason || "unknown"}。`);
   }
   if (Array.isArray(logs) && fastFallback) {
     const fastTimings = alignment && alignment.search && alignment.search.timings || {};
@@ -4733,6 +4743,113 @@ function searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset,
   };
 }
 
+function searchGlobalAlignmentWithCpuPyramid(sourceSample, referenceSample, sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride) {
+  const startedAt = getNowMs();
+  const maxEdge = Math.max(width, height);
+  const runFullSearch = (reason, details = {}) => {
+    const search = searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride);
+    search.cpuPyramid = {
+      used: maxEdge > 192 && sampleOffset > 16,
+      accepted: false,
+      fallbackFullGlobal: true,
+      reason,
+      totalMs: Number((getNowMs() - startedAt).toFixed(1)),
+      ...details
+    };
+    return search;
+  };
+
+  // Small samples are already cheap; the pyramid is only useful for larger previews.
+  if (maxEdge <= 192 || sampleOffset <= 16) {
+    return runFullSearch("sample-small");
+  }
+
+  const sourceProxy = resizeSampleForFastAlignment(sourceSample, 144);
+  const referenceProxy = resizeSampleForFastAlignment(referenceSample, 144);
+  if (sourceProxy.width !== referenceProxy.width || sourceProxy.height !== referenceProxy.height) {
+    return runFullSearch("proxy-size-mismatch");
+  }
+  const factorX = Math.max(1, Number(sourceProxy.factorX) || 1);
+  const factorY = Math.max(1, Number(sourceProxy.factorY) || 1);
+  const proxyOffset = Math.max(1, Math.min(
+    Math.floor(Math.min(sourceProxy.width, sourceProxy.height) * 0.45),
+    Math.round(sampleOffset / Math.max(factorX, factorY))
+  ));
+  const proxyStartedAt = getNowMs();
+  const proxySourceField = buildSobelField(buildLuma(sourceProxy.data, sourceProxy.width, sourceProxy.height), sourceProxy.width, sourceProxy.height);
+  const proxyReferenceField = buildSobelField(buildLuma(referenceProxy.data, referenceProxy.width, referenceProxy.height), referenceProxy.width, referenceProxy.height);
+  const proxySearch = searchGlobalAlignment(
+    proxySourceField.mag,
+    proxyReferenceField.mag,
+    sourceProxy.width,
+    sourceProxy.height,
+    proxyOffset,
+    [1],
+    Math.max(1, Math.round((Number(stride) || 1) / Math.max(factorX, factorY)))
+  );
+  const proxyMs = Number((getNowMs() - proxyStartedAt).toFixed(1));
+  const proxyBest = proxySearch.best;
+  const proxyGap = Number(proxyBest && proxyBest.score) - Math.max(0, Number(proxySearch.second) || -1);
+  if (!proxyBest || !Number.isFinite(proxyBest.score) || proxyBest.score < 0.24 || proxyGap < 0.006) {
+    return runFullSearch("proxy-low-confidence", {
+      proxySize: { width: sourceProxy.width, height: sourceProxy.height },
+      proxyOffset,
+      proxyScore: Number.isFinite(Number(proxyBest && proxyBest.score)) ? Number(proxyBest.score.toFixed(4)) : -1,
+      proxyGap: Number.isFinite(proxyGap) ? Number(proxyGap.toFixed(4)) : -1,
+      proxyMs
+    });
+  }
+
+  const seed = {
+    dx: Math.max(-sampleOffset, Math.min(sampleOffset, Math.round(proxyBest.dx * factorX))),
+    dy: Math.max(-sampleOffset, Math.min(sampleOffset, Math.round(proxyBest.dy * factorY))),
+    scale: 1
+  };
+  seed.cpuScore = scoreTransform(sourceGrad, refGrad, width, height, seed.dx, seed.dy, 1, Math.max(1, stride));
+  const seedRadius = Math.min(sampleOffset, Math.max(
+    getLargeOffsetStep(sampleOffset) * 2,
+    Math.ceil(Math.max(factorX, factorY) * 3)
+  ));
+  const refineStartedAt = getNowMs();
+  const refined = searchGlobalAlignmentAroundSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, seed, seedRadius);
+  const refinedGap = Number(refined.best && refined.best.score) - Math.max(0, Number(refined.second) || -1);
+  const refinedStrong = refined.best &&
+    Number.isFinite(refined.best.score) &&
+    refined.best.score >= Math.max(0.24, Number(seed.cpuScore) - 0.025) &&
+    (refinedGap >= 0.006 || refined.best.score >= 0.46);
+  if (!refinedStrong) {
+    return runFullSearch("pyramid-refine-rejected", {
+      proxySize: { width: sourceProxy.width, height: sourceProxy.height },
+      proxyOffset,
+      proxyScore: Number(proxyBest.score.toFixed(4)),
+      proxyGap: Number(proxyGap.toFixed(4)),
+      seed: { dx: seed.dx, dy: seed.dy },
+      seedScore: Number.isFinite(seed.cpuScore) ? Number(seed.cpuScore.toFixed(4)) : -1,
+      seedRadius,
+      proxyMs,
+      refineMs: Number((getNowMs() - refineStartedAt).toFixed(1))
+    });
+  }
+
+  refined.cpuPyramid = {
+    used: true,
+    accepted: true,
+    fallbackFullGlobal: false,
+    reason: "pyramid-seed-refined",
+    proxySize: { width: sourceProxy.width, height: sourceProxy.height },
+    proxyOffset,
+    proxyScore: Number(proxyBest.score.toFixed(4)),
+    proxyGap: Number(proxyGap.toFixed(4)),
+    seed: { dx: seed.dx, dy: seed.dy },
+    seedScore: Number(seed.cpuScore.toFixed(4)),
+    seedRadius,
+    proxyMs,
+    refineMs: Number((getNowMs() - refineStartedAt).toFixed(1)),
+    totalMs: Number((getNowMs() - startedAt).toFixed(1))
+  };
+  return refined;
+}
+
 function normalizeGpuAlignmentSeedCandidate(candidate, fallbackStage = "gpu-seed") {
   if (!candidate || typeof candidate !== "object") return null;
   const dx = readFiniteNumber(candidate.sampleDx ?? candidate.rawSampleDx ?? candidate.dx);
@@ -4933,11 +5050,13 @@ function normalizeGpuAlignmentSeed(seed, sampleOffset, width = 0, height = 0) {
   };
 }
 
-function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, gpuAlignmentSeed) {
+function searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, gpuAlignmentSeed, fallbackSearch = null) {
   const seedInfo = normalizeGpuAlignmentSeed(gpuAlignmentSeed, sampleOffset, width, height);
   const fullCpu = () => {
     const startedAt = getNowMs();
-    const search = searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride);
+    const search = typeof fallbackSearch === "function"
+      ? fallbackSearch()
+      : searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride);
     return {
       search,
       seedDiagnostics: {
@@ -5597,10 +5716,21 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const stride = Math.max(1, Math.floor(Math.max(width, height) / 180));
   const scaleCandidates = buildScaleCandidates(config.alignmentMaxScale, config.alignmentScaleEnabled);
   const globalSearchStartedAt = getNowMs();
+  const runCpuPyramidSearch = () => searchGlobalAlignmentWithCpuPyramid(
+    sourceSample,
+    referenceSample,
+    sourceGrad,
+    refGrad,
+    width,
+    height,
+    sampleOffset,
+    scaleCandidates,
+    stride
+  );
   const seedSearch = config.seedTrust === "hint-only" && config.gpuAlignmentSeed
-    ? searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, config.gpuAlignmentSeed)
+    ? searchGlobalAlignmentWithSeed(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride, config.gpuAlignmentSeed, runCpuPyramidSearch)
     : {
-        search: searchGlobalAlignment(sourceGrad, refGrad, width, height, sampleOffset, scaleCandidates, stride),
+        search: runCpuPyramidSearch(),
         seedDiagnostics: {
           used: false,
           accepted: false,
@@ -5612,6 +5742,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const globalSearchMs = Number((getNowMs() - globalSearchStartedAt).toFixed(1));
   const globalSearch = seedSearch.search;
   const gpuSeedDiagnostics = seedSearch.seedDiagnostics || null;
+  const cpuPyramidDiagnostics = globalSearch && globalSearch.cpuPyramid || null;
   const best = globalSearch.best;
   const second = globalSearch.second;
   const translationBase = globalSearch.translationBase;
@@ -5682,6 +5813,7 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
   const alignmentTimings = () => ({
     sobelMs,
     globalSearchMs,
+    pyramidMs: Number(cpuPyramidDiagnostics && cpuPyramidDiagnostics.totalMs) || 0,
     refineMs,
     localMeshMs,
     totalMs: Number((getNowMs() - alignmentStartedAt).toFixed(1))
@@ -5724,11 +5856,13 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
       rawSampleRotation: affineBest.rotation,
       modelChoice,
       search: {
+        fullCpuSearch: true,
         sampleOffset,
         coarseStep: globalSearch.coarseStep,
         coarseStride: globalSearch.coarseStride,
         timings: alignmentTimings(),
-        gpuSeed: gpuSeedDiagnostics
+        gpuSeed: gpuSeedDiagnostics,
+        cpuPyramid: cpuPyramidDiagnostics
       },
       local,
       localDeformation,
@@ -5758,11 +5892,13 @@ function estimateGradientAlignment(sourceSample, referenceSample, configOrMaxOff
     rawSampleRotation: affineBest.rotation,
     modelChoice,
     search: {
+      fullCpuSearch: true,
       sampleOffset,
       coarseStep: globalSearch.coarseStep,
       coarseStride: globalSearch.coarseStride,
       timings: alignmentTimings(),
-      gpuSeed: gpuSeedDiagnostics
+      gpuSeed: gpuSeedDiagnostics,
+      cpuPyramid: cpuPyramidDiagnostics
     },
     local,
     localDeformation,
@@ -6654,7 +6790,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     logs.push(`[融合校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
     logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
     logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan；WebView 优先提交 GPU plan，失败时 Host 只做保守 CPU 平移回退和共享掩膜分析。");
+    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan；WebView 优先提交 GPU plan，失败时 Host 会复用 raw sample 执行完整 CPU 对齐回退。");
     actionTiming.logTo(logs, "[融合校色] 快速预览采样 host action 耗时");
 
     return {
@@ -6713,7 +6849,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     referenceSample,
     alignmentConfig: config,
     timing: actionTiming,
-    fastFallback: true
+    fastFallback: false
   });
   const cpuAlignment = getPlanAlignment(plan);
   const corrections = getPlanCorrections(plan);
@@ -6739,7 +6875,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
   logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
   logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-  logs.push("[融合校色] WebGL2 plan 为生产首选；此无 GPU 路径使用保守 CPU 平移与共享内容掩膜。");
+  logs.push("[融合校色] WebGL2 plan 为生产首选；此无 GPU 路径使用完整 CPU 对齐与共享内容掩膜。");
   actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
 
   return {
@@ -6912,7 +7048,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       gpuAlignmentSeed: effectiveGpuSeed,
       alignmentSeedCandidates: payloadSeedCandidates,
       seedTrust: effectiveGpuSeed ? "hint-only" : "",
-      fastFallback: true,
+      fastFallback: false,
       fallbackAlignmentSeed: freshGpuFallbackAlignment
     });
     validation = { ok: true, reason: "rebuilt-from-preview-samples" };
@@ -6923,7 +7059,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       plan,
       planId: plan.planId
     });
-    logs.push(`[融合校色] 保守 CPU BlendMatchPlan 已完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    logs.push(`[融合校色] 完整 CPU BlendMatchPlan 已完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
     logs.push("[融合校色] CPU plan hydrate：命中 preview raw sample cache，未重新 Photoshop getPixels，未重新切换图层可见性。");
   } else {
     logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);

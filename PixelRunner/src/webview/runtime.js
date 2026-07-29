@@ -1,3 +1,5 @@
+import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-contract.js";
+
 (function initRuntimeModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
 
@@ -109,27 +111,33 @@
     });
   }
 
-  async function storageGetItem(key) {
+  async function storageGetItem(key, options = {}) {
+    const requireHost = options.requireHost === true;
     if (isPluginRuntime()) {
       try {
         return await callHost("storage.getItem", [key]);
-      } catch (_) {
+      } catch (error) {
+        if (requireHost) throw error;
         return readBrowserStorage(key);
       }
     }
 
+    if (requireHost) throw new Error("当前不在 Photoshop 插件运行环境，无法访问授权存储");
     return readBrowserStorage(key);
   }
 
-  async function storageSetItem(key, value) {
+  async function storageSetItem(key, value, options = {}) {
+    const requireHost = options.requireHost === true;
     if (isPluginRuntime()) {
       try {
-        return await callHost("storage.setItem", [key, value]);
-      } catch (_) {
+        return assertHostStorageWriteAcknowledged(await callHost("storage.setItem", [key, value]));
+      } catch (error) {
+        if (requireHost) throw error;
         return writeBrowserStorage(key, value);
       }
     }
 
+    if (requireHost) throw new Error("当前不在 Photoshop 插件运行环境，无法写入授权存储");
     return writeBrowserStorage(key, value);
   }
 

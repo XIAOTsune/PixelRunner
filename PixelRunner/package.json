@@ -1,6 +1,6 @@
 {
   "name": "pixelrunner-uxp",
-  "version": "2.7.4",
+  "version": "2.8.0",
   "description": "A Photoshop UXP plugin that connects RunningHub image workflows with a practical retouching workspace.",
   "license": "Apache-2.0",
   "author": "XIAOTsune",
@@ -14,7 +14,12 @@
   },
   "type": "module",
   "scripts": {
-    "test": "npm run test:bundle-compat && npm run test:file-transfer && npm run test:runninghub-charge && npm run test:grs && npm run test:blend-match && npm run test:local-upscale && npm run test:local-ai-service",
+    "test": "npm run test:release-compat && npm run test:license && npm run test:license-storage && npm run test:license-issuer && npm run test:private-license-issuer && npm run test:bundle-compat && npm run test:file-transfer && npm run test:runninghub-charge && npm run test:grs && npm run test:blend-match && npm run test:local-upscale && npm run test:local-ai-service",
+    "test:release-compat": "node ./scripts/test-release-compat.mjs",
+    "test:license": "node ./scripts/test-license.mjs",
+    "test:license-storage": "node ./scripts/test-license-storage.mjs",
+    "test:license-issuer": "node ./scripts/test-license-issuer.mjs",
+    "test:private-license-issuer": "node ./scripts/test-private-license-issuer.mjs",
     "test:bundle-compat": "node ./scripts/test-bundle-compat.mjs",
     "test:file-transfer": "node ./scripts/test-file-transfer.mjs",
     "test:runninghub-charge": "node ./scripts/test-runninghub-charge.mjs",
@@ -25,13 +30,20 @@
     "build": "node ./scripts/build.mjs",
     "build:watch": "node ./scripts/build.mjs --watch",
     "build:release": "node ./scripts/build.mjs --release",
+    "build:release:hardened": "node ./scripts/build.mjs --release --obfuscate",
+    "build:license-issuer": "node ./scripts/build-license-issuer.mjs",
+    "build:personal-license-issuer": "node ./scripts/build-private-license-issuer.mjs",
     "check:dist": "node ./scripts/check-dist-sync.mjs",
     "check:dist:release": "node ./scripts/check-dist-sync.mjs --release",
+    "check:dist:release:hardened": "node ./scripts/check-dist-sync.mjs --release --obfuscate",
     "package:test": "npm test && npm run check:dist && node ./scripts/package-test.mjs",
     "package:release": "npm test && node ./scripts/package-test.mjs --release"
   },
   "devDependencies": {
     "esbuild": "^0.25.3",
     "javascript-obfuscator": "^5.4.7"
+  },
+  "dependencies": {
+    "tweetnacl": "^1.0.3"
   }
 }

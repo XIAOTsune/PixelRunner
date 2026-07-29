@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { computeSharedContentReference, estimateTranslationReference } from "../src/shared/blend-match-reference.js";
-import { buildConservativeCpuFallbackAlignment, buildCpuBlendMatchPlanFromSamples, buildTrustedGpuBlendMatchPlanFromSamples } from "../src/host/photoshop/blend-match.js";
+import { buildConservativeCpuFallbackAlignment, buildCpuBlendMatchPlanFromSamples, buildTrustedGpuBlendMatchPlanFromSamples, getBlendMatchConfig } from "../src/host/photoshop/blend-match.js";
 
 function makeSample(width, height, color = [92, 118, 144, 255]) {
   const data = new Uint8Array(width * height * 4);
@@ -66,6 +66,17 @@ function buildStats(sample) {
     detailEnergy: 3
   };
 }
+
+const defaultBlendMatchConfig = getBlendMatchConfig();
+assert.equal(defaultBlendMatchConfig.mode, "balanced");
+assert.equal(defaultBlendMatchConfig.totalStrength, 100);
+assert.equal(defaultBlendMatchConfig.featherRadius, 72);
+assert.equal(getBlendMatchConfig({ featherRadius: 999 }).featherRadius, 128);
+assert.equal(
+  getBlendMatchConfig({ mode: "balanced", alignmentMaxOffset: 96 }).alignmentMaxOffset,
+  120,
+  "balanced must retain the baseline structural-search range when older settings are restored"
+);
 
 const colorConsistencyConfig = {
   mode: "balanced", totalStrength: 78, luminanceStrength: 82, colorStrength: 76,
@@ -173,6 +184,48 @@ const fastCpuTransform = buildConservativeCpuFallbackAlignment(
 assert.equal(fastCpuTransform.search.fullCpuSearch, false, "preview fallback must not run the full affine/grid CPU search");
 assert.equal(fastCpuTransform.search.source, "cpu-translation-proxy");
 assert.ok(Math.abs(fastCpuTransform.sampleDx - 3) <= 1 && Math.abs(fastCpuTransform.sampleDy + 2) <= 1, JSON.stringify(fastCpuTransform));
+
+const largeShiftReference = makeSample(256, 224, [78, 105, 131, 255]);
+paintRect(largeShiftReference, 14, 18, 42, 196, [238, 236, 226, 255]);
+paintRect(largeShiftReference, 74, 38, 218, 59, [18, 30, 42, 255]);
+paintRect(largeShiftReference, 132, 84, 178, 178, [206, 74, 38, 255]);
+paintRect(largeShiftReference, 196, 136, 238, 210, [48, 184, 124, 255]);
+const largeShiftSource = shiftSample(largeShiftReference, 52, -28);
+const largeShiftPlan = buildCpuBlendMatchPlanFromSamples({
+  documentId: 12,
+  layerId: 52,
+  layerName: "large translation fixture",
+  bounds: { left: 0, top: 0, right: largeShiftReference.width, bottom: largeShiftReference.height },
+  previewCacheKey: "large-translation-fallback",
+  config: {
+    ...getBlendMatchConfig({
+      mode: "balanced",
+      alignmentMaxOffset: 120,
+      alignmentScaleEnabled: false,
+      alignmentMaxScale: 0,
+      alignmentMaxRotation: 0,
+      alignmentMaxStretch: 0,
+      localAlignmentEnabled: false
+    }),
+    alignmentScaleEnabled: false,
+    alignmentMaxScale: 0,
+    alignmentMaxRotation: 0,
+    alignmentMaxStretch: 0,
+    localAlignmentEnabled: false
+  },
+  sourceSample: { ...largeShiftSource, scaleX: 1, scaleY: 1, stats: buildStats(largeShiftSource) },
+  referenceSample: { ...largeShiftReference, scaleX: 1, scaleY: 1, stats: buildStats(largeShiftReference) }
+});
+assert.equal(largeShiftPlan.alignment.search.fullCpuSearch, true, "GPU fallback must use the complete CPU search");
+assert.equal(largeShiftPlan.alignment.search.cpuPyramid.used, true, "large preview fallback must use the CPU pyramid locator");
+assert.equal(largeShiftPlan.alignment.search.cpuPyramid.accepted, true, JSON.stringify(largeShiftPlan.alignment.search.cpuPyramid));
+assert.ok(Math.abs(largeShiftPlan.alignment.sampleDx - 52) <= 2, JSON.stringify(largeShiftPlan.alignment));
+assert.ok(Math.abs(largeShiftPlan.alignment.sampleDy + 28) <= 2, JSON.stringify(largeShiftPlan.alignment));
+console.log(
+  `Blend-match CPU pyramid fixture: global=${largeShiftPlan.alignment.search.timings.globalSearchMs}ms, ` +
+  `proxy=${largeShiftPlan.alignment.search.cpuPyramid.proxyMs}ms, ` +
+  `refine=${largeShiftPlan.alignment.search.cpuPyramid.refineMs}ms.`
+);
 
 const lowTexture = { width: 32, height: 32, data: new Uint8Array(32 * 32 * 4).fill(128) };
 for (let index = 3; index < lowTexture.data.length; index += 4) lowTexture.data[index] = 255;

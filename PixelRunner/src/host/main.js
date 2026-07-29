@@ -42,6 +42,8 @@ import {
   placeResultIntoPhotoshop,
   runPhotoshopToolAction
 } from "./photoshop-bridge.js";
+import { createHostLicenseEnforcer } from "./license-enforcement.js";
+import { createHostLicenseStorage } from "./license-storage.js";
 
 // Result downloads run outside this queue; only Photoshop-critical stages are serialized here.
 const PHOTOSHOP_BRIDGE_PRIORITY = Object.freeze({
@@ -209,22 +211,25 @@ function getPhotoshopVersionInfo() {
   }
 }
 
+const hostLicenseStorage = createHostLicenseStorage(() => {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage;
+});
+
 function readHostStorage(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch (_) {
-    return null;
-  }
+  return hostLicenseStorage.getItem(key);
 }
 
 function writeHostStorage(key, value) {
-  try {
-    localStorage.setItem(key, value);
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return hostLicenseStorage.setItem(key, value);
 }
+
+const hostLicenseEnforcer = createHostLicenseEnforcer({
+  storage: {
+    getItem: readHostStorage,
+    setItem: writeHostStorage
+  }
+});
 
 function postBridgeResponse(target, response) {
   if (!target) return;
@@ -243,6 +248,9 @@ async function handleBridgeRequest(message, responseTarget) {
 
   const requestStartedAt = Date.now();
   try {
+    // Check again in the Host before any protected capture, analysis, export,
+    // model startup, or Photoshop write. WebView button state is not trusted.
+    hostLicenseEnforcer.assertBridgeRequest(message);
     console.log("[PixelRunner/Host] bridge request", message.method, message.id || "");
     let result = null;
 
@@ -338,6 +346,12 @@ async function handleBridgeRequest(message, responseTarget) {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;
+      case "photoshop.captureLicensedGlowPreview":
+      case "photoshop.captureLicensedSpaceFxPreview":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
       case "photoshop.captureLocalUpscaleSource":
         result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentForLocalUpscale(message.args), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
@@ -354,6 +368,13 @@ async function handleBridgeRequest(message, responseTarget) {
         });
         break;
       case "photoshop.placeResultFromUrl":
+        result = await runDeduplicatedPhotoshopPlacement(
+          message,
+          () => placeResultIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
+        );
+        break;
+      case "photoshop.placeLicensedGlowResult":
+      case "photoshop.placeLicensedSpaceFxResult":
         result = await runDeduplicatedPhotoshopPlacement(
           message,
           () => placeResultIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))

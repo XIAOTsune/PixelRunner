@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import mimetypes
 import os
@@ -30,9 +31,12 @@ JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
 SUPPORTED_SCALES = {1}
 NATIVE_MODEL_SCALE = 4
 DEFAULT_TILE_SIZE = 128
-SERVICE_VERSION = "2.7.3"
+SERVICE_VERSION = "2.8.0"
 PROTOCOL_VERSION = "2"
 BUILD_ID = "PixelRunnerV2.7.3-local-ai-native-cli"
+DEFAULT_PORT = 17836
+DEFAULT_PORT_END = 17845
+MAX_PORT_CANDIDATES = 32
 ENGINE_SCALE_POLICY = "native-cli-tile-x4-only"
 DEBUG_ENVIRONMENT_VARIABLE = "PIXELRUNNER_LOCAL_AI_DEBUG"
 EXTERNAL_TILE_OVERLAP = 64
@@ -69,6 +73,16 @@ def is_debug_enabled(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def build_port_candidates(port: int, port_end: int) -> list[int]:
+    start = int(port)
+    end = int(port_end)
+    if start < 1 or end > 65535 or end < start:
+        raise ValueError("本地超分端口范围无效")
+    if end - start + 1 > MAX_PORT_CANDIDATES:
+        raise ValueError(f"本地超分端口范围最多允许 {MAX_PORT_CANDIDATES} 个端口")
+    return list(range(start, end + 1))
 
 
 def build_native_tile_coordinates(width: int, height: int, tile: int, engine_scale: int) -> list[dict[str, int]]:
@@ -404,6 +418,7 @@ class LocalUpscaleService:
             "protocolVersion": PROTOCOL_VERSION,
             "buildId": BUILD_ID,
             "pid": os.getpid(),
+            "port": int(self.http_server.server_address[1]) if self.http_server else 0,
             "serverPath": str(self.server_path),
             "engineScalePolicy": ENGINE_SCALE_POLICY,
         }
@@ -1121,12 +1136,33 @@ class LocalAiHttpServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
+def bind_first_available_http_server(
+    host: str,
+    port_candidates: list[int],
+    handler: type[BaseHTTPRequestHandler],
+    server_factory: Any = LocalAiHttpServer,
+) -> ThreadingHTTPServer | None:
+    for candidate_port in port_candidates:
+        try:
+            return server_factory((host, candidate_port), handler)
+        except OSError as error:
+            address_in_use = (
+                getattr(error, "winerror", 0) == 10048
+                or getattr(error, "errno", 0) in {errno.EADDRINUSE, 98}
+            )
+            write_service_log(f"Port {candidate_port} is unavailable: {error}")
+            if not address_in_use:
+                raise
+    return None
+
+
 def parse_args() -> argparse.Namespace:
     root = Path(__file__).resolve().parent
     executable = "realesrgan-ncnn-vulkan.exe" if os.name == "nt" else "realesrgan-ncnn-vulkan"
     parser = argparse.ArgumentParser(description="PixelRunner Local AI - Real-ESRGAN service")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=17836)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--port-end", type=int, default=DEFAULT_PORT_END)
     parser.add_argument("--engine", type=Path, default=root / "engine" / executable)
     parser.add_argument("--models", type=Path, default=root / "engine" / "models")
     parser.add_argument("--model", default="realesrgan-x4plus")
@@ -1138,17 +1174,26 @@ def main() -> int:
     if args.host not in {"127.0.0.1", "localhost"}:
         print("For safety, PixelRunner Local AI only accepts 127.0.0.1 or localhost.", file=sys.stderr)
         return 2
+    try:
+        port_candidates = build_port_candidates(args.port, args.port_end)
+    except ValueError as error:
+        write_service_log(str(error))
+        print(str(error), file=sys.stderr)
+        return 2
     service = LocalUpscaleService(args.engine, args.models, args.model)
     RequestHandler.service = service
     try:
-        server = LocalAiHttpServer((args.host, args.port), RequestHandler)
-    except OSError as error:
-        write_service_log(f"Port {args.port} is unavailable: {error}")
-        return 0 if getattr(error, "winerror", 0) == 10048 or getattr(error, "errno", 0) == 98 else 1
+        server = bind_first_available_http_server(args.host, port_candidates, RequestHandler)
+    except OSError:
+        return 1
+    if server is None:
+        write_service_log(f"No local port is available in range {port_candidates[0]}-{port_candidates[-1]}")
+        return 1
     service.attach_http_server(server)
-    print(f"PixelRunner Local AI listening on http://{args.host}:{args.port}")
+    selected_port = int(server.server_address[1])
+    print(f"PixelRunner Local AI listening on http://{args.host}:{selected_port}")
     print(json.dumps(service.health(), ensure_ascii=False))
-    write_service_log(f"Listening on http://{args.host}:{args.port}; engine={service.engine_path}")
+    write_service_log(f"Listening on http://{args.host}:{selected_port}; engine={service.engine_path}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

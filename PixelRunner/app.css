@@ -4886,6 +4886,77 @@ button {
   color: var(--text-strong);
 }
 
+.license-settings-card .settings-collapse-summary {
+  align-items: center;
+}
+
+.license-status-badge {
+  flex: 0 1 auto;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.license-device-code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.license-activation-input {
+  min-height: 66px;
+  padding-block: 8px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.license-device-actions,
+.license-action-row {
+  align-items: stretch;
+}
+
+.license-active-details {
+  padding: 8px 10px;
+  border: 1px solid rgba(66, 183, 113, 0.48);
+  border-radius: var(--radius-sm);
+  background: rgba(45, 112, 71, 0.18);
+  color: #dffbea;
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.license-contact-note {
+  display: grid;
+  gap: 3px;
+  padding: 2px 1px 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.license-remove-btn {
+  flex: 0.85;
+}
+
+[data-license-feature].is-license-locked {
+  --btn-edge: rgba(214, 171, 83, 0.72);
+  --btn-shadow: rgba(111, 85, 29, 0.72);
+  background: rgba(111, 85, 29, 0.42);
+  color: #fff2cf;
+  cursor: pointer;
+}
+
+[data-license-feature].is-license-locked:hover,
+[data-license-feature].is-license-locked:focus-visible {
+  border-color: rgba(229, 193, 111, 0.92);
+}
+
+.overlay-card.license-feature-modal-card {
+  width: min(calc(100vw - 28px), 390px);
+}
+
 .bundle-transfer-card {
   gap: 7px;
 }

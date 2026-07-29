@@ -1,5 +1,6 @@
 import "./webview/runtime.js";
 import "./webview/state.js";
+import "./webview/license.js";
 import "./webview/glow/presets.js";
 import "./webview/glow/source-mask.js";
 import "./webview/glow/pyramid-blur.js";
