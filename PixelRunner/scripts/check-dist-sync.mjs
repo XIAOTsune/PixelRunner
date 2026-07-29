@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const releaseMode = process.argv.includes("--release");
+const obfuscateRelease = process.argv.includes("--obfuscate");
 
 const sharedOptions = {
   bundle: true,
@@ -38,7 +39,7 @@ async function assertBundleMatches({ name, entryPoint, outfile, buildOptions }) 
       entryPoints: [entryPoint],
       outfile: tempOutfile
     });
-    if (releaseMode) {
+    if (releaseMode && obfuscateRelease) {
       const { obfuscateReleaseBundle } = await import("./release-obfuscation.mjs");
       await obfuscateReleaseBundle(tempOutfile, name.includes("host") ? "host" : "webview");
     }

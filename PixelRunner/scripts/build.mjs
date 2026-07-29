@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const watchMode = process.argv.includes("--watch");
 const releaseMode = process.argv.includes("--release");
+const obfuscateRelease = process.argv.includes("--obfuscate");
 
 function readArgValue(name) {
   const index = process.argv.indexOf(name);
@@ -69,7 +70,7 @@ async function runBuild() {
   await cleanBundleArtifacts();
   await build(webviewConfig);
   await build(hostConfig);
-  if (releaseMode) {
+  if (releaseMode && obfuscateRelease) {
     // Obfuscation is a release-only friction layer. It does not encrypt code
     // and is intentionally kept out of development and hot runtime paths.
     const { obfuscateReleaseBundle } = await import("./release-obfuscation.mjs");

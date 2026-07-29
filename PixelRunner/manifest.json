@@ -131,7 +131,7 @@
     "localFileSystem": "fullAccess",
     "launchProcess": {
       "schemes": ["https", "file"],
-      "extensions": [".html", ".htm", ".cmd", ".vbs", ".app"]
+      "extensions": [".html", ".htm", ".cmd", ".vbs"]
     },
     "webview": {
       "allow": "yes",
@@ -165,7 +165,32 @@
       ]
     },
     "network": {
-      "domains": "all"
+      "domains": [
+        "https://www.runninghub.cn",
+        "https://runninghub.cn",
+        "https://*.runninghub.cn",
+        "https://www.runninghub.ai",
+        "https://runninghub.ai",
+        "https://*.runninghub.ai",
+        "https://rh-images.xiaoyaoyou.com",
+        "https://rh-hk-images.xiaoyaoyou.com",
+        "https://*.xiaoyaoyou.com",
+        "https://*.myqcloud.com",
+        "https://rh-hk-images-1252422369.cos.ap-hongkong.myqcloud.com",
+        "https://rh-images-1252422369.cos.ap-beijing.myqcloud.com",
+        "https://grsaiapi.com",
+        "https://*.grsaiapi.com",
+        "https://grsai.dakka.com.cn",
+        "https://grsai.ai",
+        "https://*.grsai.ai",
+        "https://*.aitohumanize.com",
+        "https://upload.qiniup.com",
+        "https://upload-z2.qiniup.com",
+        "https://up.qiniup.com",
+        "https://up-z2.qiniup.com",
+        "http://localhost:17836",
+        "http://127.0.0.1:17836"
+      ]
     }
   }
 }

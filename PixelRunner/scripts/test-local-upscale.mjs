@@ -22,9 +22,11 @@ const localUpscaleWebview = await readFile(new URL("../src/webview/local-upscale
 const localUpscaleShell = await readFile(new URL("../src/host/shell.js", import.meta.url), "utf8");
 const photoshopBridge = await readFile(new URL("../src/host/photoshop-bridge.js", import.meta.url), "utf8");
 const photoshopService = await readFile(new URL("../src/host/photoshop/service.js", import.meta.url), "utf8");
-assert.equal(manifest.requiredPermissions.network.domains, "all");
+assert.ok(Array.isArray(manifest.requiredPermissions.network.domains));
+assert.ok(manifest.requiredPermissions.network.domains.includes("http://127.0.0.1:17836"));
+assert.ok(manifest.requiredPermissions.network.domains.includes("https://*.runninghub.cn"));
 assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".vbs"));
-assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".app"));
+assert.ok(!manifest.requiredPermissions.launchProcess.extensions.includes(".app"));
 assert.match(hiddenLauncher, /IsServiceCompatible/);
 assert.match(hiddenLauncher, /pyw -3/);
 assert.match(localService, /NATIVE_MODEL_SCALE = 4/);
