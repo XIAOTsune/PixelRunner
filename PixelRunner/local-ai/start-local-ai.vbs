@@ -1,31 +1,25 @@
 Option Explicit
 
-Dim shell, fileSystem, rootPath, serverPath
+Dim shell, fileSystem, rootPath, serverPath, runtimePath
 Const RequiredProtocolVersion = "2"
-Const RequiredBuildId = "PixelRunnerV2.7.3-local-ai-native-cli"
+Const RequiredBuildId = "PixelRunnerV2.8.0-local-ai-bundled-runtime"
 Const FirstPort = 17836
 Const LastPort = 17845
 Set shell = CreateObject("WScript.Shell")
 Set fileSystem = CreateObject("Scripting.FileSystemObject")
 rootPath = fileSystem.GetParentFolderName(WScript.ScriptFullName)
 serverPath = rootPath & "\server.py"
+runtimePath = rootPath & "\runtime\python.exe"
 
 If FindCompatibleServicePort() > 0 Then WScript.Quit 0
 StopCurrentPixelRunnerService
 
-If HasCommand("pyw") Then
-  shell.Run "pyw -3 " & Quote(serverPath) & PortArguments(), 0, False
-ElseIf HasCommand("pythonw") Then
-  shell.Run "pythonw " & Quote(serverPath) & PortArguments(), 0, False
-ElseIf HasCommand("py") Then
-  shell.Run "py -3 " & Quote(serverPath) & PortArguments(), 0, False
-ElseIf HasCommand("python") Then
-  shell.Run "python " & Quote(serverPath) & PortArguments(), 0, False
+If Not fileSystem.FileExists(runtimePath) Then
+  WriteLauncherLog "Bundled Python runtime is missing: " & runtimePath
+  WScript.Quit 2
 End If
 
-Function HasCommand(commandName)
-  HasCommand = (shell.Run("cmd.exe /c where " & commandName & " >nul 2>nul", 0, True) = 0)
-End Function
+StartBundledRuntime
 
 Function FindCompatibleServicePort()
   Dim port
@@ -56,6 +50,40 @@ End Function
 Function PortArguments()
   PortArguments = " --port " & CStr(FirstPort) & " --port-end " & CStr(LastPort)
 End Function
+
+Sub StartBundledRuntime()
+  Dim logPath, command
+  logPath = GetLauncherLogPath()
+  EnsureFolder fileSystem.GetParentFolderName(logPath)
+  WriteLauncherLog "Starting bundled Python runtime: " & runtimePath
+  command = Quote(runtimePath) & " " & Quote(serverPath) & PortArguments() & " >> " & Quote(logPath) & " 2>&1"
+  shell.Run "cmd.exe /d /s /c " & Quote(command), 0, False
+End Sub
+
+Function GetLauncherLogPath()
+  Dim basePath
+  basePath = shell.ExpandEnvironmentStrings("%LOCALAPPDATA%")
+  If InStr(basePath, "%") > 0 Then basePath = shell.ExpandEnvironmentStrings("%TEMP%")
+  GetLauncherLogPath = basePath & "\PixelRunner\local-ai\launcher.log"
+End Function
+
+Sub EnsureFolder(folderPath)
+  If folderPath = "" Or fileSystem.FolderExists(folderPath) Then Exit Sub
+  EnsureFolder fileSystem.GetParentFolderName(folderPath)
+  If Not fileSystem.FolderExists(folderPath) Then fileSystem.CreateFolder folderPath
+End Sub
+
+Sub WriteLauncherLog(message)
+  On Error Resume Next
+  Dim logPath, output
+  logPath = GetLauncherLogPath()
+  EnsureFolder fileSystem.GetParentFolderName(logPath)
+  Set output = fileSystem.OpenTextFile(logPath, 8, True)
+  output.WriteLine Now & " " & message
+  output.Close
+  Err.Clear
+  On Error GoTo 0
+End Sub
 
 Sub StopCurrentPixelRunnerService()
   On Error Resume Next

@@ -17,6 +17,7 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Runtime and local state
+__pycache__/
 .env
 .env.*
 *.local

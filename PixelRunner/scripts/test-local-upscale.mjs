@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import {
   cancelLocalUpscaleJob,
   getLocalUpscaleHealth,
@@ -20,6 +20,7 @@ import { buildLocalUpscalePlacementPayload, placeLocalUpscaleResultIntoPhotoshop
 
 const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
 const hiddenLauncher = await readFile(new URL("../local-ai/start-local-ai.vbs", import.meta.url), "utf8");
+const localAiRuntime = JSON.parse(await readFile(new URL("../local-ai/runtime.json", import.meta.url), "utf8"));
 const localService = await readFile(new URL("../local-ai/server.py", import.meta.url), "utf8");
 const localUpscaleWebview = await readFile(new URL("../src/webview/local-upscale.js", import.meta.url), "utf8");
 const localUpscaleShell = await readFile(new URL("../src/host/shell.js", import.meta.url), "utf8");
@@ -37,7 +38,13 @@ assert.ok(manifest.requiredPermissions.network.domains.includes("https://*.runni
 assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".vbs"));
 assert.ok(!manifest.requiredPermissions.launchProcess.extensions.includes(".app"));
 assert.match(hiddenLauncher, /IsServiceCompatible/);
-assert.match(hiddenLauncher, /pyw -3/);
+assert.match(hiddenLauncher, /runtime\\python\.exe/);
+assert.match(hiddenLauncher, /Starting bundled Python runtime/);
+assert.doesNotMatch(hiddenLauncher, /HasCommand\("pyw"\)/);
+assert.equal(localAiRuntime.runtime, "CPython");
+assert.equal(localAiRuntime.distribution, "embeddable");
+assert.match(localAiRuntime.version, /^3\.12\.\d+$/);
+await access(new URL("../local-ai/runtime/python.exe", import.meta.url));
 assert.match(localService, /NATIVE_MODEL_SCALE = 4/);
 assert.match(localService, /"-s", str\(NATIVE_MODEL_SCALE\)/);
 assert.match(localService, /"-t", str\(job\.tile\)/);
@@ -63,7 +70,7 @@ assert.match(localUpscaleShell, /PixelRunner Local AI\.app/);
 assert.match(hiddenLauncher, /IsServiceCompatible/);
 assert.match(hiddenLauncher, /For port = FirstPort To LastPort/);
 assert.match(hiddenLauncher, /--port-end/);
-assert.match(hiddenLauncher, /PixelRunnerV2\.7\.3-local-ai-native-cli/);
+assert.match(hiddenLauncher, /PixelRunnerV2\.8\.0-local-ai-bundled-runtime/);
 assert.match(localUpscaleWebview, /photoshop\.placeLocalUpscaleResult/);
 assert.match(localUpscaleWebview, /refreshPhotoshopDocumentStatus/);
 assert.match(localUpscaleWebview, /capture && capture\.outputPath/);

@@ -6,14 +6,14 @@ The plugin preserves the original Photoshop canvas. It exports the complete visi
 
 ## Setup
 
-The Windows test package contains the official `realesrgan-ncnn-vulkan.exe` executable and the `realesrgan-x4plus` model files. Opening the Local Upscale panel starts the bundled hidden launcher automatically. It first checks whether a healthy local service already exists, so reopening the panel does not start duplicate engines. UXP may request permission the first time it opens the bundled launcher; no manual command window needs to remain open.
+The Windows package contains the official `realesrgan-ncnn-vulkan.exe`, the `realesrgan-x4plus` model files, and a pinned CPython embeddable runtime under `local-ai/runtime/`. Opening the Local Upscale panel starts the bundled hidden launcher automatically; a separately installed Python is not required. The launcher first checks whether a healthy local service already exists, so reopening the panel does not start duplicate engines. UXP may request permission the first time it opens the bundled launcher; no manual command window needs to remain open.
 
 Closing the Local Upscale panel sends `POST /v1/shutdown` to the loopback service. The service cancels queued/running jobs, terminates the Real-ESRGAN child process, and then stops Python. Plugin/WebView unload uses the same endpoint as a best-effort fallback, so the service no longer remains in Task Manager after the feature is closed.
 
-For troubleshooting, the service writes startup failures to `%LOCALAPPDATA%\PixelRunner\local-ai\service.log`. Enable **保留诊断文件** before starting a job to retain `input.png`, `command.txt`, `stdout.txt`, `stderr.txt`, `engine-output.png`, and `metadata.json` in `%LOCALAPPDATA%\PixelRunner\local-ai\debug\<jobId>\`. The legacy `start-local-ai.cmd` can also be started manually, or run directly with:
+For troubleshooting, the launcher writes interpreter startup output to `%LOCALAPPDATA%\PixelRunner\local-ai\launcher.log`, and the service writes lifecycle events to `%LOCALAPPDATA%\PixelRunner\local-ai\service.log`. Enable **保留诊断文件** before starting a job to retain `input.png`, `command.txt`, `stdout.txt`, `stderr.txt`, `engine-output.png`, and `metadata.json` in `%LOCALAPPDATA%\PixelRunner\local-ai\debug\<jobId>\`. The legacy `start-local-ai.cmd` can also be started manually, or run directly with the bundled runtime:
 
 ```powershell
-python .\local-ai\server.py
+.\local-ai\runtime\python.exe .\local-ai\server.py
 ```
 
 For a source checkout or a different Windows engine, place the matching NCNN executable and its `models` folder in `local-ai/engine/`. A custom location can also be used:
