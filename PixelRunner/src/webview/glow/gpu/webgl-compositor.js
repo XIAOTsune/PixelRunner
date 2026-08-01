@@ -16,12 +16,10 @@
     uniform sampler2D uGlow;
     uniform sampler2D uMasks;
     uniform float uIntensity;
-    uniform float uSoftAddMix;
     uniform float uWarmth;
     uniform float uSaturation;
     uniform float uHighlightProtect;
     uniform float uShadowProtect;
-    uniform float uColorProtect;
     uniform float uShoulder;
     uniform float uColorShift;
     uniform vec3 uColorTint;
@@ -32,8 +30,6 @@
     uniform float uCoreCeiling;
     uniform float uHaloBoost;
     uniform float uHaloMix;
-    uniform float uSourceAnchorBase;
-    uniform float uSourceAnchorAmount;
     uniform float uEnergyFloor;
     uniform float uEnergyFloorSoftness;
     uniform vec2 uTexel;
@@ -59,7 +55,7 @@
     }
 
     float hashNoise(vec2 p, float channel) {
-      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
+      return fract(sin(p.x * 12.9898 + p.y * 78.233 + channel * 37.719) * 43758.5453);
     }
 
     vec3 applySaturation(vec3 color, float saturation) {
@@ -83,13 +79,41 @@
       return mix(color, tinted, amount);
     }
 
+    float getCoreWeight(float source) {
+      return clamp((source - 0.025) / 0.495, 0.0, 1.0);
+    }
+
+    float getHaloWeight(float source, float haloSource, float coreWeight) {
+      float halo = clamp(haloSource, 0.0, 1.0);
+      float haloOnly = max(0.0, halo - clamp(source, 0.0, 1.0));
+      float relativeHalo = clamp(haloOnly / max(0.001, halo), 0.0, 1.0);
+      float nearHalo = clamp((halo - 0.0015) / 0.0735, 0.0, 1.0) * clamp((relativeHalo - 0.04) / 0.78, 0.0, 1.0);
+      float farHalo = (1.0 - coreWeight) * 0.38;
+      return clamp(max(nearHalo, farHalo), 0.0, 1.0);
+    }
+
+    float getReceiverGain(float baseLuma, float protect, float coreWeight) {
+      float externalGlow = 1.0 - coreWeight;
+      float highlightGuard =
+        clamp(protect, 0.0, 1.0) *
+        clamp(uHighlightProtect, 0.0, 1.0) *
+        (0.24 + clamp(baseLuma, 0.0, 1.0) * 0.36);
+      float darkReceiver = clamp((0.34 - baseLuma) / 0.26, 0.0, 1.0);
+      float shadowGuard = darkReceiver * clamp(uShadowProtect, 0.0, 1.0) * 0.82;
+      return clamp(1.0 - externalGlow * clamp(highlightGuard + shadowGuard, 0.0, 0.82), 0.18, 1.0);
+    }
+
     vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
-      float haloBoost = max(0.0, uHaloBoost);
-      float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float baseGuard = 1.0 - clamp(baseLuma, 0.0, 1.0) * 0.018;
-      float protectGuard = 1.0 - clamp(protect, 0.0, 1.0) * 0.035;
-      float diffusionGain = 1.0 + haloMix * 0.16 + max(0.0, haloBoost - 1.0) * 0.06;
-      return clamp(glow * clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18), 0.0, 1.0);
+      float coreWeight = getCoreWeight(source);
+      float haloWeight = getHaloWeight(source, haloSource, coreWeight);
+      float receiverGain = getReceiverGain(baseLuma, protect, coreWeight);
+      float coreGain = 1.0 - coreWeight * clamp(uCoreSuppression, 0.0, 1.0);
+      float coreCeiling = clamp(uCoreCeiling, 0.0, 1.0);
+      float coreLimit = coreCeiling + (1.0 - coreWeight) * (1.0 - coreCeiling);
+      vec3 shapedCore = min(max(glow, vec3(0.0)) * coreGain, vec3(coreLimit));
+      vec3 shapedHalo = max(glow, vec3(0.0)) * (1.0 + max(0.0, uHaloBoost));
+      float haloBlend = haloWeight * clamp(uHaloMix, 0.0, 1.0);
+      return clamp(mix(shapedCore, shapedHalo, haloBlend) * receiverGain, 0.0, 1.0);
     }
 
     vec3 visibilityGate(vec3 glow) {
@@ -103,11 +127,6 @@
       float protect = masks.g;
       float source = masks.a;
       float haloSource = masks.b;
-      float baseMax = max(max(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
-      float baseMin = min(min(texture(uBase, vUv).r, texture(uBase, vUv).g), texture(uBase, vUv).b);
-      float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
-      float highlightProtect = protect * uHighlightProtect * (0.5 + baseLuma * 0.78 + (1.0 - baseSat) * 0.08);
-      float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -118,15 +137,19 @@
       warmed += fringe;
       vec3 saturated = applySaturation(warmed, uSaturation);
       vec3 glow = clamp(vec3(
-        softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
-        softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
-        softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
+        softShoulder(max(0.0, saturated.r) * uIntensity, uShoulder),
+        softShoulder(max(0.0, saturated.g) * uIntensity, uShoulder),
+        softShoulder(max(0.0, saturated.b) * uIntensity, uShoulder)
       ), 0.0, 1.0);
       return visibilityGate(splitCoreAndHalo(glow, baseLuma, protect, source, haloSource));
     }
 
     void main() {
       vec4 base = texture(uBase, vUv);
+      if (uIntensity <= 0.000001) {
+        outColor = base;
+        return;
+      }
       float protect = texture(uMasks, vUv).g;
       vec2 chroma = vec2(uChromaticOffset, 0.0) * uTexel;
       vec3 glowLayer = vec3(
@@ -145,20 +168,13 @@
       );
       vec3 glow = clamp(linearToSrgb(computeGlow(glowLayer, fringe, texture(uMasks, vUv))), 0.0, 1.0);
       vec3 previewDither = (vec3(
-        hashNoise(gl_FragCoord.xy, 0.0),
-        hashNoise(gl_FragCoord.xy, 1.0),
-        hashNoise(gl_FragCoord.xy, 2.0)
-      ) - vec3(0.5)) * (0.45 / 255.0);
-      glow = clamp(glow + previewDither, 0.0, 1.0);
+        hashNoise(floor(gl_FragCoord.xy), 0.0),
+        hashNoise(floor(gl_FragCoord.xy), 1.0),
+        hashNoise(floor(gl_FragCoord.xy), 2.0)
+      ) - vec3(0.5)) * (0.75 / 255.0);
+      glow = floor(clamp(glow + previewDither, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
       vec3 screen = 1.0 - (1.0 - base.rgb) * (1.0 - glow);
-      vec3 soft = clamp(base.rgb + glow * (1.0 - base.rgb * 0.62), 0.0, 1.0);
-      float maxGlow = max(max(glow.r, glow.g), glow.b);
-      float baseMax = max(max(base.r, base.g), base.b);
-      float baseMin = min(min(base.r, base.g), base.b);
-      float baseSat = baseMax <= 0.0 ? 0.0 : (baseMax - baseMin) / baseMax;
-      float colorProtect = clamp(1.0 - maxGlow * uColorProtect * (0.84 + baseSat * 0.58), 0.8, 1.0);
-      vec3 result = mix(screen, soft, uSoftAddMix) * colorProtect + base.rgb * (1.0 - colorProtect);
-      outColor = vec4(clamp(result, 0.0, 1.0), base.a);
+      outColor = vec4(clamp(screen, 0.0, 1.0), base.a);
     }
   `;
 
@@ -181,8 +197,6 @@
     uniform float uCoreCeiling;
     uniform float uHaloBoost;
     uniform float uHaloMix;
-    uniform float uSourceAnchorBase;
-    uniform float uSourceAnchorAmount;
     uniform float uEnergyFloor;
     uniform float uEnergyFloorSoftness;
     uniform vec2 uTexel;
@@ -208,7 +222,7 @@
     }
 
     float hashNoise(vec2 p, float channel) {
-      return fract(sin(dot(p + vec2(channel * 17.17, channel * 3.31), vec2(12.9898, 78.233))) * 43758.5453);
+      return fract(sin(p.x * 12.9898 + p.y * 78.233 + channel * 37.719) * 43758.5453);
     }
 
     vec3 applySaturation(vec3 color, float saturation) {
@@ -232,13 +246,41 @@
       return mix(color, tinted, amount);
     }
 
+    float getCoreWeight(float source) {
+      return clamp((source - 0.025) / 0.495, 0.0, 1.0);
+    }
+
+    float getHaloWeight(float source, float haloSource, float coreWeight) {
+      float halo = clamp(haloSource, 0.0, 1.0);
+      float haloOnly = max(0.0, halo - clamp(source, 0.0, 1.0));
+      float relativeHalo = clamp(haloOnly / max(0.001, halo), 0.0, 1.0);
+      float nearHalo = clamp((halo - 0.0015) / 0.0735, 0.0, 1.0) * clamp((relativeHalo - 0.04) / 0.78, 0.0, 1.0);
+      float farHalo = (1.0 - coreWeight) * 0.38;
+      return clamp(max(nearHalo, farHalo), 0.0, 1.0);
+    }
+
+    float getReceiverGain(float baseLuma, float protect, float coreWeight) {
+      float externalGlow = 1.0 - coreWeight;
+      float highlightGuard =
+        clamp(protect, 0.0, 1.0) *
+        clamp(uHighlightProtect, 0.0, 1.0) *
+        (0.24 + clamp(baseLuma, 0.0, 1.0) * 0.36);
+      float darkReceiver = clamp((0.34 - baseLuma) / 0.26, 0.0, 1.0);
+      float shadowGuard = darkReceiver * clamp(uShadowProtect, 0.0, 1.0) * 0.82;
+      return clamp(1.0 - externalGlow * clamp(highlightGuard + shadowGuard, 0.0, 0.82), 0.18, 1.0);
+    }
+
     vec3 splitCoreAndHalo(vec3 glow, float baseLuma, float protect, float source, float haloSource) {
-      float haloBoost = max(0.0, uHaloBoost);
-      float haloMix = clamp(uHaloMix, 0.0, 1.0);
-      float baseGuard = 1.0 - clamp(baseLuma, 0.0, 1.0) * 0.018;
-      float protectGuard = 1.0 - clamp(protect, 0.0, 1.0) * 0.035;
-      float diffusionGain = 1.0 + haloMix * 0.16 + max(0.0, haloBoost - 1.0) * 0.06;
-      return clamp(glow * clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18), 0.0, 1.0);
+      float coreWeight = getCoreWeight(source);
+      float haloWeight = getHaloWeight(source, haloSource, coreWeight);
+      float receiverGain = getReceiverGain(baseLuma, protect, coreWeight);
+      float coreGain = 1.0 - coreWeight * clamp(uCoreSuppression, 0.0, 1.0);
+      float coreCeiling = clamp(uCoreCeiling, 0.0, 1.0);
+      float coreLimit = coreCeiling + (1.0 - coreWeight) * (1.0 - coreCeiling);
+      vec3 shapedCore = min(max(glow, vec3(0.0)) * coreGain, vec3(coreLimit));
+      vec3 shapedHalo = max(glow, vec3(0.0)) * (1.0 + max(0.0, uHaloBoost));
+      float haloBlend = haloWeight * clamp(uHaloMix, 0.0, 1.0);
+      return clamp(mix(shapedCore, shapedHalo, haloBlend) * receiverGain, 0.0, 1.0);
     }
 
     vec3 visibilityGate(vec3 glow) {
@@ -248,6 +290,10 @@
     }
 
     void main() {
+      if (uIntensity <= 0.000001) {
+        outColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+      }
       vec2 chroma = vec2(uChromaticOffset, 0.0) * uTexel;
       vec3 glowLayer = vec3(
         texture(uGlow, vUv + chroma).r,
@@ -268,8 +314,6 @@
         0.0,
         max(0.0, glowLayer.b - centerMax * 0.7) * chromaStrength * 0.86 * edgeGate
       );
-      float highlightProtect = protect * uHighlightProtect * 0.86;
-      float protectGain = clamp(1.0 - highlightProtect * 0.045, 0.9, 1.0);
       vec3 warmed = vec3(
         glowLayer.r * (1.0 + uWarmth),
         glowLayer.g * (1.0 + uWarmth * 0.35),
@@ -280,16 +324,16 @@
       warmed += fringe;
       vec3 saturated = applySaturation(warmed, uSaturation);
       vec3 glow = clamp(vec3(
-        softShoulder(max(0.0, saturated.r) * uIntensity * protectGain, uShoulder),
-        softShoulder(max(0.0, saturated.g) * uIntensity * protectGain, uShoulder),
-        softShoulder(max(0.0, saturated.b) * uIntensity * protectGain, uShoulder)
+        softShoulder(max(0.0, saturated.r) * uIntensity, uShoulder),
+        softShoulder(max(0.0, saturated.g) * uIntensity, uShoulder),
+        softShoulder(max(0.0, saturated.b) * uIntensity, uShoulder)
       ), 0.0, 1.0);
       glow = visibilityGate(splitCoreAndHalo(glow, baseLuma, protect, source, haloSource));
       vec3 encoded = linearToSrgb(glow);
       vec3 dither = (vec3(
-        hashNoise(gl_FragCoord.xy, 0.0),
-        hashNoise(gl_FragCoord.xy, 1.0),
-        hashNoise(gl_FragCoord.xy, 2.0)
+        hashNoise(floor(gl_FragCoord.xy), 0.0),
+        hashNoise(floor(gl_FragCoord.xy), 1.0),
+        hashNoise(floor(gl_FragCoord.xy), 2.0)
       ) - vec3(0.5)) * (0.75 / 255.0);
       outColor = vec4(clamp(encoded + dither, 0.0, 1.0), 1.0);
     }
@@ -440,12 +484,10 @@
       const gl = this.gl;
       const composite = params.composite;
       gl.uniform1f(gl.getUniformLocation(program, "uIntensity"), composite.intensity);
-      gl.uniform1f(gl.getUniformLocation(program, "uSoftAddMix"), composite.softAddMix);
       gl.uniform1f(gl.getUniformLocation(program, "uWarmth"), composite.warmth);
       gl.uniform1f(gl.getUniformLocation(program, "uSaturation"), composite.saturation);
       gl.uniform1f(gl.getUniformLocation(program, "uHighlightProtect"), composite.highlightProtect);
       gl.uniform1f(gl.getUniformLocation(program, "uShadowProtect"), composite.shadowProtect);
-      gl.uniform1f(gl.getUniformLocation(program, "uColorProtect"), composite.colorProtect);
       gl.uniform1f(gl.getUniformLocation(program, "uShoulder"), composite.shoulder);
       gl.uniform1f(gl.getUniformLocation(program, "uColorShift"), composite.colorShift);
       const tint = Array.isArray(composite.colorTint) ? composite.colorTint : [1, 0.82, 0.48];
@@ -453,13 +495,10 @@
       gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(20, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 1.08) * (2.4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 0.82))));
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
-      gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
-      gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0.12, Math.min(1, Number(composite.coreCeiling) || 0.42)));
-      gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
-      gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
-      const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.38 + radiusRatio * 0.08);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.78 - radiusRatio * 0.1);
+      gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0, Math.min(1, Number(composite.coreCeiling) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 0));
+      gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloor"), Math.max(0, Number(composite.energyFloor) || 0));
       gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloorSoftness"), Math.max(0.001, Number(composite.energyFloorSoftness) || 0.04));
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));
@@ -480,13 +519,10 @@
       gl.uniform1f(gl.getUniformLocation(program, "uColorAmount"), composite.colorAmount);
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticOffset"), Math.min(20, Math.max(0, Math.pow(Math.max(0, composite.chromatic), 1.08) * (2.4 + Math.sqrt(Math.max(1, Number(params.radius) || 1)) * 0.82))));
       gl.uniform1f(gl.getUniformLocation(program, "uChromaticAmount"), composite.chromatic);
-      gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0.5)));
-      gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0.12, Math.min(1, Number(composite.coreCeiling) || 0.42)));
-      gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 1));
-      gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0.5)));
-      const radiusRatio = Math.max(0, Math.min(1, (Number(params.radius) || 0) / 500));
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorBase"), 0.38 + radiusRatio * 0.08);
-      gl.uniform1f(gl.getUniformLocation(program, "uSourceAnchorAmount"), 0.78 - radiusRatio * 0.1);
+      gl.uniform1f(gl.getUniformLocation(program, "uCoreSuppression"), Math.max(0, Math.min(1, Number(composite.coreSuppression) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uCoreCeiling"), Math.max(0, Math.min(1, Number(composite.coreCeiling) || 0)));
+      gl.uniform1f(gl.getUniformLocation(program, "uHaloBoost"), Math.max(0, Number(composite.haloBoost) || 0));
+      gl.uniform1f(gl.getUniformLocation(program, "uHaloMix"), Math.max(0, Math.min(1, Number(composite.haloMix) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloor"), Math.max(0, Number(composite.energyFloor) || 0));
       gl.uniform1f(gl.getUniformLocation(program, "uEnergyFloorSoftness"), Math.max(0.001, Number(composite.energyFloorSoftness) || 0.04));
       gl.uniform2f(gl.getUniformLocation(program, "uTexel"), 1 / Math.max(1, this.canvas.width), 1 / Math.max(1, this.canvas.height));

@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-optical-candidate-v15";
+  const GLOW_ALGORITHM_VERSION = "engine-core-halo-v16";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");
@@ -103,6 +103,8 @@
       source.thresholdHigh,
       source.thresholdKnee,
       source.localRadius,
+      source.sourceFeatherRadius,
+      source.haloMaskRadius,
       source.contrastLow,
       source.contrastHigh,
       source.specularLow,
@@ -139,6 +141,7 @@
       params.blur && params.blur.optics && params.blur.optics.baseVeil,
       params.blur && params.blur.optics && params.blur.optics.normalization,
       blur.mipCount,
+      blur.lastMipMix,
       blur.pyramidWeight,
       ...(Array.isArray(blur.mipWeights) ? blur.mipWeights : [])
     ].join("|");
@@ -186,9 +189,11 @@
     const sourceStartedAt = performance.now();
     let sourceResult;
     let sourceBackend = "cpu";
+    let sourceCacheHit = false;
     if (allowCache && previewCache.sourceKey === sourceKey && previewCache.sourceResult) {
       sourceResult = previewCache.sourceResult;
       sourceBackend = `${previewCache.sourceBackend}-cached`;
+      sourceCacheHit = true;
     } else {
       try {
         if (
@@ -242,9 +247,11 @@
     const blurStartedAt = performance.now();
     let blurResult;
     let blurBackend = "cpu";
+    let blurCacheHit = false;
     if (allowCache && previewCache.blurKey === blurKey && previewCache.blurResult) {
       blurResult = previewCache.blurResult;
       blurBackend = `${previewCache.blurBackend}-cached`;
+      blurCacheHit = true;
     } else {
       try {
         if (
@@ -347,26 +354,29 @@
         compositeBackend = "cpu-fallback";
       }
     }
-    if ((!previewImageData && !previewRenderedOnGpu) || (includeGlowLayer && !glowLayerImageData)) {
+    if (includeGlowLayer && !glowLayerImageData) {
+      glowLayerImageData = modules.glowCompositor.renderGlowLayer(
+        blurResult.glowLayer,
+        sourceResult.masks,
+        params
+      );
+    }
+    if (!includeGlowLayer && !previewImageData && !previewRenderedOnGpu) {
       previewImageData = modules.glowCompositor.composeProtected(
         source.imageData,
         blurResult.glowLayer,
         sourceResult.masks,
         params
       );
-      if (includeGlowLayer) {
-        glowLayerImageData = modules.glowCompositor.renderGlowLayer(
-          blurResult.glowLayer,
-          sourceResult.masks,
-          params
-        );
-      }
     }
-    const compositeMs = performance.now() - compositeStartedAt;
 
     const finalSimImageData = includeGlowLayer && glowLayerImageData
       ? buildScreenPreview(source.imageData, glowLayerImageData)
       : (previewImageData || null);
+    if (!previewImageData && !previewRenderedOnGpu && finalSimImageData) {
+      previewImageData = finalSimImageData;
+    }
+    const compositeMs = performance.now() - compositeStartedAt;
     const previewDataUrl = requestRawImageData || !previewImageData ? "" : imageDataToDataUrl(previewImageData, "image/png", 0.92);
     const finalSimDataUrl = requestRawImageData || !finalSimImageData ? "" : imageDataToDataUrl(finalSimImageData, "image/png", 0.92);
 
@@ -381,7 +391,9 @@
       previewImageData: requestRawImageData ? previewImageData : null,
       finalSimImageData: requestRawImageData ? finalSimImageData : null,
       previewRenderedOnGpu,
-      glowLayerDataUrl: glowLayerImageData ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92) : "",
+      glowLayerDataUrl: !requestRawImageData && glowLayerImageData
+        ? imageDataToDataUrl(glowLayerImageData, "image/png", 0.92)
+        : "",
       sourceMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.sourceMask) : "",
       protectMaskDataUrl: sourceResult.debugImages ? imageDataToDataUrl(sourceResult.debugImages.protectMask) : "",
       debugDataUrls: sourceResult.debugImages
@@ -400,7 +412,9 @@
         totalMs: Math.round(performance.now() - startedAt),
         sourceBackend,
         blurBackend,
-        compositeBackend
+        compositeBackend,
+        sourceCacheHit,
+        blurCacheHit
       },
       params
     };
@@ -408,9 +422,11 @@
 
   modules.glowPreviewEngine = {
     createPreview,
+    getSourceCacheKey,
+    getBlurCacheKey,
     getCacheInfo() {
       return {
-        hasSourceImage: !!sourceImageCache.source,
+        hasSourceImage: !!sourceImageCache.image,
         hasSourceResult: !!previewCache.sourceResult,
         hasBlurResult: !!previewCache.blurResult,
         sourceBackend: previewCache.sourceBackend,

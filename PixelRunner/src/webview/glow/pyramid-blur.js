@@ -147,18 +147,20 @@
     return out;
   }
 
-  function resolveMipWeights(weights, count) {
+  function resolveMipWeights(weights, count, lastMipMix = 1) {
     const out = [];
     const fallback = weights.length ? Math.max(0, Number(weights[weights.length - 1]) || 0) : 0.2;
+    const finalMix = Math.max(0, Math.min(1, Number(lastMipMix) || 0));
     let total = 0;
     for (let index = 0; index < count; index += 1) {
-      const value = Math.max(0, Number(weights[index]) || fallback);
+      const value = Math.max(0, Number(weights[index]) || fallback) * (index === count - 1 ? finalMix : 1);
       out.push(value);
       total += value;
     }
     if (total <= 0.0001) return out.map(() => 1);
     const energyScale = Math.min(1.35, Math.max(0.75, total));
-    const normalize = count * energyScale / total;
+    const effectiveCount = Math.max(1, count - 1 + finalMix);
+    const normalize = effectiveCount * energyScale / total;
     return out.map((value) => value * normalize);
   }
 
@@ -628,7 +630,11 @@
       levels.push(current);
     }
 
-    const effectiveWeights = resolveMipWeights(weights, levels.length);
+    const effectiveWeights = resolveMipWeights(
+      weights,
+      levels.length,
+      levels.length === mipCount ? params.blur.lastMipMix : 1
+    );
     let combined = levels.length
       ? scaleLayer(levels[levels.length - 1], effectiveWeights[levels.length - 1])
       : blurSource;

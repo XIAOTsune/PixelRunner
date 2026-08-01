@@ -57,7 +57,6 @@
       smallWeight: 0,
       mediumWeight: 0,
       largeWeight: 0,
-      softAddMix: 0,
       warmth: 0,
       scatter: 0
     },
@@ -71,7 +70,6 @@
       smallWeight: 0.52,
       mediumWeight: 0.84,
       largeWeight: 0.34,
-      softAddMix: 0.32,
       warmth: 0.008,
       scatter: 0.72
     },
@@ -85,7 +83,6 @@
       smallWeight: 0.3,
       mediumWeight: 0.9,
       largeWeight: 0.62,
-      softAddMix: 0.58,
       warmth: 0.03,
       scatter: 1.08
     },
@@ -99,7 +96,6 @@
       smallWeight: 0.34,
       mediumWeight: 0.86,
       largeWeight: 0.68,
-      softAddMix: 0.44,
       warmth: 0.05,
       scatter: 1.18
     },
@@ -113,7 +109,6 @@
       smallWeight: 0.16,
       mediumWeight: 0.055,
       largeWeight: 0.012,
-      softAddMix: 0.08,
       warmth: 0.018,
       scatter: 0.18
     },
@@ -127,7 +122,6 @@
       smallWeight: 0.12,
       mediumWeight: 0.05,
       largeWeight: 0.014,
-      softAddMix: 0.06,
       warmth: 0.012,
       scatter: 0.16
     }
@@ -242,6 +236,16 @@
     );
     const diffusionEnergyCompensation = opticalStyle ? 0.22 : 1 + diffusionT * 0.12;
     const normalizedMipWeights = normalizeWeights(mipShape, styleEnergy * diffusionEnergyCompensation);
+    const mipFloat = opticalStyle
+      ? (style === "starburst" ? 2.4 + triggerOpen * 1.1 : 2.8 + triggerOpen * 1.2)
+      : 2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35;
+    const mipCount = opticalStyle
+      ? Math.max(2, Math.min(4, Math.round(mipFloat)))
+      : Math.max(2, Math.min(7, Math.round(mipFloat)));
+    const baseMipCount = opticalStyle ? 2 : 3;
+    const lastMipMix = mipCount > baseMipCount
+      ? clamp(mipFloat - (mipCount - 0.5), 0, 1, 0)
+      : 1;
     const sourceParams = opticalStyle
       ? {
           thresholdLow: clamp(triggerHigh - triggerKnee * (style === "starburst" ? 1.15 : 1.35), 0.18, 0.94, 0.42),
@@ -313,9 +317,8 @@
       chromatic,
       source: sourceParams,
       blur: {
-        mipCount: opticalStyle
-          ? Math.max(2, Math.min(4, Math.round(style === "starburst" ? 2.4 + triggerOpen * 1.1 : 2.8 + triggerOpen * 1.2)))
-          : Math.max(2, Math.min(7, Math.round(2.7 + legacyRadiusRatio * 3.1 + wideRadiusRatio * 1.35))),
+        mipCount,
+        lastMipMix,
         mipWeights: normalizedMipWeights,
         pyramidWeight: opticalStyle
           ? clamp(style === "starburst" ? 0.24 + strengthRatio * 0.1 : 0.22 + strengthRatio * 0.095, 0.14, 0.42, 0.24)
@@ -380,13 +383,10 @@
         intensity: opticalStyle
           ? clamp(strengthDrive * (style === "starburst" ? 9.2 : 10.4) * (0.7 + triggerOpen * 0.16), 0, 28, 1)
           : clamp(strengthEnergyBoost * (1.08 + radiusEnergyDamping * 0.52) * (1 + diffusionT * 0.12), 0, 38, 1),
-        // Favor screen-like appearance; reduce additive/linear-dodge feel.
-        softAddMix: opticalStyle ? clamp(0.025 + preset.softAddMix * 0.08, 0.02, 0.055, 0.03) : clamp(0.08 + spreadAir * 0.06 + preset.softAddMix * 0.08, 0.06, 0.24, 0.12),
         warmth: preset.warmth,
         saturation: opticalStyle ? clamp(1.08 + saturation / 100 * 0.34 + preset.chromaBoost * 0.18, 0.72, 1.62, 1) : clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
         highlightProtect: opticalStyle ? clamp(0.68 + triggerThreshold * 0.08 + strengthRatio * 0.04, 0.62, 0.88, 0.72) : clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
         shadowProtect: preset.darkProtect,
-        colorProtect: opticalStyle ? clamp(0.2 + strengthRatio * 0.08, 0.18, 0.36, 0.26) : clamp(0.24 + strengthRatio * 0.1 + spreadRatio * 0.025, 0.22, 0.48, 0.3),
         // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
         shoulder: opticalStyle ? clamp(0.13 + strengthRatio * 0.018, 0.1, 0.2, 0.14) : clamp(0.16 + strengthRatio * 0.028 + spreadAir * 0.012 + Math.max(0, exposureRatio) * 0.004, 0.12, 0.28, 0.18),
         colorShift: colorShift / 100,

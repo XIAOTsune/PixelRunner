@@ -1,6 +1,6 @@
 {
   "name": "pixelrunner-uxp",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "A Photoshop UXP plugin that connects RunningHub image workflows with a practical retouching workspace.",
   "license": "Apache-2.0",
   "author": "XIAOTsune",
@@ -14,7 +14,7 @@
   },
   "type": "module",
   "scripts": {
-    "test": "npm run test:release-compat && npm run test:license && npm run test:license-storage && npm run test:license-issuer && npm run test:private-license-issuer && npm run test:bundle-compat && npm run test:file-transfer && npm run test:runninghub-charge && npm run test:grs && npm run test:blend-match && npm run test:local-upscale && npm run test:local-ai-service",
+    "test": "npm run test:release-compat && npm run test:license && npm run test:license-storage && npm run test:license-issuer && npm run test:private-license-issuer && npm run test:bundle-compat && npm run test:file-transfer && npm run test:runninghub-charge && npm run test:grs && npm run test:blend-match && npm run test:glow && npm run test:local-upscale && npm run test:local-ai-service",
     "test:release-compat": "node ./scripts/test-release-compat.mjs",
     "test:license": "node ./scripts/test-license.mjs",
     "test:license-storage": "node ./scripts/test-license-storage.mjs",
@@ -25,6 +25,7 @@
     "test:runninghub-charge": "node ./scripts/test-runninghub-charge.mjs",
     "test:grs": "node ./scripts/test-grs-config.mjs",
     "test:blend-match": "node ./scripts/test-blend-match.mjs",
+    "test:glow": "node ./scripts/test-glow.mjs",
     "test:local-upscale": "node ./scripts/test-local-upscale.mjs",
     "test:local-ai-runtime": "node ./scripts/test-local-ai-runtime.mjs",
     "test:local-ai-service": "npm run test:local-ai-runtime",
