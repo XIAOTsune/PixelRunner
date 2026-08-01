@@ -50,7 +50,7 @@
     none: {
       thresholdBias: 0,
       whiteProtect: 1,
-      skinProtect: 1,
+      skinProtect: 0,
       darkProtect: 1,
       knee: 0.18,
       chromaBoost: 0,
@@ -63,7 +63,7 @@
     darkSoft: {
       thresholdBias: 0.04,
       whiteProtect: 0.94,
-      skinProtect: 0.88,
+      skinProtect: 0,
       darkProtect: 0.62,
       knee: 0.17,
       chromaBoost: 0.14,
@@ -76,7 +76,7 @@
     whiteSoft: {
       thresholdBias: -0.02,
       whiteProtect: 0.9,
-      skinProtect: 0.84,
+      skinProtect: 0,
       darkProtect: 0.5,
       knee: 0.26,
       chromaBoost: 0.2,
@@ -89,7 +89,7 @@
     shine: {
       thresholdBias: -0.03,
       whiteProtect: 0.8,
-      skinProtect: 0.72,
+      skinProtect: 0,
       darkProtect: 0.44,
       knee: 0.22,
       chromaBoost: 0.34,
@@ -102,7 +102,7 @@
     starburst: {
       thresholdBias: 0.04,
       whiteProtect: 0.96,
-      skinProtect: 0.9,
+      skinProtect: 0,
       darkProtect: 0.72,
       knee: 0.06,
       chromaBoost: 0.18,
@@ -115,7 +115,7 @@
     anamorphic: {
       thresholdBias: 0.035,
       whiteProtect: 0.94,
-      skinProtect: 0.88,
+      skinProtect: 0,
       darkProtect: 0.7,
       knee: 0.07,
       chromaBoost: 0.16,

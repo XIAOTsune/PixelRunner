@@ -180,6 +180,10 @@ assert.equal(normalized.threshold, 81, "invalid threshold must use its fallback"
 assert.equal(normalized.composite.colorAmount, 0, "disabled tint must have no output amount");
 assert.equal("softAddMix" in normalized.composite, false, "final-only parameters must not expose softAddMix");
 assert.equal("colorProtect" in normalized.composite, false, "final-only parameters must not expose colorProtect");
+for (const style of ["none", "darkSoft", "whiteSoft", "shine", "starburst", "anamorphic"]) {
+  const styleParams = presets.normalizeGlowParams({ style });
+  assert.equal(styleParams.source.skinProtect, 0, `${style} must keep glow skin-tone protection disabled`);
+}
 
 const disabled = presets.normalizeGlowParams({ style: "none", strength: 100 });
 assert.equal(disabled.strength, 0, "none style must normalize to zero strength");
