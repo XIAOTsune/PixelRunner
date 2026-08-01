@@ -1667,7 +1667,9 @@ async function captureDocumentPreviewInternal(options = {}) {
   const captureBounds = contextBounds;
   const sourceWidth = Math.max(1, Number(captureBounds.right) - Number(captureBounds.left));
   const sourceHeight = Math.max(1, Number(captureBounds.bottom) - Number(captureBounds.top));
-  const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, options.maxPixels);
+  const targetSize = options.fullResolution === true
+    ? { width: sourceWidth, height: sourceHeight }
+    : getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, options.maxPixels);
   return core.executeAsModal(async () => {
     if (options.generativeFillCapture === true || options.readOnlySelectionCapture === true) {
       if (!selectionBounds || options.captureSelectionMask !== true) {
@@ -1735,9 +1737,23 @@ async function captureDocumentPreviewInternal(options = {}) {
         await activateDocument(app, action, Number(doc.id));
         selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
       }
-      const uploadAsset = options.useImagingUpload === true
-        ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
-        : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
+      const skipUploadAsset = options.skipUploadAsset === true;
+      const uploadAsset = skipUploadAsset
+        ? {
+            mimeType: "",
+            base64: "",
+            dataUrl: "",
+            bytes: 0,
+            width: targetSize.width,
+            height: targetSize.height,
+            quality: 0,
+            targetBytes: 0,
+            hardLimitBytes: 0,
+            attempts: []
+          }
+        : options.useImagingUpload === true
+          ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
+          : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
       let selectionMaskDataUrl = "";
       let selectionMaskShape = "none";
       let selectionMaskError = "";
@@ -1774,7 +1790,8 @@ async function captureDocumentPreviewInternal(options = {}) {
         let previewWidth = targetSize.width;
         let previewHeight = targetSize.height;
         let previewQuality = quality;
-        if (options.useImagingUpload === true) {
+        const captureFormat = String(options.captureFormat || "jpeg").toLowerCase() === "png" ? "png" : "jpeg";
+        if (options.useImagingUpload === true && !skipUploadAsset) {
           base64 = String(uploadAsset.base64 || "");
           previewWidth = Math.max(1, Number(uploadAsset.width) || targetSize.width);
           previewHeight = Math.max(1, Number(uploadAsset.height) || targetSize.height);
@@ -1788,13 +1805,15 @@ async function captureDocumentPreviewInternal(options = {}) {
             applyAlpha: true
           });
 
-          const encoded = await imaging.encodeImageData({
+          const encodeOptions = {
             imageData: pixels.imageData,
             base64: true,
-            format: "jpeg",
-            quality
-          });
+            format: captureFormat
+          };
+          if (captureFormat === "jpeg") encodeOptions.quality = quality;
+          const encoded = await imaging.encodeImageData(encodeOptions);
           base64 = extractEncodedBase64(encoded);
+          if (captureFormat === "png") previewQuality = 0;
         }
         if (!base64) throw new Error("Photoshop returned an empty capture payload");
         const result = {
@@ -1815,11 +1834,11 @@ async function captureDocumentPreviewInternal(options = {}) {
         height: previewHeight,
         originalWidth: sourceWidth,
         originalHeight: sourceHeight,
-        mimeType: "image/jpeg",
+        mimeType: captureFormat === "png" ? "image/png" : "image/jpeg",
         quality: previewQuality,
         maxDimension,
         base64,
-        dataUrl: buildDataUrl("image/jpeg", base64),
+        dataUrl: buildDataUrl(captureFormat === "png" ? "image/png" : "image/jpeg", base64),
         uploadMimeType: uploadAsset.mimeType,
         uploadBase64: uploadAsset.base64,
         uploadDataUrl: uploadAsset.dataUrl,

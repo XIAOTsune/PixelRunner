@@ -342,13 +342,32 @@ async function handleBridgeRequest(message, responseTarget) {
         });
         break;
       case "photoshop.captureDocumentPreview":
-        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args), {
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
+          fullResolution: false,
+          skipUploadAsset: false
+        }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;
       case "photoshop.captureLicensedGlowPreview":
       case "photoshop.captureLicensedSpaceFxPreview":
-        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args), {
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
+          fullResolution: false,
+          skipUploadAsset: false
+        }]), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
+      case "photoshop.captureLicensedSpaceFxSource":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          expectedDocumentId: Number(message.args && message.args[0] && message.args[0].expectedDocumentId) || 0,
+          fullResolution: true,
+          skipUploadAsset: true,
+          captureFormat: "png",
+          ignoreSelection: true
+        }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;
