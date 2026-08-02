@@ -24,6 +24,8 @@ import {
 } from "../src/shared/gemini-config.js";
 import {
   cancelThirdPartyGeminiTask,
+  fetchThirdPartyGeminiAccountStatus,
+  fetchThirdPartyGeminiTaskCharge,
   listThirdPartyGeminiModels,
   pollThirdPartyGeminiTask,
   runThirdPartyGeminiPromptOptimize,
@@ -240,11 +242,54 @@ try {
     },
     timeoutMs: 1000
   }]);
-  assert.match(submitted.taskId, /^gemini-immediate-/);
-  assert.equal(submitted.dataUrl, "data:image/png;base64,b3V0cHV0");
-  const polled = await pollThirdPartyGeminiTask([{ taskId: submitted.taskId }]);
+  assert.match(submitted.taskId, /^gemini-job-/);
+  assert.equal(submitted.status, "RUNNING");
+  assert.equal(submitted.dataUrl, undefined);
+  const polled = await pollThirdPartyGeminiTask([{ taskId: submitted.taskId, timeoutMs: 2000, settings: { pollInterval: 0.01 } }]);
   assert.equal(polled.status, "SUCCEEDED");
-  assert.equal(polled.dataUrl, submitted.dataUrl);
+  assert.equal(polled.dataUrl, "data:image/png;base64,b3V0cHV0");
+
+  globalThis.fetch = async (url, options = {}) => {
+    assert.equal(options.headers.Authorization === "Bearer account-key" || options.headers.Authorization === undefined, true);
+    if (String(url).endsWith("/api/status")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "" },
+        text: async () => JSON.stringify({ data: { quota_display_type: "USD", quota_per_unit: 500000, usd_exchange_rate: 7.3 } })
+      };
+    }
+    if (String(url).endsWith("/api/usage/token/")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "" },
+        text: async () => JSON.stringify({ code: true, data: { total_available: 5000000, total_used: 500000, total_granted: 5500000, unlimited_quota: false } })
+      };
+    }
+    assert.equal(String(url).endsWith("/api/log/token"), true);
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "" },
+      text: async () => JSON.stringify({ success: true, data: [{ request_id: "provider-request-1", quota: 12500 }] })
+    };
+  };
+  const account = await fetchThirdPartyGeminiAccountStatus([{
+    channelId: "momo",
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "account-key", channelId: "momo" },
+    timeoutMs: 1000
+  }]);
+  assert.equal(account.balance, 10);
+  assert.equal(account.balanceDisplay, "$10");
+  assert.equal(account.usedDisplay, "$1");
+  const charge = await fetchThirdPartyGeminiTaskCharge([{
+    providerRequestId: "provider-request-1",
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "account-key" },
+    timeoutMs: 1000
+  }]);
+  assert.equal(charge.balanceCharge, 0.025);
+  assert.equal(charge.chargeDisplay, "-$0.025");
 
   globalThis.fetch = async () => ({
     ok: false,
@@ -262,17 +307,19 @@ try {
     markFetchStarted();
     options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
   });
-  const pendingSubmit = submitThirdPartyGeminiTask([{
+  const pendingTask = await submitThirdPartyGeminiTask([{
     requestId: "cancel-request",
     config: { apiUrl: "https://ai.ajiai.top", apiKey: "key", selectedModel: "gemini-image" },
     inputs: { model: "gemini-image", prompt: "cancel me" },
     timeoutMs: 1000
   }]);
   await fetchStarted;
-  const cancelled = await cancelThirdPartyGeminiTask([{ taskId: "cancel-request" }]);
+  const cancelled = await cancelThirdPartyGeminiTask([{ taskId: pendingTask.taskId }]);
   assert.equal(cancelled.localRequestCancelled, true);
   assert.equal(cancelled.remoteCancelled, false);
-  await assert.rejects(() => pendingSubmit, /请求已取消/);
+  const cancelledResult = await pollThirdPartyGeminiTask([{ taskId: pendingTask.taskId, timeoutMs: 1000 }]);
+  assert.equal(cancelledResult.status, "CANCELLED");
+  assert.equal(cancelledResult.failed, true);
 
   globalThis.fetch = async (url, options = {}) => new Promise((resolve, reject) => {
     options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });

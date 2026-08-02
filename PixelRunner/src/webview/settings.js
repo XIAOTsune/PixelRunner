@@ -54,6 +54,9 @@
       currency,
       updatedAt: Date.now()
     };
+    if (modules.workspace && typeof modules.workspace.renderWorkspaceAccountSummary === "function") {
+      modules.workspace.renderWorkspaceAccountSummary();
+    }
   }
 
   function setApiKeyVisibility(visible) {

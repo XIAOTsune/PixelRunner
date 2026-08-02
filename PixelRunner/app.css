@@ -885,6 +885,7 @@ button {
   color: var(--text-strong);
   font-size: 10px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .workspace-grid,

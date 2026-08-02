@@ -6274,7 +6274,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
     const resultLayerName = `像素起子 融合校色 - ${sourceLayerName}`.slice(0, 240);
     logs.push(`[融合校色] 开始分析图层：${sourceLayerName}。`);
-    logs.push(`[融合校色] 区域 ${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}；内部颜色匹配与快速对齐。`);
+    logs.push(`[融合校色] 区域 ${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}；内部颜色匹配与像素级精确对齐。`);
 
     let sourceWasVisible = true;
     try {
@@ -6425,9 +6425,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
-        logs.push(`[融合校色] 快速对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
+        logs.push(`[融合校色] 像素级精确对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
       } else {
-        logs.push(`[融合校色] 快速对齐跳过：${alignment.reason}。`);
+        logs.push(`[融合校色] 像素级精确对齐已跳过：${alignment.reason}。`);
       }
       if (alignment.modelChoice && alignment.modelChoice.rejectedAffine) {
         logs.push(`[融合校色] 对齐模型：纯平移优先，已拒绝弱仿射缩放/旋转；平移分 ${formatFixed(alignment.modelChoice.translationScore, 4)}，仿射分 ${formatFixed(alignment.modelChoice.affineScore, 4)}，增益 ${formatFixed(alignment.modelChoice.affineGain, 4)}，要求 ${formatFixed(alignment.modelChoice.minAffineGain, 4)}。`);

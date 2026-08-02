@@ -29,6 +29,7 @@
   let taskTickerHandle = 0;
   let accountRefreshTimer = 0;
   let accountSettlementChain = Promise.resolve(null);
+  const thirdPartyAccountRefreshPromises = new Map();
   let autoPlacementRetryTimer = 0;
   let autoPlacementProcessing = false;
   let captureInProgress = false;
@@ -555,6 +556,127 @@
     return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
   }
 
+  function getThirdPartyAccountKey(value = {}) {
+    const provider = String(value.provider || "").trim() || "grs";
+    const channelId = String(value.channelId || "").trim();
+    const apiUrl = String(value.apiUrl || value.config && value.config.apiUrl || "").trim().replace(/\/+$/, "");
+    return `${provider}:${channelId || apiUrl}`;
+  }
+
+  function getCurrentThirdPartyAccountPayload() {
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    return {
+      provider: descriptor.id,
+      providerLabel: descriptor.label,
+      channelId: descriptor.channelId,
+      apiUrl: descriptor.apiUrl,
+      apiKey: String(descriptor.config && descriptor.config.apiKey || "").trim(),
+      config: {
+        ...(descriptor.config || {}),
+        apiUrl: descriptor.apiUrl,
+        channelId: descriptor.channelId
+      }
+    };
+  }
+
+  function getThirdPartyAccountSummary(payload = getCurrentThirdPartyAccountPayload()) {
+    const summaries = modules.state.state.thirdPartyAccountSummaries || {};
+    return summaries[getThirdPartyAccountKey(payload)] || null;
+  }
+
+  function setThirdPartyAccountSummary(payload, summary) {
+    const state = modules.state.state;
+    state.thirdPartyAccountSummaries = {
+      ...(state.thirdPartyAccountSummaries || {}),
+      [getThirdPartyAccountKey(payload)]: summary
+    };
+    return summary;
+  }
+
+  function renderWorkspaceAccountSummary() {
+    const state = modules.state.state;
+    const summaryEl = modules.runtime.getById("accountSummary");
+    const balanceLabel = modules.runtime.getById("accountBalanceLabel");
+    const balanceValue = modules.runtime.getById("accountBalanceValue");
+    const secondaryLabel = modules.runtime.getById("accountCoinsLabel");
+    const secondaryValue = modules.runtime.getById("accountCoinsValue");
+    if (!summaryEl || !balanceLabel || !balanceValue || !secondaryLabel || !secondaryValue) return;
+
+    const showThirdParty = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
+    if (!showThirdParty) {
+      const account = state.accountSummary || {};
+      const isGlobal = modules.state.normalizeRunningHubRegion(account.region || state.settings.runningHubRegion) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
+      balanceLabel.textContent = "余额";
+      secondaryLabel.textContent = "RH 币";
+      const hasBalance = account.balance != null && Number.isFinite(Number(account.balance));
+      const hasCoins = account.coins != null && Number.isFinite(Number(account.coins));
+      balanceValue.textContent = hasBalance ? `${isGlobal ? "$" : ""}${Number(account.balance)}` : "--";
+      secondaryValue.textContent = hasCoins ? String(Number(account.coins)) : "--";
+      summaryEl.classList.toggle("is-empty", !hasBalance && !hasCoins);
+      summaryEl.title = "RunningHub 账户余额";
+      return;
+    }
+
+    const payload = getCurrentThirdPartyAccountPayload();
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    const account = getThirdPartyAccountSummary(payload);
+    balanceLabel.textContent = "余额";
+    secondaryLabel.textContent = account && (account.unsupported || account.error)
+      ? "状态"
+      : String(account && account.secondaryLabel || "已用");
+    balanceValue.textContent = account && account.loading ? "读取中" : account && account.ok ? String(account.balanceDisplay || "--") : "--";
+    secondaryValue.textContent = account && account.loading
+      ? "--"
+      : account && account.ok
+        ? String(account.secondaryDisplay || account.usedDisplay || "--")
+        : account && account.unsupported
+          ? "未提供"
+          : account && account.error
+            ? "失败"
+            : "--";
+    summaryEl.classList.toggle("is-empty", !(account && account.ok));
+    summaryEl.title = account && account.error
+      ? `${descriptor.label}：${account.error}`
+      : account && account.updatedAt
+        ? `${descriptor.label} · 余额更新时间 ${new Date(account.updatedAt).toLocaleTimeString()}`
+        : `${descriptor.label} 额度`;
+  }
+
+  async function refreshThirdPartyAccountSummary(payload = getCurrentThirdPartyAccountPayload(), options = {}) {
+    if (!payload || !modules.runtime.isPluginRuntime()) return null;
+    const key = getThirdPartyAccountKey(payload);
+    const current = getThirdPartyAccountSummary(payload);
+    if (!options.force && current && current.ok && Date.now() - Number(current.updatedAt || 0) < 30000) {
+      renderWorkspaceAccountSummary();
+      return current;
+    }
+    if (!options.force && thirdPartyAccountRefreshPromises.has(key)) return thirdPartyAccountRefreshPromises.get(key);
+
+    const provider = String(payload.provider || "").trim();
+
+    setThirdPartyAccountSummary(payload, { ...(current || {}), ok: false, loading: true, error: "" });
+    renderWorkspaceAccountSummary();
+    const request = modules.runtime
+      .callHost(`thirdParty.${provider}.fetchAccountStatus`, [payload], { timeoutMs: 18000 })
+      .then((account) => setThirdPartyAccountSummary(payload, { ...account, loading: false, error: "" }))
+      .catch((error) => {
+        const failed = setThirdPartyAccountSummary(payload, {
+          ok: false,
+          loading: false,
+          error: String(error && error.message || error || "余额读取失败"),
+          updatedAt: Date.now()
+        });
+        if (!options.quiet) modules.ui.logToWorkspace(`${payload.providerLabel || "第三方 API"}余额读取失败：${failed.error}`, "warn");
+        return failed;
+      })
+      .finally(() => {
+        if (thirdPartyAccountRefreshPromises.get(key) === request) thirdPartyAccountRefreshPromises.delete(key);
+        renderWorkspaceAccountSummary();
+      });
+    thirdPartyAccountRefreshPromises.set(key, request);
+    return request;
+  }
+
   function renderQuickModeMeta() {
     const count = Array.isArray(modules.state.state.quickEntries) ? modules.state.state.quickEntries.length : 0;
     const concurrencyLabel = formatConcurrencyLabel(getActiveRunningTasks().length, getMaxConcurrentTasks());
@@ -925,6 +1047,9 @@
     if (!task || typeof task !== "object") return "";
     const explicit = String(task.chargeDisplay || "").trim();
     if (explicit) return explicit;
+    // Third-party providers may use a provider-specific currency. Do not infer R/RH
+    // from a bare numeric value unless the provider has supplied a formatted value.
+    if (isThirdPartyTaskRecord(task)) return "";
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
     const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
     const parts = [];
@@ -933,6 +1058,27 @@
     if (balanceCharge !== null) parts.push(isGlobalRunningHub ? `-$${balanceCharge.toFixed(3)}` : `-${balanceCharge.toFixed(3)}R`);
     if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
     return parts.join(" · ");
+  }
+
+  function getTaskDurationLabel(task) {
+    const normalized = String(task && task.status || "").trim().toLowerCase();
+    if (isTaskTerminalStatus(normalized)) return "耗时";
+    if (normalized === "submitting") return "提交耗时";
+    if (normalized === "queued") return task && task.queueMode === "local" ? "排队等待" : "云端排队";
+    if (normalized === "submitted") return "等待执行";
+    if (normalized === "tracking") return "后台追踪";
+    if (normalized === "remote-running") return "云端运行";
+    if (normalized === "timeout") return "等待超时";
+    if (["downloading", "placing"].includes(normalized)) return "处理耗时";
+    return "已运行";
+  }
+
+  function getTaskCostLabel(task) {
+    if (!isThirdPartyTaskRecord(task)) return formatTaskChargeDisplay(task);
+    const chargeDisplay = formatTaskChargeDisplay(task);
+    if (chargeDisplay) return `扣费 ${chargeDisplay}`;
+    if (isTaskTerminalStatus(task && task.status)) return "扣费 待确认";
+    return "费用 待结算";
   }
 
   function hasTaskChargeValue(task) {
@@ -983,6 +1129,66 @@
       currency: String(accountSummary.currency || "").trim(),
       updatedAt: Number(accountSummary.updatedAt) || 0
     };
+  }
+
+  function getThirdPartyAccountSnapshot(payload) {
+    const account = getThirdPartyAccountSummary(payload) || {};
+    return {
+      provider: String(payload && payload.provider || "").trim(),
+      channelId: String(payload && payload.channelId || "").trim(),
+      apiUrl: String(payload && payload.apiUrl || payload && payload.config && payload.config.apiUrl || "").trim(),
+      balance: account.balance != null && Number.isFinite(Number(account.balance)) ? Number(account.balance) : null,
+      used: account.used != null && Number.isFinite(Number(account.used)) ? Number(account.used) : null,
+      currency: String(account.currency || "").trim(),
+      unit: String(account.unit || "").trim(),
+      updatedAt: Number(account.updatedAt) || 0
+    };
+  }
+
+  function formatThirdPartyChargeValue(value, account) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return "";
+    const currency = String(account && account.currency || "").toUpperCase();
+    const unit = String(account && account.unit || "").trim();
+    const digits = Math.abs(amount) >= 1 ? 2 : 4;
+    const normalized = amount.toFixed(digits).replace(/\.?0+$/, "");
+    if (currency === "USD") return `-$${normalized}`;
+    if (currency === "CNY") return `-¥${normalized}`;
+    if (currency === "TOKENS") return `-${Math.round(amount)} Tokens`;
+    if (currency === "CREDITS") return `-${normalized} 积分`;
+    return `-${unit ? `${unit} ` : ""}${normalized}`;
+  }
+
+  function hasOverlappingThirdPartyTask(task) {
+    if (!task || !isThirdPartyTaskRecord(task)) return false;
+    const taskId = String(task.taskId || "").trim();
+    const provider = String(task.provider || "").trim();
+    const apiUrl = String(task.apiUrl || "").trim().replace(/\/+$/, "");
+    const now = Date.now();
+    return getRunningTasks().some((item) => {
+      if (!item || !isThirdPartyTaskRecord(item) || String(item.taskId || "").trim() === taskId) return false;
+      if (String(item.provider || "").trim() !== provider) return false;
+      if (String(item.apiUrl || "").trim().replace(/\/+$/, "") !== apiUrl) return false;
+      return doTaskActivityWindowsOverlap(task, item, now);
+    });
+  }
+
+  async function refreshThirdPartyAccountAndPatchTaskCharge(taskId, payload) {
+    const normalizedTaskId = String(taskId || "").trim();
+    if (!normalizedTaskId || !payload || !isThirdPartyRunPayload(payload)) return null;
+    const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+    const account = await refreshThirdPartyAccountSummary(payload, { quiet: true, force: true });
+    if (!task || hasTaskChargeValue(task) || hasOverlappingThirdPartyTask(task) || !account || !account.ok) return null;
+    const before = task.accountSnapshot && typeof task.accountSnapshot === "object" ? task.accountSnapshot : null;
+    const beforeBalance = Number(before && before.balance);
+    const afterBalance = Number(account.balance);
+    if (!Number.isFinite(beforeBalance) || !Number.isFinite(afterBalance) || beforeBalance <= afterBalance) return null;
+    const balanceCharge = Number((beforeBalance - afterBalance).toFixed(4));
+    const chargeDisplay = formatThirdPartyChargeValue(balanceCharge, account);
+    if (!chargeDisplay) return null;
+    const patch = { charge: balanceCharge, balanceCharge, coinsCharge: null, chargeDisplay };
+    upsertRunningTask({ taskId: normalizedTaskId, ...patch });
+    return patch;
   }
 
   function buildTaskChargePatchFromAccounts(beforeAccount, afterAccount) {
@@ -1250,9 +1456,9 @@
         const statusStage = normalizeTaskStatusStage(task.status || "running");
         const progressValue = getTaskProgressForStage(statusStage).toFixed(2);
         const isActive = !isTaskTerminalStatus(task.status) && statusStage !== "timeout";
-        const durationLabel = `${isTaskTerminalStatus(task.status) ? "耗时" : "已运行"} ${formatTaskDuration(getTaskElapsedMs(task))}`;
+        const durationLabel = `${getTaskDurationLabel(task)} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
-        const chargeDisplay = formatTaskChargeDisplay(task);
+        const chargeDisplay = getTaskCostLabel(task);
         const failureLabel = getTaskFailureLabel(task);
         const detailPrefix =
           failureLabel && ["failed", "error", "cancelled", "canceled", "timeout"].includes(String(task.status || "").trim().toLowerCase())
@@ -1557,6 +1763,10 @@
     if (appPickerMeta) {
       appPickerMeta.innerHTML = quickMode ? renderQuickModeMeta() : renderAppMeta(state.currentApp);
     }
+    renderWorkspaceAccountSummary();
+    if (!quickMode && modules.state.isThirdPartyApp(state.currentApp)) {
+      void refreshThirdPartyAccountSummary(getCurrentThirdPartyAccountPayload(), { quiet: true });
+    }
 
     document.body.classList.toggle("workspace-mode-quick", quickMode);
     document.body.classList.toggle("workspace-mode-generative-fill", generativeFillMode);
@@ -1841,6 +2051,7 @@
       taskId: normalizedTaskId,
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
+      channelId: String(patch.channelId || "").trim(),
       kind: String(patch.kind || "").trim(),
       region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
       apiUrl: hasOwn("apiUrl") ? String(patch.apiUrl || "").trim() : "",
@@ -1879,6 +2090,7 @@
         ...current,
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
+        channelId: nextTask.channelId || current.channelId || "",
         kind: nextTask.kind || current.kind || "",
         region: nextTask.region || current.region || "cn",
         apiUrl: nextTask.apiUrl || current.apiUrl || "",
@@ -2055,7 +2267,9 @@
       sourceDocument,
       finishedAt: completedAt
     });
-    if (!isThirdPartyRunPayload(payload)) {
+    if (isThirdPartyRunPayload(payload)) {
+      await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
+    } else {
       await refreshAccountAndPatchTaskCharge(remoteTaskId);
     }
     setLastResult({
@@ -2183,7 +2397,9 @@
             sourceDocument,
             finishedAt
           });
-          if (!isThirdPartyRunPayload(payload)) {
+          if (isThirdPartyRunPayload(payload)) {
+            await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
+          } else {
             await refreshAccountAndPatchTaskCharge(remoteTaskId);
           }
           modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
@@ -2946,6 +3162,7 @@
       taskId: localTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      channelId: payload.channelId || "",
       kind: payload.kind || "",
       region: payload.region,
       apiUrl: payload.apiUrl || (payload.config && payload.config.apiUrl) || "",
@@ -3000,7 +3217,9 @@
     const tempTaskId = String(options.localTaskId || "").trim() || createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
-    let submissionAccountSnapshot = getCurrentAccountSnapshot();
+    let submissionAccountSnapshot = isThirdPartyTask
+      ? getThirdPartyAccountSnapshot(payload)
+      : getCurrentAccountSnapshot();
     const payloadMatchesCurrentRunningHubAccount =
       modules.state.normalizeRunningHubRegion(payload && payload.region) ===
         modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion) &&
@@ -3024,6 +3243,7 @@
       taskId: tempTaskId,
       remoteTaskId: "",
       provider: payload.provider || "",
+      channelId: payload.channelId || "",
       region: payload.region,
       apiUrl: payload.apiUrl || (payload.config && payload.config.apiUrl) || "",
       apiKey: payload.apiKey,
@@ -3040,6 +3260,10 @@
       createdAt: Date.now(),
       submittedAt: Date.now()
     });
+
+    if (isThirdPartyTask && submissionAccountSnapshot.balance == null) {
+      void refreshThirdPartyAccountSummary(payload, { quiet: true, force: true });
+    }
 
     try {
       modules.ui.logToWorkspace(
@@ -3104,7 +3328,9 @@
           sourceDocument,
           finishedAt
         });
-        if (!isThirdPartyTask) {
+        if (isThirdPartyTask) {
+          await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
+        } else {
           await refreshAccountAndPatchTaskCharge(remoteTaskId);
         }
         modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
@@ -3145,7 +3371,9 @@
         sourceDocument,
         finishedAt: completedAt
       });
-      if (!isThirdPartyTask) {
+      if (isThirdPartyTask) {
+        await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
+      } else {
         await refreshAccountAndPatchTaskCharge(remoteTaskId);
       }
       setLastResult({
@@ -3245,7 +3473,11 @@
         sourceDocument,
         finishedAt: Date.now()
       });
-      if (!isThirdPartyTask) scheduleAccountSummaryRefresh();
+      if (isThirdPartyTask) {
+        void refreshThirdPartyAccountSummary(payload, { quiet: true, force: true });
+      } else {
+        scheduleAccountSummaryRefresh();
+      }
       modules.ui.logToWorkspace(normalizedMessage, cancelled ? "warn" : "error");
     }
   }
@@ -3683,10 +3915,18 @@
         const cancelMethod = isThirdPartyTask ? `thirdParty.${effectiveThirdPartyProvider}.cancelTask` : "runninghub.cancelTask";
         const cancelPayload = isThirdPartyTask
           ? {
+              provider: effectiveThirdPartyProvider,
+              channelId: String(currentTask && currentTask.channelId || ""),
               apiKey: String((currentTask && currentTask.apiKey) || activeThirdPartyConfig.apiKey || ""),
               apiUrl: String((currentTask && currentTask.apiUrl) || activeThirdPartyConfig.apiUrl || ""),
               region: (currentTask && currentTask.region) || activeThirdPartyConfig.region,
-              taskId: remoteTaskId
+              taskId: remoteTaskId,
+              config: {
+                ...activeThirdPartyConfig,
+                apiKey: String((currentTask && currentTask.apiKey) || activeThirdPartyConfig.apiKey || ""),
+                apiUrl: String((currentTask && currentTask.apiUrl) || activeThirdPartyConfig.apiUrl || ""),
+                channelId: String(currentTask && currentTask.channelId || "")
+              }
             }
           : {
               apiKey: String((currentTask && currentTask.apiKey) || modules.state.state.settings.apiKey || ""),
@@ -3707,7 +3947,11 @@
             failureLabel: "已取消",
             finishedAt: Date.now()
           });
-          if (!isThirdPartyTask) scheduleAccountSummaryRefresh();
+          if (isThirdPartyTask) {
+            void refreshThirdPartyAccountSummary(cancelPayload, { quiet: true, force: true });
+          } else {
+            scheduleAccountSummaryRefresh();
+          }
           modules.ui.logToWorkspace(`任务已取消：${remoteTaskId}`, "warn");
         } catch (error) {
           modules.ui.logToWorkspace(`取消任务失败：${error.message}`, "error");
@@ -3771,6 +4015,10 @@
     bindWorkspaceActions,
     refreshPhotoshopDocumentStatus,
     pauseAutoPlacementRetry,
-    resumeAutoPlacementRetry
+    resumeAutoPlacementRetry,
+    getTaskDurationLabel,
+    getTaskCostLabel,
+    renderWorkspaceAccountSummary,
+    refreshThirdPartyAccountSummary
   };
 })(window);

@@ -9,6 +9,7 @@ import {
 } from "./runninghub.js";
 import {
   cancelThirdPartyGrsTask,
+  fetchThirdPartyGrsAccountStatus,
   fetchThirdPartyGrsTaskStatus,
   listThirdPartyGrsModels,
   pollThirdPartyGrsTask,
@@ -17,6 +18,7 @@ import {
 } from "./third-party-grs.js";
 import {
   cancelThirdPartyGeminiTask,
+  fetchThirdPartyGeminiAccountStatus,
   fetchThirdPartyGeminiTaskStatus,
   listThirdPartyGeminiModels,
   pollThirdPartyGeminiTask,
@@ -335,6 +337,9 @@ async function handleBridgeRequest(message, responseTarget) {
       case "thirdParty.grs.fetchTaskStatus":
         result = await fetchThirdPartyGrsTaskStatus(message.args);
         break;
+      case "thirdParty.grs.fetchAccountStatus":
+        result = await fetchThirdPartyGrsAccountStatus(message.args);
+        break;
       case "thirdParty.grs.cancelTask":
         result = await cancelThirdPartyGrsTask(message.args);
         break;
@@ -352,6 +357,9 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "thirdParty.gemini.fetchTaskStatus":
         result = await fetchThirdPartyGeminiTaskStatus(message.args);
+        break;
+      case "thirdParty.gemini.fetchAccountStatus":
+        result = await fetchThirdPartyGeminiAccountStatus(message.args);
         break;
       case "thirdParty.gemini.cancelTask":
         result = await cancelThirdPartyGeminiTask(message.args);

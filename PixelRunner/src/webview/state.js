@@ -174,6 +174,7 @@ import {
       currency: "R",
       updatedAt: 0
     },
+    thirdPartyAccountSummaries: {},
     hostRuntime: null,
     currentDocumentInfo: null,
     editingAppId: null,

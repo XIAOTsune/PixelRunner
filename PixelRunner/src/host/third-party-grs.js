@@ -90,6 +90,29 @@ function authHeaders(apiKey) {
   };
 }
 
+function findFiniteCreditValue(value) {
+  if (value == null) return null;
+  if (typeof value === "number" || typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  }
+  if (typeof value !== "object") return null;
+  for (const key of ["credits", "credit", "balance", "remainCredits", "remainingCredits", "remain", "amount", "value"]) {
+    const parsed = Number(value[key]);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return null;
+}
+
+function formatGrsCredits(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "--";
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: Number.isInteger(amount) ? 0 : 4
+  });
+}
+
 function parseDataUrl(value) {
   const match = String(value || "").trim().match(/^data:([^;,]+)?;base64,(.+)$/i);
   if (!match) return null;
@@ -614,6 +637,39 @@ function resolveAspectRatio(model, value) {
   if (capabilities.aspectRatios.includes(text)) return text;
   if (text && capabilities.allowCustomAspectRatio) return text;
   return capabilities.defaultAspectRatio;
+}
+
+export async function fetchThirdPartyGrsAccountStatus(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const config = payload.config && typeof payload.config === "object" ? payload.config : {};
+  const apiKey = String(payload.apiKey || config.apiKey || "").trim();
+  const apiUrl = resolveGrsApiUrl(payload);
+  if (!apiKey) throw new Error("请先在第三方支持中配置 GRS API Key");
+
+  const endpoint = `${getGrsHost(apiUrl)}/client/common/getCredits?apikey=${encodeURIComponent(apiKey)}`;
+  const { json, rawText } = await fetchJson(
+    endpoint,
+    { method: "GET", headers: { Accept: "application/json" } },
+    Math.max(5000, Number(payload.timeoutMs) || 15000)
+  );
+  const credits = findFiniteCreditValue(json && json.data != null ? json.data : json);
+  if (credits === null) {
+    throw new Error(extractApiError(json, rawText) || "GRS 未返回可识别的积分余额");
+  }
+  return {
+    ok: true,
+    provider: "grs",
+    apiUrl,
+    balance: credits,
+    used: null,
+    currency: "CREDITS",
+    unit: "积分",
+    balanceDisplay: formatGrsCredits(credits),
+    secondaryLabel: "单位",
+    secondaryDisplay: "积分",
+    updatedAt: Date.now(),
+    source: "grs-api-key-credits"
+  };
 }
 
 function resolveResolution(model, value) {

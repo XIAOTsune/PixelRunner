@@ -17,7 +17,7 @@ import {
 import { ensureDeps } from "./photoshop/deps.js";
 
 const geminiTaskControllers = new Map();
-const geminiImmediateResults = new Map();
+const geminiTaskResults = new Map();
 const GEMINI_RESULT_TTL_MS = 30 * 60 * 1000;
 const MAX_DATA_URL_FALLBACK_LENGTH = 8 * 1024 * 1024;
 
@@ -129,7 +129,11 @@ async function fetchGeminiJson(request, options = {}) {
       error.code = failure.code;
       throw error;
     }
-    return { json, rawText };
+    return {
+      json,
+      rawText,
+      requestId: String(response.headers && response.headers.get("x-oneapi-request-id") || "").trim()
+    };
   } catch (error) {
     if (error && error.code) throw error;
     const cancelled = Boolean(controller && controller.signal.aborted && !timedOut);
@@ -144,9 +148,13 @@ async function fetchGeminiJson(request, options = {}) {
 
 function cleanupExpiredResults() {
   const now = Date.now();
-  for (const [taskId, result] of geminiImmediateResults.entries()) {
-    if (now - Number(result.createdAt || 0) > GEMINI_RESULT_TTL_MS) geminiImmediateResults.delete(taskId);
+  for (const [taskId, result] of geminiTaskResults.entries()) {
+    if (now - Number(result.createdAt || 0) > GEMINI_RESULT_TTL_MS) geminiTaskResults.delete(taskId);
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
 function getImageFileExtension(mimeType) {
@@ -182,6 +190,160 @@ function getConfig(payload) {
   return payload && payload.config && typeof payload.config === "object" ? payload.config : {};
 }
 
+function getApiBaseUrl(payload) {
+  const config = getConfig(payload);
+  return String(config.apiUrl || payload && payload.apiUrl || "").trim().replace(/\/+$/, "");
+}
+
+function normalizeNewApiCurrencyConfig(value) {
+  const data = value && value.data && typeof value.data === "object" ? value.data : value && typeof value === "object" ? value : {};
+  const type = ["USD", "CNY", "TOKENS", "CUSTOM"].includes(String(data.quota_display_type || "").toUpperCase())
+    ? String(data.quota_display_type).toUpperCase()
+    : "USD";
+  return {
+    type,
+    quotaPerUnit: Math.max(1, Number(data.quota_per_unit) || 500000),
+    usdExchangeRate: Math.max(0.000001, Number(data.usd_exchange_rate) || 1),
+    customExchangeRate: Math.max(0.000001, Number(data.custom_currency_exchange_rate) || 1),
+    customSymbol: String(data.custom_currency_symbol || "¤").trim() || "¤"
+  };
+}
+
+function convertNewApiQuota(rawQuota, currencyConfig) {
+  const raw = Number(rawQuota);
+  if (!Number.isFinite(raw)) return null;
+  if (currencyConfig.type === "TOKENS") return raw;
+  const usd = raw / currencyConfig.quotaPerUnit;
+  if (currencyConfig.type === "CNY") return usd * currencyConfig.usdExchangeRate;
+  if (currencyConfig.type === "CUSTOM") return usd * currencyConfig.customExchangeRate;
+  return usd;
+}
+
+function getNewApiCurrencyMeta(currencyConfig) {
+  if (currencyConfig.type === "CNY") return { currency: "CNY", symbol: "¥", unit: "CNY" };
+  if (currencyConfig.type === "TOKENS") return { currency: "TOKENS", symbol: "", unit: "Tokens" };
+  if (currencyConfig.type === "CUSTOM") return { currency: "CUSTOM", symbol: currencyConfig.customSymbol, unit: currencyConfig.customSymbol };
+  return { currency: "USD", symbol: "$", unit: "USD" };
+}
+
+function formatNewApiAmount(value, currencyConfig, options = {}) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "--";
+  const meta = getNewApiCurrencyMeta(currencyConfig);
+  if (currencyConfig.type === "TOKENS") return `${Math.round(amount).toLocaleString("en-US")} ${meta.unit}`;
+  const digits = Math.abs(amount) >= 1 ? 2 : 4;
+  const normalized = amount.toFixed(digits).replace(/\.?0+$/, "");
+  const prefix = options.negative && amount > 0 ? "-" : "";
+  return currencyConfig.type === "CUSTOM" ? `${prefix}${meta.symbol} ${normalized}` : `${prefix}${meta.symbol}${normalized}`;
+}
+
+async function fetchNewApiJson(apiUrl, path, apiKey = "", timeoutMs = 15000) {
+  const headers = { Accept: "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const { json } = await fetchGeminiJson({
+    url: `${String(apiUrl || "").replace(/\/+$/, "")}${path}`,
+    options: { method: "GET", headers }
+  }, { timeoutMs });
+  return json;
+}
+
+async function getNewApiCurrencyConfig(apiUrl, timeoutMs = 15000) {
+  const status = await fetchNewApiJson(apiUrl, "/api/status", "", timeoutMs);
+  return normalizeNewApiCurrencyConfig(status);
+}
+
+export async function fetchThirdPartyGeminiAccountStatus(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const config = getConfig(payload);
+  const apiUrl = getApiBaseUrl(payload);
+  const apiKey = String(config.apiKey || payload.apiKey || "").trim();
+  if (!apiUrl) throw new Error("当前第三方渠道缺少 API 地址");
+  if (!apiKey) throw new Error("请先配置当前第三方渠道的 API Key");
+
+  const timeoutMs = getTimeoutMs(payload, 15000);
+  const [currencyConfig, usage] = await Promise.all([
+    getNewApiCurrencyConfig(apiUrl, timeoutMs),
+    fetchNewApiJson(apiUrl, "/api/usage/token/", apiKey, timeoutMs)
+  ]);
+  const usageData = usage && usage.data && typeof usage.data === "object" ? usage.data : null;
+  if (!usageData || usage.code === false || usage.success === false) {
+    throw new Error(String(usage && usage.message || "渠道未返回可用的额度信息"));
+  }
+
+  const unlimited = usageData.unlimited_quota === true;
+  const balance = convertNewApiQuota(usageData.total_available, currencyConfig);
+  const used = convertNewApiQuota(usageData.total_used, currencyConfig);
+  const total = convertNewApiQuota(usageData.total_granted, currencyConfig);
+  const currencyMeta = getNewApiCurrencyMeta(currencyConfig);
+  return {
+    ok: true,
+    provider: "gemini",
+    channelId: String(config.channelId || payload.channelId || "").trim(),
+    apiUrl,
+    balance: unlimited ? null : balance,
+    used,
+    total,
+    unlimited,
+    currency: currencyMeta.currency,
+    unit: currencyMeta.unit,
+    balanceDisplay: unlimited ? "不限" : formatNewApiAmount(balance, currencyConfig),
+    usedDisplay: formatNewApiAmount(used, currencyConfig),
+    totalDisplay: unlimited ? "不限" : formatNewApiAmount(total, currencyConfig),
+    updatedAt: Date.now(),
+    source: "newapi-token-usage"
+  };
+}
+
+function getLogQuota(log) {
+  if (!log || typeof log !== "object") return null;
+  let other = log.other;
+  if (typeof other === "string") other = parseJsonSafe(other);
+  const value = other && other.fee_quota != null ? other.fee_quota : log.quota;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export async function fetchThirdPartyGeminiTaskCharge(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const config = getConfig(payload);
+  const apiUrl = getApiBaseUrl(payload);
+  const apiKey = String(config.apiKey || payload.apiKey || "").trim();
+  const requestId = String(payload.providerRequestId || payload.requestId || "").trim();
+  if (!apiUrl || !apiKey || !requestId) return { ok: false, chargePending: true };
+
+  const timeoutMs = getTimeoutMs(payload, 15000);
+  const [currencyConfig, response] = await Promise.all([
+    getNewApiCurrencyConfig(apiUrl, timeoutMs),
+    fetchNewApiJson(apiUrl, "/api/log/token", apiKey, timeoutMs)
+  ]);
+  const logs = Array.isArray(response && response.data) ? response.data : [];
+  const matched = logs.find((item) => String(item && item.request_id || "").trim() === requestId);
+  const rawCharge = getLogQuota(matched);
+  if (rawCharge === null) return { ok: false, chargePending: true, providerRequestId: requestId };
+  const charge = convertNewApiQuota(rawCharge, currencyConfig);
+  return {
+    ok: true,
+    charge,
+    balanceCharge: charge,
+    coinsCharge: null,
+    chargeDisplay: formatNewApiAmount(charge, currencyConfig, { negative: true }),
+    providerRequestId: requestId,
+    source: "newapi-consumption-log"
+  };
+}
+
+async function decorateGeminiResultWithCharge(result, payload) {
+  if (!result || result.chargeDisplay || !result.providerRequestId) return result;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const charge = await fetchThirdPartyGeminiTaskCharge([{ ...payload, providerRequestId: result.providerRequestId }]);
+      if (charge && charge.ok) return { ...result, ...charge };
+    } catch (_) {}
+    if (attempt < 2) await sleep(350 * (attempt + 1));
+  }
+  return result;
+}
+
 export async function submitThirdPartyGeminiTask(args = []) {
   cleanupExpiredResults();
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
@@ -194,73 +356,106 @@ export async function submitThirdPartyGeminiTask(args = []) {
   if (!model) throw new Error("请先选择 Gemini 生图模型");
   if (!prompt) throw new Error("请先填写提示词");
 
-  const images = [];
-  for (const value of [inputs.mainImage, inputs.referenceImage]) {
-    const image = await imageValueToInlineData(value);
-    if (image) images.push(image);
-  }
-
-  const requestId = String(payload.requestId || `gemini-request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const taskId = `gemini-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-  if (controller) geminiTaskControllers.set(requestId, controller);
-  try {
-    const request = buildGeminiGenerateRequest({
-      apiUrl: config.apiUrl,
-      apiKey,
-      model,
-      prompt,
-      images,
-      aspectRatio: inputs.aspectRatio,
-      resolution: inputs.resolution,
-      responseModalities: ["TEXT", "IMAGE"]
-    });
-    const { json } = await fetchGeminiJson(request, { controller, timeoutMs: getTimeoutMs(payload) });
-    const parsed = parseGeminiImageResponse(json);
-    if (!parsed.image) {
-      const failure = normalizeGeminiFailure({ json });
-      if (failure.code === "safety") throw new Error(failure.message);
-      const returnedText = parseGeminiTextResponse(json);
-      throw new Error(`Gemini 未返回图片${returnedText ? `：${returnedText.slice(0, 240)}` : ""}`);
+  const createdAt = Date.now();
+  if (controller) geminiTaskControllers.set(taskId, controller);
+  geminiTaskResults.set(taskId, { ok: true, taskId, status: "RUNNING", stillRunning: true, model, createdAt });
+
+  void (async () => {
+    try {
+      const images = [];
+      for (const value of [inputs.mainImage, inputs.referenceImage]) {
+        const image = await imageValueToInlineData(value);
+        if (image) images.push(image);
+      }
+      const request = buildGeminiGenerateRequest({
+        apiUrl: config.apiUrl,
+        apiKey,
+        model,
+        prompt,
+        images,
+        aspectRatio: inputs.aspectRatio,
+        resolution: inputs.resolution,
+        responseModalities: ["TEXT", "IMAGE"]
+      });
+      const { json, requestId } = await fetchGeminiJson(request, { controller, timeoutMs: getTimeoutMs(payload) });
+      const parsed = parseGeminiImageResponse(json);
+      if (!parsed.image) {
+        const failure = normalizeGeminiFailure({ json });
+        if (failure.code === "safety") throw new Error(failure.message);
+        const returnedText = parseGeminiTextResponse(json);
+        throw new Error(`Gemini 未返回图片${returnedText ? `：${returnedText.slice(0, 240)}` : ""}`);
+      }
+      const delivery = await createGeminiDelivery(parsed.image, taskId);
+      geminiTaskResults.set(taskId, {
+        ok: true,
+        taskId,
+        status: "SUCCEEDED",
+        stillRunning: false,
+        outputUrl: "",
+        dataUrl: delivery.dataUrl,
+        filePath: delivery.filePath,
+        mimeType: delivery.mimeType,
+        byteLength: delivery.byteLength,
+        delivery: delivery.delivery,
+        providerRequestId: requestId,
+        model,
+        createdAt,
+        finishedAt: Date.now()
+      });
+    } catch (error) {
+      const cancelled = Boolean(controller && controller.signal.aborted) || String(error && error.code || "") === "cancelled";
+      geminiTaskResults.set(taskId, {
+        ok: false,
+        taskId,
+        status: cancelled ? "CANCELLED" : "FAILED",
+        failed: true,
+        stillRunning: false,
+        message: cancelled ? "Gemini 任务已取消" : String(error && error.message || error || "Gemini 任务执行失败"),
+        model,
+        createdAt,
+        finishedAt: Date.now()
+      });
+    } finally {
+      geminiTaskControllers.delete(taskId);
     }
-    const taskId = `gemini-immediate-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const delivery = await createGeminiDelivery(parsed.image, taskId);
-    const result = {
-      ok: true,
-      taskId,
-      status: "SUCCEEDED",
-      outputUrl: "",
-      dataUrl: delivery.dataUrl,
-      filePath: delivery.filePath,
-      mimeType: delivery.mimeType,
-      byteLength: delivery.byteLength,
-      delivery: delivery.delivery,
-      createdAt: Date.now()
-    };
-    geminiImmediateResults.set(taskId, result);
-    return { ...result, immediate: true };
-  } finally {
-    geminiTaskControllers.delete(requestId);
-  }
+  })();
+
+  return { ok: true, taskId, status: "RUNNING", stillRunning: true, immediate: false };
 }
 
-function getImmediateResult(taskId) {
+function getGeminiTaskResult(taskId) {
   cleanupExpiredResults();
-  const result = geminiImmediateResults.get(taskId);
-  if (!result) return null;
-  return { ...result, ok: true, status: "SUCCEEDED" };
+  const result = geminiTaskResults.get(taskId);
+  return result ? { ...result } : null;
 }
 
 export async function pollThirdPartyGeminiTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const taskId = String(payload.taskId || "").trim();
   if (!taskId) throw new Error("Gemini taskId is missing");
-  const result = getImmediateResult(taskId);
-  if (result) return result;
-  return { ok: false, taskId, status: "NOT_FOUND", failed: true, stillRunning: false, message: "Gemini 本地结果已过期或不存在" };
+  const timeoutMs = getTimeoutMs(payload);
+  const pollIntervalMs = Math.max(250, Number(payload.settings && payload.settings.pollInterval || 2) * 1000);
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const result = getGeminiTaskResult(taskId);
+    if (!result) return { ok: false, taskId, status: "NOT_FOUND", failed: true, stillRunning: false, message: "Gemini 本地任务已过期或不存在" };
+    if (!result.stillRunning && String(result.status || "").toUpperCase() !== "RUNNING") {
+      return decorateGeminiResultWithCharge(result, payload);
+    }
+    await sleep(pollIntervalMs);
+  }
+  return { ok: false, taskId, status: "RUNNING", timedOut: true, stillRunning: true, message: "Gemini 任务仍在运行" };
 }
 
 export async function fetchThirdPartyGeminiTaskStatus(args = []) {
-  return pollThirdPartyGeminiTask(args);
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const taskId = String(payload.taskId || "").trim();
+  if (!taskId) throw new Error("Gemini taskId is missing");
+  const result = getGeminiTaskResult(taskId);
+  if (!result) return { ok: false, taskId, status: "NOT_FOUND", failed: true, stillRunning: false, message: "Gemini 本地任务已过期或不存在" };
+  return result.stillRunning ? result : decorateGeminiResultWithCharge(result, payload);
 }
 
 export async function cancelThirdPartyGeminiTask(args = []) {
@@ -274,8 +469,19 @@ export async function cancelThirdPartyGeminiTask(args = []) {
     } catch (_) {}
     geminiTaskControllers.delete(taskId);
   }
-  const removedImmediateResult = geminiImmediateResults.delete(taskId);
-  return { ok: true, taskId, localRequestCancelled: Boolean(controller), removedImmediateResult, remoteCancelled: false };
+  const current = getGeminiTaskResult(taskId);
+  geminiTaskResults.set(taskId, {
+    ...(current || {}),
+    ok: false,
+    taskId,
+    status: "CANCELLED",
+    failed: true,
+    stillRunning: false,
+    message: "Gemini 任务已取消",
+    createdAt: Number(current && current.createdAt) || Date.now(),
+    finishedAt: Date.now()
+  });
+  return { ok: true, taskId, localRequestCancelled: Boolean(controller), removedImmediateResult: false, remoteCancelled: false };
 }
 
 export async function listThirdPartyGeminiModels(args = []) {
