@@ -130,6 +130,17 @@ import {
     glass: false
   };
 
+  const THEME_PRESET_NAMES = Object.freeze([
+    "classic",
+    "aurora",
+    "graphite",
+    "rose",
+    "studio",
+    "minimal",
+    "mist",
+    "focus"
+  ]);
+
   const DEFAULT_TEMPLATE_CATEGORY_ID = "default";
   const DEFAULT_TEMPLATE_CATEGORY_NAME = "默认分类";
 
@@ -223,11 +234,11 @@ import {
 
   function normalizeTheme(theme) {
     const source = theme && typeof theme === "object" ? theme : {};
-    const preset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.preset || ""))
+    const preset = THEME_PRESET_NAMES.includes(String(source.preset || ""))
       ? String(source.preset)
       : DEFAULT_THEME.preset;
     const customImage = String(source.customImage || "").trim();
-    const basePreset = ["classic", "aurora", "graphite", "rose", "studio"].includes(String(source.basePreset || ""))
+    const basePreset = THEME_PRESET_NAMES.includes(String(source.basePreset || ""))
       ? String(source.basePreset)
       : preset;
     return {
@@ -788,6 +799,7 @@ import {
     THIRD_PARTY_APP_ID,
     GENERATIVE_FILL_APP_ID,
     DEFAULT_THEME,
+    THEME_PRESET_NAMES,
     DEFAULT_TEMPLATE_CATEGORY_ID,
     DEFAULT_TEMPLATE_CATEGORY_NAME,
     state,

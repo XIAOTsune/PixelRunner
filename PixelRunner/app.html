@@ -503,21 +503,30 @@
           <details class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">主题设置</summary>
             <div class="form-stack collapsible-body">
-              <div class="theme-preset-grid" id="themePresetGrid">
-                <button class="theme-swatch is-selected" type="button" data-theme-preset="classic">
-                  <span style="background:#63d67b"></span><strong>经典</strong>
+              <div class="theme-preset-grid" id="themePresetGrid" role="group" aria-label="界面主题">
+                <button class="theme-swatch is-selected" type="button" data-theme-preset="classic" aria-pressed="true">
+                  <span style="--swatch-surface:#263746;--swatch-accent:#63d67b"></span><strong>经典</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="aurora">
-                  <span style="background:#74d8c7"></span><strong>极光</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="aurora" aria-pressed="false">
+                  <span style="--swatch-surface:#17424b;--swatch-accent:#74d8c7"></span><strong>极光</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="graphite">
-                  <span style="background:#9ab0c6"></span><strong>石墨</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="graphite" aria-pressed="false">
+                  <span style="--swatch-surface:#2a333d;--swatch-accent:#9ab0c6"></span><strong>石墨</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="rose">
-                  <span style="background:#ff9bb4"></span><strong>玫瑰</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="rose" aria-pressed="false">
+                  <span style="--swatch-surface:#422e48;--swatch-accent:#ff9bb4"></span><strong>玫瑰</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="studio">
-                  <span style="background:#ffd56a"></span><strong>影棚</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="studio" aria-pressed="false">
+                  <span style="--swatch-surface:#36392f;--swatch-accent:#ffd56a"></span><strong>影棚</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="minimal" aria-pressed="false">
+                  <span style="--swatch-surface:#202125;--swatch-accent:#e4e5e8"></span><strong>极简黑</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="mist" aria-pressed="false">
+                  <span style="--swatch-surface:#293136;--swatch-accent:#9fc7bd"></span><strong>雾银</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="focus" aria-pressed="false">
+                  <span style="--swatch-surface:#1d2123;--swatch-accent:#d9b46c"></span><strong>专注</strong>
                 </button>
               </div>
               <label class="field">

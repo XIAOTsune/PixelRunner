@@ -520,8 +520,157 @@
     });
   }
 
+  const DARK_THEME_TOKENS = {
+    "--border": "rgba(169, 194, 214, 0.14)",
+    "--border-strong": "rgba(169, 194, 214, 0.26)",
+    "--text": "#d8e5f0",
+    "--text-strong": "#f6fbf8",
+    "--muted": "#9eb0bf",
+    "--muted-soft": "#8092a3"
+  };
+
+  const LEGACY_THEME_STYLE = {
+    "--app-background": "radial-gradient(circle at 0% 0%, var(--accent-soft), transparent 22%), radial-gradient(circle at 92% 8%, var(--accent-wash), transparent 24%), linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 30%, var(--bg-bottom) 100%)",
+    "--chrome-border-width": "2px",
+    "--chrome-shadow": "0 3px 0 rgba(20, 27, 36, 0.42)",
+    "--control-radius": "13px",
+    "--control-border-width": "2px",
+    "--control-shadow-offset": "3px 4px 0",
+    "--control-sheen": "linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03) 52%, rgba(255, 255, 255, 0))",
+    "--control-hover-transform": "translateY(-1px)",
+    "--control-hover-shadow-offset": "0 5px 0",
+    "--control-active-transform": "translateY(2px)",
+    "--control-active-shadow-offset": "0 2px 0",
+    "--control-disabled-shadow": "1px 1px 0 rgba(44, 61, 80, 0.5)",
+    "--nav-radius": "12px",
+    "--nav-tab-radius": "9px",
+    "--layout-gap": "6px",
+    "--workspace-section-gap": "12px",
+    "--surface-card-padding": "6px 8px 7px",
+    "--surface-card-decoration": "linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0))",
+    "--joined-card-radius": "14px",
+    "--field-radius": "12px",
+    "--field-border-width": "2px",
+    "--field-shadow": "2px 3px 0 rgba(29, 40, 54, 0.72)",
+    "--field-focus-transform": "translate(-1px, -1px)",
+    "--field-focus-shadow": "0 0 0 2px rgba(143, 216, 195, 0.08), 3px 4px 0 rgba(29, 40, 54, 0.78)",
+    "--workspace-card-gap": "10px",
+    "--workspace-card-padding": "10px 12px 12px",
+    "--workspace-card-radius": "18px",
+    "--workspace-card-border": "1px solid rgba(92, 117, 140, 0.58)",
+    "--workspace-card-background": "linear-gradient(180deg, rgba(var(--surface-rgb), var(--surface-alpha)) 0%, rgba(var(--surface-soft-rgb), var(--surface-soft-alpha)) 100%)",
+    "--workspace-card-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(25, 36, 48, 0.5)",
+    "--item-border-width": "2px",
+    "--item-shadow": "2px 3px 0 var(--control-edge)",
+    "--item-hover-transform": "translateY(-1px)",
+    "--item-hover-shadow": "0 4px 0 var(--cta-strong)",
+    "--radius-xl": "16px",
+    "--radius-lg": "12px",
+    "--radius-md": "10px",
+    "--radius-sm": "8px"
+  };
+
+  const MINIMAL_THEME_STYLE = {
+    "--app-background": "linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 52%, var(--bg-bottom) 100%)",
+    "--chrome-border-width": "1px",
+    "--chrome-shadow": "none",
+    "--control-radius": "6px",
+    "--control-border-width": "1px",
+    "--control-shadow-offset": "0 0 0",
+    "--control-sheen": "none",
+    "--control-hover-transform": "none",
+    "--control-hover-shadow-offset": "0 0 0",
+    "--control-active-transform": "none",
+    "--control-active-shadow-offset": "0 0 0",
+    "--control-disabled-shadow": "none",
+    "--nav-radius": "8px",
+    "--nav-tab-radius": "6px",
+    "--layout-gap": "5px",
+    "--workspace-section-gap": "9px",
+    "--surface-card-padding": "6px 8px",
+    "--surface-card-decoration": "none",
+    "--joined-card-radius": "8px",
+    "--field-radius": "6px",
+    "--field-border-width": "1px",
+    "--field-shadow": "none",
+    "--field-focus-transform": "none",
+    "--field-focus-shadow": "0 0 0 2px var(--accent-soft)",
+    "--workspace-card-gap": "8px",
+    "--workspace-card-padding": "9px 10px 10px",
+    "--workspace-card-radius": "8px",
+    "--workspace-card-border": "1px solid var(--border-strong)",
+    "--workspace-card-background": "rgba(var(--surface-rgb), var(--surface-alpha))",
+    "--workspace-card-shadow": "none",
+    "--item-border-width": "1px",
+    "--item-shadow": "none",
+    "--item-hover-transform": "none",
+    "--item-hover-shadow": "none",
+    "--radius-xl": "8px",
+    "--radius-lg": "8px",
+    "--radius-md": "6px",
+    "--radius-sm": "6px"
+  };
+
+  const MATTE_THEME_STYLE = {
+    ...MINIMAL_THEME_STYLE,
+    "--app-background": "radial-gradient(circle at 50% 0%, rgba(159, 199, 189, 0.08), transparent 30%), linear-gradient(180deg, var(--bg-top), var(--bg-bottom))",
+    "--chrome-shadow": "0 4px 14px rgba(0, 0, 0, 0.16)",
+    "--control-radius": "8px",
+    "--control-shadow-offset": "0 2px 6px",
+    "--control-hover-shadow-offset": "0 3px 9px",
+    "--nav-radius": "10px",
+    "--nav-tab-radius": "8px",
+    "--layout-gap": "6px",
+    "--workspace-section-gap": "10px",
+    "--joined-card-radius": "10px",
+    "--field-radius": "8px",
+    "--field-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.025)",
+    "--workspace-card-gap": "9px",
+    "--workspace-card-padding": "10px 11px",
+    "--workspace-card-radius": "10px",
+    "--workspace-card-shadow": "0 6px 18px rgba(0, 0, 0, 0.14)",
+    "--item-shadow": "0 1px 2px rgba(0, 0, 0, 0.18)",
+    "--item-hover-shadow": "0 3px 9px rgba(0, 0, 0, 0.18)",
+    "--radius-xl": "10px",
+    "--radius-lg": "10px",
+    "--radius-md": "8px",
+    "--radius-sm": "7px"
+  };
+
+  const FOCUS_THEME_STYLE = {
+    ...MINIMAL_THEME_STYLE,
+    "--control-radius": "3px",
+    "--nav-radius": "4px",
+    "--nav-tab-radius": "3px",
+    "--layout-gap": "4px",
+    "--workspace-section-gap": "7px",
+    "--surface-card-padding": "5px 7px",
+    "--joined-card-radius": "4px",
+    "--field-radius": "3px",
+    "--workspace-card-gap": "6px",
+    "--workspace-card-padding": "7px 8px 8px",
+    "--workspace-card-radius": "4px",
+    "--radius-xl": "4px",
+    "--radius-lg": "4px",
+    "--radius-md": "3px",
+    "--radius-sm": "3px"
+  };
+
+  const THEME_PRESET_LABELS = {
+    classic: "经典",
+    aurora: "极光",
+    graphite: "石墨",
+    rose: "玫瑰",
+    studio: "影棚",
+    minimal: "极简黑",
+    mist: "雾银",
+    focus: "专注"
+  };
+
   const THEME_PRESETS = {
     classic: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#111822",
       "--bg-mid": "#18212d",
       "--bg-bottom": "#0c1219",
@@ -546,6 +695,8 @@
       "--cta-strong": "#8ac6df"
     },
     aurora: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#0b1a20",
       "--bg-mid": "#14333b",
       "--bg-bottom": "#081318",
@@ -570,6 +721,8 @@
       "--cta-strong": "#dbb95f"
     },
     graphite: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#12151a",
       "--bg-mid": "#202832",
       "--bg-bottom": "#0b0e13",
@@ -594,6 +747,8 @@
       "--cta-strong": "#b7c7d5"
     },
     rose: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#1d1420",
       "--bg-mid": "#302234",
       "--bg-bottom": "#120d16",
@@ -618,6 +773,8 @@
       "--cta-strong": "#7dd3c4"
     },
     studio: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#17171a",
       "--bg-mid": "#252823",
       "--bg-bottom": "#101111",
@@ -640,6 +797,102 @@
       "--accent-wash": "rgba(255, 213, 106, 0.1)",
       "--cta": "#8fd6ff",
       "--cta-strong": "#65bce9"
+    },
+    minimal: {
+      ...DARK_THEME_TOKENS,
+      ...MINIMAL_THEME_STYLE,
+      "--bg-top": "#111214",
+      "--bg-mid": "#141518",
+      "--bg-bottom": "#0d0e10",
+      "--panel": "#191a1e",
+      "--panel-soft": "#202125",
+      "--panel-strong": "#292a2f",
+      "--ink": "#34363c",
+      "--surface-rgb": "27, 28, 32",
+      "--surface-soft-rgb": "33, 34, 39",
+      "--control-rgb": "49, 50, 56",
+      "--control-edge": "#42444c",
+      "--control-ink": "#111216",
+      "--surface-alpha": "0.98",
+      "--surface-soft-alpha": "0.94",
+      "--surface-glass-alpha": "0.68",
+      "--theme-image-overlay": "rgba(7, 8, 10, 0.52)",
+      "--border": "rgba(235, 236, 240, 0.1)",
+      "--border-strong": "rgba(235, 236, 240, 0.18)",
+      "--text": "#dddfe3",
+      "--text-strong": "#f5f5f6",
+      "--muted": "#9b9da4",
+      "--muted-soft": "#767982",
+      "--accent": "#e4e5e8",
+      "--accent-strong": "#c8cad0",
+      "--accent-soft": "rgba(228, 229, 232, 0.14)",
+      "--accent-wash": "rgba(228, 229, 232, 0.07)",
+      "--cta": "#b9bcc4",
+      "--cta-strong": "#9397a1"
+    },
+    mist: {
+      ...DARK_THEME_TOKENS,
+      ...MATTE_THEME_STYLE,
+      "--bg-top": "#171b1e",
+      "--bg-mid": "#1b2024",
+      "--bg-bottom": "#121518",
+      "--panel": "#20262a",
+      "--panel-soft": "#293136",
+      "--panel-strong": "#343e44",
+      "--ink": "#3d494f",
+      "--surface-rgb": "32, 38, 42",
+      "--surface-soft-rgb": "41, 49, 54",
+      "--control-rgb": "57, 67, 73",
+      "--control-edge": "#4d5a61",
+      "--control-ink": "#10201d",
+      "--surface-alpha": "0.97",
+      "--surface-soft-alpha": "0.92",
+      "--surface-glass-alpha": "0.66",
+      "--theme-image-overlay": "rgba(10, 15, 17, 0.48)",
+      "--border": "rgba(188, 207, 207, 0.12)",
+      "--border-strong": "rgba(188, 207, 207, 0.22)",
+      "--text": "#dce5e3",
+      "--text-strong": "#f2f7f5",
+      "--muted": "#9eacab",
+      "--muted-soft": "#7f8d8d",
+      "--accent": "#9fc7bd",
+      "--accent-strong": "#78aa9f",
+      "--accent-soft": "rgba(159, 199, 189, 0.16)",
+      "--accent-wash": "rgba(159, 199, 189, 0.08)",
+      "--cta": "#bdcbd2",
+      "--cta-strong": "#95aab4"
+    },
+    focus: {
+      ...DARK_THEME_TOKENS,
+      ...FOCUS_THEME_STYLE,
+      "--bg-top": "#0e1011",
+      "--bg-mid": "#121516",
+      "--bg-bottom": "#0a0c0d",
+      "--panel": "#151819",
+      "--panel-soft": "#1d2123",
+      "--panel-strong": "#272c2e",
+      "--ink": "#343a3d",
+      "--surface-rgb": "22, 25, 27",
+      "--surface-soft-rgb": "29, 33, 35",
+      "--control-rgb": "43, 48, 51",
+      "--control-edge": "#3b4245",
+      "--control-ink": "#16130c",
+      "--surface-alpha": "0.99",
+      "--surface-soft-alpha": "0.96",
+      "--surface-glass-alpha": "0.7",
+      "--theme-image-overlay": "rgba(5, 7, 8, 0.56)",
+      "--border": "rgba(220, 226, 224, 0.09)",
+      "--border-strong": "rgba(220, 226, 224, 0.17)",
+      "--text": "#d8dcda",
+      "--text-strong": "#f2f4f3",
+      "--muted": "#929b98",
+      "--muted-soft": "#717a78",
+      "--accent": "#d9b46c",
+      "--accent-strong": "#b8924d",
+      "--accent-soft": "rgba(217, 180, 108, 0.15)",
+      "--accent-wash": "rgba(217, 180, 108, 0.075)",
+      "--cta": "#9bbab4",
+      "--cta-strong": "#73978f"
     }
   };
 
@@ -733,6 +986,7 @@
     const presetName = normalized.preset === "custom" ? normalized.basePreset : normalized.preset;
     const preset = THEME_PRESETS[presetName] || THEME_PRESETS.classic;
     Object.entries(preset).forEach(([key, value]) => root.style.setProperty(key, value));
+    document.body.dataset.themePreset = presetName;
     document.body.classList.toggle("has-custom-theme-image", Boolean(normalized.customImage));
     document.body.classList.toggle("has-glass-theme", Boolean(normalized.glass));
     if (normalized.customImage) {
@@ -748,9 +1002,11 @@
     }
     modules.state.state.theme = normalized;
 
-    const swatches = document.querySelectorAll("[data-theme-preset]");
+    const swatches = document.querySelectorAll(".theme-swatch[data-theme-preset]");
     swatches.forEach((button) => {
-      button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === presetName);
+      const isSelected = String(button.getAttribute("data-theme-preset")) === presetName;
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
     });
     const statusEl = modules.runtime.getById("themeStatusSummary");
     if (statusEl) {
@@ -758,7 +1014,7 @@
         statusEl,
         normalized.customImage
           ? `自定义主题已启用：${normalized.customImageName || "背景照片"}，背景已写入界面皮肤。`
-          : `已启用${normalized.preset === "classic" ? "经典" : "预设"}主题。`,
+          : `已启用「${THEME_PRESET_LABELS[presetName] || "经典"}」主题。`,
         "success"
       );
     }
@@ -1434,7 +1690,7 @@
       });
     }
 
-    document.querySelectorAll("[data-theme-preset]").forEach((button) => {
+    document.querySelectorAll(".theme-swatch[data-theme-preset]").forEach((button) => {
       button.addEventListener("click", async () => {
         const preset = String(button.getAttribute("data-theme-preset") || "classic");
         try {
