@@ -548,10 +548,9 @@
     const runtime = modules.runtime;
     if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
     if (modules.state.isThirdPartyApp(app)) {
-      const grs = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.grs ? modules.state.state.thirdPartySettings.grs : {};
-      const region = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
-      const selectedModel = modules.state.state.formValues?.model || grs.selectedModel || "未选择模型";
-      return `<div class="workspace-app-summary workspace-third-party-summary"><div class="workspace-third-party-copy"><div class="workspace-app-name">第三方 API</div><span class="workspace-quick-count">GRS · ${runtime.escapeHtml(region.label)} · ${runtime.escapeHtml(String(selectedModel))}</span></div><button class="mini-btn workspace-third-party-settings-btn" type="button" data-action="open-third-party-settings" title="打开第三方设置" aria-label="打开第三方设置"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.4 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2V9.55h.3A1.7 1.7 0 0 0 4 8.4a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.46 3.6l.06.06A1.7 1.7 0 0 0 8.4 4a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 9.8 2.3V2h4.05v.3A1.7 1.7 0 0 0 15 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.4a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.3v4.05h-.3A1.7 1.7 0 0 0 19.4 15Z"></path></svg></button></div>`;
+      const descriptor = modules.state.getThirdPartyProviderDescriptor();
+      const selectedModel = modules.state.state.formValues?.model || descriptor.config.selectedModel || "未选择模型";
+      return `<div class="workspace-app-summary workspace-third-party-summary"><div class="workspace-third-party-copy"><div class="workspace-app-name">第三方 API</div><span class="workspace-quick-count">${runtime.escapeHtml(descriptor.shortLabel)} · ${runtime.escapeHtml(String(selectedModel))}</span></div><button class="mini-btn workspace-third-party-settings-btn" type="button" data-action="open-third-party-settings" title="打开第三方设置" aria-label="打开第三方设置"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.4 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2V9.55h.3A1.7 1.7 0 0 0 4 8.4a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.46 3.6l.06.06A1.7 1.7 0 0 0 8.4 4a1.7 1.7 0 0 0 1-.6A1.7 1.7 0 0 0 9.8 2.3V2h4.05v.3A1.7 1.7 0 0 0 15 4a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.4a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.3v4.05h-.3A1.7 1.7 0 0 0 19.4 15Z"></path></svg></button></div>`;
     }
     return `<div class="workspace-app-summary"><div class="workspace-app-name">${runtime.escapeHtml(modules.state.getAppDisplayName(app))}</div></div>`;
   }
@@ -582,7 +581,11 @@
     if (isTaskTerminalStatus(task.status)) return false;
     if (isLocalQueuedTask(task)) return true;
     if (["placing", "downloading"].includes(String(task.status || "").trim().toLowerCase())) return false;
-    return Boolean(String(task.remoteTaskId || task.taskId || "").trim()) && String(task.status || "").trim().toLowerCase() !== "submitting";
+    const status = String(task.status || "").trim().toLowerCase();
+    if (status === "submitting") {
+      return String(task.provider || "").trim() === "gemini" && Boolean(String(task.taskId || "").trim());
+    }
+    return Boolean(String(task.remoteTaskId || task.taskId || "").trim());
   }
 
   function isTaskDeletable(task) {
@@ -594,7 +597,14 @@
       task &&
       typeof task === "object" &&
       String(task.status || "").trim().toLowerCase() === "placement-failed" &&
-      String(task.outputUrl || "").trim()
+      hasResultReference(task)
+    );
+  }
+
+  function hasResultReference(value) {
+    return Boolean(
+      value &&
+      (String(value.outputUrl || value.url || "").trim() || String(value.dataUrl || "").trim() || String(value.filePath || "").trim())
     );
   }
 
@@ -682,13 +692,14 @@
   }
 
   function isNormalizedTaskFailureMessage(message) {
-    return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|(?:RunningHub|GRS) (?:返回任务状态异常|账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
+    return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|(?:RunningHub|GRS|Gemini) (?:返回任务状态异常|账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
       String(message || "").trim()
     );
   }
 
   function normalizeTaskFailureMessage(message, task = null) {
-    const providerLabel = isThirdPartyTaskRecord(task) ? "GRS" : "RunningHub";
+    const taskProvider = String(task && task.provider || "").trim();
+    const providerLabel = taskProvider === "gemini" ? "Gemini" : isThirdPartyTaskRecord(task) ? "GRS" : "RunningHub";
     const raw = compactTaskMessage(message, 500);
     const httpStatus = getTaskMessageHttpStatus(raw);
     const taskStatusErrorCode = getTaskStatusErrorCode(raw);
@@ -738,6 +749,7 @@
     if (!task || typeof task !== "object") return "";
     const explicitUrl = String(task.detailUrl || task.taskDetailUrl || task.recordUrl || "").trim();
     if (/^https?:\/\//i.test(explicitUrl)) return explicitUrl;
+    if (String(task.provider || "").trim() === "gemini") return "";
     if (isThirdPartyTaskRecord(task)) return GRS_CONSUMPTION_LOG_URL;
     const region = modules.state.normalizeRunningHubRegion(task.region);
     return RUNNINGHUB_TASK_DETAIL_URLS[region] || RUNNINGHUB_TASK_DETAIL_URLS.cn;
@@ -754,16 +766,18 @@
 
   function getTaskActionTitle(task) {
     if (!task || typeof task !== "object") return "打开详情";
+    if (String(task.provider || "").trim() === "gemini") return "Gemini 同步任务没有远端详情页";
     return isThirdPartyTaskRecord(task) ? "打开 GRS 消费记录" : "打开 RunningHub 任务详情";
   }
 
   function getTaskActionTargetName(task) {
     if (!task || typeof task !== "object") return "任务详情";
+    if (String(task.provider || "").trim() === "gemini") return "Gemini 任务详情";
     return isThirdPartyTaskRecord(task) ? "GRS 消费记录" : "RunningHub 任务详情";
   }
 
   function isThirdPartyTaskRecord(task) {
-    return Boolean(task && (String(task.provider || "").trim() === "grs" || String(task.appName || "").trim() === "第三方 API"));
+    return Boolean(task && (["grs", "gemini"].includes(String(task.provider || "").trim()) || String(task.appName || "").trim() === "第三方 API"));
   }
 
   function getActiveRunningTasks() {
@@ -1150,24 +1164,32 @@
 
   function shouldStopTrackingFromStatusResult(statusResult) {
     if (!statusResult || typeof statusResult !== "object") return false;
-    if (String(statusResult.outputUrl || "").trim()) return false;
+    if (hasResultReference(statusResult)) return false;
     if (statusResult.stillRunning || statusResult.failed) return false;
     return statusResult.ok === false;
   }
 
   function isThirdPartyRunPayload(payload) {
-    return Boolean(payload && String(payload.provider || "").trim() === "grs");
+    return Boolean(payload && ["grs", "gemini"].includes(String(payload.provider || "").trim()));
   }
 
   function getTaskProviderLabel(payload) {
+    if (String(payload && payload.provider || "").trim() === "gemini") {
+      return String(payload && payload.providerLabel || "Gemini").trim() || "Gemini";
+    }
     return isThirdPartyRunPayload(payload) ? "GRS" : "RunningHub";
+  }
+
+  function getThirdPartyHostMethod(payload, action) {
+    const provider = String(payload && payload.provider || "").trim() === "gemini" ? "gemini" : "grs";
+    return `thirdParty.${provider}.${action}`;
   }
 
   function buildTaskStatusRequest(taskId, payload) {
     const remoteTaskId = String(taskId || "").trim();
     if (isThirdPartyRunPayload(payload)) {
       return {
-        method: "thirdParty.grs.fetchTaskStatus",
+        method: getThirdPartyHostMethod(payload, "fetchTaskStatus"),
         args: [{
           ...payload,
           taskId: remoteTaskId,
@@ -1676,21 +1698,36 @@
     if (!modules.state.isThirdPartyApp(state.currentApp)) return;
     collectFormValuesFromDom();
     const snapshot = {
+      provider: String(state.thirdPartySettings && state.thirdPartySettings.provider || "grs"),
+      channelId: String(state.thirdPartySettings && state.thirdPartySettings.gemini && state.thirdPartySettings.gemini.channelId || ""),
       model: String(state.formValues.model || "").trim(),
       aspectRatio: String(state.formValues.aspectRatio || state.formValues.aspectRatioCustom || "").trim(),
       aspectRatioCustom: String(state.formValues.aspectRatioCustom || "").trim(),
       resolution: String(state.formValues.resolution || "").trim()
     };
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_LAST_SELECTION, JSON.stringify(snapshot));
-    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : null;
-    if (grs) {
-      grs.selectedModel = snapshot.model || grs.selectedModel;
-      grs.aspectRatio = snapshot.aspectRatio || grs.aspectRatio;
-      grs.resolution = snapshot.resolution || grs.resolution;
-      const thirdPartySettings = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
+    const normalizedCurrent = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
+    const descriptor = modules.state.getThirdPartyProviderDescriptor(normalizedCurrent);
+    const activeConfig = descriptor.config;
+    if (activeConfig) {
+      activeConfig.selectedModel = snapshot.model || activeConfig.selectedModel;
+      activeConfig.aspectRatio = snapshot.aspectRatio || activeConfig.aspectRatio;
+      activeConfig.resolution = snapshot.resolution || activeConfig.resolution;
+      if (descriptor.id === "gemini") {
+        normalizedCurrent.gemini.channels[normalizedCurrent.gemini.channelId] = { ...activeConfig };
+      } else {
+        normalizedCurrent.grs = { ...normalizedCurrent.grs, ...activeConfig };
+      }
+      const thirdPartySettings = modules.state.normalizeThirdPartySettings(normalizedCurrent);
       state.thirdPartySettings = thirdPartySettings;
       await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdPartySettings));
       await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdPartySettings.grs.apiKey || "");
+      await modules.runtime.storageSetItem(
+        modules.state.STORAGE_KEYS.THIRD_PARTY_GEMINI_API_KEYS,
+        JSON.stringify(Object.fromEntries(
+          Object.entries(thirdPartySettings.gemini.channels || {}).map(([channelId, config]) => [channelId, String(config && config.apiKey || "")])
+        ))
+      );
     }
   }
 
@@ -1735,18 +1772,24 @@
 
   function buildThirdPartyRunPayload() {
     const state = modules.state.state;
-    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
-    const region = modules.state.normalizeGrsRegion(grs.region, grs.apiUrl);
-    const apiUrl = modules.state.getGrsApiUrl(region);
+    const normalized = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
+    state.thirdPartySettings = normalized;
+    const descriptor = modules.state.getThirdPartyProviderDescriptor(normalized);
+    const config = descriptor.config;
+    const isGemini = descriptor.id === "gemini";
+    const region = isGemini ? "" : modules.state.normalizeGrsRegion(config.region, config.apiUrl);
+    const apiUrl = isGemini ? descriptor.apiUrl : modules.state.getGrsApiUrl(region);
     const payload = {
-      provider: "grs",
-      adapter: grs.adapter || "grs-image-generate",
+      provider: descriptor.id,
+      providerLabel: descriptor.label,
+      channelId: descriptor.channelId,
+      adapter: isGemini ? "gemini-generate-content" : config.adapter || "grs-image-generate",
       region,
       apiUrl,
       appId: modules.state.THIRD_PARTY_APP_ID,
       appName: "第三方 API",
       app: state.currentApp,
-      apiKey: grs.apiKey || "",
+      apiKey: config.apiKey || "",
       inputs: normalizePayloadInputs(state.currentApp, state.formValues),
       settings: {
         pollInterval: state.settings.pollInterval,
@@ -1756,9 +1799,11 @@
       config: {
         region,
         apiUrl,
-        apiKey: grs.apiKey || "",
-        chatModel: grs.chatModel || "",
-        adapter: grs.adapter || "grs-image-generate"
+        apiKey: config.apiKey || "",
+        chatModel: config.chatModel || "",
+        selectedModel: config.selectedModel || "",
+        channelId: descriptor.channelId,
+        adapter: isGemini ? "gemini-generate-content" : config.adapter || "grs-image-generate"
       }
     };
     state.lastRunPayload = payload;
@@ -1815,6 +1860,8 @@
       failureCode: String(patch.failureCode || "").trim(),
       failureLabel: String(patch.failureLabel || "").trim(),
       outputUrl: hasOwn("outputUrl") ? String(patch.outputUrl || "").trim() : undefined,
+      dataUrl: hasOwn("dataUrl") ? String(patch.dataUrl || "").trim() : undefined,
+      filePath: hasOwn("filePath") ? String(patch.filePath || "").trim() : undefined,
       detailUrl: hasOwn("detailUrl") ? String(patch.detailUrl || "").trim() : undefined,
       sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
       createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
@@ -1846,6 +1893,8 @@
         chargeDisplay: nextTask.chargeDisplay !== undefined ? nextTask.chargeDisplay : current.chargeDisplay,
         accountSnapshot: nextTask.accountSnapshot !== undefined ? nextTask.accountSnapshot : current.accountSnapshot,
         outputUrl: nextTask.outputUrl !== undefined ? nextTask.outputUrl : current.outputUrl || "",
+        dataUrl: nextTask.dataUrl !== undefined ? nextTask.dataUrl : current.dataUrl || "",
+        filePath: nextTask.filePath !== undefined ? nextTask.filePath : current.filePath || "",
         detailUrl: nextTask.detailUrl !== undefined ? nextTask.detailUrl : current.detailUrl || "",
         createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
         submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
@@ -1984,7 +2033,9 @@
   async function finalizeTrackedTaskSuccess(taskId, payload, sourceDocument, statusResult) {
     const remoteTaskId = String(taskId || "").trim();
     const outputUrl = String((statusResult && statusResult.outputUrl) || "").trim();
-    if (!remoteTaskId || !outputUrl) return;
+    const dataUrl = String((statusResult && statusResult.dataUrl) || "").trim();
+    const filePath = String((statusResult && statusResult.filePath) || "").trim();
+    if (!remoteTaskId || (!outputUrl && !dataUrl && !filePath)) return;
     const completedAt = Date.now();
 
     stopTaskStatusTracking(remoteTaskId);
@@ -1999,6 +2050,8 @@
       coinsCharge: statusResult && statusResult.coinsCharge,
       chargeDisplay: statusResult && statusResult.chargeDisplay,
       outputUrl,
+      dataUrl,
+      filePath,
       sourceDocument,
       finishedAt: completedAt
     });
@@ -2009,15 +2062,19 @@
       appName: payload.appName,
       sourceDocument,
       outputUrl,
+      dataUrl,
+      filePath,
       taskId: remoteTaskId
     });
-    modules.ui.logToWorkspace(`后台追踪发现任务已完成，结果地址：${outputUrl}`, "success");
+    modules.ui.logToWorkspace(`后台追踪发现任务已完成，已取得${filePath ? "宿主临时文件" : dataUrl ? "内联图片" : "结果地址"}。`, "success");
 
       try {
         const placementResponse = await autoPlaceResult({
           appName: payload.appName,
           sourceDocument,
           outputUrl,
+          dataUrl,
+          filePath,
           taskId: remoteTaskId
         });
         if (placementResponse && placementResponse.queued) {
@@ -2069,7 +2126,7 @@
         const statusResult = await modules.runtime.callHost(statusRequest.method, statusRequest.args, { timeoutMs: 35000 });
         const remoteStatus = String((statusResult && statusResult.status) || "").trim().toUpperCase();
 
-        if (statusResult && String(statusResult.outputUrl || "").trim()) {
+        if (statusResult && hasResultReference(statusResult)) {
           await finalizeTrackedTaskSuccess(remoteTaskId, payload, sourceDocument, statusResult);
           return;
         }
@@ -2200,7 +2257,7 @@
   }
 
   function clearLastResult() {
-    modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", taskId: "", placedAt: 0 };
+    modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", dataUrl: "", filePath: "", taskId: "", placedAt: 0 };
     updateRunButtonState();
   }
 
@@ -2210,6 +2267,8 @@
       appName: String(data.appName || "").trim(),
       sourceDocument: data.sourceDocument && typeof data.sourceDocument === "object" ? data.sourceDocument : null,
       outputUrl: String(data.outputUrl || "").trim(),
+      dataUrl: String(data.dataUrl || "").trim(),
+      filePath: String(data.filePath || "").trim(),
       taskId: String(data.taskId || "").trim(),
       placedAt: Number(data.placedAt) > 0 ? Number(data.placedAt) : 0
     };
@@ -2370,8 +2429,9 @@
       if (!modules.state.state.thirdPartySettings || !modules.state.state.thirdPartySettings.enabled) {
         throw new Error("请先在设置页启用第三方支持");
       }
-      if (!String(modules.state.state.thirdPartySettings.grs.apiKey || "").trim()) {
-        throw new Error("请先在第三方支持中配置 GRS API Key");
+      const descriptor = modules.state.getThirdPartyProviderDescriptor();
+      if (!String(descriptor.config.apiKey || "").trim()) {
+        throw new Error(`请先在第三方支持中配置 ${descriptor.label} API Key`);
       }
     }
     collectFormValuesFromDom();
@@ -2497,6 +2557,8 @@
     const useFullDocumentBounds = !selectionBounds && !!documentBounds;
     return {
       url: result && result.outputUrl ? result.outputUrl : "",
+      dataUrl: result && result.dataUrl ? result.dataUrl : "",
+      filePath: result && result.filePath ? result.filePath : "",
       taskId: result && result.taskId ? result.taskId : "",
       downloadTimeoutMs: 120000,
       targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
@@ -2647,7 +2709,7 @@
   }
 
   function queueAutoPlacement(result) {
-    if (!result || !result.outputUrl) return null;
+    if (!hasResultReference(result)) return null;
     const taskId = String(result.taskId || "").trim() || `placement-${Date.now()}`;
     pendingAutoPlacements.set(taskId, {
       ...result,
@@ -2727,9 +2789,9 @@
   }
 
   async function autoPlaceResult(result) {
-    if (!result || !result.outputUrl) throw new Error("当前没有可自动贴回 Photoshop 的结果");
+    if (!hasResultReference(result)) throw new Error("当前没有可自动贴回 Photoshop 的结果");
     if (!modules.runtime.isPluginRuntime()) {
-      modules.ui.logToWorkspace(`浏览器预览模式不会自动贴回结果，输出地址：${result.outputUrl}`, "info");
+      modules.ui.logToWorkspace("浏览器预览模式不会自动贴回结果。", "info");
       return null;
     }
     await refreshPhotoshopDocumentStatus({ quiet: true });
@@ -2789,6 +2851,8 @@
       appName: String(task.appName || ""),
       sourceDocument: task.sourceDocument && typeof task.sourceDocument === "object" ? task.sourceDocument : null,
       outputUrl: String(task.outputUrl || "").trim(),
+      dataUrl: String(task.dataUrl || "").trim(),
+      filePath: String(task.filePath || "").trim(),
       taskId: String(task.remoteTaskId || task.taskId || "").trim()
     };
     pendingAutoPlacements.delete(normalizedTaskId);
@@ -2931,8 +2995,8 @@
   }
 
   async function startRunTaskFlow(payload, sourceDocument, options = {}) {
-    const isThirdPartyTask = payload && payload.provider === "grs";
-    const statusLabel = isThirdPartyTask ? "GRS" : "RunningHub";
+    const isThirdPartyTask = isThirdPartyRunPayload(payload);
+    const statusLabel = getTaskProviderLabel(payload);
     const tempTaskId = String(options.localTaskId || "").trim() || createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
@@ -2967,7 +3031,7 @@
       appName: payload.appName,
       status: "submitting",
       detail: isThirdPartyTask
-        ? "正在提交到 GRS..."
+        ? `正在提交到 ${statusLabel}...`
         : payload.instanceType === "plus"
           ? "正在提交到 RunningHub Plus 模式..."
           : "正在提交到 RunningHub...",
@@ -2983,9 +3047,10 @@
         "info"
       );
 
-      const submitMethod = isThirdPartyTask ? "thirdParty.grs.submitTask" : "runninghub.submitTask";
-      const pollMethod = isThirdPartyTask ? "thirdParty.grs.pollTask" : "runninghub.pollTask";
-      const submitResult = await modules.runtime.callHost(submitMethod, [payload], {
+      const submitMethod = isThirdPartyTask ? getThirdPartyHostMethod(payload, "submitTask") : "runninghub.submitTask";
+      const pollMethod = isThirdPartyTask ? getThirdPartyHostMethod(payload, "pollTask") : "runninghub.pollTask";
+      const submitPayload = isThirdPartyTask ? { ...payload, requestId: tempTaskId } : payload;
+      const submitResult = await modules.runtime.callHost(submitMethod, [submitPayload], {
         timeoutMs: Math.max(10000, Number(payload.settings.timeout || 180) * 1000 + 5000)
       });
 
@@ -3075,6 +3140,8 @@
         coinsCharge: pollResult && pollResult.coinsCharge,
         chargeDisplay: pollResult && pollResult.chargeDisplay,
         outputUrl: String(pollResult.outputUrl || "").trim(),
+        dataUrl: String(pollResult.dataUrl || "").trim(),
+        filePath: String(pollResult.filePath || "").trim(),
         sourceDocument,
         finishedAt: completedAt
       });
@@ -3085,9 +3152,11 @@
         appName: payload.appName,
         sourceDocument,
         outputUrl: pollResult.outputUrl,
+        dataUrl: pollResult.dataUrl,
+        filePath: pollResult.filePath,
         taskId: remoteTaskId
       });
-      modules.ui.logToWorkspace(`任务已完成，结果地址：${pollResult.outputUrl}`, "success");
+      modules.ui.logToWorkspace(`任务已完成，已取得${pollResult.filePath ? "宿主临时文件" : pollResult.dataUrl ? "内联图片" : "结果地址"}。`, "success");
       let placementResponse = null;
       let placementFailureMessage = "";
       try {
@@ -3095,6 +3164,8 @@
           appName: payload.appName,
           sourceDocument,
           outputUrl: pollResult.outputUrl,
+          dataUrl: pollResult.dataUrl,
+          filePath: pollResult.filePath,
           taskId: remoteTaskId
         });
         if (placementResponse && placementResponse.queued) {
@@ -3187,10 +3258,16 @@
       throw new Error("请先在设置页高级设置中开启 Plus 模式。");
     }
     if (!modules.runtime.isPluginRuntime()) {
-      modules.ui.logToWorkspace(`浏览器预览模式已生成任务负载：${JSON.stringify(payload)}`, "info");
+      modules.ui.logToWorkspace(
+        `浏览器预览模式已生成任务负载：provider=${payload.provider || "runninghub"} appId=${payload.appId} inputCount=${Object.keys(payload.inputs || {}).length}`,
+        "info"
+      );
       return;
     }
-    if (!payload.apiKey) throw new Error(payload.provider === "grs" ? "请先在第三方支持中配置 GRS API Key" : "请先在设置页保存 RunningHub API Key");
+    if (!payload.apiKey) {
+      if (isThirdPartyRunPayload(payload)) throw new Error(`请先在第三方支持中配置 ${getTaskProviderLabel(payload)} API Key`);
+      throw new Error("请先在设置页保存 RunningHub API Key");
+    }
     if (!payload.appId) throw new Error("当前应用缺少有效的 appId，请到设置页重新保存该应用后再运行");
     if (!canAcceptQueuedSubmission()) {
       throw new Error(`已达到最大并发数 ${getMaxConcurrentTasks()}，请等待部分任务完成后再继续发送。`);
@@ -3259,7 +3336,7 @@
       const details = modules.runtime.getById("thirdPartySettingsDetails");
       if (details) details.open = true;
       window.setTimeout(() => {
-        const control = modules.runtime.getById("thirdPartyGrsRegionControl");
+        const control = modules.runtime.getById("thirdPartyProviderControl");
         if (control && typeof control.scrollIntoView === "function") control.scrollIntoView({ block: "center" });
         const activeButton = control && control.querySelector(".region-segmented-btn.is-active");
         if (activeButton && typeof activeButton.focus === "function") activeButton.focus();
@@ -3599,13 +3676,16 @@
           target.disabled = false;
           return;
         }
-        const isThirdPartyTask = currentTask && String(currentTask.appName || "") === "第三方 API";
-        const cancelMethod = isThirdPartyTask ? "thirdParty.grs.cancelTask" : "runninghub.cancelTask";
+        const taskProvider = String(currentTask && currentTask.provider || "").trim();
+        const isThirdPartyTask = ["grs", "gemini"].includes(taskProvider) || currentTask && String(currentTask.appName || "") === "第三方 API";
+        const effectiveThirdPartyProvider = taskProvider === "gemini" ? "gemini" : "grs";
+        const activeThirdPartyConfig = modules.state.getThirdPartyProviderDescriptor().config;
+        const cancelMethod = isThirdPartyTask ? `thirdParty.${effectiveThirdPartyProvider}.cancelTask` : "runninghub.cancelTask";
         const cancelPayload = isThirdPartyTask
           ? {
-              apiKey: String((currentTask && currentTask.apiKey) || modules.state.state.thirdPartySettings?.grs?.apiKey || ""),
-              apiUrl: String((currentTask && currentTask.apiUrl) || modules.state.state.thirdPartySettings?.grs?.apiUrl || ""),
-              region: (currentTask && currentTask.region) || modules.state.state.thirdPartySettings?.grs?.region,
+              apiKey: String((currentTask && currentTask.apiKey) || activeThirdPartyConfig.apiKey || ""),
+              apiUrl: String((currentTask && currentTask.apiUrl) || activeThirdPartyConfig.apiUrl || ""),
+              region: (currentTask && currentTask.region) || activeThirdPartyConfig.region,
               taskId: remoteTaskId
             }
           : {

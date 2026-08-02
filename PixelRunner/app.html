@@ -541,42 +541,94 @@
                   <span>在工作台应用切换中显示“第三方 API”卡片</span>
                 </label>
               </label>
-              <div class="dual-grid">
+              <div class="field">
+                <span class="field-label">供应商</span>
+                <div id="thirdPartyProviderControl" class="region-segmented third-party-provider-control" role="group" aria-label="第三方 API 供应商">
+                  <button class="region-segmented-btn is-active" type="button" data-third-party-provider="grs" aria-pressed="true">
+                    <span>GRS</span><small>原有渠道</small>
+                  </button>
+                  <button class="region-segmented-btn" type="button" data-third-party-provider="gemini" aria-pressed="false">
+                    <span>Gemini</span><small>Aji / Momo</small>
+                  </button>
+                </div>
+              </div>
+              <div id="thirdPartyGrsSettingsGroup" class="third-party-provider-fields">
+                <div class="dual-grid">
+                  <div class="field">
+                    <span class="field-label">GRS 服务节点</span>
+                    <div id="thirdPartyGrsRegionControl" class="region-segmented" role="group" aria-label="GRS 服务节点">
+                      <button class="region-segmented-btn is-active" type="button" data-grs-region="cn" aria-pressed="true">
+                        <span>国内节点</span><small>直连</small>
+                      </button>
+                      <button class="region-segmented-btn" type="button" data-grs-region="global" aria-pressed="false">
+                        <span>国际节点</span><small>海外</small>
+                      </button>
+                    </div>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">GRS API Key</span>
+                    <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="保存在宿主本地存储中" />
+                  </label>
+                </div>
+                <div class="dual-grid">
+                  <label class="field">
+                    <span class="field-label">默认生图模型</span>
+                    <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">AI 优化文本模型</span>
+                    <select id="thirdPartyGrsChatModelInput" class="field-input"></select>
+                  </label>
+                </div>
+                <div class="dual-grid">
+                  <label class="field">
+                    <span class="field-label">默认比例</span>
+                    <select id="thirdPartyGrsDefaultRatioInput" class="field-input"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">默认分辨率</span>
+                    <select id="thirdPartyGrsDefaultResolutionInput" class="field-input"></select>
+                  </label>
+                </div>
+              </div>
+              <div id="thirdPartyGeminiSettingsGroup" class="third-party-provider-fields" hidden>
                 <div class="field">
-                  <span class="field-label">GRS 服务节点</span>
-                  <div id="thirdPartyGrsRegionControl" class="region-segmented" role="group" aria-label="GRS 服务节点">
-                    <button class="region-segmented-btn is-active" type="button" data-grs-region="cn" aria-pressed="true">
-                      <span>国内节点</span><small>直连</small>
+                  <span class="field-label">NewAPI 渠道</span>
+                  <div id="thirdPartyGeminiChannelControl" class="region-segmented" role="group" aria-label="NewAPI 渠道">
+                    <button class="region-segmented-btn is-active" type="button" data-gemini-channel="aji" aria-pressed="true">
+                      <span>阿吉 Aji</span>
                     </button>
-                    <button class="region-segmented-btn" type="button" data-grs-region="global" aria-pressed="false">
-                      <span>国际节点</span><small>海外</small>
+                    <button class="region-segmented-btn" type="button" data-gemini-channel="momo" aria-pressed="false">
+                      <span>墨墨 Momo</span>
                     </button>
                   </div>
                 </div>
                 <label class="field">
-                  <span class="field-label">GRS API Key</span>
-                  <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
+                  <span class="field-label">渠道 API Key</span>
+                  <input id="thirdPartyGeminiApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="当前渠道独立保存" />
                 </label>
-              </div>
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">默认生图模型</span>
-                  <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
-                </label>
+                <div class="field">
+                  <label class="field-label" for="thirdPartyGeminiDefaultModelInput">默认生图模型</label>
+                  <div class="third-party-model-row">
+                    <select id="thirdPartyGeminiDefaultModelInput" class="field-input"></select>
+                    <button id="btnRefreshThirdPartyGeminiModels" class="mini-btn" type="button">刷新模型</button>
+                  </div>
+                </div>
                 <label class="field">
                   <span class="field-label">AI 优化文本模型</span>
-                  <select id="thirdPartyGrsChatModelInput" class="field-input"></select>
+                  <select id="thirdPartyGeminiChatModelInput" class="field-input"></select>
                 </label>
-              </div>
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">默认比例</span>
-                  <select id="thirdPartyGrsDefaultRatioInput" class="field-input"></select>
-                </label>
-                <label class="field">
-                  <span class="field-label">默认分辨率</span>
-                  <select id="thirdPartyGrsDefaultResolutionInput" class="field-input"></select>
-                </label>
+                <div class="dual-grid">
+                  <label class="field">
+                    <span class="field-label">默认比例</span>
+                    <select id="thirdPartyGeminiDefaultRatioInput" class="field-input"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">默认分辨率</span>
+                    <select id="thirdPartyGeminiDefaultResolutionInput" class="field-input"></select>
+                  </label>
+                </div>
+                <span class="field-hint settings-field-hint">模型列表来自当前渠道；刷新失败时会保留已保存模型。</span>
               </div>
               <div class="action-row">
                 <button id="btnSaveThirdPartySettings" class="primary-btn" type="button">保存第三方设置</button>

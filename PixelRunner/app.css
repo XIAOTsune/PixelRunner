@@ -4750,6 +4750,38 @@ button {
   opacity: 0.72;
 }
 
+.third-party-provider-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: rgba(var(--surface-rgb), 0.24);
+}
+
+.third-party-model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.third-party-model-row .mini-btn {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .third-party-model-row {
+    grid-template-columns: 1fr;
+  }
+
+  .third-party-provider-control .region-segmented-btn small {
+    display: none;
+  }
+}
+
 .api-profile-chip {
   display: inline-flex;
   align-items: center;

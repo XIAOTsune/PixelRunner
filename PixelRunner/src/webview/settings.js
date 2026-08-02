@@ -348,7 +348,7 @@
   }
 
   function fillThirdPartyCapabilitySelects(model, selectedAspectRatio, selectedResolution) {
-    const capabilities = modules.state.getThirdPartyModelCapabilities(model);
+    const capabilities = modules.state.getThirdPartyModelCapabilities(model, "grs");
     const ratioSelect = modules.runtime.getById("thirdPartyGrsDefaultRatioInput");
     const resolutionSelect = modules.runtime.getById("thirdPartyGrsDefaultResolutionInput");
     const ratio = capabilities.aspectRatios.includes(String(selectedAspectRatio || ""))
@@ -369,30 +369,137 @@
     }
   }
 
+  function getSelectedThirdPartyProvider() {
+    const activeButton = document.querySelector("[data-third-party-provider].is-active");
+    return String(activeButton && activeButton.getAttribute("data-third-party-provider") || "grs") === "gemini" ? "gemini" : "grs";
+  }
+
+  function getSelectedGeminiChannel() {
+    const activeButton = document.querySelector("[data-gemini-channel].is-active");
+    const stored = modules.state.state.thirdPartySettings?.gemini?.channelId;
+    return modules.state.normalizeGeminiChannelId(activeButton ? activeButton.getAttribute("data-gemini-channel") : stored);
+  }
+
+  function renderThirdPartyProviderControls(provider, channelId) {
+    const normalizedProvider = String(provider || "") === "gemini" ? "gemini" : "grs";
+    const normalizedChannel = modules.state.normalizeGeminiChannelId(channelId);
+    document.querySelectorAll("[data-third-party-provider]").forEach((button) => {
+      const isActive = button.getAttribute("data-third-party-provider") === normalizedProvider;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    document.querySelectorAll("[data-gemini-channel]").forEach((button) => {
+      const isActive = modules.state.normalizeGeminiChannelId(button.getAttribute("data-gemini-channel")) === normalizedChannel;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    const grsGroup = modules.runtime.getById("thirdPartyGrsSettingsGroup");
+    const geminiGroup = modules.runtime.getById("thirdPartyGeminiSettingsGroup");
+    if (grsGroup) grsGroup.hidden = normalizedProvider !== "grs";
+    if (geminiGroup) geminiGroup.hidden = normalizedProvider !== "gemini";
+  }
+
+  function fillGeminiModelSelect(selectId, models, selected, fallbackModels = []) {
+    const select = modules.runtime.getById(selectId);
+    if (!select) return;
+    const list = Array.isArray(models) && models.length
+      ? models
+      : (Array.isArray(fallbackModels) && fallbackModels.length ? fallbackModels : modules.state.GEMINI_IMAGE_MODEL_IDS);
+    const value = String(selected || list[0] || "").trim();
+    const options = list.includes(value) || !value ? list : [value, ...list];
+    select.innerHTML = options
+      .map((model) => `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(String(model))}</option>`)
+      .join("");
+  }
+
+  function fillGeminiCapabilitySelects(selectedAspectRatio, selectedResolution) {
+    const ratioSelect = modules.runtime.getById("thirdPartyGeminiDefaultRatioInput");
+    const resolutionSelect = modules.runtime.getById("thirdPartyGeminiDefaultResolutionInput");
+    const ratio = modules.state.GEMINI_ASPECT_RATIOS.includes(String(selectedAspectRatio || "")) ? String(selectedAspectRatio) : "auto";
+    const resolution = modules.state.GEMINI_RESOLUTIONS.includes(String(selectedResolution || "").toUpperCase())
+      ? String(selectedResolution).toUpperCase()
+      : "1K";
+    if (ratioSelect) {
+      ratioSelect.innerHTML = modules.state.GEMINI_ASPECT_RATIOS
+        .map((value) => `<option value="${value}" ${value === ratio ? "selected" : ""}>${value}</option>`)
+        .join("");
+    }
+    if (resolutionSelect) {
+      resolutionSelect.innerHTML = modules.state.GEMINI_RESOLUTIONS
+        .map((value) => `<option value="${value}" ${value === resolution ? "selected" : ""}>${value}</option>`)
+        .join("");
+    }
+  }
+
+  function fillGeminiSettingsForm(gemini) {
+    const active = gemini.channels?.[gemini.channelId] || gemini;
+    const modelDefaults = modules.state.getGeminiChannelModelDefaults(gemini.channelId);
+    if (modules.runtime.getById("thirdPartyGeminiApiKeyInput")) {
+      modules.runtime.getById("thirdPartyGeminiApiKeyInput").value = active.apiKey || "";
+    }
+    fillGeminiModelSelect("thirdPartyGeminiDefaultModelInput", active.imageModels, active.selectedModel, modelDefaults.imageModels);
+    fillGeminiModelSelect("thirdPartyGeminiChatModelInput", active.chatModels, active.chatModel, modelDefaults.chatModels);
+    fillGeminiCapabilitySelects(active.aspectRatio, active.resolution);
+  }
+
+  function refreshThirdPartyWorkspacePreview() {
+    if (!modules.state.isThirdPartyApp(modules.state.state.currentApp)) return;
+    const app = modules.state.getThirdPartyApp();
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    const config = descriptor.config;
+    modules.state.state.currentApp = app;
+    modules.state.state.formValues = {
+      ...modules.state.state.formValues,
+      model: config.selectedModel || config.imageModels?.[0] || "",
+      aspectRatio: config.aspectRatio || "auto",
+      resolution: config.resolution || "1K"
+    };
+    if (modules.workspace && typeof modules.workspace.updateThirdPartyDynamicOptions === "function") {
+      modules.workspace.updateThirdPartyDynamicOptions(modules.state.state.formValues.model);
+    }
+    if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
+    if (modules.apps && typeof modules.apps.renderAppPickerList === "function") modules.apps.renderAppPickerList();
+  }
+
   function fillThirdPartySettingsForm(settings) {
     const normalized = modules.state.normalizeThirdPartySettings(settings);
     const grs = normalized.grs;
     if (modules.runtime.getById("thirdPartyEnabledInput")) modules.runtime.getById("thirdPartyEnabledInput").checked = Boolean(normalized.enabled);
+    renderThirdPartyProviderControls(normalized.provider, normalized.gemini.channelId);
     renderGrsRegionControl(grs.region);
     if (modules.runtime.getById("thirdPartyGrsApiKeyInput")) modules.runtime.getById("thirdPartyGrsApiKeyInput").value = grs.apiKey || "";
     fillThirdPartyModelSelect(grs.imageModels, grs.selectedModel);
     fillThirdPartyChatModelSelect(grs.chatModel);
     fillThirdPartyCapabilitySelects(grs.selectedModel, grs.aspectRatio, grs.resolution);
+    fillGeminiSettingsForm(normalized.gemini);
     const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
-    const regionConfig = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
+    const descriptor = modules.state.getThirdPartyProviderDescriptor(normalized);
     modules.runtime.setSummaryStatus(
       statusEl,
       normalized.enabled
-        ? `GRS 已启用 · ${regionConfig.label} · ${grs.selectedModel}`
-        : `GRS 未启用 · 当前配置为 ${regionConfig.label}`,
+        ? `${descriptor.label} 已启用 · ${descriptor.config.selectedModel}`
+        : `第三方支持未启用 · 当前配置为 ${descriptor.label}`,
       normalized.enabled ? "success" : "info"
     );
   }
 
   function readThirdPartySettingsForm() {
+    const current = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
+    const channelId = getSelectedGeminiChannel();
+    const modelDefaults = modules.state.getGeminiChannelModelDefaults(channelId);
+    const activeGemini = {
+      ...(current.gemini.channels?.[channelId] || {}),
+      apiKey: modules.runtime.getById("thirdPartyGeminiApiKeyInput")?.value || "",
+      selectedModel: modules.runtime.getById("thirdPartyGeminiDefaultModelInput")?.value || "",
+      imageModels: current.gemini.channels?.[channelId]?.imageModels || current.gemini.imageModels || modelDefaults.imageModels,
+      chatModels: current.gemini.channels?.[channelId]?.chatModels || modelDefaults.chatModels,
+      chatModel: modules.runtime.getById("thirdPartyGeminiChatModelInput")?.value || "",
+      aspectRatio: modules.runtime.getById("thirdPartyGeminiDefaultRatioInput")?.value || "",
+      resolution: modules.runtime.getById("thirdPartyGeminiDefaultResolutionInput")?.value || ""
+    };
     return modules.state.normalizeThirdPartySettings({
       enabled: Boolean(modules.runtime.getById("thirdPartyEnabledInput")?.checked),
-      provider: "grs",
+      provider: getSelectedThirdPartyProvider(),
       grs: {
         region: getSelectedGrsRegion(),
         apiKey: modules.runtime.getById("thirdPartyGrsApiKeyInput")?.value || "",
@@ -401,6 +508,14 @@
         selectedModel: modules.runtime.getById("thirdPartyGrsDefaultModelInput")?.value || "",
         aspectRatio: modules.runtime.getById("thirdPartyGrsDefaultRatioInput")?.value || "",
         resolution: modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")?.value || ""
+      },
+      gemini: {
+        ...current.gemini,
+        channelId,
+        channels: {
+          ...current.gemini.channels,
+          [channelId]: activeGemini
+        }
       }
     });
   }
@@ -836,10 +951,26 @@
       null
     );
     const rawThirdPartyApiKey = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY);
+    const rawGeminiApiKeys = modules.runtime.readJsonText(
+      await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GEMINI_API_KEYS),
+      {}
+    );
     const legacyThirdParty = rawSettings && rawSettings.thirdParty && typeof rawSettings.thirdParty === "object" ? rawSettings.thirdParty : {};
     const storedThirdParty = rawThirdPartySettings && typeof rawThirdPartySettings === "object" ? rawThirdPartySettings : {};
     const legacyGrs = legacyThirdParty.grs && typeof legacyThirdParty.grs === "object" ? legacyThirdParty.grs : {};
     const storedGrs = storedThirdParty.grs && typeof storedThirdParty.grs === "object" ? storedThirdParty.grs : {};
+    const legacyGemini = legacyThirdParty.gemini && typeof legacyThirdParty.gemini === "object" ? legacyThirdParty.gemini : {};
+    const storedGemini = storedThirdParty.gemini && typeof storedThirdParty.gemini === "object" ? storedThirdParty.gemini : {};
+    const storedGeminiChannels = storedGemini.channels && typeof storedGemini.channels === "object" ? storedGemini.channels : {};
+    const legacyGeminiChannels = legacyGemini.channels && typeof legacyGemini.channels === "object" ? legacyGemini.channels : {};
+    const geminiChannels = {};
+    for (const channelId of Object.keys(modules.state.GEMINI_CHANNEL_PRESETS)) {
+      geminiChannels[channelId] = {
+        ...(legacyGeminiChannels[channelId] || {}),
+        ...(storedGeminiChannels[channelId] || {}),
+        ...(rawGeminiApiKeys && rawGeminiApiKeys[channelId] !== undefined ? { apiKey: rawGeminiApiKeys[channelId] } : {})
+      };
+    }
     const mergedThirdParty = {
       ...legacyThirdParty,
       ...storedThirdParty,
@@ -847,6 +978,11 @@
         ...legacyGrs,
         ...storedGrs,
         ...(rawThirdPartyApiKey !== null && rawThirdPartyApiKey !== undefined ? { apiKey: rawThirdPartyApiKey } : {})
+      },
+      gemini: {
+        ...legacyGemini,
+        ...storedGemini,
+        channels: geminiChannels
       }
     };
     const thirdParty = modules.state.normalizeThirdPartySettings(mergedThirdParty);
@@ -919,6 +1055,12 @@
     );
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdParty));
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdParty.grs.apiKey || "");
+    await modules.runtime.storageSetItem(
+      modules.state.STORAGE_KEYS.THIRD_PARTY_GEMINI_API_KEYS,
+      JSON.stringify(Object.fromEntries(
+        Object.entries(thirdParty.gemini.channels || {}).map(([channelId, config]) => [channelId, String(config && config.apiKey || "")])
+      ))
+    );
     await writeSettingsStorage(nextSettings, thirdParty);
 
     modules.state.state.apiProfiles = apiProfileState.profiles;
@@ -1005,6 +1147,8 @@
     const apiProfileList = runtime.getById("apiProfileList");
     const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
     const grsRegionButtons = Array.from(document.querySelectorAll("[data-grs-region]"));
+    const thirdPartyProviderButtons = Array.from(document.querySelectorAll("[data-third-party-provider]"));
+    const geminiChannelButtons = Array.from(document.querySelectorAll("[data-gemini-channel]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const resetGenerativeFillButton = runtime.getById("btnResetGenerativeFillAppId");
     const parseAppButton = runtime.getById("btnParseApp");
@@ -1014,6 +1158,7 @@
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
     const saveThirdPartySettingsButton = runtime.getById("btnSaveThirdPartySettings");
+    const refreshGeminiModelsButton = runtime.getById("btnRefreshThirdPartyGeminiModels");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
@@ -1024,7 +1169,12 @@
       "thirdPartyGrsChatModelInput",
       "thirdPartyGrsDefaultModelInput",
       "thirdPartyGrsDefaultRatioInput",
-      "thirdPartyGrsDefaultResolutionInput"
+      "thirdPartyGrsDefaultResolutionInput",
+      "thirdPartyGeminiApiKeyInput",
+      "thirdPartyGeminiChatModelInput",
+      "thirdPartyGeminiDefaultModelInput",
+      "thirdPartyGeminiDefaultRatioInput",
+      "thirdPartyGeminiDefaultResolutionInput"
     ];
     const advancedSettingFieldIds = [
       "settingsPollIntervalInput",
@@ -1190,6 +1340,33 @@
       });
     });
 
+    thirdPartyProviderButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const provider = button.getAttribute("data-third-party-provider") === "gemini" ? "gemini" : "grs";
+        if (provider === getSelectedThirdPartyProvider()) return;
+        const snapshot = readThirdPartySettingsForm();
+        modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({ ...snapshot, provider });
+        fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+        refreshThirdPartyWorkspacePreview();
+        renderSettingsStatus("检测到未保存的供应商切换。", "pending");
+      });
+    });
+
+    geminiChannelButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const channelId = modules.state.normalizeGeminiChannelId(button.getAttribute("data-gemini-channel"));
+        if (channelId === getSelectedGeminiChannel()) return;
+        const snapshot = readThirdPartySettingsForm();
+        modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
+          ...snapshot,
+          gemini: { ...snapshot.gemini, channelId }
+        });
+        fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+        refreshThirdPartyWorkspacePreview();
+        renderSettingsStatus("检测到未保存的 Gemini 渠道切换。", "pending");
+      });
+    });
+
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {
         const profile = modules.state.state.apiProfiles.find((item) => String(item.id) === String(apiProfileSelect.value));
@@ -1341,8 +1518,80 @@
           if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
         });
       }
+      if (["thirdPartyGeminiDefaultModelInput", "thirdPartyGeminiDefaultRatioInput", "thirdPartyGeminiDefaultResolutionInput"].includes(id)) {
+        element.addEventListener("change", () => {
+          modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
+          refreshThirdPartyWorkspacePreview();
+        });
+      }
       element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
     });
+
+    if (refreshGeminiModelsButton) {
+      refreshGeminiModelsButton.addEventListener("click", async () => {
+        const statusEl = runtime.getById("thirdPartyStatusSummary");
+        const snapshot = readThirdPartySettingsForm();
+        const gemini = snapshot.gemini;
+        const active = gemini.channels?.[gemini.channelId] || gemini;
+        if (!String(active.apiKey || "").trim()) {
+          runtime.setSummaryStatus(statusEl, "请先填写当前 Gemini 渠道的 API Key。", "warn");
+          return;
+        }
+        if (!modules.runtime.isPluginRuntime()) {
+          runtime.setSummaryStatus(statusEl, "浏览器预览模式无法请求 Gemini 模型列表。", "warn");
+          return;
+        }
+        refreshGeminiModelsButton.disabled = true;
+        runtime.setSummaryStatus(statusEl, `正在从 ${modules.state.getGeminiChannelPreset(gemini.channelId).label} 获取模型...`, "info");
+        try {
+          const result = await modules.runtime.callHost(
+            "thirdParty.gemini.listModels",
+            [{ config: { ...active, channelId: gemini.channelId } }],
+            { timeoutMs: 30000 }
+          );
+          const remoteModels = (Array.isArray(result && result.models) ? result.models : [])
+            .map((model) => String(model && (model.id || model.name) || model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, models) => model && models.indexOf(model) === index);
+          if (!remoteModels.length) throw new Error("渠道未返回可用模型");
+          const imageModels = (Array.isArray(result && result.imageModels) ? result.imageModels : [])
+            .map((model) => String(model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, models) => model && models.indexOf(model) === index);
+          const textModels = (Array.isArray(result && result.chatModels) ? result.chatModels : [])
+            .map((model) => String(model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, models) => model && models.indexOf(model) === index);
+          const effectiveImageModels = imageModels.length ? imageModels : active.imageModels;
+          const effectiveChatModels = textModels.length ? textModels : active.chatModels;
+          if (!effectiveImageModels.length || !effectiveChatModels.length) {
+            throw new Error("渠道没有返回完整的生图和文字模型分类");
+          }
+          const nextChannel = {
+            ...active,
+            imageModels: effectiveImageModels,
+            chatModels: effectiveChatModels,
+            selectedModel: effectiveImageModels.includes(active.selectedModel) ? active.selectedModel : effectiveImageModels[0],
+            chatModel: effectiveChatModels.includes(active.chatModel) ? active.chatModel : effectiveChatModels[0]
+          };
+          modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
+            ...snapshot,
+            gemini: {
+              ...gemini,
+              channels: { ...gemini.channels, [gemini.channelId]: nextChannel }
+            }
+          });
+          fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+          refreshThirdPartyWorkspacePreview();
+          runtime.setSummaryStatus(
+            statusEl,
+            `已获取 ${imageModels.length} 个生图模型、${textModels.length} 个文字模型，请保存第三方设置。`,
+            "success"
+          );
+        } catch (error) {
+          runtime.setSummaryStatus(statusEl, `模型刷新失败，已保留现有列表：${error.message}`, "error");
+        } finally {
+          refreshGeminiModelsButton.disabled = false;
+        }
+      });
+    }
 
     if (saveThirdPartySettingsButton) {
       saveThirdPartySettingsButton.addEventListener("click", async () => {
@@ -1351,9 +1600,8 @@
         runtime.setSummaryStatus(statusEl, "正在保存第三方设置...", "info");
         try {
           await saveSettingsSnapshot(readSettingsForm());
-          const grs = modules.state.state.thirdPartySettings.grs;
-          const regionConfig = modules.state.getGrsRegionConfig(grs.region);
-          runtime.setSummaryStatus(statusEl, `第三方设置已保存 · ${regionConfig.label} · ${grs.selectedModel}`, "success");
+          const descriptor = modules.state.getThirdPartyProviderDescriptor();
+          runtime.setSummaryStatus(statusEl, `第三方设置已保存 · ${descriptor.label} · ${descriptor.config.selectedModel}`, "success");
         } catch (error) {
           runtime.setSummaryStatus(statusEl, `第三方设置保存失败：${error.message}`, "error");
         } finally {

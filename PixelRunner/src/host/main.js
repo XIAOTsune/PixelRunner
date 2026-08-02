@@ -15,6 +15,14 @@ import {
   runThirdPartyGrsPromptOptimize,
   submitThirdPartyGrsTask
 } from "./third-party-grs.js";
+import {
+  cancelThirdPartyGeminiTask,
+  fetchThirdPartyGeminiTaskStatus,
+  listThirdPartyGeminiModels,
+  pollThirdPartyGeminiTask,
+  runThirdPartyGeminiPromptOptimize,
+  submitThirdPartyGeminiTask
+} from "./third-party-gemini.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
 import { openTextFile, saveTextFile } from "./files.js";
 import {
@@ -335,6 +343,24 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "thirdParty.grs.optimizePrompt":
         result = await runThirdPartyGrsPromptOptimize(message.args);
+        break;
+      case "thirdParty.gemini.submitTask":
+        result = await submitThirdPartyGeminiTask(message.args);
+        break;
+      case "thirdParty.gemini.pollTask":
+        result = await pollThirdPartyGeminiTask(message.args);
+        break;
+      case "thirdParty.gemini.fetchTaskStatus":
+        result = await fetchThirdPartyGeminiTaskStatus(message.args);
+        break;
+      case "thirdParty.gemini.cancelTask":
+        result = await cancelThirdPartyGeminiTask(message.args);
+        break;
+      case "thirdParty.gemini.listModels":
+        result = await listThirdPartyGeminiModels(message.args);
+        break;
+      case "thirdParty.gemini.optimizePrompt":
+        result = await runThirdPartyGeminiPromptOptimize(message.args);
         break;
       case "photoshop.getActiveDocumentInfo":
         result = await enqueuePhotoshopBridgeOperation(message, () => getPhotoshopDocumentInfo(), {

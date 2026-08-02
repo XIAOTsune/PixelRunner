@@ -11,6 +11,18 @@ import {
   normalizeGrsModelId as normalizeSharedGrsModelId,
   normalizeGrsRegion
 } from "../shared/grs-config.js";
+import {
+  DEFAULT_GEMINI_SETTINGS,
+  GEMINI_ASPECT_RATIOS,
+  GEMINI_CHANNEL_PRESETS,
+  GEMINI_CHAT_MODEL_IDS,
+  GEMINI_IMAGE_MODEL_IDS,
+  GEMINI_RESOLUTIONS,
+  getGeminiChannelModelDefaults,
+  getGeminiChannelPreset,
+  normalizeGeminiChannelId,
+  normalizeGeminiSettings
+} from "../shared/gemini-config.js";
 
 (function initStateModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
@@ -33,6 +45,7 @@ import {
     BLEND_MATCH_SETTINGS: "pixelrunner.blendMatch.settings.v1",
     THIRD_PARTY_SETTINGS: "pixelrunner.thirdParty.settings.v1",
     THIRD_PARTY_GRS_API_KEY: "pixelrunner.thirdParty.grs.apiKey",
+    THIRD_PARTY_GEMINI_API_KEYS: "pixelrunner.thirdParty.gemini.apiKeys.v1",
     THIRD_PARTY_LAST_SELECTION: "pixelrunner.thirdParty.lastSelection.v1"
   };
 
@@ -102,7 +115,8 @@ import {
       aspectRatio: "auto",
       resolution: "1K",
       adapter: "grs-image-generate"
-    }
+    },
+    gemini: normalizeGeminiSettings(DEFAULT_GEMINI_SETTINGS)
   };
 
   const THIRD_PARTY_APP_ID = "__pixelrunner_third_party_api__";
@@ -187,6 +201,8 @@ import {
       appName: "",
       sourceDocument: null,
       outputUrl: "",
+      dataUrl: "",
+      filePath: "",
       taskId: "",
       placedAt: 0
     },
@@ -384,9 +400,10 @@ import {
       ? requestedResolution
       : capabilities.defaultResolution;
     const region = normalizeGrsRegion(grsSource.region, grsSource.apiUrl);
+    const geminiSource = source.gemini && typeof source.gemini === "object" ? source.gemini : {};
     return {
       enabled: Boolean(source.enabled),
-      provider: "grs",
+      provider: String(source.provider || "").trim().toLowerCase() === "gemini" ? "gemini" : "grs",
       grs: {
         region,
         apiUrl: getGrsApiUrl(region),
@@ -397,7 +414,8 @@ import {
         aspectRatio: aspectRatio || capabilities.defaultAspectRatio,
         resolution: resolution || capabilities.defaultResolution,
         adapter: fallback.adapter
-      }
+      },
+      gemini: normalizeGeminiSettings(geminiSource)
     };
   }
 
@@ -443,19 +461,62 @@ import {
     return isSharedGrsGptImageModel(value);
   }
 
-  function getThirdPartyModelCapabilities(model) {
+  function getThirdPartyProviderDescriptor(settings = state.thirdPartySettings) {
+    const normalized = normalizeThirdPartySettings(settings);
+    if (normalized.provider === "gemini") {
+      const preset = getGeminiChannelPreset(normalized.gemini.channelId);
+      const activeConfig = normalized.gemini.channels && normalized.gemini.channels[preset.id]
+        ? normalized.gemini.channels[preset.id]
+        : normalized.gemini;
+      return {
+        id: "gemini",
+        label: preset.label,
+        shortLabel: preset.label,
+        channelId: preset.id,
+        apiUrl: preset.apiUrl,
+        config: activeConfig
+      };
+    }
+    const region = getGrsRegionConfig(normalized.grs.region, normalized.grs.apiUrl);
+    return {
+      id: "grs",
+      label: "GRS",
+      shortLabel: `GRS · ${region.label}`,
+      channelId: "",
+      apiUrl: normalized.grs.apiUrl,
+      config: normalized.grs
+    };
+  }
+
+  function getThirdPartyModelCapabilities(model, provider = state.thirdPartySettings && state.thirdPartySettings.provider) {
+    if (String(provider || "").trim().toLowerCase() === "gemini") {
+      return {
+        model: String(model || "").trim(),
+        family: "gemini",
+        aspectRatios: [...GEMINI_ASPECT_RATIOS],
+        resolutions: [...GEMINI_RESOLUTIONS],
+        allowCustomAspectRatio: false,
+        defaultAspectRatio: "auto",
+        defaultResolution: "1K",
+        supportsImageSize: true,
+        experimental: false
+      };
+    }
     return getGrsImageModelCapabilities(model);
   }
 
   function getThirdPartyApp() {
-    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : DEFAULT_THIRD_PARTY_SETTINGS.grs;
-    const capabilities = getThirdPartyModelCapabilities(grs.selectedModel || grs.imageModels[0]);
+    const normalized = normalizeThirdPartySettings(state.thirdPartySettings);
+    const descriptor = getThirdPartyProviderDescriptor(normalized);
+    const config = descriptor.config;
+    const capabilities = getThirdPartyModelCapabilities(config.selectedModel || config.imageModels[0], descriptor.id);
     return {
       id: THIRD_PARTY_APP_ID,
       appId: THIRD_PARTY_APP_ID,
       name: "第三方 API",
-      description: "GRS 第三方生图入口",
-      provider: "grs",
+      description: `${descriptor.label} 第三方生图入口`,
+      provider: descriptor.id,
+      channelId: descriptor.channelId,
       thirdParty: true,
       inputs: [
         { key: "mainImage", label: "主图", name: "主图", type: "image", required: false },
@@ -467,7 +528,10 @@ import {
           name: "模型",
           type: "select",
           required: true,
-          options: grs.imageModels.map((model) => ({ value: model, label: getGrsImageModelLabel(model) }))
+          options: config.imageModels.map((model) => ({
+            value: model,
+            label: descriptor.id === "grs" ? getGrsImageModelLabel(model) : model
+          }))
         },
         {
           key: "aspectRatio",
@@ -714,6 +778,11 @@ import {
     GRS_REGIONS,
     GRS_CHAT_MODEL_IDS,
     GRS_IMAGE_MODEL_IDS,
+    GEMINI_ASPECT_RATIOS,
+    GEMINI_CHANNEL_PRESETS,
+    GEMINI_CHAT_MODEL_IDS,
+    GEMINI_IMAGE_MODEL_IDS,
+    GEMINI_RESOLUTIONS,
     DEFAULT_SETTINGS,
     DEFAULT_THIRD_PARTY_SETTINGS,
     THIRD_PARTY_APP_ID,
@@ -725,6 +794,9 @@ import {
     normalizeTheme,
     normalizeRunningHubRegion,
     normalizeGrsRegion,
+    normalizeGeminiChannelId,
+    getGeminiChannelModelDefaults,
+    getGeminiChannelPreset,
     getGrsRegionConfig,
     getGrsApiUrl,
     getGrsImageModelLabel,
@@ -735,6 +807,7 @@ import {
     normalizeApiProfileList,
     getActiveApiProfile,
     normalizeThirdPartySettings,
+    getThirdPartyProviderDescriptor,
     isThirdPartyApp,
     normalizeGrsModelId,
     normalizeSearchText,

@@ -2095,15 +2095,19 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     localSourceFile = await getTemporaryFileByNativePath(
       storage.localFileSystem,
       filePath,
-      "未找到本地超分结果文件"
+      "未找到宿主临时结果文件"
     );
     const filename = filePath.split(/[\\/]/).pop() || "";
-    const extension = (filename.match(/\.([a-z0-9]+)$/i) || [])[1];
-    if (String(extension || "").toLowerCase() !== "png") {
-      throw new Error("本地超分结果必须为 PNG 文件");
-    }
-    localResultFileType = { extension: "png", mimeType: "image/png", detectedBy: "local-temporary-file" };
-    sourceMimeType = "image/png";
+    const extension = String((filename.match(/\.([a-z0-9]+)$/i) || [])[1] || "").toLowerCase();
+    const localTypes = {
+      png: { extension: "png", mimeType: "image/png" },
+      jpg: { extension: "jpg", mimeType: "image/jpeg" },
+      jpeg: { extension: "jpg", mimeType: "image/jpeg" },
+      webp: { extension: "webp", mimeType: "image/webp" }
+    };
+    if (!localTypes[extension]) throw new Error("宿主临时结果文件必须是 PNG、JPEG 或 WebP 图片");
+    localResultFileType = { ...localTypes[extension], detectedBy: "local-temporary-file" };
+    sourceMimeType = localResultFileType.mimeType;
     responseUrl = filePath;
   } else {
     const downloaded = await fetchBinaryWithMetadata(url, {
