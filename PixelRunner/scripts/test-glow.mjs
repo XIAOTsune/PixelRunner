@@ -122,8 +122,7 @@ function createFlatMasks(width, height) {
   return {
     luma: new Float32Array(total),
     protectMask: new Float32Array(total),
-    sourceMask: new Float32Array(total),
-    haloMask: new Float32Array(total)
+    sourceMask: new Float32Array(total)
   };
 }
 
@@ -180,6 +179,9 @@ assert.equal(normalized.threshold, 81, "invalid threshold must use its fallback"
 assert.equal(normalized.composite.colorAmount, 0, "disabled tint must have no output amount");
 assert.equal("softAddMix" in normalized.composite, false, "final-only parameters must not expose softAddMix");
 assert.equal("colorProtect" in normalized.composite, false, "final-only parameters must not expose colorProtect");
+for (const obsoleteField of ["highlightProtect", "shadowProtect", "coreSuppression", "coreCeiling", "haloBoost", "haloMix"]) {
+  assert.equal(obsoleteField in normalized.composite, false, `${obsoleteField} must not stamp masks into the final glow`);
+}
 for (const style of ["none", "darkSoft", "whiteSoft", "shine", "starburst", "anamorphic"]) {
   const styleParams = presets.normalizeGlowParams({ style });
   assert.equal(styleParams.source.skinProtect, 0, `${style} must keep glow skin-tone protection disabled`);
@@ -190,44 +192,73 @@ assert.equal(disabled.strength, 0, "none style must normalize to zero strength")
 assert.equal(disabled.composite.intensity, 0, "none style must emit zero energy");
 
 let previousIntensity = -1;
-let previousHaloBoost = -1;
 for (let strength = 0; strength <= 100; strength += 1) {
   const params = presets.normalizeGlowParams({ style: "shine", strength, radius: 160, threshold: 20 });
   assert.ok(params.composite.intensity >= previousIntensity, "strength intensity must be monotonic");
-  assert.ok(params.composite.haloBoost >= previousHaloBoost, "strength halo energy must be monotonic");
   previousIntensity = params.composite.intensity;
-  previousHaloBoost = params.composite.haloBoost;
 }
 
-let previousRadiusHalo = -1;
-for (let radius = 1; radius <= 500; radius += 1) {
-  const params = presets.normalizeGlowParams({ style: "shine", strength: 70, radius, threshold: 20 });
-  assert.ok(params.composite.haloMix + 1e-12 >= previousRadiusHalo, "diffusion halo mix must be monotonic");
-  previousRadiusHalo = params.composite.haloMix;
+let previousMappedPeak = -1;
+for (const energy of [0, 0.02, 0.08, 0.2, 0.5, 1, 2, 4, 8]) {
+  const mapped = compositor.toneMapGlow(energy, energy * 0.6, energy * 0.2, 1, 0.18);
+  assert.ok(mapped[0] + 1e-12 >= previousMappedPeak, "tone-mapped core energy must stay monotonic");
+  assert.ok(mapped[0] < 1 || energy === 0, "the glow shoulder must approach white without hard clipping");
+  if (energy > 0) {
+    assert.ok(Math.abs(mapped[1] / mapped[0] - 0.6) < 1e-9, "tone mapping must preserve green chroma ratio");
+    assert.ok(Math.abs(mapped[2] / mapped[0] - 0.2) < 1e-9, "tone mapping must preserve blue chroma ratio");
+  }
+  previousMappedPeak = mapped[0];
 }
 
-const splitParams = presets.normalizeGlowParams({ style: "shine", strength: 85, radius: 220, threshold: 20 });
-const coreWeight = compositor.getCoreWeight(1);
-const coreHaloWeight = compositor.getHaloWeight(1, 1, coreWeight);
-const coreGain = compositor.getReceiverGain(0.9, 1, coreWeight, splitParams);
-const coreValue = compositor.splitCoreAndHaloValue(0.9, coreWeight, coreHaloWeight, coreGain, splitParams);
-const haloCoreWeight = compositor.getCoreWeight(0);
-const haloWeight = compositor.getHaloWeight(0, 0.35, haloCoreWeight);
-const haloGain = compositor.getReceiverGain(0.35, 0, haloCoreWeight, splitParams);
-const haloValue = compositor.splitCoreAndHaloValue(0.45, haloCoreWeight, haloWeight, haloGain, splitParams);
-assert.ok(coreWeight > 0.99, "sourceMask must identify the emitting core");
-assert.ok(coreHaloWeight < 0.01, "core pixels must not be mislabeled as halo-only pixels");
-assert.ok(haloWeight > 0.95, "haloMask - sourceMask must identify the diffusion band");
-assert.ok(coreValue <= splitParams.composite.coreCeiling + 1e-6, "coreCeiling must cap core energy");
-assert.ok(haloValue > 0.45, "haloBoost and haloMix must add energy outside the core");
+const invariantWidth = 48;
+const invariantHeight = 32;
+const invariantGlow = modules.glowPyramidBlur.createLayer(invariantWidth, invariantHeight);
+invariantGlow.r.fill(0.42);
+invariantGlow.g.fill(0.3);
+invariantGlow.b.fill(0.1);
+const clearMasks = createFlatMasks(invariantWidth, invariantHeight);
+const texturedMasks = createFlatMasks(invariantWidth, invariantHeight);
+for (let index = 0; index < invariantWidth * invariantHeight; index += 1) {
+  texturedMasks.luma[index] = (index % 17) / 16;
+  texturedMasks.protectMask[index] = (index % 5) / 4;
+  texturedMasks.sourceMask[index] = (index % 11) / 10;
+}
+const invariantParams = presets.normalizeGlowParams({ style: "shine", strength: 55, radius: 80, threshold: 20 });
+assertImageEqual(
+  compositor.renderGlowLayer(invariantGlow, clearMasks, invariantParams),
+  compositor.renderGlowLayer(invariantGlow, texturedMasks, invariantParams),
+  "source and protection masks must not stamp texture into non-chromatic glow"
+);
 
-const unprotectedReceiver = compositor.getReceiverGain(0.72, 0, 0, splitParams);
-const protectedReceiver = compositor.getReceiverGain(0.72, 1, 0, splitParams);
-const protectedCoreReceiver = compositor.getReceiverGain(0.72, 1, 1, splitParams);
-const darkReceiver = compositor.getReceiverGain(0.02, 0, 0, splitParams);
-assert.ok(protectedReceiver < unprotectedReceiver, "protected surfaces must reject external glow");
-assert.equal(protectedCoreReceiver, 1, "receiver protection must not suppress the emitting core");
-assert.ok(darkReceiver < unprotectedReceiver, "deep shadows must reject external gray haze");
+const radialSize = 65;
+const radialCenter = Math.floor(radialSize / 2);
+const radialGlow = modules.glowPyramidBlur.createLayer(radialSize, radialSize);
+const radialMasks = createFlatMasks(radialSize, radialSize);
+for (let y = 0; y < radialSize; y += 1) {
+  for (let x = 0; x < radialSize; x += 1) {
+    const dx = x - radialCenter;
+    const dy = y - radialCenter;
+    const energy = Math.exp(-(dx * dx + dy * dy) / (2 * 10 * 10));
+    const index = y * radialSize + x;
+    radialGlow.r[index] = energy;
+    radialGlow.g[index] = energy * 0.72;
+    radialGlow.b[index] = energy * 0.16;
+    radialMasks.protectMask[index] = ((x * 13 + y * 7) % 19) / 18;
+    radialMasks.sourceMask[index] = ((x * 5 + y * 11) % 23) / 22;
+  }
+}
+const radialParams = presets.normalizeGlowParams({ style: "shine", strength: 40, radius: 20, threshold: 3 });
+const radialLayer = compositor.renderGlowLayer(radialGlow, radialMasks, radialParams);
+let previousRadialValue = radialLayer.data[(radialCenter * radialSize + radialCenter) * 4];
+for (let x = radialCenter + 1; x < radialSize; x += 1) {
+  const currentValue = radialLayer.data[(radialCenter * radialSize + x) * 4];
+  assert.ok(currentValue <= previousRadialValue + 1, "a smooth point light must not develop a brighter outer ring");
+  previousRadialValue = currentValue;
+}
+assert.ok(
+  radialLayer.data[(radialCenter * radialSize + radialCenter) * 4] > radialLayer.data[(radialCenter * radialSize + radialCenter + 12) * 4],
+  "the emitting core must remain brighter than its halo"
+);
 
 const zeroBase = createSyntheticGlowImage(16, 10);
 const zeroGlow = modules.glowPyramidBlur.createLayer(16, 10);
@@ -250,8 +281,6 @@ const cacheParams = presets.normalizeGlowParams({ style: "shine", strength: 40, 
 const sourceKey = modules.glowPreviewEngine.getSourceCacheKey(cacheParams, 1000, 667);
 const featherParams = structuredClone(cacheParams);
 featherParams.source.sourceFeatherRadius += 1;
-const haloRadiusParams = structuredClone(cacheParams);
-haloRadiusParams.source.haloMaskRadius += 1;
 const tintOnlyParams = presets.normalizeGlowParams({
   style: "shine",
   strength: 40,
@@ -265,11 +294,6 @@ assert.notEqual(
   modules.glowPreviewEngine.getSourceCacheKey(featherParams, 1000, 667),
   sourceKey,
   "sourceFeatherRadius must invalidate the source cache"
-);
-assert.notEqual(
-  modules.glowPreviewEngine.getSourceCacheKey(haloRadiusParams, 1000, 667),
-  sourceKey,
-  "haloMaskRadius must invalidate the source cache"
 );
 assert.equal(
   modules.glowPreviewEngine.getSourceCacheKey(tintOnlyParams, 1000, 667),
@@ -337,15 +361,26 @@ for (const radii of [[63, 64, 65, 66], [144, 145, 146, 147]]) {
 const shaderSource = fs.readFileSync(path.join(repoRoot, "src/webview/glow/gpu/webgl-compositor.js"), "utf8");
 const gpuBlurSource = fs.readFileSync(path.join(repoRoot, "src/webview/glow/gpu/webgl-pyramid-blur.js"), "utf8");
 for (const token of [
-  "haloOnly = max(0.0, halo - clamp(source",
-  "coreLimit = coreCeiling + (1.0 - coreWeight)",
-  "shadowGuard = darkReceiver",
+  "mappedPeak = 1.0 - exp(-peak * response)",
+  "return energy * (mappedPeak / peak)",
   "if (uIntensity <= 0.000001)",
   "floor(clamp(glow + previewDither"
 ]) {
   assert.ok(shaderSource.includes(token), `WebGL2 compositor must retain shared formula token: ${token}`);
 }
-for (const obsoleteToken of ["uSoftAddMix", "uColorProtect", "uSourceAnchorBase", "uSourceAnchorAmount"]) {
+for (const obsoleteToken of [
+  "uSoftAddMix",
+  "uColorProtect",
+  "uSourceAnchorBase",
+  "uSourceAnchorAmount",
+  "uHighlightProtect",
+  "uShadowProtect",
+  "uCoreSuppression",
+  "uCoreCeiling",
+  "uHaloBoost",
+  "uHaloMix",
+  "coreLimit ="
+]) {
   assert.equal(shaderSource.includes(obsoleteToken), false, `obsolete GPU parameter must be removed: ${obsoleteToken}`);
 }
 assert.ok(gpuBlurSource.includes("count - 1 + finalMix"), "GPU mip normalization must retain continuous last-level mixing");
@@ -355,7 +390,7 @@ console.log(
   `[glow] synthetic 120x80: source ${sourceMs.toFixed(1)}ms / blur ${blurMs.toFixed(1)}ms / ` +
   `composite ${compositeMs.toFixed(1)}ms / total ${totalMs.toFixed(1)}ms / mips ${blurResult.levels.mips.length}`
 );
-console.log("[glow] cache-key coverage: sourceFeatherRadius and haloMaskRadius invalidate correctly");
+console.log("[glow] cache-key coverage: sourceFeatherRadius invalidates correctly");
 
 if (typeof OffscreenCanvas !== "function") {
   console.log("[glow] SKIP CPU/GPU pixel parity: Node runtime does not provide a WebGL2 OffscreenCanvas");

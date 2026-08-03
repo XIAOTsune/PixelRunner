@@ -258,9 +258,7 @@
     }
 
     const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
-    const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
     const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
-    const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
     return {
       width,
@@ -275,8 +273,7 @@
         skinLikeMask,
         darkProtect,
         protectMask,
-        sourceMask: featheredSourceMask,
-        haloMask
+        sourceMask: featheredSourceMask
       },
       debugImages: options.includeDebug === false
         ? null

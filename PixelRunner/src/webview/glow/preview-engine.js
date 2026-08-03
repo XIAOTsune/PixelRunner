@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-core-halo-v16";
+  const GLOW_ALGORITHM_VERSION = "engine-smooth-core-v17";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");
@@ -104,7 +104,6 @@
       source.thresholdKnee,
       source.localRadius,
       source.sourceFeatherRadius,
-      source.haloMaskRadius,
       source.contrastLow,
       source.contrastHigh,
       source.specularLow,

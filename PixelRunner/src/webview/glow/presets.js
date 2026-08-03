@@ -253,7 +253,6 @@
           thresholdKnee: triggerKnee,
           localRadius: Math.max(2, Math.round(style === "starburst" ? 3 + triggerOpen * 4 : 4 + triggerOpen * 5)),
           sourceFeatherRadius: Math.max(1, Math.min(3, Math.round(style === "starburst" ? 1 + triggerOpen * 1.4 : 1 + triggerOpen * 1.7))),
-          haloMaskRadius: Math.max(4, Math.min(10, Math.round(style === "starburst" ? 4 + triggerOpen * 4 : 5 + triggerOpen * 5))),
           contrastLow: clamp(0.016 - exposureRatio * 0.006, 0.01, 0.03, 0.018),
           contrastHigh: clamp((style === "starburst" ? 0.05 : 0.044) + triggerThreshold * 0.09 - exposureRatio * 0.012, 0.032, 0.15, 0.062),
           specularLow: clamp((style === "starburst" ? 0.045 : 0.038) + triggerThreshold * 0.04, 0.03, 0.105, 0.052),
@@ -290,7 +289,6 @@
           ),
           localRadius: Math.max(3, Math.round(4 + legacyRadiusRatio * 10)),
           sourceFeatherRadius: Math.max(1, Math.min(2, Math.round(1 + legacyRadiusRatio * 0.7))),
-          haloMaskRadius: Math.max(10, Math.min(20, Math.round(10 + legacyRadiusRatio * 7 + wideRadiusRatio * 3))),
           contrastLow: clamp(0.024 - exposureRatio * 0.009, 0.013, 0.038, 0.024),
           contrastHigh: clamp(0.052 + thresholdFineSelectivity * 0.078 - exposureRatio * 0.018, 0.032, 0.15, 0.068),
           specularLow: clamp(0.06 + thresholdFineSelectivity * 0.05, 0.06, 0.12, 0.06),
@@ -385,19 +383,13 @@
           : clamp(strengthEnergyBoost * (1.08 + radiusEnergyDamping * 0.52) * (1 + diffusionT * 0.12), 0, 38, 1),
         warmth: preset.warmth,
         saturation: opticalStyle ? clamp(1.08 + saturation / 100 * 0.34 + preset.chromaBoost * 0.18, 0.72, 1.62, 1) : clamp(1.22 + saturation / 100 * 0.56 + preset.chromaBoost * 0.3, 0.72, 1.9, 1),
-        highlightProtect: opticalStyle ? clamp(0.68 + triggerThreshold * 0.08 + strengthRatio * 0.04, 0.62, 0.88, 0.72) : clamp(0.58 + thresholdSelectivity * 0.14 + spreadAir * 0.02 + strengthRatio * 0.05, 0.52, 0.86, 0.72),
-        shadowProtect: preset.darkProtect,
-        // Keep highlights energetic; too much shoulder makes strength feel gray instead of brighter.
+        // The compositor uses a hue-preserving exponential shoulder; source
+        // selection protection stays upstream and never darkens the final core.
         shoulder: opticalStyle ? clamp(0.13 + strengthRatio * 0.018, 0.1, 0.2, 0.14) : clamp(0.16 + strengthRatio * 0.028 + spreadAir * 0.012 + Math.max(0, exposureRatio) * 0.004, 0.12, 0.28, 0.18),
         colorShift: colorShift / 100,
         colorTint,
         colorAmount: colorAmount / 100,
         chromatic: chromaticRatio,
-        // Split glow into core vs halo at composite stage (strength-gated).
-        coreSuppression: opticalStyle ? clamp(0.18 + strengthDrive * 0.16, 0.12, 0.42, 0.22) : clamp(0.34 + strengthDrive * 0.28 + thresholdSelectivity * 0.08 + diffusionT * 0.02, 0.28, 0.78, 0.46),
-        coreCeiling: opticalStyle ? clamp(0.18 + Math.pow(strengthRatio, 0.72) * 0.24, 0.14, 0.5, 0.28) : clamp(0.22 + Math.pow(strengthRatio, 0.72) * 0.38 + diffusionT * 0.08, 0.18, 0.72, 0.42),
-        haloBoost: opticalStyle ? clamp(0.26 + strengthRatio * 0.28, 0, 0.62, 0.32) : clamp((1.35 + diffusionT * 0.78 + wideRadiusRatio * 0.24) * Math.pow(strengthRatio, 1.12), 0, 3.4, 0),
-        haloMix: opticalStyle ? clamp(0.025 + strengthRatio * 0.055, 0, 0.12, 0.045) : clamp((0.18 + diffusionT * 0.56) * Math.pow(strengthRatio, 1.18), 0, 0.82, 0),
         energyFloor: opticalStyle ? 0.0018 + triggerThreshold * 0.003 : 0,
         energyFloorSoftness: opticalStyle ? 0.016 : 0.001
       },
