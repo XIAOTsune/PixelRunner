@@ -11,6 +11,22 @@ function getPhotoshopService() {
   return photoshopService;
 }
 
+const GENERATIVE_FILL_COLOR_CORRECTION_CONFIG = Object.freeze({
+  mode: "natural",
+  totalStrength: 64,
+  luminanceStrength: 70,
+  colorStrength: 68,
+  saturationStrength: 0,
+  contrastStrength: 0,
+  featherRadius: 0,
+  createBackupLayer: true,
+  pixelPipelineEnabled: true,
+  alignmentEnabled: false,
+  alignmentScaleEnabled: false,
+  localAlignmentEnabled: false,
+  colorCorrectionOnly: true
+});
+
 export async function getPhotoshopDocumentInfo() {
   const photoshopService = getPhotoshopService();
   if (typeof photoshopService.getActiveDocumentInfo !== "function") {
@@ -185,6 +201,42 @@ export async function placeResultAndBlendIntoPhotoshop(args = [], runtime = {}) 
       blendMatchFusion: {
         ok: false,
         error: String(error && error.message ? error.message : error || "自动融合失败")
+      }
+    };
+  }
+}
+
+export async function placeResultWithGenerativeFillColorCorrection(args = [], runtime = {}) {
+  const placement = await placeResultIntoPhotoshop(args, runtime);
+  const layerId = Number(placement && placement.layerId) || 0;
+  if (!layerId) return placement;
+
+  const photoshopService = getPhotoshopService();
+  const correctionStartedAt = Date.now();
+  console.log(`[PixelRunner/Host] generative fill color correction start layerId=${layerId}`);
+  try {
+    const runCorrection = () => photoshopService.runToolAction({
+      ...GENERATIVE_FILL_COLOR_CORRECTION_CONFIG,
+      action: "blendMatch",
+      layerId
+    });
+    const correction = runtime && typeof runtime.enqueuePhotoshopOperation === "function"
+      ? await runtime.enqueuePhotoshopOperation(runCorrection, { stage: "blendMatch" })
+      : await runCorrection();
+    console.log(`[PixelRunner/Host] generative fill color correction success layerId=${layerId} durationMs=${Date.now() - correctionStartedAt}`);
+    return {
+      ...placement,
+      blendMatchFusion: correction
+    };
+  } catch (error) {
+    console.error(
+      `[PixelRunner/Host] generative fill color correction failure layerId=${layerId} durationMs=${Date.now() - correctionStartedAt} error=${String(error && error.message ? error.message : error || "创成式填充校色失败")}`
+    );
+    return {
+      ...placement,
+      blendMatchFusion: {
+        ok: false,
+        error: String(error && error.message ? error.message : error || "创成式填充校色失败")
       }
     };
   }

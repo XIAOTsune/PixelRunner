@@ -109,6 +109,7 @@ import {
     generativeFillMaskExpansion: 4,
     generativeFillFeather: 36,
     generativeFillColorCorrectionEnabled: true,
+    ratioOffsetCorrectionEnabled: false,
     appPickerLayout: "visual",
     plusModeEnabled: false
   };
@@ -340,6 +341,7 @@ import {
       generativeFillMaskExpansion,
       generativeFillFeather,
       generativeFillColorCorrectionEnabled: source.generativeFillColorCorrectionEnabled !== false,
+      ratioOffsetCorrectionEnabled: source.ratioOffsetCorrectionEnabled === true,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()

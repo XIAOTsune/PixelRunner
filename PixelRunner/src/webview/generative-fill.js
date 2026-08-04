@@ -653,6 +653,7 @@
         pollInterval: modules.state.state.settings.pollInterval,
         timeout: modules.state.state.settings.timeout,
         maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: modules.state.state.settings.ratioOffsetCorrectionEnabled === true,
         runningHubRegion: modules.state.state.settings.runningHubRegion
       },
       generativeFill: {

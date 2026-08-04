@@ -1,24 +1,10 @@
-﻿(function initWorkspaceModule(global) {
+(function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const RUN_BUTTON_COOLDOWN_MS = 600;
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
-  const GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS = Object.freeze({
-    mode: "natural",
-    totalStrength: 64,
-    luminanceStrength: 70,
-    colorStrength: 68,
-    saturationStrength: 0,
-    contrastStrength: 0,
-    featherRadius: 0,
-    createBackupLayer: true,
-    pixelPipelineEnabled: true,
-    alignmentEnabled: false,
-    alignmentScaleEnabled: false,
-    localAlignmentEnabled: false
-  });
   const RUNNINGHUB_TASK_DETAIL_URLS = {
     cn: "https://www.runninghub.cn/bill-task",
     global: "https://www.runninghub.ai/bill-task"
@@ -1977,6 +1963,7 @@
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
         maxConcurrentTasks: state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: state.settings.ratioOffsetCorrectionEnabled === true,
         runningHubRegion: state.settings.runningHubRegion
       }
     };
@@ -2011,7 +1998,8 @@
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
-        maxConcurrentTasks: state.settings.maxConcurrentTasks
+        maxConcurrentTasks: state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: state.settings.ratioOffsetCorrectionEnabled === true
       },
       config: {
         region,
@@ -2720,6 +2708,7 @@
         pollInterval: modules.state.state.settings.pollInterval,
         timeout: modules.state.state.settings.timeout,
         maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: modules.state.state.settings.ratioOffsetCorrectionEnabled === true,
         runningHubRegion: modules.state.state.settings.runningHubRegion
       }
     };
@@ -2780,6 +2769,9 @@
     const generativeFill = sourceDocument && sourceDocument.generativeFill && typeof sourceDocument.generativeFill === "object"
       ? sourceDocument.generativeFill
       : null;
+    const ratioOffsetCorrection = sourceDocument && sourceDocument.ratioOffsetCorrection && sourceDocument.ratioOffsetCorrection.enabled === true
+      ? sourceDocument.ratioOffsetCorrection
+      : null;
     const documentBounds = getDocumentCanvasBounds(sourceDocument);
     const targetBounds = (generativeFill && generativeFill.contextBounds) || selectionBounds || documentBounds || null;
     const useFullDocumentBounds = !selectionBounds && !!documentBounds;
@@ -2792,7 +2784,7 @@
       targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
       targetBounds,
       applyMask: Boolean(selectionBounds),
-      fitMode: generativeFill || useFullDocumentBounds ? "stretch" : "contain",
+      fitMode: ratioOffsetCorrection ? "cover" : generativeFill || useFullDocumentBounds ? "stretch" : "contain",
       preserveCanvasBounds: Boolean(generativeFill),
       placementMaskDataUrl: generativeFill ? String(generativeFill.placementMaskDataUrl || "") : "",
       selectionSnapshotChannelName: generativeFill ? String(generativeFill.selectionSnapshotChannelName || "") : "",
@@ -2819,11 +2811,8 @@
         };
       }
       return {
-        method: "photoshop.placeResultWithBlendMatch",
-        payload: {
-          ...payload,
-          blendMatch: GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS
-        },
+        method: "photoshop.placeResultWithGenerativeFillColorCorrection",
+        payload,
         timeoutMs: 300000
       };
     }
@@ -2850,7 +2839,7 @@
   function getAutoPlacementFusionSuffix(result, fusionResponse) {
     if (!fusionResponse || fusionResponse.ok !== true || fusionResponse.skipped) return "";
     const generativeFill = result && result.sourceDocument && result.sourceDocument.generativeFill;
-    return generativeFill ? "，明度与色彩自动校正完成" : "，融合校色完成";
+    return generativeFill ? "，明度与色彩自动校正完成" : "，对齐与校色完成";
   }
 
   function isAutoPlacementBlockedError(error) {
@@ -3278,6 +3267,32 @@
     }
 
     try {
+      if (payload && payload.settings && payload.settings.ratioOffsetCorrectionEnabled === true) {
+        if (!modules.ratioOffsetCorrection || typeof modules.ratioOffsetCorrection.prepareRunPayload !== "function") {
+          throw new Error("比例偏移修正模块未加载，请重启插件后重试");
+        }
+        const prepared = await modules.ratioOffsetCorrection.prepareRunPayload(payload, sourceDocument);
+        if (prepared.applied) {
+          payload = prepared.payload;
+          sourceDocument = prepared.sourceDocument;
+          const correction = prepared.metadata;
+          const retainedPercent = Math.max(0, Math.min(100, Math.round(Number(correction.retainedAreaRatio || 0) * 100)));
+          const forcedRatio = correction.forcedAspectRatioValue
+            ? `，比例字段已强制为 ${correction.forcedAspectRatioValue}`
+            : "，未识别到可写入的 1:1 比例字段，将由工作流根据方形主图决定输出比例";
+          modules.ui.logToWorkspace(
+            `比例偏移修正已应用：${correction.originalWidth}x${correction.originalHeight} -> ${correction.squareSize}x${correction.squareSize}，裁回后保留约 ${retainedPercent}% 有效面积${forcedRatio}。`,
+            correction.forcedAspectRatioValue ? "info" : "warn"
+          );
+          upsertRunningTask({
+            taskId: tempTaskId,
+            sourceDocument,
+            detail: `比例偏移修正完成，正在提交到 ${statusLabel}...`
+          });
+        } else if (prepared.reason === "missing-primary-image") {
+          modules.ui.logToWorkspace("已开启比例偏移修正，但当前任务没有可处理的主图，任务将按原参数运行。", "warn");
+        }
+      }
       modules.ui.logToWorkspace(
         `[运行提交] provider=${payload.provider || "runninghub"} appId=${payload.appId} appName=${payload.appName || "-"} instanceType=${payload.instanceType || "default"} inputCount=${Object.keys(payload.inputs || {}).length}`,
         "info"
@@ -3433,7 +3448,7 @@
         status: placementFailureMessage ? "placement-failed" : "succeeded",
         detail:
           placementResponse && placementResponse.documentId
-            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}${placementResponse.blendMatch && placementResponse.blendMatch.ok ? "，融合校色完成" : ""}。`
+            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}${placementResponse.blendMatch && placementResponse.blendMatch.ok ? "，对齐与校色完成" : ""}。`
             : placementResponse && placementResponse.placed
               ? "任务已完成，并已自动贴回 Photoshop。"
               : placementFailureMessage

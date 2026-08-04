@@ -252,7 +252,7 @@
     renderSettings();
     setPreviewLoadingState("正在采样图层", "正在采样当前图层并生成融合预览");
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace("[融合校色] 已开始准备预览采样：打开面板后立即刷新当前图层。", "info");
+      modules.ui.logToWorkspace("[对齐与校色] 已开始准备预览采样：打开面板后立即刷新当前图层。", "info");
     }
     void refreshPreview();
   }
@@ -273,7 +273,7 @@
     renderSettings();
     void persistSettings();
     if (modules.ui && modules.ui.logToWorkspace) {
-      modules.ui.logToWorkspace("融合校色参数已重置为均衡默认值。", "info");
+      modules.ui.logToWorkspace("对齐与校色参数已重置为均衡默认值。", "info");
     }
   }
 
@@ -965,7 +965,7 @@
     resolveGpuAlignmentSeedWaiters(seed);
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
       const topCount = seed.search && Array.isArray(seed.search.topCandidates) ? seed.search.topCandidates.length : 0;
-      modules.ui.logToWorkspace(`[融合校色] GPU seed ready total：${formatPreviewMs(seed.createdTotalMs)}，previewCacheKey=${seed.previewCacheKey || "无"}，topCandidates=${topCount}，trust=hint-only。`, "info");
+      modules.ui.logToWorkspace(`[对齐与校色] GPU seed ready total：${formatPreviewMs(seed.createdTotalMs)}，previewCacheKey=${seed.previewCacheKey || "无"}，topCandidates=${topCount}，trust=hint-only。`, "info");
     }
     updatePreviewBackgroundOverlay();
     return seed;
@@ -1835,10 +1835,10 @@
       ? formatShadowValidation(validation || candidate.validation)
       : "verdict=pending";
     modules.ui.logToWorkspace(
-      `[融合校色] ${label}GPU alignment candidate backend=${candidate.backend || "unknown"}，generated=true，diagnosticOnly=true，${validationText}。`,
+      `[对齐与校色] ${label}GPU alignment candidate backend=${candidate.backend || "unknown"}，generated=true，diagnosticOnly=true，${validationText}。`,
       validation && validation.verdict === "rejected" ? "warn" : "info"
     );
-    modules.ui.logToWorkspace("[融合校色] 本轮 Apply 仍使用 host CPU BlendMatchPlan；GPU candidate 不会写入最终执行 alignment。", "info");
+    modules.ui.logToWorkspace("[对齐与校色] 本轮 Apply 仍使用 host CPU BlendMatchPlan；GPU candidate 不会写入最终执行 alignment。", "info");
   }
 
   function mergePreviewPlanHydration(planResult) {
@@ -1893,7 +1893,7 @@
     };
     setPreviewReadyState("快速预览");
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace("[融合校色] CPU 最终 plan 改为在点击融合时构建；将复用当前 raw sample，不重新 Photoshop 采样。", "info");
+      modules.ui.logToWorkspace("[对齐与校色] CPU 最终 plan 改为在点击融合时构建；将复用当前 raw sample，不重新 Photoshop 采样。", "info");
     }
   }
 
@@ -1905,8 +1905,8 @@
     try {
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(gpuPlan
-          ? "[融合校色] WebGL2 可信 plan 提交：复用刚才的 raw sample，不重新采样 Photoshop 像素，也不启动 CPU shadow search。"
-          : "[融合校色] GPU 不可用或结果不可信，开始使用预览 raw sample 构建 CPU fallback plan。", "info");
+          ? "[对齐与校色] WebGL2 可信 plan 提交：复用刚才的 raw sample，不重新采样 Photoshop 像素，也不启动 CPU shadow search。"
+          : "[对齐与校色] GPU 不可用或结果不可信，开始使用预览 raw sample 构建 CPU fallback plan。", "info");
       }
       const seedWait = gpuPlan ? { waitedMs: 0, timedOut: false, seed: null } : await waitForGpuAlignmentSeed(sampleResult.previewCacheKey, GPU_ALIGNMENT_SEED_GRACE_MS);
       const gpuSeed = seedWait && seedWait.seed ? seedWait.seed : null;
@@ -1914,7 +1914,7 @@
       const seedKeyMatch = Boolean(gpuSeed) || Boolean(latestSeed && String(latestSeed.previewCacheKey || "") === String(sampleResult.previewCacheKey || ""));
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
         modules.ui.logToWorkspace(
-          `[融合校色] GPU seed hydrate grace：window=${formatPreviewMs(GPU_ALIGNMENT_SEED_GRACE_MS)}，waited=${formatPreviewMs(seedWait && seedWait.waitedMs)}，attached=${gpuSeed ? "true" : "false"}，previewCacheKeyMatch=${seedKeyMatch ? "true" : "false"}，timedOut=${seedWait && seedWait.timedOut ? "true" : "false"}。`,
+          `[对齐与校色] GPU seed hydrate grace：window=${formatPreviewMs(GPU_ALIGNMENT_SEED_GRACE_MS)}，waited=${formatPreviewMs(seedWait && seedWait.waitedMs)}，attached=${gpuSeed ? "true" : "false"}，previewCacheKeyMatch=${seedKeyMatch ? "true" : "false"}，timedOut=${seedWait && seedWait.timedOut ? "true" : "false"}。`,
           gpuSeed ? "info" : "warn"
         );
       }
@@ -1946,7 +1946,7 @@
       const merged = mergePreviewPlanHydration(planResult);
       if (merged) setPreviewReadyState("实时预览");
       if (merged && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] ${gpuPlan ? "WebGL2" : "CPU fallback"} plan 已准备：planId=${planResult && planResult.planId || "无"}，从打开面板到 plan ready ${formatPreviewMs(getPreviewNowMs() - startedAt)}；Apply 将复用 cached plan。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] ${gpuPlan ? "WebGL2" : "CPU fallback"} plan 已准备：planId=${planResult && planResult.planId || "无"}，从打开面板到 plan ready ${formatPreviewMs(getPreviewNowMs() - startedAt)}；Apply 将复用 cached plan。`, "info");
       }
     } catch (error) {
       const message = error && error.message ? error.message : "BlendMatchPlan 后台准备失败";
@@ -1955,7 +1955,7 @@
         localState.preview.planHydrationError = message;
       }
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] ${gpuPlan ? "WebGL2 plan" : "CPU fallback plan"} 准备失败：${message}。Apply 会在缓存失效时回退 CPU 分析。`, "warn");
+        modules.ui.logToWorkspace(`[对齐与校色] ${gpuPlan ? "WebGL2 plan" : "CPU fallback plan"} 准备失败：${message}。Apply 会在缓存失效时回退 CPU 分析。`, "warn");
       }
     } finally {
       localState.previewPlanBusy = false;
@@ -1978,14 +1978,14 @@
       const gpuDoneAt = getPreviewNowMs();
       if (!isGpuAlignmentUsable(gpuAlignment)) {
         if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-          modules.ui.logToWorkspace(`[融合校色] GPU candidate 未生成：${gpuAlignment && gpuAlignment.reason || "gpu-unusable"}；快速预览和 CPU plan 不受影响。`, "warn");
+          modules.ui.logToWorkspace(`[对齐与校色] GPU candidate 未生成：${gpuAlignment && gpuAlignment.reason || "gpu-unusable"}；快速预览和 CPU plan 不受影响。`, "warn");
         }
         return null;
       }
       const gpuPlan = buildGpuFinalPlanPayload(gpuAlignment, sampleResult);
       if (!gpuPlan) {
         if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-          modules.ui.logToWorkspace("[融合校色] WebGL2 plan 未生成共享内容掩膜；将回退 CPU。", "warn");
+          modules.ui.logToWorkspace("[对齐与校色] WebGL2 plan 未生成共享内容掩膜；将回退 CPU。", "warn");
         }
         return null;
       }
@@ -2013,16 +2013,16 @@
         const stages = Array.isArray(search.stages)
           ? search.stages.map((stage) => stage.name || stage).join(" -> ")
           : Array.isArray(search.gpuStages) ? search.gpuStages.join(" -> ") : "sobel-magnitude -> global-translation-scale-search";
-        modules.ui.logToWorkspace(`[融合校色] WebGL2 可信对齐已完成：backend=webgl2，stages=${stages}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] WebGL2 可信对齐已完成：backend=webgl2，stages=${stages}。`, "info");
         if (globalValidation) {
-          modules.ui.logToWorkspace(`[融合校色] GPU validation ready total：${formatPreviewMs(gpuDoneAt - startedAt)}，score=${Number(globalValidation.score || 0).toFixed(4)}，scoreGap=${Number(globalValidation.scoreGap || 0).toFixed(4)}，sampleCount=${globalValidation.sampleCount || 0}，topK=${Array.isArray(globalValidation.topK) ? globalValidation.topK.length : 0}，readback=${globalValidation.scoreReadback || "compact-summary"}。`, "info");
+          modules.ui.logToWorkspace(`[对齐与校色] GPU validation ready total：${formatPreviewMs(gpuDoneAt - startedAt)}，score=${Number(globalValidation.score || 0).toFixed(4)}，scoreGap=${Number(globalValidation.scoreGap || 0).toFixed(4)}，sampleCount=${globalValidation.sampleCount || 0}，topK=${Array.isArray(globalValidation.topK) ? globalValidation.topK.length : 0}，readback=${globalValidation.scoreReadback || "compact-summary"}。`, "info");
         }
-        modules.ui.logToWorkspace(`[融合校色] WebGL2 耗时：raw 解码 ${formatPreviewMs(decodeMs)} / 临时准备 ${formatPreviewMs(correctionsMs)} / GPU upload ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / 图像金字塔 ${formatPreviewMs(timings.pyramid || 0)} / 全局搜索 ${formatPreviewMs(timings.globalSearch || 0)} / affine refine ${formatPreviewMs(timings.affineRefine || 0)} / 局部网格 ${formatPreviewMs(timings.localGrid || 0)} / readback ${formatPreviewMs(timings.readback || 0)} / mask ${formatPreviewMs(timings.mask || 0)} / ColorPlan 由 Host 统计 / 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] WebGL2 耗时：raw 解码 ${formatPreviewMs(decodeMs)} / 临时准备 ${formatPreviewMs(correctionsMs)} / GPU upload ${formatPreviewMs(timings.upload || 0)} / Sobel ${formatPreviewMs(timings.sobel || 0)} / 图像金字塔 ${formatPreviewMs(timings.pyramid || 0)} / 全局搜索 ${formatPreviewMs(timings.globalSearch || 0)} / affine refine ${formatPreviewMs(timings.affineRefine || 0)} / 局部网格 ${formatPreviewMs(timings.localGrid || 0)} / readback ${formatPreviewMs(timings.readback || 0)} / mask ${formatPreviewMs(timings.mask || 0)} / ColorPlan 由 Host 统计 / 总计 ${formatPreviewMs(gpuDoneAt - gpuStartedAt)}。`, "info");
       }
       return { alignment: gpuAlignment, gpuPlan };
     } catch (error) {
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] WebGL2 分析失败：${error && error.message ? error.message : "unknown"}；将回退 CPU。`, "warn");
+        modules.ui.logToWorkspace(`[对齐与校色] WebGL2 分析失败：${error && error.message ? error.message : "unknown"}；将回退 CPU。`, "warn");
       }
       return null;
     } finally {
@@ -2105,19 +2105,19 @@
         const candidate = localState.preview.gpuAlignmentCandidate;
         const validation = localState.preview.gpuAlignmentShadowValidation || candidate.validation || null;
         modules.ui.logToWorkspace(
-          `[融合校色] 预览 GPU candidate 已挂载为 diagnostic：backend=${candidate.backend || "unknown"}，validation=${validation && validation.verdict || "pending"}，finalApplyEligible=false。`,
+          `[对齐与校色] 预览 GPU candidate 已挂载为 diagnostic：backend=${candidate.backend || "unknown"}，validation=${validation && validation.verdict || "pending"}，finalApplyEligible=false。`,
           validation && validation.verdict === "rejected" ? "warn" : "info"
         );
       } else {
-        modules.ui.logToWorkspace("[融合校色] 预览 GPU candidate：未生成或已回退 CPU-only preview。", "info");
+        modules.ui.logToWorkspace("[对齐与校色] 预览 GPU candidate：未生成或已回退 CPU-only preview。", "info");
       }
       if (colorSummary) {
-        modules.ui.logToWorkspace(`[融合校色] 预览 ColorPlan：method=${colorSummary.method || "unknown"}，profile=${colorSummary.profile ? "yes" : "no"}，renderer=${colorSummary.previewRenderable ? "plan" : colorSummary.previewFallback || "simplified-corrections"}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] 预览 ColorPlan：method=${colorSummary.method || "unknown"}，profile=${colorSummary.profile ? "yes" : "no"}，renderer=${colorSummary.previewRenderable ? "plan" : colorSummary.previewFallback || "simplified-corrections"}。`, "info");
       } else {
-        modules.ui.logToWorkspace("[融合校色] 预览 ColorPlan：host 未返回颜色计划，使用 simplified color fallback。", "warn");
+        modules.ui.logToWorkspace("[对齐与校色] 预览 ColorPlan：host 未返回颜色计划，使用 simplified color fallback。", "warn");
       }
       if (isPreviewUsingSimplifiedColorFallback(localState.preview)) {
-        modules.ui.logToWorkspace("[融合校色] 预览颜色仍处于 simplified color fallback；最终 Apply 会优先消费 host ColorPlan。", "info");
+        modules.ui.logToWorkspace("[对齐与校色] 预览颜色仍处于 simplified color fallback；最终 Apply 会优先消费 host ColorPlan。", "info");
       }
     }
     setPreviewLoadingState("正在生成融合预览", "正在绘制融合前后对比");
@@ -2132,9 +2132,9 @@
     }
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
       if (result && result.planPending) {
-        modules.ui.logToWorkspace(`[融合校色] 快速 preview 已准备：raw sample 已缓存，previewCacheKey=${result.previewCacheKey || "无"}；可直接融合，最终 plan 会复用该采样。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] 快速 preview 已准备：raw sample 已缓存，previewCacheKey=${result.previewCacheKey || "无"}；可直接融合，最终 plan 会复用该采样。`, "info");
       } else {
-        modules.ui.logToWorkspace(`[融合校色] preview planId 准备完成：${result && result.planId || "无"}，previewCacheKey=${result && result.previewCacheKey || "无"}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] preview planId 准备完成：${result && result.planId || "无"}，previewCacheKey=${result && result.previewCacheKey || "无"}。`, "info");
       }
     }
     updatePreviewControls();
@@ -2190,11 +2190,11 @@
 
   async function refreshPreviewWithCpu(startedAt, fallbackReason = "", gpuAlignment = null) {
     if (fallbackReason && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] GPU 预览路径回退 CPU：${fallbackReason}。`, "warn");
+      modules.ui.logToWorkspace(`[对齐与校色] GPU 预览路径回退 CPU：${fallbackReason}。`, "warn");
     }
     setPreviewLoadingState("正在采样图层", "正在采样图层并生成 CPU 融合预览");
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace("[融合校色] preview host call 开始：blendMatchPreview。", "info");
+      modules.ui.logToWorkspace("[对齐与校色] preview host call 开始：blendMatchPreview。", "info");
     }
     await waitForPreviewPaint();
     const result = await modules.runtime.callHost("photoshop.runToolAction", [{
@@ -2204,7 +2204,7 @@
     const hostDoneAt = getPreviewNowMs();
     setPreviewLoadingState("正在解码预览", "正在载入预览图像");
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] preview host call 结束：blendMatchPreview，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
+      modules.ui.logToWorkspace(`[对齐与校色] preview host call 结束：blendMatchPreview，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
     }
     logPreviewLines(result && result.logs, "info");
     if (gpuAlignment && result && result.alignment) {
@@ -2222,14 +2222,14 @@
     const installSummary = await installPreviewResult(result);
     const drawDoneAt = getPreviewNowMs();
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载+canvas ${formatPreviewMs(installSummary ? installSummary.prepareMs : drawDoneAt - hostDoneAt)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : 0)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+      modules.ui.logToWorkspace(`[对齐与校色] 预览前端耗时：host ${formatPreviewMs(hostDoneAt - startedAt)} / 图片加载+canvas ${formatPreviewMs(installSummary ? installSummary.prepareMs : drawDoneAt - hostDoneAt)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : 0)} / 总计 ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
     }
   }
 
   async function useSampleCpuBaselinePreview(sampleResult, startedAt, fallbackReason, gpuAlignment = null) {
     if (!sampleResult || !sampleResult.cpuAlignment) return false;
     if (fallbackReason && modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] GPU 预览路径使用 CPU 基准结果：${fallbackReason}。`, "warn");
+      modules.ui.logToWorkspace(`[对齐与校色] GPU 预览路径使用 CPU 基准结果：${fallbackReason}。`, "warn");
     }
     setPreviewLoadingState("正在生成融合预览", "正在使用 CPU 基准 plan 绘制融合预览");
     const baselineResult = {
@@ -2252,7 +2252,7 @@
     const installStartedAt = getPreviewNowMs();
     const installSummary = await installPreviewResult(baselineResult);
     if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-      modules.ui.logToWorkspace(`[融合校色] 预览前端耗时：host采样+CPU基准 ${formatPreviewMs(installStartedAt - startedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : 0)} / 未二次调用 CPU 预览。`, "info");
+      modules.ui.logToWorkspace(`[对齐与校色] 预览前端耗时：host采样+CPU基准 ${formatPreviewMs(installStartedAt - startedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : 0)} / 未二次调用 CPU 预览。`, "info");
     }
     return true;
   }
@@ -2267,15 +2267,15 @@
     const startedAt = getPreviewNowMs();
     try {
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace("[融合校色] 预览准备已开始：等待 UI 绘制采样状态后调用 Photoshop。", "info");
+        modules.ui.logToWorkspace("[对齐与校色] 预览准备已开始：等待 UI 绘制采样状态后调用 Photoshop。", "info");
       }
       await waitForPreviewPaint();
       const shouldRunGpuDiagnostic = Boolean(localState.settings.alignmentEnabled);
       const requestCpuBaseline = false;
       const validationMode = getGpuAlignmentValidationMode();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] 快速预览路径：host 先返回 raw sample；WebGL2 负责最终可信 plan，只有 GPU 不可用或不可信时才构建 CPU fallback。`, "info");
-        modules.ui.logToWorkspace("[融合校色] preview host call 开始：blendMatchPreviewSamples。", "info");
+        modules.ui.logToWorkspace(`[对齐与校色] 快速预览路径：host 先返回 raw sample；WebGL2 负责最终可信 plan，只有 GPU 不可用或不可信时才构建 CPU fallback。`, "info");
+        modules.ui.logToWorkspace("[对齐与校色] preview host call 开始：blendMatchPreviewSamples。", "info");
       }
       setPreviewLoadingState("正在采样图层", "正在从 Photoshop 采样 source/reference raw 图层");
       const sampleResult = await modules.runtime.callHost("photoshop.runToolAction", [{
@@ -2287,7 +2287,7 @@
       const hostDoneAt = getPreviewNowMs();
       setPreviewLoadingState("正在解码采样", "正在解码 raw 采样数据");
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] preview host call 结束：blendMatchPreviewSamples，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] preview host call 结束：blendMatchPreviewSamples，耗时 ${formatPreviewMs(hostDoneAt - startedAt)}。`, "info");
       }
       logPreviewLines(sampleResult && sampleResult.logs, "info");
       if (sampleResult && sampleResult.cpuAlignment) localState.alignmentValidationDone = true;
@@ -2301,7 +2301,7 @@
       }
       const transferredBytes = Number(sourceSample.byteLength || 0) + Number(referenceSample.byteLength || 0);
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] bridge transfer + decode：raw payload ${transferredBytes} bytes，source decode ${formatPreviewMs(sourceSample.decodeMs)} / reference decode ${formatPreviewMs(referenceSample.decodeMs)} / 前端 decode 总计 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] bridge transfer + decode：raw payload ${transferredBytes} bytes，source decode ${formatPreviewMs(sourceSample.decodeMs)} / reference decode ${formatPreviewMs(referenceSample.decodeMs)} / 前端 decode 总计 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)}。`, "info");
       }
       sampleResult.sourceSample = sourceSample;
       sampleResult.referenceSample = referenceSample;
@@ -2316,16 +2316,16 @@
       const installSummary = await installPreviewResult(sampleResult);
       const drawDoneAt = getPreviewNowMs();
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[融合校色] 快速预览已显示：planPending=${sampleResult.planPending ? "true" : "false"}，正在准备可信对齐 plan。`, "info");
-        modules.ui.logToWorkspace(`[融合校色] quick preview render：corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - correctionsDoneAt)} / render install ${formatPreviewMs(installSummary ? installSummary.installMs : drawDoneAt - correctionsDoneAt)}。`, "info");
-        modules.ui.logToWorkspace(`[融合校色] first preview visible total：host raw capture+encode+bridge ${formatPreviewMs(hostDoneAt - startedAt)} / front decode ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / quick render ${formatPreviewMs(drawDoneAt - correctionsStartedAt)} / total ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] 快速预览已显示：planPending=${sampleResult.planPending ? "true" : "false"}，正在准备可信对齐 plan。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] quick preview render：corrections ${formatPreviewMs(correctionsDoneAt - correctionsStartedAt)} / raw->canvas ${formatPreviewMs(installSummary ? installSummary.rawCanvasMs : 0)} / canvas render ${formatPreviewMs(installSummary ? installSummary.renderMs : drawDoneAt - correctionsDoneAt)} / render install ${formatPreviewMs(installSummary ? installSummary.installMs : drawDoneAt - correctionsDoneAt)}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] first preview visible total：host raw capture+encode+bridge ${formatPreviewMs(hostDoneAt - startedAt)} / front decode ${formatPreviewMs(decodeDoneAt - decodeStartedAt)} / quick render ${formatPreviewMs(drawDoneAt - correctionsStartedAt)} / total ${formatPreviewMs(drawDoneAt - startedAt)}。`, "info");
       }
       let gpuResult = null;
       if (shouldRunGpuDiagnostic) {
         const engine = ensureAlignmentEngine();
         if (engine) {
           if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-            modules.ui.logToWorkspace("[融合校色] WebGL2 对齐已在首屏预览显示后启动，将作为最终计划提交。", "info");
+            modules.ui.logToWorkspace("[对齐与校色] WebGL2 对齐已在首屏预览显示后启动，将作为最终计划提交。", "info");
           }
           gpuResult = await runPreviewGpuDiagnostic({
             engine,
@@ -2338,13 +2338,13 @@
             correctionsMs: correctionsDoneAt - correctionsStartedAt
           });
         } else if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-          modules.ui.logToWorkspace(`[融合校色] WebGL2 未启动：${localState.alignmentGpuUnavailableReason || "WebGL2 对齐不可用"}；将构建 CPU fallback plan。`, "warn");
+          modules.ui.logToWorkspace(`[对齐与校色] WebGL2 未启动：${localState.alignmentGpuUnavailableReason || "WebGL2 对齐不可用"}；将构建 CPU fallback plan。`, "warn");
         }
       }
       if (localState.busy) {
         deferCpuPreviewPlanUntilApply(sampleResult);
         if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-          modules.ui.logToWorkspace("[融合校色] 已启动直接融合，跳过后续预览 plan 补齐以避免重复分析。", "info");
+          modules.ui.logToWorkspace("[对齐与校色] 已启动直接融合，跳过后续预览 plan 补齐以避免重复分析。", "info");
         }
       } else if (gpuResult && gpuResult.gpuPlan) {
         await hydratePreviewPlanFromHost(sampleResult, startedAt, gpuResult.gpuPlan);
@@ -2359,7 +2359,7 @@
         const fallbackMessage = fallbackError && fallbackError.message ? fallbackError.message : message;
         setPreviewErrorState(is16BitErrorMessage(fallbackMessage) ? "不支持 16 位" : "预览失败", fallbackMessage);
         if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-          modules.ui.logToWorkspace(`[融合校色] 预览失败：${fallbackMessage}。前端等待 ${formatPreviewMs(getPreviewNowMs() - startedAt)}。`, "warn");
+          modules.ui.logToWorkspace(`[对齐与校色] 预览失败：${fallbackMessage}。前端等待 ${formatPreviewMs(getPreviewNowMs() - startedAt)}。`, "warn");
         }
       }
     } finally {
@@ -2372,7 +2372,7 @@
     if (modules.license && !modules.license.requireFeature("blendMatch")) return;
     if (localState.busy) return;
     if (!modules.runtime.isPluginRuntime()) {
-      modules.ui.logToWorkspace("浏览器预览模式下不会执行融合校色。", "info");
+      modules.ui.logToWorkspace("浏览器预览模式下不会执行对齐与校色。", "info");
       return;
     }
 
@@ -2380,9 +2380,9 @@
     renderSettings();
     const applyButton = getById("btnBlendMatchApply");
     if (applyButton) applyButton.disabled = true;
-    modules.ui.logToWorkspace("[融合校色] 准备使用当前活动图层作为 AI 返图图层。", "info");
+    modules.ui.logToWorkspace("[对齐与校色] 准备使用当前活动图层作为 AI 返图图层。", "info");
     if (localState.preview && localState.preview.planHydrationDeferred) {
-      modules.ui.logToWorkspace("[融合校色] 直接融合：复用预览 raw sample 构建最终可信 plan，不等待后台预览分析。", "info");
+      modules.ui.logToWorkspace("[对齐与校色] 直接融合：复用预览 raw sample 构建最终可信 plan，不等待后台预览分析。", "info");
     }
 
     try {
@@ -2390,16 +2390,16 @@
       const logs = Array.isArray(result && result.logs) ? result.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
       if (result && result.skipped) {
-        modules.ui.logToWorkspace(result.message || "融合校色已跳过，未生成结果层。", "warn");
-        setText("blendMatchPanelStatus", result.message || "融合校色已跳过");
+        modules.ui.logToWorkspace(result.message || "对齐与校色已跳过，未生成结果层。", "warn");
+        setText("blendMatchPanelStatus", result.message || "对齐与校色已跳过");
       } else {
-        modules.ui.logToWorkspace(result && result.message ? result.message : "融合校色完成。", "success");
-        setText("blendMatchPanelStatus", result && result.layerName ? `结果图层：${result.layerName}` : "融合校色已完成");
+        modules.ui.logToWorkspace(result && result.message ? result.message : "对齐与校色完成。", "success");
+        setText("blendMatchPanelStatus", result && result.layerName ? `结果图层：${result.layerName}` : "对齐与校色已完成");
         closePanel();
       }
     } catch (error) {
       const message = error && error.message ? error.message : "执行失败";
-      modules.ui.logToWorkspace(`[融合校色] 执行失败：${message}`, "error");
+      modules.ui.logToWorkspace(`[对齐与校色] 执行失败：${message}`, "error");
       setText("blendMatchPanelStatus", is16BitErrorMessage(message) ? "当前文档为 16 位，请切换到 8 位后再使用" : `执行失败：${message}`);
     } finally {
       localState.busy = false;
@@ -2409,7 +2409,10 @@
   }
 
   async function applyAutoPlacementFusion(placementResponse, resultContext = {}) {
-    if (modules.license && !modules.license.isFeatureUnlocked("blendMatch")) return null;
+    const generativeFillCorrection = Boolean(
+      resultContext && resultContext.sourceDocument && resultContext.sourceDocument.generativeFill
+    );
+    if (!generativeFillCorrection && modules.license && !modules.license.isFeatureUnlocked("blendMatch")) return null;
     const hasBundledFusion = Boolean(
       placementResponse && Object.prototype.hasOwnProperty.call(placementResponse, "blendMatchFusion")
     );
@@ -2417,10 +2420,7 @@
       return null;
     }
     const taskId = String((resultContext && resultContext.taskId) || "").trim();
-    const generativeFillCorrection = Boolean(
-      resultContext && resultContext.sourceDocument && resultContext.sourceDocument.generativeFill
-    );
-    const operationLabel = generativeFillCorrection ? "创成式填充自动校色" : "融合校色";
+    const operationLabel = generativeFillCorrection ? "创成式填充自动校色" : "对齐与校色";
     modules.ui.logToWorkspace(`[${operationLabel}] 自动贴回后开始处理${taskId ? `：${taskId}` : ""}。`, "info");
     if (hasBundledFusion) {
       const fusion = placementResponse.blendMatchFusion;
@@ -2431,7 +2431,7 @@
         ? (fusion.message || `[${operationLabel}] 已跳过处理。`)
         : (generativeFillCorrection
             ? "[创成式填充自动校色] 明度与色彩校正完成。"
-            : (fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。"));
+            : (fusion && fusion.message ? fusion.message : "[对齐与校色] 自动融合完成。"));
       modules.ui.logToWorkspace(
         bundledError
           ? `[${operationLabel}] 处理失败，已保留原返图：${bundledError}`
@@ -2450,12 +2450,12 @@
       const logs = Array.isArray(fusion && fusion.logs) ? fusion.logs : [];
       logs.forEach((line) => modules.ui.logToWorkspace(line, "info"));
       modules.ui.logToWorkspace(
-        fusion && fusion.message ? fusion.message : "[融合校色] 自动融合完成。",
+        fusion && fusion.message ? fusion.message : "[对齐与校色] 自动融合完成。",
         fusion && fusion.skipped ? "warn" : "success"
       );
       return fusion;
     } catch (error) {
-      modules.ui.logToWorkspace(`[融合校色] 自动融合失败，已保留原返图：${error.message}`, "warn");
+      modules.ui.logToWorkspace(`[对齐与校色] 自动融合失败，已保留原返图：${error.message}`, "warn");
       return { ok: false, error: error.message || String(error || "自动融合失败") };
     }
   }

@@ -71,7 +71,7 @@ function createTimingRecorder() {
     entries() {
       return entries.slice();
     },
-    logTo(logs, prefix = "[融合校色] 耗时") {
+    logTo(logs, prefix = "[对齐与校色] 耗时") {
       if (!Array.isArray(logs) || !entries.length) return;
       const segments = entries.map((entry) => `${entry.label} ${formatMs(entry.ms)}`);
       logs.push(`${prefix}：${segments.join(" / ")} / 总计 ${formatMs(this.totalMs())}。`);
@@ -102,7 +102,7 @@ function isUnsupportedBitsPerChannel(docInfo) {
 
 function buildUnsupportedBitsError(docInfo) {
   const bitsLabel = String(docInfo && docInfo.bitsPerChannelLabel) || "当前位深";
-  return new Error(`融合校色支持 8 位和 16 位 RGB 文档，当前文档为 ${bitsLabel}，请切换到 8 位或 16 位后再使用。`);
+  return new Error(`对齐与校色支持 8 位和 16 位 RGB 文档，当前文档为 ${bitsLabel}，请切换到 8 位或 16 位后再使用。`);
 }
 
 export function getBlendMatchConfig(payload = {}) {
@@ -574,7 +574,7 @@ async function createTransparentTempDocument(app, action, name, size, resolution
     _options: { dialogOptions: "dontDisplay" }
   }], {});
   const doc = app && app.activeDocument ? app.activeDocument : null;
-  if (!doc) throw new Error("无法创建融合校色临时文档。");
+  if (!doc) throw new Error("无法创建对齐与校色临时文档。");
   return doc;
 }
 
@@ -1418,7 +1418,7 @@ export function buildCpuBlendMatchPlanFromSamples(options) {
       });
     }
     if (Array.isArray(logs)) {
-      logs.push(`[融合校色] CPU shared mask：shared=${formatRatioPercent(alignment.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(alignment.sharedMask.excludedRatio)}，仅共享区域参与 ColorPlan。`);
+      logs.push(`[对齐与校色] CPU shared mask：shared=${formatRatioPercent(alignment.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(alignment.sharedMask.excludedRatio)}，仅共享区域参与 ColorPlan。`);
     }
   }
   const sharedRatio = Number(alignment.sharedMask && alignment.sharedMask.sharedRatio) || 0;
@@ -1432,7 +1432,7 @@ export function buildCpuBlendMatchPlanFromSamples(options) {
       "color-inference-stopped"
     ])).slice(0, 8);
     if (Array.isArray(logs)) {
-      logs.push(`[融合校色] 共享区域不足：shared=${formatRatioPercent(sharedRatio)}，excluded=${formatRatioPercent(excludedRatio)}；停止颜色推断并使用零校正。`);
+      logs.push(`[对齐与校色] 共享区域不足：shared=${formatRatioPercent(sharedRatio)}，excluded=${formatRatioPercent(excludedRatio)}；停止颜色推断并使用零校正。`);
     }
   }
   const gpuSeedDiagnostics = alignment && alignment.search && alignment.search.gpuSeed ? alignment.search.gpuSeed : null;
@@ -1449,23 +1449,23 @@ export function buildCpuBlendMatchPlanFromSamples(options) {
     });
   }
   if (Array.isArray(logs) && seedTrust === "hint-only") {
-    logs.push(`[融合校色] CPU hydrate gpuSeed=${gpuAlignmentSeed ? "true" : "false"}，seedCandidates=${gpuSeedDiagnostics && Number(gpuSeedDiagnostics.seedCandidates) || 0}，seedAccepted=${gpuSeedDiagnostics && gpuSeedDiagnostics.accepted ? "true" : "false"}，fallbackFullCpu=${gpuSeedDiagnostics && gpuSeedDiagnostics.fallbackFullCpu ? "true" : "false"}，seedRejectReason=${gpuSeedDiagnostics && gpuSeedDiagnostics.rejectReason || "none"}。`);
+    logs.push(`[对齐与校色] CPU hydrate gpuSeed=${gpuAlignmentSeed ? "true" : "false"}，seedCandidates=${gpuSeedDiagnostics && Number(gpuSeedDiagnostics.seedCandidates) || 0}，seedAccepted=${gpuSeedDiagnostics && gpuSeedDiagnostics.accepted ? "true" : "false"}，fallbackFullCpu=${gpuSeedDiagnostics && gpuSeedDiagnostics.fallbackFullCpu ? "true" : "false"}，seedRejectReason=${gpuSeedDiagnostics && gpuSeedDiagnostics.rejectReason || "none"}。`);
     if (gpuSeedDiagnostics) {
       const seedMs = Number(gpuSeedDiagnostics.seedValidationMs) || 0;
       const fullMs = Number(gpuSeedDiagnostics.fullCpuSearchMs) || 0;
       const bestSeed = gpuSeedDiagnostics.bestSeed || null;
-      logs.push(`[融合校色] CPU hydrate seed search：accepted=${gpuSeedDiagnostics.accepted ? "true" : "false"}，seedValidationMs=${formatMs(seedMs)}，fullCpuSearchMs=${formatMs(fullMs)}，bestSeed=${bestSeed ? `${bestSeed.dx},${bestSeed.dy},${formatFixed(bestSeed.scale, 4)}` : "none"}，refinedScore=${formatFixed(gpuSeedDiagnostics.refinedScore, 4)}。`);
+      logs.push(`[对齐与校色] CPU hydrate seed search：accepted=${gpuSeedDiagnostics.accepted ? "true" : "false"}，seedValidationMs=${formatMs(seedMs)}，fullCpuSearchMs=${formatMs(fullMs)}，bestSeed=${bestSeed ? `${bestSeed.dx},${bestSeed.dy},${formatFixed(bestSeed.scale, 4)}` : "none"}，refinedScore=${formatFixed(gpuSeedDiagnostics.refinedScore, 4)}。`);
       if (gpuSeedDiagnostics.gpuValidation) {
         const evidence = gpuSeedDiagnostics.gpuValidation;
-        logs.push(`[融合校色] GPU validation evidence：score=${formatFixed(evidence.score, 4)}，secondScore=${formatFixed(evidence.secondScore, 4)}，scoreGap=${formatFixed(evidence.scoreGap, 4)}，sampleCount=${evidence.sampleCount || 0}/${evidence.minSamples || 0}，directionAgreement=${evidence.directionAgreement === null ? "n/a" : formatFixed(evidence.directionAgreement, 4)}，edgeOverlap=${evidence.edgeOverlap === null ? "n/a" : formatFixed(evidence.edgeOverlap, 4)}，topK=${evidence.topK || 0}。`);
+        logs.push(`[对齐与校色] GPU validation evidence：score=${formatFixed(evidence.score, 4)}，secondScore=${formatFixed(evidence.secondScore, 4)}，scoreGap=${formatFixed(evidence.scoreGap, 4)}，sampleCount=${evidence.sampleCount || 0}/${evidence.minSamples || 0}，directionAgreement=${evidence.directionAgreement === null ? "n/a" : formatFixed(evidence.directionAgreement, 4)}，edgeOverlap=${evidence.edgeOverlap === null ? "n/a" : formatFixed(evidence.edgeOverlap, 4)}，topK=${evidence.topK || 0}。`);
       }
       if (gpuSeedDiagnostics.cpuSpotCheck) {
         const spot = gpuSeedDiagnostics.cpuSpotCheck;
-        logs.push(`[融合校色] CPU spot-check：score=${formatFixed(spot.score, 4)}，scoreGap=${formatFixed(spot.scoreGap, 4)}，refinedScore=${formatFixed(spot.refinedScore, 4)}，refinedGap=${formatFixed(spot.refinedGap, 4)}，dx=${spot.dx || 0}，dy=${spot.dy || 0}，scale=${formatFixed(spot.scale || 1, 4)}。`);
+        logs.push(`[对齐与校色] CPU spot-check：score=${formatFixed(spot.score, 4)}，scoreGap=${formatFixed(spot.scoreGap, 4)}，refinedScore=${formatFixed(spot.refinedScore, 4)}，refinedGap=${formatFixed(spot.refinedGap, 4)}，dx=${spot.dx || 0}，dy=${spot.dy || 0}，scale=${formatFixed(spot.scale || 1, 4)}。`);
       }
       if (gpuSeedDiagnostics.parity) {
         const parity = gpuSeedDiagnostics.parity;
-        logs.push(`[融合校色] GPU/CPU parity：scoreDelta=${parity.scoreDelta === null ? "n/a" : formatFixed(parity.scoreDelta, 4)}，scoreGapDelta=${parity.scoreGapDelta === null ? "n/a" : formatFixed(parity.scoreGapDelta, 4)}，dxDelta=${formatFixed(parity.dxDelta, 2)}，dyDelta=${formatFixed(parity.dyDelta, 2)}，scaleDelta=${formatFixed(parity.scaleDelta, 4)}，acceptParity=${parity.acceptParity ? "true" : "false"}，verdict=${parity.verdict || "parity-fallback"}。`);
+        logs.push(`[对齐与校色] GPU/CPU parity：scoreDelta=${parity.scoreDelta === null ? "n/a" : formatFixed(parity.scoreDelta, 4)}，scoreGapDelta=${parity.scoreGapDelta === null ? "n/a" : formatFixed(parity.scoreGapDelta, 4)}，dxDelta=${formatFixed(parity.dxDelta, 2)}，dyDelta=${formatFixed(parity.dyDelta, 2)}，scaleDelta=${formatFixed(parity.scaleDelta, 4)}，acceptParity=${parity.acceptParity ? "true" : "false"}，verdict=${parity.verdict || "parity-fallback"}。`);
       }
     }
   }
@@ -1477,19 +1477,19 @@ export function buildCpuBlendMatchPlanFromSamples(options) {
     timing.mark("plan 颜色画像", colorProfile ? { weight: Math.round(colorProfile.subjectWeight || 0) } : null);
   }
   if (Array.isArray(logs) && colorProfile) {
-    logs.push(`[融合校色] ColorPlan 稳健配对统计：mismatch=${formatFixed(colorProfile.mismatchSeverity, 4)}，evidence=${formatFixed(colorProfile.evidenceReliability, 4)}，weight=${Math.round(colorProfile.subjectWeight || 0)}，shared=${formatRatioPercent(colorProfile.sharedMask && colorProfile.sharedMask.sharedRatio)}。`);
+    logs.push(`[对齐与校色] ColorPlan 稳健配对统计：mismatch=${formatFixed(colorProfile.mismatchSeverity, 4)}，evidence=${formatFixed(colorProfile.evidenceReliability, 4)}，weight=${Math.round(colorProfile.subjectWeight || 0)}，shared=${formatRatioPercent(colorProfile.sharedMask && colorProfile.sharedMask.sharedRatio)}。`);
   }
   if (Array.isArray(logs) && alignmentTimings) {
     const hydrateAnalysisTotal = Number(alignmentTimings.totalMs || 0) + colorPlanMs;
-    logs.push(`[融合校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，pyramid=${formatMs(alignmentTimings.pyramidMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
+    logs.push(`[对齐与校色] CPU alignment 分段：sobel=${formatMs(alignmentTimings.sobelMs)}，global=${formatMs(alignmentTimings.globalSearchMs)}，pyramid=${formatMs(alignmentTimings.pyramidMs)}，refine=${formatMs(alignmentTimings.refineMs)}，localMesh=${formatMs(alignmentTimings.localMeshMs)}，ColorPlan=${formatMs(colorPlanMs)}，total=${formatMs(hydrateAnalysisTotal)}。`);
   }
   const cpuPyramid = alignment && alignment.search && alignment.search.cpuPyramid;
   if (Array.isArray(logs) && cpuPyramid && cpuPyramid.used) {
-    logs.push(`[融合校色] CPU 金字塔定位：${cpuPyramid.accepted ? "已接受缩略图定位并原尺寸精修" : "缩略图定位不可靠，已执行完整全范围搜索"}，proxy=${cpuPyramid.proxySize ? `${cpuPyramid.proxySize.width}x${cpuPyramid.proxySize.height}` : "n/a"}，reason=${cpuPyramid.reason || "unknown"}。`);
+    logs.push(`[对齐与校色] CPU 金字塔定位：${cpuPyramid.accepted ? "已接受缩略图定位并原尺寸精修" : "缩略图定位不可靠，已执行完整全范围搜索"}，proxy=${cpuPyramid.proxySize ? `${cpuPyramid.proxySize.width}x${cpuPyramid.proxySize.height}` : "n/a"}，reason=${cpuPyramid.reason || "unknown"}。`);
   }
   if (Array.isArray(logs) && fastFallback) {
     const fastTimings = alignment && alignment.search && alignment.search.timings || {};
-    logs.push(`[融合校色] CPU 保守快速回退：${alignment.reason || "unknown"}，translation=${formatMs(fastTimings.totalMs)}，fullCpuSearch=false。`);
+    logs.push(`[对齐与校色] CPU 保守快速回退：${alignment.reason || "unknown"}，translation=${formatMs(fastTimings.totalMs)}，fullCpuSearch=false。`);
   }
   return buildBlendMatchPlan({
     ...options,
@@ -1564,7 +1564,7 @@ function resolveBlendMatchColorPlan({ plan, config, sourceSample, referenceSampl
       });
     }
     if (Array.isArray(logs)) {
-      logs.push(`[融合校色] ColorPlan 复用：method=${existingColorPlan.method || "unknown"}，profile=${existingColorPlan.profile ? "yes" : "no"}，preview=${existingColorPlan.previewRenderable ? "plan" : existingColorPlan.previewFallback || "fallback"}。`);
+      logs.push(`[对齐与校色] ColorPlan 复用：method=${existingColorPlan.method || "unknown"}，profile=${existingColorPlan.profile ? "yes" : "no"}，preview=${existingColorPlan.previewRenderable ? "plan" : existingColorPlan.previewFallback || "fallback"}。`);
     }
     return {
       colorPlan: existingColorPlan,
@@ -1576,7 +1576,7 @@ function resolveBlendMatchColorPlan({ plan, config, sourceSample, referenceSampl
     };
   }
   if (Array.isArray(logs)) {
-    logs.push(`[融合校色] ColorPlan 未复用：${validation.reason}；${allowRebuild ? "将重建颜色画像" : "使用 legacy corrections fallback"}。`);
+    logs.push(`[对齐与校色] ColorPlan 未复用：${validation.reason}；${allowRebuild ? "将重建颜色画像" : "使用 legacy corrections fallback"}。`);
   }
   if (!allowRebuild) {
     const corrections = getPlanCorrections(plan) || buildCorrections(sourceSample && sourceSample.stats, referenceSample && referenceSample.stats, config);
@@ -1605,7 +1605,7 @@ function resolveBlendMatchColorPlan({ plan, config, sourceSample, referenceSampl
     });
   }
   if (Array.isArray(logs)) {
-    logs.push(`[融合校色] ColorPlan 已重建：reason=${validation.reason}，method=${rebuilt.method}，profile=${rebuilt.profile ? "yes" : "no"}。`);
+    logs.push(`[对齐与校色] ColorPlan 已重建：reason=${validation.reason}，method=${rebuilt.method}，profile=${rebuilt.profile ? "yes" : "no"}。`);
   }
   return {
     colorPlan: rebuilt,
@@ -1783,7 +1783,7 @@ function buildStatsFromRgba(data) {
     lumas.push(luma);
   }
 
-  if (!sums.count) throw new Error("当前区域没有可用于融合校色的有效像素。");
+  if (!sums.count) throw new Error("当前区域没有可用于对齐与校色的有效像素。");
 
   const meanLuma = sums.luma / sums.count;
   let variance = 0;
@@ -2064,7 +2064,7 @@ export function buildTrustedGpuBlendMatchPlanFromSamples(options) {
     warnings: Array.isArray(options && options.warnings) ? options.warnings : []
   });
   if (Array.isArray(logs)) {
-    logs.push(`[融合校色] GPU plan 已可信接收：shared=${formatRatioPercent(normalized.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(normalized.sharedMask.excludedRatio)}，scoreGap=${formatFixed(normalized.alignment.scoreGap, 4)}，不执行 CPU shadow search。`);
+    logs.push(`[对齐与校色] GPU plan 已可信接收：shared=${formatRatioPercent(normalized.sharedMask.sharedRatio)}，excluded=${formatRatioPercent(normalized.sharedMask.excludedRatio)}，scoreGap=${formatFixed(normalized.alignment.scoreGap, 4)}，不执行 CPU shadow search。`);
   }
   return { plan, reason: "gpu-plan-trusted" };
 }
@@ -2924,7 +2924,7 @@ async function createInternalBlendMatchResult({
   );
   const sourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, outputLongEdge);
   if (timing) timing.mark("隔离输出采样", { width: sourceSample.width, height: sourceSample.height });
-  logs.push(`[融合校色] 内部处理：预览 ${alignmentSample.width}x${alignmentSample.height}，输出 ${sourceSample.width}x${sourceSample.height}，source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""}->RGBA。`);
+  logs.push(`[对齐与校色] 内部处理：预览 ${alignmentSample.width}x${alignmentSample.height}，输出 ${sourceSample.width}x${sourceSample.height}，source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""}->RGBA。`);
   const alpha = getAlphaStats(sourceSample.data);
   const forceOpaque = fullDocumentTarget && alpha.opaqueRatio > 0.995 && alpha.transparentRatio < 0.001;
   let effectiveCorrections = corrections;
@@ -2936,7 +2936,7 @@ async function createInternalBlendMatchResult({
   const hasPlannedColorPlan = Boolean(plannedColorPlan && typeof plannedColorPlan === "object");
   const plannedLegacyFallback = hasPlannedColorPlan && plannedColorPlan.method === "legacy-corrections";
   if (!colorProfile && hasPlannedColorPlan && plannedColorPlan.method === "internal-color-profile") {
-    logs.push("[融合校色] ColorPlan 标记为 internal profile 但缺少 profile，执行前重建颜色画像。");
+    logs.push("[对齐与校色] ColorPlan 标记为 internal profile 但缺少 profile，执行前重建颜色画像。");
   }
   if (!colorProfile && !plannedLegacyFallback) {
     colorProfile = buildInternalColorProfile(alignmentSample, referenceSample, config, alignment);
@@ -2964,7 +2964,7 @@ async function createInternalBlendMatchResult({
   await activateDocument(app, action, Number(document.id));
   const placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
   if (timing) timing.mark("置入结果层");
-  logs.push(`[融合校色] 内部融合：对齐 ${warped.globalApplied ? "全局" : "无全局"}/${warped.localApplied ? `局部 ${warped.validTiles || 0}/${warped.totalTiles || 0}` : "无局部"}，颜色 ${corrected.color.method}${colorProfile ? `，主体权重 ${Math.round(colorProfile.subjectWeight || 0)}` : ""}，亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}%，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}%。`);
+  logs.push(`[对齐与校色] 内部融合：对齐 ${warped.globalApplied ? "全局" : "无全局"}/${warped.localApplied ? `局部 ${warped.validTiles || 0}/${warped.totalTiles || 0}` : "无局部"}，颜色 ${corrected.color.method}${colorProfile ? `，主体权重 ${Math.round(colorProfile.subjectWeight || 0)}` : ""}，亮度 ${corrected.color.brightness >= 0 ? "+" : ""}${corrected.color.brightness}，对比 ${corrected.color.contrast >= 0 ? "+" : ""}${corrected.color.contrast}%，饱和 ${corrected.color.saturation >= 0 ? "+" : ""}${corrected.color.saturation}%。`);
   return {
     layer: placed.layer,
     layerId: placed.layerId,
@@ -3203,7 +3203,7 @@ async function placePngBufferAsLayer(app, action, storage, buffer, targetBounds,
   const layer = app && app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
   if (!layer) return null;
   try {
-    layer.name = String(layerName || "像素起子 融合校色").slice(0, 240);
+    layer.name = String(layerName || "像素起子 对齐与校色").slice(0, 240);
   } catch (_) {}
   return layer;
 }
@@ -3384,16 +3384,16 @@ async function makeInwardFeatherMaskFromActiveLayerTransparency(action, radius) 
 
 async function applyFeatherBestEffort(action, radius, logs) {
   if (!(radius > 0)) {
-    logs.push("[融合校色] 羽化半径为 0，已跳过边缘羽化。");
+    logs.push("[对齐与校色] 羽化半径为 0，已跳过边缘羽化。");
     return false;
   }
   try {
     const result = await makeInwardFeatherMaskFromActiveLayerTransparency(action, radius);
     const insetRadius = result && result.insetRadius ? result.insetRadius : radius;
-    logs.push(`[融合校色] 已基于当前图层透明度创建向内羽化蒙版：羽化 ${insetRadius}px。`);
+    logs.push(`[对齐与校色] 已基于当前图层透明度创建向内羽化蒙版：羽化 ${insetRadius}px。`);
     return true;
   } catch (error) {
-    logs.push(`[融合校色] 蒙版羽化未完成：${error.message || "Photoshop 未接受蒙版命令"}。已保留校色结果层。`);
+    logs.push(`[对齐与校色] 蒙版羽化未完成：${error.message || "Photoshop 未接受蒙版命令"}。已保留校色结果层。`);
     try {
       await action.batchPlay([{
         _obj: "select",
@@ -5990,7 +5990,7 @@ function buildSkippedPixelAlignmentResult({
   diagnostics = null,
   alignmentV2 = null
 }) {
-  logs.push(`[融合校色] 实验像素级对齐未应用：${reason}。未生成像素结果层，原返图保持不变。`);
+  logs.push(`[对齐与校色] 实验像素级对齐未应用：${reason}。未生成像素结果层，原返图保持不变。`);
   return {
     ok: true,
     skipped: true,
@@ -6048,11 +6048,11 @@ async function runPixelAlignmentV2Flow({
   let alignmentV2 = null;
 
   try {
-    logs.push("[融合校色] 实验像素级对齐 v2 已启用：仅执行 source RGBA 对齐，不做像素校色、边缘融合或羽化蒙版。");
+    logs.push("[对齐与校色] 实验像素级对齐 v2 已启用：仅执行 source RGBA 对齐，不做像素校色、边缘融合或羽化蒙版。");
     sourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, maxEdge);
-    logs.push(`[融合校色] v2 source capture method：${sourceSample.captureMethod || "unknown"}。`);
+    logs.push(`[对齐与校色] v2 source capture method：${sourceSample.captureMethod || "unknown"}。`);
     referenceSample = await captureReferenceSample(imaging, app, action, document, sourceLayerId, sourceBounds, maxEdge, sourceWasVisible);
-    logs.push(`[融合校色] v2 reference capture method：${referenceSample.captureMethod || "unknown"}。`);
+    logs.push(`[对齐与校色] v2 reference capture method：${referenceSample.captureMethod || "unknown"}。`);
   } catch (error) {
     return buildSkippedPixelAlignmentResult({
       app,
@@ -6069,8 +6069,8 @@ async function runPixelAlignmentV2Flow({
   const sameScale =
     Math.abs((Number(sourceSample.scaleX) || 1) - (Number(referenceSample.scaleX) || 1)) < 0.0001 &&
     Math.abs((Number(sourceSample.scaleY) || 1) - (Number(referenceSample.scaleY) || 1)) < 0.0001;
-  logs.push(`[融合校色] v2 capture size：source ${sourceSample.width}x${sourceSample.height} / reference ${referenceSample.width}x${referenceSample.height} / scale ${formatFixed(sourceSample.scaleX, 3)}x${formatFixed(sourceSample.scaleY, 3)}。`);
-  logs.push(`[融合校色] v2 capture channels：source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""} -> RGBA，reference ${referenceSample.sourceComponents || 0}${referenceSample.sourcePixelFormat ? `/${referenceSample.sourcePixelFormat}` : ""} -> RGBA。`);
+  logs.push(`[对齐与校色] v2 capture size：source ${sourceSample.width}x${sourceSample.height} / reference ${referenceSample.width}x${referenceSample.height} / scale ${formatFixed(sourceSample.scaleX, 3)}x${formatFixed(sourceSample.scaleY, 3)}。`);
+  logs.push(`[对齐与校色] v2 capture channels：source ${sourceSample.sourceComponents || 0}${sourceSample.sourcePixelFormat ? `/${sourceSample.sourcePixelFormat}` : ""} -> RGBA，reference ${referenceSample.sourceComponents || 0}${referenceSample.sourcePixelFormat ? `/${referenceSample.sourcePixelFormat}` : ""} -> RGBA。`);
   if (!sameSize || !sameScale) {
     return buildSkippedPixelAlignmentResult({
       app,
@@ -6087,10 +6087,10 @@ async function runPixelAlignmentV2Flow({
 
   sourceDiagnostics = buildCaptureDiagnostics(sourceSample);
   referenceDiagnostics = buildCaptureDiagnostics(referenceSample);
-  logs.push(`[融合校色] v2 source alpha：不透明 ${formatRatioPercent(sourceDiagnostics.alpha.opaqueRatio)}，透明 ${formatRatioPercent(sourceDiagnostics.alpha.transparentRatio)}，min/max ${sourceDiagnostics.alpha.minAlpha}/${sourceDiagnostics.alpha.maxAlpha}。`);
-  logs.push(`[融合校色] v2 source RGB：mean ${formatFixed(sourceDiagnostics.rgb.meanR, 1)}/${formatFixed(sourceDiagnostics.rgb.meanG, 1)}/${formatFixed(sourceDiagnostics.rgb.meanB, 1)}，luma 方差 ${formatFixed(sourceDiagnostics.rgb.varianceLuma, 2)}。`);
-  logs.push(`[融合校色] v2 gradient energy：source ${formatFixed(sourceDiagnostics.gradientEnergy, 2)} / reference ${formatFixed(referenceDiagnostics.gradientEnergy, 2)}。`);
-  logs.push(`[融合校色] v2 source 异常检测：黑边 ${formatRatioPercent(sourceDiagnostics.borderBlackRatio)}，重复图案 ${formatRatioPercent(sourceDiagnostics.repeatedPatternScore)}${sourceDiagnostics.suspicious ? `，命中 ${sourceDiagnostics.reasons.join(", ")}` : "，未命中明显异常"}。`);
+  logs.push(`[对齐与校色] v2 source alpha：不透明 ${formatRatioPercent(sourceDiagnostics.alpha.opaqueRatio)}，透明 ${formatRatioPercent(sourceDiagnostics.alpha.transparentRatio)}，min/max ${sourceDiagnostics.alpha.minAlpha}/${sourceDiagnostics.alpha.maxAlpha}。`);
+  logs.push(`[对齐与校色] v2 source RGB：mean ${formatFixed(sourceDiagnostics.rgb.meanR, 1)}/${formatFixed(sourceDiagnostics.rgb.meanG, 1)}/${formatFixed(sourceDiagnostics.rgb.meanB, 1)}，luma 方差 ${formatFixed(sourceDiagnostics.rgb.varianceLuma, 2)}。`);
+  logs.push(`[对齐与校色] v2 gradient energy：source ${formatFixed(sourceDiagnostics.gradientEnergy, 2)} / reference ${formatFixed(referenceDiagnostics.gradientEnergy, 2)}。`);
+  logs.push(`[对齐与校色] v2 source 异常检测：黑边 ${formatRatioPercent(sourceDiagnostics.borderBlackRatio)}，重复图案 ${formatRatioPercent(sourceDiagnostics.repeatedPatternScore)}${sourceDiagnostics.suspicious ? `，命中 ${sourceDiagnostics.reasons.join(", ")}` : "，未命中明显异常"}。`);
 
   if (sourceDiagnostics.suspicious) {
     return buildSkippedPixelAlignmentResult({
@@ -6109,14 +6109,14 @@ async function runPixelAlignmentV2Flow({
 
   alignmentV2 = buildPixelAlignmentV2(sourceSample, referenceSample, config);
   const mask = alignmentV2.mask || {};
-  logs.push(`[融合校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，共享结构 ${formatFixed(mask.meanSharedStructureAgreement, 3)}。`);
+  logs.push(`[对齐与校色] v2 ROI：覆盖 ${formatRatioPercent(mask.coverage)}，有效像素 ${Math.round(Number(mask.coveredPixels) || 0)}，edge ${formatFixed(mask.meanEdgeEnergy, 2)}，共享结构 ${formatFixed(mask.meanSharedStructureAgreement, 3)}。`);
   if (alignmentV2.globalMotion) {
     const g = alignmentV2.globalMotion;
-    logs.push(`[融合校色] v2 global motion：dx ${formatFixed(g.dx, 2)}px，dy ${formatFixed(g.dy, 2)}px，score ${formatFixed(g.score, 3)}，gap ${formatFixed(g.scoreGap, 3)}，${g.reliable ? "可靠" : `跳过 ${g.reason}`}。`);
+    logs.push(`[对齐与校色] v2 global motion：dx ${formatFixed(g.dx, 2)}px，dy ${formatFixed(g.dy, 2)}px，score ${formatFixed(g.score, 3)}，gap ${formatFixed(g.scoreGap, 3)}，${g.reliable ? "可靠" : `跳过 ${g.reason}`}。`);
   }
   if (alignmentV2.tileMotion) {
     const t = alignmentV2.tileMotion;
-    logs.push(`[融合校色] v2 tile motion：有效 ${t.validTiles}/${t.totalTiles}，最大 ${formatFixed(t.maxDistance, 2)}px，平均 ${formatFixed(t.meanDistance, 2)}px，离散 ${formatFixed(t.spread, 2)}px，${t.reliable ? "可靠" : `跳过 ${t.reason}`}。`);
+    logs.push(`[对齐与校色] v2 tile motion：有效 ${t.validTiles}/${t.totalTiles}，最大 ${formatFixed(t.maxDistance, 2)}px，平均 ${formatFixed(t.meanDistance, 2)}px，离散 ${formatFixed(t.spread, 2)}px，${t.reliable ? "可靠" : `跳过 ${t.reason}`}。`);
   }
   if (alignmentV2.model) {
     const m = alignmentV2.model;
@@ -6124,11 +6124,11 @@ async function runPixelAlignmentV2Flow({
     const controlText = Array.isArray(m.yControls) && m.yControls.length
       ? `，controls ${m.yControls.map((control) => `${formatFixed(control.xNorm, 1)}:${formatFixed(control.dy, 2)}`).join(" / ")}`
       : "";
-    logs.push(`[融合校色] v2 warp model：${m.type}，dx ${formatFixed(m.dx, 2)}px，dy(x) ${formatFixed(c[0], 2)} + ${formatFixed(c[1], 2)}x + ${formatFixed(c[2], 2)}x^2${controlText}，最大位移 ${formatFixed(m.maxDisplacement, 2)}px，平滑度 ${formatFixed(m.smoothness, 2)}。`);
+    logs.push(`[对齐与校色] v2 warp model：${m.type}，dx ${formatFixed(m.dx, 2)}px，dy(x) ${formatFixed(c[0], 2)} + ${formatFixed(c[1], 2)}x + ${formatFixed(c[2], 2)}x^2${controlText}，最大位移 ${formatFixed(m.maxDisplacement, 2)}px，平滑度 ${formatFixed(m.smoothness, 2)}。`);
   }
   if (alignmentV2.validation) {
     const v = alignmentV2.validation;
-    logs.push(`[融合校色] v2 before/after：score ${formatFixed(v.before && v.before.score, 4)} -> ${formatFixed(v.after && v.after.score, 4)}，NCC ${formatFixed(v.before && v.before.ncc, 4)} -> ${formatFixed(v.after && v.after.ncc, 4)}，方向 ${formatFixed(v.before && v.before.direction, 4)} -> ${formatFixed(v.after && v.after.direction, 4)}，edge overlap ${formatFixed(v.before && v.before.overlap, 4)} -> ${formatFixed(v.after && v.after.overlap, 4)}。`);
+    logs.push(`[对齐与校色] v2 before/after：score ${formatFixed(v.before && v.before.score, 4)} -> ${formatFixed(v.after && v.after.score, 4)}，NCC ${formatFixed(v.before && v.before.ncc, 4)} -> ${formatFixed(v.after && v.after.ncc, 4)}，方向 ${formatFixed(v.before && v.before.direction, 4)} -> ${formatFixed(v.after && v.after.direction, 4)}，edge overlap ${formatFixed(v.before && v.before.overlap, 4)} -> ${formatFixed(v.after && v.after.overlap, 4)}。`);
   }
 
   if (!alignmentV2.applied) {
@@ -6155,12 +6155,12 @@ async function runPixelAlignmentV2Flow({
       Math.max(1, Math.ceil(Number(sourceBounds.right) - Number(sourceBounds.left))),
       Math.max(1, Math.ceil(Number(sourceBounds.bottom) - Number(sourceBounds.top)))
     );
-    logs.push(`[融合校色] v2 输出阶段：重新捕获原尺寸 source，长边 ${outputLongEdge}px，避免预览采样放大造成画质损失。`);
+    logs.push(`[对齐与校色] v2 输出阶段：重新捕获原尺寸 source，长边 ${outputLongEdge}px，避免预览采样放大造成画质损失。`);
     const outputSourceSample = await captureIsolatedSourceSampleV2(imaging, app, action, document, sourceLayerId, sourceBounds, outputLongEdge);
     outputSampleSize = { width: outputSourceSample.width, height: outputSourceSample.height };
-    logs.push(`[融合校色] v2 output capture：${outputSourceSample.width}x${outputSourceSample.height}，channels ${outputSourceSample.sourceComponents || 0}${outputSourceSample.sourcePixelFormat ? `/${outputSourceSample.sourcePixelFormat}` : ""} -> RGBA。`);
+    logs.push(`[对齐与校色] v2 output capture：${outputSourceSample.width}x${outputSourceSample.height}，channels ${outputSourceSample.sourceComponents || 0}${outputSourceSample.sourcePixelFormat ? `/${outputSourceSample.sourcePixelFormat}` : ""} -> RGBA。`);
     const outputModel = scaleDisplacementModel(alignmentV2.model, sourceSample, outputSourceSample);
-    logs.push(`[融合校色] v2 output warp：模型缩放到原尺寸，最大位移 ${formatFixed(outputModel.maxDisplacement, 2)}px。`);
+    logs.push(`[对齐与校色] v2 output warp：模型缩放到原尺寸，最大位移 ${formatFixed(outputModel.maxDisplacement, 2)}px。`);
     const outputAlpha = getAlphaStats(outputSourceSample.data);
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, getDocumentInfo(document));
     const clampEdges = fullDocumentTarget && outputAlpha.opaqueRatio > 0.995 && outputAlpha.transparentRatio < 0.001;
@@ -6173,7 +6173,7 @@ async function runPixelAlignmentV2Flow({
     if (!pngBuffer) throw new Error("像素对齐 PNG 编码失败。");
     await activateDocument(app, action, Number(document.id));
     placed = await placeAlignedPngResult(app, action, storage, pngBuffer, sourceBounds, resultLayerName);
-    logs.push(`[融合校色] v2 像素对齐结果已置入并栅格化：${resultLayerName}。`);
+    logs.push(`[对齐与校色] v2 像素对齐结果已置入并栅格化：${resultLayerName}。`);
   } catch (error) {
     return buildSkippedPixelAlignmentResult({
       app,
@@ -6193,15 +6193,15 @@ async function runPixelAlignmentV2Flow({
   if (config.createBackupLayer) {
     try {
       await setLayerVisible(action, sourceLayerId, false);
-      logs.push("[融合校色] v2 对齐成功后，原返图图层已隐藏保留为备份。");
+      logs.push("[对齐与校色] v2 对齐成功后，原返图图层已隐藏保留为备份。");
     } catch (error) {
-      logs.push(`[融合校色] 原图层备份隐藏失败：${error.message || "未知错误"}。`);
+      logs.push(`[对齐与校色] 原图层备份隐藏失败：${error.message || "未知错误"}。`);
     }
   } else {
-    logs.push("[融合校色] v2 对齐成功，按设置保留原返图图层可见性。");
+    logs.push("[对齐与校色] v2 对齐成功，按设置保留原返图图层可见性。");
   }
   await selectLayerById(action, placed.layerId);
-  logs.push("[融合校色] v2 已跳过像素校色、Photoshop 调整命令、边缘融合和羽化蒙版。");
+  logs.push("[对齐与校色] v2 已跳过像素校色、Photoshop 调整命令、边缘融合和羽化蒙版。");
 
   return {
     ok: true,
@@ -6248,9 +6248,11 @@ export async function blendMatchActiveLayer(payload = {}, context) {
   const action = photoshop.action;
   const imaging = photoshop.imaging;
   if (!imaging || typeof imaging.getPixels !== "function") {
-    throw new Error("Photoshop imaging API 不可用，无法分析融合校色。");
+    throw new Error("Photoshop imaging API 不可用，无法分析对齐与校色。");
   }
 
+  const colorCorrectionOnly = payload.colorCorrectionOnly === true;
+  const operationLabel = colorCorrectionOnly ? "创成式填充校色" : "对齐与校色";
   const config = getBlendMatchConfig(payload);
 
   return core.executeAsModal(async () => {
@@ -6272,9 +6274,9 @@ export async function blendMatchActiveLayer(payload = {}, context) {
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
     const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
-    const resultLayerName = `像素起子 融合校色 - ${sourceLayerName}`.slice(0, 240);
-    logs.push(`[融合校色] 开始分析图层：${sourceLayerName}。`);
-    logs.push(`[融合校色] 区域 ${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}；内部颜色匹配与像素级精确对齐。`);
+    const resultLayerName = `像素起子 ${operationLabel} - ${sourceLayerName}`.slice(0, 240);
+    logs.push(`[${operationLabel}] 开始分析图层：${sourceLayerName}。`);
+    logs.push(`[${operationLabel}] 区域 ${sourceBounds.left},${sourceBounds.top} - ${sourceBounds.right},${sourceBounds.bottom}；${colorCorrectionOnly ? "仅执行明度与色彩校正，不执行像素对齐。" : "内部颜色匹配与像素级精确对齐。"}`);
 
     let sourceWasVisible = true;
     try {
@@ -6323,7 +6325,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         width: sourceSample.width,
         height: sourceSample.height
       });
-      logs.push(`[融合校色] Apply 复用 BlendMatchPlan：planId ${activePlan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+      logs.push(`[对齐与校色] Apply 复用 BlendMatchPlan：planId ${activePlan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
     } else if (previewSampleCache) {
       sourceSample = previewSampleCache.sourceSample;
       referenceSample = previewSampleCache.referenceSample;
@@ -6334,13 +6336,13 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         width: sourceSample.width,
         height: sourceSample.height
       });
-      logs.push(`[融合校色] Apply 未复用完整 plan：${cachedPlanValidation.reason}；已复用预览 raw sample cache，直接补建 CPU BlendMatchPlan，未重新 Photoshop 采样。`);
+      logs.push(`[对齐与校色] Apply 未复用完整 plan：${cachedPlanValidation.reason}；已复用预览 raw sample cache，直接补建 CPU BlendMatchPlan，未重新 Photoshop 采样。`);
     } else {
       cachedPlanValidation = resolvedPlan.validation;
       if (requestedPlanId || requestedPreviewCacheKey) {
-        logs.push(`[融合校色] Apply 未复用预览 plan：${cachedPlanValidation.reason}；将重新采样并用 CPU 重新分析。`);
+        logs.push(`[对齐与校色] Apply 未复用预览 plan：${cachedPlanValidation.reason}；将重新采样并用 CPU 重新分析。`);
       } else {
-        logs.push("[融合校色] Apply 未收到预览 plan；将采样并用 CPU 分析。");
+        logs.push("[对齐与校色] Apply 未收到预览 plan；将采样并用 CPU 分析。");
       }
       try {
         sourceSample = await captureCompositeSample(imaging, document, sourceBounds, 768, false);
@@ -6354,12 +6356,12 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         await setLayerVisible(action, sourceLayerId, sourceWasVisible);
         timing.mark("恢复图层");
         restoredVisibility = true;
-        logs.push(`[融合校色] 采样完成：source/reference ${sourceSample.width}x${sourceSample.height}。`);
+        logs.push(`[对齐与校色] 采样完成：source/reference ${sourceSample.width}x${sourceSample.height}。`);
       } finally {
         if (!restoredVisibility) {
           try {
             await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-            logs.push("[融合校色] 异常回滚：已恢复返图图层可见性。");
+            logs.push("[对齐与校色] 异常回滚：已恢复返图图层可见性。");
           } catch (_) {}
         }
       }
@@ -6387,7 +6389,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         plan: activePlan,
         planId: activePlan.planId
       });
-      logs.push(`[融合校色] Apply 已重建 CPU BlendMatchPlan：planId ${activePlan.planId}。`);
+      logs.push(`[对齐与校色] Apply 已重建 CPU BlendMatchPlan：planId ${activePlan.planId}。`);
     }
     const alignment = getPlanAlignment(activePlan) || { applied: false, dx: 0, dy: 0, confidence: 0, reason: "missing-plan-alignment" };
     ensurePlanColorStats(activePlan, sourceSample, referenceSample);
@@ -6415,35 +6417,35 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       colorPlan: colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback",
       colorReason: colorPlanResolution.validation && colorPlanResolution.validation.reason || ""
     });
-    logs.push(`[融合校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，sampleCache=${previewSampleCacheUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
+    logs.push(`[对齐与校色] Apply plan 状态：cachedPlan=${cachedPlanUsed ? "true" : "false"}，sampleCache=${previewSampleCacheUsed ? "true" : "false"}，reason=${cachedPlanValidation.reason || "new-analysis"}，planId=${activePlan.planId}。`);
     if (alignment.backend === "webgl2") {
       const shared = alignment.sharedMask || {};
-      logs.push(`[融合校色] Apply 复用可信 WebGL2 plan：planId=${activePlan.planId}，shared=${formatRatioPercent(shared.sharedRatio)}，excluded=${formatRatioPercent(shared.excludedRatio)}；未执行 CPU shadow search。`);
+      logs.push(`[对齐与校色] Apply 复用可信 WebGL2 plan：planId=${activePlan.planId}，shared=${formatRatioPercent(shared.sharedRatio)}，excluded=${formatRatioPercent(shared.excludedRatio)}；未执行 CPU shadow search。`);
     } else {
-      logs.push("[融合校色] Apply 使用 CPU fallback BlendMatchPlan；WebGL2 plan 不可用或未达可信门槛。");
+      logs.push("[对齐与校色] Apply 使用 CPU fallback BlendMatchPlan；WebGL2 plan 不可用或未达可信门槛。");
     }
-    logs.push(`[融合校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
+    logs.push(`[对齐与校色] Apply ColorPlan 状态：${colorPlanResolution.reused ? "reused" : colorPlanResolution.rebuilt ? "rebuilt" : "fallback"}，reason=${colorPlanResolution.validation.reason}，method=${colorPlan && colorPlan.method || "legacy-corrections"}。`);
     if (config.alignmentEnabled) {
       if (alignment.applied) {
-        logs.push(`[融合校色] 像素级精确对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
+        logs.push(`[对齐与校色] 像素级精确对齐：dx ${alignment.dx}px，dy ${alignment.dy}px，scale ${Number(alignment.scaleXPercent || 100).toFixed(2)}%/${Number(alignment.scaleYPercent || 100).toFixed(2)}%，置信 ${alignment.confidence.toFixed(2)}。`);
       } else {
-        logs.push(`[融合校色] 像素级精确对齐已跳过：${alignment.reason}。`);
+        logs.push(`[对齐与校色] 像素级精确对齐已跳过：${alignment.reason}。`);
       }
       if (alignment.modelChoice && alignment.modelChoice.rejectedAffine) {
-        logs.push(`[融合校色] 对齐模型：纯平移优先，已拒绝弱仿射缩放/旋转；平移分 ${formatFixed(alignment.modelChoice.translationScore, 4)}，仿射分 ${formatFixed(alignment.modelChoice.affineScore, 4)}，增益 ${formatFixed(alignment.modelChoice.affineGain, 4)}，要求 ${formatFixed(alignment.modelChoice.minAffineGain, 4)}。`);
+        logs.push(`[对齐与校色] 对齐模型：纯平移优先，已拒绝弱仿射缩放/旋转；平移分 ${formatFixed(alignment.modelChoice.translationScore, 4)}，仿射分 ${formatFixed(alignment.modelChoice.affineScore, 4)}，增益 ${formatFixed(alignment.modelChoice.affineGain, 4)}，要求 ${formatFixed(alignment.modelChoice.minAffineGain, 4)}。`);
       }
       if (alignment.search && Number(alignment.search.coarseStep) > 1) {
-        logs.push(`[融合校色] 大偏移搜索：采样半径 ${alignment.search.sampleOffset}px，粗搜步长 ${alignment.search.coarseStep}px，已精修到 1px。`);
+        logs.push(`[对齐与校色] 大偏移搜索：采样半径 ${alignment.search.sampleOffset}px，粗搜步长 ${alignment.search.coarseStep}px，已精修到 1px。`);
       }
       if (alignment.localDeformation) {
         const validation = alignment.local && alignment.local.validation;
         const validationText = validation
           ? `，验证提升 ${formatFixed(validation.scoreGain, 4)}（全局 ${formatFixed(validation.globalScore, 4)} -> 局部 ${formatFixed(validation.localScore, 4)}）`
           : "";
-        logs.push(`[融合校色] 局部对齐：${alignment.local.validTiles}/${alignment.local.totalTiles}，最大 ${alignment.local.maxDistance.toFixed(2)}px${validationText}。`);
+        logs.push(`[对齐与校色] 局部对齐：${alignment.local.validTiles}/${alignment.local.totalTiles}，最大 ${alignment.local.maxDistance.toFixed(2)}px${validationText}。`);
       } else if (alignment.local && alignment.local.rejected) {
         const validation = alignment.local.validation || {};
-        logs.push(`[融合校色] 局部对齐验证回退：${validation.reason || alignment.local.reason}，提升 ${formatFixed(validation.scoreGain, 4)}，要求 ${formatFixed(validation.minGain, 4)}；保留全局对齐。`);
+        logs.push(`[对齐与校色] 局部对齐验证回退：${validation.reason || alignment.local.reason}，提升 ${formatFixed(validation.scoreGain, 4)}，要求 ${formatFixed(validation.minGain, 4)}；保留全局对齐。`);
       }
     }
 
@@ -6478,7 +6480,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       resultLayer = pixelResult.layer;
       resultLayerId = pixelResult.layerId;
     } catch (error) {
-      logs.push(`[融合校色] 插件内部融合未完成：${error.message || "未知错误"}。已回退为复制返图图层，不执行 Photoshop 颜色调整。`);
+      logs.push(`[对齐与校色] 插件内部融合未完成：${error.message || "未知错误"}。已回退为复制返图图层，不执行 Photoshop 颜色调整。`);
       await activateDocument(app, action, Number(document.id));
       await selectLayerById(action, sourceLayerId);
       await duplicateActiveLayer(action, resultLayerName);
@@ -6494,23 +6496,23 @@ export async function blendMatchActiveLayer(payload = {}, context) {
         fallbackCopy: true
       };
     }
-    if (!(resultLayerId > 0)) throw new Error("融合校色结果层创建失败。");
-    logs.push(`[融合校色] 结果层：${resultLayerName}。`);
+    if (!(resultLayerId > 0)) throw new Error("对齐与校色结果层创建失败。");
+    logs.push(`[${operationLabel}] 结果层：${resultLayerName}。`);
 
     if (config.createBackupLayer) {
       try {
         await setLayerVisible(action, sourceLayerId, false);
         timing.mark("隐藏备份层");
-        logs.push("[融合校色] 原返图图层已隐藏保留为备份。");
+        logs.push("[对齐与校色] 原返图图层已隐藏保留为备份。");
       } catch (error) {
-        logs.push(`[融合校色] 原图层备份隐藏失败：${error.message || "未知错误"}。`);
+        logs.push(`[对齐与校色] 原图层备份隐藏失败：${error.message || "未知错误"}。`);
       }
       await selectLayerById(action, resultLayerId);
     }
 
     let featherApplied = false;
     if (fullDocumentTarget && pixelResult && pixelResult.forceOpaque) {
-      logs.push("[融合校色] 整画布不透明，跳过羽化蒙版。");
+      logs.push("[对齐与校色] 整画布不透明，跳过羽化蒙版。");
       timing.mark("跳过羽化蒙版");
     } else {
       featherApplied = await applyFeatherBestEffort(action, config.featherRadius, logs);
@@ -6524,7 +6526,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       ok: true,
       action: "blendMatch",
       document: getDocumentInfo(app.activeDocument),
-      message: `融合校色完成：${sourceLayerName} -> ${resultLayerName}`,
+      message: `${operationLabel}完成：${sourceLayerName} -> ${resultLayerName}`,
       logs,
       layerId: resultLayerId,
       sourceLayerId,
@@ -6555,7 +6557,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
       featherApplied
     };
   }, {
-    commandName: "像素起子 融合校色"
+    commandName: `像素起子 ${operationLabel}`
   });
 }
 
@@ -6565,7 +6567,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
   const action = photoshop.action;
   const imaging = photoshop.imaging;
   if (!imaging || typeof imaging.getPixels !== "function" || typeof imaging.encodeImageData !== "function") {
-    throw new Error("Photoshop imaging API 不可用，无法生成融合校色预览。");
+    throw new Error("Photoshop imaging API 不可用，无法生成对齐与校色预览。");
   }
   const config = getBlendMatchConfig(payload);
 
@@ -6635,8 +6637,8 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       plan,
       planId: plan.planId
     });
-    logs.push(`[融合校色] 预览已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}，CPU plan ${plan.planId}。`);
-    timing.logTo(logs, "[融合校色] 预览耗时");
+    logs.push(`[对齐与校色] 预览已刷新：${sourceLayerName}，${sourceSample.width}x${sourceSample.height}，CPU plan ${plan.planId}。`);
+    timing.logTo(logs, "[对齐与校色] 预览耗时");
 
     return {
       ok: true,
@@ -6659,7 +6661,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
       logs
     };
   }, {
-    commandName: "像素起子 融合校色预览"
+    commandName: "像素起子 对齐与校色预览"
   });
 }
 
@@ -6669,7 +6671,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   const action = photoshop.action;
   const imaging = photoshop.imaging;
   if (!imaging || typeof imaging.getPixels !== "function") {
-    throw new Error("Photoshop imaging API 不可用，无法生成融合校色预览采样。");
+    throw new Error("Photoshop imaging API 不可用，无法生成对齐与校色预览采样。");
   }
   const config = getBlendMatchConfig(payload);
   const actionTiming = createTimingRecorder();
@@ -6714,13 +6716,13 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       if (!restoredVisibility) {
         try {
           await setLayerVisible(action, sourceLayerId, sourceWasVisible);
-          logs.push("[融合校色] 预览采样异常回滚：已恢复返图图层可见性。");
+          logs.push("[对齐与校色] 预览采样异常回滚：已恢复返图图层可见性。");
         } catch (_) {}
       }
     }
 
-    logs.push(`[融合校色] 预览采样 modal：仅执行 Photoshop raw 采样与图层可见性恢复；未执行 JPEG/PNG 编码、raw base64 序列化、颜色修正或 CPU 对齐。`);
-    modalTiming.logTo(logs, "[融合校色] 预览采样 modal 耗时");
+    logs.push(`[对齐与校色] 预览采样 modal：仅执行 Photoshop raw 采样与图层可见性恢复；未执行 JPEG/PNG 编码、raw base64 序列化、颜色修正或 CPU 对齐。`);
+    modalTiming.logTo(logs, "[对齐与校色] 预览采样 modal 耗时");
 
     return {
       ok: true,
@@ -6738,7 +6740,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       modalMs: modalTiming.totalMs()
     };
   }, {
-    commandName: "像素起子 融合校色预览采样"
+    commandName: "像素起子 对齐与校色预览采样"
   });
 
   actionTiming.mark("executeAsModal", {
@@ -6787,11 +6789,11 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
       cpuPlanDeferred: true
     });
 
-    logs.push(`[融合校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
-    logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
-    logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-    logs.push("[融合校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan；WebView 优先提交 GPU plan，失败时 Host 会复用 raw sample 执行完整 CPU 对齐回退。");
-    actionTiming.logTo(logs, "[融合校色] 快速预览采样 host action 耗时");
+    logs.push(`[对齐与校色] 预览采样快速返回：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}；CPU BlendMatchPlan 已延后生成，先显示 raw preview。`);
+    logs.push(`[对齐与校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成。`);
+    logs.push(`[对齐与校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
+    logs.push("[对齐与校色] 快速预览：本次 host call 跳过 CPU 对齐/ColorPlan；WebView 优先提交 GPU plan，失败时 Host 会复用 raw sample 执行完整 CPU 对齐回退。");
+    actionTiming.logTo(logs, "[对齐与校色] 快速预览采样 host action 耗时");
 
     return {
       ok: true,
@@ -6872,11 +6874,11 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
     referenceEncodeMs: referenceRaw ? referenceRaw.encodingMs : 0
   });
 
-  logs.push(`[融合校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
-  logs.push(`[融合校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
-  logs.push(`[融合校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
-  logs.push("[融合校色] WebGL2 plan 为生产首选；此无 GPU 路径使用完整 CPU 对齐与共享内容掩膜。");
-  actionTiming.logTo(logs, "[融合校色] 预览采样 host action 耗时");
+  logs.push(`[对齐与校色] 预览采样已刷新：${modalResult.layerName}，${sourceSample.width}x${sourceSample.height}，已生成 CPU BlendMatchPlan ${plan.planId}。`);
+  logs.push(`[对齐与校色] 预览采样传输：source ${sourceRaw ? sourceRaw.byteLength : 0} bytes / reference ${referenceRaw ? referenceRaw.byteLength : 0} bytes；raw base64 在 modal 外生成，未生成 host preview JPEG/PNG。`);
+  logs.push(`[对齐与校色] raw base64 encode：source ${formatMs(sourceRaw ? sourceRaw.encodingMs : 0)} / reference ${formatMs(referenceRaw ? referenceRaw.encodingMs : 0)}；modal raw capture ${formatMs(modalResult.modalMs)}。`);
+  logs.push("[对齐与校色] WebGL2 plan 为生产首选；此无 GPU 路径使用完整 CPU 对齐与共享内容掩膜。");
+  actionTiming.logTo(logs, "[对齐与校色] 预览采样 host action 耗时");
 
   return {
     ok: true,
@@ -6947,7 +6949,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       previewCacheKey
     };
   }, {
-    commandName: "像素起子 融合校色预览分析"
+    commandName: "像素起子 对齐与校色预览分析"
   });
 
   actionTiming.mark("校验当前图层", {
@@ -6963,9 +6965,9 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
   const effectiveGpuSeed = payloadGpuSeed && payloadSeedTrust === "hint-only" && gpuSeedPreviewMatch
     ? payloadGpuSeed
     : null;
-  logs.push(`[融合校色] CPU hydrate gpuSeed=${payloadGpuSeed ? "true" : "false"}，previewCacheKeyMatch=${gpuSeedPreviewMatch ? "true" : "false"}，seedTrust=${payloadSeedTrust || "none"}，seedCandidates=${payloadSeedCandidates.length}。`);
+  logs.push(`[对齐与校色] CPU hydrate gpuSeed=${payloadGpuSeed ? "true" : "false"}，previewCacheKeyMatch=${gpuSeedPreviewMatch ? "true" : "false"}，seedTrust=${payloadSeedTrust || "none"}，seedCandidates=${payloadSeedCandidates.length}。`);
   if (payloadGpuSeed && !effectiveGpuSeed) {
-    logs.push(`[融合校色] GPU seed 未进入 CPU fast path：${payloadSeedTrust !== "hint-only" ? "seed-trust-not-hint-only" : !gpuSeedPreviewMatch ? "preview-cache-key-mismatch" : "seed-unusable"}；将完整 CPU fallback。`);
+    logs.push(`[对齐与校色] GPU seed 未进入 CPU fast path：${payloadSeedTrust !== "hint-only" ? "seed-trust-not-hint-only" : !gpuSeedPreviewMatch ? "preview-cache-key-mismatch" : "seed-unusable"}；将完整 CPU fallback。`);
   }
 
   const cache = getBlendMatchPreviewCache(modalResult.previewCacheKey);
@@ -6995,7 +6997,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       String(payloadGpuPlan.sampleHash || "") === expectedSampleHash &&
       String(payloadGpuPlan.configHash || "") === expectedConfigHash;
     if (!gpuFresh) {
-      logs.push("[融合校色] GPU plan 拒绝：previewCacheKey/sampleHash/configHash 不新鲜；将使用 CPU fallback。");
+      logs.push("[对齐与校色] GPU plan 拒绝：previewCacheKey/sampleHash/configHash 不新鲜；将使用 CPU fallback。");
     } else {
       freshGpuFallbackAlignment = cloneJsonValue(payloadGpuPlan.alignment || payloadGpuPlan);
       const gpuBuild = buildTrustedGpuBlendMatchPlanFromSamples({
@@ -7021,9 +7023,9 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
           plan,
           planId: plan.planId
         });
-        logs.push(`[融合校色] GPU BlendMatchPlan 已缓存：planId ${plan.planId}，Host 仅完成新鲜度/结构校验和 ColorPlan 序列化。`);
+        logs.push(`[对齐与校色] GPU BlendMatchPlan 已缓存：planId ${plan.planId}，Host 仅完成新鲜度/结构校验和 ColorPlan 序列化。`);
       } else {
-        logs.push(`[融合校色] GPU plan 未达可信门槛：${gpuBuild.reason || "unknown"}；将使用 CPU fallback。`);
+        logs.push(`[对齐与校色] GPU plan 未达可信门槛：${gpuBuild.reason || "unknown"}；将使用 CPU fallback。`);
       }
     }
   }
@@ -7059,18 +7061,18 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
       plan,
       planId: plan.planId
     });
-    logs.push(`[融合校色] 完整 CPU BlendMatchPlan 已完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
-    logs.push("[融合校色] CPU plan hydrate：命中 preview raw sample cache，未重新 Photoshop getPixels，未重新切换图层可见性。");
+    logs.push(`[对齐与校色] 完整 CPU BlendMatchPlan 已完成：planId ${plan.planId}，source/reference ${sourceSample.width}x${sourceSample.height}。`);
+    logs.push("[对齐与校色] CPU plan hydrate：命中 preview raw sample cache，未重新 Photoshop getPixels，未重新切换图层可见性。");
   } else {
-    logs.push(`[融合校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);
+    logs.push(`[对齐与校色] CPU BlendMatchPlan 后台补齐命中缓存：planId ${plan.planId}。`);
   }
 
   const alignment = getPlanAlignment(plan);
   const corrections = getPlanCorrections(plan);
   const colorPlan = getPlanColorPlan(plan);
   const colorSummary = summarizeColorPlan(colorPlan);
-  actionTiming.logTo(logs, "[融合校色] CPU plan 后台补齐耗时");
-  logs.push(`[融合校色] CPU plan ready total：${formatMs(actionTiming.totalMs())}，validation=${validation.reason || "valid"}。`);
+  actionTiming.logTo(logs, "[对齐与校色] CPU plan 后台补齐耗时");
+  logs.push(`[对齐与校色] CPU plan ready total：${formatMs(actionTiming.totalMs())}，validation=${validation.reason || "valid"}。`);
 
   return {
     ok: true,

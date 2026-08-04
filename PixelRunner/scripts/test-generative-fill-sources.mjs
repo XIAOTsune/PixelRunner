@@ -58,6 +58,11 @@ assert.equal(legacySettings.generativeFillSource, stateModule.GENERATIVE_FILL_SO
 assert.equal(legacySettings.generativeFillAppId, "legacy-runninghub-app");
 assert.equal(stateModule.normalizeSettings({ generativeFillSource: "unknown" }).generativeFillSource, "runninghub");
 assert.equal(stateModule.normalizeSettings({ generativeFillSource: "third-party" }).generativeFillSource, "third-party");
+assert.equal(stateModule.normalizeSettings({}).ratioOffsetCorrectionEnabled, false);
+assert.equal(stateModule.normalizeSettings({ ratioOffsetCorrectionEnabled: true }).ratioOffsetCorrectionEnabled, true);
+const defaultThirdParty = stateModule.normalizeThirdPartySettings({});
+assert.equal(defaultThirdParty.provider, "grs");
+assert.equal(defaultThirdParty.grs.selectedModel, "gpt-image-2", "new third-party users default to the GRS image model");
 
 const legacyThirdParty = stateModule.normalizeThirdPartySettings({
   enabled: false,
@@ -153,10 +158,15 @@ assert.equal(thirdPartyPayload.inputs.referenceImage.mimeType, "image/png");
 assert.equal(thirdPartyPayload.generativeFill.compatibilityMode, true);
 
 const settingsSource = await readFile(new URL("../src/webview/settings.js", import.meta.url), "utf8");
+const workspaceSource = await readFile(new URL("../src/webview/workspace.js", import.meta.url), "utf8");
+const hostBridgeSource = await readFile(new URL("../src/host/photoshop-bridge.js", import.meta.url), "utf8");
 const htmlSource = await readFile(new URL("../app.html", import.meta.url), "utf8");
 assert.match(settingsSource, /generativeFillSource: nextSettings\.generativeFillSource/);
 assert.doesNotMatch(settingsSource, /thirdPartyEnabledInput|thirdPartySettings\.enabled/);
 assert.doesNotMatch(htmlSource, /id="thirdPartyEnabledInput"/);
 assert.match(htmlSource, /第三方 API 卡片始终显示在工作台应用切换中/);
+assert.match(workspaceSource, /photoshop\.placeResultWithGenerativeFillColorCorrection/);
+assert.match(hostBridgeSource, /alignmentEnabled: false/);
+assert.match(hostBridgeSource, /colorCorrectionOnly: true/);
 
 console.log("Generative fill source compatibility and always-visible third-party card checks passed.");

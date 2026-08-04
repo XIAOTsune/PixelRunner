@@ -49,6 +49,7 @@ import {
   openLocalUpscaleResultInPhotoshop,
   placeLocalUpscaleResultIntoPhotoshop,
   placeResultAndBlendIntoPhotoshop,
+  placeResultWithGenerativeFillColorCorrection,
   placeResultIntoPhotoshop,
   runPhotoshopToolAction
 } from "./photoshop-bridge.js";
@@ -437,6 +438,12 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await runDeduplicatedPhotoshopPlacement(
           message,
           () => placeResultAndBlendIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
+        );
+        break;
+      case "photoshop.placeResultWithGenerativeFillColorCorrection":
+        result = await runDeduplicatedPhotoshopPlacement(
+          message,
+          () => placeResultWithGenerativeFillColorCorrection(message.args, createPhotoshopPlacementRuntime(message))
         );
         break;
       case "photoshop.openLocalUpscaleResult":

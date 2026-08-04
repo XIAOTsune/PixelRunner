@@ -15,6 +15,7 @@ import "./webview/blend-match/gpu/webgl-alignment.js";
 import "./webview/space-fx.js";
 import "./webview/blend-match.js";
 import "./webview/local-upscale.js";
+import "./webview/ratio-offset-correction.js";
 import "./webview/workspace.js";
 import "./webview/generative-fill.js";
 import "./webview/ai-optimize.js";

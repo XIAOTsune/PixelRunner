@@ -147,6 +147,9 @@
     if (modules.runtime.getById("settingsLocalQueueEnabledInput")) {
       modules.runtime.getById("settingsLocalQueueEnabledInput").checked = settings.localQueueEnabled === true;
     }
+    if (modules.runtime.getById("settingsRatioOffsetCorrectionInput")) {
+      modules.runtime.getById("settingsRatioOffsetCorrectionInput").checked = settings.ratioOffsetCorrectionEnabled === true;
+    }
     if (modules.runtime.getById("settingsAiOptimizeAppIdInput")) {
       modules.runtime.getById("settingsAiOptimizeAppIdInput").value = String(
         settings.aiOptimizeAppId ?? modules.state.getDefaultAiOptimizeAppId(settings.runningHubRegion)
@@ -1098,6 +1101,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
+      ratioOffsetCorrectionEnabled: modules.runtime.getById("settingsRatioOffsetCorrectionInput")?.checked === true,
       aiOptimizeAppId,
       aiOptimizeAppIds: {
         ...(modules.state.state.settings.aiOptimizeAppIds || {}),
@@ -1129,6 +1133,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
+      ratioOffsetCorrectionEnabled: modules.runtime.getById("settingsRatioOffsetCorrectionInput")?.checked === true,
       aiOptimizeAppId,
       aiOptimizeAppIds: {
         ...(modules.state.state.settings.aiOptimizeAppIds || {}),
@@ -1159,6 +1164,7 @@
         timeout: nextSettings.timeout,
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
         localQueueEnabled: nextSettings.localQueueEnabled,
+        ratioOffsetCorrectionEnabled: nextSettings.ratioOffsetCorrectionEnabled,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
         aiOptimizeAppIds: nextSettings.aiOptimizeAppIds,
         generativeFillAppId: nextSettings.generativeFillAppId,
@@ -1270,6 +1276,7 @@
       timeout: rawSettings && rawSettings.timeout,
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
       localQueueEnabled: rawSettings ? rawSettings.localQueueEnabled : undefined,
+      ratioOffsetCorrectionEnabled: rawSettings ? rawSettings.ratioOffsetCorrectionEnabled : undefined,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
       aiOptimizeAppIds: rawSettings && rawSettings.aiOptimizeAppIds,
       generativeFillAppId: rawSettings && rawSettings.generativeFillAppId,
@@ -1452,6 +1459,7 @@
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
       "settingsLocalQueueEnabledInput",
+      "settingsRatioOffsetCorrectionInput",
       "settingsAiOptimizeAppIdInput",
       "settingsGenerativeFillAppIdInput",
       "settingsGenerativeFillContextInput",
@@ -1463,6 +1471,7 @@
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsLocalQueueEnabledInput",
+      "settingsRatioOffsetCorrectionInput",
       "settingsGenerativeFillColorCorrectionInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
@@ -1903,6 +1912,16 @@
           if (modules.workspace && typeof modules.workspace.flushQueuedTasks === "function") {
             modules.workspace.flushQueuedTasks();
           } else if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
+            modules.workspace.updateRunButtonState();
+          }
+        }
+        if (id === "settingsRatioOffsetCorrectionInput") {
+          const previewSettings = modules.state.normalizeSettings({
+            ...modules.state.state.settings,
+            ratioOffsetCorrectionEnabled: element.checked === true
+          });
+          modules.state.state.settings.ratioOffsetCorrectionEnabled = previewSettings.ratioOffsetCorrectionEnabled;
+          if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
             modules.workspace.updateRunButtonState();
           }
         }

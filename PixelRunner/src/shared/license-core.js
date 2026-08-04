@@ -9,7 +9,7 @@ export const ACTIVATION_STORAGE_KEY = "pixelrunner.license.activation.v1";
 export const LICENSE_FEATURES = Object.freeze({
   glow: "辉光",
   spaceFx: "空间特效",
-  blendMatch: "融合校色",
+  blendMatch: "对齐与校色",
   localUpscale: "本地超分"
 });
 
