@@ -74,8 +74,21 @@
     const protocolVersion = String(payload && payload.protocolVersion || "").trim();
     const buildId = String(payload && payload.buildId || "").trim();
     if (protocolVersion !== LOCAL_AI_PROTOCOL_VERSION || buildId !== LOCAL_AI_BUILD_ID) {
-      throw new Error("本地超分服务版本不匹配，请重新启动 PixelRunner Local AI");
+      throw new Error("本地增强服务版本不匹配，请重新打开本地超分");
     }
+  }
+
+  function formatLocalUpscaleDisplayText(value) {
+    return String(value || "")
+      .replace(/realesrgan(?:-x4plus)?/gi, "本地增强")
+      .replace(/real[-\s]?esrgan/gi, "本地增强")
+      .replace(/x4plus/gi, "")
+      .replace(/vulkan\s*(?:原生\s*)?4x/gi, "本地增强")
+      .replace(/原生\s*4x/gi, "增强")
+      .replace(/PixelRunner Local AI/gi, "本地增强服务")
+      .replace(/本地增强\s*本地增强/g, "本地增强")
+      .replace(/\s{2,}/g, " ")
+      .trim();
   }
 
   function shouldUseWebviewLocalAiFallback(error) {
@@ -156,38 +169,22 @@
       try {
         return await requestLocalAiFromWebview(method, args);
       } catch (fallbackError) {
-        throw new Error(`无法连接 PixelRunner Local AI：${String(fallbackError && fallbackError.message || fallbackError)}`);
+        throw new Error(`无法连接本地增强服务：${String(fallbackError && fallbackError.message || fallbackError)}`);
       }
     }
-  }
-
-  function getEngineLabel(engine) {
-    const gpu = String(engine && (engine.gpuName || engine.gpu || "") || "").trim();
-    const backend = String(engine && (engine.backend || "") || "").trim();
-    const model = String(engine && (engine.model || "realesrgan-x4plus") || "realesrgan-x4plus").trim();
-    return [gpu, backend, model].filter(Boolean).join(" · ") || "Real-ESRGAN x4plus";
   }
 
   function setStatus(message, tone = "info") {
     const status = getById("localUpscaleEngineStatus");
     const hint = getById("localUpscaleHint");
-    const quickBadge = getById("localUpscaleQuickBadge");
     const quickHint = getById("localUpscaleQuickHint");
+    const displayMessage = formatLocalUpscaleDisplayText(message);
     if (status) {
-      status.textContent = String(message || "");
+      status.textContent = displayMessage;
       status.dataset.status = tone;
     }
-    if (hint) modules.runtime.setSummaryStatus(hint, String(message || ""), tone);
-    if (quickBadge) {
-      quickBadge.textContent = tone === "success" ? "本地引擎已就绪" : tone === "error" ? "本地引擎未连接" : "检测本地引擎";
-      quickBadge.dataset.status = tone;
-    }
-    if (quickHint) modules.runtime.setSummaryStatus(quickHint, String(message || ""), tone);
-  }
-
-  function setEngineMeta(engine) {
-    const meta = getById("localUpscaleEngineMeta");
-    if (meta) meta.textContent = getEngineLabel(engine);
+    if (hint) modules.runtime.setSummaryStatus(hint, displayMessage, tone);
+    if (quickHint) modules.runtime.setSummaryStatus(quickHint, displayMessage, tone);
   }
 
   function setProgress(label, meta, progress, status = "idle") {
@@ -196,18 +193,17 @@
     const metaEl = getById("localUpscaleProgressMeta");
     const bar = getById("localUpscaleProgressBar");
     if (panel) panel.dataset.state = status;
-    if (labelEl) labelEl.textContent = String(label || "");
-    if (metaEl) metaEl.textContent = String(meta || "");
+    if (labelEl) labelEl.textContent = formatLocalUpscaleDisplayText(label);
+    if (metaEl) metaEl.textContent = formatLocalUpscaleDisplayText(meta);
     if (bar) bar.style.width = `${Math.max(0, Math.min(100, Number(progress) || 0))}%`;
   }
 
   function getCaptureLabel(capture) {
-    if (!capture || String(capture.captureMode || "") !== "selection") return "整图超分 · 原生 4x";
+    if (!capture || String(capture.captureMode || "") !== "selection") return "整图增强";
     const bounds = capture.captureBounds || capture.targetBounds || {};
     const width = Math.max(0, Math.round(Number(bounds.right) - Number(bounds.left)));
     const height = Math.max(0, Math.round(Number(bounds.bottom) - Number(bounds.top)));
-    const padding = Math.max(0, Math.round(Number(capture.padding) || 0));
-    return `选区超分 · ${width} x ${height} · padding ${padding}px · 原生 4x`;
+    return `选区增强 · ${width} x ${height}`;
   }
 
   function getCaptureProgressLabel(capture) {
@@ -300,7 +296,7 @@
       { timeoutMs: ENGINE_DISCOVERY_TIMEOUT_MS }
     );
     if (!health || health.ok === false || health.ready === false) {
-      throw new Error(String(health && (health.message || health.error) || "本地引擎未就绪"));
+      throw new Error(String(health && (health.message || health.error) || "本地增强尚未准备完成"));
     }
     return { ...health, baseUrl: normalizeLocalAiBaseUrl(health.baseUrl || normalizedBaseUrl) };
   }
@@ -319,7 +315,7 @@
           lastError = error;
           remaining -= 1;
           if (!settled && remaining === 0) {
-            reject(lastError || new Error("未找到可用的 PixelRunner Local AI 服务"));
+            reject(lastError || new Error("未找到可用的本地增强服务"));
           }
         });
       });
@@ -330,9 +326,8 @@
     state.engine = health;
     state.engineReady = true;
     state.baseUrl = normalizeLocalAiBaseUrl(health && health.baseUrl);
-    setEngineMeta(health);
-    setStatus(`本地引擎已就绪：${getEngineLabel(health)}`, "success");
-    setProgress("等待开始", "自动范围 · 原生 4x", 0, "idle");
+    setStatus("本地增强已就绪。", "success");
+    setProgress("等待开始", "自动范围", 0, "idle");
   }
 
   function markEngineUnavailable(error, options = {}) {
@@ -340,18 +335,13 @@
     state.engine = null;
     state.engineReady = false;
     state.baseUrl = LOCAL_AI_BASE_URL;
-    setEngineMeta(null);
     setStatus(
       startupFailed
-        ? "本地模型暂未启动成功；点击“重新检测”会再次启动。"
-        : "本地模型尚未启动；打开本地超分后会自动启动并加载。",
+        ? "本地增强暂未准备成功；点击“重新检测”会再次尝试。"
+        : "本地增强尚未准备；打开本地超分后会自动准备。",
       startupFailed ? "warn" : "info"
     );
-    const quickBadge = getById("localUpscaleQuickBadge");
-    if (quickBadge) quickBadge.textContent = startupFailed ? "可重新启动" : "打开后自动启动";
-    const meta = getById("localUpscaleEngineMeta");
-    if (meta) meta.textContent = "Real-ESRGAN x4plus · 打开面板后自动加载";
-    setProgress("等待启动", "打开面板后自动加载本地模型", 0, "idle");
+    setProgress("等待准备", "打开面板后自动准备", 0, "idle");
     if (startupFailed) console.warn("[PixelRunner/WebView] local upscale engine start failed", error);
   }
 
@@ -443,13 +433,12 @@
     if (!modules.runtime.isPluginRuntime()) {
       state.engine = null;
       state.engineReady = false;
-      setEngineMeta(null);
-      setStatus("浏览器预览模式下无法连接本地超分引擎。", "warn");
+      setStatus("浏览器预览模式下无法连接本地增强服务。", "warn");
       setRunning(false);
       return null;
     }
 
-    if (!quiet) setStatus("正在检测 PixelRunner Local AI...", "info");
+    if (!quiet) setStatus("正在检测本地增强服务...", "info");
     try {
       const health = await discoverCompatibleEngine();
       markEngineReady(health);
@@ -471,12 +460,12 @@
       const sessionId = state.engineSessionId;
       state.engineStarting = true;
       setRunning(state.running);
-      setStatus("正在启动 PixelRunner Local AI...", "info");
-      setProgress("正在启动本地引擎", "首次启动可能需要几秒", 8, "running");
+      setStatus("正在准备本地增强...", "info");
+      setProgress("正在准备本地增强", "首次准备可能需要几秒", 8, "running");
       try {
         const launched = await modules.runtime.callHost("localUpscale.startEngine", [], { timeoutMs: 15000 });
         if (!launched || launched.ok === false) {
-          throw new Error(String(launched && launched.result || "无法启动 PixelRunner Local AI"));
+          throw new Error(String(launched && launched.result || "无法准备本地增强服务"));
         }
 
         const deadline = Date.now() + ENGINE_START_TIMEOUT_MS;
@@ -495,10 +484,10 @@
             await wait(ENGINE_START_POLL_INTERVAL_MS);
           }
         }
-        throw lastError || new Error("PixelRunner Local AI 启动超时");
+        throw lastError || new Error("本地增强准备超时");
       } catch (error) {
         markEngineUnavailable(error, { startupFailed: true });
-        setProgress("等待重新启动", "点击“重新检测”再次启动本地模型", 0, "idle");
+        setProgress("等待重新准备", "点击“重新检测”再次准备本地增强", 0, "idle");
         return null;
       } finally {
         state.engineStarting = false;
@@ -584,8 +573,8 @@
       const label = STATUS_LABELS[status] || "正在处理";
       const isInference = ["running", "processing"].includes(status);
       const detail = isInference
-        ? `${formatInferenceProgress(job)} · Vulkan 4x`
-        : `${getCaptureProgressLabel(state.currentCapture)} · ${String(job && (job.message || job.stage) || "原生 4x").trim()}`;
+        ? formatInferenceProgress(job)
+        : `${getCaptureProgressLabel(state.currentCapture)} · ${String(job && (job.message || job.stage) || "正在处理").trim()}`;
       if (["succeeded", "success", "completed", "done"].includes(status)) {
         await finishSuccessfully(job);
         state.currentJobId = "";
@@ -600,10 +589,11 @@
       schedulePoll();
     } catch (error) {
       const wasCancelled = /取消/.test(String(error && error.message || ""));
-      setProgress(wasCancelled ? "已取消" : "本地超分失败", String(error.message || error), 100, wasCancelled ? "idle" : "error");
-      setStatus(wasCancelled ? "本地超分已取消。" : `本地超分失败：${error.message}`, wasCancelled ? "warn" : "error");
+      const errorMessage = formatLocalUpscaleDisplayText(error && error.message || error);
+      setProgress(wasCancelled ? "已取消" : "本地增强失败", errorMessage, 100, wasCancelled ? "idle" : "error");
+      setStatus(wasCancelled ? "本地增强已取消。" : `本地增强失败：${errorMessage}`, wasCancelled ? "warn" : "error");
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`本地超分${wasCancelled ? "已取消" : `失败：${error.message}`}`, wasCancelled ? "info" : "error");
+        modules.ui.logToWorkspace(`本地增强${wasCancelled ? "已取消" : `失败：${errorMessage}`}`, wasCancelled ? "info" : "error");
       }
       const failedCapture = state.currentCapture;
       state.currentJobId = "";
@@ -634,7 +624,7 @@
     const mode = String(modeInput && modeInput.value || "auto").trim() || "auto";
     state.currentJobId = modules.runtime.createId("local-upscale");
     setRunning(true);
-    setProgress("正在导出无损图像", mode === "full" ? "整图超分 · 原生 4x" : "正在检测 Photoshop 选区 · 原生 4x", 12, "running");
+    setProgress("正在导出无损图像", mode === "full" ? "整图增强" : "正在检测 Photoshop 选区", 12, "running");
     setStatus("正在从 Photoshop 导出无损 PNG...", "info");
 
     try {
@@ -659,7 +649,7 @@
       }
       state.currentCapture = capture;
       const sourceSize = `${Math.round(Number(capture.width) || 0)} x ${Math.round(Number(capture.height) || 0)}`;
-      setProgress("正在提交本地引擎", `${getCaptureLabel(capture)} · 输入 ${sourceSize}`, 28, "running");
+      setProgress("正在提交本地增强", `${getCaptureLabel(capture)} · 输入 ${sourceSize}`, 28, "running");
       const job = await callLocalUpscaleService("localUpscale.submitJob", buildLocalUpscaleArgs({
         jobId: state.currentJobId,
         inputPath: capture.inputPath,
@@ -676,17 +666,18 @@
         return;
       }
       const jobId = String(job && job.jobId || state.currentJobId).trim();
-      if (!jobId) throw new Error("本地引擎未返回任务编号");
+      if (!jobId) throw new Error("本地增强服务未返回任务编号");
       state.currentJobId = jobId;
-      setStatus(`已提交${String(capture.captureMode) === "selection" ? "选区" : "整图"}超分：${sourceSize} · 原生 4x`, "info");
+      setStatus(`已提交${String(capture.captureMode) === "selection" ? "选区" : "整图"}增强：${sourceSize}`, "info");
       setProgress("正在排队", `${getCaptureLabel(capture)} · 输入 ${sourceSize}`, 36, "running");
       schedulePoll();
     } catch (error) {
       if (!isCurrentEngineSession(sessionId)) return;
-      setProgress("本地超分失败", String(error.message || error), 100, "error");
-      setStatus(`本地超分失败：${error.message}`, "error");
+      const errorMessage = formatLocalUpscaleDisplayText(error && error.message || error);
+      setProgress("本地增强失败", errorMessage, 100, "error");
+      setStatus(`本地增强失败：${errorMessage}`, "error");
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`本地超分失败：${error.message}`, "error");
+        modules.ui.logToWorkspace(`本地增强失败：${errorMessage}`, "error");
       }
       const failedCapture = state.currentCapture;
       state.currentJobId = "";
@@ -699,7 +690,7 @@
   async function cancelUpscale() {
     if (!state.running || !state.currentJobId) return;
     const jobId = state.currentJobId;
-    setProgress("正在取消", "等待本地引擎停止", 60, "running");
+    setProgress("正在取消", "等待本地增强停止", 60, "running");
     try {
       await callLocalUpscaleService(
         "localUpscale.cancelJob",
@@ -712,8 +703,8 @@
       state.currentCapture = null;
       await cleanupCaptureSelectionSnapshot(cancelledCapture);
       setRunning(false);
-      setProgress("已取消", "自动范围 · 原生 4x", 0, "idle");
-      setStatus("本地超分已取消。", "warn");
+      setProgress("已取消", "自动范围", 0, "idle");
+      setStatus("本地增强已取消。", "warn");
     } catch (error) {
       setStatus(`取消任务失败：${error.message}`, "error");
       schedulePoll();

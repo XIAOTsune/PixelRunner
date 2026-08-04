@@ -2634,17 +2634,6 @@ button {
   }
 }
 
-@media (max-width: 430px) {
-  .tool-blend-match-launcher {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  #viewTools .blend-match-open-btn {
-    width: 100%;
-  }
-}
-
 .overlay-card.space-fx-modal-card {
   width: min(96vw, 1440px);
   min-height: min(86vh, 920px);
@@ -3597,7 +3586,8 @@ button {
 #viewTools .tool-item p,
 #viewTools .tool-glow-card .subtle-note,
 #viewTools .tool-space-fx-card .subtle-note,
-#viewTools .tool-blend-match-card .subtle-note {
+#viewTools .tool-blend-match-card .subtle-note,
+#viewTools .tool-local-upscale-card .subtle-note {
   display: -webkit-box;
   overflow: hidden;
   line-height: 1.35;
@@ -6767,17 +6757,11 @@ button {
   gap: 8px;
 }
 
-.local-upscale-engine-meta,
 .local-upscale-progress-meta {
   min-width: 0;
   color: var(--muted);
   font-size: 10px;
   line-height: 1.35;
-}
-
-.local-upscale-engine-meta {
-  display: block;
-  margin-top: 6px;
 }
 
 .local-upscale-controls {

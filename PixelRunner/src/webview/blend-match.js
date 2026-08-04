@@ -200,7 +200,6 @@
     const settings = localState.settings;
     const modeLabel = MODE_LABELS[settings.mode] || MODE_LABELS.balanced;
     setText("blendMatchModeBadge", modeLabel);
-    setText("blendMatchStatus", localState.busy ? "正在执行融合校色" : "等待选择返图图层");
     setText("blendMatchQuickHint", `模式 ${modeLabel} / 强度 ${settings.totalStrength}% / 羽化 ${settings.featherRadius}px`);
     setText("blendMatchTotalValue", settings.totalStrength);
     setText("blendMatchToneValue", settings.toneStrength);

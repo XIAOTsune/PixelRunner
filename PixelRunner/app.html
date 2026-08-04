@@ -182,7 +182,6 @@
             <input id="blendMatchAutoToggle" type="checkbox" />
             <span>AI 返图后立即融合校色</span>
           </label>
-          <div id="blendMatchStatus" class="summary-strip">等待选择返图图层</div>
         </section>
 
         <section class="surface-card tool-local-upscale-card">
@@ -190,14 +189,13 @@
             <div class="tool-local-upscale-summary-main">
               <div class="tool-local-upscale-header-line">
                 <h3 class="card-title">本地超分</h3>
-                <span id="localUpscaleQuickBadge" class="status-chip">打开后自动启动</span>
                 <span class="status-chip license-tool-status" data-license-status-for="localUpscale">已锁定</span>
               </div>
-              <p class="subtle-note">Real-ESRGAN x4plus · 同尺寸增强并回贴为新图层。</p>
+              <p class="subtle-note">同尺寸增强并回贴为新图层。</p>
             </div>
             <button id="btnOpenLocalUpscalePanel" class="primary-btn local-upscale-open-btn" type="button" data-license-feature="localUpscale">打开本地超分</button>
           </div>
-          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">点击“打开本地超分”会自动启动并加载本地模型。</div>
+          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">打开后会自动准备本地增强。</div>
         </section>
 
         <div class="tool-group-grid">
@@ -1360,10 +1358,9 @@
 
       <div class="local-upscale-engine-panel">
         <div class="local-upscale-engine-head">
-          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">等待启动本地模型</span>
+          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">等待准备本地增强</span>
           <button id="btnRefreshLocalUpscaleEngine" class="mini-btn" type="button">重新检测</button>
         </div>
-        <span id="localUpscaleEngineMeta" class="local-upscale-engine-meta">Real-ESRGAN x4plus · 打开面板后自动加载</span>
       </div>
 
       <div class="local-upscale-controls">
@@ -1398,7 +1395,7 @@
       <div id="localUpscaleProgressPanel" class="local-upscale-progress-panel" data-state="idle">
         <div class="local-upscale-progress-head">
           <span id="localUpscaleProgressLabel">等待开始</span>
-          <span id="localUpscaleProgressMeta">自动范围 · 原生 4x</span>
+          <span id="localUpscaleProgressMeta">自动范围</span>
         </div>
         <div class="local-upscale-progress-track" aria-hidden="true"><span id="localUpscaleProgressBar"></span></div>
       </div>
