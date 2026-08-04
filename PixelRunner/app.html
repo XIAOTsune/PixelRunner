@@ -463,9 +463,9 @@
             <summary class="settings-collapse-summary">创成式填充设置</summary>
             <div class="form-stack collapsible-body">
               <label class="field">
-                <span class="field-label">创成式填充应用 ID</span>
+                <span class="field-label">RunningHub 创成式填充应用 ID</span>
                 <input id="settingsGenerativeFillAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub 创成式填充应用 ID" />
-                <span class="field-hint settings-field-hint">当前国内版默认使用 2072190882207584257。创成式填充会在工作台应用切换中作为独立特殊模式运行。</span>
+                <span class="field-hint settings-field-hint">当前国内版默认使用 2072190882207584257；选择第三方 API 来源时改用“第三方支持”中的当前配置。</span>
               </label>
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">回贴自动校色</span>
@@ -541,13 +541,6 @@
           <details id="thirdPartySettingsDetails" class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">第三方支持</summary>
             <div class="form-stack collapsible-body">
-              <label class="field toggle-field">
-                <span class="field-label">启用第三方 API</span>
-                <label class="checkbox-line">
-                  <input id="thirdPartyEnabledInput" type="checkbox" />
-                  <span>在工作台应用切换中显示“第三方 API”卡片</span>
-                </label>
-              </label>
               <div class="field">
                 <span class="field-label">供应商</span>
                 <div id="thirdPartyProviderControl" class="region-segmented third-party-provider-control" role="group" aria-label="第三方 API 供应商">
@@ -640,7 +633,7 @@
               <div class="action-row">
                 <button id="btnSaveThirdPartySettings" class="primary-btn" type="button">保存第三方设置</button>
               </div>
-              <div id="thirdPartyStatusSummary" class="summary-strip">启用后，工作台应用切换中会出现固定的第三方 API 卡片。</div>
+              <div id="thirdPartyStatusSummary" class="summary-strip">第三方 API 卡片始终显示在工作台应用切换中；运行前请完成当前供应商配置。</div>
             </div>
           </details>
         </div>

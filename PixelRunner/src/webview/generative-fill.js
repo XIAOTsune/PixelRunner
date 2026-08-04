@@ -22,6 +22,37 @@
     return String(modules.state.state.settings.generativeFillAppId || "").trim();
   }
 
+  function getConfiguredSource() {
+    return modules.state.normalizeGenerativeFillSource(
+      modules.state.state.settings.generativeFillSource
+    );
+  }
+
+  function getThirdPartyAvailability() {
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    const apiKey = String(descriptor.config && descriptor.config.apiKey || "").trim();
+    const model = String(descriptor.config && descriptor.config.selectedModel || "").trim();
+    return {
+      available: Boolean(apiKey && model),
+      descriptor,
+      message: !apiKey
+        ? `请先到设置页的“第三方支持”中配置 ${descriptor.label} API Key`
+        : !model
+          ? `请先到设置页的“第三方支持”中选择 ${descriptor.label} 生图模型`
+          : ""
+    };
+  }
+
+  function buildThirdPartyGenerativeFillPrompt(promptText) {
+    const request = String(promptText || "").trim();
+    return [
+      "Edit the first image using the second image as a grayscale mask.",
+      "Generate only inside the white mask area; preserve every pixel outside the mask.",
+      "Keep the original composition, perspective, lighting, and canvas aspect ratio.",
+      `Requested edit: ${request}`
+    ].join("\n");
+  }
+
   function getConfiguredFeather() {
     return Math.max(0, Math.min(128, Math.floor(numberOrDefault(
       modules.state.state.settings.generativeFillFeather,
@@ -639,6 +670,50 @@
     };
   }
 
+  async function buildThirdPartyPayload(selection, promptText) {
+    const availability = getThirdPartyAvailability();
+    if (!availability.available) throw new Error(availability.message);
+    if (!modules.workspace || typeof modules.workspace.buildThirdPartyRunPayload !== "function") {
+      throw new Error("当前版本未加载第三方 API 任务适配器");
+    }
+
+    const sourceImage = buildImageValue(selection.asset);
+    const maskVariants = await buildMaskVariants(selection);
+    const maskImage = buildImageValue(maskVariants.apiMask);
+    const app = modules.state.getThirdPartyApp();
+    const config = availability.descriptor.config;
+    const generativeFill = {
+      selectionBounds: selection.selectionBounds,
+      contextBounds: selection.contextBounds,
+      selectionPadding: selection.selectionPadding,
+      maskExpansion: Math.max(0, numberOrDefault(selection.maskExpansion, getConfiguredMaskExpansion())),
+      feather: Math.max(0, numberOrDefault(selection.feather, getConfiguredFeather())),
+      maskShape: maskVariants.shape,
+      placementMaskDataUrl: maskVariants.placementMask ? maskVariants.placementMask.dataUrl : "",
+      selectionSnapshotChannelName: String(selection.selectionSnapshotChannelName || ""),
+      autoColorCorrection: modules.state.state.settings.generativeFillColorCorrectionEnabled !== false,
+      useCurrentSelectionMask: true,
+      source: modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY,
+      compatibilityMode: true
+    };
+    return modules.workspace.buildThirdPartyRunPayload({
+      kind: "generative-fill",
+      appId: modules.state.THIRD_PARTY_APP_ID,
+      appName: "创成式填充 · 第三方 API",
+      app,
+      inputs: {
+        ...modules.state.buildDefaultFormValues(app),
+        mainImage: sourceImage,
+        referenceImage: maskImage,
+        prompt: buildThirdPartyGenerativeFillPrompt(promptText),
+        model: config.selectedModel,
+        aspectRatio: "auto",
+        resolution: config.resolution || "1K"
+      },
+      generativeFill
+    });
+  }
+
   async function submit() {
     const state = getState();
     let selection = null;
@@ -648,21 +723,31 @@
       setStatus("error", "请先输入创成式填充提示词");
       return false;
     }
-    if (!getConfiguredAppId()) {
-      setStatus("error", "请先在设置页的创成式填充设置中填写应用 ID");
-      return false;
-    }
-    if (!String(modules.state.state.settings.apiKey || "").trim()) {
-      setStatus("error", "请先在设置页保存 RunningHub API Key");
-      return false;
+    const source = getConfiguredSource();
+    if (source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY) {
+      const availability = getThirdPartyAvailability();
+      if (!availability.available) {
+        setStatus("error", availability.message);
+        return false;
+      }
+    } else {
+      if (!getConfiguredAppId()) {
+        setStatus("error", "请先在设置页的创成式填充设置中填写应用 ID");
+        return false;
+      }
+      if (!String(modules.state.state.settings.apiKey || "").trim()) {
+        setStatus("error", "请先在设置页保存 RunningHub API Key");
+        return false;
+      }
     }
 
     submissionInFlight = true;
     render();
     try {
       selection = await captureSelection();
-      const schema = await loadSchema();
-      const payload = await buildPayload(schema, selection, promptText);
+      const payload = source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY
+        ? await buildThirdPartyPayload(selection, promptText)
+        : await buildPayload(await loadSchema(), selection, promptText);
       const sourceDocument = {
         ...(modules.state.state.currentDocumentInfo || {}),
         ok: true,
@@ -672,12 +757,16 @@
         selectionBounds: selection.selectionBounds,
         contextBounds: selection.contextBounds,
         generativeFill: payload.generativeFill,
+        generativeFillSource: source,
         generativeFillPrompt: promptText
       };
       modules.state.state.lastRunPayload = payload;
       const localTaskId = modules.workspace.enqueueRunTaskFlow(payload, sourceDocument);
       state.lastTaskId = localTaskId;
-      setStatus("queued", `已提交创成式填充任务，正在等待 RunningHub 返回结果。`);
+      const providerLabel = source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY
+        ? getThirdPartyAvailability().descriptor.label
+        : "RunningHub";
+      setStatus("queued", `已提交创成式填充任务，正在等待 ${providerLabel} 返回结果。`);
       return true;
     } catch (error) {
       if (selection) await cleanupSelectionSnapshot(selection);
@@ -691,14 +780,20 @@
   }
 
   async function enterMode() {
-    if (!getConfiguredAppId()) {
+    const source = getConfiguredSource();
+    if (source === modules.state.GENERATIVE_FILL_SOURCES.RUNNINGHUB && !getConfiguredAppId()) {
       modules.ui.logToWorkspace("请先在设置页的创成式填充设置中填写应用 ID。", "warn");
       modules.settings && modules.settings.renderSettingsStatus && modules.settings.renderSettingsStatus("请先在设置页的创成式填充设置中填写应用 ID。", "warn");
       return false;
     }
     const state = getState();
-    state.status = "idle";
-    state.statusMessage = "运行时自动读取当前 Photoshop 选区。";
+    const thirdPartyAvailability = source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY
+      ? getThirdPartyAvailability()
+      : null;
+    state.status = thirdPartyAvailability && !thirdPartyAvailability.available ? "error" : "idle";
+    state.statusMessage = thirdPartyAvailability && !thirdPartyAvailability.available
+      ? thirdPartyAvailability.message
+      : "运行时自动读取当前 Photoshop 选区。";
     if (modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
       await modules.quickEntries.setWorkspaceMode("generative-fill");
     } else {
@@ -711,8 +806,51 @@
       } catch (_) {}
     }
     render();
-    modules.ui.logToWorkspace("已进入创成式填充模式。运行时会自动读取 Photoshop 当前选区。", "info");
+    modules.ui.logToWorkspace(
+      thirdPartyAvailability && !thirdPartyAvailability.available
+        ? `${thirdPartyAvailability.message}。`
+        : `已进入创成式填充模式，当前来源：${source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY ? thirdPartyAvailability.descriptor.label : "RunningHub"}。`,
+      thirdPartyAvailability && !thirdPartyAvailability.available ? "warn" : "info"
+    );
     return true;
+  }
+
+  async function selectSource(source) {
+    if (submissionInFlight) return false;
+    const normalized = modules.state.normalizeGenerativeFillSource(source);
+    try {
+      if (modules.settings && typeof modules.settings.saveGenerativeFillSource === "function") {
+        await modules.settings.saveGenerativeFillSource(normalized);
+      } else {
+        modules.state.state.settings = modules.state.normalizeSettings({
+          ...modules.state.state.settings,
+          generativeFillSource: normalized
+        });
+      }
+      const state = getState();
+      if (normalized === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY) {
+        const availability = getThirdPartyAvailability();
+        state.status = availability.available ? "idle" : "error";
+        state.statusMessage = availability.available
+          ? `当前使用 ${availability.descriptor.label} 第三方兼容模式。`
+          : availability.message;
+        modules.ui.logToWorkspace(
+          availability.available
+            ? `创成式填充已切换到 ${availability.descriptor.label} 第三方兼容模式。`
+            : `${availability.message}。`,
+          availability.available ? "info" : "warn"
+        );
+      } else {
+        state.status = "idle";
+        state.statusMessage = "当前使用 RunningHub 应用 ID。";
+        modules.ui.logToWorkspace("创成式填充已切换到 RunningHub 应用 ID。", "info");
+      }
+      render();
+      return true;
+    } catch (error) {
+      setStatus("error", `保存创成式填充来源失败：${error && error.message ? error.message : error}`);
+      return false;
+    }
   }
 
   async function exitMode() {
@@ -745,6 +883,15 @@
     const tasks = getGenerativeFillTasks();
     const busy = submissionInFlight || ["capturing", "schema", "submitting"].includes(state.status);
     const statusText = state.statusMessage || "运行时自动读取当前 Photoshop 选区。";
+    const source = getConfiguredSource();
+    const thirdPartyAvailability = getThirdPartyAvailability();
+    const sourceIsThirdParty = source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY;
+    const sourceMeta = sourceIsThirdParty
+      ? thirdPartyAvailability.available
+        ? `${thirdPartyAvailability.descriptor.shortLabel} · ${thirdPartyAvailability.descriptor.config.selectedModel}`
+        : thirdPartyAvailability.message
+      : `应用 ID ${getConfiguredAppId() || "未配置"}`;
+    const submitDisabled = busy || (sourceIsThirdParty && !thirdPartyAvailability.available);
 
     surface.innerHTML = `
       <div class="generative-fill-toolbar" role="region" aria-label="创成式填充操作栏">
@@ -757,6 +904,15 @@
             </div>
           </div>
           <button id="btnExitGenerativeFill" class="generative-fill-exit-btn" type="button" data-action="exit-generative-fill" title="退出创成式填充模式">退出</button>
+        </div>
+
+        <div class="generative-fill-source-row">
+          <span class="generative-fill-source-label">运行来源</span>
+          <div class="region-segmented generative-fill-source-control" role="group" aria-label="创成式填充运行来源">
+            <button class="region-segmented-btn ${sourceIsThirdParty ? "" : "is-active"}" type="button" data-action="select-generative-fill-source" data-generative-fill-source="runninghub" aria-pressed="${sourceIsThirdParty ? "false" : "true"}" ${busy ? "disabled" : ""}><span>RunningHub</span><small>应用 ID</small></button>
+            <button class="region-segmented-btn ${sourceIsThirdParty ? "is-active" : ""}" type="button" data-action="select-generative-fill-source" data-generative-fill-source="third-party" aria-pressed="${sourceIsThirdParty ? "true" : "false"}" ${busy ? "disabled" : ""}><span>第三方 API</span><small>兼容模式</small></button>
+          </div>
+          <span class="generative-fill-source-meta ${sourceIsThirdParty && !thirdPartyAvailability.available ? "is-error" : ""}">${modules.runtime.escapeHtml(sourceMeta)}</span>
         </div>
 
         <div class="generative-fill-selection-row">
@@ -772,8 +928,8 @@
         </label>
 
         <div class="generative-fill-footer">
-          <div class="generative-fill-status" aria-live="polite">${modules.runtime.escapeHtml(statusText)}<small>每次生成都会读取最新选区，并保留不规则蒙版</small></div>
-          <button class="primary-btn generative-fill-submit-btn" type="button" data-action="submit-generative-fill" ${busy ? "disabled" : ""}>${busy ? "读取中" : "生成"}</button>
+          <div class="generative-fill-status" aria-live="polite">${modules.runtime.escapeHtml(statusText)}<small>${sourceIsThirdParty ? "蒙版作为第二张图交给模型解释，回贴仍按原选区裁切" : "每次生成都会读取最新选区，并保留不规则蒙版"}</small></div>
+          <button class="primary-btn generative-fill-submit-btn" type="button" data-action="submit-generative-fill" ${submitDisabled ? "disabled" : ""}>${busy ? "读取中" : "生成"}</button>
         </div>
 
         <section class="generative-fill-tasks" aria-label="创成式填充任务">
@@ -806,6 +962,9 @@
       const action = target.getAttribute("data-action");
       if (action === "exit-generative-fill") void exitMode();
       if (action === "submit-generative-fill") void submit();
+      if (action === "select-generative-fill-source") {
+        void selectSource(target.getAttribute("data-generative-fill-source"));
+      }
     });
   }
 
@@ -813,6 +972,8 @@
     DEFAULT_CONTEXT_EXPANSION,
     dilateAlphaMask,
     buildOutwardFeatherAlpha,
+    buildThirdPartyGenerativeFillPrompt,
+    getThirdPartyAvailability,
     enterMode,
     exitMode,
     captureSelection,

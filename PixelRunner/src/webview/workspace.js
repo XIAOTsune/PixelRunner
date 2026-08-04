@@ -1985,7 +1985,7 @@
     return payload;
   }
 
-  function buildThirdPartyRunPayload() {
+  function buildThirdPartyRunPayload(options = {}) {
     const state = modules.state.state;
     const normalized = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
     state.thirdPartySettings = normalized;
@@ -1994,6 +1994,8 @@
     const isGemini = descriptor.id === "gemini";
     const region = isGemini ? "" : modules.state.normalizeGrsRegion(config.region, config.apiUrl);
     const apiUrl = isGemini ? descriptor.apiUrl : modules.state.getGrsApiUrl(region);
+    const app = options.app || state.currentApp || modules.state.getThirdPartyApp();
+    const inputValues = options.inputs && typeof options.inputs === "object" ? options.inputs : state.formValues;
     const payload = {
       provider: descriptor.id,
       providerLabel: descriptor.label,
@@ -2001,11 +2003,11 @@
       adapter: isGemini ? "gemini-generate-content" : config.adapter || "grs-image-generate",
       region,
       apiUrl,
-      appId: modules.state.THIRD_PARTY_APP_ID,
-      appName: "第三方 API",
-      app: state.currentApp,
+      appId: options.appId || modules.state.THIRD_PARTY_APP_ID,
+      appName: options.appName || "第三方 API",
+      app,
       apiKey: config.apiKey || "",
-      inputs: normalizePayloadInputs(state.currentApp, state.formValues),
+      inputs: normalizePayloadInputs(app, inputValues),
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
@@ -2021,6 +2023,10 @@
         adapter: isGemini ? "gemini-generate-content" : config.adapter || "grs-image-generate"
       }
     };
+    if (options.kind) payload.kind = String(options.kind);
+    if (options.generativeFill && typeof options.generativeFill === "object") {
+      payload.generativeFill = options.generativeFill;
+    }
     state.lastRunPayload = payload;
     return payload;
   }
@@ -2651,9 +2657,6 @@
     const app = state.currentApp;
     if (!app) throw new Error("请先选择一个应用");
     if (modules.state.isThirdPartyApp(app)) {
-      if (!modules.state.state.thirdPartySettings || !modules.state.state.thirdPartySettings.enabled) {
-        throw new Error("请先在设置页启用第三方支持");
-      }
       const descriptor = modules.state.getThirdPartyProviderDescriptor();
       if (!String(descriptor.config.apiKey || "").trim()) {
         throw new Error(`请先在第三方支持中配置 ${descriptor.label} API Key`);
@@ -4018,6 +4021,7 @@
     renderWorkspace,
     clearCompletedRunningTasks,
     buildRunPayload,
+    buildThirdPartyRunPayload,
     enqueueRunTaskFlow,
     collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,
