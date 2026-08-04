@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 globalThis.window = {
   PixelRunnerModules: {
@@ -11,6 +12,11 @@ globalThis.window = {
 await import("../src/webview/workspace.js");
 
 const workspace = globalThis.window.PixelRunnerModules.workspace;
+const workspaceSource = await readFile(new URL("../src/webview/workspace.js", import.meta.url), "utf8");
+assert.match(workspaceSource, /const RUN_BUTTON_COOLDOWN_MS = 600;/);
+assert.match(workspaceSource, /runButton\.disabled = .*captureInProgress/);
+assert.match(workspaceSource, /runPlusButton\.disabled = .*captureInProgress/);
+assert.match(workspaceSource, /if \(captureInProgress\) throw new Error\("正在捕获图像/);
 assert.equal(workspace.getTaskDurationLabel({ status: "submitting" }), "提交耗时");
 assert.equal(workspace.getTaskDurationLabel({ status: "queued", queueMode: "local" }), "排队等待");
 assert.equal(workspace.getTaskDurationLabel({ status: "running" }), "已运行");

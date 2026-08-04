@@ -1,6 +1,6 @@
 ﻿(function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const RUN_BUTTON_COOLDOWN_MS = 1500;
+  const RUN_BUTTON_COOLDOWN_MS = 600;
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
@@ -33,6 +33,7 @@
   let autoPlacementRetryTimer = 0;
   let autoPlacementProcessing = false;
   let captureInProgress = false;
+  let captureInFlightCount = 0;
   const taskTrackingTimers = new Map();
   const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
@@ -1528,11 +1529,13 @@
 
     if (runButton) {
       runButton.hidden = generativeFillMode;
-      runButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || captureInProgress || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       if (quickMode) {
         runButton.textContent = "点击快捷入口运行";
       } else if (!hasCurrentApp) {
         runButton.textContent = "开始运行";
+      } else if (captureInProgress) {
+        runButton.textContent = "正在捕获图像...";
       } else if (concurrencyReached && localQueueEnabled) {
         runButton.textContent = `加入队列 ${queuedCount} 等待`;
       } else if (concurrencyReached) {
@@ -1550,7 +1553,7 @@
       const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
       const plusModeEnabled = state.settings && state.settings.plusModeEnabled === true;
       runPlusButton.hidden = generativeFillMode || !plusModeEnabled;
-      runPlusButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runPlusButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || captureInProgress || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
       runPlusButton.setAttribute(
         "aria-label",
@@ -1568,6 +1571,8 @@
             : "后台任务：选择一个快捷入口即可直接运行。";
       } else if (!hasCurrentApp) {
         taskStatusSummary.textContent = "后台任务：无，请先选择应用。";
+      } else if (captureInProgress) {
+        taskStatusSummary.textContent = "后台任务：正在从 Photoshop 捕获图像，完成后即可运行。";
       } else if (concurrencyReached && localQueueEnabled) {
         taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，本地排队 ${queuedCount} 个；新任务会先排队，空出位置后自动提交。`;
       } else if (concurrencyReached) {
@@ -2579,12 +2584,16 @@
       window.clearTimeout(autoPlacementRetryTimer);
       autoPlacementRetryTimer = 0;
     }
+    captureInFlightCount += 1;
     captureInProgress = true;
+    updateRunButtonState();
   }
 
   function resumeAutoPlacementRetry() {
-    captureInProgress = false;
-    if (pendingAutoPlacements.size > 0) {
+    captureInFlightCount = Math.max(0, captureInFlightCount - 1);
+    captureInProgress = captureInFlightCount > 0;
+    updateRunButtonState();
+    if (!captureInProgress && pendingAutoPlacements.size > 0) {
       schedulePendingAutoPlacementRetry(2000);
     }
   }
@@ -3483,6 +3492,7 @@
   }
 
   async function runCurrentWorkspaceTask(options = {}) {
+    if (captureInProgress) throw new Error("正在捕获图像，请等待图像完成后再运行。");
     validateRunPayload();
     clearLastResult();
     const payload = buildRunPayload(options);

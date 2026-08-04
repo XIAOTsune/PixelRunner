@@ -122,54 +122,10 @@ function isImageLikeInput(input) {
   return typeMarker.includes("image") || typeMarker.includes("img") || typeMarker.includes("file") || fieldMarker === "image";
 }
 
-function getImageInputMarker(input) {
-  return `${(input && input.key) || ""} ${(input && input.label) || ""} ${(input && input.name) || ""} ${(input && input.fieldName) || ""}`
-    .toLowerCase();
-}
-
-function getImageInputRole(input) {
-  return String((input && input.role) || "").trim().toLowerCase();
-}
-
 function getImageInputEmptyBehavior(input) {
   return String((input && (input.emptyBehavior || input.emptyBehaviour || input.emptyPolicy || input.onEmpty)) || "")
     .trim()
     .toLowerCase();
-}
-
-function isMainImageInput(input) {
-  return getImageInputRole(input) === "primary" || /(主图|主输入|原图|底图|主体图|main|primary|source|base)/i.test(getImageInputMarker(input));
-}
-
-function isControlImageInput(input) {
-  return /(遮罩|蒙版|控制图|姿态|深度|法线|线稿|边缘|mask|control|pose|depth|normal|canny|edge|lineart|scribble|sketch|seg|segmentation|openpose)/i.test(getImageInputMarker(input));
-}
-
-function getImageInputPrimaryScore(input, index = 0) {
-  const marker = getImageInputMarker(input);
-  let score = 0;
-  if (isMainImageInput(input)) score += 80;
-  if (isControlImageInput(input)) score -= 80;
-  if (/(参考|副图|辅图|风格图|ref|reference|style)/i.test(marker)) score -= 40;
-  if (input && input.required) score += 8;
-  return score - index * 0.01;
-}
-
-function findPrimaryImageInput(inputs, values) {
-  const imageInputs = (Array.isArray(inputs) ? inputs : []).filter(isImageLikeInput);
-  const mainInputs = imageInputs.filter(isMainImageInput);
-  const sourceInputs = mainInputs.length ? mainInputs : imageInputs;
-  const ranked = sourceInputs
-    .map((input, index) => ({
-      input,
-      index,
-      key: String((input && input.key) || "").trim() || `param_${index + 1}`,
-      score: getImageInputPrimaryScore(input, index)
-    }))
-    .filter((item) => item.key && isFilledInputValue(values[item.key]))
-    .filter((item) => mainInputs.length || item.score >= 0)
-    .sort((a, b) => b.score - a.score || a.index - b.index);
-  return ranked.length ? ranked[0] : null;
 }
 
 function parseDataUrl(value) {
@@ -380,8 +336,6 @@ function buildNodeParams(app, inputValues) {
 async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
   const inputs = Array.isArray(app && app.inputs) ? app.inputs : [];
   const values = inputValues && typeof inputValues === "object" ? inputValues : {};
-  const imageInputs = inputs.filter(isImageLikeInput);
-  const placeholderAnchorInput = imageInputs.length >= 2 ? findPrimaryImageInput(inputs, values) : null;
   const uploadedImageValues = new Map();
   const normalizedValues = {};
   const nodeInfoList = [];
@@ -413,14 +367,9 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     return safePlaceholderImageValue;
   }
 
-  function shouldUseSafePlaceholder(input, key, imageRequiresValue) {
-    if (!placeholderAnchorInput || !placeholderAnchorInput.key) return false;
-    if (String(placeholderAnchorInput.key || "") === String(key || "")) return false;
+  function shouldUseSafePlaceholder(input, imageRequiresValue) {
     if (imageRequiresValue) return false;
-    const emptyBehavior = getImageInputEmptyBehavior(input);
-    if (emptyBehavior === "skip" || emptyBehavior === "require") return false;
-    if (isMainImageInput(input) || isControlImageInput(input)) return false;
-    return true;
+    return getImageInputEmptyBehavior(input) !== "skip";
   }
 
   function pushImagePayload(input, key, normalizedValue) {
@@ -445,7 +394,7 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
     const imageRequiresValue = Boolean(input && input.required) || imageEmptyBehavior === "require";
     if (!isFilledInputValue(rawValue)) {
       if (isImageInput && !imageRequiresValue) {
-        if (shouldUseSafePlaceholder(input, key, imageRequiresValue)) {
+        if (shouldUseSafePlaceholder(input, imageRequiresValue)) {
           const placeholderImageValue = await getSafePlaceholderImageValue();
           if (placeholderImageValue) {
             pushImagePayload(input, key, placeholderImageValue);
@@ -477,7 +426,7 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         if (imageRequiresValue) {
           throw new Error(`Missing required input: ${input.label || input.name || key}`);
         }
-        const placeholderImageValue = shouldUseSafePlaceholder(input, key, imageRequiresValue)
+        const placeholderImageValue = shouldUseSafePlaceholder(input, imageRequiresValue)
           ? await getSafePlaceholderImageValue()
           : "";
         if (placeholderImageValue) {

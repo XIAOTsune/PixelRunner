@@ -10,6 +10,7 @@ import {
   buildDataUrl,
   ensureActiveDocument,
   getDocumentInfo,
+  normalizeBitsPerChannel,
   normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
@@ -1990,6 +1991,7 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
       }
       tempDoc = await doc.duplicate("PR 超分");
+      await activateDocument(app, action, Number(tempDoc.id));
       try {
         await tempDoc.flatten();
       } catch (_) {}
@@ -2000,6 +2002,7 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         await tempDoc.crop(captureBounds);
       }
 
+      await normalizeLocalUpscaleTempDocumentBitDepth(action, tempDoc);
       const sourceSize = getDocumentPixelSize(tempDoc);
       const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `PR-S-${fileKey}`);
       const outputPath = createSiblingNativePath(
@@ -2461,6 +2464,23 @@ async function exportDocumentAsPngFile(storage, action, docRef, filePrefix = "pi
     await deleteFileQuietly(tempFile);
     throw error;
   }
+}
+
+async function normalizeLocalUpscaleTempDocumentBitDepth(action, docRef) {
+  const rawBitsPerChannel = docRef && docRef.bitsPerChannel;
+  const bitsPerChannel = rawBitsPerChannel && typeof rawBitsPerChannel === "object"
+    ? rawBitsPerChannel._value ?? rawBitsPerChannel.value ?? rawBitsPerChannel
+    : rawBitsPerChannel;
+  if (normalizeBitsPerChannel(bitsPerChannel) !== "SIXTEEN") return;
+
+  // The duplicated document is active here. Real-ESRGAN receives an 8-bit PNG,
+  // while the source Photoshop document remains at its original bit depth.
+  await action.batchPlay([{
+    _obj: "convertMode",
+    depth: 8,
+    merge: false,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
 }
 
 export async function openImageFromUrl(payload = {}) {
