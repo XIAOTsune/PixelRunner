@@ -5,6 +5,11 @@
     return Math.min(max, Math.max(min, value));
   }
 
+  function smoothstep(edge0, edge1, value) {
+    const t = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
   function applySaturation(r, g, b, saturation) {
     const luma = r * 0.2126 + g * 0.7152 + b * 0.0722;
     return [
@@ -14,9 +19,19 @@
     ];
   }
 
-  function softShoulder(value, shoulder) {
-    const safeShoulder = clamp(shoulder, 0.04, 0.95);
-    return value / (1 + value * safeShoulder);
+  function toneMapGlow(r, g, b, intensity, shoulder) {
+    const inputR = Math.max(0, r) * intensity;
+    const inputG = Math.max(0, g) * intensity;
+    const inputB = Math.max(0, b) * intensity;
+    const peak = Math.max(inputR, inputG, inputB);
+    if (peak <= 0.000001) return [0, 0, 0];
+
+    // Compress the glow as one RGB vector so bright emitters roll off smoothly
+    // without channel clipping or source-mask texture being stamped into the core.
+    const response = clamp(1.08 - clamp(shoulder, 0.04, 0.95) * 0.45, 0.65, 1.08);
+    const mappedPeak = 1 - Math.exp(-peak * response);
+    const scale = mappedPeak / peak;
+    return [inputR * scale, inputG * scale, inputB * scale];
   }
 
   function linearToSrgb(value) {
@@ -81,23 +96,15 @@
     ];
   }
 
-  function splitCoreAndHalo(glow, baseLuma, protect, source, haloSource, params) {
-    const haloBoost = Math.max(0, Number(params.composite.haloBoost) || 1);
-    const haloMix = clamp(Number(params.composite.haloMix) || 0.5, 0, 1);
-    const baseGuard = 1 - clamp(baseLuma, 0, 1) * 0.018;
-    const protectGuard = 1 - clamp(protect, 0, 1) * 0.035;
-    const diffusionGain = 1 + haloMix * 0.16 + Math.max(0, haloBoost - 1) * 0.06;
-    const scale = clamp(baseGuard * protectGuard * diffusionGain, 0.88, 1.18);
-    return [
-      clamp(glow[0] * scale, 0, 1),
-      clamp(glow[1] * scale, 0, 1),
-      clamp(glow[2] * scale, 0, 1)
-    ];
-  }
-
   function composeProtected(baseImageData, glowLayer, masks, params) {
     const { width, height, data } = baseImageData;
     const out = new ImageData(width, height);
+    const composite = params.composite;
+    const intensity = Number(composite.intensity) || 0;
+    if (intensity <= 0.000001) {
+      out.data.set(data);
+      return out;
+    }
     const chromaticOffset = getChromaticOffset(params);
     for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
       const x = pixel % width;
@@ -105,17 +112,11 @@
       const baseR = data[index] / 255;
       const baseG = data[index + 1] / 255;
       const baseB = data[index + 2] / 255;
-      const baseLuma = masks.luma[pixel];
       const source = masks.sourceMask[pixel];
-      const haloSource = masks.haloMask ? masks.haloMask[pixel] : source;
       const protect = masks.protectMask[pixel];
-      const baseSat = Math.max(baseR, baseG, baseB) > 0 ? (Math.max(baseR, baseG, baseB) - Math.min(baseR, baseG, baseB)) / Math.max(baseR, baseG, baseB) : 0;
-      const highlightProtect = protect * params.composite.highlightProtect * (0.5 + baseLuma * 0.78 + (1 - baseSat) * 0.08);
       const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
       const layerG = glowLayer.g[pixel];
       const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
-      const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
-      const protectGain = clamp(1 - highlightProtect * 0.045, 0.9, 1);
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
       const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.16);
       const edgeGate = source * (0.44 + (1 - protect) * 0.24);
@@ -129,33 +130,23 @@
       warmedR += redEdge;
       warmedB += blueEdge;
       const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
-      const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const [rawR, rawG, rawB] = splitCoreAndHalo([glowR, glowG, glowB], baseLuma, protect, source, haloSource, params);
-      const shapedR = visibilityGate(rawR, params);
-      const shapedG = visibilityGate(rawG, params);
-      const shapedB = visibilityGate(rawB, params);
-      const glowSrgbR = clamp(linearToSrgb(shapedR), 0, 1);
-      const glowSrgbG = clamp(linearToSrgb(shapedG), 0, 1);
-      const glowSrgbB = clamp(linearToSrgb(shapedB), 0, 1);
+      const [glowR, glowG, glowB] = toneMapGlow(satR, satG, satB, intensity, composite.shoulder);
+      const shapedR = visibilityGate(glowR, params);
+      const shapedG = visibilityGate(glowG, params);
+      const shapedB = visibilityGate(glowB, params);
+      const dither = 0.75 / 255;
+      const previewDither = (hashNoise(x, y, 0) - 0.5) * dither;
+      const glowSrgbR = Math.round(clamp(linearToSrgb(shapedR) + previewDither, 0, 1) * 255) / 255;
+      const glowSrgbG = Math.round(clamp(linearToSrgb(shapedG) + previewDither, 0, 1) * 255) / 255;
+      const glowSrgbB = Math.round(clamp(linearToSrgb(shapedB) + previewDither, 0, 1) * 255) / 255;
 
       const screenR = 1 - (1 - baseR) * (1 - glowSrgbR);
       const screenG = 1 - (1 - baseG) * (1 - glowSrgbG);
       const screenB = 1 - (1 - baseB) * (1 - glowSrgbB);
-      const softR = clamp(baseR + glowSrgbR * (1 - baseR * 0.62), 0, 1);
-      const softG = clamp(baseG + glowSrgbG * (1 - baseG * 0.62), 0, 1);
-      const softB = clamp(baseB + glowSrgbB * (1 - baseB * 0.62), 0, 1);
-      const mix = params.composite.softAddMix;
-      const maxGlow = Math.max(glowSrgbR, glowSrgbG, glowSrgbB);
-      const colorProtect = clamp(1 - maxGlow * params.composite.colorProtect * (0.84 + baseSat * 0.58), 0.8, 1);
-      const resultR = (screenR * (1 - mix) + softR * mix) * colorProtect + baseR * (1 - colorProtect);
-      const resultG = (screenG * (1 - mix) + softG * mix) * colorProtect + baseG * (1 - colorProtect);
-      const resultB = (screenB * (1 - mix) + softB * mix) * colorProtect + baseB * (1 - colorProtect);
 
-      out.data[index] = Math.round(clamp(resultR, 0, 1) * 255);
-      out.data[index + 1] = Math.round(clamp(resultG, 0, 1) * 255);
-      out.data[index + 2] = Math.round(clamp(resultB, 0, 1) * 255);
+      out.data[index] = Math.round(clamp(screenR, 0, 1) * 255);
+      out.data[index + 1] = Math.round(clamp(screenG, 0, 1) * 255);
+      out.data[index + 2] = Math.round(clamp(screenB, 0, 1) * 255);
       out.data[index + 3] = data[index + 3];
     }
     return out;
@@ -164,19 +155,21 @@
   function renderGlowLayer(glowLayer, masks, params) {
     const out = new ImageData(glowLayer.width, glowLayer.height);
     const data = out.data;
+    const composite = params.composite;
+    const intensity = Number(composite.intensity) || 0;
+    if (intensity <= 0.000001) {
+      for (let index = 3; index < data.length; index += 4) data[index] = 255;
+      return out;
+    }
     const chromaticOffset = getChromaticOffset(params);
     for (let pixel = 0, index = 0; pixel < glowLayer.r.length; pixel += 1, index += 4) {
       const x = pixel % glowLayer.width;
       const y = Math.floor(pixel / glowLayer.width);
       const source = masks.sourceMask[pixel];
-      const haloSource = masks.haloMask ? masks.haloMask[pixel] : source;
       const protect = masks.protectMask[pixel];
-      const highlightProtect = protect * params.composite.highlightProtect * 0.86;
       const layerR = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x + chromaticOffset, y, glowLayer.r) : glowLayer.r[pixel];
       const layerG = glowLayer.g[pixel];
       const layerB = chromaticOffset > 0 ? sampleChannelNearest(glowLayer, x - chromaticOffset, y, glowLayer.b) : glowLayer.b[pixel];
-      const layerLuma = layerR * 0.2126 + layerG * 0.7152 + layerB * 0.0722;
-      const protectGain = clamp(1 - highlightProtect * 0.045, 0.9, 1);
       const centerMax = Math.max(glowLayer.r[pixel], glowLayer.g[pixel], glowLayer.b[pixel]);
       const chromaStrength = Math.pow(Math.max(0, Math.min(1, params.composite.chromatic || 0)), 1.16);
       const edgeGate = source * (0.44 + (1 - protect) * 0.24);
@@ -190,17 +183,15 @@
       warmedR += redEdge;
       warmedB += blueEdge;
       const [satR, satG, satB] = applySaturation(warmedR, warmedG, warmedB, params.composite.saturation);
-      const glowR = clamp(softShoulder(Math.max(0, satR) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const glowG = clamp(softShoulder(Math.max(0, satG) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const glowB = clamp(softShoulder(Math.max(0, satB) * params.composite.intensity * protectGain, params.composite.shoulder), 0, 1);
-      const [rawR, rawG, rawB] = splitCoreAndHalo([glowR, glowG, glowB], masks.luma[pixel], protect, source, haloSource, params);
-      const shapedR = visibilityGate(rawR, params);
-      const shapedG = visibilityGate(rawG, params);
-      const shapedB = visibilityGate(rawB, params);
+      const [glowR, glowG, glowB] = toneMapGlow(satR, satG, satB, intensity, composite.shoulder);
+      const shapedR = visibilityGate(glowR, params);
+      const shapedG = visibilityGate(glowG, params);
+      const shapedB = visibilityGate(glowB, params);
       const dither = 0.75 / 255;
-      data[index] = Math.round(clamp(linearToSrgb(shapedR) + (hashNoise(x, y, 0) - 0.5) * dither, 0, 1) * 255);
-      data[index + 1] = Math.round(clamp(linearToSrgb(shapedG) + (hashNoise(x, y, 1) - 0.5) * dither, 0, 1) * 255);
-      data[index + 2] = Math.round(clamp(linearToSrgb(shapedB) + (hashNoise(x, y, 2) - 0.5) * dither, 0, 1) * 255);
+      const outputDither = (hashNoise(x, y, 0) - 0.5) * dither;
+      data[index] = Math.round(clamp(linearToSrgb(shapedR) + outputDither, 0, 1) * 255);
+      data[index + 1] = Math.round(clamp(linearToSrgb(shapedG) + outputDither, 0, 1) * 255);
+      data[index + 2] = Math.round(clamp(linearToSrgb(shapedB) + outputDither, 0, 1) * 255);
       // Photoshop Screen already uses RGB energy; alpha here would multiply the glow a second time.
       data[index + 3] = 255;
     }
@@ -209,6 +200,7 @@
 
   modules.glowCompositor = {
     composeProtected,
-    renderGlowLayer
+    renderGlowLayer,
+    toneMapGlow
   };
 })(window);

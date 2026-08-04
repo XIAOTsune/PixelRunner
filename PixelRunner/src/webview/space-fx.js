@@ -1,7 +1,7 @@
 (function initSpaceFxModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const PREVIEW_MAX_DIMENSION = 1000;
-  const CAPTURE_MAX_DIMENSION = 2200;
+  const PREVIEW_CAPTURE_MAX_DIMENSION = 2200;
   const PREVIEW_DEBOUNCE_MS = 90;
   const DISPLACEMENT_FIELD_MAX_DIMENSION = 420;
   const SPACE_FX_ASSET_BASE = "assets/space-fx/generated/";
@@ -306,7 +306,7 @@
     const sourceWidth = Math.max(1, Number(width) || 1);
     const sourceHeight = Math.max(1, Number(height) || 1);
     const maxEdge = Math.max(sourceWidth, sourceHeight);
-    if (maxEdge <= maxDimension) return { width: sourceWidth, height: sourceHeight };
+    if (!(maxDimension > 0) || maxEdge <= maxDimension) return { width: sourceWidth, height: sourceHeight };
     const scale = maxDimension / maxEdge;
     return {
       width: Math.max(1, Math.round(sourceWidth * scale)),
@@ -328,15 +328,21 @@
     };
   }
 
-  function sampleBilinear(data, width, height, x, y, out) {
+  function getDetailPreservingWeight(value, sharpness = 0) {
+    const t = clamp(value, 0, 1, 0);
+    const curved = t * t * (3 - 2 * t);
+    return lerp(t, curved, clamp(sharpness, 0, 0.72, 0));
+  }
+
+  function sampleBilinear(data, width, height, x, y, out, sharpness = 0) {
     const sx = clamp(x, 0, width - 1, 0);
     const sy = clamp(y, 0, height - 1, 0);
     const x0 = Math.floor(sx);
     const y0 = Math.floor(sy);
     const x1 = Math.min(width - 1, x0 + 1);
     const y1 = Math.min(height - 1, y0 + 1);
-    const tx = sx - x0;
-    const ty = sy - y0;
+    const tx = getDetailPreservingWeight(sx - x0, sharpness);
+    const ty = getDetailPreservingWeight(sy - y0, sharpness);
     const i00 = (y0 * width + x0) * 4;
     const i10 = (y0 * width + x1) * 4;
     const i01 = (y1 * width + x0) * 4;
@@ -366,6 +372,20 @@
       const b = lerp(field[i01 + c], field[i11 + c], tx);
       out[c] = lerp(a, b, ty);
     }
+  }
+
+  function sampleScalarFieldBilinear(field, width, height, x, y) {
+    const sx = clamp(x, 0, width - 1, 0);
+    const sy = clamp(y, 0, height - 1, 0);
+    const x0 = Math.floor(sx);
+    const y0 = Math.floor(sy);
+    const x1 = Math.min(width - 1, x0 + 1);
+    const y1 = Math.min(height - 1, y0 + 1);
+    const tx = sx - x0;
+    const ty = sy - y0;
+    const a = lerp(field[y0 * width + x0], field[y0 * width + x1], tx);
+    const b = lerp(field[y1 * width + x0], field[y1 * width + x1], tx);
+    return lerp(a, b, ty);
   }
 
   function getLocalBasis(params) {
@@ -611,7 +631,43 @@
     }
 
     blurDisplacementField(field, fieldWidth, fieldHeight, detail);
-    return { data: field, width: fieldWidth, height: fieldHeight };
+    return { data: field, width: fieldWidth, height: fieldHeight, smokeTexture: textureMap };
+  }
+
+  function buildStandardDisplacementField(width, height, params) {
+    const maxSide = Math.max(width, height);
+    const fieldScale = Math.min(1, DISPLACEMENT_FIELD_MAX_DIMENSION / Math.max(1, maxSide));
+    const fieldWidth = Math.max(24, Math.round(width * fieldScale));
+    const fieldHeight = Math.max(24, Math.round(height * fieldScale));
+    const field = new Float32Array(fieldWidth * fieldHeight * 4);
+    const line = new Float32Array(fieldWidth * fieldHeight);
+    const xScale = (width - 1) / Math.max(1, fieldWidth - 1);
+    const yScale = (height - 1) / Math.max(1, fieldHeight - 1);
+    for (let y = 0; y < fieldHeight; y += 1) {
+      for (let x = 0; x < fieldWidth; x += 1) {
+        const displacement = getDisplacement(x * xScale, y * yScale, width, height, params);
+        const pixelIndex = y * fieldWidth + x;
+        const index = pixelIndex * 4;
+        field[index] = displacement.dx;
+        field[index + 1] = displacement.dy;
+        field[index + 2] = displacement.light;
+        field[index + 3] = displacement.mask;
+        line[pixelIndex] = displacement.line;
+      }
+    }
+    return { data: field, line, width: fieldWidth, height: fieldHeight };
+  }
+
+  function prepareSpaceFxRenderContext(width, height, params, smokeAsset = null) {
+    const effect = String(params.effect || "heat");
+    return {
+      effect,
+      width,
+      height,
+      field: effect === "airflow"
+        ? buildAirflowDisplacementField(width, height, params, smokeAsset)
+        : buildStandardDisplacementField(width, height, params)
+    };
   }
 
   function blurDisplacementField(field, width, height, detail) {
@@ -876,43 +932,30 @@
     };
   }
 
-  function softenAirflowResult(imageData, width, height, field, params) {
-    const source = new Uint8ClampedArray(imageData.data);
-    const dst = imageData.data;
-    const detail = clamp(params.detail, 0, 100, 58) / 100;
-    const passes = detail > 0.68 ? 1 : 2;
-    const samplePixel = [0, 0, 0, 0];
-    const fieldSample = [0, 0, 0, 0];
-    const fieldXScale = (field.width - 1) / Math.max(1, width - 1);
-    const fieldYScale = (field.height - 1) / Math.max(1, height - 1);
-    for (let pass = 0; pass < passes; pass += 1) {
-      source.set(dst);
-      for (let y = 0; y < height; y += 1) {
-        for (let x = 0; x < width; x += 1) {
-          sampleFieldBilinear(field.data, field.width, field.height, x * fieldXScale, y * fieldYScale, fieldSample);
-          const soften = clamp((fieldSample[3] || 0) * (0.14 + (1 - detail) * 0.1), 0, 0.22, 0);
-          if (soften <= 0.001) continue;
-          const index = (y * width + x) * 4;
-          sampleBilinear(source, width, height, x + fieldSample[0] * 0.16, y + fieldSample[1] * 0.16, samplePixel);
-          dst[index] = clamp(lerp(dst[index], samplePixel[0], soften), 0, 255, 0);
-          dst[index + 1] = clamp(lerp(dst[index + 1], samplePixel[1], soften), 0, 255, 0);
-          dst[index + 2] = clamp(lerp(dst[index + 2], samplePixel[2], soften), 0, 255, 0);
-        }
-      }
-    }
+  function screenChannel(base, color, alpha) {
+    return base + (255 - base) * (color / 255) * alpha;
   }
 
-  function renderAirflowImageData(sourceImageData, width, height, params, startedAt, smokeAsset = null) {
+  function renderAirflowImageData(sourceImageData, width, height, params, startedAt, smokeAsset = null, options = {}) {
+    const outputMode = String(options.outputMode || "composite");
+    const includeMap = options.includeMap !== false && outputMode === "composite";
     const src = sourceImageData.data;
     const out = new ImageData(width, height);
-    const map = new ImageData(width, height);
+    const map = includeMap ? new ImageData(width, height) : null;
     const dst = out.data;
-    const mapData = map.data;
+    const mapData = map && map.data;
     const sample = [0, 0, 0, 0];
     const fieldSample = [0, 0, 0, 0];
-    const field = buildAirflowDisplacementField(width, height, params, smokeAsset);
+    const smokeSample = [0, 0, 0, 0];
+    const renderContext = options.renderContext && options.renderContext.effect === "airflow"
+      ? options.renderContext
+      : prepareSpaceFxRenderContext(width, height, params, smokeAsset);
+    const field = renderContext.field;
     const fallbackColor = [159, 220, 255];
     const glowColor = getGlowColor(params, fallbackColor);
+    const detail = clamp(params.detail, 0, 100, 48) / 100;
+    const intensity = clamp(params.intensity, 0, 100, 48) / 100;
+    const sampleSharpness = 0.24 + detail * 0.28;
     const fieldXScale = (field.width - 1) / Math.max(1, width - 1);
     const fieldYScale = (field.height - 1) / Math.max(1, height - 1);
 
@@ -924,30 +967,61 @@
         const dy = fieldSample[1];
         const light = clamp(fieldSample[2], 0, 1.3, 0);
         const mask = clamp(fieldSample[3], 0, 1, 0);
-        sampleBilinear(src, width, height, x + dx, y + dy, sample);
+        sampleBilinear(src, width, height, x + dx, y + dy, sample, sampleSharpness);
         const baseMix = clamp(mask * (0.74 + Math.min(1, Math.abs(dx) + Math.abs(dy)) * 0.035), 0, 0.98, 0);
         let r = src[index] * (1 - baseMix) + sample[0] * baseMix;
         let g = src[index + 1] * (1 - baseMix) + sample[1] * baseMix;
         let b = src[index + 2] * (1 - baseMix) + sample[2] * baseMix;
-        const shade = mask * 6.5;
-        const haze = Math.pow(mask, 1.35) * 0.048;
-        const sparkle = light * light * 0.18;
-        r = r * (1 - haze) - shade * 0.16 + glowColor[0] * (light * 0.26 + haze) + 255 * sparkle;
-        g = g * (1 - haze) - shade * 0.1 + glowColor[1] * (light * 0.26 + haze) + 255 * sparkle;
-        b = b * (1 - haze * 0.35) + glowColor[2] * (light * 0.28 + haze) + 255 * sparkle;
+        let smokeAlpha = 0;
+        if (outputMode !== "warp" && field.smokeTexture) {
+          sampleFieldBilinear(field.smokeTexture.data, field.smokeTexture.width, field.smokeTexture.height, x * fieldXScale, y * fieldYScale, smokeSample);
+          smokeAlpha = clamp(smokeSample[0] * mask * intensity * (0.12 + intensity * 0.2), 0, 0.34, 0);
+        }
+        const smokeLift = 0.72 + clamp(smokeSample[3], 0, 1, 0) * 0.18;
+        const smokeR = 142 * smokeLift;
+        const smokeG = 172 * smokeLift;
+        const smokeB = 190 * smokeLift;
+        const sparkle = light * light * 0.2;
+        const glowAlpha = clamp(light * 0.72 + sparkle + Math.pow(mask, 1.7) * 0.018 * clamp(params.glow, 0, 100, 0) / 100, 0, 0.86, 0);
+        const whiteMix = clamp(sparkle * 2.4, 0, 0.72, 0);
+        const lightR = lerp(glowColor[0], 255, whiteMix);
+        const lightG = lerp(glowColor[1], 255, whiteMix);
+        const lightB = lerp(glowColor[2], 255, whiteMix);
+
+        if (outputMode === "smoke") {
+          r = smokeR;
+          g = smokeG;
+          b = smokeB;
+        } else if (outputMode === "glow") {
+          r = lightR;
+          g = lightG;
+          b = lightB;
+        } else if (outputMode === "composite") {
+          r = lerp(r, smokeR, smokeAlpha);
+          g = lerp(g, smokeG, smokeAlpha);
+          b = lerp(b, smokeB, smokeAlpha);
+          r = screenChannel(r, lightR, glowAlpha);
+          g = screenChannel(g, lightG, glowAlpha);
+          b = screenChannel(b, lightB, glowAlpha);
+        }
         dst[index] = clamp(r, 0, 255, 0);
         dst[index + 1] = clamp(g, 0, 255, 0);
         dst[index + 2] = clamp(b, 0, 255, 0);
-        dst[index + 3] = src[index + 3];
+        dst[index + 3] = outputMode === "smoke"
+          ? clamp(smokeAlpha * 255, 0, 255, 0)
+          : outputMode === "glow"
+            ? clamp(glowAlpha * 255, 0, 255, 0)
+            : src[index + 3];
 
-        mapData[index] = clamp(128 + dx * 1.6, 0, 255, 128);
-        mapData[index + 1] = clamp(28 + mask * 210 + light * 24, 0, 255, 0);
-        mapData[index + 2] = clamp(128 + dy * 1.6, 0, 255, 128);
-        mapData[index + 3] = 255;
+        if (mapData) {
+          mapData[index] = clamp(128 + dx * 1.6, 0, 255, 128);
+          mapData[index + 1] = clamp(28 + mask * 210 + light * 24, 0, 255, 0);
+          mapData[index + 2] = clamp(128 + dy * 1.6, 0, 255, 128);
+          mapData[index + 3] = 255;
+        }
       }
     }
 
-    softenAirflowResult(out, width, height, field, params);
     return {
       imageData: out,
       mapImageData: map,
@@ -1020,63 +1094,101 @@
     return pool[index % pool.length];
   }
 
-  function renderSpaceFxImageData(sourceImageData, width, height, params, smokeAsset = null) {
+  function renderSpaceFxImageData(sourceImageData, width, height, params, smokeAsset = null, options = {}) {
     const startedAt = performance.now();
     const effect = String(params.effect || "heat");
+    const renderContext = options.renderContext
+      && options.renderContext.effect === effect
+      && options.renderContext.width === width
+      && options.renderContext.height === height
+      ? options.renderContext
+      : prepareSpaceFxRenderContext(width, height, params, smokeAsset);
     if (effect === "airflow") {
-      return renderAirflowImageData(sourceImageData, width, height, params, startedAt, smokeAsset);
+      return renderAirflowImageData(sourceImageData, width, height, params, startedAt, smokeAsset, {
+        ...options,
+        renderContext
+      });
     }
+    const outputMode = String(options.outputMode || "composite");
+    const includeMap = options.includeMap !== false && outputMode === "composite";
     const src = sourceImageData.data;
     const out = new ImageData(width, height);
-    const map = new ImageData(width, height);
+    const map = includeMap ? new ImageData(width, height) : null;
     const dst = out.data;
-    const mapData = map.data;
+    const mapData = map && map.data;
     const sample = [0, 0, 0, 0];
+    const fieldSample = [0, 0, 0, 0];
+    const field = renderContext.field;
     const warm = effect === "slash" ? [125, 215, 255] : effect === "airflow" ? [160, 235, 225] : [255, 210, 135];
     const glowColor = getGlowColor(params, warm);
+    const detail = clamp(params.detail, 0, 100, 58) / 100;
+    const sampleSharpness = 0.2 + detail * 0.3;
+    const fieldXScale = (field.width - 1) / Math.max(1, width - 1);
+    const fieldYScale = (field.height - 1) / Math.max(1, height - 1);
 
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const index = (y * width + x) * 4;
-        const displacement = getDisplacement(x, y, width, height, params);
-        sampleBilinear(src, width, height, x + displacement.dx, y + displacement.dy, sample);
-        const mask = clamp(displacement.mask, 0, 1, 0);
-        const light = clamp(displacement.light, 0, 1.5, 0);
-        const line = clamp(displacement.line, 0, 1, 0);
+        const fieldX = x * fieldXScale;
+        const fieldY = y * fieldYScale;
+        sampleFieldBilinear(field.data, field.width, field.height, fieldX, fieldY, fieldSample);
+        const dx = fieldSample[0];
+        const dy = fieldSample[1];
+        const light = clamp(fieldSample[2], 0, 1.5, 0);
+        const mask = clamp(fieldSample[3], 0, 1, 0);
+        sampleBilinear(src, width, height, x + dx, y + dy, sample, sampleSharpness);
         const baseMix = mask;
         let r = src[index] * (1 - baseMix) + sample[0] * baseMix;
         let g = src[index + 1] * (1 - baseMix) + sample[1] * baseMix;
         let b = src[index + 2] * (1 - baseMix) + sample[2] * baseMix;
+        let glowAlpha = 0;
+        let lightR = glowColor[0];
+        let lightG = glowColor[1];
+        let lightB = glowColor[2];
 
-        if (effect === "airflow") {
-          const shade = line * mask * 16;
-          const sparkle = line * light * 0.18;
-          r = r - shade * 0.35 + glowColor[0] * light * 0.34 + 255 * sparkle;
-          g = g - shade * 0.2 + glowColor[1] * light * 0.34 + 255 * sparkle;
-          b = b + glowColor[2] * light * 0.36 + 255 * sparkle;
-        } else if (effect === "slash") {
-          const coreBoost = light * 1.25;
-          const whiteCore = Math.pow(line, 1.8) * light * 0.42;
-          r += glowColor[0] * coreBoost * 0.5 + 255 * whiteCore;
-          g += glowColor[1] * coreBoost * 0.52 + 255 * whiteCore;
-          b += glowColor[2] * coreBoost * 0.6 + 255 * whiteCore;
-        } else {
-          r += glowColor[0] * light * 0.2;
-          g += glowColor[1] * light * 0.16;
-          b += glowColor[2] * light * 0.12;
+        if (outputMode !== "warp" && effect === "slash") {
+          const line = clamp(sampleScalarFieldBilinear(field.line, field.width, field.height, fieldX, fieldY), 0, 1, 0);
+          const whiteCore = clamp(Math.pow(line, 1.8) * light * 0.52, 0, 0.82, 0);
+          glowAlpha = clamp(light * 0.72 + whiteCore, 0, 0.92, 0);
+          lightR = lerp(glowColor[0], 255, whiteCore);
+          lightG = lerp(glowColor[1], 255, whiteCore);
+          lightB = lerp(glowColor[2], 255, whiteCore);
+        } else if (outputMode !== "warp") {
+          glowAlpha = clamp(light * 0.42, 0, 0.66, 0);
+        }
+
+        if (outputMode === "glow") {
+          r = lightR;
+          g = lightG;
+          b = lightB;
+        } else if (outputMode === "smoke") {
+          r = 0;
+          g = 0;
+          b = 0;
+        } else if (outputMode === "composite") {
+          r = screenChannel(r, lightR, glowAlpha);
+          g = screenChannel(g, lightG, glowAlpha);
+          b = screenChannel(b, lightB, glowAlpha);
         }
 
         dst[index] = clamp(r, 0, 255, 0);
         dst[index + 1] = clamp(g, 0, 255, 0);
         dst[index + 2] = clamp(b, 0, 255, 0);
-        dst[index + 3] = src[index + 3];
+        dst[index + 3] = outputMode === "glow"
+          ? clamp(glowAlpha * 255, 0, 255, 0)
+          : outputMode === "smoke"
+            ? 0
+            : src[index + 3];
 
-        const mapValue = clamp(128 + displacement.dx * 1.15 + displacement.dy * 0.55, 0, 255, 128);
-        const maskValue = clamp(28 + mask * 190 + line * 35, 0, 255, 0);
-        mapData[index] = mapValue;
-        mapData[index + 1] = maskValue;
-        mapData[index + 2] = clamp(128 - displacement.dx * 0.6 + displacement.dy * 0.95, 0, 255, 128);
-        mapData[index + 3] = 255;
+        if (mapData) {
+          const line = clamp(sampleScalarFieldBilinear(field.line, field.width, field.height, fieldX, fieldY), 0, 1, 0);
+          const mapValue = clamp(128 + dx * 1.15 + dy * 0.55, 0, 255, 128);
+          const maskValue = clamp(28 + mask * 190 + line * 35, 0, 255, 0);
+          mapData[index] = mapValue;
+          mapData[index + 1] = maskValue;
+          mapData[index + 2] = clamp(128 - dx * 0.6 + dy * 0.95, 0, 255, 128);
+          mapData[index + 3] = 255;
+        }
       }
     }
 
@@ -1096,10 +1208,8 @@
     return canvas.toDataURL("image/png");
   }
 
-  async function renderToCanvas(image, canvas, maxDimension, params) {
-    const source = drawImageToImageData(image, maxDimension);
-    const smokeAsset = String(params.effect || "heat") === "airflow" ? await loadSmokeAsset() : null;
-    const result = renderSpaceFxImageData(source.imageData, source.width, source.height, params, smokeAsset);
+  function renderPreparedSourceToCanvas(source, canvas, params, smokeAsset, options = {}) {
+    const result = renderSpaceFxImageData(source.imageData, source.width, source.height, params, smokeAsset, options);
     canvas.width = source.width;
     canvas.height = source.height;
     const ctx = canvas.getContext("2d");
@@ -1109,8 +1219,89 @@
       height: source.height,
       elapsedMs: result.elapsedMs,
       dataUrl: canvas.toDataURL("image/png"),
-      mapDataUrl: imageDataToDataUrl(result.mapImageData)
+      mapDataUrl: result.mapImageData ? imageDataToDataUrl(result.mapImageData) : ""
     };
+  }
+
+  function renderFieldLayerToCanvas(renderContext, canvas, params, outputMode) {
+    const startedAt = performance.now();
+    const field = renderContext.field;
+    const effect = renderContext.effect;
+    const layer = new ImageData(field.width, field.height);
+    const dst = layer.data;
+    const fallbackColor = effect === "slash" ? [125, 215, 255] : effect === "airflow" ? [159, 220, 255] : [255, 210, 135];
+    const glowColor = getGlowColor(params, fallbackColor);
+    const intensity = clamp(params.intensity, 0, 100, 48) / 100;
+    let maxAlpha = 0;
+    for (let pixelIndex = 0; pixelIndex < field.width * field.height; pixelIndex += 1) {
+      const index = pixelIndex * 4;
+      const light = clamp(field.data[index + 2], 0, 1.5, 0);
+      const mask = clamp(field.data[index + 3], 0, 1, 0);
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let alpha = 0;
+      if (outputMode === "smoke" && effect === "airflow" && field.smokeTexture) {
+        const smokeStrength = clamp(field.smokeTexture.data[index], 0, 1, 0);
+        const smokeEdge = clamp(field.smokeTexture.data[index + 3], 0, 1, 0);
+        alpha = clamp(smokeStrength * mask * intensity * (0.12 + intensity * 0.2), 0, 0.34, 0);
+        const lift = 0.72 + smokeEdge * 0.18;
+        r = 142 * lift;
+        g = 172 * lift;
+        b = 190 * lift;
+      } else if (outputMode === "glow") {
+        if (effect === "airflow") {
+          const sparkle = light * light * 0.2;
+          alpha = clamp(light * 0.72 + sparkle + Math.pow(mask, 1.7) * 0.018 * clamp(params.glow, 0, 100, 0) / 100, 0, 0.86, 0);
+          const whiteMix = clamp(sparkle * 2.4, 0, 0.72, 0);
+          r = lerp(glowColor[0], 255, whiteMix);
+          g = lerp(glowColor[1], 255, whiteMix);
+          b = lerp(glowColor[2], 255, whiteMix);
+        } else if (effect === "slash") {
+          const line = clamp(field.line && field.line[pixelIndex], 0, 1, 0);
+          const whiteCore = clamp(Math.pow(line, 1.8) * light * 0.52, 0, 0.82, 0);
+          alpha = clamp(light * 0.72 + whiteCore, 0, 0.92, 0);
+          r = lerp(glowColor[0], 255, whiteCore);
+          g = lerp(glowColor[1], 255, whiteCore);
+          b = lerp(glowColor[2], 255, whiteCore);
+        } else {
+          alpha = clamp(light * 0.42, 0, 0.66, 0);
+          r = glowColor[0];
+          g = glowColor[1];
+          b = glowColor[2];
+        }
+      }
+      dst[index] = clamp(r, 0, 255, 0);
+      dst[index + 1] = clamp(g, 0, 255, 0);
+      dst[index + 2] = clamp(b, 0, 255, 0);
+      dst[index + 3] = clamp(alpha * 255, 0, 255, 0);
+      if (alpha > maxAlpha) maxAlpha = alpha;
+    }
+
+    const fieldCanvas = document.createElement("canvas");
+    fieldCanvas.width = field.width;
+    fieldCanvas.height = field.height;
+    fieldCanvas.getContext("2d").putImageData(layer, 0, 0);
+    canvas.width = renderContext.width;
+    canvas.height = renderContext.height;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(fieldCanvas, 0, 0, field.width, field.height, 0, 0, canvas.width, canvas.height);
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      elapsedMs: Math.round(performance.now() - startedAt),
+      maxAlpha,
+      dataUrl: canvas.toDataURL("image/png")
+    };
+  }
+
+  async function renderToCanvas(image, canvas, maxDimension, params, options = {}) {
+    const source = drawImageToImageData(image, maxDimension);
+    const smokeAsset = String(params.effect || "heat") === "airflow" ? await loadSmokeAsset() : null;
+    return renderPreparedSourceToCanvas(source, canvas, params, smokeAsset, options);
   }
 
   function getFullDocumentBounds(captured, fallbackWidth = 1, fallbackHeight = 1) {
@@ -1404,7 +1595,7 @@
       throw new Error("浏览器预览模式下不可捕获 Photoshop 图像");
     }
     const captured = await modules.runtime.callHost("photoshop.captureLicensedSpaceFxPreview", [{
-      maxDimension: CAPTURE_MAX_DIMENSION,
+      maxDimension: PREVIEW_CAPTURE_MAX_DIMENSION,
       ignoreSelection: true,
       quality: 92,
       uploadTargetBytes: 18_000_000,
@@ -1450,6 +1641,23 @@
     }
   }
 
+  async function captureFullResolutionSource() {
+    if (!state.captured) throw new Error("缺少预览捕获信息");
+    const captured = await modules.runtime.callHost("photoshop.captureLicensedSpaceFxSource", [{
+      expectedDocumentId: state.captured.documentId,
+      ignoreSelection: true
+    }], { timeoutMs: 180000 });
+    if (!captured || !String(captured.dataUrl || "").trim()) {
+      throw new Error("Photoshop 未返回全分辨率图像");
+    }
+    const expectedBounds = getFullDocumentBounds(state.captured);
+    const actualBounds = getFullDocumentBounds(captured);
+    if (actualBounds.right !== expectedBounds.right || actualBounds.bottom !== expectedBounds.bottom) {
+      throw new Error("Photoshop 文档尺寸已发生变化，请重新捕获后再应用");
+    }
+    return captured;
+  }
+
   async function openSpaceFxModal() {
     if (modules.license && !modules.license.requireFeature("spaceFx")) return;
     modules.workspace.setModalOpen("spaceFxModal", true);
@@ -1474,16 +1682,16 @@
     modules.workspace.setModalOpen("spaceFxModal", false);
   }
 
-  async function placeDataUrl(dataUrl, layerName, opacity = 100, blendMode = "normal") {
+  async function placeDataUrl(dataUrl, layerName, opacity = 100, blendMode = "normal", captured = state.captured) {
     if (modules.license && !modules.license.requireFeature("spaceFx")) {
       throw new Error("空间特效需要授权");
     }
-    if (!state.captured) throw new Error("缺少捕获图像信息");
-    const bounds = getFullDocumentBounds(state.captured, state.lastRender && state.lastRender.width, state.lastRender && state.lastRender.height);
+    if (!captured) throw new Error("缺少捕获图像信息");
+    const bounds = getFullDocumentBounds(captured, state.lastRender && state.lastRender.width, state.lastRender && state.lastRender.height);
     return modules.runtime.callHost("photoshop.placeLicensedSpaceFxResult", [{
       dataUrl,
-      targetDocumentId: state.captured.documentId,
-      sourceDocumentId: state.captured.documentId,
+      targetDocumentId: captured.documentId,
+      sourceDocumentId: captured.documentId,
       targetBounds: bounds,
       fitMode: "stretch",
       preserveCanvasBounds: true,
@@ -1507,16 +1715,57 @@
       return;
     }
     if (applyButton) applyButton.disabled = true;
-    setStatus("正在生成空间特效结果层...", "info");
-    setMeta("正在准备写回 Photoshop...");
+    setStatus("正在捕获全分辨率图像...", "info");
+    setMeta("正在读取 Photoshop 原始尺寸图像...");
     try {
+      const fullCapture = await captureFullResolutionSource();
+      const fullImage = await loadImage(fullCapture.dataUrl);
+      const source = drawImageToImageData(fullImage, 0);
+      fullCapture.dataUrl = "";
+      fullCapture.base64 = "";
+      fullImage.src = "";
+      const smokeAsset = String(state.params.effect || "heat") === "airflow" ? await loadSmokeAsset() : null;
+      const renderContext = prepareSpaceFxRenderContext(source.width, source.height, state.params, smokeAsset);
       const outputCanvas = document.createElement("canvas");
-      const result = await renderToCanvas(state.sourceImage, outputCanvas, CAPTURE_MAX_DIMENSION, state.params);
       const label = getPresetLabel(state.params.effect);
-      const placed = await placeDataUrl(result.dataUrl, `像素起子 空间特效 - ${label}`, 100, "normal");
-      setStatus(placed && placed.layerName ? `已生成空间特效结果层：${placed.layerName}` : "已生成空间特效结果层。", "success");
-      setMeta(`已应用 ${result.width}x${result.height} · ${result.elapsedMs}ms`);
-      modules.ui.logToWorkspace(`空间特效已应用：${label}。`, "success");
+
+      setStatus("正在生成全分辨率变形层...", "info");
+      const warp = renderPreparedSourceToCanvas(source, outputCanvas, state.params, smokeAsset, {
+        outputMode: "warp",
+        includeMap: false,
+        renderContext
+      });
+      const placedWarp = await placeDataUrl(warp.dataUrl, `像素起子 空间特效 - ${label} - 变形`, 100, "normal", fullCapture);
+      warp.dataUrl = "";
+      source.imageData = null;
+      outputCanvas.width = 1;
+      outputCanvas.height = 1;
+
+      let placedSmoke = null;
+      if (String(state.params.effect || "heat") === "airflow" && smokeAsset) {
+        setStatus("正在生成独立烟雾层...", "info");
+        const smoke = renderFieldLayerToCanvas(renderContext, outputCanvas, state.params, "smoke");
+        if (smoke.maxAlpha > 0.001) {
+          placedSmoke = await placeDataUrl(smoke.dataUrl, `像素起子 空间特效 - ${label} - 烟雾`, 100, "normal", fullCapture);
+        }
+        smoke.dataUrl = "";
+        outputCanvas.width = 1;
+        outputCanvas.height = 1;
+      }
+
+      setStatus("正在生成独立光效层...", "info");
+      const glow = renderFieldLayerToCanvas(renderContext, outputCanvas, state.params, "glow");
+      const placedGlow = glow.maxAlpha > 0.001
+        ? await placeDataUrl(glow.dataUrl, `像素起子 空间特效 - ${label} - 光效`, 100, "screen", fullCapture)
+        : null;
+      glow.dataUrl = "";
+      outputCanvas.width = 1;
+      outputCanvas.height = 1;
+      const layerCount = 1 + (placedSmoke ? 1 : 0) + (placedGlow ? 1 : 0);
+      const topLayerName = placedGlow && placedGlow.layerName || placedSmoke && placedSmoke.layerName || placedWarp && placedWarp.layerName;
+      setStatus(topLayerName ? `已生成 ${layerCount} 个独立空间特效图层，当前层：${topLayerName}` : `已生成 ${layerCount} 个独立空间特效图层。`, "success");
+      setMeta(`已按原始尺寸应用 ${source.width}x${source.height} · 变形 / 光效${placedSmoke ? " / 烟雾" : ""}`);
+      modules.ui.logToWorkspace(`空间特效已按全分辨率应用：${label}，输出 ${layerCount} 个独立图层。`, "success");
     } catch (error) {
       setStatus(`应用空间特效失败：${error.message}`, "error");
       modules.ui.logToWorkspace(`空间特效应用失败：${error.message}`, "error");
@@ -1542,7 +1791,7 @@
       let mapDataUrl = state.lastMapDataUrl;
       if (!mapDataUrl) {
         const outputCanvas = document.createElement("canvas");
-        const result = await renderToCanvas(state.sourceImage, outputCanvas, CAPTURE_MAX_DIMENSION, state.params);
+        const result = await renderToCanvas(state.sourceImage, outputCanvas, PREVIEW_CAPTURE_MAX_DIMENSION, state.params);
         mapDataUrl = result.mapDataUrl;
       }
       const label = getPresetLabel(state.params.effect);
@@ -1753,6 +2002,7 @@
 
   modules.spaceFx = {
     bindSpaceFxActions,
-    renderSpaceFxImageData
+    renderSpaceFxImageData,
+    prepareSpaceFxRenderContext
   };
 })(window);

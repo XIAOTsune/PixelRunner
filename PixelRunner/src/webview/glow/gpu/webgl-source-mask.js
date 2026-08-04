@@ -178,6 +178,10 @@
       float nearClipException = nearClip * clippingDetail * thresholdGate;
       float protection = saturate(protectionBase * (1.0 - nearClipException * 0.42));
       float colorReflection = smooth01(0.1, 0.48, sat) * smooth01(0.52, 0.92, brightness);
+      float coloredEmitter =
+        smooth01(0.38, 0.82, sat) *
+        smooth01(max(0.42, uThresholdLow * 0.62), max(0.55, uThresholdHigh * 0.92), maxChannel) *
+        smooth01(uSpecularLow * 0.65, uSpecularHigh * 0.8, specular);
       float opticalPointSignal = saturate(
         specularScore * (uTriggerMode < 1.5 ? 0.78 : 0.62) +
         contrastScore * (uTriggerMode < 1.5 ? 0.32 : 0.24) +
@@ -194,9 +198,10 @@
         ? (
             brightEnergy * (uTriggerMode < 1.5 ? 0.98 : 1.1) * (1.0 + colorReflection * 0.12) * opticalAreaGuard +
             specularPass * (uTriggerMode < 1.5 ? 0.82 : 0.64) +
+            coloredEmitter * (uTriggerMode < 1.5 ? 0.42 : 0.5) +
             rimPass * (uTriggerMode < 1.5 ? 0.018 : 0.05)
           )
-        : brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+        : brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + coloredEmitter * 0.68 + rimPass * 0.028;
       float neutralClothReject = whiteFlat * (1.0 - specularScore * 0.42) * (1.0 - nearClipException * 0.35) * (1.0 - colorReflection * 0.32);
       emissionEnergy *= 1.0 - protection * (uTriggerMode > 0.5 ? (uTriggerMode < 1.5 ? 0.93 : 0.9) : 0.86);
       emissionEnergy *= 1.0 - neutralClothReject * (uTriggerMode > 0.5 ? 0.94 : 0.82);
@@ -495,9 +500,7 @@
           sourceMask[pixel] = Math.min(1, Math.max(0, maskPixels[index + 3]));
         }
         const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
-        const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
         const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
-        const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
         return {
           width,
@@ -512,8 +515,7 @@
             skinLikeMask,
             darkProtect,
             protectMask,
-            sourceMask: featheredSourceMask,
-            haloMask
+            sourceMask: featheredSourceMask
           },
           debugImages: null,
           backend: "webgl2"

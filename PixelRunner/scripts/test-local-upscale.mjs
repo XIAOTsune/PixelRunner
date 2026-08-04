@@ -70,7 +70,7 @@ assert.match(localUpscaleShell, /PixelRunner Local AI\.app/);
 assert.match(hiddenLauncher, /IsServiceCompatible/);
 assert.match(hiddenLauncher, /For port = FirstPort To LastPort/);
 assert.match(hiddenLauncher, /--port-end/);
-assert.match(hiddenLauncher, /PixelRunnerV2\.8\.0-local-ai-bundled-runtime/);
+assert.ok(hiddenLauncher.includes(`PixelRunnerV${manifest.version}-local-ai-bundled-runtime`));
 assert.match(localUpscaleWebview, /photoshop\.placeLocalUpscaleResult/);
 assert.match(localUpscaleWebview, /refreshPhotoshopDocumentStatus/);
 assert.match(localUpscaleWebview, /capture && capture\.outputPath/);

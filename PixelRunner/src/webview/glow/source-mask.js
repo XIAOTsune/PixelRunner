@@ -199,6 +199,10 @@
       const protection = clamp(protectionBase * (1 - nearClipException * 0.42), 0, 1);
       const lowEnergyCutoff = Number(sourceParams.lowEnergyCutoff) || 0.046;
       const colorReflection = smoothstep(0.1, 0.48, sat) * smoothstep(0.52, 0.92, brightness);
+      const coloredEmitter =
+        smoothstep(0.38, 0.82, sat) *
+        smoothstep(Math.max(0.42, thresholdLow * 0.62), Math.max(0.55, thresholdHigh * 0.92), maxChannel) *
+        smoothstep(sourceParams.specularLow * 0.65, sourceParams.specularHigh * 0.8, specular);
       const opticalPointSignal = clamp(
         specularScore * (triggerMode === 1 ? 0.78 : 0.62) +
           contrastScore * (triggerMode === 1 ? 0.32 : 0.24) +
@@ -217,9 +221,10 @@
         ? (
             brightEnergy * (triggerMode === 1 ? 0.98 : 1.1) * (1 + colorReflection * 0.12) * opticalAreaGuard +
             specularPass * (triggerMode === 1 ? 0.82 : 0.64) +
+            coloredEmitter * (triggerMode === 1 ? 0.42 : 0.5) +
             rimPass * (triggerMode === 1 ? 0.018 : 0.05)
           )
-        : brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + rimPass * 0.028;
+        : brightEnergy * (1.2 + colorReflection * 0.18) + specularPass * 0.48 + coloredEmitter * 0.68 + rimPass * 0.028;
       const neutralClothReject = whiteFlat * (1 - specularScore * 0.42) * (1 - nearClipException * 0.35) * (1 - colorReflection * 0.32);
       emissionEnergy *= 1 - protection * (triggerMode ? (triggerMode === 1 ? 0.93 : 0.9) : 0.86);
       emissionEnergy *= 1 - neutralClothReject * (triggerMode ? 0.94 : 0.82);
@@ -253,9 +258,7 @@
     }
 
     const sourceFeatherRadius = Math.max(1, Math.floor(Number(sourceParams.sourceFeatherRadius) || 1));
-    const haloMaskRadius = Math.max(sourceFeatherRadius + 1, Math.floor(Number(sourceParams.haloMaskRadius) || 8));
     const featheredSourceMask = blurFloat(sourceMask, width, height, sourceFeatherRadius);
-    const haloMask = blurFloat(featheredSourceMask, width, height, haloMaskRadius);
 
     return {
       width,
@@ -270,8 +273,7 @@
         skinLikeMask,
         darkProtect,
         protectMask,
-        sourceMask: featheredSourceMask,
-        haloMask
+        sourceMask: featheredSourceMask
       },
       debugImages: options.includeDebug === false
         ? null

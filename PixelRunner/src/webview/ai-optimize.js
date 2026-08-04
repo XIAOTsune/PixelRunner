@@ -1026,18 +1026,20 @@
 
         try {
           if (useThirdPartyOptimize) {
-            const grs = modules.state.state.thirdPartySettings.grs || {};
-            if (!String(grs.apiKey || "").trim()) throw new Error("请先在第三方支持中配置 GRS API Key。");
-            state.taskDetail = "正在使用 GRS 文本模型优化提示词...";
+            const descriptor = modules.state.getThirdPartyProviderDescriptor();
+            const config = descriptor.config;
+            if (!String(config.apiKey || "").trim()) throw new Error(`请先在第三方支持中配置 ${descriptor.label} API Key。`);
+            state.taskDetail = `正在使用 ${descriptor.label} 文本模型优化提示词...`;
             renderModal();
             const result = await modules.runtime.callHost(
-              "thirdParty.grs.optimizePrompt",
+              `thirdParty.${descriptor.id}.optimizePrompt`,
               [{
                 config: {
-                  region: grs.region,
-                  apiUrl: grs.apiUrl,
-                  apiKey: grs.apiKey,
-                  chatModel: grs.chatModel
+                  region: config.region,
+                  channelId: descriptor.channelId,
+                  apiUrl: config.apiUrl,
+                  apiKey: config.apiKey,
+                  chatModel: config.chatModel
                 },
                 prompt: buildAiOptimizePromptText(),
                 timeout: modules.state.state.settings.timeout
@@ -1045,11 +1047,11 @@
               { timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000) }
             );
             const text = String((result && result.text) || "").trim();
-            if (!text) throw new Error("GRS 文本模型未返回有效提示词。");
+            if (!text) throw new Error(`${descriptor.label} 文本模型未返回有效提示词。`);
             state.resultText = text;
             state.taskStatus = "success";
             state.taskUpdatedAt = Date.now();
-            state.taskDetail = `GRS 文本模型已完成优化：${result && result.model ? result.model : "chat"}`;
+            state.taskDetail = `${descriptor.label} 文本模型已完成优化：${result && result.model ? result.model : "chat"}`;
             setStatus("AI优化完成，可应用到当前提示词。", "success");
             renderModal();
             return;

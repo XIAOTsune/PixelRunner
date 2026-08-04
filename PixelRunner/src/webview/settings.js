@@ -54,6 +54,9 @@
       currency,
       updatedAt: Date.now()
     };
+    if (modules.workspace && typeof modules.workspace.renderWorkspaceAccountSummary === "function") {
+      modules.workspace.renderWorkspaceAccountSummary();
+    }
   }
 
   function setApiKeyVisibility(visible) {
@@ -348,7 +351,7 @@
   }
 
   function fillThirdPartyCapabilitySelects(model, selectedAspectRatio, selectedResolution) {
-    const capabilities = modules.state.getThirdPartyModelCapabilities(model);
+    const capabilities = modules.state.getThirdPartyModelCapabilities(model, "grs");
     const ratioSelect = modules.runtime.getById("thirdPartyGrsDefaultRatioInput");
     const resolutionSelect = modules.runtime.getById("thirdPartyGrsDefaultResolutionInput");
     const ratio = capabilities.aspectRatios.includes(String(selectedAspectRatio || ""))
@@ -369,30 +372,137 @@
     }
   }
 
+  function getSelectedThirdPartyProvider() {
+    const activeButton = document.querySelector("[data-third-party-provider].is-active");
+    return String(activeButton && activeButton.getAttribute("data-third-party-provider") || "grs") === "gemini" ? "gemini" : "grs";
+  }
+
+  function getSelectedGeminiChannel() {
+    const activeButton = document.querySelector("[data-gemini-channel].is-active");
+    const stored = modules.state.state.thirdPartySettings?.gemini?.channelId;
+    return modules.state.normalizeGeminiChannelId(activeButton ? activeButton.getAttribute("data-gemini-channel") : stored);
+  }
+
+  function renderThirdPartyProviderControls(provider, channelId) {
+    const normalizedProvider = String(provider || "") === "gemini" ? "gemini" : "grs";
+    const normalizedChannel = modules.state.normalizeGeminiChannelId(channelId);
+    document.querySelectorAll("[data-third-party-provider]").forEach((button) => {
+      const isActive = button.getAttribute("data-third-party-provider") === normalizedProvider;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    document.querySelectorAll("[data-gemini-channel]").forEach((button) => {
+      const isActive = modules.state.normalizeGeminiChannelId(button.getAttribute("data-gemini-channel")) === normalizedChannel;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    const grsGroup = modules.runtime.getById("thirdPartyGrsSettingsGroup");
+    const geminiGroup = modules.runtime.getById("thirdPartyGeminiSettingsGroup");
+    if (grsGroup) grsGroup.hidden = normalizedProvider !== "grs";
+    if (geminiGroup) geminiGroup.hidden = normalizedProvider !== "gemini";
+  }
+
+  function fillGeminiModelSelect(selectId, models, selected, fallbackModels = []) {
+    const select = modules.runtime.getById(selectId);
+    if (!select) return;
+    const list = Array.isArray(models) && models.length
+      ? models
+      : (Array.isArray(fallbackModels) && fallbackModels.length ? fallbackModels : modules.state.GEMINI_IMAGE_MODEL_IDS);
+    const value = String(selected || list[0] || "").trim();
+    const options = list.includes(value) || !value ? list : [value, ...list];
+    select.innerHTML = options
+      .map((model) => `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(String(model))}</option>`)
+      .join("");
+  }
+
+  function fillGeminiCapabilitySelects(selectedAspectRatio, selectedResolution) {
+    const ratioSelect = modules.runtime.getById("thirdPartyGeminiDefaultRatioInput");
+    const resolutionSelect = modules.runtime.getById("thirdPartyGeminiDefaultResolutionInput");
+    const ratio = modules.state.GEMINI_ASPECT_RATIOS.includes(String(selectedAspectRatio || "")) ? String(selectedAspectRatio) : "auto";
+    const resolution = modules.state.GEMINI_RESOLUTIONS.includes(String(selectedResolution || "").toUpperCase())
+      ? String(selectedResolution).toUpperCase()
+      : "1K";
+    if (ratioSelect) {
+      ratioSelect.innerHTML = modules.state.GEMINI_ASPECT_RATIOS
+        .map((value) => `<option value="${value}" ${value === ratio ? "selected" : ""}>${value}</option>`)
+        .join("");
+    }
+    if (resolutionSelect) {
+      resolutionSelect.innerHTML = modules.state.GEMINI_RESOLUTIONS
+        .map((value) => `<option value="${value}" ${value === resolution ? "selected" : ""}>${value}</option>`)
+        .join("");
+    }
+  }
+
+  function fillGeminiSettingsForm(gemini) {
+    const active = gemini.channels?.[gemini.channelId] || gemini;
+    const modelDefaults = modules.state.getGeminiChannelModelDefaults(gemini.channelId);
+    if (modules.runtime.getById("thirdPartyGeminiApiKeyInput")) {
+      modules.runtime.getById("thirdPartyGeminiApiKeyInput").value = active.apiKey || "";
+    }
+    fillGeminiModelSelect("thirdPartyGeminiDefaultModelInput", active.imageModels, active.selectedModel, modelDefaults.imageModels);
+    fillGeminiModelSelect("thirdPartyGeminiChatModelInput", active.chatModels, active.chatModel, modelDefaults.chatModels);
+    fillGeminiCapabilitySelects(active.aspectRatio, active.resolution);
+  }
+
+  function refreshThirdPartyWorkspacePreview() {
+    if (!modules.state.isThirdPartyApp(modules.state.state.currentApp)) return;
+    const app = modules.state.getThirdPartyApp();
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    const config = descriptor.config;
+    modules.state.state.currentApp = app;
+    modules.state.state.formValues = {
+      ...modules.state.state.formValues,
+      model: config.selectedModel || config.imageModels?.[0] || "",
+      aspectRatio: config.aspectRatio || "auto",
+      resolution: config.resolution || "1K"
+    };
+    if (modules.workspace && typeof modules.workspace.updateThirdPartyDynamicOptions === "function") {
+      modules.workspace.updateThirdPartyDynamicOptions(modules.state.state.formValues.model);
+    }
+    if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
+    if (modules.apps && typeof modules.apps.renderAppPickerList === "function") modules.apps.renderAppPickerList();
+  }
+
   function fillThirdPartySettingsForm(settings) {
     const normalized = modules.state.normalizeThirdPartySettings(settings);
     const grs = normalized.grs;
     if (modules.runtime.getById("thirdPartyEnabledInput")) modules.runtime.getById("thirdPartyEnabledInput").checked = Boolean(normalized.enabled);
+    renderThirdPartyProviderControls(normalized.provider, normalized.gemini.channelId);
     renderGrsRegionControl(grs.region);
     if (modules.runtime.getById("thirdPartyGrsApiKeyInput")) modules.runtime.getById("thirdPartyGrsApiKeyInput").value = grs.apiKey || "";
     fillThirdPartyModelSelect(grs.imageModels, grs.selectedModel);
     fillThirdPartyChatModelSelect(grs.chatModel);
     fillThirdPartyCapabilitySelects(grs.selectedModel, grs.aspectRatio, grs.resolution);
+    fillGeminiSettingsForm(normalized.gemini);
     const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
-    const regionConfig = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
+    const descriptor = modules.state.getThirdPartyProviderDescriptor(normalized);
     modules.runtime.setSummaryStatus(
       statusEl,
       normalized.enabled
-        ? `GRS 已启用 · ${regionConfig.label} · ${grs.selectedModel}`
-        : `GRS 未启用 · 当前配置为 ${regionConfig.label}`,
+        ? `${descriptor.label} 已启用 · ${descriptor.config.selectedModel}`
+        : `第三方支持未启用 · 当前配置为 ${descriptor.label}`,
       normalized.enabled ? "success" : "info"
     );
   }
 
   function readThirdPartySettingsForm() {
+    const current = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
+    const channelId = getSelectedGeminiChannel();
+    const modelDefaults = modules.state.getGeminiChannelModelDefaults(channelId);
+    const activeGemini = {
+      ...(current.gemini.channels?.[channelId] || {}),
+      apiKey: modules.runtime.getById("thirdPartyGeminiApiKeyInput")?.value || "",
+      selectedModel: modules.runtime.getById("thirdPartyGeminiDefaultModelInput")?.value || "",
+      imageModels: current.gemini.channels?.[channelId]?.imageModels || current.gemini.imageModels || modelDefaults.imageModels,
+      chatModels: current.gemini.channels?.[channelId]?.chatModels || modelDefaults.chatModels,
+      chatModel: modules.runtime.getById("thirdPartyGeminiChatModelInput")?.value || "",
+      aspectRatio: modules.runtime.getById("thirdPartyGeminiDefaultRatioInput")?.value || "",
+      resolution: modules.runtime.getById("thirdPartyGeminiDefaultResolutionInput")?.value || ""
+    };
     return modules.state.normalizeThirdPartySettings({
       enabled: Boolean(modules.runtime.getById("thirdPartyEnabledInput")?.checked),
-      provider: "grs",
+      provider: getSelectedThirdPartyProvider(),
       grs: {
         region: getSelectedGrsRegion(),
         apiKey: modules.runtime.getById("thirdPartyGrsApiKeyInput")?.value || "",
@@ -401,12 +511,169 @@
         selectedModel: modules.runtime.getById("thirdPartyGrsDefaultModelInput")?.value || "",
         aspectRatio: modules.runtime.getById("thirdPartyGrsDefaultRatioInput")?.value || "",
         resolution: modules.runtime.getById("thirdPartyGrsDefaultResolutionInput")?.value || ""
+      },
+      gemini: {
+        ...current.gemini,
+        channelId,
+        channels: {
+          ...current.gemini.channels,
+          [channelId]: activeGemini
+        }
       }
     });
   }
 
+  const DARK_THEME_TOKENS = {
+    "--border": "rgba(169, 194, 214, 0.14)",
+    "--border-strong": "rgba(169, 194, 214, 0.26)",
+    "--text": "#d8e5f0",
+    "--text-strong": "#f6fbf8",
+    "--muted": "#9eb0bf",
+    "--muted-soft": "#8092a3"
+  };
+
+  const LEGACY_THEME_STYLE = {
+    "--app-background": "radial-gradient(circle at 0% 0%, var(--accent-soft), transparent 22%), radial-gradient(circle at 92% 8%, var(--accent-wash), transparent 24%), linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 30%, var(--bg-bottom) 100%)",
+    "--chrome-border-width": "2px",
+    "--chrome-shadow": "0 3px 0 rgba(20, 27, 36, 0.42)",
+    "--control-radius": "13px",
+    "--control-border-width": "2px",
+    "--control-shadow-offset": "3px 4px 0",
+    "--control-sheen": "linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03) 52%, rgba(255, 255, 255, 0))",
+    "--control-hover-transform": "translateY(-1px)",
+    "--control-hover-shadow-offset": "0 5px 0",
+    "--control-active-transform": "translateY(2px)",
+    "--control-active-shadow-offset": "0 2px 0",
+    "--control-disabled-shadow": "1px 1px 0 rgba(44, 61, 80, 0.5)",
+    "--nav-radius": "12px",
+    "--nav-tab-radius": "9px",
+    "--layout-gap": "6px",
+    "--workspace-section-gap": "12px",
+    "--surface-card-padding": "6px 8px 7px",
+    "--surface-card-decoration": "linear-gradient(180deg, rgba(255, 255, 255, 0.015), rgba(255, 255, 255, 0))",
+    "--joined-card-radius": "14px",
+    "--field-radius": "12px",
+    "--field-border-width": "2px",
+    "--field-shadow": "2px 3px 0 rgba(29, 40, 54, 0.72)",
+    "--field-focus-transform": "translate(-1px, -1px)",
+    "--field-focus-shadow": "0 0 0 2px rgba(143, 216, 195, 0.08), 3px 4px 0 rgba(29, 40, 54, 0.78)",
+    "--workspace-card-gap": "10px",
+    "--workspace-card-padding": "10px 12px 12px",
+    "--workspace-card-radius": "18px",
+    "--workspace-card-border": "1px solid rgba(92, 117, 140, 0.58)",
+    "--workspace-card-background": "linear-gradient(180deg, rgba(var(--surface-rgb), var(--surface-alpha)) 0%, rgba(var(--surface-soft-rgb), var(--surface-soft-alpha)) 100%)",
+    "--workspace-card-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(25, 36, 48, 0.5)",
+    "--item-border-width": "2px",
+    "--item-shadow": "2px 3px 0 var(--control-edge)",
+    "--item-hover-transform": "translateY(-1px)",
+    "--item-hover-shadow": "0 4px 0 var(--cta-strong)",
+    "--radius-xl": "16px",
+    "--radius-lg": "12px",
+    "--radius-md": "10px",
+    "--radius-sm": "8px"
+  };
+
+  const MINIMAL_THEME_STYLE = {
+    "--app-background": "linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 52%, var(--bg-bottom) 100%)",
+    "--chrome-border-width": "1px",
+    "--chrome-shadow": "none",
+    "--control-radius": "6px",
+    "--control-border-width": "1px",
+    "--control-shadow-offset": "0 0 0",
+    "--control-sheen": "none",
+    "--control-hover-transform": "none",
+    "--control-hover-shadow-offset": "0 0 0",
+    "--control-active-transform": "none",
+    "--control-active-shadow-offset": "0 0 0",
+    "--control-disabled-shadow": "none",
+    "--nav-radius": "8px",
+    "--nav-tab-radius": "6px",
+    "--layout-gap": "5px",
+    "--workspace-section-gap": "9px",
+    "--surface-card-padding": "6px 8px",
+    "--surface-card-decoration": "none",
+    "--joined-card-radius": "8px",
+    "--field-radius": "6px",
+    "--field-border-width": "1px",
+    "--field-shadow": "none",
+    "--field-focus-transform": "none",
+    "--field-focus-shadow": "0 0 0 2px var(--accent-soft)",
+    "--workspace-card-gap": "8px",
+    "--workspace-card-padding": "9px 10px 10px",
+    "--workspace-card-radius": "8px",
+    "--workspace-card-border": "1px solid var(--border-strong)",
+    "--workspace-card-background": "rgba(var(--surface-rgb), var(--surface-alpha))",
+    "--workspace-card-shadow": "none",
+    "--item-border-width": "1px",
+    "--item-shadow": "none",
+    "--item-hover-transform": "none",
+    "--item-hover-shadow": "none",
+    "--radius-xl": "8px",
+    "--radius-lg": "8px",
+    "--radius-md": "6px",
+    "--radius-sm": "6px"
+  };
+
+  const MATTE_THEME_STYLE = {
+    ...MINIMAL_THEME_STYLE,
+    "--app-background": "radial-gradient(circle at 50% 0%, rgba(159, 199, 189, 0.08), transparent 30%), linear-gradient(180deg, var(--bg-top), var(--bg-bottom))",
+    "--chrome-shadow": "0 4px 14px rgba(0, 0, 0, 0.16)",
+    "--control-radius": "8px",
+    "--control-shadow-offset": "0 2px 6px",
+    "--control-hover-shadow-offset": "0 3px 9px",
+    "--nav-radius": "10px",
+    "--nav-tab-radius": "8px",
+    "--layout-gap": "6px",
+    "--workspace-section-gap": "10px",
+    "--joined-card-radius": "10px",
+    "--field-radius": "8px",
+    "--field-shadow": "inset 0 1px 0 rgba(255, 255, 255, 0.025)",
+    "--workspace-card-gap": "9px",
+    "--workspace-card-padding": "10px 11px",
+    "--workspace-card-radius": "10px",
+    "--workspace-card-shadow": "0 6px 18px rgba(0, 0, 0, 0.14)",
+    "--item-shadow": "0 1px 2px rgba(0, 0, 0, 0.18)",
+    "--item-hover-shadow": "0 3px 9px rgba(0, 0, 0, 0.18)",
+    "--radius-xl": "10px",
+    "--radius-lg": "10px",
+    "--radius-md": "8px",
+    "--radius-sm": "7px"
+  };
+
+  const FOCUS_THEME_STYLE = {
+    ...MINIMAL_THEME_STYLE,
+    "--control-radius": "3px",
+    "--nav-radius": "4px",
+    "--nav-tab-radius": "3px",
+    "--layout-gap": "4px",
+    "--workspace-section-gap": "7px",
+    "--surface-card-padding": "5px 7px",
+    "--joined-card-radius": "4px",
+    "--field-radius": "3px",
+    "--workspace-card-gap": "6px",
+    "--workspace-card-padding": "7px 8px 8px",
+    "--workspace-card-radius": "4px",
+    "--radius-xl": "4px",
+    "--radius-lg": "4px",
+    "--radius-md": "3px",
+    "--radius-sm": "3px"
+  };
+
+  const THEME_PRESET_LABELS = {
+    classic: "经典",
+    aurora: "极光",
+    graphite: "石墨",
+    rose: "玫瑰",
+    studio: "影棚",
+    minimal: "极简黑",
+    mist: "雾银",
+    focus: "专注"
+  };
+
   const THEME_PRESETS = {
     classic: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#111822",
       "--bg-mid": "#18212d",
       "--bg-bottom": "#0c1219",
@@ -431,6 +698,8 @@
       "--cta-strong": "#8ac6df"
     },
     aurora: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#0b1a20",
       "--bg-mid": "#14333b",
       "--bg-bottom": "#081318",
@@ -455,6 +724,8 @@
       "--cta-strong": "#dbb95f"
     },
     graphite: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#12151a",
       "--bg-mid": "#202832",
       "--bg-bottom": "#0b0e13",
@@ -479,6 +750,8 @@
       "--cta-strong": "#b7c7d5"
     },
     rose: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#1d1420",
       "--bg-mid": "#302234",
       "--bg-bottom": "#120d16",
@@ -503,6 +776,8 @@
       "--cta-strong": "#7dd3c4"
     },
     studio: {
+      ...DARK_THEME_TOKENS,
+      ...LEGACY_THEME_STYLE,
       "--bg-top": "#17171a",
       "--bg-mid": "#252823",
       "--bg-bottom": "#101111",
@@ -525,6 +800,102 @@
       "--accent-wash": "rgba(255, 213, 106, 0.1)",
       "--cta": "#8fd6ff",
       "--cta-strong": "#65bce9"
+    },
+    minimal: {
+      ...DARK_THEME_TOKENS,
+      ...MINIMAL_THEME_STYLE,
+      "--bg-top": "#111214",
+      "--bg-mid": "#141518",
+      "--bg-bottom": "#0d0e10",
+      "--panel": "#191a1e",
+      "--panel-soft": "#202125",
+      "--panel-strong": "#292a2f",
+      "--ink": "#34363c",
+      "--surface-rgb": "27, 28, 32",
+      "--surface-soft-rgb": "33, 34, 39",
+      "--control-rgb": "49, 50, 56",
+      "--control-edge": "#42444c",
+      "--control-ink": "#111216",
+      "--surface-alpha": "0.98",
+      "--surface-soft-alpha": "0.94",
+      "--surface-glass-alpha": "0.68",
+      "--theme-image-overlay": "rgba(7, 8, 10, 0.52)",
+      "--border": "rgba(235, 236, 240, 0.1)",
+      "--border-strong": "rgba(235, 236, 240, 0.18)",
+      "--text": "#dddfe3",
+      "--text-strong": "#f5f5f6",
+      "--muted": "#9b9da4",
+      "--muted-soft": "#767982",
+      "--accent": "#e4e5e8",
+      "--accent-strong": "#c8cad0",
+      "--accent-soft": "rgba(228, 229, 232, 0.14)",
+      "--accent-wash": "rgba(228, 229, 232, 0.07)",
+      "--cta": "#b9bcc4",
+      "--cta-strong": "#9397a1"
+    },
+    mist: {
+      ...DARK_THEME_TOKENS,
+      ...MATTE_THEME_STYLE,
+      "--bg-top": "#171b1e",
+      "--bg-mid": "#1b2024",
+      "--bg-bottom": "#121518",
+      "--panel": "#20262a",
+      "--panel-soft": "#293136",
+      "--panel-strong": "#343e44",
+      "--ink": "#3d494f",
+      "--surface-rgb": "32, 38, 42",
+      "--surface-soft-rgb": "41, 49, 54",
+      "--control-rgb": "57, 67, 73",
+      "--control-edge": "#4d5a61",
+      "--control-ink": "#10201d",
+      "--surface-alpha": "0.97",
+      "--surface-soft-alpha": "0.92",
+      "--surface-glass-alpha": "0.66",
+      "--theme-image-overlay": "rgba(10, 15, 17, 0.48)",
+      "--border": "rgba(188, 207, 207, 0.12)",
+      "--border-strong": "rgba(188, 207, 207, 0.22)",
+      "--text": "#dce5e3",
+      "--text-strong": "#f2f7f5",
+      "--muted": "#9eacab",
+      "--muted-soft": "#7f8d8d",
+      "--accent": "#9fc7bd",
+      "--accent-strong": "#78aa9f",
+      "--accent-soft": "rgba(159, 199, 189, 0.16)",
+      "--accent-wash": "rgba(159, 199, 189, 0.08)",
+      "--cta": "#bdcbd2",
+      "--cta-strong": "#95aab4"
+    },
+    focus: {
+      ...DARK_THEME_TOKENS,
+      ...FOCUS_THEME_STYLE,
+      "--bg-top": "#0e1011",
+      "--bg-mid": "#121516",
+      "--bg-bottom": "#0a0c0d",
+      "--panel": "#151819",
+      "--panel-soft": "#1d2123",
+      "--panel-strong": "#272c2e",
+      "--ink": "#343a3d",
+      "--surface-rgb": "22, 25, 27",
+      "--surface-soft-rgb": "29, 33, 35",
+      "--control-rgb": "43, 48, 51",
+      "--control-edge": "#3b4245",
+      "--control-ink": "#16130c",
+      "--surface-alpha": "0.99",
+      "--surface-soft-alpha": "0.96",
+      "--surface-glass-alpha": "0.7",
+      "--theme-image-overlay": "rgba(5, 7, 8, 0.56)",
+      "--border": "rgba(220, 226, 224, 0.09)",
+      "--border-strong": "rgba(220, 226, 224, 0.17)",
+      "--text": "#d8dcda",
+      "--text-strong": "#f2f4f3",
+      "--muted": "#929b98",
+      "--muted-soft": "#717a78",
+      "--accent": "#d9b46c",
+      "--accent-strong": "#b8924d",
+      "--accent-soft": "rgba(217, 180, 108, 0.15)",
+      "--accent-wash": "rgba(217, 180, 108, 0.075)",
+      "--cta": "#9bbab4",
+      "--cta-strong": "#73978f"
     }
   };
 
@@ -618,6 +989,7 @@
     const presetName = normalized.preset === "custom" ? normalized.basePreset : normalized.preset;
     const preset = THEME_PRESETS[presetName] || THEME_PRESETS.classic;
     Object.entries(preset).forEach(([key, value]) => root.style.setProperty(key, value));
+    document.body.dataset.themePreset = presetName;
     document.body.classList.toggle("has-custom-theme-image", Boolean(normalized.customImage));
     document.body.classList.toggle("has-glass-theme", Boolean(normalized.glass));
     if (normalized.customImage) {
@@ -633,9 +1005,11 @@
     }
     modules.state.state.theme = normalized;
 
-    const swatches = document.querySelectorAll("[data-theme-preset]");
+    const swatches = document.querySelectorAll(".theme-swatch[data-theme-preset]");
     swatches.forEach((button) => {
-      button.classList.toggle("is-selected", String(button.getAttribute("data-theme-preset")) === presetName);
+      const isSelected = String(button.getAttribute("data-theme-preset")) === presetName;
+      button.classList.toggle("is-selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
     });
     const statusEl = modules.runtime.getById("themeStatusSummary");
     if (statusEl) {
@@ -643,7 +1017,7 @@
         statusEl,
         normalized.customImage
           ? `自定义主题已启用：${normalized.customImageName || "背景照片"}，背景已写入界面皮肤。`
-          : `已启用${normalized.preset === "classic" ? "经典" : "预设"}主题。`,
+          : `已启用「${THEME_PRESET_LABELS[presetName] || "经典"}」主题。`,
         "success"
       );
     }
@@ -836,10 +1210,26 @@
       null
     );
     const rawThirdPartyApiKey = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY);
+    const rawGeminiApiKeys = modules.runtime.readJsonText(
+      await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GEMINI_API_KEYS),
+      {}
+    );
     const legacyThirdParty = rawSettings && rawSettings.thirdParty && typeof rawSettings.thirdParty === "object" ? rawSettings.thirdParty : {};
     const storedThirdParty = rawThirdPartySettings && typeof rawThirdPartySettings === "object" ? rawThirdPartySettings : {};
     const legacyGrs = legacyThirdParty.grs && typeof legacyThirdParty.grs === "object" ? legacyThirdParty.grs : {};
     const storedGrs = storedThirdParty.grs && typeof storedThirdParty.grs === "object" ? storedThirdParty.grs : {};
+    const legacyGemini = legacyThirdParty.gemini && typeof legacyThirdParty.gemini === "object" ? legacyThirdParty.gemini : {};
+    const storedGemini = storedThirdParty.gemini && typeof storedThirdParty.gemini === "object" ? storedThirdParty.gemini : {};
+    const storedGeminiChannels = storedGemini.channels && typeof storedGemini.channels === "object" ? storedGemini.channels : {};
+    const legacyGeminiChannels = legacyGemini.channels && typeof legacyGemini.channels === "object" ? legacyGemini.channels : {};
+    const geminiChannels = {};
+    for (const channelId of Object.keys(modules.state.GEMINI_CHANNEL_PRESETS)) {
+      geminiChannels[channelId] = {
+        ...(legacyGeminiChannels[channelId] || {}),
+        ...(storedGeminiChannels[channelId] || {}),
+        ...(rawGeminiApiKeys && rawGeminiApiKeys[channelId] !== undefined ? { apiKey: rawGeminiApiKeys[channelId] } : {})
+      };
+    }
     const mergedThirdParty = {
       ...legacyThirdParty,
       ...storedThirdParty,
@@ -847,6 +1237,11 @@
         ...legacyGrs,
         ...storedGrs,
         ...(rawThirdPartyApiKey !== null && rawThirdPartyApiKey !== undefined ? { apiKey: rawThirdPartyApiKey } : {})
+      },
+      gemini: {
+        ...legacyGemini,
+        ...storedGemini,
+        channels: geminiChannels
       }
     };
     const thirdParty = modules.state.normalizeThirdPartySettings(mergedThirdParty);
@@ -919,6 +1314,12 @@
     );
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_SETTINGS, JSON.stringify(thirdParty));
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_GRS_API_KEY, thirdParty.grs.apiKey || "");
+    await modules.runtime.storageSetItem(
+      modules.state.STORAGE_KEYS.THIRD_PARTY_GEMINI_API_KEYS,
+      JSON.stringify(Object.fromEntries(
+        Object.entries(thirdParty.gemini.channels || {}).map(([channelId, config]) => [channelId, String(config && config.apiKey || "")])
+      ))
+    );
     await writeSettingsStorage(nextSettings, thirdParty);
 
     modules.state.state.apiProfiles = apiProfileState.profiles;
@@ -1005,6 +1406,8 @@
     const apiProfileList = runtime.getById("apiProfileList");
     const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
     const grsRegionButtons = Array.from(document.querySelectorAll("[data-grs-region]"));
+    const thirdPartyProviderButtons = Array.from(document.querySelectorAll("[data-third-party-provider]"));
+    const geminiChannelButtons = Array.from(document.querySelectorAll("[data-gemini-channel]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const resetGenerativeFillButton = runtime.getById("btnResetGenerativeFillAppId");
     const parseAppButton = runtime.getById("btnParseApp");
@@ -1014,6 +1417,7 @@
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
     const saveThirdPartySettingsButton = runtime.getById("btnSaveThirdPartySettings");
+    const refreshGeminiModelsButton = runtime.getById("btnRefreshThirdPartyGeminiModels");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
@@ -1024,7 +1428,12 @@
       "thirdPartyGrsChatModelInput",
       "thirdPartyGrsDefaultModelInput",
       "thirdPartyGrsDefaultRatioInput",
-      "thirdPartyGrsDefaultResolutionInput"
+      "thirdPartyGrsDefaultResolutionInput",
+      "thirdPartyGeminiApiKeyInput",
+      "thirdPartyGeminiChatModelInput",
+      "thirdPartyGeminiDefaultModelInput",
+      "thirdPartyGeminiDefaultRatioInput",
+      "thirdPartyGeminiDefaultResolutionInput"
     ];
     const advancedSettingFieldIds = [
       "settingsPollIntervalInput",
@@ -1190,6 +1599,33 @@
       });
     });
 
+    thirdPartyProviderButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const provider = button.getAttribute("data-third-party-provider") === "gemini" ? "gemini" : "grs";
+        if (provider === getSelectedThirdPartyProvider()) return;
+        const snapshot = readThirdPartySettingsForm();
+        modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({ ...snapshot, provider });
+        fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+        refreshThirdPartyWorkspacePreview();
+        renderSettingsStatus("检测到未保存的供应商切换。", "pending");
+      });
+    });
+
+    geminiChannelButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const channelId = modules.state.normalizeGeminiChannelId(button.getAttribute("data-gemini-channel"));
+        if (channelId === getSelectedGeminiChannel()) return;
+        const snapshot = readThirdPartySettingsForm();
+        modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
+          ...snapshot,
+          gemini: { ...snapshot.gemini, channelId }
+        });
+        fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+        refreshThirdPartyWorkspacePreview();
+        renderSettingsStatus("检测到未保存的 Gemini 渠道切换。", "pending");
+      });
+    });
+
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {
         const profile = modules.state.state.apiProfiles.find((item) => String(item.id) === String(apiProfileSelect.value));
@@ -1257,7 +1693,7 @@
       });
     }
 
-    document.querySelectorAll("[data-theme-preset]").forEach((button) => {
+    document.querySelectorAll(".theme-swatch[data-theme-preset]").forEach((button) => {
       button.addEventListener("click", async () => {
         const preset = String(button.getAttribute("data-theme-preset") || "classic");
         try {
@@ -1341,8 +1777,80 @@
           if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
         });
       }
+      if (["thirdPartyGeminiDefaultModelInput", "thirdPartyGeminiDefaultRatioInput", "thirdPartyGeminiDefaultResolutionInput"].includes(id)) {
+        element.addEventListener("change", () => {
+          modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
+          refreshThirdPartyWorkspacePreview();
+        });
+      }
       element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
     });
+
+    if (refreshGeminiModelsButton) {
+      refreshGeminiModelsButton.addEventListener("click", async () => {
+        const statusEl = runtime.getById("thirdPartyStatusSummary");
+        const snapshot = readThirdPartySettingsForm();
+        const gemini = snapshot.gemini;
+        const active = gemini.channels?.[gemini.channelId] || gemini;
+        if (!String(active.apiKey || "").trim()) {
+          runtime.setSummaryStatus(statusEl, "请先填写当前 Gemini 渠道的 API Key。", "warn");
+          return;
+        }
+        if (!modules.runtime.isPluginRuntime()) {
+          runtime.setSummaryStatus(statusEl, "浏览器预览模式无法请求 Gemini 模型列表。", "warn");
+          return;
+        }
+        refreshGeminiModelsButton.disabled = true;
+        runtime.setSummaryStatus(statusEl, `正在从 ${modules.state.getGeminiChannelPreset(gemini.channelId).label} 获取模型...`, "info");
+        try {
+          const result = await modules.runtime.callHost(
+            "thirdParty.gemini.listModels",
+            [{ config: { ...active, channelId: gemini.channelId } }],
+            { timeoutMs: 30000 }
+          );
+          const remoteModels = (Array.isArray(result && result.models) ? result.models : [])
+            .map((model) => String(model && (model.id || model.name) || model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, models) => model && models.indexOf(model) === index);
+          if (!remoteModels.length) throw new Error("渠道未返回可用模型");
+          const imageModels = (Array.isArray(result && result.imageModels) ? result.imageModels : [])
+            .map((model) => String(model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, models) => model && models.indexOf(model) === index);
+          const textModels = (Array.isArray(result && result.chatModels) ? result.chatModels : [])
+            .map((model) => String(model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, models) => model && models.indexOf(model) === index);
+          const effectiveImageModels = imageModels.length ? imageModels : active.imageModels;
+          const effectiveChatModels = textModels.length ? textModels : active.chatModels;
+          if (!effectiveImageModels.length || !effectiveChatModels.length) {
+            throw new Error("渠道没有返回完整的生图和文字模型分类");
+          }
+          const nextChannel = {
+            ...active,
+            imageModels: effectiveImageModels,
+            chatModels: effectiveChatModels,
+            selectedModel: effectiveImageModels.includes(active.selectedModel) ? active.selectedModel : effectiveImageModels[0],
+            chatModel: effectiveChatModels.includes(active.chatModel) ? active.chatModel : effectiveChatModels[0]
+          };
+          modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
+            ...snapshot,
+            gemini: {
+              ...gemini,
+              channels: { ...gemini.channels, [gemini.channelId]: nextChannel }
+            }
+          });
+          fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+          refreshThirdPartyWorkspacePreview();
+          runtime.setSummaryStatus(
+            statusEl,
+            `已获取 ${imageModels.length} 个生图模型、${textModels.length} 个文字模型，请保存第三方设置。`,
+            "success"
+          );
+        } catch (error) {
+          runtime.setSummaryStatus(statusEl, `模型刷新失败，已保留现有列表：${error.message}`, "error");
+        } finally {
+          refreshGeminiModelsButton.disabled = false;
+        }
+      });
+    }
 
     if (saveThirdPartySettingsButton) {
       saveThirdPartySettingsButton.addEventListener("click", async () => {
@@ -1351,9 +1859,8 @@
         runtime.setSummaryStatus(statusEl, "正在保存第三方设置...", "info");
         try {
           await saveSettingsSnapshot(readSettingsForm());
-          const grs = modules.state.state.thirdPartySettings.grs;
-          const regionConfig = modules.state.getGrsRegionConfig(grs.region);
-          runtime.setSummaryStatus(statusEl, `第三方设置已保存 · ${regionConfig.label} · ${grs.selectedModel}`, "success");
+          const descriptor = modules.state.getThirdPartyProviderDescriptor();
+          runtime.setSummaryStatus(statusEl, `第三方设置已保存 · ${descriptor.label} · ${descriptor.config.selectedModel}`, "success");
         } catch (error) {
           runtime.setSummaryStatus(statusEl, `第三方设置保存失败：${error.message}`, "error");
         } finally {

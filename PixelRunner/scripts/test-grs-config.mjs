@@ -9,6 +9,7 @@ import {
 } from "../src/shared/grs-config.js";
 import {
   buildThirdPartyGrsImageRequest,
+  fetchThirdPartyGrsAccountStatus,
   listThirdPartyGrsModels
 } from "../src/host/third-party-grs.js";
 
@@ -85,6 +86,29 @@ assert.equal(gptRequest.body.cdn, undefined);
 const builtinModels = await listThirdPartyGrsModels([{ kind: "image" }]);
 assert.equal(builtinModels.source, "builtin");
 assert.deepEqual(builtinModels.models, GRS_IMAGE_MODEL_IDS);
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async (url, options = {}) => {
+  assert.equal(String(url), "https://grsai.dakka.com.cn/client/common/getCredits?apikey=sk-test");
+  assert.equal(options.method, "GET");
+  return {
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ code: 0, data: { credits: 12345.5 }, msg: "success" })
+  };
+};
+try {
+  const account = await fetchThirdPartyGrsAccountStatus([{
+    config: { apiKey: "sk-test", apiUrl: "https://grsai.dakka.com.cn" },
+    region: "cn",
+    timeoutMs: 1000
+  }]);
+  assert.equal(account.balance, 12345.5);
+  assert.equal(account.balanceDisplay, "12,345.5");
+  assert.equal(account.secondaryDisplay, "积分");
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 globalThis.window = {};
 await import("../src/webview/state.js");

@@ -28,11 +28,11 @@
           <div class="panel-header-side workspace-header-side">
             <div id="accountSummary" class="account-summary is-empty">
               <div class="metric-pill">
-                <span class="metric-label">余额</span>
+                <span id="accountBalanceLabel" class="metric-label">余额</span>
                 <strong id="accountBalanceValue" class="metric-value">--</strong>
               </div>
               <div class="metric-pill">
-                <span class="metric-label">RH 币</span>
+                <span id="accountCoinsLabel" class="metric-label">RH 币</span>
                 <strong id="accountCoinsValue" class="metric-value">--</strong>
               </div>
             </div>
@@ -48,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.8.0</span>
+              <span class="version-text">v2.8.1</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -116,7 +116,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子（小T修图助手）2.8.0 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子（小T修图助手）2.8.1 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -131,7 +131,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.8.0</span>
+            <span class="version-text">v2.8.1</span>
           </div>
         </div>
 
@@ -302,7 +302,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.8.0</span>
+          <span class="version-text">v2.8.1</span>
           </div>
         </div>
 
@@ -503,21 +503,30 @@
           <details class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">主题设置</summary>
             <div class="form-stack collapsible-body">
-              <div class="theme-preset-grid" id="themePresetGrid">
-                <button class="theme-swatch is-selected" type="button" data-theme-preset="classic">
-                  <span style="background:#63d67b"></span><strong>经典</strong>
+              <div class="theme-preset-grid" id="themePresetGrid" role="group" aria-label="界面主题">
+                <button class="theme-swatch is-selected" type="button" data-theme-preset="classic" aria-pressed="true">
+                  <span style="--swatch-surface:#263746;--swatch-accent:#63d67b"></span><strong>经典</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="aurora">
-                  <span style="background:#74d8c7"></span><strong>极光</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="aurora" aria-pressed="false">
+                  <span style="--swatch-surface:#17424b;--swatch-accent:#74d8c7"></span><strong>极光</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="graphite">
-                  <span style="background:#9ab0c6"></span><strong>石墨</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="graphite" aria-pressed="false">
+                  <span style="--swatch-surface:#2a333d;--swatch-accent:#9ab0c6"></span><strong>石墨</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="rose">
-                  <span style="background:#ff9bb4"></span><strong>玫瑰</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="rose" aria-pressed="false">
+                  <span style="--swatch-surface:#422e48;--swatch-accent:#ff9bb4"></span><strong>玫瑰</strong>
                 </button>
-                <button class="theme-swatch" type="button" data-theme-preset="studio">
-                  <span style="background:#ffd56a"></span><strong>影棚</strong>
+                <button class="theme-swatch" type="button" data-theme-preset="studio" aria-pressed="false">
+                  <span style="--swatch-surface:#36392f;--swatch-accent:#ffd56a"></span><strong>影棚</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="minimal" aria-pressed="false">
+                  <span style="--swatch-surface:#202125;--swatch-accent:#e4e5e8"></span><strong>极简黑</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="mist" aria-pressed="false">
+                  <span style="--swatch-surface:#293136;--swatch-accent:#9fc7bd"></span><strong>雾银</strong>
+                </button>
+                <button class="theme-swatch" type="button" data-theme-preset="focus" aria-pressed="false">
+                  <span style="--swatch-surface:#1d2123;--swatch-accent:#d9b46c"></span><strong>专注</strong>
                 </button>
               </div>
               <label class="field">
@@ -541,42 +550,94 @@
                   <span>在工作台应用切换中显示“第三方 API”卡片</span>
                 </label>
               </label>
-              <div class="dual-grid">
+              <div class="field">
+                <span class="field-label">供应商</span>
+                <div id="thirdPartyProviderControl" class="region-segmented third-party-provider-control" role="group" aria-label="第三方 API 供应商">
+                  <button class="region-segmented-btn is-active" type="button" data-third-party-provider="grs" aria-pressed="true">
+                    <span>GRS</span><small>原有渠道</small>
+                  </button>
+                  <button class="region-segmented-btn" type="button" data-third-party-provider="gemini" aria-pressed="false">
+                    <span>Gemini</span><small>Aji / Momo</small>
+                  </button>
+                </div>
+              </div>
+              <div id="thirdPartyGrsSettingsGroup" class="third-party-provider-fields">
+                <div class="dual-grid">
+                  <div class="field">
+                    <span class="field-label">GRS 服务节点</span>
+                    <div id="thirdPartyGrsRegionControl" class="region-segmented" role="group" aria-label="GRS 服务节点">
+                      <button class="region-segmented-btn is-active" type="button" data-grs-region="cn" aria-pressed="true">
+                        <span>国内节点</span><small>直连</small>
+                      </button>
+                      <button class="region-segmented-btn" type="button" data-grs-region="global" aria-pressed="false">
+                        <span>国际节点</span><small>海外</small>
+                      </button>
+                    </div>
+                  </div>
+                  <label class="field">
+                    <span class="field-label">GRS API Key</span>
+                    <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="保存在宿主本地存储中" />
+                  </label>
+                </div>
+                <div class="dual-grid">
+                  <label class="field">
+                    <span class="field-label">默认生图模型</span>
+                    <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">AI 优化文本模型</span>
+                    <select id="thirdPartyGrsChatModelInput" class="field-input"></select>
+                  </label>
+                </div>
+                <div class="dual-grid">
+                  <label class="field">
+                    <span class="field-label">默认比例</span>
+                    <select id="thirdPartyGrsDefaultRatioInput" class="field-input"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">默认分辨率</span>
+                    <select id="thirdPartyGrsDefaultResolutionInput" class="field-input"></select>
+                  </label>
+                </div>
+              </div>
+              <div id="thirdPartyGeminiSettingsGroup" class="third-party-provider-fields" hidden>
                 <div class="field">
-                  <span class="field-label">GRS 服务节点</span>
-                  <div id="thirdPartyGrsRegionControl" class="region-segmented" role="group" aria-label="GRS 服务节点">
-                    <button class="region-segmented-btn is-active" type="button" data-grs-region="cn" aria-pressed="true">
-                      <span>国内节点</span><small>直连</small>
+                  <span class="field-label">NewAPI 渠道</span>
+                  <div id="thirdPartyGeminiChannelControl" class="region-segmented" role="group" aria-label="NewAPI 渠道">
+                    <button class="region-segmented-btn is-active" type="button" data-gemini-channel="aji" aria-pressed="true">
+                      <span>阿吉 Aji</span>
                     </button>
-                    <button class="region-segmented-btn" type="button" data-grs-region="global" aria-pressed="false">
-                      <span>国际节点</span><small>海外</small>
+                    <button class="region-segmented-btn" type="button" data-gemini-channel="momo" aria-pressed="false">
+                      <span>墨墨 Momo</span>
                     </button>
                   </div>
                 </div>
                 <label class="field">
-                  <span class="field-label">GRS API Key</span>
-                  <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
+                  <span class="field-label">渠道 API Key</span>
+                  <input id="thirdPartyGeminiApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="当前渠道独立保存" />
                 </label>
-              </div>
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">默认生图模型</span>
-                  <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
-                </label>
+                <div class="field">
+                  <label class="field-label" for="thirdPartyGeminiDefaultModelInput">默认生图模型</label>
+                  <div class="third-party-model-row">
+                    <select id="thirdPartyGeminiDefaultModelInput" class="field-input"></select>
+                    <button id="btnRefreshThirdPartyGeminiModels" class="mini-btn" type="button">刷新模型</button>
+                  </div>
+                </div>
                 <label class="field">
                   <span class="field-label">AI 优化文本模型</span>
-                  <select id="thirdPartyGrsChatModelInput" class="field-input"></select>
+                  <select id="thirdPartyGeminiChatModelInput" class="field-input"></select>
                 </label>
-              </div>
-              <div class="dual-grid">
-                <label class="field">
-                  <span class="field-label">默认比例</span>
-                  <select id="thirdPartyGrsDefaultRatioInput" class="field-input"></select>
-                </label>
-                <label class="field">
-                  <span class="field-label">默认分辨率</span>
-                  <select id="thirdPartyGrsDefaultResolutionInput" class="field-input"></select>
-                </label>
+                <div class="dual-grid">
+                  <label class="field">
+                    <span class="field-label">默认比例</span>
+                    <select id="thirdPartyGeminiDefaultRatioInput" class="field-input"></select>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">默认分辨率</span>
+                    <select id="thirdPartyGeminiDefaultResolutionInput" class="field-input"></select>
+                  </label>
+                </div>
+                <span class="field-hint settings-field-hint">模型列表来自当前渠道；刷新失败时会保留已保存模型。</span>
               </div>
               <div class="action-row">
                 <button id="btnSaveThirdPartySettings" class="primary-btn" type="button">保存第三方设置</button>
@@ -1272,7 +1333,7 @@
         </label>
         <label class="freq-sep-check-field">
           <input id="blendMatchAlignmentToggle" type="checkbox" checked />
-          <span>启用快速对齐</span>
+          <span>像素级精确对齐（处理较慢）</span>
         </label>
       </div>
 

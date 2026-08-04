@@ -22,6 +22,7 @@ const METHOD_FEATURES = Object.freeze({
   "photoshop.captureLicensedGlowPreview": "glow",
   "photoshop.placeLicensedGlowResult": "glow",
   "photoshop.captureLicensedSpaceFxPreview": "spaceFx",
+  "photoshop.captureLicensedSpaceFxSource": "spaceFx",
   "photoshop.placeLicensedSpaceFxResult": "spaceFx",
   "photoshop.placeResultWithBlendMatch": "blendMatch",
   "localUpscale.getHealth": "localUpscale",

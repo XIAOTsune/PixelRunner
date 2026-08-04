@@ -1667,7 +1667,9 @@ async function captureDocumentPreviewInternal(options = {}) {
   const captureBounds = contextBounds;
   const sourceWidth = Math.max(1, Number(captureBounds.right) - Number(captureBounds.left));
   const sourceHeight = Math.max(1, Number(captureBounds.bottom) - Number(captureBounds.top));
-  const targetSize = getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, options.maxPixels);
+  const targetSize = options.fullResolution === true
+    ? { width: sourceWidth, height: sourceHeight }
+    : getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, options.maxPixels);
   return core.executeAsModal(async () => {
     if (options.generativeFillCapture === true || options.readOnlySelectionCapture === true) {
       if (!selectionBounds || options.captureSelectionMask !== true) {
@@ -1735,9 +1737,23 @@ async function captureDocumentPreviewInternal(options = {}) {
         await activateDocument(app, action, Number(doc.id));
         selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
       }
-      const uploadAsset = options.useImagingUpload === true
-        ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
-        : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
+      const skipUploadAsset = options.skipUploadAsset === true;
+      const uploadAsset = skipUploadAsset
+        ? {
+            mimeType: "",
+            base64: "",
+            dataUrl: "",
+            bytes: 0,
+            width: targetSize.width,
+            height: targetSize.height,
+            quality: 0,
+            targetBytes: 0,
+            hardLimitBytes: 0,
+            attempts: []
+          }
+        : options.useImagingUpload === true
+          ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
+          : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
       let selectionMaskDataUrl = "";
       let selectionMaskShape = "none";
       let selectionMaskError = "";
@@ -1774,7 +1790,8 @@ async function captureDocumentPreviewInternal(options = {}) {
         let previewWidth = targetSize.width;
         let previewHeight = targetSize.height;
         let previewQuality = quality;
-        if (options.useImagingUpload === true) {
+        const captureFormat = String(options.captureFormat || "jpeg").toLowerCase() === "png" ? "png" : "jpeg";
+        if (options.useImagingUpload === true && !skipUploadAsset) {
           base64 = String(uploadAsset.base64 || "");
           previewWidth = Math.max(1, Number(uploadAsset.width) || targetSize.width);
           previewHeight = Math.max(1, Number(uploadAsset.height) || targetSize.height);
@@ -1788,13 +1805,15 @@ async function captureDocumentPreviewInternal(options = {}) {
             applyAlpha: true
           });
 
-          const encoded = await imaging.encodeImageData({
+          const encodeOptions = {
             imageData: pixels.imageData,
             base64: true,
-            format: "jpeg",
-            quality
-          });
+            format: captureFormat
+          };
+          if (captureFormat === "jpeg") encodeOptions.quality = quality;
+          const encoded = await imaging.encodeImageData(encodeOptions);
           base64 = extractEncodedBase64(encoded);
+          if (captureFormat === "png") previewQuality = 0;
         }
         if (!base64) throw new Error("Photoshop returned an empty capture payload");
         const result = {
@@ -1815,11 +1834,11 @@ async function captureDocumentPreviewInternal(options = {}) {
         height: previewHeight,
         originalWidth: sourceWidth,
         originalHeight: sourceHeight,
-        mimeType: "image/jpeg",
+        mimeType: captureFormat === "png" ? "image/png" : "image/jpeg",
         quality: previewQuality,
         maxDimension,
         base64,
-        dataUrl: buildDataUrl("image/jpeg", base64),
+        dataUrl: buildDataUrl(captureFormat === "png" ? "image/png" : "image/jpeg", base64),
         uploadMimeType: uploadAsset.mimeType,
         uploadBase64: uploadAsset.base64,
         uploadDataUrl: uploadAsset.dataUrl,
@@ -2076,15 +2095,19 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     localSourceFile = await getTemporaryFileByNativePath(
       storage.localFileSystem,
       filePath,
-      "未找到本地超分结果文件"
+      "未找到宿主临时结果文件"
     );
     const filename = filePath.split(/[\\/]/).pop() || "";
-    const extension = (filename.match(/\.([a-z0-9]+)$/i) || [])[1];
-    if (String(extension || "").toLowerCase() !== "png") {
-      throw new Error("本地超分结果必须为 PNG 文件");
-    }
-    localResultFileType = { extension: "png", mimeType: "image/png", detectedBy: "local-temporary-file" };
-    sourceMimeType = "image/png";
+    const extension = String((filename.match(/\.([a-z0-9]+)$/i) || [])[1] || "").toLowerCase();
+    const localTypes = {
+      png: { extension: "png", mimeType: "image/png" },
+      jpg: { extension: "jpg", mimeType: "image/jpeg" },
+      jpeg: { extension: "jpg", mimeType: "image/jpeg" },
+      webp: { extension: "webp", mimeType: "image/webp" }
+    };
+    if (!localTypes[extension]) throw new Error("宿主临时结果文件必须是 PNG、JPEG 或 WebP 图片");
+    localResultFileType = { ...localTypes[extension], detectedBy: "local-temporary-file" };
+    sourceMimeType = localResultFileType.mimeType;
     responseUrl = filePath;
   } else {
     const downloaded = await fetchBinaryWithMetadata(url, {

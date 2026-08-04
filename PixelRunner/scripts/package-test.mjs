@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -83,6 +83,7 @@ async function hardenReleasePackage(packageDir) {
 async function assertBundledLocalAiRuntime(packageDir) {
   const localAiDir = path.join(packageDir, "local-ai");
   const runtimeDir = path.join(localAiDir, "runtime");
+  const modelsDir = path.join(localAiDir, "engine", "models");
   const runtimeManifest = JSON.parse(await readFile(path.join(localAiDir, "runtime.json"), "utf8"));
   if (runtimeManifest.runtime !== "CPython" || runtimeManifest.distribution !== "embeddable") {
     throw new Error("The packaged Local AI runtime manifest is invalid");
@@ -91,6 +92,18 @@ async function assertBundledLocalAiRuntime(packageDir) {
     const runtimeFile = path.join(runtimeDir, name);
     await access(runtimeFile);
     if ((await stat(runtimeFile)).size <= 0) throw new Error(`The packaged Local AI runtime file is empty: ${name}`);
+  }
+  const expectedModels = ["realesrgan-x4plus.bin", "realesrgan-x4plus.param"];
+  const packagedModels = (await readdir(modelsDir))
+    .filter((name) => /\.(?:bin|param)$/i.test(name))
+    .sort();
+  if (JSON.stringify(packagedModels) !== JSON.stringify(expectedModels)) {
+    throw new Error(`The packaged Local AI models must contain x4plus only: ${packagedModels.join(", ")}`);
+  }
+  for (const name of expectedModels) {
+    if ((await stat(path.join(modelsDir, name))).size <= 0) {
+      throw new Error(`The packaged Local AI model file is empty: ${name}`);
+    }
   }
 }
 
@@ -127,9 +140,6 @@ async function main() {
   }
   await rm(path.join(packageDir, "local-ai", "__pycache__"), { recursive: true, force: true });
   await rm(path.join(packageDir, "local-ai", "python-3.12.10-embed-amd64.zip"), { force: true });
-  // The bundled NCNN executable supports the tested x4plus model only.
-  await rm(path.join(packageDir, "local-ai", "engine", "models", "realesrgan-x2plus.param"), { force: true });
-  await rm(path.join(packageDir, "local-ai", "engine", "models", "realesrgan-x2plus.bin"), { force: true });
   await assertBundledLocalAiRuntime(packageDir);
 
   console.log(`PixelRunner ${channel} package created at: ${packageDir}`);

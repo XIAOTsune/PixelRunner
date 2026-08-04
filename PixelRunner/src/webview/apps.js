@@ -97,9 +97,8 @@
     if (!isThirdPartyEnabled()) return "";
     const state = modules.state.state;
     const isActive = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
-    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
-    const region = modules.state.getGrsRegionConfig(grs.region, grs.apiUrl);
-    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>GRS · ${modules.runtime.escapeHtml(region.label)}</span><span>${modules.runtime.escapeHtml(String(grs.selectedModel || "未选择模型"))}</span></span></button>`;
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(descriptor.shortLabel)}</span><span>${modules.runtime.escapeHtml(String(descriptor.config.selectedModel || "未选择模型"))}</span></span></button>`;
   }
 
   function getGenerativeFillPickerButton() {
@@ -614,15 +613,21 @@
     const nextApp = modules.state.getThirdPartyApp();
     state.currentApp = nextApp;
     const defaults = modules.state.buildDefaultFormValues(nextApp);
-    const grs = state.thirdPartySettings && state.thirdPartySettings.grs ? state.thirdPartySettings.grs : {};
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    const config = descriptor.config;
     const rawLast = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_LAST_SELECTION);
     const last = modules.runtime.readJsonText(rawLast, {});
+    const matchingLast = last && typeof last === "object" &&
+      String(last.provider || "grs") === descriptor.id &&
+      (descriptor.id !== "gemini" || String(last.channelId || "") === String(descriptor.channelId || ""))
+      ? last
+      : {};
     state.formValues = {
       ...defaults,
-      model: grs.selectedModel || defaults.model || "",
-      aspectRatio: grs.aspectRatio || defaults.aspectRatio || "1:1",
-      resolution: grs.resolution || defaults.resolution || "1K",
-      ...(last && typeof last === "object" ? last : {})
+      model: config.selectedModel || defaults.model || "",
+      aspectRatio: config.aspectRatio || defaults.aspectRatio || "auto",
+      resolution: config.resolution || defaults.resolution || "1K",
+      ...matchingLast
     };
     modules.workspace.updateThirdPartyDynamicOptions(state.formValues.model);
     await persistCurrentAppId(modules.state.THIRD_PARTY_APP_ID);
@@ -635,7 +640,7 @@
     modules.workspace.renderWorkspace();
     renderSavedAppsList();
     renderAppPickerList();
-    if (!options.quiet) modules.ui.logToWorkspace("已选择第三方 API：GRS 生图入口");
+    if (!options.quiet) modules.ui.logToWorkspace(`已选择第三方 API：${descriptor.label} 生图入口`);
     return true;
   }
 

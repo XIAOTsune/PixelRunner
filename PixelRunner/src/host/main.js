@@ -9,12 +9,22 @@ import {
 } from "./runninghub.js";
 import {
   cancelThirdPartyGrsTask,
+  fetchThirdPartyGrsAccountStatus,
   fetchThirdPartyGrsTaskStatus,
   listThirdPartyGrsModels,
   pollThirdPartyGrsTask,
   runThirdPartyGrsPromptOptimize,
   submitThirdPartyGrsTask
 } from "./third-party-grs.js";
+import {
+  cancelThirdPartyGeminiTask,
+  fetchThirdPartyGeminiAccountStatus,
+  fetchThirdPartyGeminiTaskStatus,
+  listThirdPartyGeminiModels,
+  pollThirdPartyGeminiTask,
+  runThirdPartyGeminiPromptOptimize,
+  submitThirdPartyGeminiTask
+} from "./third-party-gemini.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
 import { openTextFile, saveTextFile } from "./files.js";
 import {
@@ -327,6 +337,9 @@ async function handleBridgeRequest(message, responseTarget) {
       case "thirdParty.grs.fetchTaskStatus":
         result = await fetchThirdPartyGrsTaskStatus(message.args);
         break;
+      case "thirdParty.grs.fetchAccountStatus":
+        result = await fetchThirdPartyGrsAccountStatus(message.args);
+        break;
       case "thirdParty.grs.cancelTask":
         result = await cancelThirdPartyGrsTask(message.args);
         break;
@@ -336,19 +349,59 @@ async function handleBridgeRequest(message, responseTarget) {
       case "thirdParty.grs.optimizePrompt":
         result = await runThirdPartyGrsPromptOptimize(message.args);
         break;
+      case "thirdParty.gemini.submitTask":
+        result = await submitThirdPartyGeminiTask(message.args);
+        break;
+      case "thirdParty.gemini.pollTask":
+        result = await pollThirdPartyGeminiTask(message.args);
+        break;
+      case "thirdParty.gemini.fetchTaskStatus":
+        result = await fetchThirdPartyGeminiTaskStatus(message.args);
+        break;
+      case "thirdParty.gemini.fetchAccountStatus":
+        result = await fetchThirdPartyGeminiAccountStatus(message.args);
+        break;
+      case "thirdParty.gemini.cancelTask":
+        result = await cancelThirdPartyGeminiTask(message.args);
+        break;
+      case "thirdParty.gemini.listModels":
+        result = await listThirdPartyGeminiModels(message.args);
+        break;
+      case "thirdParty.gemini.optimizePrompt":
+        result = await runThirdPartyGeminiPromptOptimize(message.args);
+        break;
       case "photoshop.getActiveDocumentInfo":
         result = await enqueuePhotoshopBridgeOperation(message, () => getPhotoshopDocumentInfo(), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.DOCUMENT_INFO
         });
         break;
       case "photoshop.captureDocumentPreview":
-        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args), {
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
+          fullResolution: false,
+          skipUploadAsset: false
+        }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;
       case "photoshop.captureLicensedGlowPreview":
       case "photoshop.captureLicensedSpaceFxPreview":
-        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview(message.args), {
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
+          fullResolution: false,
+          skipUploadAsset: false
+        }]), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
+      case "photoshop.captureLicensedSpaceFxSource":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          expectedDocumentId: Number(message.args && message.args[0] && message.args[0].expectedDocumentId) || 0,
+          fullResolution: true,
+          skipUploadAsset: true,
+          captureFormat: "png",
+          ignoreSelection: true
+        }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;

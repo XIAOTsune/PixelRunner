@@ -132,10 +132,11 @@ const hostEnforcer = createHostLicenseEnforcer({ storage: hostStorage, keyring: 
 const protectedRequests = [
   { feature: "glow", counter: "glow", request: { method: "photoshop.captureLicensedGlowPreview", args: [{}] } },
   { feature: "spaceFx", counter: "spaceFx", request: { method: "photoshop.captureLicensedSpaceFxPreview", args: [{}] } },
+  { feature: "spaceFx", counter: "spaceFxSource", request: { method: "photoshop.captureLicensedSpaceFxSource", args: [{}] } },
   { feature: "blendMatch", counter: "blendMatchAnalysis", request: { method: "photoshop.runToolAction", args: [{ action: "blendMatchPreviewSamples" }] } },
   { feature: "localUpscale", counter: "localUpscaleRequest", request: { method: "localUpscale.startEngine", args: [] } }
 ];
-const executionCounters = { glow: 0, spaceFx: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
+const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
 function invokeProtectedTask(item) {
   hostEnforcer.assertBridgeRequest(item.request);
   executionCounters[item.counter] += 1;
@@ -156,6 +157,7 @@ for (const item of protectedRequests) {
 }
 assert.equal(executionCounters.glow, 1, "authorized glow enters its original Host path");
 assert.equal(executionCounters.spaceFx, 1, "authorized space FX enters its original Host path");
+assert.equal(executionCounters.spaceFxSource, 1, "authorized full-resolution space FX capture enters its Host path");
 assert.equal(executionCounters.blendMatchAnalysis, 1, "authorized blend-match enters its original Host path");
 assert.equal(executionCounters.localUpscaleRequest, 1, "authorized local-upscale enters its original Host path");
 

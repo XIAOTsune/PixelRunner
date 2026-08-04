@@ -55,7 +55,8 @@ export async function placeResultIntoPhotoshop(args = [], runtime = {}) {
   const url = String(payload.url || "").trim();
   const dataUrl = String(payload.dataUrl || "").trim();
   const base64 = String(payload.base64 || "").trim();
-  if (!url && !dataUrl && !base64) {
+  const filePath = String(payload.filePath || "").trim();
+  if (!url && !dataUrl && !base64 && !filePath) {
     throw new Error("Result image is missing");
   }
 
