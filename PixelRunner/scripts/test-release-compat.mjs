@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -32,13 +32,15 @@ try {
     outputDir
   ], { cwd: rootDir });
 
-  for (const bundleName of ["host.bundle.js", "app.bundle.js"]) {
+  for (const bundleName of ["core.bundle.js", "host.bundle.js", "app.bundle.js"]) {
     const bundlePath = path.join(outputDir, bundleName);
     const bundle = await readFile(bundlePath, "utf8");
     assert.ok(bundle.length > 0, `${bundleName} is generated`);
     assert.doesNotMatch(bundle, /\b_0x[\da-f]+\b/i, `${bundleName} is not obfuscated in the compatibility release`);
+    assert.doesNotMatch(bundle, /sourceMappingURL\s*=/i, `${bundleName} does not expose a source map`);
     await execFileAsync(process.execPath, ["--check", bundlePath]);
   }
+  assert.equal((await readdir(outputDir)).filter((name) => name.endsWith(".map")).length, 0, "release output has no source maps");
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

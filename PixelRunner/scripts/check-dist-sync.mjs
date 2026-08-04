@@ -39,9 +39,9 @@ async function assertBundleMatches({ name, entryPoint, outfile, buildOptions }) 
       entryPoints: [entryPoint],
       outfile: tempOutfile
     });
-    if (releaseMode && obfuscateRelease) {
+    if (releaseMode && obfuscateRelease && name.includes("core")) {
       const { obfuscateReleaseBundle } = await import("./release-obfuscation.mjs");
-      await obfuscateReleaseBundle(tempOutfile, name.includes("host") ? "host" : "webview");
+      await obfuscateReleaseBundle(tempOutfile, "webview-core");
     }
     const currentText = await readNormalized(outfile);
     const generatedText = await readNormalized(tempOutfile);
@@ -57,6 +57,16 @@ async function assertBundleMatches({ name, entryPoint, outfile, buildOptions }) 
 }
 
 async function main() {
+  await assertBundleMatches({
+    name: "dist/core.bundle.js",
+    entryPoint: path.join(rootDir, "src", "webview-core-entry.js"),
+    outfile: path.join(rootDir, "dist", "core.bundle.js"),
+    buildOptions: {
+      format: "iife",
+      globalName: "PixelRunnerCoreBundle"
+    }
+  });
+
   await assertBundleMatches({
     name: "dist/app.bundle.js",
     entryPoint: path.join(rootDir, "src", "webview-entry.js"),

@@ -5,14 +5,14 @@ const require = createRequire(import.meta.url);
 const { obfuscate } = require("javascript-obfuscator");
 
 const BUNDLE_SEEDS = {
-  webview: 186431927,
-  host: 593018447
+  "webview-core": 186431927
 };
 
 const RESERVED_RUNTIME_NAMES = [
   "^PixelRunnerModules$",
   "^PixelRunnerHost$",
   "^PixelRunnerWebviewBundle$",
+  "^PixelRunnerCoreBundle$",
   "^PixelRunnerHostBundle$",
   "^require$",
   "^module$",

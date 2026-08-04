@@ -28,6 +28,14 @@ const sharedOptions = {
   legalComments: releaseMode ? "none" : "eof"
 };
 
+const coreConfig = {
+  ...sharedOptions,
+  entryPoints: [path.join(rootDir, "src", "webview-core-entry.js")],
+  outfile: path.join(distDir, "core.bundle.js"),
+  format: "iife",
+  globalName: "PixelRunnerCoreBundle"
+};
+
 const webviewConfig = {
   ...sharedOptions,
   entryPoints: [path.join(rootDir, "src", "webview-entry.js")],
@@ -48,6 +56,8 @@ const hostConfig = {
 
 async function cleanBundleArtifacts() {
   await Promise.all([
+    rm(path.join(distDir, "core.bundle.js"), { force: true }),
+    rm(path.join(distDir, "core.bundle.js.map"), { force: true }),
     rm(path.join(distDir, "app.bundle.js"), { force: true }),
     rm(path.join(distDir, "app.bundle.js.map"), { force: true }),
     rm(path.join(distDir, "host.bundle.js"), { force: true }),
@@ -59,8 +69,10 @@ async function runBuild() {
   await mkdir(distDir, { recursive: true });
 
   if (watchMode) {
+    const coreContext = await context(coreConfig);
     const webviewContext = await context(webviewConfig);
     const hostContext = await context(hostConfig);
+    await coreContext.watch();
     await webviewContext.watch();
     await hostContext.watch();
     console.log("Watching PixelRunner bundles...");
@@ -68,14 +80,14 @@ async function runBuild() {
   }
 
   await cleanBundleArtifacts();
+  await build(coreConfig);
   await build(webviewConfig);
   await build(hostConfig);
   if (releaseMode && obfuscateRelease) {
-    // Obfuscation is a release-only friction layer. It does not encrypt code
-    // and is intentionally kept out of development and hot runtime paths.
+    // Only the isolated product core is transformed. Host glue, manifest-facing
+    // code, and runtime protocols remain conventional UXP-compatible bundles.
     const { obfuscateReleaseBundle } = await import("./release-obfuscation.mjs");
-    await obfuscateReleaseBundle(webviewConfig.outfile, "webview");
-    await obfuscateReleaseBundle(hostConfig.outfile, "host");
+    await obfuscateReleaseBundle(coreConfig.outfile, "webview-core");
   }
   console.log(`PixelRunner ${releaseMode ? "release" : "development"} bundles built successfully.`);
 }

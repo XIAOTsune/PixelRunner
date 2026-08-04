@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const releaseRoot = path.join(rootDir, "release");
 export const RELEASE_PRODUCT_NAME = "像素起子";
+export const HARDENED_RELEASE_SUFFIX = "-加固版";
 
 async function readManifestVersion() {
   const manifestPath = path.join(rootDir, "manifest.json");
@@ -21,12 +22,16 @@ function getBuildChannel() {
   return process.argv.includes("--release") ? "release" : "test";
 }
 
-export function getReleasePackageNames(version) {
-  const packageDirName = `${RELEASE_PRODUCT_NAME}V${version}`;
+function isHardenedRelease() {
+  return process.argv.includes("--hardened");
+}
+
+export function getReleasePackageNames(version, { hardened = false } = {}) {
+  const packageDirName = `${RELEASE_PRODUCT_NAME}V${version}${hardened ? HARDENED_RELEASE_SUFFIX : ""}`;
   return { packageDirName, packageZipName: `${packageDirName}.zip` };
 }
 
-function getIncludedEntries(version, channel) {
+function getIncludedEntries(version, channel, hardened) {
   const entries = [
     "manifest.json",
     "LICENSE",
@@ -47,7 +52,7 @@ function getIncludedEntries(version, channel) {
   }
 
   return {
-    ...getReleasePackageNames(version),
+    ...getReleasePackageNames(version, { hardened }),
     entries
   };
 }
@@ -158,7 +163,9 @@ function createZipArchive(files) {
 async function createReleaseArchive(packageDir, archivePath) {
   const temporaryArchivePath = `${archivePath}.tmp`;
   await rm(temporaryArchivePath, { force: true });
-  await writeFile(temporaryArchivePath, createZipArchive(await collectZipFiles(packageDir)));
+  const archiveFiles = await collectZipFiles(packageDir);
+  assertReleaseArchiveSafety(archiveFiles);
+  await writeFile(temporaryArchivePath, createZipArchive(archiveFiles));
   await rm(archivePath, { force: true });
   await rename(temporaryArchivePath, archivePath);
 }
@@ -183,13 +190,15 @@ function runCommand(command, args, options = {}) {
   });
 }
 
-async function buildReleaseDist(packageDir) {
-  await runCommand(process.execPath, [
+async function buildReleaseDist(packageDir, hardened) {
+  const args = [
     path.join(rootDir, "scripts", "build.mjs"),
     "--release",
     "--outdir",
     path.join(packageDir, "dist")
-  ]);
+  ];
+  if (hardened) args.push("--obfuscate");
+  await runCommand(process.execPath, args);
 }
 
 async function hardenReleasePackage(packageDir) {
@@ -225,10 +234,70 @@ async function assertBundledLocalAiRuntime(packageDir) {
   }
 }
 
+const FORBIDDEN_ARCHIVE_PATH_SEGMENTS = new Set([
+  ".git",
+  "node_modules",
+  "scripts",
+  "src",
+  "tests"
+]);
+const FORBIDDEN_ARCHIVE_FILE_NAMES = [
+  /\.map$/i,
+  /\.(?:pem|key|pfx|p12)$/i,
+  /^\.env(?:\.|$)/i,
+  /^license-issuer(?:[.-]|$)/i,
+  /激活码生成器/i
+];
+const TEXT_ARCHIVE_EXTENSIONS = new Set([".css", ".html", ".js", ".json", ".md", ".py", ".txt", ".vbs"]);
+const SENSITIVE_ARCHIVE_CONTENT = [
+  /-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----/i,
+  /PIXELRUNNER_LICENSE_PRIVATE_KEY_PEM/,
+  /--allow-embedded-private-key/,
+  /sourceMappingURL\s*=/i
+];
+const REQUIRED_RELEASE_FILES = [
+  "manifest.json",
+  "index.html",
+  "app.html",
+  "dist/app.bundle.js",
+  "dist/core.bundle.js",
+  "dist/host.bundle.js"
+];
+
+function assertReleaseArchiveSafety(files) {
+  const archiveNames = new Set(files.map((file) => file.name));
+  for (const requiredName of REQUIRED_RELEASE_FILES) {
+    if (!archiveNames.has(requiredName)) throw new Error(`发布 ZIP 缺少运行时文件：${requiredName}`);
+  }
+
+  for (const file of files) {
+    const normalizedName = String(file.name || "").replace(/\\/g, "/");
+    const segments = normalizedName.split("/");
+    const baseName = segments.at(-1) || "";
+    if (segments.some((segment) => FORBIDDEN_ARCHIVE_PATH_SEGMENTS.has(segment.toLowerCase()))) {
+      throw new Error(`发布 ZIP 包含禁止的开发目录：${normalizedName}`);
+    }
+    if (FORBIDDEN_ARCHIVE_FILE_NAMES.some((pattern) => pattern.test(baseName))) {
+      throw new Error(`发布 ZIP 包含禁止的敏感文件：${normalizedName}`);
+    }
+    if (path.extname(baseName).toLowerCase() === ".py" && normalizedName !== "local-ai/server.py") {
+      throw new Error(`发布 ZIP 仅允许受控的 Local AI Python 运行时入口：${normalizedName}`);
+    }
+    if (!TEXT_ARCHIVE_EXTENSIONS.has(path.extname(baseName).toLowerCase())) continue;
+    const text = file.bytes.toString("utf8");
+    const matchedPattern = SENSITIVE_ARCHIVE_CONTENT.find((pattern) => pattern.test(text));
+    if (matchedPattern) {
+      throw new Error(`发布 ZIP 包含敏感内容 ${matchedPattern}: ${normalizedName}`);
+    }
+  }
+}
+
 async function main() {
   const version = await readManifestVersion();
   const channel = getBuildChannel();
-  const { packageDirName, packageZipName, entries } = getIncludedEntries(version, channel);
+  const hardened = isHardenedRelease();
+  if (hardened && channel !== "release") throw new Error("--hardened 仅能与 --release 一起使用");
+  const { packageDirName, packageZipName, entries } = getIncludedEntries(version, channel, hardened);
   const packageDir = path.join(releaseRoot, packageDirName);
   const packageZip = path.join(releaseRoot, packageZipName);
   const packageDocs = [
@@ -249,7 +318,7 @@ async function main() {
   }
 
   if (channel === "release") {
-    await buildReleaseDist(packageDir);
+    await buildReleaseDist(packageDir, hardened);
     await hardenReleasePackage(packageDir);
   }
 
@@ -259,12 +328,24 @@ async function main() {
   }
   await rm(path.join(packageDir, "local-ai", "__pycache__"), { recursive: true, force: true });
   await rm(path.join(packageDir, "local-ai", "python-3.12.10-embed-amd64.zip"), { force: true });
+  for (const relativePath of [
+    "README.md",
+    "pixelrunner-local-ai.log",
+    "test_server.py",
+    "engine/README_windows.md",
+    "engine/input.jpg",
+    "engine/input2.jpg",
+    "engine/onepiece_demo.mp4"
+  ]) {
+    await rm(path.join(packageDir, "local-ai", relativePath), { force: true });
+  }
   await assertBundledLocalAiRuntime(packageDir);
 
   if (channel === "release") {
     await createReleaseArchive(packageDir, packageZip);
-    console.log(`${RELEASE_PRODUCT_NAME} release package created at: ${packageDir}`);
-    console.log(`${RELEASE_PRODUCT_NAME} release archive created at: ${packageZip}`);
+    const releaseLabel = `${RELEASE_PRODUCT_NAME}${hardened ? " hardened" : ""} release`;
+    console.log(`${releaseLabel} package created at: ${packageDir}`);
+    console.log(`${releaseLabel} archive created at: ${packageZip}`);
     return;
   }
   console.log(`${RELEASE_PRODUCT_NAME} ${channel} package created at: ${packageDir}`);

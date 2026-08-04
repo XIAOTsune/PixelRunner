@@ -22,11 +22,16 @@ assert.deepEqual(getReleasePackageNames(manifest.version), {
   packageDirName: "像素起子V2.8.2",
   packageZipName: "像素起子V2.8.2.zip"
 });
+assert.deepEqual(getReleasePackageNames(manifest.version, { hardened: true }), {
+  packageDirName: "像素起子V2.8.2-加固版",
+  packageZipName: "像素起子V2.8.2-加固版.zip"
+});
 for (const source of [indexHtml, appHtml, hostMain]) {
   assert.doesNotMatch(source, /像素起子（小T修图助手）/);
 }
 assert.match(indexHtml, /<title>像素起子<\/title>/);
 assert.match(appHtml, /<title>像素起子<\/title>/);
+assert.match(appHtml, /<script src="dist\/core\.bundle\.js"><\/script>/);
 assert.match(hostMain, /像素起子 WebView/);
 
 console.log("Release naming and package contract checks passed.");
