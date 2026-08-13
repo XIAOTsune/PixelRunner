@@ -15,16 +15,16 @@ assert.equal(RELEASE_PRODUCT_NAME, "像素起子");
 assert.equal(manifest.id, "com.tsune.pixelrunner");
 assert.equal(manifest.name, RELEASE_PRODUCT_NAME);
 assert.equal(manifest.entrypoints[0].label.default, RELEASE_PRODUCT_NAME);
-assert.equal(manifest.version, "2.8.2");
+assert.equal(manifest.version, "2.8.3");
 assert.equal(packageJson.name, "pixelrunner-uxp");
 assert.equal(packageJson.version, manifest.version);
 assert.deepEqual(getReleasePackageNames(manifest.version), {
-  packageDirName: "像素起子V2.8.2",
-  packageZipName: "像素起子V2.8.2.zip"
+  packageDirName: "像素起子V2.8.3",
+  packageZipName: "像素起子V2.8.3.zip"
 });
 assert.deepEqual(getReleasePackageNames(manifest.version, { hardened: true }), {
-  packageDirName: "像素起子V2.8.2-加固版",
-  packageZipName: "像素起子V2.8.2-加固版.zip"
+  packageDirName: "像素起子V2.8.3-加固版",
+  packageZipName: "像素起子V2.8.3-加固版.zip"
 });
 for (const source of [indexHtml, appHtml, hostMain]) {
   assert.doesNotMatch(source, /像素起子（小T修图助手）/);

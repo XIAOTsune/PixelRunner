@@ -42,6 +42,7 @@ import {
   submitLocalUpscaleJob
 } from "./local-upscale.js";
 import {
+  cacheResultForPhotoshop,
   capturePhotoshopDocumentPreview,
   capturePhotoshopDocumentForLocalUpscale,
   deletePhotoshopSelectionSnapshot,
@@ -420,6 +421,9 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await enqueuePhotoshopBridgeOperation(message, () => runPhotoshopToolAction(message.args), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.STANDARD
         });
+        break;
+      case "photoshop.cacheResultFromUrl":
+        result = await cacheResultForPhotoshop(message.args);
         break;
       case "photoshop.placeResultFromUrl":
         result = await runDeduplicatedPhotoshopPlacement(

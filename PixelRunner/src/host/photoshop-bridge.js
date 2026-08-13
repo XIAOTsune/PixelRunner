@@ -84,6 +84,25 @@ export async function placeResultIntoPhotoshop(args = [], runtime = {}) {
   return photoshopService.placeImageFromUrl(payload, runtime);
 }
 
+export async function cacheResultForPhotoshop(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const url = String(payload.url || "").trim();
+  if (!url) throw new Error("Result image URL is missing");
+
+  const photoshopService = getPhotoshopService();
+  if (typeof photoshopService.placeImageFromUrl !== "function") {
+    throw new Error("Photoshop host service is unavailable");
+  }
+
+  return photoshopService.placeImageFromUrl({
+    ...payload,
+    dataUrl: "",
+    base64: "",
+    filePath: "",
+    cacheOnly: true
+  });
+}
+
 export async function openLocalUpscaleResultInPhotoshop(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const photoshopService = getPhotoshopService();

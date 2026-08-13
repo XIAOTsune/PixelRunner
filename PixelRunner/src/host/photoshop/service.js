@@ -9,6 +9,7 @@ import {
   activateDocument,
   buildDataUrl,
   ensureActiveDocument,
+  findOpenDocumentById,
   getDocumentInfo,
   normalizeBitsPerChannel,
   normalizeBounds
@@ -2080,7 +2081,12 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const core = photoshop.core;
   const action = photoshop.action;
 
-  if (!app || !app.activeDocument) throw new Error("No active Photoshop document");
+  if (!app) throw new Error("Photoshop application is unavailable");
+  const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
+  if (targetDocumentId > 0 && !findOpenDocumentById(app, targetDocumentId)) {
+    throw new Error(`Target document is unavailable: #${targetDocumentId}`);
+  }
+  if (!app.activeDocument) throw new Error("No active Photoshop document");
 
   let buffer = null;
   let sourceMimeType = "";
@@ -2190,6 +2196,21 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       throw error;
     }
   }
+  if (options.cacheOnly === true) {
+    const cachedFilePath = String(tempFile && tempFile.nativePath || "").trim();
+    if (!cachedFilePath) {
+      if (!localSourceFile) await deleteFileQuietly(tempFile);
+      throw new Error("Photoshop 未返回结果缓存文件路径");
+    }
+    return {
+      ok: true,
+      cached: true,
+      filePath: cachedFilePath,
+      resultFormat: resultFileType.extension,
+      byteLength: placementByteLength,
+      mimeType: sourceMimeType || resultFileType.mimeType
+    };
+  }
   let sessionToken = "";
   try {
     sessionToken = await fs.createSessionToken(tempFile);
@@ -2230,7 +2251,6 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     ]);
     throw new Error("创成式填充缺少不规则选区蒙版，已停止回贴以避免生成矩形蒙版");
   }
-  const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
   const targetBounds = normalizeBounds(options.targetBounds);
   const maskFallbackBounds = normalizeBounds(options.maskFallbackBounds);
   const normalizedMode = String(options.fitMode || "contain").trim().toLowerCase();
@@ -2427,13 +2447,16 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const enqueuePhotoshopOperation = runtime && typeof runtime.enqueuePhotoshopOperation === "function"
     ? runtime.enqueuePhotoshopOperation
     : null;
+  let placementCompleted = false;
   try {
-    return await (enqueuePhotoshopOperation
+    const response = await (enqueuePhotoshopOperation
       ? enqueuePhotoshopOperation(commitPlacement, { stage: "placing" })
       : commitPlacement());
+    placementCompleted = true;
+    return response;
   } finally {
     await Promise.all([
-      shouldDeleteTempFile ? deleteFileQuietly(tempFile) : Promise.resolve(),
+      shouldDeleteTempFile && (!localSourceFile || placementCompleted) ? deleteFileQuietly(tempFile) : Promise.resolve(),
       deleteFileQuietly(placementMaskFile)
     ]);
   }

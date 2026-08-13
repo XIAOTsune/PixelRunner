@@ -2007,6 +2007,11 @@ button {
   font-size: 11px;
 }
 
+.running-task-reassign-btn {
+  max-width: none;
+  white-space: nowrap;
+}
+
 .running-task-detail-btn {
   --btn-edge: var(--control-edge);
   --btn-shadow: var(--control-edge);

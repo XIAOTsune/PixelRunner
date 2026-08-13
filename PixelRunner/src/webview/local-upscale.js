@@ -14,7 +14,7 @@
   );
   const LOCAL_AI_BASE_URL = LOCAL_AI_BASE_URLS[0];
   const LOCAL_AI_PROTOCOL_VERSION = "2";
-  const LOCAL_AI_BUILD_ID = "PixelRunnerV2.8.2-local-ai-bundled-runtime";
+  const LOCAL_AI_BUILD_ID = "PixelRunnerV2.8.3-local-ai-bundled-runtime";
   const STATUS_LABELS = {
     queued: "正在排队",
     running: "正在推理",
