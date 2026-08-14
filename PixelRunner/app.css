@@ -1141,6 +1141,44 @@ button {
   background: rgba(12, 22, 31, 0.42);
 }
 
+.generative-fill-source-row {
+  display: grid;
+  grid-template-columns: auto minmax(190px, 1fr);
+  align-items: center;
+  gap: 6px 9px;
+  margin-top: 12px;
+}
+
+.generative-fill-source-label {
+  color: var(--text-strong);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.generative-fill-source-control {
+  justify-self: stretch;
+}
+
+.generative-fill-source-control .region-segmented-btn:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.generative-fill-source-meta {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.generative-fill-source-meta.is-error {
+  color: #ffb5b5;
+}
+
 .generative-fill-selection-status {
   display: flex;
   align-items: center;
@@ -1446,6 +1484,15 @@ button {
   .generative-fill-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .generative-fill-source-row {
+    grid-template-columns: 1fr;
+  }
+
+  .generative-fill-source-meta {
+    grid-column: 1;
+    white-space: normal;
   }
 
   .generative-fill-submit-btn {
@@ -1958,6 +2005,11 @@ button {
   border-radius: 10px;
   padding: 0 8px;
   font-size: 11px;
+}
+
+.running-task-reassign-btn {
+  max-width: none;
+  white-space: nowrap;
 }
 
 .running-task-detail-btn {
@@ -2631,17 +2683,6 @@ button {
   .blend-match-controls,
   .blend-match-actions {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 430px) {
-  .tool-blend-match-launcher {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  #viewTools .blend-match-open-btn {
-    width: 100%;
   }
 }
 
@@ -3597,7 +3638,8 @@ button {
 #viewTools .tool-item p,
 #viewTools .tool-glow-card .subtle-note,
 #viewTools .tool-space-fx-card .subtle-note,
-#viewTools .tool-blend-match-card .subtle-note {
+#viewTools .tool-blend-match-card .subtle-note,
+#viewTools .tool-local-upscale-card .subtle-note {
   display: -webkit-box;
   overflow: hidden;
   line-height: 1.35;
@@ -6767,17 +6809,11 @@ button {
   gap: 8px;
 }
 
-.local-upscale-engine-meta,
 .local-upscale-progress-meta {
   min-width: 0;
   color: var(--muted);
   font-size: 10px;
   line-height: 1.35;
-}
-
-.local-upscale-engine-meta {
-  display: block;
-  margin-top: 6px;
 }
 
 .local-upscale-controls {

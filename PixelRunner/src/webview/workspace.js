@@ -1,24 +1,14 @@
-﻿(function initWorkspaceModule(global) {
+(function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const RUN_BUTTON_COOLDOWN_MS = 1500;
+  const RUN_BUTTON_COOLDOWN_MS = 600;
   const TASK_CARD_LIMIT = 24;
   const TASK_TRACKING_INTERVAL_MS = 15000;
   const TASK_TRACKING_MAX_TEMP_FAILURES = 6;
   const AUTO_PLACEMENT_MAX_TEMP_FAILURES = 8;
-  const GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS = Object.freeze({
-    mode: "natural",
-    totalStrength: 64,
-    luminanceStrength: 70,
-    colorStrength: 68,
-    saturationStrength: 0,
-    contrastStrength: 0,
-    featherRadius: 0,
-    createBackupLayer: true,
-    pixelPipelineEnabled: true,
-    alignmentEnabled: false,
-    alignmentScaleEnabled: false,
-    localAlignmentEnabled: false
-  });
+  const AUTO_PLACEMENT_BLOCKED_MAX_WAIT_MS = 120000;
+  const AUTO_PLACEMENT_RETRY_DELAYS_MS = Object.freeze([2000, 4000, 7000, 10000]);
+  const RESULT_DOWNLOAD_MAX_TEMP_FAILURES = 4;
+  const RESULT_DOWNLOAD_RETRY_DELAYS_MS = Object.freeze([5000, 15000, 30000]);
   const RUNNINGHUB_TASK_DETAIL_URLS = {
     cn: "https://www.runninghub.cn/bill-task",
     global: "https://www.runninghub.ai/bill-task"
@@ -31,11 +21,17 @@
   let accountSettlementChain = Promise.resolve(null);
   const thirdPartyAccountRefreshPromises = new Map();
   let autoPlacementRetryTimer = 0;
+  let autoPlacementRetryDueAt = 0;
   let autoPlacementProcessing = false;
+  let resultDownloadRetryTimer = 0;
+  let resultDownloadRetryDueAt = 0;
+  let resultDownloadProcessing = false;
   let captureInProgress = false;
+  let captureInFlightCount = 0;
   const taskTrackingTimers = new Map();
   const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
+  const pendingResultDownloads = new Map();
   const pendingRunSubmissions = new Map();
   const activeRunSubmissions = new Set();
   let runSubmissionFlushScheduled = false;
@@ -694,6 +690,10 @@
     return ["succeeded", "success", "done", "failed", "error", "cancelled", "canceled", "placement-failed"].includes(normalized);
   }
 
+  function isTaskRemoteCompleteStatus(status) {
+    return ["downloading", "placing"].includes(String(status || "").trim().toLowerCase());
+  }
+
   function isLocalQueuedTask(task) {
     return Boolean(task && String(task.queueMode || "").trim() === "local" && String(task.status || "").trim().toLowerCase() === "queued");
   }
@@ -719,6 +719,21 @@
       task &&
       typeof task === "object" &&
       String(task.status || "").trim().toLowerCase() === "placement-failed" &&
+      task.placementRetryable !== false &&
+      !isTaskTargetDocumentUnavailable(task) &&
+      hasResultReference(task)
+    );
+  }
+
+  function isTaskTargetDocumentUnavailable(task) {
+    return Boolean(
+      task &&
+      typeof task === "object" &&
+      String(task.status || "").trim().toLowerCase() === "placement-failed" &&
+      (
+        String(task.placementErrorType || "").trim() === "target-document" ||
+        isAutoPlacementTargetDocumentError(task.detail || task.errorMessage || "")
+      ) &&
       hasResultReference(task)
     );
   }
@@ -903,7 +918,11 @@
   }
 
   function getActiveRunningTasks() {
-    return getRunningTasks().filter((task) => !isTaskTerminalStatus(task.status) && !isLocalQueuedTask(task));
+    return getRunningTasks().filter((task) =>
+      !isTaskTerminalStatus(task.status) &&
+      !isTaskRemoteCompleteStatus(task.status) &&
+      !isLocalQueuedTask(task)
+    );
   }
 
   function getLocalQueuedTasks() {
@@ -1023,7 +1042,7 @@
     if (normalized === "tracking") return "本地等待已超时，插件正在后台追踪云端状态。";
     if (normalized === "remote-running") return "云端仍在运行，本地已切换为后台追踪。";
     if (normalized === "downloading") return "任务已完成，正在下载结果图。";
-    if (normalized === "placing") return "任务已完成，正在下载结果并贴回 Photoshop。";
+    if (normalized === "placing") return "任务已完成，正在等待或执行 Photoshop 回贴。";
     if (normalized === "placement-failed") return String(task.detail || "任务已完成，但自动贴回失败。请点击重试。");
     if (normalized === "timeout") return "本地等待超时，尚未确认云端最终状态。";
     if (normalized === "succeeded" || normalized === "success" || normalized === "done") return "任务已完成。";
@@ -1467,6 +1486,7 @@
         const canCancel = isTaskCancellable(task);
         const canDelete = isTaskDeletable(task);
         const canRetryPlacement = isTaskPlacementRetryable(task);
+        const canReassignPlacement = isTaskTargetDocumentUnavailable(task);
         const canOpenAction = canOpenTaskAction(task);
         const actionLabel = getTaskActionLabel(task);
         const actionTitle = getTaskActionTitle(task);
@@ -1478,7 +1498,9 @@
                 <div class="running-task-title">${appName}</div>
                 <div class="running-task-topline-actions">
                   ${
-                    canRetryPlacement
+                    canReassignPlacement
+                      ? `<button class="mini-btn running-task-inline-btn running-task-reassign-btn" type="button" data-action="place-in-current-document" data-task-id="${actionTaskId}" title="明确将结果改贴到当前 Photoshop 文档" aria-label="将结果贴到当前 Photoshop 文档">贴到当前文档</button>`
+                      : canRetryPlacement
                       ? `<button class="mini-btn running-task-inline-btn running-task-retry-btn" type="button" data-action="retry-auto-placement" data-task-id="${actionTaskId}" title="重新将结果贴回 Photoshop" aria-label="重试自动贴回 Photoshop">重试</button>`
                       : `<span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(statusTone)}" data-stage="${modules.runtime.escapeHtml(statusStage)}">${modules.runtime.escapeHtml(statusLabel)}</span>`
                   }
@@ -1528,11 +1550,13 @@
 
     if (runButton) {
       runButton.hidden = generativeFillMode;
-      runButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || captureInProgress || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       if (quickMode) {
         runButton.textContent = "点击快捷入口运行";
       } else if (!hasCurrentApp) {
         runButton.textContent = "开始运行";
+      } else if (captureInProgress) {
+        runButton.textContent = "正在捕获图像...";
       } else if (concurrencyReached && localQueueEnabled) {
         runButton.textContent = `加入队列 ${queuedCount} 等待`;
       } else if (concurrencyReached) {
@@ -1550,7 +1574,7 @@
       const isThirdPartyApp = modules.state.isThirdPartyApp(state.currentApp);
       const plusModeEnabled = state.settings && state.settings.plusModeEnabled === true;
       runPlusButton.hidden = generativeFillMode || !plusModeEnabled;
-      runPlusButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
+      runPlusButton.disabled = generativeFillMode || quickMode || !hasCurrentApp || captureInProgress || isThirdPartyApp || (concurrencyReached && !localQueueEnabled) || cooldownActive;
       runPlusButton.title = isThirdPartyApp ? "Plus 模式仅适用于 RunningHub 应用" : "使用 Plus 模式运行（48G 显存）";
       runPlusButton.setAttribute(
         "aria-label",
@@ -1568,6 +1592,8 @@
             : "后台任务：选择一个快捷入口即可直接运行。";
       } else if (!hasCurrentApp) {
         taskStatusSummary.textContent = "后台任务：无，请先选择应用。";
+      } else if (captureInProgress) {
+        taskStatusSummary.textContent = "后台任务：正在从 Photoshop 捕获图像，完成后即可运行。";
       } else if (concurrencyReached && localQueueEnabled) {
         taskStatusSummary.textContent = `后台任务：进行中 ${activeCount}/${maxConcurrentTasks} 个，本地排队 ${queuedCount} 个；新任务会先排队，空出位置后自动提交。`;
       } else if (concurrencyReached) {
@@ -1972,6 +1998,7 @@
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
         maxConcurrentTasks: state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: state.settings.ratioOffsetCorrectionEnabled === true,
         runningHubRegion: state.settings.runningHubRegion
       }
     };
@@ -1980,7 +2007,7 @@
     return payload;
   }
 
-  function buildThirdPartyRunPayload() {
+  function buildThirdPartyRunPayload(options = {}) {
     const state = modules.state.state;
     const normalized = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
     state.thirdPartySettings = normalized;
@@ -1989,6 +2016,8 @@
     const isGemini = descriptor.id === "gemini";
     const region = isGemini ? "" : modules.state.normalizeGrsRegion(config.region, config.apiUrl);
     const apiUrl = isGemini ? descriptor.apiUrl : modules.state.getGrsApiUrl(region);
+    const app = options.app || state.currentApp || modules.state.getThirdPartyApp();
+    const inputValues = options.inputs && typeof options.inputs === "object" ? options.inputs : state.formValues;
     const payload = {
       provider: descriptor.id,
       providerLabel: descriptor.label,
@@ -1996,15 +2025,16 @@
       adapter: isGemini ? "gemini-generate-content" : config.adapter || "grs-image-generate",
       region,
       apiUrl,
-      appId: modules.state.THIRD_PARTY_APP_ID,
-      appName: "第三方 API",
-      app: state.currentApp,
+      appId: options.appId || modules.state.THIRD_PARTY_APP_ID,
+      appName: options.appName || "第三方 API",
+      app,
       apiKey: config.apiKey || "",
-      inputs: normalizePayloadInputs(state.currentApp, state.formValues),
+      inputs: normalizePayloadInputs(app, inputValues),
       settings: {
         pollInterval: state.settings.pollInterval,
         timeout: state.settings.timeout,
-        maxConcurrentTasks: state.settings.maxConcurrentTasks
+        maxConcurrentTasks: state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: state.settings.ratioOffsetCorrectionEnabled === true
       },
       config: {
         region,
@@ -2016,6 +2046,10 @@
         adapter: isGemini ? "gemini-generate-content" : config.adapter || "grs-image-generate"
       }
     };
+    if (options.kind) payload.kind = String(options.kind);
+    if (options.generativeFill && typeof options.generativeFill === "object") {
+      payload.generativeFill = options.generativeFill;
+    }
     state.lastRunPayload = payload;
     return payload;
   }
@@ -2030,6 +2064,20 @@
 
   function createLocalTaskId() {
     return `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function scheduleTaskSelectionSnapshotCleanup(task) {
+    const generativeFill = task && task.sourceDocument && task.sourceDocument.generativeFill;
+    const channelName = String(generativeFill && generativeFill.selectionSnapshotChannelName || "").trim();
+    if (!modules.runtime.isPluginRuntime() || !channelName) return;
+    void modules.runtime.callHost(
+      "photoshop.deleteSelectionSnapshot",
+      [{
+        documentId: Number(task.sourceDocument.documentId) || 0,
+        selectionSnapshotChannelName: channelName
+      }],
+      { timeoutMs: 15000 }
+    ).catch(() => {});
   }
 
   function upsertRunningTask(taskOrTaskId, appName = "", status = "running") {
@@ -2070,9 +2118,17 @@
         : undefined,
       failureCode: String(patch.failureCode || "").trim(),
       failureLabel: String(patch.failureLabel || "").trim(),
+      placementRetryable: hasOwn("placementRetryable") ? patch.placementRetryable !== false : undefined,
+      placementErrorType: hasOwn("placementErrorType") ? String(patch.placementErrorType || "").trim() : undefined,
+      placementRetryAt: hasOwn("placementRetryAt") ? Math.max(0, Number(patch.placementRetryAt) || 0) : undefined,
+      placementRetryCount: hasOwn("placementRetryCount") ? Math.max(0, Number(patch.placementRetryCount) || 0) : undefined,
+      cachedResult: hasOwn("cachedResult") ? patch.cachedResult === true : undefined,
       outputUrl: hasOwn("outputUrl") ? String(patch.outputUrl || "").trim() : undefined,
       dataUrl: hasOwn("dataUrl") ? String(patch.dataUrl || "").trim() : undefined,
       filePath: hasOwn("filePath") ? String(patch.filePath || "").trim() : undefined,
+      resultImage: hasOwn("resultImage")
+        ? (patch.resultImage && typeof patch.resultImage === "object" ? { ...patch.resultImage } : null)
+        : undefined,
       detailUrl: hasOwn("detailUrl") ? String(patch.detailUrl || "").trim() : undefined,
       sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
       createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
@@ -2099,6 +2155,16 @@
         appName: nextTask.appName || current.appName || "",
         sourceDocument: nextTask.sourceDocument || current.sourceDocument || null,
         status: nextTask.status || current.status || "running",
+        placementRetryable:
+          nextTask.placementRetryable !== undefined ? nextTask.placementRetryable : current.placementRetryable !== false,
+        placementErrorType:
+          nextTask.placementErrorType !== undefined ? nextTask.placementErrorType : String(current.placementErrorType || ""),
+        placementRetryAt:
+          nextTask.placementRetryAt !== undefined ? nextTask.placementRetryAt : Math.max(0, Number(current.placementRetryAt) || 0),
+        placementRetryCount:
+          nextTask.placementRetryCount !== undefined ? nextTask.placementRetryCount : Math.max(0, Number(current.placementRetryCount) || 0),
+        cachedResult:
+          nextTask.cachedResult !== undefined ? nextTask.cachedResult : current.cachedResult === true,
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
@@ -2107,6 +2173,7 @@
         outputUrl: nextTask.outputUrl !== undefined ? nextTask.outputUrl : current.outputUrl || "",
         dataUrl: nextTask.dataUrl !== undefined ? nextTask.dataUrl : current.dataUrl || "",
         filePath: nextTask.filePath !== undefined ? nextTask.filePath : current.filePath || "",
+        resultImage: nextTask.resultImage !== undefined ? nextTask.resultImage : current.resultImage || null,
         detailUrl: nextTask.detailUrl !== undefined ? nextTask.detailUrl : current.detailUrl || "",
         createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
         submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
@@ -2125,28 +2192,17 @@
     state.runningTasks = sortRunningTasks(list).slice(0, TASK_CARD_LIMIT);
     const storedTask = state.runningTasks.find((item) => String(item.taskId || "") === normalizedTaskId) || null;
     const cleanupStatus = String(storedTask && storedTask.status || "").trim().toLowerCase();
-    const cleanupGenerativeFill = storedTask && storedTask.sourceDocument && storedTask.sourceDocument.generativeFill;
-    const cleanupChannelName = String(cleanupGenerativeFill && cleanupGenerativeFill.selectionSnapshotChannelName || "").trim();
-    if (
-      modules.runtime.isPluginRuntime() &&
-      cleanupChannelName &&
-      ["failed", "error", "cancelled", "canceled", "timeout"].includes(cleanupStatus)
-    ) {
-      void modules.runtime.callHost(
-        "photoshop.deleteSelectionSnapshot",
-        [{
-          documentId: Number(storedTask.sourceDocument.documentId) || 0,
-          selectionSnapshotChannelName: cleanupChannelName
-        }],
-        { timeoutMs: 15000 }
-      ).catch(() => {});
+    if (storedTask && ["failed", "error", "cancelled", "canceled", "timeout"].includes(cleanupStatus)) {
+      scheduleTaskSelectionSnapshotCleanup(storedTask);
     }
     syncPrimaryRunningTask();
     updateRunButtonState();
     if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
       modules.generativeFill.render();
     }
-    if (nextTask.status && isTaskTerminalStatus(nextTask.status)) scheduleRunSubmissionFlush();
+    if (nextTask.status && (isTaskTerminalStatus(nextTask.status) || isTaskRemoteCompleteStatus(nextTask.status))) {
+      scheduleRunSubmissionFlush();
+    }
     return storedTask;
   }
 
@@ -2183,9 +2239,19 @@
     const state = modules.state.state;
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId) return;
+    const task = (Array.isArray(state.runningTasks) ? state.runningTasks : []).find(
+      (item) => String(item && item.taskId || "") === normalizedTaskId
+    ) || null;
+    const remoteTaskId = String(task && (task.remoteTaskId || task.taskId) || normalizedTaskId).trim();
     stopTaskStatusTracking(normalizedTaskId);
+    if (remoteTaskId && remoteTaskId !== normalizedTaskId) stopTaskStatusTracking(remoteTaskId);
     pendingRunSubmissions.delete(normalizedTaskId);
     activeRunSubmissions.delete(normalizedTaskId);
+    pendingAutoPlacements.delete(normalizedTaskId);
+    if (remoteTaskId) pendingAutoPlacements.delete(remoteTaskId);
+    pendingResultDownloads.delete(normalizedTaskId);
+    if (remoteTaskId) pendingResultDownloads.delete(remoteTaskId);
+    if (task) scheduleTaskSelectionSnapshotCleanup(task);
     state.runningTasks = (Array.isArray(state.runningTasks) ? state.runningTasks : []).filter(
       (item) => String(item.taskId || "") !== normalizedTaskId
     );
@@ -2214,6 +2280,8 @@
         }
         if (remoteTaskId && remoteTaskId !== taskId) stopTaskStatusTracking(remoteTaskId);
         if (remoteTaskId) pendingAutoPlacements.delete(remoteTaskId);
+        if (taskId) pendingResultDownloads.delete(taskId);
+        if (remoteTaskId) pendingResultDownloads.delete(remoteTaskId);
         removedCount += 1;
         return;
       }
@@ -2264,6 +2332,7 @@
       outputUrl,
       dataUrl,
       filePath,
+      resultImage: statusResult.resultImage && typeof statusResult.resultImage === "object" ? statusResult.resultImage : null,
       sourceDocument,
       finishedAt: completedAt
     });
@@ -2278,6 +2347,7 @@
       outputUrl,
       dataUrl,
       filePath,
+      resultImage: statusResult.resultImage && typeof statusResult.resultImage === "object" ? statusResult.resultImage : null,
       taskId: remoteTaskId
     });
     modules.ui.logToWorkspace(`后台追踪发现任务已完成，已取得${filePath ? "宿主临时文件" : dataUrl ? "内联图片" : "结果地址"}。`, "success");
@@ -2289,6 +2359,7 @@
           outputUrl,
           dataUrl,
           filePath,
+          resultImage: statusResult.resultImage,
           taskId: remoteTaskId
         });
         if (placementResponse && placementResponse.queued) {
@@ -2296,8 +2367,9 @@
             taskId: remoteTaskId,
             remoteTaskId,
             appName: payload.appName,
-            status: "placing",
-            detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
+            status: placementResponse.phase === "download" ? "downloading" : "placing",
+            detail: placementResponse.message || "返图暂未成功，稍后会自动继续。",
+            placementErrorType: placementResponse.phase === "download" ? "result-download" : "photoshop-busy"
           });
           return;
         }
@@ -2473,7 +2545,7 @@
   }
 
   function clearLastResult() {
-    modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", dataUrl: "", filePath: "", taskId: "", placedAt: 0 };
+    modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", dataUrl: "", filePath: "", resultImage: null, cachedResult: false, taskId: "", placedAt: 0 };
     updateRunButtonState();
   }
 
@@ -2485,6 +2557,8 @@
       outputUrl: String(data.outputUrl || "").trim(),
       dataUrl: String(data.dataUrl || "").trim(),
       filePath: String(data.filePath || "").trim(),
+      resultImage: data.resultImage && typeof data.resultImage === "object" ? { ...data.resultImage } : null,
+      cachedResult: data.cachedResult === true,
       taskId: String(data.taskId || "").trim(),
       placedAt: Number(data.placedAt) > 0 ? Number(data.placedAt) : 0
     };
@@ -2579,13 +2653,24 @@
       window.clearTimeout(autoPlacementRetryTimer);
       autoPlacementRetryTimer = 0;
     }
+    if (resultDownloadRetryTimer) {
+      window.clearTimeout(resultDownloadRetryTimer);
+      resultDownloadRetryTimer = 0;
+    }
+    captureInFlightCount += 1;
     captureInProgress = true;
+    updateRunButtonState();
   }
 
   function resumeAutoPlacementRetry() {
-    captureInProgress = false;
-    if (pendingAutoPlacements.size > 0) {
+    captureInFlightCount = Math.max(0, captureInFlightCount - 1);
+    captureInProgress = captureInFlightCount > 0;
+    updateRunButtonState();
+    if (!captureInProgress && pendingAutoPlacements.size > 0) {
       schedulePendingAutoPlacementRetry(2000);
+    }
+    if (!captureInProgress && pendingResultDownloads.size > 0) {
+      schedulePendingResultDownloadRetry(2000);
     }
   }
 
@@ -2642,9 +2727,6 @@
     const app = state.currentApp;
     if (!app) throw new Error("请先选择一个应用");
     if (modules.state.isThirdPartyApp(app)) {
-      if (!modules.state.state.thirdPartySettings || !modules.state.state.thirdPartySettings.enabled) {
-        throw new Error("请先在设置页启用第三方支持");
-      }
       const descriptor = modules.state.getThirdPartyProviderDescriptor();
       if (!String(descriptor.config.apiKey || "").trim()) {
         throw new Error(`请先在第三方支持中配置 ${descriptor.label} API Key`);
@@ -2708,6 +2790,7 @@
         pollInterval: modules.state.state.settings.pollInterval,
         timeout: modules.state.state.settings.timeout,
         maxConcurrentTasks: modules.state.state.settings.maxConcurrentTasks,
+        ratioOffsetCorrectionEnabled: modules.state.state.settings.ratioOffsetCorrectionEnabled === true,
         runningHubRegion: modules.state.state.settings.runningHubRegion
       }
     };
@@ -2768,6 +2851,9 @@
     const generativeFill = sourceDocument && sourceDocument.generativeFill && typeof sourceDocument.generativeFill === "object"
       ? sourceDocument.generativeFill
       : null;
+    const ratioOffsetCorrection = sourceDocument && sourceDocument.ratioOffsetCorrection && sourceDocument.ratioOffsetCorrection.enabled === true
+      ? sourceDocument.ratioOffsetCorrection
+      : null;
     const documentBounds = getDocumentCanvasBounds(sourceDocument);
     const targetBounds = (generativeFill && generativeFill.contextBounds) || selectionBounds || documentBounds || null;
     const useFullDocumentBounds = !selectionBounds && !!documentBounds;
@@ -2775,12 +2861,14 @@
       url: result && result.outputUrl ? result.outputUrl : "",
       dataUrl: result && result.dataUrl ? result.dataUrl : "",
       filePath: result && result.filePath ? result.filePath : "",
+      resultImage: result && result.resultImage && typeof result.resultImage === "object" ? result.resultImage : null,
       taskId: result && result.taskId ? result.taskId : "",
       downloadTimeoutMs: 120000,
+      cleanupLocalSource: Boolean(result && result.cachedResult === true),
       targetDocumentId: sourceDocument && sourceDocument.hasActiveDocument ? sourceDocument.documentId : null,
       targetBounds,
       applyMask: Boolean(selectionBounds),
-      fitMode: generativeFill || useFullDocumentBounds ? "stretch" : "contain",
+      fitMode: ratioOffsetCorrection ? "cover" : generativeFill || useFullDocumentBounds ? "stretch" : "contain",
       preserveCanvasBounds: Boolean(generativeFill),
       placementMaskDataUrl: generativeFill ? String(generativeFill.placementMaskDataUrl || "") : "",
       selectionSnapshotChannelName: generativeFill ? String(generativeFill.selectionSnapshotChannelName || "") : "",
@@ -2807,11 +2895,8 @@
         };
       }
       return {
-        method: "photoshop.placeResultWithBlendMatch",
-        payload: {
-          ...payload,
-          blendMatch: GENERATIVE_FILL_COLOR_CORRECTION_SETTINGS
-        },
+        method: "photoshop.placeResultWithGenerativeFillColorCorrection",
+        payload,
         timeoutMs: 300000
       };
     }
@@ -2838,37 +2923,67 @@
   function getAutoPlacementFusionSuffix(result, fusionResponse) {
     if (!fusionResponse || fusionResponse.ok !== true || fusionResponse.skipped) return "";
     const generativeFill = result && result.sourceDocument && result.sourceDocument.generativeFill;
-    return generativeFill ? "，明度与色彩自动校正完成" : "，融合校色完成";
+    return generativeFill ? "，明度与色彩自动校正完成" : "，对齐与校色完成";
   }
 
   function isAutoPlacementBlockedError(error) {
     const message = String((error && error.message) || error || "").toLowerCase();
     if (!message) return false;
     return (
-      message.includes("modal") ||
       message.includes("executeasmodal") ||
       message.includes("host is in a modal state") ||
       message.includes("modal state") ||
       message.includes("modal dialog") ||
       message.includes("photoshop is busy") ||
       message.includes("another modal") ||
-      message.includes("already in use") ||
-      message.includes("command is currently unavailable") ||
-      message.includes("currently unavailable") ||
-      message.includes("the object is currently in use") ||
-      message.includes("liquify") ||
-      /photoshop.*(?:busy|unavailable|in use)/i.test(message) ||
-      /(?:正忙|忙碌|模态|液化|命令不可用|暂不可用|正在使用|当前无法|无法执行)/.test(message)
+      /photoshop.{0,80}(?:busy|modal)/i.test(message) ||
+      /(?:正忙|忙碌|模态)/.test(message)
     );
   }
 
-  function isAutoPlacementRetryableError(error) {
-    if (isAutoPlacementBlockedError(error)) return true;
-    const message = String((error && error.message) || error || "").toLowerCase();
+  function getAutoPlacementErrorMessage(error) {
+    return String((error && error.message) || error || "").trim();
+  }
+
+  function isAutoPlacementTargetDocumentError(error) {
+    const message = getAutoPlacementErrorMessage(error).toLowerCase();
+    return Boolean(
+      message && (
+        message.includes("target document is unavailable") ||
+        message.includes("failed to activate target document") ||
+        message.includes("目标文档不可用") ||
+        message.includes("目标文档不存在")
+      )
+    );
+  }
+
+  function getAutoPlacementRetryDelayMs(attempts = 0) {
+    const index = Math.max(0, Math.min(AUTO_PLACEMENT_RETRY_DELAYS_MS.length - 1, Number(attempts || 0)));
+    return AUTO_PLACEMENT_RETRY_DELAYS_MS[index];
+  }
+
+  function getResultDownloadRetryDelayMs(attempts = 0) {
+    const index = Math.max(0, Math.min(RESULT_DOWNLOAD_RETRY_DELAYS_MS.length - 1, Math.max(1, Number(attempts) || 1) - 1));
+    return RESULT_DOWNLOAD_RETRY_DELAYS_MS[index];
+  }
+
+  function isResultDownloadInvalidError(error) {
+    const message = getAutoPlacementErrorMessage(error).toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes("不是可识别的图片") ||
+      message.includes("not a valid base64 image") ||
+      message.includes("result image is missing") ||
+      /failed to download result\s*\(http\s+(?:400|401|403|404|405|410|422)\)/.test(message)
+    );
+  }
+
+  function isResultDownloadRetryableError(error) {
+    if (isResultDownloadInvalidError(error) || isAutoPlacementTargetDocumentError(error)) return false;
+    const message = getAutoPlacementErrorMessage(error).toLowerCase();
     if (!message) return false;
     return (
       message.includes("failed to download result") ||
-      message.includes("download") ||
       message.includes("timeout") ||
       message.includes("timed out") ||
       message.includes("超时") ||
@@ -2881,59 +2996,323 @@
       message.includes("enotfound") ||
       message.includes("etimedout") ||
       message.includes("socket") ||
-      message.includes("temporarily unavailable") ||
-      message.includes("domain is not allowed") ||
-      message.includes("domain not allowed") ||
-      message.includes("not allowed by") ||
-      message.includes("network permission") ||
-      message.includes("network access") ||
-      message.includes("plugin manifest") ||
-      message.includes("request is not permitted") ||
-      /(?:permission|access).*(?:denied|not permitted|not allowed)/.test(message) ||
-      /(?:网络|域名|访问).*(?:权限|不允许|拒绝|禁止)/.test(message) ||
-      message.includes("返回内容不是可识别的图片")
+      message.includes("temporarily unavailable")
     );
+  }
+
+  function getAutoPlacementErrorType(error, fallback = "placement") {
+    if (isAutoPlacementTargetDocumentError(error)) return "target-document";
+    if (isAutoPlacementBlockedError(error)) return "photoshop-busy";
+    if (isResultDownloadInvalidError(error) || isResultDownloadRetryableError(error)) return "result-download";
+    return String(fallback || "placement");
+  }
+
+  function shouldStopAutoPlacementBlockedRetry(blockedAttempts = 0, blockedSince = 0, now = Date.now()) {
+    const attempts = Math.max(0, Number(blockedAttempts) || 0);
+    const startedAt = Math.max(0, Number(blockedSince) || 0);
+    return attempts >= AUTO_PLACEMENT_MAX_TEMP_FAILURES || (startedAt > 0 && now - startedAt >= AUTO_PLACEMENT_BLOCKED_MAX_WAIT_MS);
+  }
+
+  function isAutoPlacementRetryableError(error) {
+    return isAutoPlacementBlockedError(error) || isResultDownloadRetryableError(error);
   }
 
   function markAutoPlacementFailed(taskId, error, options = {}) {
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId) return null;
     pendingAutoPlacements.delete(normalizedTaskId);
+    pendingResultDownloads.delete(normalizedTaskId);
     const currentTask = getRunningTasks().find((task) => String(task.taskId || "") === normalizedTaskId);
-    const message = (error && error.message
-      ? String(error.message)
-      : String(error || "自动贴回 Photoshop 失败"))
+    const message = (getAutoPlacementErrorMessage(error) || "自动贴回 Photoshop 失败")
       .trim()
       .replace(/[。.!]+$/g, "");
+    const errorType = String(options.errorType || getAutoPlacementErrorType(error)).trim() || "placement";
+    const retryable = Object.prototype.hasOwnProperty.call(options, "retryable")
+      ? options.retryable !== false
+      : errorType === "photoshop-busy" || (errorType === "result-download" && isResultDownloadRetryableError(error));
     const prefix = options.background ? "后台追踪确认任务已完成，但自动贴回失败" : "任务已完成，但自动贴回失败";
+    const retryHint = errorType === "target-document"
+      ? "源文档已关闭，无法安全回贴；请打开原文档，或明确选择“贴到当前文档”"
+      : retryable
+        ? "请点击“重试”重新获取结果并贴回"
+        : errorType === "result-download"
+          ? "结果地址已失效或返回内容不是图片，请到任务详情确认结果"
+          : "当前错误无法自动恢复，请检查 Photoshop 后重新运行任务";
     return upsertRunningTask({
       taskId: normalizedTaskId,
       remoteTaskId: String((currentTask && (currentTask.remoteTaskId || currentTask.taskId)) || normalizedTaskId),
       appName: String((currentTask && currentTask.appName) || options.appName || ""),
       status: "placement-failed",
-      detail: `${prefix}：${message}。请点击“重试”再次贴回。`,
+      detail: `${prefix}：${message}。${retryHint}。`,
+      placementRetryable: retryable,
+      placementErrorType: errorType,
+      placementRetryAt: 0,
+      placementRetryCount: Math.max(0, Number(options.retryCount) || 0),
       finishedAt: Date.now()
     });
   }
 
+  function findAutoPlacementTask(result) {
+    const taskId = String(result && result.taskId || "").trim();
+    if (!taskId) return null;
+    return getRunningTasks().find((task) =>
+      String(task.taskId || "").trim() === taskId || String(task.remoteTaskId || "").trim() === taskId
+    ) || null;
+  }
+
+  async function refreshAutoPlacementResultReference(result) {
+    const task = findAutoPlacementTask(result);
+    const remoteTaskId = String(task && (task.remoteTaskId || task.taskId) || result && result.taskId || "").trim();
+    if (!task || !remoteTaskId || isLocalTaskId(remoteTaskId)) return result;
+
+    const statusRequest = buildTaskStatusRequest(remoteTaskId, task);
+    const statusResult = await modules.runtime.callHost(statusRequest.method, statusRequest.args, { timeoutMs: 35000 });
+    if (statusResult && statusResult.failed) {
+      throw new Error(String(statusResult.message || "云端任务未返回可用结果"));
+    }
+    if (!statusResult || !hasResultReference(statusResult)) {
+      throw new Error("重新查询任务后仍未取得可用结果地址");
+    }
+
+    const refreshed = {
+      ...result,
+      outputUrl: String(statusResult.outputUrl || "").trim(),
+      dataUrl: String(statusResult.dataUrl || "").trim(),
+      filePath: String(statusResult.filePath || "").trim(),
+      resultImage: statusResult.resultImage && typeof statusResult.resultImage === "object" ? statusResult.resultImage : null,
+      cachedResult: false
+    };
+    upsertRunningTask({
+      taskId: String(task.taskId || remoteTaskId),
+      outputUrl: refreshed.outputUrl,
+      dataUrl: refreshed.dataUrl,
+      filePath: refreshed.filePath,
+      resultImage: refreshed.resultImage,
+      cachedResult: false
+    });
+    return refreshed;
+  }
+
+  async function cacheAutoPlacementResult(result) {
+    if (String(result && result.filePath || "").trim() || String(result && result.dataUrl || "").trim()) return result;
+    const outputUrl = String(result && result.outputUrl || "").trim();
+    if (!outputUrl) throw new Error("Result image is missing");
+
+    const payload = buildAutoPlacementPayload(result);
+    const response = await modules.runtime.callHost("photoshop.cacheResultFromUrl", [{
+      url: outputUrl,
+      taskId: String(result.taskId || "").trim(),
+      targetDocumentId: payload.targetDocumentId,
+      downloadTimeoutMs: payload.downloadTimeoutMs,
+      preserveCanvasBounds: payload.preserveCanvasBounds,
+      anchorTransparentCanvas: payload.anchorTransparentCanvas
+    }], { timeoutMs: Math.max(135000, Number(payload.downloadTimeoutMs) + 15000) });
+    const filePath = String(response && response.filePath || "").trim();
+    if (!response || response.cached !== true || !filePath) {
+      throw new Error("宿主未返回有效的结果缓存文件");
+    }
+
+    const resultImage = response.resultImage && typeof response.resultImage === "object" ? response.resultImage : null;
+    const prepared = { ...result, filePath, dataUrl: "", resultImage, cachedResult: true };
+    const task = findAutoPlacementTask(result);
+    if (task) {
+      upsertRunningTask({
+        taskId: String(task.taskId || result.taskId || ""),
+        outputUrl,
+        dataUrl: "",
+        filePath,
+        resultImage,
+        cachedResult: true,
+        placementErrorType: "",
+        placementRetryAt: 0,
+        placementRetryCount: 0
+      });
+    }
+    setLastResult({
+      appName: prepared.appName,
+      sourceDocument: prepared.sourceDocument,
+      outputUrl,
+      dataUrl: "",
+      filePath,
+      resultImage,
+      cachedResult: true,
+      taskId: prepared.taskId
+    });
+    return prepared;
+  }
+
+  function schedulePendingResultDownloadRetry(delayMs = 5000) {
+    if (pendingResultDownloads.size === 0 || captureInProgress) return;
+    const normalizedDelay = Math.max(1000, Number(delayMs) || 5000);
+    const dueAt = Date.now() + normalizedDelay;
+    if (resultDownloadRetryTimer && resultDownloadRetryDueAt <= dueAt) return;
+    if (resultDownloadRetryTimer) window.clearTimeout(resultDownloadRetryTimer);
+    resultDownloadRetryDueAt = dueAt;
+    resultDownloadRetryTimer = window.setTimeout(() => {
+      resultDownloadRetryTimer = 0;
+      resultDownloadRetryDueAt = 0;
+      void flushPendingResultDownloads();
+    }, normalizedDelay);
+  }
+
+  function queueResultDownload(result, error, options = {}) {
+    if (!hasResultReference(result)) return null;
+    const taskId = String(result.taskId || "").trim() || `download-${Date.now()}`;
+    const existing = pendingResultDownloads.get(taskId) || {};
+    const attempts = Math.max(1, Number(options.attempts) || Number(existing.attempts || 0) + 1);
+    const delayMs = getResultDownloadRetryDelayMs(attempts);
+    const nextRetryAt = Date.now() + delayMs;
+    const message = getAutoPlacementErrorMessage(error) || "结果下载失败";
+    const queued = {
+      ...existing,
+      ...result,
+      taskId,
+      attempts,
+      nextRetryAt,
+      lastError: message
+    };
+    pendingResultDownloads.set(taskId, queued);
+    upsertRunningTask({
+      taskId,
+      remoteTaskId: taskId,
+      status: "downloading",
+      detail: `结果下载失败：${message}。将在 ${Math.ceil(delayMs / 1000)} 秒后刷新结果地址并重试（${attempts}/${RESULT_DOWNLOAD_MAX_TEMP_FAILURES}）。`,
+      placementErrorType: "result-download",
+      placementRetryAt: nextRetryAt,
+      placementRetryCount: attempts
+    });
+    schedulePendingResultDownloadRetry(delayMs);
+    return queued;
+  }
+
+  async function flushPendingResultDownloads() {
+    if (resultDownloadProcessing || pendingResultDownloads.size === 0 || !modules.runtime.isPluginRuntime() || captureInProgress) return;
+    resultDownloadProcessing = true;
+    try {
+      for (const [taskId, queued] of Array.from(pendingResultDownloads.entries())) {
+        if (captureInProgress) break;
+        if (Number(queued.nextRetryAt || 0) > Date.now()) continue;
+        let downloadCompleted = false;
+        try {
+          upsertRunningTask({
+            taskId,
+            remoteTaskId: taskId,
+            status: "downloading",
+            detail: `正在重新查询云端任务并获取最新结果地址（${queued.attempts}/${RESULT_DOWNLOAD_MAX_TEMP_FAILURES}）。`,
+            placementErrorType: "result-download",
+            placementRetryAt: 0,
+            placementRetryCount: queued.attempts
+          });
+          const refreshed = await refreshAutoPlacementResultReference(queued);
+          const prepared = await cacheAutoPlacementResult(refreshed);
+          downloadCompleted = true;
+          pendingResultDownloads.delete(taskId);
+          upsertRunningTask({
+            taskId,
+            remoteTaskId: taskId,
+            status: "placing",
+            detail: "结果已下载并缓存，正在等待 Photoshop 回贴。",
+            placementErrorType: "",
+            placementRetryAt: 0,
+            placementRetryCount: 0
+          });
+          const response = await autoPlaceResult(prepared);
+          if (response && response.queued) {
+            upsertRunningTask({
+              taskId,
+              remoteTaskId: taskId,
+              status: response.phase === "download" ? "downloading" : "placing",
+              detail: response.message || "返图暂未成功，稍后会自动继续。",
+              placementErrorType: response.phase === "download" ? "result-download" : "photoshop-busy"
+            });
+            continue;
+          }
+          upsertRunningTask({
+            taskId,
+            remoteTaskId: taskId,
+            status: "succeeded",
+            detail: response && response.documentId
+              ? `任务已完成，并已自动贴回 Photoshop 文档 #${response.documentId}${getAutoPlacementFusionSuffix(prepared, response.blendMatch)}。`
+              : "任务已完成，并已自动贴回 Photoshop。",
+            placementRetryable: false,
+            placementErrorType: "",
+            placementRetryAt: 0,
+            placementRetryCount: 0,
+            cachedResult: false,
+            filePath: prepared.cachedResult ? "" : prepared.filePath,
+            resultImage: prepared.cachedResult ? null : prepared.resultImage,
+            finishedAt: Date.now()
+          });
+        } catch (error) {
+          if (downloadCompleted) {
+            markAutoPlacementFailed(taskId, error, {
+              retryable: false,
+              errorType: getAutoPlacementErrorType(error, "placement")
+            });
+            continue;
+          }
+          if (isAutoPlacementTargetDocumentError(error)) {
+            markAutoPlacementFailed(taskId, error, { retryable: false, errorType: "target-document" });
+            continue;
+          }
+          const attempts = Number(queued.attempts || 0) + 1;
+          if (isResultDownloadRetryableError(error) && attempts < RESULT_DOWNLOAD_MAX_TEMP_FAILURES) {
+            queueResultDownload(queued, error, { attempts });
+            continue;
+          }
+          markAutoPlacementFailed(taskId, error, {
+            retryable: isResultDownloadRetryableError(error),
+            errorType: "result-download",
+            retryCount: attempts
+          });
+        }
+      }
+    } finally {
+      resultDownloadProcessing = false;
+      if (pendingResultDownloads.size > 0) {
+        const now = Date.now();
+        const nextDelay = Math.min(
+          ...Array.from(pendingResultDownloads.values()).map((queued) =>
+            Math.max(0, Number(queued && queued.nextRetryAt || 0) - now)
+          )
+        );
+        schedulePendingResultDownloadRetry(Number.isFinite(nextDelay) ? nextDelay : 5000);
+      }
+    }
+  }
+
   function schedulePendingAutoPlacementRetry(delayMs = 4000) {
-    if (autoPlacementRetryTimer || pendingAutoPlacements.size === 0 || captureInProgress) return;
+    if (pendingAutoPlacements.size === 0 || captureInProgress) return;
+    const normalizedDelay = Math.max(1000, Number(delayMs) || 4000);
+    const dueAt = Date.now() + normalizedDelay;
+    if (autoPlacementRetryTimer && autoPlacementRetryDueAt <= dueAt) return;
+    if (autoPlacementRetryTimer) window.clearTimeout(autoPlacementRetryTimer);
+    autoPlacementRetryDueAt = dueAt;
     autoPlacementRetryTimer = window.setTimeout(() => {
       autoPlacementRetryTimer = 0;
+      autoPlacementRetryDueAt = 0;
       void flushPendingAutoPlacements();
-    }, Math.max(1000, Number(delayMs) || 4000));
+    }, normalizedDelay);
   }
 
   function queueAutoPlacement(result) {
     if (!hasResultReference(result)) return null;
     const taskId = String(result.taskId || "").trim() || `placement-${Date.now()}`;
+    const existing = pendingAutoPlacements.get(taskId) || {};
+    const queuedAt = Date.now();
+    const nextRetryAt = Number(existing.nextRetryAt) > queuedAt
+      ? Number(existing.nextRetryAt)
+      : queuedAt + getAutoPlacementRetryDelayMs(0);
     pendingAutoPlacements.set(taskId, {
       ...result,
       taskId,
-      queuedAt: Date.now(),
-      attempts: Number((pendingAutoPlacements.get(taskId) && pendingAutoPlacements.get(taskId).attempts) || 0)
+      queuedAt,
+      attempts: Number(existing.attempts || 0),
+      blockedAttempts: Number(existing.blockedAttempts || 0),
+      blockedSince: Number(existing.blockedSince || 0),
+      nextRetryAt
     });
-    schedulePendingAutoPlacementRetry();
+    schedulePendingAutoPlacementRetry(Math.max(0, nextRetryAt - Date.now()));
     return pendingAutoPlacements.get(taskId);
   }
 
@@ -2943,6 +3322,7 @@
     try {
       for (const [taskId, queued] of Array.from(pendingAutoPlacements.entries())) {
         if (captureInProgress) break;
+        if (Number(queued.nextRetryAt || 0) > Date.now()) continue;
         try {
           const placementRequest = buildAutoPlacementHostRequest(queued);
           const response = await modules.runtime.callHost(placementRequest.method, [placementRequest.payload], { timeoutMs: placementRequest.timeoutMs });
@@ -2954,6 +3334,10 @@
             : null;
           pendingAutoPlacements.delete(taskId);
           modules.state.state.lastResult.placedAt = Date.now();
+          if (queued.cachedResult === true) {
+            modules.state.state.lastResult.filePath = "";
+            modules.state.state.lastResult.cachedResult = false;
+          }
           if (response && response.document) modules.state.state.currentDocumentInfo = response.document;
           upsertRunningTask({
             taskId,
@@ -2963,43 +3347,67 @@
               response && response.documentId
                 ? `任务已完成，并已在 Photoshop 空闲后自动贴回文档 #${response.documentId}${getAutoPlacementFusionSuffix(queued, fusionResponse)}。`
                 : "任务已完成，并已在 Photoshop 空闲后自动贴回。",
+            placementRetryable: false,
+            placementErrorType: "",
+            placementRetryAt: 0,
+            placementRetryCount: 0,
+            cachedResult: false,
+            filePath: queued.cachedResult ? "" : queued.filePath,
+            resultImage: queued.cachedResult ? null : queued.resultImage,
             finishedAt: Date.now()
           });
           modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
         } catch (error) {
-          if (isAutoPlacementRetryableError(error)) {
-            const blocked = isAutoPlacementBlockedError(error);
-            const attempts = blocked ? Number(queued.attempts || 0) : Number(queued.attempts || 0) + 1;
-            if (!blocked && attempts >= AUTO_PLACEMENT_MAX_TEMP_FAILURES) {
+          if (isAutoPlacementBlockedError(error)) {
+            const blockedAttempts = Number(queued.blockedAttempts || 0) + 1;
+            const blockedSince = Number(queued.blockedSince || 0) || Date.now();
+            const blockedExpired = shouldStopAutoPlacementBlockedRetry(blockedAttempts, blockedSince);
+            if (blockedExpired) {
               const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 失败");
-              markAutoPlacementFailed(taskId, message);
+              markAutoPlacementFailed(taskId, message, {
+                retryable: true,
+                errorType: "photoshop-busy",
+                retryCount: blockedAttempts
+              });
               modules.ui.logToWorkspace(`返图重试已停止：${message}`, "warn");
               continue;
             }
             const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
+            const delayMs = getAutoPlacementRetryDelayMs(blockedAttempts);
             pendingAutoPlacements.set(taskId, {
               ...queued,
-              attempts
+              blockedAttempts,
+              blockedSince,
+              nextRetryAt: Date.now() + delayMs
             });
             upsertRunningTask({
               taskId,
               remoteTaskId: taskId,
               status: "placing",
-              detail: blocked
-                ? "任务已完成，但 Photoshop 当前仍在液化或其他模态操作中，返图会在可执行时继续贴回。"
-                : `任务已完成，返图暂未成功：${message}，稍后自动重试（${attempts}/${AUTO_PLACEMENT_MAX_TEMP_FAILURES}）。`
+              detail: "任务已完成，Photoshop 当前暂不可用，返图将在 " +
+                Math.ceil(delayMs / 1000) +
+                " 秒后重试（" + blockedAttempts + "/" + AUTO_PLACEMENT_MAX_TEMP_FAILURES + "）。",
+              placementErrorType: "photoshop-busy",
+              placementRetryAt: Date.now() + delayMs,
+              placementRetryCount: blockedAttempts
             });
             continue;
           }
           const message = error && error.message ? error.message : String(error || "自动贴回 Photoshop 失败");
-          markAutoPlacementFailed(taskId, message);
+          markAutoPlacementFailed(taskId, message, { retryable: false });
           modules.ui.logToWorkspace(`返图重试已停止：${message}`, "warn");
         }
       }
     } finally {
       autoPlacementProcessing = false;
       if (pendingAutoPlacements.size > 0) {
-        schedulePendingAutoPlacementRetry(4000);
+        const now = Date.now();
+        const nextDelay = Math.min(
+          ...Array.from(pendingAutoPlacements.values()).map((queued) =>
+            Math.max(0, Number(queued && queued.nextRetryAt || 0) - now)
+          )
+        );
+        schedulePendingAutoPlacementRetry(Number.isFinite(nextDelay) ? nextDelay : 4000);
       }
     }
   }
@@ -3011,21 +3419,79 @@
       return null;
     }
     await refreshPhotoshopDocumentStatus({ quiet: true });
-    const placementRequest = buildAutoPlacementHostRequest(result);
+    let preparedResult = result;
+    try {
+      if (result && result.refreshResultReference === true && !String(result.filePath || "").trim() && !String(result.dataUrl || "").trim()) {
+        preparedResult = await refreshAutoPlacementResultReference(result);
+      }
+      if (!String(preparedResult.filePath || "").trim() && !String(preparedResult.dataUrl || "").trim()) {
+        const task = findAutoPlacementTask(preparedResult);
+        if (task) {
+          upsertRunningTask({
+            taskId: String(task.taskId || preparedResult.taskId || ""),
+            status: "downloading",
+            detail: "云端任务已完成，正在下载并缓存结果图。",
+            placementErrorType: "",
+            placementRetryAt: 0,
+            placementRetryCount: 0
+          });
+        }
+        preparedResult = await cacheAutoPlacementResult(preparedResult);
+      }
+    } catch (error) {
+      if (isAutoPlacementTargetDocumentError(error)) throw error;
+      if (isResultDownloadInvalidError(error)) {
+        try {
+          const refreshed = await refreshAutoPlacementResultReference(preparedResult);
+          const previousReference = String(preparedResult.outputUrl || preparedResult.dataUrl || preparedResult.filePath || "").trim();
+          const refreshedReference = String(refreshed.outputUrl || refreshed.dataUrl || refreshed.filePath || "").trim();
+          if (!refreshedReference || refreshedReference === previousReference) throw error;
+          preparedResult = await cacheAutoPlacementResult(refreshed);
+        } catch (refreshError) {
+          if (isResultDownloadRetryableError(refreshError)) {
+            const queued = queueResultDownload(preparedResult, refreshError);
+            return {
+              ok: false,
+              queued: true,
+              phase: "download",
+              message: queued
+                ? `结果地址刷新失败：${queued.lastError}。将在 ${Math.ceil(Math.max(0, queued.nextRetryAt - Date.now()) / 1000)} 秒后自动重试（${queued.attempts}/${RESULT_DOWNLOAD_MAX_TEMP_FAILURES}）。`
+                : `结果地址刷新失败：${getAutoPlacementErrorMessage(refreshError)}`
+            };
+          }
+          throw refreshError;
+        }
+      } else if (isResultDownloadRetryableError(error)) {
+        const queued = queueResultDownload(preparedResult, error);
+        return {
+          ok: false,
+          queued: true,
+          phase: "download",
+          message: queued
+            ? `结果下载失败：${queued.lastError}。将在 ${Math.ceil(Math.max(0, queued.nextRetryAt - Date.now()) / 1000)} 秒后刷新结果地址并重试（${queued.attempts}/${RESULT_DOWNLOAD_MAX_TEMP_FAILURES}）。`
+            : `结果下载失败：${getAutoPlacementErrorMessage(error)}`
+        };
+      } else {
+        throw error;
+      }
+    }
+
+    const placementRequest = buildAutoPlacementHostRequest(preparedResult);
     let response = null;
     try {
       response = await modules.runtime.callHost(placementRequest.method, [placementRequest.payload], { timeoutMs: placementRequest.timeoutMs });
     } catch (error) {
-      if (isAutoPlacementRetryableError(error)) {
-        queueAutoPlacement(result);
+      if (isAutoPlacementBlockedError(error)) {
+        const queued = queueAutoPlacement(preparedResult);
         const retryMessage = error && error.message ? error.message : String(error || "自动贴回 Photoshop 暂不可用");
         return {
           ok: false,
           queued: true,
+          phase: "placement",
           blocked: isAutoPlacementBlockedError(error),
-          message: isAutoPlacementBlockedError(error)
-            ? "Photoshop 当前正在执行液化或其他模态操作，返图已暂停，待可执行时会自动继续。"
-            : `返图暂未成功：${retryMessage}，稍后会自动重试。`
+          message: queued
+            ? `Photoshop 当前暂不可用，返图将在 ${Math.ceil(Math.max(0, queued.nextRetryAt - Date.now()) / 1000)} 秒后自动重试。`
+            : `Photoshop 当前暂不可用：${retryMessage}`
         };
       }
       throw error;
@@ -3034,18 +3500,34 @@
       throw new Error("Photoshop 未返回有效的贴回确认");
     }
     modules.state.state.lastResult.placedAt = Date.now();
+    if (preparedResult.cachedResult === true) {
+      modules.state.state.lastResult.filePath = "";
+      modules.state.state.lastResult.cachedResult = false;
+      const task = findAutoPlacementTask(preparedResult);
+      if (task) {
+        upsertRunningTask({
+          taskId: String(task.taskId || preparedResult.taskId || ""),
+          filePath: "",
+          resultImage: null,
+          cachedResult: false,
+          placementErrorType: "",
+          placementRetryAt: 0,
+          placementRetryCount: 0
+        });
+      }
+    }
     if (response && response.document) modules.state.state.currentDocumentInfo = response.document;
     const fusionResponse = modules.blendMatch && typeof modules.blendMatch.applyAutoPlacementFusion === "function"
-      ? await modules.blendMatch.applyAutoPlacementFusion(response, result)
+      ? await modules.blendMatch.applyAutoPlacementFusion(response, preparedResult)
       : null;
     if (fusionResponse && fusionResponse.document) modules.state.state.currentDocumentInfo = fusionResponse.document;
-    const sourceDocument = result.sourceDocument;
+    const sourceDocument = preparedResult.sourceDocument;
     const placementSummary = sourceDocument && sourceDocument.selectionBounds
       ? `已按原选区 ${formatSelectionLabel(sourceDocument.selectionBounds)} 自动贴回`
       : "已自动贴回源文档";
-    const fallbackLayerName = buildAutoPlacementPayload(result).layerName;
+    const fallbackLayerName = buildAutoPlacementPayload(preparedResult).layerName;
     modules.ui.logToWorkspace(
-      `${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || fallbackLayerName}${getAutoPlacementFusionSuffix(result, fusionResponse)}`,
+      `${placementSummary}，文档 #${response.documentId}，图层：${response.layerName || fallbackLayerName}${getAutoPlacementFusionSuffix(preparedResult, fusionResponse)}`,
       "success"
     );
     return {
@@ -3058,27 +3540,41 @@
     return autoPlaceResult(modules.state.state.lastResult);
   }
 
-  async function retryTaskAutoPlacement(taskId) {
+  async function retryTaskAutoPlacement(taskId, options = {}) {
     const normalizedTaskId = String(taskId || "").trim();
     const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId);
-    if (!isTaskPlacementRetryable(task)) throw new Error("当前任务没有可重试的返图结果");
+    const allowTargetReassignment = options.allowTargetReassignment === true && isTaskTargetDocumentUnavailable(task);
+    if (!isTaskPlacementRetryable(task) && !allowTargetReassignment) throw new Error("当前任务没有可重试的返图结果");
 
     const result = {
       appName: String(task.appName || ""),
-      sourceDocument: task.sourceDocument && typeof task.sourceDocument === "object" ? task.sourceDocument : null,
+      sourceDocument: options.sourceDocument && typeof options.sourceDocument === "object"
+        ? options.sourceDocument
+        : task.sourceDocument && typeof task.sourceDocument === "object" ? task.sourceDocument : null,
       outputUrl: String(task.outputUrl || "").trim(),
       dataUrl: String(task.dataUrl || "").trim(),
       filePath: String(task.filePath || "").trim(),
-      taskId: String(task.remoteTaskId || task.taskId || "").trim()
+      resultImage: task.resultImage && typeof task.resultImage === "object" ? task.resultImage : null,
+      taskId: String(task.remoteTaskId || task.taskId || "").trim(),
+      cachedResult: task.cachedResult === true,
+      refreshResultReference: task.cachedResult !== true && !String(task.filePath || "").trim() && !String(task.dataUrl || "").trim()
     };
     pendingAutoPlacements.delete(normalizedTaskId);
     pendingAutoPlacements.delete(result.taskId);
+    pendingResultDownloads.delete(normalizedTaskId);
+    pendingResultDownloads.delete(result.taskId);
+    const startsWithCachedResult = Boolean(result.filePath || result.dataUrl);
     upsertRunningTask({
       taskId: normalizedTaskId,
       remoteTaskId: result.taskId,
       appName: result.appName,
-      status: "placing",
-      detail: "正在重新下载结果并贴回 Photoshop。"
+      sourceDocument: result.sourceDocument,
+      status: startsWithCachedResult ? "placing" : "downloading",
+      detail: startsWithCachedResult ? "正在使用已缓存的结果贴回 Photoshop。" : "正在刷新云端结果地址并重新下载。",
+      placementRetryable: false,
+      placementErrorType: "",
+      placementRetryAt: 0,
+      placementRetryCount: 0
     });
 
     try {
@@ -3088,8 +3584,9 @@
           taskId: normalizedTaskId,
           remoteTaskId: result.taskId,
           appName: result.appName,
-          status: "placing",
-          detail: response.message || "返图暂未成功，稍后会自动继续重试。"
+          status: response.phase === "download" ? "downloading" : "placing",
+          detail: response.message || "返图暂未成功，稍后会自动继续重试。",
+          placementErrorType: response.phase === "download" ? "result-download" : "photoshop-busy"
         });
         modules.ui.logToWorkspace(`返图重试已进入等待队列：${result.taskId}`, "warn");
         return response;
@@ -3103,6 +3600,10 @@
         detail: response && response.documentId
           ? `任务已完成，并已重新贴回 Photoshop 文档 #${response.documentId}${getAutoPlacementFusionSuffix(result, response.blendMatch)}。`
           : "任务已完成，并已重新贴回 Photoshop。",
+        placementRetryable: false,
+        placementErrorType: "",
+        placementRetryAt: 0,
+        placementRetryCount: 0,
         finishedAt: Date.now()
       });
       modules.ui.logToWorkspace(`返图重试成功：${result.taskId}`, "success");
@@ -3112,6 +3613,61 @@
       modules.ui.logToWorkspace(`返图重试失败：${error && error.message ? error.message : error}`, "warn");
       throw error;
     }
+  }
+
+  async function placeTaskResultInCurrentDocument(taskId) {
+    const normalizedTaskId = String(taskId || "").trim();
+    const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId);
+    if (!isTaskTargetDocumentUnavailable(task)) throw new Error("当前任务不需要重新指定目标文档");
+
+    const currentDocument = await refreshPhotoshopDocumentStatus({ quiet: true });
+    if (!currentDocument || !currentDocument.hasActiveDocument || Number(currentDocument.documentId) <= 0) {
+      throw new Error("请先在 Photoshop 中选择要接收结果的文档");
+    }
+    const sourceDocument = task.sourceDocument && typeof task.sourceDocument === "object" ? task.sourceDocument : {};
+    const sourceWidth = Math.round(Number(sourceDocument.width) || 0);
+    const sourceHeight = Math.round(Number(sourceDocument.height) || 0);
+    const currentWidth = Math.round(Number(currentDocument.width) || 0);
+    const currentHeight = Math.round(Number(currentDocument.height) || 0);
+    if (sourceWidth > 0 && sourceHeight > 0 && currentWidth > 0 && currentHeight > 0 &&
+        (sourceWidth !== currentWidth || sourceHeight !== currentHeight)) {
+      const mismatchError = new Error(
+        `当前文档尺寸 ${currentWidth}x${currentHeight} 与源文档 ${sourceWidth}x${sourceHeight} 不一致，无法安全沿用原回贴位置`
+      );
+      markAutoPlacementFailed(normalizedTaskId, mismatchError, {
+        retryable: false,
+        errorType: "target-document"
+      });
+      throw mismatchError;
+    }
+
+    const generativeFill = sourceDocument.generativeFill && typeof sourceDocument.generativeFill === "object"
+      ? { ...sourceDocument.generativeFill, selectionSnapshotChannelName: "" }
+      : sourceDocument.generativeFill;
+    const reassignedSourceDocument = {
+      ...sourceDocument,
+      ok: true,
+      hasActiveDocument: true,
+      documentId: Number(currentDocument.documentId),
+      title: String(currentDocument.title || sourceDocument.title || "当前文档"),
+      width: currentWidth || sourceWidth || null,
+      height: currentHeight || sourceHeight || null,
+      generativeFill
+    };
+    upsertRunningTask({
+      taskId: normalizedTaskId,
+      sourceDocument: reassignedSourceDocument,
+      placementDocumentId: Number(currentDocument.documentId),
+      detail: `已明确改用当前 Photoshop 文档 #${currentDocument.documentId}，正在准备回贴。`,
+      placementErrorType: "",
+      placementRetryAt: 0,
+      placementRetryCount: 0
+    });
+    modules.ui.logToWorkspace(`返图目标已改为当前 Photoshop 文档 #${currentDocument.documentId}。`, "info");
+    return retryTaskAutoPlacement(normalizedTaskId, {
+      allowTargetReassignment: true,
+      sourceDocument: reassignedSourceDocument
+    });
   }
 
   function markRunCooldown() {
@@ -3266,6 +3822,32 @@
     }
 
     try {
+      if (payload && payload.settings && payload.settings.ratioOffsetCorrectionEnabled === true) {
+        if (!modules.ratioOffsetCorrection || typeof modules.ratioOffsetCorrection.prepareRunPayload !== "function") {
+          throw new Error("比例偏移修正模块未加载，请重启插件后重试");
+        }
+        const prepared = await modules.ratioOffsetCorrection.prepareRunPayload(payload, sourceDocument);
+        if (prepared.applied) {
+          payload = prepared.payload;
+          sourceDocument = prepared.sourceDocument;
+          const correction = prepared.metadata;
+          const retainedPercent = Math.max(0, Math.min(100, Math.round(Number(correction.retainedAreaRatio || 0) * 100)));
+          const forcedRatio = correction.forcedAspectRatioValue
+            ? `，比例字段已强制为 ${correction.forcedAspectRatioValue}`
+            : "，未识别到可写入的 1:1 比例字段，将由工作流根据方形主图决定输出比例";
+          modules.ui.logToWorkspace(
+            `比例偏移修正已应用：${correction.originalWidth}x${correction.originalHeight} -> ${correction.squareSize}x${correction.squareSize}，裁回后保留约 ${retainedPercent}% 有效面积${forcedRatio}。`,
+            correction.forcedAspectRatioValue ? "info" : "warn"
+          );
+          upsertRunningTask({
+            taskId: tempTaskId,
+            sourceDocument,
+            detail: `比例偏移修正完成，正在提交到 ${statusLabel}...`
+          });
+        } else if (prepared.reason === "missing-primary-image") {
+          modules.ui.logToWorkspace("已开启比例偏移修正，但当前任务没有可处理的主图，任务将按原参数运行。", "warn");
+        }
+      }
       modules.ui.logToWorkspace(
         `[运行提交] provider=${payload.provider || "runninghub"} appId=${payload.appId} appName=${payload.appName || "-"} instanceType=${payload.instanceType || "default"} inputCount=${Object.keys(payload.inputs || {}).length}`,
         "info"
@@ -3368,6 +3950,7 @@
         outputUrl: String(pollResult.outputUrl || "").trim(),
         dataUrl: String(pollResult.dataUrl || "").trim(),
         filePath: String(pollResult.filePath || "").trim(),
+        resultImage: pollResult.resultImage && typeof pollResult.resultImage === "object" ? pollResult.resultImage : null,
         sourceDocument,
         finishedAt: completedAt
       });
@@ -3382,11 +3965,11 @@
         outputUrl: pollResult.outputUrl,
         dataUrl: pollResult.dataUrl,
         filePath: pollResult.filePath,
+        resultImage: pollResult.resultImage,
         taskId: remoteTaskId
       });
       modules.ui.logToWorkspace(`任务已完成，已取得${pollResult.filePath ? "宿主临时文件" : pollResult.dataUrl ? "内联图片" : "结果地址"}。`, "success");
       let placementResponse = null;
-      let placementFailureMessage = "";
       try {
         placementResponse = await autoPlaceResult({
           appName: payload.appName,
@@ -3394,6 +3977,7 @@
           outputUrl: pollResult.outputUrl,
           dataUrl: pollResult.dataUrl,
           filePath: pollResult.filePath,
+          resultImage: pollResult.resultImage,
           taskId: remoteTaskId
         });
         if (placementResponse && placementResponse.queued) {
@@ -3401,8 +3985,9 @@
             taskId: remoteTaskId,
             remoteTaskId,
             appName: payload.appName,
-            status: "placing",
-            detail: "任务已完成，但 Photoshop 当前正忙，返图已暂停，稍后会自动继续贴回。"
+            status: placementResponse.phase === "download" ? "downloading" : "placing",
+            detail: placementResponse.message || "返图暂未成功，稍后会自动继续。",
+            placementErrorType: placementResponse.phase === "download" ? "result-download" : "photoshop-busy"
           });
           return;
         }
@@ -3411,24 +3996,27 @@
           placementError && placementError.message
             ? placementError.message
             : String(placementError || "自动贴回 Photoshop 失败");
-        placementFailureMessage = placementMessage;
         modules.ui.logToWorkspace(`任务已完成，但自动贴回失败：${placementMessage}`, "warn");
+        markAutoPlacementFailed(remoteTaskId, placementError, { appName: payload.appName });
+        return;
       }
       upsertRunningTask({
         taskId: remoteTaskId,
         remoteTaskId,
         appName: payload.appName,
-        status: placementFailureMessage ? "placement-failed" : "succeeded",
+        status: "succeeded",
         detail:
           placementResponse && placementResponse.documentId
-            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}${placementResponse.blendMatch && placementResponse.blendMatch.ok ? "，融合校色完成" : ""}。`
+            ? `任务已完成，并已自动贴回 Photoshop 文档 #${placementResponse.documentId}${placementResponse.blendMatch && placementResponse.blendMatch.ok ? "，对齐与校色完成" : ""}。`
             : placementResponse && placementResponse.placed
               ? "任务已完成，并已自动贴回 Photoshop。"
-              : placementFailureMessage
-                ? `任务已完成，但自动贴回失败：${placementFailureMessage}。请点击“重试”再次贴回。`
-                : modules.runtime.isPluginRuntime()
-                  ? "任务已完成，但 Photoshop 未返回有效的贴回确认。"
-                  : "任务已完成，浏览器预览模式不会自动贴回 Photoshop。"
+              : modules.runtime.isPluginRuntime()
+                ? "任务已完成，但 Photoshop 未返回有效的贴回确认。"
+                : "任务已完成，浏览器预览模式不会自动贴回 Photoshop。",
+        placementRetryable: false,
+        placementErrorType: "",
+        placementRetryAt: 0,
+        placementRetryCount: 0
       });
     } catch (error) {
       const message = error && error.message ? error.message : String(error || "任务执行失败");
@@ -3483,6 +4071,7 @@
   }
 
   async function runCurrentWorkspaceTask(options = {}) {
+    if (captureInProgress) throw new Error("正在捕获图像，请等待图像完成后再运行。");
     validateRunPayload();
     clearLastResult();
     const payload = buildRunPayload(options);
@@ -3885,6 +4474,20 @@
         return;
       }
 
+      if (action === "place-in-current-document") {
+        const taskId = String(target.getAttribute("data-task-id") || "").trim();
+        if (!taskId) return;
+        target.disabled = true;
+        try {
+          await placeTaskResultInCurrentDocument(taskId);
+        } catch (error) {
+          modules.ui.logToWorkspace(`重新指定回贴文档失败：${error && error.message ? error.message : error}`, "warn");
+        } finally {
+          target.disabled = false;
+        }
+        return;
+      }
+
       if (action === "cancel-running-task") {
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
         if (!taskId) return;
@@ -4008,6 +4611,7 @@
     renderWorkspace,
     clearCompletedRunningTasks,
     buildRunPayload,
+    buildThirdPartyRunPayload,
     enqueueRunTaskFlow,
     collectFormValuesFromDom,
     captureWorkspaceFormSnapshot,
@@ -4018,6 +4622,16 @@
     resumeAutoPlacementRetry,
     getTaskDurationLabel,
     getTaskCostLabel,
+    isAutoPlacementBlockedError,
+    isAutoPlacementRetryableError,
+    isAutoPlacementTargetDocumentError,
+    isResultDownloadInvalidError,
+    isResultDownloadRetryableError,
+    getAutoPlacementErrorType,
+    getAutoPlacementRetryDelayMs,
+    getResultDownloadRetryDelayMs,
+    shouldStopAutoPlacementBlockedRetry,
+    isTaskRemoteCompleteStatus,
     renderWorkspaceAccountSummary,
     refreshThirdPartyAccountSummary
   };

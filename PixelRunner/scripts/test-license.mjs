@@ -15,7 +15,7 @@ import {
   isFeatureUnlocked,
   verifyActivationCode
 } from "../src/shared/license-core.js";
-import { LicenseFeatureError, createHostLicenseEnforcer } from "../src/host/license-enforcement.js";
+import { LicenseFeatureError, createHostLicenseEnforcer, getRequiredLicenseFeature } from "../src/host/license-enforcement.js";
 
 class MemoryStorage {
   constructor(values = {}) {
@@ -136,6 +136,16 @@ const protectedRequests = [
   { feature: "blendMatch", counter: "blendMatchAnalysis", request: { method: "photoshop.runToolAction", args: [{ action: "blendMatchPreviewSamples" }] } },
   { feature: "localUpscale", counter: "localUpscaleRequest", request: { method: "localUpscale.startEngine", args: [] } }
 ];
+assert.equal(
+  getRequiredLicenseFeature({ method: "photoshop.placeResultWithGenerativeFillColorCorrection", args: [{}] }),
+  "",
+  "generative-fill color correction placement is intentionally available without blend-match authorization"
+);
+assert.equal(
+  getRequiredLicenseFeature({ method: "photoshop.placeResultWithBlendMatch", args: [{}] }),
+  "blendMatch",
+  "regular blend-match placement remains protected"
+);
 const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
 function invokeProtectedTask(item) {
   hostEnforcer.assertBridgeRequest(item.request);

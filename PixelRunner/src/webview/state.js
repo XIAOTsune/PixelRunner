@@ -57,6 +57,10 @@ import {
     CN: "cn",
     GLOBAL: "global"
   };
+  const GENERATIVE_FILL_SOURCES = Object.freeze({
+    RUNNINGHUB: "runninghub",
+    THIRD_PARTY: "third-party"
+  });
 
   function normalizeRunningHubRegion(value) {
     const marker = String(value || "").trim().toLowerCase();
@@ -77,6 +81,12 @@ import {
       : DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID;
   }
 
+  function normalizeGenerativeFillSource(value) {
+    return String(value || "").trim().toLowerCase() === GENERATIVE_FILL_SOURCES.THIRD_PARTY
+      ? GENERATIVE_FILL_SOURCES.THIRD_PARTY
+      : GENERATIVE_FILL_SOURCES.RUNNINGHUB;
+  }
+
   const DEFAULT_SETTINGS = {
     apiKey: "",
     runningHubRegion: RUNNINGHUB_REGIONS.CN,
@@ -94,16 +104,17 @@ import {
       cn: DEFAULT_GENERATIVE_FILL_APP_ID,
       global: DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID
     },
+    generativeFillSource: GENERATIVE_FILL_SOURCES.RUNNINGHUB,
     generativeFillContextExpansion: 128,
     generativeFillMaskExpansion: 4,
     generativeFillFeather: 36,
     generativeFillColorCorrectionEnabled: true,
+    ratioOffsetCorrectionEnabled: false,
     appPickerLayout: "visual",
     plusModeEnabled: false
   };
 
   const DEFAULT_THIRD_PARTY_SETTINGS = {
-    enabled: false,
     provider: "grs",
     grs: {
       region: GRS_REGIONS.CN,
@@ -215,6 +226,8 @@ import {
       outputUrl: "",
       dataUrl: "",
       filePath: "",
+      resultImage: null,
+      cachedResult: false,
       taskId: "",
       placedAt: 0
     },
@@ -325,10 +338,12 @@ import {
       aiOptimizeAppIds,
       generativeFillAppId: generativeFillAppIds[runningHubRegion],
       generativeFillAppIds,
+      generativeFillSource: normalizeGenerativeFillSource(source.generativeFillSource),
       generativeFillContextExpansion,
       generativeFillMaskExpansion,
       generativeFillFeather,
       generativeFillColorCorrectionEnabled: source.generativeFillColorCorrectionEnabled !== false,
+      ratioOffsetCorrectionEnabled: source.ratioOffsetCorrectionEnabled === true,
       appPickerLayout: String(source.appPickerLayout || "") === "compact" ? "compact" : DEFAULT_SETTINGS.appPickerLayout,
       plusModeEnabled: source.plusModeEnabled === true,
       activeApiProfileId: String(source.activeApiProfileId || "").trim()
@@ -414,7 +429,6 @@ import {
     const region = normalizeGrsRegion(grsSource.region, grsSource.apiUrl);
     const geminiSource = source.gemini && typeof source.gemini === "object" ? source.gemini : {};
     return {
-      enabled: Boolean(source.enabled),
       provider: String(source.provider || "").trim().toLowerCase() === "gemini" ? "gemini" : "grs",
       grs: {
         region,
@@ -787,6 +801,7 @@ import {
     DEFAULT_GLOBAL_AI_OPTIMIZE_APP_ID,
     DEFAULT_GLOBAL_GENERATIVE_FILL_APP_ID,
     RUNNINGHUB_REGIONS,
+    GENERATIVE_FILL_SOURCES,
     GRS_REGIONS,
     GRS_CHAT_MODEL_IDS,
     GRS_IMAGE_MODEL_IDS,
@@ -806,6 +821,7 @@ import {
     state,
     normalizeTheme,
     normalizeRunningHubRegion,
+    normalizeGenerativeFillSource,
     normalizeGrsRegion,
     normalizeGeminiChannelId,
     getGeminiChannelModelDefaults,

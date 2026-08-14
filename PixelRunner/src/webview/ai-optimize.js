@@ -970,9 +970,7 @@
         }
 
         const useThirdPartyOptimize = Boolean(
-          modules.state.isThirdPartyApp(modules.state.state.currentApp) &&
-            modules.state.state.thirdPartySettings &&
-            modules.state.state.thirdPartySettings.enabled
+          modules.state.isThirdPartyApp(modules.state.state.currentApp)
         );
         const apiKey = String(modules.state.state.settings.apiKey || "").trim();
         const runningHubRegion = modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion);

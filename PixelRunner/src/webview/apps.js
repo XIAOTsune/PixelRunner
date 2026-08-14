@@ -89,24 +89,33 @@
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID, String(appId || ""));
   }
 
-  function isThirdPartyEnabled() {
-    return Boolean(modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.enabled);
-  }
-
   function getThirdPartyPickerButton() {
-    if (!isThirdPartyEnabled()) return "";
     const state = modules.state.state;
     const isActive = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
     const descriptor = modules.state.getThirdPartyProviderDescriptor();
-    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(descriptor.shortLabel)}</span><span>${modules.runtime.escapeHtml(String(descriptor.config.selectedModel || "未选择模型"))}</span></span></button>`;
+    const configured = Boolean(String(descriptor.config.apiKey || "").trim());
+    return `<button class="picker-item picker-item-special app-picker-special-card third-party-picker-item ${isActive ? "active" : ""}" type="button" data-action="select-third-party-app" title="${configured ? `进入 ${modules.runtime.escapeHtml(descriptor.label)} 生图入口` : `请在第三方支持中配置 ${modules.runtime.escapeHtml(descriptor.label)} API Key`}"><span class="picker-item-title">第三方 API</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(descriptor.shortLabel)}</span><span>${modules.runtime.escapeHtml(configured ? String(descriptor.config.selectedModel || "未选择模型") : "待配置 API Key")}</span></span></button>`;
   }
 
   function getGenerativeFillPickerButton() {
     const state = modules.state.state;
+    const source = modules.state.normalizeGenerativeFillSource(state.settings && state.settings.generativeFillSource);
+    const useThirdParty = source === modules.state.GENERATIVE_FILL_SOURCES.THIRD_PARTY;
     const appId = String(state.settings && state.settings.generativeFillAppId || "").trim();
+    const descriptor = modules.state.getThirdPartyProviderDescriptor();
+    const thirdPartyConfigured = Boolean(String(descriptor.config && descriptor.config.apiKey || "").trim());
+    const available = useThirdParty ? thirdPartyConfigured : Boolean(appId);
     const isActive = state.workspaceMode === "generative-fill";
-    const meta = appId ? `上下文 ${modules.state.state.settings.generativeFillContextExpansion ?? 128}px` : "请先配置应用 ID";
-    return `<button class="picker-item picker-item-special app-picker-special-card generative-fill-picker-item ${isActive ? "active" : ""} ${appId ? "" : "is-unavailable"}" type="button" data-action="select-generative-fill" title="${appId ? "进入创成式填充模式" : "请在设置页的创成式填充设置中配置应用 ID"}"><span class="picker-item-title">创成式填充</span><span class="picker-item-meta"><span>原生紧凑操作栏</span><span>${modules.runtime.escapeHtml(meta)}</span></span></button>`;
+    const sourceLabel = useThirdParty ? `第三方 · ${descriptor.shortLabel}` : "RunningHub 应用 ID";
+    const meta = available
+      ? `上下文 ${modules.state.state.settings.generativeFillContextExpansion ?? 128}px`
+      : useThirdParty
+        ? `请配置 ${descriptor.label} API Key`
+        : "请先配置应用 ID";
+    const unavailableTitle = useThirdParty
+      ? `请在第三方支持中配置 ${descriptor.label} API Key`
+      : "请在设置页的创成式填充设置中配置应用 ID";
+    return `<button class="picker-item picker-item-special app-picker-special-card generative-fill-picker-item ${isActive ? "active" : ""} ${available ? "" : "is-unavailable"}" type="button" data-action="select-generative-fill" title="${available ? "进入创成式填充模式" : modules.runtime.escapeHtml(unavailableTitle)}"><span class="picker-item-title">创成式填充</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(sourceLabel)}</span><span>${modules.runtime.escapeHtml(meta)}</span></span></button>`;
   }
 
   function getAppPreviewImage(app) {
@@ -466,7 +475,7 @@
       ? regionApps
       : regionApps.filter((item) => modules.state.fuzzyMatchText(`${modules.state.getAppDisplayName(item)} ${modules.state.getAppDisplayId(item)} ${item.description || ""}`, keyword));
 
-    if (statsEl) statsEl.textContent = `${visibleApps.length + (isThirdPartyEnabled() ? 1 : 0)} / ${regionApps.length + (isThirdPartyEnabled() ? 1 : 0)}`;
+    if (statsEl) statsEl.textContent = `${visibleApps.length + 1} / ${regionApps.length + 1}`;
     const quickEntryButton = `<button class="picker-item picker-item-special app-picker-special-card ${state.workspaceMode === "quick" ? "active" : ""}" type="button" data-action="select-quick-mode"><span class="picker-item-title">快捷入口</span><span class="picker-item-meta"><span>框选后点击即跑</span><span>${modules.runtime.escapeHtml(String(state.quickEntries.length || 0))} 个入口</span></span></button>`;
     const thirdPartyButton = getThirdPartyPickerButton();
     const generativeFillButton = getGenerativeFillPickerButton();
@@ -609,7 +618,6 @@
 
   async function setCurrentThirdPartyApp(options = {}) {
     const state = modules.state.state;
-    if (!isThirdPartyEnabled()) return false;
     const nextApp = modules.state.getThirdPartyApp();
     state.currentApp = nextApp;
     const defaults = modules.state.buildDefaultFormValues(nextApp);
@@ -640,7 +648,14 @@
     modules.workspace.renderWorkspace();
     renderSavedAppsList();
     renderAppPickerList();
-    if (!options.quiet) modules.ui.logToWorkspace(`已选择第三方 API：${descriptor.label} 生图入口`);
+    if (!options.quiet) {
+      modules.ui.logToWorkspace(
+        String(descriptor.config.apiKey || "").trim()
+          ? `已选择第三方 API：${descriptor.label} 生图入口`
+          : `已选择第三方 API，但 ${descriptor.label} 尚未配置 API Key。请到设置页的第三方支持中完成配置。`,
+        String(descriptor.config.apiKey || "").trim() ? "info" : "warn"
+      );
+    }
     return true;
   }
 

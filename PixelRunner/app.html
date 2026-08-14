@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>像素起子（小T修图助手）</title>
+  <title>像素起子</title>
   <link rel="stylesheet" href="app.css" />
 </head>
 <body>
@@ -48,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持项目</button>
-              <span class="version-text">v2.8.1</span>
+              <span class="version-text">v2.8.3</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -116,7 +116,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子（小T修图助手）2.8.1 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.8.3 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -131,7 +131,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持项目</button>
-            <span class="version-text">v2.8.1</span>
+            <span class="version-text">v2.8.3</span>
           </div>
         </div>
 
@@ -169,20 +169,19 @@
           <div class="tool-blend-match-launcher">
             <div class="tool-blend-match-summary-main">
               <div class="tool-blend-match-header-line">
-                <h3 class="card-title">融合校色</h3>
+                <h3 class="card-title">对齐与校色</h3>
                 <span id="blendMatchModeBadge" class="status-chip">均衡</span>
                 <span class="status-chip license-tool-status" data-license-status-for="blendMatch">已锁定</span>
               </div>
               <p class="subtle-note">隐藏当前返图图层后采样原图参考，生成更匹配明度、色彩和边缘过渡的融合结果层。</p>
             </div>
-            <button id="btnOpenBlendMatchPanel" class="primary-btn blend-match-open-btn" type="button" data-license-feature="blendMatch">打开融合校色</button>
+            <button id="btnOpenBlendMatchPanel" class="primary-btn blend-match-open-btn" type="button" data-license-feature="blendMatch">打开对齐与校色</button>
           </div>
           <div id="blendMatchQuickHint" class="summary-strip">模式 均衡 / 强度 78% / 羽化 16px</div>
           <label class="freq-sep-check-field blend-match-auto-field">
             <input id="blendMatchAutoToggle" type="checkbox" />
-            <span>AI 返图后立即融合校色</span>
+            <span>AI 返图后立即对齐与校色</span>
           </label>
-          <div id="blendMatchStatus" class="summary-strip">等待选择返图图层</div>
         </section>
 
         <section class="surface-card tool-local-upscale-card">
@@ -190,14 +189,13 @@
             <div class="tool-local-upscale-summary-main">
               <div class="tool-local-upscale-header-line">
                 <h3 class="card-title">本地超分</h3>
-                <span id="localUpscaleQuickBadge" class="status-chip">打开后自动启动</span>
                 <span class="status-chip license-tool-status" data-license-status-for="localUpscale">已锁定</span>
               </div>
-              <p class="subtle-note">Real-ESRGAN x4plus · 同尺寸增强并回贴为新图层。</p>
+              <p class="subtle-note">同尺寸增强并回贴为新图层。</p>
             </div>
             <button id="btnOpenLocalUpscalePanel" class="primary-btn local-upscale-open-btn" type="button" data-license-feature="localUpscale">打开本地超分</button>
           </div>
-          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">点击“打开本地超分”会自动启动并加载本地模型。</div>
+          <div id="localUpscaleQuickHint" class="summary-strip" role="status" aria-live="polite">打开后会自动准备本地增强。</div>
         </section>
 
         <div class="tool-group-grid">
@@ -302,7 +300,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持项目</button>
-          <span class="version-text">v2.8.1</span>
+          <span class="version-text">v2.8.3</span>
           </div>
         </div>
 
@@ -386,7 +384,7 @@
                 <span>联系插件开发者小T激活</span>
                 <span>QQ：1048855084</span>
                 <span>激活价格：29.9 元</span>
-                <span>激活后可使用：辉光、空间特效、融合校色、本地超分</span>
+                <span>激活后可使用：辉光、空间特效、对齐与校色、本地超分</span>
               </div>
             </div>
           </details>
@@ -435,6 +433,14 @@
                 </label>
                 <span class="field-hint settings-field-hint">适合 API 不支持多个任务同时上传的情况。开启后新任务会先进入本地队列，当前云端任务完成或结束后再自动提交；关闭后等待中的本地任务会按当前最大并发数立即放行。</span>
               </div>
+              <div class="field toggle-field settings-toggle-field">
+                <span class="field-label">比例偏移修正</span>
+                <label class="checkbox-line">
+                  <input id="settingsRatioOffsetCorrectionInput" type="checkbox" />
+                  <span>强制以 1:1 运行并裁回原比例</span>
+                </label>
+                <span class="field-hint settings-field-hint">默认关闭。开启后不检查当前比例是否为 Auto：主图会居中补边为方形，结果按原上传比例居中裁回；超宽或超高图片会损失较多有效分辨率。RunningHub 应用若提供可识别的方形比例选项，也会一并强制使用。</span>
+              </div>
               <label class="field">
                 <span class="field-label">AI 优化应用 ID</span>
                 <input id="settingsAiOptimizeAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub AI优化应用 ID" />
@@ -465,9 +471,9 @@
             <summary class="settings-collapse-summary">创成式填充设置</summary>
             <div class="form-stack collapsible-body">
               <label class="field">
-                <span class="field-label">创成式填充应用 ID</span>
+                <span class="field-label">RunningHub 创成式填充应用 ID</span>
                 <input id="settingsGenerativeFillAppIdInput" class="field-input" type="text" placeholder="填写 RunningHub 创成式填充应用 ID" />
-                <span class="field-hint settings-field-hint">当前国内版默认使用 2072190882207584257。创成式填充会在工作台应用切换中作为独立特殊模式运行。</span>
+                <span class="field-hint settings-field-hint">当前国内版默认使用 2072190882207584257；选择第三方 API 来源时改用“第三方支持”中的当前配置。</span>
               </label>
               <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">回贴自动校色</span>
@@ -475,7 +481,7 @@
                   <input id="settingsGenerativeFillColorCorrectionInput" type="checkbox" checked />
                   <span>自动校正明度和色彩</span>
                 </label>
-                <span class="field-hint settings-field-hint">默认开启。回贴时使用融合校色同款算法，以自然强度校正明度和色彩，不执行对比度、饱和度、对齐或额外羽化。</span>
+                <span class="field-hint settings-field-hint">默认开启。回贴时使用对齐与校色同款算法，以自然强度校正明度和色彩，不执行对比度、饱和度、对齐或额外羽化。</span>
               </div>
               <div class="dual-grid">
                 <label class="field">
@@ -543,13 +549,6 @@
           <details id="thirdPartySettingsDetails" class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">第三方支持</summary>
             <div class="form-stack collapsible-body">
-              <label class="field toggle-field">
-                <span class="field-label">启用第三方 API</span>
-                <label class="checkbox-line">
-                  <input id="thirdPartyEnabledInput" type="checkbox" />
-                  <span>在工作台应用切换中显示“第三方 API”卡片</span>
-                </label>
-              </label>
               <div class="field">
                 <span class="field-label">供应商</span>
                 <div id="thirdPartyProviderControl" class="region-segmented third-party-provider-control" role="group" aria-label="第三方 API 供应商">
@@ -642,7 +641,7 @@
               <div class="action-row">
                 <button id="btnSaveThirdPartySettings" class="primary-btn" type="button">保存第三方设置</button>
               </div>
-              <div id="thirdPartyStatusSummary" class="summary-strip">启用后，工作台应用切换中会出现固定的第三方 API 卡片。</div>
+              <div id="thirdPartyStatusSummary" class="summary-strip">第三方 API 卡片始终显示在工作台应用切换中；运行前请完成当前供应商配置。</div>
             </div>
           </details>
         </div>
@@ -1269,7 +1268,7 @@
       <div class="card-head">
         <div>
           <p class="card-kicker">工具箱</p>
-          <h3 class="card-title">融合校色</h3>
+          <h3 class="card-title">对齐与校色</h3>
         </div>
         <button id="blendMatchModalClose" class="mini-btn" type="button">关闭</button>
       </div>
@@ -1287,7 +1286,7 @@
           </div>
         </div>
         <div id="blendMatchPreviewFrame" class="blend-match-preview-frame">
-          <canvas id="blendMatchPreviewCanvas" aria-label="融合校色边界预览"></canvas>
+          <canvas id="blendMatchPreviewCanvas" aria-label="对齐与校色边界预览"></canvas>
           <input id="blendMatchPreviewSplitInput" class="blend-match-preview-split" type="range" min="0" max="100" step="1" value="50" aria-label="融合前后对比位置" />
           <div class="blend-match-preview-tools" aria-label="预览缩放工具">
             <button class="mini-btn blend-match-preview-tool-btn" type="button" data-blend-match-zoom="out" title="缩小预览">−</button>
@@ -1360,10 +1359,9 @@
 
       <div class="local-upscale-engine-panel">
         <div class="local-upscale-engine-head">
-          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">等待启动本地模型</span>
+          <span id="localUpscaleEngineStatus" class="status-chip" role="status" aria-live="polite">等待准备本地增强</span>
           <button id="btnRefreshLocalUpscaleEngine" class="mini-btn" type="button">重新检测</button>
         </div>
-        <span id="localUpscaleEngineMeta" class="local-upscale-engine-meta">Real-ESRGAN x4plus · 打开面板后自动加载</span>
       </div>
 
       <div class="local-upscale-controls">
@@ -1398,7 +1396,7 @@
       <div id="localUpscaleProgressPanel" class="local-upscale-progress-panel" data-state="idle">
         <div class="local-upscale-progress-head">
           <span id="localUpscaleProgressLabel">等待开始</span>
-          <span id="localUpscaleProgressMeta">自动范围 · 原生 4x</span>
+          <span id="localUpscaleProgressMeta">自动范围</span>
         </div>
         <div class="local-upscale-progress-track" aria-hidden="true"><span id="localUpscaleProgressBar"></span></div>
       </div>
@@ -1422,6 +1420,7 @@
     allow="autoplay">
   </iframe>
 
+  <script src="dist/core.bundle.js"></script>
   <script src="dist/app.bundle.js"></script>
 </body>
 </html>

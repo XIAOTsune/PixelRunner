@@ -85,6 +85,15 @@ const originalFetch = globalThis.fetch;
 const submittedRequests = [];
 let globalTaskSnapshot = null;
 globalThis.fetch = async (url, options = {}) => {
+  if (String(url).includes("/media/upload/binary") || String(url).includes("/uc/openapi/upload")) {
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ data: { fileName: "neutral-gray-image-token" } });
+      }
+    };
+  }
   if (String(url).endsWith("/openapi/v2/query")) {
     return {
       ok: true,
@@ -121,6 +130,34 @@ try {
   assert.equal(submittedRequests[0].url, "https://www.runninghub.ai/task/openapi/ai-app/run");
   assert.equal(Object.hasOwn(submittedRequests[0].body, "instanceType"), false);
   assert.equal(submittedRequests[1].body.instanceType, "plus");
+
+  await submitRunningHubTask([{
+    ...basePayload,
+    app: {
+      appId: "global-test-app",
+      inputs: [
+        { key: "mainImage", type: "image" },
+        { key: "controlImage", type: "image" },
+        { key: "referenceImage", type: "image" },
+        { key: "skippedImage", type: "image", emptyBehavior: "skip" }
+      ]
+    },
+    inputs: {}
+  }]);
+  const optionalImageFields = submittedRequests[2].body.nodeInfoList;
+  assert.deepEqual(optionalImageFields, [
+    { nodeId: "mainImage", fieldName: "mainImage", fieldValue: "neutral-gray-image-token" },
+    { nodeId: "controlImage", fieldName: "controlImage", fieldValue: "neutral-gray-image-token" },
+    { nodeId: "referenceImage", fieldName: "referenceImage", fieldValue: "neutral-gray-image-token" }
+  ]);
+  await assert.rejects(
+    () => submitRunningHubTask([{
+      ...basePayload,
+      app: { appId: "global-test-app", inputs: [{ key: "requiredImage", type: "image", required: true }] },
+      inputs: {}
+    }]),
+    /Missing required input: requiredImage/
+  );
 
   globalTaskSnapshot = globalRunningPreview;
   const runningStatus = await fetchRunningHubTaskStatus([{

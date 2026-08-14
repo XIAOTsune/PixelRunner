@@ -9,7 +9,9 @@ import {
   activateDocument,
   buildDataUrl,
   ensureActiveDocument,
+  findOpenDocumentById,
   getDocumentInfo,
+  normalizeBitsPerChannel,
   normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
@@ -390,6 +392,38 @@ function sanitizePngInfo(pngInfo) {
   if (!pngInfo) return null;
   const { _meta, ...safeInfo } = pngInfo;
   return safeInfo;
+}
+
+export function mergeCachedPngInfo(parsedPngInfo, cachedResultImage) {
+  if (!parsedPngInfo) return null;
+  const cached = cachedResultImage && typeof cachedResultImage === "object" ? cachedResultImage : null;
+  if (!cached) return parsedPngInfo;
+
+  const width = Math.max(1, Number(parsedPngInfo.width) || 1);
+  const height = Math.max(1, Number(parsedPngInfo.height) || 1);
+  if (!dimensionsNearlyMatch(width, height, Number(cached.width), Number(cached.height), 0)) {
+    return parsedPngInfo;
+  }
+
+  const cachedAlphaBounds = normalizeBounds(cached.alphaBounds);
+  const alphaBounds = cachedAlphaBounds &&
+    cachedAlphaBounds.left >= 0 &&
+    cachedAlphaBounds.top >= 0 &&
+    cachedAlphaBounds.right <= width &&
+    cachedAlphaBounds.bottom <= height
+    ? {
+        ...cachedAlphaBounds,
+        width: cachedAlphaBounds.right - cachedAlphaBounds.left,
+        height: cachedAlphaBounds.bottom - cachedAlphaBounds.top
+      }
+    : parsedPngInfo.alphaBounds;
+
+  return {
+    ...parsedPngInfo,
+    hasTransparency: parsedPngInfo.hasTransparency || cached.hasTransparency === true,
+    alphaBounds,
+    boundsAnchored: parsedPngInfo.boundsAnchored === true || cached.boundsAnchored === true
+  };
 }
 
 function extractEncodedBase64(encoded) {
@@ -1990,6 +2024,7 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
       }
       tempDoc = await doc.duplicate("PR 超分");
+      await activateDocument(app, action, Number(tempDoc.id));
       try {
         await tempDoc.flatten();
       } catch (_) {}
@@ -2000,6 +2035,7 @@ export async function captureDocumentForLocalUpscale(options = {}) {
         await tempDoc.crop(captureBounds);
       }
 
+      await normalizeLocalUpscaleTempDocumentBitDepth(action, tempDoc);
       const sourceSize = getDocumentPixelSize(tempDoc);
       const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `PR-S-${fileKey}`);
       const outputPath = createSiblingNativePath(
@@ -2077,7 +2113,12 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const core = photoshop.core;
   const action = photoshop.action;
 
-  if (!app || !app.activeDocument) throw new Error("No active Photoshop document");
+  if (!app) throw new Error("Photoshop application is unavailable");
+  const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
+  if (targetDocumentId > 0 && !findOpenDocumentById(app, targetDocumentId)) {
+    throw new Error(`Target document is unavailable: #${targetDocumentId}`);
+  }
+  if (!app.activeDocument) throw new Error("No active Photoshop document");
 
   let buffer = null;
   let sourceMimeType = "";
@@ -2109,6 +2150,15 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     localResultFileType = { ...localTypes[extension], detectedBy: "local-temporary-file" };
     sourceMimeType = localResultFileType.mimeType;
     responseUrl = filePath;
+    if (extension === "png" && typeof localSourceFile.read === "function") {
+      const rawBuffer = await localSourceFile.read({ format: storage.formats.binary });
+      buffer = rawBuffer instanceof ArrayBuffer
+        ? rawBuffer
+        : ArrayBuffer.isView(rawBuffer)
+          ? rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength)
+          : new Uint8Array(rawBuffer || []).buffer;
+      if (!buffer.byteLength) throw new Error("宿主临时结果 PNG 文件为空");
+    }
   } else {
     const downloaded = await fetchBinaryWithMetadata(url, {
       timeoutMs: Math.max(30000, Number(options.downloadTimeoutMs) || 120000)
@@ -2127,7 +2177,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       `RunningHub 返回内容不是可识别的图片（MIME: ${sourceMimeType || "未知"}，大小: ${buffer && buffer.byteLength || 0} 字节）`
     );
   }
-  const pngInfo = buffer ? await parsePngInfo(buffer) : null;
+  const parsedPngInfo = buffer ? await parsePngInfo(buffer) : null;
+  const pngInfo = mergeCachedPngInfo(parsedPngInfo, options.resultImage);
   const preserveCanvasBounds = options.preserveCanvasBounds === true;
   const anchorTransparentCanvas = options.anchorTransparentCanvas === true;
   const pngAlphaBounds = pngInfo && pngInfo.alphaBounds ? pngInfo.alphaBounds : null;
@@ -2186,6 +2237,24 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       await deleteFileQuietly(tempFile);
       throw error;
     }
+  } else if (placementBuffer && placementBuffer !== buffer) {
+    await tempFile.write(placementBuffer, { format: formats.binary });
+  }
+  if (options.cacheOnly === true) {
+    const cachedFilePath = String(tempFile && tempFile.nativePath || "").trim();
+    if (!cachedFilePath) {
+      if (!localSourceFile) await deleteFileQuietly(tempFile);
+      throw new Error("Photoshop 未返回结果缓存文件路径");
+    }
+    return {
+      ok: true,
+      cached: true,
+      filePath: cachedFilePath,
+      resultFormat: resultFileType.extension,
+      byteLength: placementByteLength,
+      mimeType: sourceMimeType || resultFileType.mimeType,
+      resultImage: sanitizePngInfo(pngInfo)
+    };
   }
   let sessionToken = "";
   try {
@@ -2227,7 +2296,6 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     ]);
     throw new Error("创成式填充缺少不规则选区蒙版，已停止回贴以避免生成矩形蒙版");
   }
-  const targetDocumentId = Number(options.targetDocumentId || options.sourceDocumentId);
   const targetBounds = normalizeBounds(options.targetBounds);
   const maskFallbackBounds = normalizeBounds(options.maskFallbackBounds);
   const normalizedMode = String(options.fitMode || "contain").trim().toLowerCase();
@@ -2424,13 +2492,16 @@ export async function placeImageFromUrl(payload, runtime = {}) {
   const enqueuePhotoshopOperation = runtime && typeof runtime.enqueuePhotoshopOperation === "function"
     ? runtime.enqueuePhotoshopOperation
     : null;
+  let placementCompleted = false;
   try {
-    return await (enqueuePhotoshopOperation
+    const response = await (enqueuePhotoshopOperation
       ? enqueuePhotoshopOperation(commitPlacement, { stage: "placing" })
       : commitPlacement());
+    placementCompleted = true;
+    return response;
   } finally {
     await Promise.all([
-      shouldDeleteTempFile ? deleteFileQuietly(tempFile) : Promise.resolve(),
+      shouldDeleteTempFile && (!localSourceFile || placementCompleted) ? deleteFileQuietly(tempFile) : Promise.resolve(),
       deleteFileQuietly(placementMaskFile)
     ]);
   }
@@ -2461,6 +2532,23 @@ async function exportDocumentAsPngFile(storage, action, docRef, filePrefix = "pi
     await deleteFileQuietly(tempFile);
     throw error;
   }
+}
+
+async function normalizeLocalUpscaleTempDocumentBitDepth(action, docRef) {
+  const rawBitsPerChannel = docRef && docRef.bitsPerChannel;
+  const bitsPerChannel = rawBitsPerChannel && typeof rawBitsPerChannel === "object"
+    ? rawBitsPerChannel._value ?? rawBitsPerChannel.value ?? rawBitsPerChannel
+    : rawBitsPerChannel;
+  if (normalizeBitsPerChannel(bitsPerChannel) !== "SIXTEEN") return;
+
+  // The duplicated document is active here. Real-ESRGAN receives an 8-bit PNG,
+  // while the source Photoshop document remains at its original bit depth.
+  await action.batchPlay([{
+    _obj: "convertMode",
+    depth: 8,
+    merge: false,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
 }
 
 export async function openImageFromUrl(payload = {}) {

@@ -42,6 +42,7 @@ import {
   submitLocalUpscaleJob
 } from "./local-upscale.js";
 import {
+  cacheResultForPhotoshop,
   capturePhotoshopDocumentPreview,
   capturePhotoshopDocumentForLocalUpscale,
   deletePhotoshopSelectionSnapshot,
@@ -49,6 +50,7 @@ import {
   openLocalUpscaleResultInPhotoshop,
   placeLocalUpscaleResultIntoPhotoshop,
   placeResultAndBlendIntoPhotoshop,
+  placeResultWithGenerativeFillColorCorrection,
   placeResultIntoPhotoshop,
   runPhotoshopToolAction
 } from "./photoshop-bridge.js";
@@ -420,6 +422,9 @@ async function handleBridgeRequest(message, responseTarget) {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.STANDARD
         });
         break;
+      case "photoshop.cacheResultFromUrl":
+        result = await cacheResultForPhotoshop(message.args);
+        break;
       case "photoshop.placeResultFromUrl":
         result = await runDeduplicatedPhotoshopPlacement(
           message,
@@ -437,6 +442,12 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await runDeduplicatedPhotoshopPlacement(
           message,
           () => placeResultAndBlendIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))
+        );
+        break;
+      case "photoshop.placeResultWithGenerativeFillColorCorrection":
+        result = await runDeduplicatedPhotoshopPlacement(
+          message,
+          () => placeResultWithGenerativeFillColorCorrection(message.args, createPhotoshopPlacementRuntime(message))
         );
         break;
       case "photoshop.openLocalUpscaleResult":
@@ -494,7 +505,7 @@ function mountWebView() {
 
     if (payload.type === "pixelrunner.webview.ready") {
       webviewReady = true;
-      setHostStatus("像素起子（小T修图助手）WebView 已就绪", "success");
+      setHostStatus("像素起子 WebView 已就绪", "success");
       document.body.classList.add("webview-ready");
       return;
     }
@@ -516,7 +527,7 @@ function mountWebView() {
   registerListener(window, "message", onMessage);
   registerListener(nextWebview, "message", onMessage);
 
-  setHostStatus("像素起子（小T修图助手）WebView 已挂载，等待就绪信号...", "info");
+  setHostStatus("像素起子 WebView 已挂载，等待就绪信号...", "info");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -530,6 +541,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  setHostStatus("正在挂载像素起子（小T修图助手）WebView...", "info");
+  setHostStatus("正在挂载像素起子 WebView...", "info");
   mountWebView();
 });

@@ -11,6 +11,22 @@ function getPhotoshopService() {
   return photoshopService;
 }
 
+const GENERATIVE_FILL_COLOR_CORRECTION_CONFIG = Object.freeze({
+  mode: "natural",
+  totalStrength: 64,
+  luminanceStrength: 70,
+  colorStrength: 68,
+  saturationStrength: 0,
+  contrastStrength: 0,
+  featherRadius: 0,
+  createBackupLayer: true,
+  pixelPipelineEnabled: true,
+  alignmentEnabled: false,
+  alignmentScaleEnabled: false,
+  localAlignmentEnabled: false,
+  colorCorrectionOnly: true
+});
+
 export async function getPhotoshopDocumentInfo() {
   const photoshopService = getPhotoshopService();
   if (typeof photoshopService.getActiveDocumentInfo !== "function") {
@@ -66,6 +82,25 @@ export async function placeResultIntoPhotoshop(args = [], runtime = {}) {
   }
 
   return photoshopService.placeImageFromUrl(payload, runtime);
+}
+
+export async function cacheResultForPhotoshop(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const url = String(payload.url || "").trim();
+  if (!url) throw new Error("Result image URL is missing");
+
+  const photoshopService = getPhotoshopService();
+  if (typeof photoshopService.placeImageFromUrl !== "function") {
+    throw new Error("Photoshop host service is unavailable");
+  }
+
+  return photoshopService.placeImageFromUrl({
+    ...payload,
+    dataUrl: "",
+    base64: "",
+    filePath: "",
+    cacheOnly: true
+  });
 }
 
 export async function openLocalUpscaleResultInPhotoshop(args = []) {
@@ -185,6 +220,42 @@ export async function placeResultAndBlendIntoPhotoshop(args = [], runtime = {}) 
       blendMatchFusion: {
         ok: false,
         error: String(error && error.message ? error.message : error || "自动融合失败")
+      }
+    };
+  }
+}
+
+export async function placeResultWithGenerativeFillColorCorrection(args = [], runtime = {}) {
+  const placement = await placeResultIntoPhotoshop(args, runtime);
+  const layerId = Number(placement && placement.layerId) || 0;
+  if (!layerId) return placement;
+
+  const photoshopService = getPhotoshopService();
+  const correctionStartedAt = Date.now();
+  console.log(`[PixelRunner/Host] generative fill color correction start layerId=${layerId}`);
+  try {
+    const runCorrection = () => photoshopService.runToolAction({
+      ...GENERATIVE_FILL_COLOR_CORRECTION_CONFIG,
+      action: "blendMatch",
+      layerId
+    });
+    const correction = runtime && typeof runtime.enqueuePhotoshopOperation === "function"
+      ? await runtime.enqueuePhotoshopOperation(runCorrection, { stage: "blendMatch" })
+      : await runCorrection();
+    console.log(`[PixelRunner/Host] generative fill color correction success layerId=${layerId} durationMs=${Date.now() - correctionStartedAt}`);
+    return {
+      ...placement,
+      blendMatchFusion: correction
+    };
+  } catch (error) {
+    console.error(
+      `[PixelRunner/Host] generative fill color correction failure layerId=${layerId} durationMs=${Date.now() - correctionStartedAt} error=${String(error && error.message ? error.message : error || "创成式填充校色失败")}`
+    );
+    return {
+      ...placement,
+      blendMatchFusion: {
+        ok: false,
+        error: String(error && error.message ? error.message : error || "创成式填充校色失败")
       }
     };
   }

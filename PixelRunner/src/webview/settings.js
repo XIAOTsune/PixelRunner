@@ -22,9 +22,7 @@
       ? `<p>当前应用：${modules.runtime.escapeHtml(modules.state.getAppDisplayName(currentApp))}。</p>`
       : "<p>当前应用：尚未选择。</p>";
 
-    const thirdPartyText = modules.state.state.thirdPartySettings && modules.state.state.thirdPartySettings.enabled
-      ? "<p>第三方支持：已启用，工作台会显示第三方 API 卡片。</p>"
-      : "<p>第三方支持：未启用。</p>";
+    const thirdPartyText = "<p>第三方 API：工作台卡片始终显示，使用当前已保存供应商配置。</p>";
 
     box.innerHTML = `<p>${modules.runtime.escapeHtml(String(message || ""))}</p>${runtimeText}${apiKeyText}${appText}${templateText}${currentAppText}${thirdPartyText}`;
   }
@@ -148,6 +146,9 @@
     }
     if (modules.runtime.getById("settingsLocalQueueEnabledInput")) {
       modules.runtime.getById("settingsLocalQueueEnabledInput").checked = settings.localQueueEnabled === true;
+    }
+    if (modules.runtime.getById("settingsRatioOffsetCorrectionInput")) {
+      modules.runtime.getById("settingsRatioOffsetCorrectionInput").checked = settings.ratioOffsetCorrectionEnabled === true;
     }
     if (modules.runtime.getById("settingsAiOptimizeAppIdInput")) {
       modules.runtime.getById("settingsAiOptimizeAppIdInput").value = String(
@@ -467,7 +468,6 @@
   function fillThirdPartySettingsForm(settings) {
     const normalized = modules.state.normalizeThirdPartySettings(settings);
     const grs = normalized.grs;
-    if (modules.runtime.getById("thirdPartyEnabledInput")) modules.runtime.getById("thirdPartyEnabledInput").checked = Boolean(normalized.enabled);
     renderThirdPartyProviderControls(normalized.provider, normalized.gemini.channelId);
     renderGrsRegionControl(grs.region);
     if (modules.runtime.getById("thirdPartyGrsApiKeyInput")) modules.runtime.getById("thirdPartyGrsApiKeyInput").value = grs.apiKey || "";
@@ -479,10 +479,10 @@
     const descriptor = modules.state.getThirdPartyProviderDescriptor(normalized);
     modules.runtime.setSummaryStatus(
       statusEl,
-      normalized.enabled
-        ? `${descriptor.label} 已启用 · ${descriptor.config.selectedModel}`
-        : `第三方支持未启用 · 当前配置为 ${descriptor.label}`,
-      normalized.enabled ? "success" : "info"
+      String(descriptor.config.apiKey || "").trim()
+        ? `${descriptor.label} 已配置 · ${descriptor.config.selectedModel}`
+        : `${descriptor.label} 尚未配置 API Key`,
+      String(descriptor.config.apiKey || "").trim() ? "success" : "warn"
     );
   }
 
@@ -501,7 +501,6 @@
       resolution: modules.runtime.getById("thirdPartyGeminiDefaultResolutionInput")?.value || ""
     };
     return modules.state.normalizeThirdPartySettings({
-      enabled: Boolean(modules.runtime.getById("thirdPartyEnabledInput")?.checked),
       provider: getSelectedThirdPartyProvider(),
       grs: {
         region: getSelectedGrsRegion(),
@@ -1102,6 +1101,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
+      ratioOffsetCorrectionEnabled: modules.runtime.getById("settingsRatioOffsetCorrectionInput")?.checked === true,
       aiOptimizeAppId,
       aiOptimizeAppIds: {
         ...(modules.state.state.settings.aiOptimizeAppIds || {}),
@@ -1112,6 +1112,7 @@
         ...(modules.state.state.settings.generativeFillAppIds || {}),
         [runningHubRegion]: generativeFillAppId
       },
+      generativeFillSource: modules.state.state.settings.generativeFillSource,
       generativeFillFeather: modules.runtime.getById("settingsGenerativeFillFeatherInput")?.value,
       generativeFillContextExpansion: modules.runtime.getById("settingsGenerativeFillContextInput")?.value,
       generativeFillMaskExpansion: modules.runtime.getById("settingsGenerativeFillMaskExpansionInput")?.value,
@@ -1132,6 +1133,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
+      ratioOffsetCorrectionEnabled: modules.runtime.getById("settingsRatioOffsetCorrectionInput")?.checked === true,
       aiOptimizeAppId,
       aiOptimizeAppIds: {
         ...(modules.state.state.settings.aiOptimizeAppIds || {}),
@@ -1162,10 +1164,12 @@
         timeout: nextSettings.timeout,
         maxConcurrentTasks: nextSettings.maxConcurrentTasks,
         localQueueEnabled: nextSettings.localQueueEnabled,
+        ratioOffsetCorrectionEnabled: nextSettings.ratioOffsetCorrectionEnabled,
         aiOptimizeAppId: nextSettings.aiOptimizeAppId,
         aiOptimizeAppIds: nextSettings.aiOptimizeAppIds,
         generativeFillAppId: nextSettings.generativeFillAppId,
         generativeFillAppIds: nextSettings.generativeFillAppIds,
+        generativeFillSource: nextSettings.generativeFillSource,
         generativeFillContextExpansion: nextSettings.generativeFillContextExpansion,
         generativeFillMaskExpansion: nextSettings.generativeFillMaskExpansion,
         generativeFillFeather: nextSettings.generativeFillFeather,
@@ -1272,10 +1276,12 @@
       timeout: rawSettings && rawSettings.timeout,
       maxConcurrentTasks: rawSettings && rawSettings.maxConcurrentTasks,
       localQueueEnabled: rawSettings ? rawSettings.localQueueEnabled : undefined,
+      ratioOffsetCorrectionEnabled: rawSettings ? rawSettings.ratioOffsetCorrectionEnabled : undefined,
       aiOptimizeAppId: rawSettings && rawSettings.aiOptimizeAppId,
       aiOptimizeAppIds: rawSettings && rawSettings.aiOptimizeAppIds,
       generativeFillAppId: rawSettings && rawSettings.generativeFillAppId,
       generativeFillAppIds: rawSettings && rawSettings.generativeFillAppIds,
+      generativeFillSource: rawSettings && rawSettings.generativeFillSource,
       generativeFillContextExpansion: rawSettings && rawSettings.generativeFillContextExpansion,
       generativeFillMaskExpansion: rawSettings && rawSettings.generativeFillMaskExpansion,
       generativeFillFeather: rawSettings && rawSettings.generativeFillFeather,
@@ -1346,6 +1352,20 @@
       renderSettingsStatus("高级设置已自动保存并立即生效。", "success");
     }
     return nextSettings;
+  }
+
+  async function saveGenerativeFillSource(source) {
+    const thirdParty = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
+    const nextSettings = modules.state.normalizeSettings({
+      ...modules.state.state.settings,
+      generativeFillSource: source
+    });
+    applySettingsSnapshot(nextSettings, thirdParty, {
+      diagnosticsMessage: "创成式填充运行来源已同步。",
+      skipFillForm: true
+    });
+    await writeSettingsStorage(nextSettings, thirdParty);
+    return nextSettings.generativeFillSource;
   }
 
   async function initializeSettings() {
@@ -1423,7 +1443,6 @@
     const fieldIds = [
       "settingsApiKeyInput",
       "settingsApiProfileNameInput",
-      "thirdPartyEnabledInput",
       "thirdPartyGrsApiKeyInput",
       "thirdPartyGrsChatModelInput",
       "thirdPartyGrsDefaultModelInput",
@@ -1440,6 +1459,7 @@
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
       "settingsLocalQueueEnabledInput",
+      "settingsRatioOffsetCorrectionInput",
       "settingsAiOptimizeAppIdInput",
       "settingsGenerativeFillAppIdInput",
       "settingsGenerativeFillContextInput",
@@ -1451,6 +1471,7 @@
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsLocalQueueEnabledInput",
+      "settingsRatioOffsetCorrectionInput",
       "settingsGenerativeFillColorCorrectionInput",
       "settingsAppPickerLayoutInput",
       "settingsPlusModeEnabledInput"
@@ -1770,13 +1791,6 @@
           );
         });
       }
-      if (id === "thirdPartyEnabledInput") {
-        element.addEventListener("change", () => {
-          modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
-          if (modules.apps && typeof modules.apps.renderAppPickerList === "function") modules.apps.renderAppPickerList();
-          if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
-        });
-      }
       if (["thirdPartyGeminiDefaultModelInput", "thirdPartyGeminiDefaultRatioInput", "thirdPartyGeminiDefaultResolutionInput"].includes(id)) {
         element.addEventListener("change", () => {
           modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
@@ -1898,6 +1912,16 @@
           if (modules.workspace && typeof modules.workspace.flushQueuedTasks === "function") {
             modules.workspace.flushQueuedTasks();
           } else if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
+            modules.workspace.updateRunButtonState();
+          }
+        }
+        if (id === "settingsRatioOffsetCorrectionInput") {
+          const previewSettings = modules.state.normalizeSettings({
+            ...modules.state.state.settings,
+            ratioOffsetCorrectionEnabled: element.checked === true
+          });
+          modules.state.state.settings.ratioOffsetCorrectionEnabled = previewSettings.ratioOffsetCorrectionEnabled;
+          if (modules.workspace && typeof modules.workspace.updateRunButtonState === "function") {
             modules.workspace.updateRunButtonState();
           }
         }
@@ -2080,6 +2104,7 @@
     refreshAccountSummary,
     loadParseDebug,
     initializeSettings,
+    saveGenerativeFillSource,
     refreshThemeSkin,
     bindSettingsActions
   };
