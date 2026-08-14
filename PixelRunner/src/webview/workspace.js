@@ -2126,6 +2126,9 @@
       outputUrl: hasOwn("outputUrl") ? String(patch.outputUrl || "").trim() : undefined,
       dataUrl: hasOwn("dataUrl") ? String(patch.dataUrl || "").trim() : undefined,
       filePath: hasOwn("filePath") ? String(patch.filePath || "").trim() : undefined,
+      resultImage: hasOwn("resultImage")
+        ? (patch.resultImage && typeof patch.resultImage === "object" ? { ...patch.resultImage } : null)
+        : undefined,
       detailUrl: hasOwn("detailUrl") ? String(patch.detailUrl || "").trim() : undefined,
       sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
       createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
@@ -2170,6 +2173,7 @@
         outputUrl: nextTask.outputUrl !== undefined ? nextTask.outputUrl : current.outputUrl || "",
         dataUrl: nextTask.dataUrl !== undefined ? nextTask.dataUrl : current.dataUrl || "",
         filePath: nextTask.filePath !== undefined ? nextTask.filePath : current.filePath || "",
+        resultImage: nextTask.resultImage !== undefined ? nextTask.resultImage : current.resultImage || null,
         detailUrl: nextTask.detailUrl !== undefined ? nextTask.detailUrl : current.detailUrl || "",
         createdAt: Number(current.createdAt) > 0 ? Number(current.createdAt) : nextTask.createdAt,
         submittedAt: Number(current.submittedAt) > 0 ? Number(current.submittedAt) : nextTask.submittedAt,
@@ -2328,6 +2332,7 @@
       outputUrl,
       dataUrl,
       filePath,
+      resultImage: statusResult.resultImage && typeof statusResult.resultImage === "object" ? statusResult.resultImage : null,
       sourceDocument,
       finishedAt: completedAt
     });
@@ -2342,6 +2347,7 @@
       outputUrl,
       dataUrl,
       filePath,
+      resultImage: statusResult.resultImage && typeof statusResult.resultImage === "object" ? statusResult.resultImage : null,
       taskId: remoteTaskId
     });
     modules.ui.logToWorkspace(`后台追踪发现任务已完成，已取得${filePath ? "宿主临时文件" : dataUrl ? "内联图片" : "结果地址"}。`, "success");
@@ -2353,6 +2359,7 @@
           outputUrl,
           dataUrl,
           filePath,
+          resultImage: statusResult.resultImage,
           taskId: remoteTaskId
         });
         if (placementResponse && placementResponse.queued) {
@@ -2538,7 +2545,7 @@
   }
 
   function clearLastResult() {
-    modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", dataUrl: "", filePath: "", cachedResult: false, taskId: "", placedAt: 0 };
+    modules.state.state.lastResult = { appName: "", sourceDocument: null, outputUrl: "", dataUrl: "", filePath: "", resultImage: null, cachedResult: false, taskId: "", placedAt: 0 };
     updateRunButtonState();
   }
 
@@ -2550,6 +2557,7 @@
       outputUrl: String(data.outputUrl || "").trim(),
       dataUrl: String(data.dataUrl || "").trim(),
       filePath: String(data.filePath || "").trim(),
+      resultImage: data.resultImage && typeof data.resultImage === "object" ? { ...data.resultImage } : null,
       cachedResult: data.cachedResult === true,
       taskId: String(data.taskId || "").trim(),
       placedAt: Number(data.placedAt) > 0 ? Number(data.placedAt) : 0
@@ -2853,6 +2861,7 @@
       url: result && result.outputUrl ? result.outputUrl : "",
       dataUrl: result && result.dataUrl ? result.dataUrl : "",
       filePath: result && result.filePath ? result.filePath : "",
+      resultImage: result && result.resultImage && typeof result.resultImage === "object" ? result.resultImage : null,
       taskId: result && result.taskId ? result.taskId : "",
       downloadTimeoutMs: 120000,
       cleanupLocalSource: Boolean(result && result.cachedResult === true),
@@ -3070,6 +3079,7 @@
       outputUrl: String(statusResult.outputUrl || "").trim(),
       dataUrl: String(statusResult.dataUrl || "").trim(),
       filePath: String(statusResult.filePath || "").trim(),
+      resultImage: statusResult.resultImage && typeof statusResult.resultImage === "object" ? statusResult.resultImage : null,
       cachedResult: false
     };
     upsertRunningTask({
@@ -3077,6 +3087,7 @@
       outputUrl: refreshed.outputUrl,
       dataUrl: refreshed.dataUrl,
       filePath: refreshed.filePath,
+      resultImage: refreshed.resultImage,
       cachedResult: false
     });
     return refreshed;
@@ -3101,7 +3112,8 @@
       throw new Error("宿主未返回有效的结果缓存文件");
     }
 
-    const prepared = { ...result, filePath, dataUrl: "", cachedResult: true };
+    const resultImage = response.resultImage && typeof response.resultImage === "object" ? response.resultImage : null;
+    const prepared = { ...result, filePath, dataUrl: "", resultImage, cachedResult: true };
     const task = findAutoPlacementTask(result);
     if (task) {
       upsertRunningTask({
@@ -3109,6 +3121,7 @@
         outputUrl,
         dataUrl: "",
         filePath,
+        resultImage,
         cachedResult: true,
         placementErrorType: "",
         placementRetryAt: 0,
@@ -3121,6 +3134,7 @@
       outputUrl,
       dataUrl: "",
       filePath,
+      resultImage,
       cachedResult: true,
       taskId: prepared.taskId
     });
@@ -3226,6 +3240,7 @@
             placementRetryCount: 0,
             cachedResult: false,
             filePath: prepared.cachedResult ? "" : prepared.filePath,
+            resultImage: prepared.cachedResult ? null : prepared.resultImage,
             finishedAt: Date.now()
           });
         } catch (error) {
@@ -3338,6 +3353,7 @@
             placementRetryCount: 0,
             cachedResult: false,
             filePath: queued.cachedResult ? "" : queued.filePath,
+            resultImage: queued.cachedResult ? null : queued.resultImage,
             finishedAt: Date.now()
           });
           modules.ui.logToWorkspace(`返图已恢复执行并贴回 Photoshop：${taskId}`, "success");
@@ -3492,6 +3508,7 @@
         upsertRunningTask({
           taskId: String(task.taskId || preparedResult.taskId || ""),
           filePath: "",
+          resultImage: null,
           cachedResult: false,
           placementErrorType: "",
           placementRetryAt: 0,
@@ -3537,6 +3554,7 @@
       outputUrl: String(task.outputUrl || "").trim(),
       dataUrl: String(task.dataUrl || "").trim(),
       filePath: String(task.filePath || "").trim(),
+      resultImage: task.resultImage && typeof task.resultImage === "object" ? task.resultImage : null,
       taskId: String(task.remoteTaskId || task.taskId || "").trim(),
       cachedResult: task.cachedResult === true,
       refreshResultReference: task.cachedResult !== true && !String(task.filePath || "").trim() && !String(task.dataUrl || "").trim()
@@ -3932,6 +3950,7 @@
         outputUrl: String(pollResult.outputUrl || "").trim(),
         dataUrl: String(pollResult.dataUrl || "").trim(),
         filePath: String(pollResult.filePath || "").trim(),
+        resultImage: pollResult.resultImage && typeof pollResult.resultImage === "object" ? pollResult.resultImage : null,
         sourceDocument,
         finishedAt: completedAt
       });
@@ -3946,6 +3965,7 @@
         outputUrl: pollResult.outputUrl,
         dataUrl: pollResult.dataUrl,
         filePath: pollResult.filePath,
+        resultImage: pollResult.resultImage,
         taskId: remoteTaskId
       });
       modules.ui.logToWorkspace(`任务已完成，已取得${pollResult.filePath ? "宿主临时文件" : pollResult.dataUrl ? "内联图片" : "结果地址"}。`, "success");
@@ -3957,6 +3977,7 @@
           outputUrl: pollResult.outputUrl,
           dataUrl: pollResult.dataUrl,
           filePath: pollResult.filePath,
+          resultImage: pollResult.resultImage,
           taskId: remoteTaskId
         });
         if (placementResponse && placementResponse.queued) {

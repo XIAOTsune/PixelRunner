@@ -394,6 +394,38 @@ function sanitizePngInfo(pngInfo) {
   return safeInfo;
 }
 
+export function mergeCachedPngInfo(parsedPngInfo, cachedResultImage) {
+  if (!parsedPngInfo) return null;
+  const cached = cachedResultImage && typeof cachedResultImage === "object" ? cachedResultImage : null;
+  if (!cached) return parsedPngInfo;
+
+  const width = Math.max(1, Number(parsedPngInfo.width) || 1);
+  const height = Math.max(1, Number(parsedPngInfo.height) || 1);
+  if (!dimensionsNearlyMatch(width, height, Number(cached.width), Number(cached.height), 0)) {
+    return parsedPngInfo;
+  }
+
+  const cachedAlphaBounds = normalizeBounds(cached.alphaBounds);
+  const alphaBounds = cachedAlphaBounds &&
+    cachedAlphaBounds.left >= 0 &&
+    cachedAlphaBounds.top >= 0 &&
+    cachedAlphaBounds.right <= width &&
+    cachedAlphaBounds.bottom <= height
+    ? {
+        ...cachedAlphaBounds,
+        width: cachedAlphaBounds.right - cachedAlphaBounds.left,
+        height: cachedAlphaBounds.bottom - cachedAlphaBounds.top
+      }
+    : parsedPngInfo.alphaBounds;
+
+  return {
+    ...parsedPngInfo,
+    hasTransparency: parsedPngInfo.hasTransparency || cached.hasTransparency === true,
+    alphaBounds,
+    boundsAnchored: parsedPngInfo.boundsAnchored === true || cached.boundsAnchored === true
+  };
+}
+
 function extractEncodedBase64(encoded) {
   if (!encoded) return "";
   if (typeof encoded === "string") return encoded.trim();
@@ -2118,6 +2150,15 @@ export async function placeImageFromUrl(payload, runtime = {}) {
     localResultFileType = { ...localTypes[extension], detectedBy: "local-temporary-file" };
     sourceMimeType = localResultFileType.mimeType;
     responseUrl = filePath;
+    if (extension === "png" && typeof localSourceFile.read === "function") {
+      const rawBuffer = await localSourceFile.read({ format: storage.formats.binary });
+      buffer = rawBuffer instanceof ArrayBuffer
+        ? rawBuffer
+        : ArrayBuffer.isView(rawBuffer)
+          ? rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength)
+          : new Uint8Array(rawBuffer || []).buffer;
+      if (!buffer.byteLength) throw new Error("宿主临时结果 PNG 文件为空");
+    }
   } else {
     const downloaded = await fetchBinaryWithMetadata(url, {
       timeoutMs: Math.max(30000, Number(options.downloadTimeoutMs) || 120000)
@@ -2136,7 +2177,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       `RunningHub 返回内容不是可识别的图片（MIME: ${sourceMimeType || "未知"}，大小: ${buffer && buffer.byteLength || 0} 字节）`
     );
   }
-  const pngInfo = buffer ? await parsePngInfo(buffer) : null;
+  const parsedPngInfo = buffer ? await parsePngInfo(buffer) : null;
+  const pngInfo = mergeCachedPngInfo(parsedPngInfo, options.resultImage);
   const preserveCanvasBounds = options.preserveCanvasBounds === true;
   const anchorTransparentCanvas = options.anchorTransparentCanvas === true;
   const pngAlphaBounds = pngInfo && pngInfo.alphaBounds ? pngInfo.alphaBounds : null;
@@ -2195,6 +2237,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       await deleteFileQuietly(tempFile);
       throw error;
     }
+  } else if (placementBuffer && placementBuffer !== buffer) {
+    await tempFile.write(placementBuffer, { format: formats.binary });
   }
   if (options.cacheOnly === true) {
     const cachedFilePath = String(tempFile && tempFile.nativePath || "").trim();
@@ -2208,7 +2252,8 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       filePath: cachedFilePath,
       resultFormat: resultFileType.extension,
       byteLength: placementByteLength,
-      mimeType: sourceMimeType || resultFileType.mimeType
+      mimeType: sourceMimeType || resultFileType.mimeType,
+      resultImage: sanitizePngInfo(pngInfo)
     };
   }
   let sessionToken = "";

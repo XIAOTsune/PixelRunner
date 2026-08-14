@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { mergeCachedPngInfo } from "../src/host/photoshop/service.js";
 
 globalThis.window = {
   PixelRunnerModules: {
@@ -76,7 +77,47 @@ assert.ok(
   "target document availability must be checked before result download"
 );
 assert.match(photoshopServiceSource, /options\.cacheOnly === true/);
+assert.match(photoshopServiceSource, /localSourceFile\.read\(\{ format: storage\.formats\.binary \}\)/);
+assert.match(photoshopServiceSource, /resultImage: sanitizePngInfo\(pngInfo\)/);
 assert.match(photoshopServiceSource, /!localSourceFile \|\| placementCompleted/);
 assert.match(hostMainSource, /case "photoshop\.cacheResultFromUrl"/);
+assert.match(workspaceSource, /const resultImage = response\.resultImage/);
+assert.match(workspaceSource, /resultImage: result && result\.resultImage/);
+assert.match(photoshopServiceSource, /placementBuffer && placementBuffer !== buffer/);
+
+const parsedAnchoredPng = {
+  width: 512,
+  height: 512,
+  hasTransparency: true,
+  alphaBounds: { left: 0, top: 0, right: 512, bottom: 512, width: 512, height: 512 },
+  boundsAnchored: false,
+  _meta: { retained: true }
+};
+const restoredPng = mergeCachedPngInfo(parsedAnchoredPng, {
+  width: 512,
+  height: 512,
+  hasTransparency: true,
+  alphaBounds: { left: 96, top: 64, right: 420, bottom: 470, width: 324, height: 406 },
+  boundsAnchored: true
+});
+assert.deepEqual(restoredPng.alphaBounds, {
+  left: 96,
+  top: 64,
+  right: 420,
+  bottom: 470,
+  width: 324,
+  height: 406
+});
+assert.equal(restoredPng.boundsAnchored, true);
+assert.deepEqual(restoredPng._meta, { retained: true });
+assert.equal(
+  mergeCachedPngInfo(parsedAnchoredPng, {
+    width: 1024,
+    height: 1024,
+    alphaBounds: { left: 1, top: 1, right: 10, bottom: 10 }
+  }).alphaBounds.width,
+  512,
+  "metadata from a different cached image must not affect placement"
+);
 
 console.log("task card status and cost tests passed");

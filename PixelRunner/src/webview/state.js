@@ -226,6 +226,7 @@ import {
       outputUrl: "",
       dataUrl: "",
       filePath: "",
+      resultImage: null,
       cachedResult: false,
       taskId: "",
       placedAt: 0
