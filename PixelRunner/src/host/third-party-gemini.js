@@ -1,12 +1,16 @@
 import {
   buildGeminiGenerateRequest,
   buildGeminiModelsRequest,
+  buildMomoMidjourneyImagineRequest,
+  buildMomoMidjourneyTaskRequest,
   buildNewApiChatRequest,
   buildNewApiModelsRequest,
   buildNewApiPricingRequest,
   classifyNewApiModels,
   normalizeGeminiFailure,
   normalizeGeminiModelId,
+  isMomoMidjourneyModel,
+  MOMO_MIDJOURNEY_MODEL_ID,
   parseGeminiImageResponse,
   parseGeminiModelsResponse,
   parseGeminiTextResponse,
@@ -190,6 +194,110 @@ function getConfig(payload) {
   return payload && payload.config && typeof payload.config === "object" ? payload.config : {};
 }
 
+function getMidjourneyModel(payload) {
+  const inputs = payload && payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
+  const config = getConfig(payload);
+  const model = inputs.model || config.selectedModel;
+  return isMomoMidjourneyModel(model) ? MOMO_MIDJOURNEY_MODEL_ID : "";
+}
+
+function getMidjourneyTaskId(value) {
+  if (!value || typeof value !== "object") return "";
+  const data = value.data && typeof value.data === "object" ? value.data : {};
+  return String(value.result || value.taskId || value.task_id || value.id || data.result || data.taskId || data.task_id || data.id || "").trim();
+}
+
+function getMidjourneyImageUrl(value) {
+  if (!value || typeof value !== "object") return "";
+  const data = value.data && typeof value.data === "object" ? value.data : {};
+  const properties = value.properties && typeof value.properties === "object" ? value.properties : {};
+  const propertyImages = Array.isArray(properties.images) ? properties.images : [];
+  const dataProperties = data.properties && typeof data.properties === "object" ? data.properties : {};
+  const dataImages = Array.isArray(dataProperties.images) ? dataProperties.images : [];
+  const candidates = [
+    ...propertyImages,
+    ...dataImages,
+    value.imageUrl,
+    value.image_url,
+    value.outputUrl,
+    value.output_url,
+    data.imageUrl,
+    data.image_url,
+    data.outputUrl,
+    data.output_url
+  ];
+  return candidates.map((item) => String(item || "").trim()).find((item) => /^https?:\/\//i.test(item)) || "";
+}
+
+function normalizeMidjourneyStatus(value, taskId) {
+  const status = String(value && (value.status || value.state || value.data && (value.data.status || value.data.state)) || "").trim().toUpperCase();
+  const outputUrl = getMidjourneyImageUrl(value);
+  const completed = value && (value.isCompleted === true || value.completed === true) || Boolean(outputUrl) || ["SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "DONE", "FINISHED"].includes(status);
+  const failed = ["FAILURE", "FAILED", "ERROR", "CANCELLED", "CANCELED", "REJECTED", "TIMEOUT", "TIMED_OUT"].includes(status);
+  const stillRunning = !completed && !failed;
+  const message = String(value && (value.failReason || value.error || value.message || value.description || value.data && (value.data.failReason || value.data.message)) || "").trim();
+  return {
+    ok: Boolean(outputUrl && !failed),
+    taskId,
+    status: status || (completed ? "SUCCESS" : failed ? "FAILED" : "IN_PROGRESS"),
+    outputUrl,
+    failed: failed || (completed && !outputUrl),
+    stillRunning,
+    message: message || (completed && !outputUrl ? "Midjourney 任务已完成，但未返回图片地址" : ""),
+    raw: value || null
+  };
+}
+
+function isMidjourneyTaskPayload(payload) {
+  return Boolean(getMidjourneyModel(payload));
+}
+
+async function submitMomoMidjourneyTask(payload, config, inputs, apiKey) {
+  const request = buildMomoMidjourneyImagineRequest({
+    apiUrl: config.apiUrl,
+    apiKey,
+    prompt: inputs.prompt,
+    mode: inputs.mode,
+    state: inputs.state || payload.requestId
+  });
+  const { json } = await fetchGeminiJson(request, { timeoutMs: getTimeoutMs(payload) });
+  const taskId = getMidjourneyTaskId(json);
+  if (!taskId) throw new Error("Midjourney 未返回可识别的任务 ID");
+  return { ok: true, taskId, status: "RUNNING", stillRunning: true, immediate: false, model: MOMO_MIDJOURNEY_MODEL_ID };
+}
+
+async function fetchMomoMidjourneyTaskStatus(payload, taskId) {
+  const config = getConfig(payload);
+  const apiKey = String(config.apiKey || payload.apiKey || "").trim();
+  if (!apiKey) throw new Error("请先配置当前第三方渠道的 API Key");
+  const request = buildMomoMidjourneyTaskRequest({ apiUrl: getApiBaseUrl(payload), apiKey, taskId });
+  const { json } = await fetchGeminiJson(request, { timeoutMs: getTimeoutMs(payload, 30000) });
+  return normalizeMidjourneyStatus(json, taskId);
+}
+
+async function pollMomoMidjourneyTask(payload) {
+  const taskId = String(payload.taskId || "").trim();
+  const timeoutMs = getTimeoutMs(payload);
+  const pollIntervalMs = Math.max(250, Number(payload.settings && payload.settings.pollInterval || 3) * 1000);
+  const startedAt = Date.now();
+  let lastResult = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    lastResult = await fetchMomoMidjourneyTaskStatus(payload, taskId);
+    if (!lastResult.stillRunning) return lastResult;
+    await sleep(pollIntervalMs);
+  }
+  return {
+    ok: false,
+    taskId,
+    status: lastResult && lastResult.status || "IN_PROGRESS",
+    timedOut: true,
+    stillRunning: true,
+    failed: false,
+    outputUrl: "",
+    message: "Midjourney 任务仍在运行"
+  };
+}
+
 function getApiBaseUrl(payload) {
   const config = getConfig(payload);
   return String(config.apiUrl || payload && payload.apiUrl || "").trim().replace(/\/+$/, "");
@@ -356,6 +464,10 @@ export async function submitThirdPartyGeminiTask(args = []) {
   if (!model) throw new Error("请先选择 Gemini 生图模型");
   if (!prompt) throw new Error("请先填写提示词");
 
+  if (isMidjourneyTaskPayload(payload)) {
+    return submitMomoMidjourneyTask(payload, config, inputs, apiKey);
+  }
+
   const taskId = `gemini-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const createdAt = Date.now();
@@ -435,6 +547,7 @@ export async function pollThirdPartyGeminiTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const taskId = String(payload.taskId || "").trim();
   if (!taskId) throw new Error("Gemini taskId is missing");
+  if (isMidjourneyTaskPayload(payload)) return pollMomoMidjourneyTask(payload);
   const timeoutMs = getTimeoutMs(payload);
   const pollIntervalMs = Math.max(250, Number(payload.settings && payload.settings.pollInterval || 2) * 1000);
   const startedAt = Date.now();
@@ -453,6 +566,7 @@ export async function fetchThirdPartyGeminiTaskStatus(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const taskId = String(payload.taskId || "").trim();
   if (!taskId) throw new Error("Gemini taskId is missing");
+  if (isMidjourneyTaskPayload(payload)) return fetchMomoMidjourneyTaskStatus(payload, taskId);
   const result = getGeminiTaskResult(taskId);
   if (!result) return { ok: false, taskId, status: "NOT_FOUND", failed: true, stillRunning: false, message: "Gemini 本地任务已过期或不存在" };
   return result.stillRunning ? result : decorateGeminiResultWithCharge(result, payload);
@@ -462,6 +576,9 @@ export async function cancelThirdPartyGeminiTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const taskId = String(payload.taskId || payload.requestId || "").trim();
   if (!taskId) throw new Error("Gemini taskId is missing");
+  if (isMidjourneyTaskPayload(payload)) {
+    return { ok: true, taskId, localRequestCancelled: false, removedImmediateResult: false, remoteCancelled: false };
+  }
   const controller = geminiTaskControllers.get(taskId);
   if (controller) {
     try {
@@ -526,6 +643,11 @@ export async function listThirdPartyGeminiModels(args = []) {
   });
   const pricingModels = byId.pricing.ok ? parseNewApiPricingResponse(byId.pricing.json) : [];
   const classified = classifyNewApiModels({ openAiModels, geminiModels, pricingModels });
+  const channelId = String(config.channelId || payload.channelId || "").trim().toLowerCase();
+  if (channelId === "momo") {
+    if (!classified.models.includes(MOMO_MIDJOURNEY_MODEL_ID)) classified.models.push(MOMO_MIDJOURNEY_MODEL_ID);
+    if (!classified.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID)) classified.imageModels.push(MOMO_MIDJOURNEY_MODEL_ID);
+  }
   if (!classified.models.length) throw new Error("当前 NewAPI 渠道未返回可用模型");
   return {
     ok: true,

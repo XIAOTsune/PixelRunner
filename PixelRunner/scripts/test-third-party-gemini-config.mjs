@@ -5,6 +5,8 @@ import {
   GEMINI_CHANNEL_PRESETS,
   buildGeminiGenerateRequest,
   buildGeminiModelsRequest,
+  buildMomoMidjourneyImagineRequest,
+  buildMomoMidjourneyTaskRequest,
   buildNewApiChatRequest,
   buildNewApiModelsRequest,
   buildNewApiPricingRequest,
@@ -23,6 +25,8 @@ import {
   parseNewApiPricingResponse,
   MOMO_SERVICE_ENDPOINTS,
   MOMO_DEFAULT_API_URL,
+  MOMO_MIDJOURNEY_MODEL_ID,
+  isMomoMidjourneyModel,
   normalizeMomoEndpoint
 } from "../src/shared/gemini-config.js";
 import {
@@ -45,12 +49,13 @@ assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1k"));
 assert.ok(getGeminiChannelModelDefaults("aji").chatModels.includes("gpt-5.6-sol"));
 assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes("[yu]gemini-3.1-flash-lite-image"));
+assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[文本]gemini-3.5-flash"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[YZ-k]claude-opus-4-8"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("tsc1-gpt-5.6-terra"));
 assert.equal(getGeminiChannelModelDefaults("aji").imageModels.length, 40);
 assert.equal(getGeminiChannelModelDefaults("aji").chatModels.length, 5);
-assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 6);
+assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 7);
 assert.equal(getGeminiChannelModelDefaults("momo").chatModels.length, 19);
 
 const migrated = normalizeGeminiSettings({
@@ -200,6 +205,12 @@ const oldMomoSettings = normalizeGeminiSettings({
 assert.equal(oldMomoSettings.channels.momo.apiUrl, MOMO_DEFAULT_API_URL);
 assert.equal(oldMomoSettings.apiUrl, MOMO_DEFAULT_API_URL);
 
+const upgradedMomoCatalog = normalizeGeminiSettings({
+  channelId: "momo",
+  channels: { momo: { modelCatalogVersion: 2, imageModels: ["[c]gemini-3-pro-image-preview"], selectedModel: "[c]gemini-3-pro-image-preview" } }
+});
+assert.ok(upgradedMomoCatalog.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+
 // Aji channel ignores custom apiUrl
 const ajiCustomSettings = normalizeGeminiSettings({
   channelId: "aji",
@@ -220,6 +231,15 @@ assert.equal(momoNewApiReq.url, "https://api1.momoapi.icu/v1/models");
 
 const momoPricingReq = buildNewApiPricingRequest({ apiUrl: "https://api2.momoapi.icu" });
 assert.equal(momoPricingReq.url, "https://api2.momoapi.icu/api/pricing");
+
+const mjImagineReq = buildMomoMidjourneyImagineRequest({
+  apiUrl: "https://api2.momoapi.icu", apiKey: "secret", prompt: "a palace", mode: "fast", state: "order-1"
+});
+assert.equal(mjImagineReq.url, "https://api2.momoapi.icu/mj/submit/imagine");
+assert.deepEqual(JSON.parse(mjImagineReq.options.body), { prompt: "a palace", mode: "fast", state: "order-1" });
+const mjTaskReq = buildMomoMidjourneyTaskRequest({ apiUrl: "https://api2.momoapi.icu", apiKey: "secret", taskId: "task/1" });
+assert.equal(mjTaskReq.url, "https://api2.momoapi.icu/mj/task/task%2F1/fetch");
+assert.equal(isMomoMidjourneyModel("models/mj_imagine"), true);
 
 const originalFetch = globalThis.fetch;
 try {
@@ -309,6 +329,44 @@ try {
   const polled = await pollThirdPartyGeminiTask([{ taskId: submitted.taskId, timeoutMs: 2000, settings: { pollInterval: 0.01 } }]);
   assert.equal(polled.status, "SUCCEEDED");
   assert.equal(polled.dataUrl, "data:image/png;base64,b3V0cHV0");
+
+  let midjourneyRequestCount = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    assert.equal(options.headers.Authorization, "Bearer mj-key");
+    midjourneyRequestCount += 1;
+    if (requestUrl.endsWith("/mj/submit/imagine")) {
+      assert.deepEqual(JSON.parse(options.body), { prompt: "a palace", state: "mj-request" });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ code: 1, description: "success", result: "mj-task-1" })
+      };
+    }
+    assert.equal(requestUrl, "https://api.momoapi.icu/mj/task/mj-task-1/fetch");
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true, properties: { images: ["https://cdn.example/mj.png"] } })
+    };
+  };
+  const midjourneySubmitted = await submitThirdPartyGeminiTask([{
+    requestId: "mj-request",
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID, prompt: "a palace", state: "mj-request" },
+    timeoutMs: 1000
+  }]);
+  assert.equal(midjourneySubmitted.taskId, "mj-task-1");
+  const midjourneyPolled = await pollThirdPartyGeminiTask([{
+    taskId: midjourneySubmitted.taskId,
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID },
+    timeoutMs: 1000,
+    settings: { pollInterval: 0.01 }
+  }]);
+  assert.equal(midjourneyPolled.status, "SUCCESS");
+  assert.equal(midjourneyPolled.outputUrl, "https://cdn.example/mj.png");
+  assert.equal(midjourneyRequestCount, 2);
 
   globalThis.fetch = async (url, options = {}) => {
     assert.equal(options.headers.Authorization === "Bearer account-key" || options.headers.Authorization === undefined, true);

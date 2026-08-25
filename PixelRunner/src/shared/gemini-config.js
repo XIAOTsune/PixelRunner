@@ -1,5 +1,7 @@
 const DEFAULT_CHANNEL_ID = "aji";
-export const GEMINI_MODEL_CATALOG_VERSION = 2;
+export const GEMINI_MODEL_CATALOG_VERSION = 3;
+
+export const MOMO_MIDJOURNEY_MODEL_ID = "mj_imagine";
 
 const LEGACY_IMAGE_MODEL_IDS = Object.freeze([
   "gemini-2.5-flash-image",
@@ -73,7 +75,8 @@ const MOMO_IMAGE_MODEL_IDS = Object.freeze([
   "[m]gemini-3.1-flash-image-preview",
   "[yu]gemini-3-pro-image-preview",
   "[yu]gemini-3.1-flash-image-preview",
-  "[yu]gemini-3.1-flash-lite-image"
+  "[yu]gemini-3.1-flash-lite-image",
+  MOMO_MIDJOURNEY_MODEL_ID
 ]);
 
 const MOMO_CHAT_MODEL_IDS = Object.freeze([
@@ -179,6 +182,10 @@ export function normalizeGeminiModelId(value) {
   return String(value || "").trim().replace(/^models\//i, "");
 }
 
+export function isMomoMidjourneyModel(value) {
+  return normalizeGeminiModelId(value).toLowerCase() === MOMO_MIDJOURNEY_MODEL_ID;
+}
+
 function normalizeStringList(value, fallback = []) {
   const source = Array.isArray(value) ? value : String(value || "").split(",");
   const seen = new Set();
@@ -240,6 +247,7 @@ function normalizeChannelSettings(value, channelId) {
   const imageModels = normalizeStringList(
     [
       ...(shouldUpgradeCatalog ? fallback.imageModels : []),
+      ...(channelId === "momo" ? [MOMO_MIDJOURNEY_MODEL_ID] : []),
       ...(rawImageModels.some((item) => String(item || "").trim()) ? rawImageModels : fallback.imageModels),
       requestedModel
     ],
@@ -456,7 +464,36 @@ export function parseNewApiPricingResponse(value) {
 }
 
 export function isLikelyGeminiImageModel(value) {
-  return /(?:image|banana)/i.test(normalizeGeminiModelId(value));
+  const model = normalizeGeminiModelId(value);
+  return model.toLowerCase() === MOMO_MIDJOURNEY_MODEL_ID || /(?:image|banana)/i.test(model);
+}
+
+export function buildMomoMidjourneyImagineRequest(config = {}) {
+  const body = { prompt: String(config.prompt || "").trim() };
+  const mode = String(config.mode || "").trim().toLowerCase();
+  if (mode === "fast" || mode === "relax") body.mode = mode;
+  const state = String(config.state || "").trim();
+  if (state) body.state = state;
+  return {
+    url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/submit/imagine`,
+    options: {
+      method: "POST",
+      headers: buildGeminiHeaders(config.apiKey),
+      body: JSON.stringify(body)
+    },
+    body
+  };
+}
+
+export function buildMomoMidjourneyTaskRequest(config = {}) {
+  const taskId = encodeURIComponent(String(config.taskId || "").trim());
+  return {
+    url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/task/${taskId}/fetch`,
+    options: {
+      method: "GET",
+      headers: buildGeminiHeaders(config.apiKey)
+    }
+  };
 }
 
 export function isLikelyTextGenerationModel(value) {
