@@ -5,6 +5,7 @@ import {
   GEMINI_CHANNEL_PRESETS,
   buildGeminiGenerateRequest,
   buildGeminiModelsRequest,
+  buildMomoMidjourneyImageRequest,
   buildMomoMidjourneyImagineRequest,
   buildMomoMidjourneyTaskRequest,
   buildNewApiChatRequest,
@@ -49,13 +50,13 @@ assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1k"));
 assert.ok(getGeminiChannelModelDefaults("aji").chatModels.includes("gpt-5.6-sol"));
 assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes("[yu]gemini-3.1-flash-lite-image"));
-assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+assert.ok(!getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[文本]gemini-3.5-flash"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[YZ-k]claude-opus-4-8"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("tsc1-gpt-5.6-terra"));
 assert.equal(getGeminiChannelModelDefaults("aji").imageModels.length, 40);
 assert.equal(getGeminiChannelModelDefaults("aji").chatModels.length, 5);
-assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 7);
+assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 6);
 assert.equal(getGeminiChannelModelDefaults("momo").chatModels.length, 19);
 
 const migrated = normalizeGeminiSettings({
@@ -78,6 +79,14 @@ assert.equal(migrated.channels.aji.selectedModel, "aji-image");
 assert.equal(migrated.channels.aji.modelCatalogVersion, GEMINI_MODEL_CATALOG_VERSION);
 assert.ok(migrated.channels.aji.imageModels.includes("AJbanana3-4k"));
 assert.ok(migrated.channels.momo.chatModels.includes("[文本]gemini-3-flash"));
+
+const hiddenMomoSelection = normalizeGeminiSettings({
+  channelId: "momo",
+  selectedModel: MOMO_MIDJOURNEY_MODEL_ID,
+  imageModels: [MOMO_MIDJOURNEY_MODEL_ID, "[c]gemini-3-pro-image-preview"]
+});
+assert.equal(hiddenMomoSelection.selectedModel, "[c]gemini-3-pro-image-preview");
+assert.ok(!hiddenMomoSelection.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 
 const upgradedLegacyDefaults = normalizeGeminiSettings({
   channelId: "momo",
@@ -209,7 +218,7 @@ const upgradedMomoCatalog = normalizeGeminiSettings({
   channelId: "momo",
   channels: { momo: { modelCatalogVersion: 2, imageModels: ["[c]gemini-3-pro-image-preview"], selectedModel: "[c]gemini-3-pro-image-preview" } }
 });
-assert.ok(upgradedMomoCatalog.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+assert.ok(!upgradedMomoCatalog.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 
 // Aji channel ignores custom apiUrl
 const ajiCustomSettings = normalizeGeminiSettings({
@@ -239,6 +248,8 @@ assert.equal(mjImagineReq.url, "https://api2.momoapi.icu/mj/submit/imagine");
 assert.deepEqual(JSON.parse(mjImagineReq.options.body), { prompt: "a palace", mode: "fast", state: "order-1" });
 const mjTaskReq = buildMomoMidjourneyTaskRequest({ apiUrl: "https://api2.momoapi.icu", apiKey: "secret", taskId: "task/1" });
 assert.equal(mjTaskReq.url, "https://api2.momoapi.icu/mj/task/task%2F1/fetch");
+const mjImageReq = buildMomoMidjourneyImageRequest({ apiUrl: "https://api2.momoapi.icu", apiKey: "secret", taskId: "task/1" });
+assert.equal(mjImageReq.url, "https://api2.momoapi.icu/mj/image/task%2F1");
 assert.equal(isMomoMidjourneyModel("models/mj_imagine"), true);
 
 const originalFetch = globalThis.fetch;
@@ -343,11 +354,19 @@ try {
         text: async () => JSON.stringify({ code: 1, description: "success", result: "mj-task-1" })
       };
     }
-    assert.equal(requestUrl, "https://api.momoapi.icu/mj/task/mj-task-1/fetch");
+    if (requestUrl.endsWith("/mj/task/mj-task-1/fetch")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true, properties: { images: ["https://cdn.midjourney.com/mj.png"] } })
+      };
+    }
+    assert.equal(requestUrl, "https://api.momoapi.icu/mj/image/mj-task-1");
     return {
       ok: true,
       status: 200,
-      text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true, properties: { images: ["https://cdn.example/mj.png"] } })
+      headers: { get: (name) => name === "content-type" ? "image/png" : "" },
+      arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer
     };
   };
   const midjourneySubmitted = await submitThirdPartyGeminiTask([{
@@ -365,8 +384,39 @@ try {
     settings: { pollInterval: 0.01 }
   }]);
   assert.equal(midjourneyPolled.status, "SUCCESS");
-  assert.equal(midjourneyPolled.outputUrl, "https://cdn.example/mj.png");
-  assert.equal(midjourneyRequestCount, 2);
+  assert.equal(midjourneyPolled.outputUrl, "https://cdn.midjourney.com/mj.png");
+  assert.equal(midjourneyPolled.failed, false);
+  assert.ok(midjourneyPolled.filePath || midjourneyPolled.dataUrl);
+  assert.equal(midjourneyRequestCount, 3);
+
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    assert.equal(options.headers.Authorization, "Bearer mj-key");
+    if (requestUrl.endsWith("/mj/task/mj-task-2/fetch")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true })
+      };
+    }
+    assert.equal(requestUrl, "https://api.momoapi.icu/mj/image/mj-task-2");
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (name) => name === "content-type" ? "image/png" : "" },
+      arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer
+    };
+  };
+  const directImageResult = await pollThirdPartyGeminiTask([{
+    taskId: "mj-task-2",
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID },
+    timeoutMs: 1000,
+    settings: { pollInterval: 0.01 }
+  }]);
+  assert.equal(directImageResult.status, "SUCCESS");
+  assert.equal(directImageResult.failed, false);
+  assert.ok(directImageResult.filePath || directImageResult.dataUrl);
 
   globalThis.fetch = async (url, options = {}) => {
     assert.equal(options.headers.Authorization === "Bearer account-key" || options.headers.Authorization === undefined, true);

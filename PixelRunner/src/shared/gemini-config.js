@@ -1,5 +1,5 @@
 const DEFAULT_CHANNEL_ID = "aji";
-export const GEMINI_MODEL_CATALOG_VERSION = 3;
+export const GEMINI_MODEL_CATALOG_VERSION = 4;
 
 export const MOMO_MIDJOURNEY_MODEL_ID = "mj_imagine";
 
@@ -75,8 +75,7 @@ const MOMO_IMAGE_MODEL_IDS = Object.freeze([
   "[m]gemini-3.1-flash-image-preview",
   "[yu]gemini-3-pro-image-preview",
   "[yu]gemini-3.1-flash-image-preview",
-  "[yu]gemini-3.1-flash-lite-image",
-  MOMO_MIDJOURNEY_MODEL_ID
+  "[yu]gemini-3.1-flash-lite-image"
 ]);
 
 const MOMO_CHAT_MODEL_IDS = Object.freeze([
@@ -135,7 +134,8 @@ export const GEMINI_CHANNEL_PRESETS = Object.freeze({
   })
 });
 
-export const GEMINI_IMAGE_MODEL_IDS = Object.freeze([...new Set([...AJI_IMAGE_MODEL_IDS, ...MOMO_IMAGE_MODEL_IDS])]);
+export const GEMINI_IMAGE_MODEL_IDS = Object.freeze([...new Set([...AJI_IMAGE_MODEL_IDS, ...MOMO_IMAGE_MODEL_IDS])]
+  .filter((model) => !isMomoMidjourneyModel(model)));
 
 export const GEMINI_CHAT_MODEL_IDS = Object.freeze([...new Set([...AJI_CHAT_MODEL_IDS, ...MOMO_CHAT_MODEL_IDS])]);
 
@@ -238,7 +238,8 @@ function normalizeChannelSettings(value, channelId) {
   const fallback = createDefaultChannelSettings(channelId);
   const shouldUpgradeCatalog = Number(source.modelCatalogVersion || 0) < GEMINI_MODEL_CATALOG_VERSION;
   const storedModel = normalizeGeminiModelId(source.selectedModel);
-  const requestedModel = shouldUpgradeCatalog && LEGACY_IMAGE_MODEL_IDS.includes(storedModel) && !fallback.imageModels.includes(storedModel)
+  const hiddenModel = isMomoMidjourneyModel(storedModel);
+  const requestedModel = hiddenModel || shouldUpgradeCatalog && LEGACY_IMAGE_MODEL_IDS.includes(storedModel) && !fallback.imageModels.includes(storedModel)
     ? fallback.selectedModel
     : (storedModel || fallback.selectedModel);
   const rawImageModels = Array.isArray(source.imageModels || source.models)
@@ -247,8 +248,8 @@ function normalizeChannelSettings(value, channelId) {
   const imageModels = normalizeStringList(
     [
       ...(shouldUpgradeCatalog ? fallback.imageModels : []),
-      ...(channelId === "momo" ? [MOMO_MIDJOURNEY_MODEL_ID] : []),
-      ...(rawImageModels.some((item) => String(item || "").trim()) ? rawImageModels : fallback.imageModels),
+      ...(rawImageModels.some((item) => String(item || "").trim()) ? rawImageModels : fallback.imageModels)
+        .filter((item) => !isMomoMidjourneyModel(item)),
       requestedModel
     ],
     fallback.imageModels
@@ -489,6 +490,17 @@ export function buildMomoMidjourneyTaskRequest(config = {}) {
   const taskId = encodeURIComponent(String(config.taskId || "").trim());
   return {
     url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/task/${taskId}/fetch`,
+    options: {
+      method: "GET",
+      headers: buildGeminiHeaders(config.apiKey)
+    }
+  };
+}
+
+export function buildMomoMidjourneyImageRequest(config = {}) {
+  const taskId = encodeURIComponent(String(config.taskId || "").trim());
+  return {
+    url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/image/${taskId}`,
     options: {
       method: "GET",
       headers: buildGeminiHeaders(config.apiKey)

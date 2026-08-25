@@ -1466,7 +1466,6 @@
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
     const saveThirdPartySettingsButton = runtime.getById("btnSaveThirdPartySettings");
     const refreshGeminiModelsButton = runtime.getById("btnRefreshThirdPartyGeminiModels");
-    const checkMomoEndpointButton = runtime.getById("btnCheckMomoEndpoint");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
@@ -1684,42 +1683,6 @@ if (momoEndpointSelect) {
     renderSettingsStatus("检测到未保存的服务地址修改。", "pending");
   });
 }
-
-if (checkMomoEndpointButton) {
-  checkMomoEndpointButton.addEventListener("click", async () => {
-    const statusEl = runtime.getById("thirdPartyStatusSummary");
-    const momoUrl = getSelectedMomoEndpoint();
-    if (!momoUrl) {
-      runtime.setSummaryStatus(statusEl, "无法确定当前 Momo 地址。", "warn");
-      return;
-    }
-    if (!modules.runtime.isPluginRuntime()) {
-      runtime.setSummaryStatus(statusEl, "浏览器预览模式无法检测服务地址连通性。", "warn");
-      return;
-    }
-    checkMomoEndpointButton.disabled = true;
-    momoEndpointSelect.disabled = true;
-    runtime.setSummaryStatus(statusEl, `正在检测 ${momUrl} ...`, "info");
-    try {
-      const result = await modules.runtime.callHost(
-        "thirdParty.gemini.checkEndpoint",
-        [{ apiUrl: momUrl }],
-        { timeoutMs: 15000 }
-      );
-      if (result && result.ok) {
-        runtime.setSummaryStatus(statusEl, `墨墨服务地址 ${momUrl} 检测通过。`, "success");
-      } else {
-        throw new Error(String(result && result.message || "地址不可达"));
-      }
-    } catch (error) {
-      runtime.setSummaryStatus(statusEl, `墨墨地址检测失败：${error.message}`, "error");
-    } finally {
-      checkMomoEndpointButton.disabled = false;
-      momoEndpointSelect.disabled = false;
-    }
-  });
-}
-
 
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {

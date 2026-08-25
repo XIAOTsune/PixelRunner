@@ -1,6 +1,7 @@
 import {
   buildGeminiGenerateRequest,
   buildGeminiModelsRequest,
+  buildMomoMidjourneyImageRequest,
   buildMomoMidjourneyImagineRequest,
   buildMomoMidjourneyTaskRequest,
   buildNewApiChatRequest,
@@ -194,11 +195,59 @@ function getConfig(payload) {
   return payload && payload.config && typeof payload.config === "object" ? payload.config : {};
 }
 
+async function fetchGeminiBinary(request, options = {}) {
+  const controller = options.controller || (typeof AbortController !== "undefined" ? new AbortController() : null);
+  let timedOut = false;
+  const timer = controller
+    ? setTimeout(() => {
+        timedOut = true;
+        try {
+          controller.abort();
+        } catch (_) {}
+      }, Math.max(100, Number(options.timeoutMs) || 180000))
+    : null;
+  try {
+    const response = await fetch(request.url, {
+      ...request.options,
+      signal: controller ? controller.signal : undefined
+    });
+    if (!response.ok) {
+      const rawText = await response.text().catch(() => "");
+      const json = parseJsonSafe(rawText);
+      const apiKey = String(request.options && request.options.headers && request.options.headers.Authorization || "").replace(/^Bearer\s+/i, "");
+      const failure = normalizeGeminiFailure({ status: response.status, json, rawText, apiKey });
+      const error = new Error(failure.message);
+      error.code = failure.code;
+      error.status = failure.status;
+      throw error;
+    }
+    const buffer = await response.arrayBuffer();
+    const mimeType = String(response.headers && response.headers.get("content-type") || "image/png")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+    if (!mimeType.startsWith("image/")) throw new Error("Midjourney 图片接口未返回图片数据");
+    return { buffer, mimeType };
+  } catch (error) {
+    if (error && error.code) throw error;
+    const cancelled = Boolean(controller && controller.signal.aborted && !timedOut);
+    const failure = normalizeGeminiFailure({ error, timedOut, cancelled });
+    const normalized = new Error(failure.message);
+    normalized.code = failure.code;
+    throw normalized;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function getMidjourneyModel(payload) {
   const inputs = payload && payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
   const config = getConfig(payload);
+  const channelId = String(config.channelId || payload && payload.channelId || "").trim().toLowerCase();
+  const apiUrl = String(config.apiUrl || payload && payload.apiUrl || "").trim();
+  const isMomoEndpoint = /(^|\.)momoapi\.icu(?::\d+)?(?:\/|$)/i.test(apiUrl.replace(/^https?:\/\//i, ""));
   const model = inputs.model || config.selectedModel;
-  return isMomoMidjourneyModel(model) ? MOMO_MIDJOURNEY_MODEL_ID : "";
+  return (channelId === "momo" || isMomoEndpoint) && isMomoMidjourneyModel(model) ? MOMO_MIDJOURNEY_MODEL_ID : "";
 }
 
 function getMidjourneyTaskId(value) {
@@ -219,20 +268,32 @@ function getMidjourneyImageUrl(value) {
     ...dataImages,
     value.imageUrl,
     value.image_url,
+    value.url,
     value.outputUrl,
     value.output_url,
     data.imageUrl,
     data.image_url,
+    data.url,
     data.outputUrl,
-    data.output_url
+    data.output_url,
+    data.image,
+    data.image_url_proxy,
+    dataProperties.imageUrl,
+    dataProperties.image_url
   ];
-  return candidates.map((item) => String(item || "").trim()).find((item) => /^https?:\/\//i.test(item)) || "";
+  return candidates
+    .map((item) => {
+      if (!item || typeof item !== "object") return String(item || "").trim();
+      return String(item.url || item.imageUrl || item.image_url || item.outputUrl || item.output_url || "").trim();
+    })
+    .find((item) => /^https?:\/\//i.test(item)) || "";
 }
 
 function normalizeMidjourneyStatus(value, taskId) {
+  const data = value && value.data && typeof value.data === "object" ? value.data : {};
   const status = String(value && (value.status || value.state || value.data && (value.data.status || value.data.state)) || "").trim().toUpperCase();
   const outputUrl = getMidjourneyImageUrl(value);
-  const completed = value && (value.isCompleted === true || value.completed === true) || Boolean(outputUrl) || ["SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "DONE", "FINISHED"].includes(status);
+  const completed = value && (value.isCompleted === true || value.completed === true || data.isCompleted === true || data.completed === true) || Boolean(outputUrl) || ["SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "DONE", "FINISHED"].includes(status);
   const failed = ["FAILURE", "FAILED", "ERROR", "CANCELLED", "CANCELED", "REJECTED", "TIMEOUT", "TIMED_OUT"].includes(status);
   const stillRunning = !completed && !failed;
   const message = String(value && (value.failReason || value.error || value.message || value.description || value.data && (value.data.failReason || value.data.message)) || "").trim();
@@ -266,13 +327,55 @@ async function submitMomoMidjourneyTask(payload, config, inputs, apiKey) {
   return { ok: true, taskId, status: "RUNNING", stillRunning: true, immediate: false, model: MOMO_MIDJOURNEY_MODEL_ID };
 }
 
+async function fetchMomoMidjourneyImage(payload, taskId) {
+  const config = getConfig(payload);
+  const apiKey = String(config.apiKey || payload.apiKey || "").trim();
+  const request = buildMomoMidjourneyImageRequest({ apiUrl: getApiBaseUrl(payload), apiKey, taskId });
+  const { buffer, mimeType } = await fetchGeminiBinary(request, { timeoutMs: getTimeoutMs(payload, 30000) });
+  const data = arrayBufferToBase64(buffer);
+  const image = { mimeType, data, dataUrl: `data:${mimeType};base64,${data}` };
+  const delivery = await createGeminiDelivery(image, `momo-mj-${taskId}`);
+  return {
+    outputUrl: "",
+    dataUrl: delivery.dataUrl,
+    filePath: delivery.filePath,
+    mimeType: delivery.mimeType,
+    byteLength: delivery.byteLength,
+    delivery: delivery.delivery
+  };
+}
+
 async function fetchMomoMidjourneyTaskStatus(payload, taskId) {
   const config = getConfig(payload);
   const apiKey = String(config.apiKey || payload.apiKey || "").trim();
   if (!apiKey) throw new Error("请先配置当前第三方渠道的 API Key");
   const request = buildMomoMidjourneyTaskRequest({ apiUrl: getApiBaseUrl(payload), apiKey, taskId });
   const { json } = await fetchGeminiJson(request, { timeoutMs: getTimeoutMs(payload, 30000) });
-  return normalizeMidjourneyStatus(json, taskId);
+  const result = normalizeMidjourneyStatus(json, taskId);
+  const explicitFailure = ["FAILURE", "FAILED", "ERROR", "CANCELLED", "CANCELED", "REJECTED", "TIMEOUT", "TIMED_OUT"].includes(result.status);
+  // The task response often exposes a direct cdn.midjourney.com URL. Photoshop's
+  // UXP network policy may reject that host, and the URL may also require no
+  // authentication context. Always download through Momo's authenticated proxy
+  // before handing the result to the placement pipeline.
+  if (result.stillRunning || explicitFailure) return result;
+  try {
+    return {
+      ...result,
+      ok: true,
+      failed: false,
+      stillRunning: false,
+      ...(await fetchMomoMidjourneyImage(payload, taskId)),
+      outputUrl: result.outputUrl
+    };
+  } catch (error) {
+    return {
+      ...result,
+      ok: false,
+      failed: true,
+      stillRunning: false,
+      message: `Midjourney 已完成，但获取图片失败：${String(error && error.message || error || "未知错误")}`
+    };
+  }
 }
 
 async function pollMomoMidjourneyTask(payload) {
@@ -645,8 +748,9 @@ export async function listThirdPartyGeminiModels(args = []) {
   const classified = classifyNewApiModels({ openAiModels, geminiModels, pricingModels });
   const channelId = String(config.channelId || payload.channelId || "").trim().toLowerCase();
   if (channelId === "momo") {
-    if (!classified.models.includes(MOMO_MIDJOURNEY_MODEL_ID)) classified.models.push(MOMO_MIDJOURNEY_MODEL_ID);
-    if (!classified.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID)) classified.imageModels.push(MOMO_MIDJOURNEY_MODEL_ID);
+    classified.models = classified.models.filter((model) => !isMomoMidjourneyModel(model));
+    classified.imageModels = classified.imageModels.filter((model) => !isMomoMidjourneyModel(model));
+    classified.details = classified.details.filter((item) => !isMomoMidjourneyModel(item && item.id));
   }
   if (!classified.models.length) throw new Error("当前 NewAPI 渠道未返回可用模型");
   return {
