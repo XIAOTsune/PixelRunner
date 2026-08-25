@@ -103,6 +103,20 @@ export const GEMINI_CHANNEL_MODEL_DEFAULTS = Object.freeze({
   momo: Object.freeze({ imageModels: MOMO_IMAGE_MODEL_IDS, chatModels: MOMO_CHAT_MODEL_IDS })
 });
 
+export const MOMO_SERVICE_ENDPOINTS = Object.freeze([
+  Object.freeze({ url: "https://api.momoapi.icu", label: "国内优化（默认）", description: "默认地址，推荐使用" }),
+  Object.freeze({ url: "https://api1.momoapi.icu", label: "国内优化（备用）", description: "备用地址" }),
+  Object.freeze({ url: "https://api2.momoapi.icu", label: "无国内优化", description: "有代理时优先使用" })
+]);
+
+export const MOMO_DEFAULT_API_URL = "https://api.momoapi.icu";
+
+export function normalizeMomoEndpoint(value) {
+  const input = String(value || "").trim().replace(/\/+$/, "");
+  const match = MOMO_SERVICE_ENDPOINTS.find((ep) => ep.url === input);
+  return match ? match.url : MOMO_DEFAULT_API_URL;
+}
+
 export const GEMINI_CHANNEL_PRESETS = Object.freeze({
   aji: Object.freeze({
     id: "aji",
@@ -113,8 +127,8 @@ export const GEMINI_CHANNEL_PRESETS = Object.freeze({
   momo: Object.freeze({
     id: "momo",
     label: "墨墨 Momo",
-    apiUrl: "https://api.momoapi.icu",
-    keyUrl: "https://api.momoapi.icu"
+    apiUrl: MOMO_DEFAULT_API_URL,
+    keyUrl: MOMO_DEFAULT_API_URL
   })
 });
 
@@ -203,6 +217,15 @@ export const DEFAULT_GEMINI_SETTINGS = Object.freeze({
   })
 });
 
+function normalizeChannelApiUrl(sourceApiUrl, channelId) {
+  if (channelId === "momo") {
+    const stored = String(sourceApiUrl || "").trim().replace(/\/+$/, "");
+    if (stored) return normalizeMomoEndpoint(stored);
+    return MOMO_DEFAULT_API_URL;
+  }
+  return getGeminiChannelPreset(channelId).apiUrl;
+}
+
 function normalizeChannelSettings(value, channelId) {
   const source = value && typeof value === "object" ? value : {};
   const fallback = createDefaultChannelSettings(channelId);
@@ -238,7 +261,7 @@ function normalizeChannelSettings(value, channelId) {
   const requestedRatio = String(source.aspectRatio || fallback.aspectRatio).trim();
   const requestedResolution = String(source.resolution || fallback.resolution).trim().toUpperCase();
   return {
-    apiUrl: getGeminiChannelPreset(channelId).apiUrl,
+    apiUrl: normalizeChannelApiUrl(source.apiUrl, channelId),
     apiKey: String(source.apiKey || "").trim(),
     modelCatalogVersion: GEMINI_MODEL_CATALOG_VERSION,
     imageModels,

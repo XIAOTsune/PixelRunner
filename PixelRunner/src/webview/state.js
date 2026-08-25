@@ -18,10 +18,13 @@ import {
   GEMINI_CHAT_MODEL_IDS,
   GEMINI_IMAGE_MODEL_IDS,
   GEMINI_RESOLUTIONS,
+  MOMO_SERVICE_ENDPOINTS,
+  MOMO_DEFAULT_API_URL,
   getGeminiChannelModelDefaults,
   getGeminiChannelPreset,
   normalizeGeminiChannelId,
-  normalizeGeminiSettings
+  normalizeGeminiSettings,
+  normalizeMomoEndpoint
 } from "../shared/gemini-config.js";
 
 (function initStateModule(global) {
@@ -494,12 +497,13 @@ import {
       const activeConfig = normalized.gemini.channels && normalized.gemini.channels[preset.id]
         ? normalized.gemini.channels[preset.id]
         : normalized.gemini;
+      const currentApiUrl = activeConfig.apiUrl || preset.apiUrl;
       return {
         id: "gemini",
         label: preset.label,
         shortLabel: preset.label,
         channelId: preset.id,
-        apiUrl: preset.apiUrl,
+        apiUrl: currentApiUrl,
         config: activeConfig
       };
     }
@@ -805,6 +809,8 @@ import {
     GRS_REGIONS,
     GRS_CHAT_MODEL_IDS,
     GRS_IMAGE_MODEL_IDS,
+    MOMO_SERVICE_ENDPOINTS,
+    MOMO_DEFAULT_API_URL,
     GEMINI_ASPECT_RATIOS,
     GEMINI_CHANNEL_PRESETS,
     GEMINI_CHAT_MODEL_IDS,
@@ -824,6 +830,7 @@ import {
     normalizeGenerativeFillSource,
     normalizeGrsRegion,
     normalizeGeminiChannelId,
+    normalizeMomoEndpoint,
     getGeminiChannelModelDefaults,
     getGeminiChannelPreset,
     getGrsRegionConfig,

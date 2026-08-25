@@ -435,6 +435,30 @@
     }
   }
 
+  function fillMomoEndpointSelect(currentApiUrl) {
+    const select = modules.runtime.getById("thirdPartyMomoEndpointInput");
+    if (!select) return;
+    const endpoints = modules.state.MOMO_SERVICE_ENDPOINTS;
+    const current = modules.state.normalizeMomoEndpoint(currentApiUrl);
+    select.innerHTML = endpoints
+      .map((ep) => `<option value="${modules.runtime.escapeHtml(ep.url)}" ${ep.url === current ? "selected" : ""}>${modules.runtime.escapeHtml(ep.label)}</option>`)
+      .join("");
+  }
+
+  function getSelectedMomoEndpoint() {
+    const select = modules.runtime.getById("thirdPartyMomoEndpointInput");
+    const value = String(select && select.value || "").trim().replace(/\/+$/, "");
+    return modules.state.normalizeMomoEndpoint(value);
+  }
+
+  function renderMomoEndpointControls(channelId, currentApiUrl) {
+    const group = modules.runtime.getById("thirdPartyMomoEndpointGroup");
+    if (!group) return;
+    const visible = channelId === "momo";
+    group.hidden = !visible;
+    if (visible) fillMomoEndpointSelect(currentApiUrl);
+  }
+
   function fillGeminiSettingsForm(gemini) {
     const active = gemini.channels?.[gemini.channelId] || gemini;
     const modelDefaults = modules.state.getGeminiChannelModelDefaults(gemini.channelId);
@@ -444,6 +468,7 @@
     fillGeminiModelSelect("thirdPartyGeminiDefaultModelInput", active.imageModels, active.selectedModel, modelDefaults.imageModels);
     fillGeminiModelSelect("thirdPartyGeminiChatModelInput", active.chatModels, active.chatModel, modelDefaults.chatModels);
     fillGeminiCapabilitySelects(active.aspectRatio, active.resolution);
+    renderMomoEndpointControls(gemini.channelId, active.apiUrl);
   }
 
   function refreshThirdPartyWorkspacePreview() {
@@ -476,6 +501,7 @@
     fillThirdPartyCapabilitySelects(grs.selectedModel, grs.aspectRatio, grs.resolution);
     fillGeminiSettingsForm(normalized.gemini);
     const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
+    renderMomoEndpointControls(normalized.gemini.channelId, normalized.gemini.apiUrl);
     const descriptor = modules.state.getThirdPartyProviderDescriptor(normalized);
     modules.runtime.setSummaryStatus(
       statusEl,
@@ -490,8 +516,10 @@
     const current = modules.state.normalizeThirdPartySettings(modules.state.state.thirdPartySettings);
     const channelId = getSelectedGeminiChannel();
     const modelDefaults = modules.state.getGeminiChannelModelDefaults(channelId);
+    const momoApiUrl = channelId === "momo" ? getSelectedMomoEndpoint() : undefined;
     const activeGemini = {
       ...(current.gemini.channels?.[channelId] || {}),
+      apiUrl: channelId === "momo" ? momoApiUrl : (current.gemini.channels?.[channelId]?.apiUrl),
       apiKey: modules.runtime.getById("thirdPartyGeminiApiKeyInput")?.value || "",
       selectedModel: modules.runtime.getById("thirdPartyGeminiDefaultModelInput")?.value || "",
       imageModels: current.gemini.channels?.[channelId]?.imageModels || current.gemini.imageModels || modelDefaults.imageModels,
@@ -1438,6 +1466,7 @@
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
     const saveThirdPartySettingsButton = runtime.getById("btnSaveThirdPartySettings");
     const refreshGeminiModelsButton = runtime.getById("btnRefreshThirdPartyGeminiModels");
+    const checkMomoEndpointButton = runtime.getById("btnCheckMomoEndpoint");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
     const fieldIds = [
@@ -1452,7 +1481,8 @@
       "thirdPartyGeminiChatModelInput",
       "thirdPartyGeminiDefaultModelInput",
       "thirdPartyGeminiDefaultRatioInput",
-      "thirdPartyGeminiDefaultResolutionInput"
+      "thirdPartyGeminiDefaultResolutionInput",
+      "thirdPartyMomoEndpointInput"
     ];
     const advancedSettingFieldIds = [
       "settingsPollIntervalInput",
@@ -1631,21 +1661,65 @@
         renderSettingsStatus("检测到未保存的供应商切换。", "pending");
       });
     });
-
-    geminiChannelButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        const channelId = modules.state.normalizeGeminiChannelId(button.getAttribute("data-gemini-channel"));
-        if (channelId === getSelectedGeminiChannel()) return;
-        const snapshot = readThirdPartySettingsForm();
-        modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
-          ...snapshot,
-          gemini: { ...snapshot.gemini, channelId }
-        });
-        fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
-        refreshThirdPartyWorkspacePreview();
-        renderSettingsStatus("检测到未保存的 Gemini 渠道切换。", "pending");
-      });
+geminiChannelButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const channelId = modules.state.normalizeGeminiChannelId(button.getAttribute("data-gemini-channel"));
+    if (channelId === getSelectedGeminiChannel()) return;
+    const snapshot = readThirdPartySettingsForm();
+    modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
+      ...snapshot,
+      gemini: { ...snapshot.gemini, channelId }
     });
+    fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+    refreshThirdPartyWorkspacePreview();
+    renderSettingsStatus("检测到未保存的 Gemini 渠道切换。", "pending");
+  });
+});
+
+const momoEndpointSelect = runtime.getById("thirdPartyMomoEndpointInput");
+if (momoEndpointSelect) {
+  momoEndpointSelect.addEventListener("change", () => {
+    modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
+    refreshThirdPartyWorkspacePreview();
+    renderSettingsStatus("检测到未保存的服务地址修改。", "pending");
+  });
+}
+
+if (checkMomoEndpointButton) {
+  checkMomoEndpointButton.addEventListener("click", async () => {
+    const statusEl = runtime.getById("thirdPartyStatusSummary");
+    const momoUrl = getSelectedMomoEndpoint();
+    if (!momoUrl) {
+      runtime.setSummaryStatus(statusEl, "无法确定当前 Momo 地址。", "warn");
+      return;
+    }
+    if (!modules.runtime.isPluginRuntime()) {
+      runtime.setSummaryStatus(statusEl, "浏览器预览模式无法检测服务地址连通性。", "warn");
+      return;
+    }
+    checkMomoEndpointButton.disabled = true;
+    momoEndpointSelect.disabled = true;
+    runtime.setSummaryStatus(statusEl, `正在检测 ${momUrl} ...`, "info");
+    try {
+      const result = await modules.runtime.callHost(
+        "thirdParty.gemini.checkEndpoint",
+        [{ apiUrl: momUrl }],
+        { timeoutMs: 15000 }
+      );
+      if (result && result.ok) {
+        runtime.setSummaryStatus(statusEl, `墨墨服务地址 ${momUrl} 检测通过。`, "success");
+      } else {
+        throw new Error(String(result && result.message || "地址不可达"));
+      }
+    } catch (error) {
+      runtime.setSummaryStatus(statusEl, `墨墨地址检测失败：${error.message}`, "error");
+    } finally {
+      checkMomoEndpointButton.disabled = false;
+      momoEndpointSelect.disabled = false;
+    }
+  });
+}
+
 
     if (apiProfileSelect) {
       apiProfileSelect.addEventListener("change", async () => {

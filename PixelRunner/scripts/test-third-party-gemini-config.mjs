@@ -20,10 +20,14 @@ import {
   parseGeminiTextResponse,
   parseNewApiChatResponse,
   parseNewApiModelsResponse,
-  parseNewApiPricingResponse
+  parseNewApiPricingResponse,
+  MOMO_SERVICE_ENDPOINTS,
+  MOMO_DEFAULT_API_URL,
+  normalizeMomoEndpoint
 } from "../src/shared/gemini-config.js";
 import {
   cancelThirdPartyGeminiTask,
+  checkThirdPartyGeminiEndpoint,
   fetchThirdPartyGeminiAccountStatus,
   fetchThirdPartyGeminiTaskCharge,
   listThirdPartyGeminiModels,
@@ -159,6 +163,63 @@ assert.equal(normalizeGeminiFailure({ timedOut: true }).code, "timeout");
 assert.equal(normalizeGeminiFailure({ json: { promptFeedback: { blockReason: "SAFETY" } } }).code, "safety");
 assert.ok(!normalizeGeminiFailure({ status: 500, rawText: "Bearer super-secret" }).message.includes("super-secret"));
 assert.ok(!normalizeGeminiFailure({ status: 500, rawText: "upstream echoed abc-123", apiKey: "abc-123" }).message.includes("abc-123"));
+
+// Momo endpoint whitelist
+assert.equal(MOMO_SERVICE_ENDPOINTS.length, 3);
+assert.equal(MOMO_SERVICE_ENDPOINTS[0].url, "https://api.momoapi.icu");
+assert.equal(MOMO_SERVICE_ENDPOINTS[1].url, "https://api1.momoapi.icu");
+assert.equal(MOMO_SERVICE_ENDPOINTS[2].url, "https://api2.momoapi.icu");
+assert.equal(MOMO_DEFAULT_API_URL, "https://api.momoapi.icu");
+
+assert.equal(normalizeMomoEndpoint("https://api.momoapi.icu"), "https://api.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api1.momoapi.icu"), "https://api1.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api2.momoapi.icu"), "https://api2.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api.momoapi.icu/"), "https://api.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api1.momoapi.icu/"), "https://api1.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api2.momoapi.icu/"), "https://api2.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://evil.example.com"), MOMO_DEFAULT_API_URL);
+assert.equal(normalizeMomoEndpoint(""), MOMO_DEFAULT_API_URL);
+assert.equal(normalizeMomoEndpoint("  "), MOMO_DEFAULT_API_URL);
+
+// normalizeGeminiSettings preserves Momo user-chosen apiUrl
+const momoCustomSettings = normalizeGeminiSettings({
+  channelId: "momo",
+  channels: {
+    momo: { apiUrl: "https://api2.momoapi.icu", apiKey: "momo-key", selectedModel: "model-a" }
+  }
+});
+assert.equal(momoCustomSettings.channelId, "momo");
+assert.equal(momoCustomSettings.apiUrl, "https://api2.momoapi.icu");
+assert.equal(momoCustomSettings.channels.momo.apiUrl, "https://api2.momoapi.icu");
+
+// Old momo config without apiUrl defaults to default
+const oldMomoSettings = normalizeGeminiSettings({
+  channelId: "momo",
+  channels: { momo: { apiKey: "old-key" } }
+});
+assert.equal(oldMomoSettings.channels.momo.apiUrl, MOMO_DEFAULT_API_URL);
+assert.equal(oldMomoSettings.apiUrl, MOMO_DEFAULT_API_URL);
+
+// Aji channel ignores custom apiUrl
+const ajiCustomSettings = normalizeGeminiSettings({
+  channelId: "aji",
+  channels: { aji: { apiUrl: "https://custom.example.com", apiKey: "aji-key", selectedModel: "model-b" } }
+});
+assert.equal(ajiCustomSettings.channelId, "aji");
+assert.equal(ajiCustomSettings.apiUrl, "https://ai.ajiai.top");
+assert.equal(ajiCustomSettings.channels.aji.apiUrl, "https://ai.ajiai.top");
+
+// Build requests use Momo current apiUrl
+const momoGenReq = buildGeminiGenerateRequest({
+  apiUrl: "https://api2.momoapi.icu", apiKey: "secret", model: "gemini-image", prompt: "hello"
+});
+assert.equal(momoGenReq.url, "https://api2.momoapi.icu/v1beta/models/gemini-image:generateContent");
+
+const momoNewApiReq = buildNewApiModelsRequest({ apiUrl: "https://api1.momoapi.icu", apiKey: "key" });
+assert.equal(momoNewApiReq.url, "https://api1.momoapi.icu/v1/models");
+
+const momoPricingReq = buildNewApiPricingRequest({ apiUrl: "https://api2.momoapi.icu" });
+assert.equal(momoPricingReq.url, "https://api2.momoapi.icu/api/pricing");
 
 const originalFetch = globalThis.fetch;
 try {
@@ -332,6 +393,29 @@ try {
   globalThis.fetch = originalFetch;
 }
 
+// checkThirdPartyGeminiEndpoint
+{
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), "https://api1.momoapi.icu/api/status");
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ data: {} })
+    };
+  };
+  const checkOk = await checkThirdPartyGeminiEndpoint([{ apiUrl: "https://api1.momoapi.icu" }]);
+  assert.equal(checkOk.ok, true);
+  assert.equal(checkOk.apiUrl, "https://api1.momoapi.icu");
+
+  globalThis.fetch = async () => {
+    const error = new Error("network error");
+    throw error;
+  };
+  const checkFail = await checkThirdPartyGeminiEndpoint([{ apiUrl: "https://api2.momoapi.icu", timeoutMs: 5000 }]);
+  assert.equal(checkFail.ok, false);
+  assert.ok(checkFail.message.includes("network error") || checkFail.message.includes("不可达"));
+}
+
 globalThis.window = {};
 await import("../src/webview/state.js");
 const stateModule = globalThis.window.PixelRunnerModules.state;
@@ -351,8 +435,36 @@ assert.equal(thirdParty.grs.apiUrl, "https://grsai.dakka.com.cn");
 assert.equal(thirdParty.gemini.apiKey, "momo-key");
 assert.equal(thirdParty.gemini.channels.aji.apiKey, "aji-key");
 assert.equal(stateModule.getThirdPartyProviderDescriptor(thirdParty).label, "墨墨 Momo");
+
+// Momo with custom apiUrl in descriptor
+const momoCustomState = stateModule.normalizeThirdPartySettings({
+  enabled: true,
+  provider: "gemini",
+  gemini: {
+    channelId: "momo",
+    channels: { momo: { apiUrl: "https://api2.momoapi.icu", apiKey: "momo-key", selectedModel: "img" } }
+  }
+});
+assert.equal(stateModule.getThirdPartyProviderDescriptor(momoCustomState).apiUrl, "https://api2.momoapi.icu");
+
+// Old momo without apiUrl defaults in descriptor
+const momoOldState = stateModule.normalizeThirdPartySettings({
+  enabled: true,
+  provider: "gemini",
+  gemini: {
+    channelId: "momo",
+    channels: { momo: { apiKey: "old-momo" } }
+  }
+});
+assert.equal(stateModule.getThirdPartyProviderDescriptor(momoOldState).apiUrl, MOMO_DEFAULT_API_URL);
+
 const legacyThirdParty = stateModule.normalizeThirdPartySettings({ enabled: true, grs: { apiKey: "legacy-grs-key" } });
 assert.equal(legacyThirdParty.provider, "grs");
 assert.equal(legacyThirdParty.grs.apiKey, "legacy-grs-key");
 
-console.log("Gemini channel, migration, request, response, and failure contract checks passed.");
+assert.equal(stateModule.MOMO_DEFAULT_API_URL, MOMO_DEFAULT_API_URL);
+assert.equal(stateModule.MOMO_SERVICE_ENDPOINTS.length, 3);
+assert.equal(stateModule.normalizeMomoEndpoint("https://api1.momoapi.icu"), "https://api1.momoapi.icu");
+assert.equal(stateModule.normalizeMomoEndpoint("bad-url"), MOMO_DEFAULT_API_URL);
+
+console.log("Gemini channel, migration, request, response, failure contract, and Momo endpoint checks passed.");

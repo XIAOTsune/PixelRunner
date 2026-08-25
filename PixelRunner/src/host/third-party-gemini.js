@@ -484,6 +484,19 @@ export async function cancelThirdPartyGeminiTask(args = []) {
   return { ok: true, taskId, localRequestCancelled: Boolean(controller), removedImmediateResult: false, remoteCancelled: false };
 }
 
+export async function checkThirdPartyGeminiEndpoint(args = []) {
+  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const apiUrl = String(payload.apiUrl || "").trim().replace(/\/+$/, "");
+  if (!apiUrl) throw new Error("缺少要检测的 API 地址");
+  const timeoutMs = Math.max(5000, Number(payload.timeoutMs) || 15000);
+  try {
+    await fetchNewApiJson(apiUrl, "/api/status", "", timeoutMs);
+    return { ok: true, apiUrl, message: "服务地址可访问" };
+  } catch (error) {
+    return { ok: false, apiUrl, message: String(error.message || "服务地址不可达") };
+  }
+}
+
 export async function listThirdPartyGeminiModels(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const config = getConfig(payload);
