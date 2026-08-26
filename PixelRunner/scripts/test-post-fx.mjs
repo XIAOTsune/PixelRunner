@@ -122,4 +122,59 @@ assert.ok(
   `film grain must not contain directional bands: ${directionalCorrelations.map((value) => value.toFixed(3)).join(", ")}`
 );
 
+function grainStatistics(level, grainColor = 100) {
+  const image = {
+    width: flatSize,
+    height: flatSize,
+    data: new Uint8ClampedArray(flatSize * flatSize * 4)
+  };
+  for (let index = 0; index < image.data.length; index += 4) {
+    image.data[index] = level;
+    image.data[index + 1] = level;
+    image.data[index + 2] = level;
+    image.data[index + 3] = 255;
+  }
+  const result = renderFilmImageData(image, {
+    ...FILM_DEFAULTS,
+    amount: 100,
+    exposure: 0,
+    contrast: 0,
+    saturation: 0,
+    warmth: 0,
+    shadowLift: 0,
+    highlightRollOff: 0,
+    halation: 0,
+    grain: 100,
+    grainSize: 3,
+    grainColor,
+    vignette: 0,
+    dispersion: 0,
+    seed: 4817
+  });
+  let lumaSum = 0;
+  let lumaSquaredSum = 0;
+  let colorDifference = 0;
+  const pixelCount = result.width * result.height;
+  for (let index = 0; index < result.data.length; index += 4) {
+    const r = result.data[index];
+    const g = result.data[index + 1];
+    const b = result.data[index + 2];
+    const luma = (r + g + b) / 3;
+    lumaSum += luma;
+    lumaSquaredSum += luma * luma;
+    colorDifference += Math.abs(r - g) + Math.abs(g - b);
+  }
+  const mean = lumaSum / pixelCount;
+  return {
+    deviation: Math.sqrt(lumaSquaredSum / pixelCount - mean * mean),
+    colorDifference: colorDifference / pixelCount
+  };
+}
+const darkGrain = grainStatistics(32);
+const midGrain = grainStatistics(112);
+const highlightGrain = grainStatistics(224);
+assert.ok(darkGrain.deviation > midGrain.deviation, "shadows carry more grain than midtones");
+assert.ok(midGrain.deviation > highlightGrain.deviation * 1.5, "highlights remain visibly cleaner than midtones");
+assert.ok(midGrain.colorDifference < 1, "film grain remains predominantly neutral even at maximum color-grain setting");
+
 console.log("Post FX renderer tests passed.");

@@ -71,20 +71,25 @@
 
     float grainNoise(vec2 pixel, float grainSize, float seed) {
       float radius = max(1.0, floor(grainSize + 0.5));
-      float center = hashNoise(pixel, seed);
-      float cardinal = (
+      float fine = (
+        hashNoise(pixel, seed + 3.0) +
+        hashNoise(pixel + vec2(5.0, -7.0), seed + 31.0) +
+        hashNoise(pixel + vec2(-9.0, 4.0), seed + 67.0)
+      ) / 3.0;
+      float soft = (
         hashNoise(pixel + vec2(radius, 0.0), seed + 11.0) +
         hashNoise(pixel + vec2(-radius, 0.0), seed + 23.0) +
         hashNoise(pixel + vec2(0.0, radius), seed + 37.0) +
         hashNoise(pixel + vec2(0.0, -radius), seed + 53.0)
-      ) * 0.055;
-      float diagonal = (
-        hashNoise(pixel + vec2(radius, radius), seed + 67.0) +
-        hashNoise(pixel + vec2(-radius, radius), seed + 79.0) +
-        hashNoise(pixel + vec2(radius, -radius), seed + 97.0) +
-        hashNoise(pixel + vec2(-radius, -radius), seed + 113.0)
-      ) * 0.03;
-      return center * 0.66 + cardinal + diagonal;
+      ) / 4.0;
+      float broadRadius = radius * 2.0 + 1.0;
+      float broad = (
+        hashNoise(pixel + vec2(broadRadius, broadRadius), seed + 79.0) +
+        hashNoise(pixel + vec2(-broadRadius, broadRadius), seed + 97.0) +
+        hashNoise(pixel + vec2(broadRadius, -broadRadius), seed + 113.0) +
+        hashNoise(pixel + vec2(-broadRadius, -broadRadius), seed + 131.0)
+      ) / 4.0;
+      return fine * 0.46 + soft * 0.36 + broad * 0.18;
     }
 
     float luminance(vec3 color) {
@@ -161,22 +166,21 @@
         outputColor += halo * vec3(1.1, 0.3, 0.08) * strength;
       }
 
-      float grainStrength = uGrain / 100.0 * uAmount / 100.0 * 0.16;
+      float grainStrength = uGrain / 100.0 * uAmount / 100.0 * 0.13;
       if (grainStrength > 0.0) {
         vec2 fragmentPoint = vec2(gl_FragCoord.x - 0.5, uResolution.y - gl_FragCoord.y - 0.5) + uOrigin;
         float mono = grainNoise(floor(fragmentPoint), uGrainSize, uSeed) - 0.5;
         float chroma = grainNoise(floor(fragmentPoint) + vec2(17.0, -11.0), uGrainSize, uSeed + 97.0) - 0.5;
         float grainLuma = luminance(outputColor);
-        float shadowWeight = 1.0 - smoothstep(0.08, 0.56, grainLuma);
-        float highlightWeight = smoothstep(0.60, 0.94, grainLuma);
-        float toneWeight = clamp(0.88 + shadowWeight * 0.48 - highlightWeight * 0.52, 0.30, 1.36);
+        float shadowWeight = 1.0 - smoothstep(0.10, 0.52, grainLuma);
+        float highlightWeight = smoothstep(0.58, 0.92, grainLuma);
+        float toneWeight = clamp(0.92 + shadowWeight * 0.24 - highlightWeight * 0.58, 0.26, 1.18);
         mono *= grainStrength * toneWeight;
-        chroma *= grainStrength * toneWeight;
-        float colorMix = uGrainColor / 100.0;
+        chroma *= grainStrength * toneWeight * (uGrainColor / 100.0) * 0.16;
         outputColor += vec3(
-          mono * (1.0 - colorMix) + (mono + chroma) * colorMix * 0.45,
-          mono * (1.0 - colorMix) + mono * colorMix * 0.25,
-          mono * (1.0 - colorMix) + (mono - chroma) * colorMix * 0.45
+          mono + chroma * 0.55,
+          mono - chroma * 0.20,
+          mono - chroma * 0.45
         );
       }
 

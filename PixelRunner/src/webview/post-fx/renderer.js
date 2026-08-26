@@ -122,20 +122,25 @@ function hashNoise(x, y, seed) {
 
 function grainNoise(x, y, grainSize, seed) {
   const radius = Math.max(1, Math.round(Number(grainSize) || 1));
-  const center = hashNoise(x, y, seed);
-  const cardinal = (
+  const fine = (
+    hashNoise(x, y, seed + 3) +
+    hashNoise(x + 5, y - 7, seed + 31) +
+    hashNoise(x - 9, y + 4, seed + 67)
+  ) / 3;
+  const soft = (
     hashNoise(x + radius, y, seed + 11) +
     hashNoise(x - radius, y, seed + 23) +
     hashNoise(x, y + radius, seed + 37) +
     hashNoise(x, y - radius, seed + 53)
-  ) * 0.055;
-  const diagonal = (
-    hashNoise(x + radius, y + radius, seed + 67) +
-    hashNoise(x - radius, y + radius, seed + 79) +
-    hashNoise(x + radius, y - radius, seed + 97) +
-    hashNoise(x - radius, y - radius, seed + 113)
-  ) * 0.03;
-  return center * 0.66 + cardinal + diagonal;
+  ) / 4;
+  const broadRadius = radius * 2 + 1;
+  const broad = (
+    hashNoise(x + broadRadius, y + broadRadius, seed + 79) +
+    hashNoise(x - broadRadius, y + broadRadius, seed + 97) +
+    hashNoise(x + broadRadius, y - broadRadius, seed + 113) +
+    hashNoise(x - broadRadius, y - broadRadius, seed + 131)
+  ) / 4;
+  return fine * 0.46 + soft * 0.36 + broad * 0.18;
 }
 
 function getDimensions(imageData) {
@@ -332,7 +337,7 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
     }
   }
 
-  const grainStrength = params.grain / 100 * amount * 0.16;
+  const grainStrength = params.grain / 100 * amount * 0.13;
   const grainSize = Math.max(1, Math.round(params.grainSize));
   const colorGrain = params.grainColor / 100;
   const vignetteStrength = params.vignette / 100 * amount * 0.72;
@@ -347,15 +352,15 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
       if (grainStrength > 0) {
         const noise = grainNoise(globalX, globalY, grainSize, params.seed) - 0.5;
         const chromaNoise = grainNoise(globalX + 17, globalY - 11, grainSize, params.seed + 97) - 0.5;
-        const shadowWeight = 1 - smoothstep(0.08, 0.56, luma);
-        const highlightWeight = smoothstep(0.60, 0.94, luma);
-        const toneWeight = clamp(0.88 + shadowWeight * 0.48 - highlightWeight * 0.52, 0.30, 1.36, 0.88);
+        const shadowWeight = 1 - smoothstep(0.10, 0.52, luma);
+        const highlightWeight = smoothstep(0.58, 0.92, luma);
+        const toneWeight = clamp(0.92 + shadowWeight * 0.24 - highlightWeight * 0.58, 0.26, 1.18, 0.92);
         const pixelGrainStrength = grainStrength * toneWeight;
         const monochrome = noise * pixelGrainStrength;
-        const chroma = chromaNoise * pixelGrainStrength;
-        output[index] = Math.round(clamp(output[index] / 255 + monochrome * (1 - colorGrain) + (monochrome + chroma) * colorGrain * 0.45, 0, 1, 0) * 255);
-        output[index + 1] = Math.round(clamp(output[index + 1] / 255 + monochrome * (1 - colorGrain) + monochrome * colorGrain * 0.25, 0, 1, 0) * 255);
-        output[index + 2] = Math.round(clamp(output[index + 2] / 255 + monochrome * (1 - colorGrain) + (monochrome - chroma) * colorGrain * 0.45, 0, 1, 0) * 255);
+        const chroma = chromaNoise * pixelGrainStrength * colorGrain * 0.16;
+        output[index] = Math.round(clamp(output[index] / 255 + monochrome + chroma * 0.55, 0, 1, 0) * 255);
+        output[index + 1] = Math.round(clamp(output[index + 1] / 255 + monochrome - chroma * 0.20, 0, 1, 0) * 255);
+        output[index + 2] = Math.round(clamp(output[index + 2] / 255 + monochrome - chroma * 0.45, 0, 1, 0) * 255);
       }
       if (vignetteStrength > 0) {
         const nx = (x / Math.max(1, width - 1) - 0.5) * 2;
