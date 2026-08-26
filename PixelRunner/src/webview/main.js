@@ -18,6 +18,7 @@ function initializePixelRunnerApp() {
   modules.localUpscale.bindActions();
   modules.blendMatch.bindBlendMatchActions();
   modules.spaceFx.bindSpaceFxActions();
+  modules.postFx.bindActions();
   modules.apps.bindAppPicker();
   modules.workspace.bindWorkspaceActions();
   modules.generativeFill.bindActions();
@@ -49,7 +50,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.8.4"
+        version: "2.8.4.a"
       });
     })
     .catch((error) => {

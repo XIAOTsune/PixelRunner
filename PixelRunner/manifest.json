@@ -1,7 +1,7 @@
 {
   "id": "com.tsune.pixelrunner",
   "name": "像素起子",
-  "version": "2.8.4",
+  "version": "2.8.4.a",
   "main": "index.html",
   "manifestVersion": 5,
   "entrypoints": [

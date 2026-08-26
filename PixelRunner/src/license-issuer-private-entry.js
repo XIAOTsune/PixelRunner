@@ -109,7 +109,7 @@ const UNLOCKED_FEATURES = Object.freeze(Object.keys(LICENSE_FEATURES).sort());
     getById("btnGenerateActivationCode").addEventListener("click", () => {
       try {
         output.value = generateActivationCode();
-        setStatus("激活码已生成。它已固定解锁辉光、空间特效、对齐与校色和本地超分。", "success");
+      setStatus("激活码已生成。它已固定解锁镜头与后期、辉光、空间特效、对齐与校色和本地超分。", "success");
       } catch (error) {
         setStatus(error.message || "生成激活码失败，请检查设备代码。", "warn");
       }

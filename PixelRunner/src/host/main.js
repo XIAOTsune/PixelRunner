@@ -45,6 +45,8 @@ import {
 import {
   cacheResultForPhotoshop,
   capturePhotoshopDocumentPreview,
+  capturePhotoshopPostFxPreview,
+  capturePhotoshopPostFxSource,
   capturePhotoshopDocumentForLocalUpscale,
   deletePhotoshopSelectionSnapshot,
   getPhotoshopDocumentInfo,
@@ -400,6 +402,26 @@ async function handleBridgeRequest(message, responseTarget) {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
         break;
+      case "photoshop.captureLicensedPostFxPreview":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopPostFxPreview([{
+          ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
+          fullResolution: false,
+          skipUploadAsset: false
+        }]), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
+      case "photoshop.captureLicensedPostFxSource":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopPostFxSource([{
+          expectedDocumentId: Number(message.args && message.args[0] && message.args[0].expectedDocumentId) || 0,
+          fullResolution: true,
+          skipUploadAsset: true,
+          captureFormat: "png",
+          ignoreSelection: true
+        }]), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
       case "photoshop.captureLicensedSpaceFxSource":
         result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
           expectedDocumentId: Number(message.args && message.args[0] && message.args[0].expectedDocumentId) || 0,
@@ -437,6 +459,7 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "photoshop.placeLicensedGlowResult":
       case "photoshop.placeLicensedSpaceFxResult":
+      case "photoshop.placeLicensedPostFxResult":
         result = await runDeduplicatedPhotoshopPlacement(
           message,
           () => placeResultIntoPhotoshop(message.args, createPhotoshopPlacementRuntime(message))

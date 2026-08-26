@@ -46,6 +46,14 @@ export async function capturePhotoshopDocumentPreview(args = []) {
   return photoshopService.captureDocumentPreview(payload);
 }
 
+export async function capturePhotoshopPostFxPreview(args = []) {
+  return capturePhotoshopDocumentPreview(args);
+}
+
+export async function capturePhotoshopPostFxSource(args = []) {
+  return capturePhotoshopDocumentPreview(args);
+}
+
 export async function capturePhotoshopDocumentForLocalUpscale(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const photoshopService = getPhotoshopService();

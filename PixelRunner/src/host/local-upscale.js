@@ -8,7 +8,7 @@ export const LOCAL_UPSCALE_BASE_URLS = Object.freeze(
 );
 const DEFAULT_LOCAL_UPSCALE_BASE_URL = LOCAL_UPSCALE_BASE_URLS[0];
 export const LOCAL_UPSCALE_PROTOCOL_VERSION = "2";
-export const LOCAL_UPSCALE_BUILD_ID = "PixelRunnerV2.8.4-local-ai-bundled-runtime";
+export const LOCAL_UPSCALE_BUILD_ID = "PixelRunnerV2.8.4.a-local-ai-bundled-runtime";
 
 export function normalizeLocalUpscaleBaseUrl(value) {
   const raw = String(value || DEFAULT_LOCAL_UPSCALE_BASE_URL).trim();

@@ -45,7 +45,7 @@ const issuedAt = "2026-07-28T00:00:00.000Z";
 
 function issueLicense({
   deviceCode,
-  features = ["blendMatch", "glow", "localUpscale", "spaceFx"],
+  features = ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"],
   productId = LICENSE_PRODUCT_ID,
   keyId = "test-2026",
   licenseId = "PR-TEST-0001"
@@ -75,7 +75,7 @@ assert.match(deviceCode, /^PR2-(?:[A-Z2-9]{4}-){4}[A-Z2-9]{4}$/);
 const validCode = issueLicense({ deviceCode });
 const validVerification = verifyActivationCode(validCode, { deviceCode, keyring: testKeyring });
 assert.equal(validVerification.active, true, "valid Ed25519 license verifies locally");
-assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "localUpscale", "spaceFx"]);
+assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"]);
 assert.equal(isFeatureUnlocked(validVerification, "glow"), true);
 
 const textEncoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextEncoder");
@@ -103,7 +103,7 @@ const invalidSchemaPayload = {
   productId: LICENSE_PRODUCT_ID,
   licenseId: "PR-TEST-BAD-SCHEMA",
   deviceCodeHash: deriveDeviceCodeHash(deviceCode),
-  features: ["blendMatch", "glow", "localUpscale", "spaceFx"],
+  features: ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"],
   issuedAt,
   permanent: true,
   keyId: "test-2026"
@@ -133,6 +133,9 @@ const protectedRequests = [
   { feature: "glow", counter: "glow", request: { method: "photoshop.captureLicensedGlowPreview", args: [{}] } },
   { feature: "spaceFx", counter: "spaceFx", request: { method: "photoshop.captureLicensedSpaceFxPreview", args: [{}] } },
   { feature: "spaceFx", counter: "spaceFxSource", request: { method: "photoshop.captureLicensedSpaceFxSource", args: [{}] } },
+  { feature: "postFx", counter: "postFxPreview", request: { method: "photoshop.captureLicensedPostFxPreview", args: [{}] } },
+  { feature: "postFx", counter: "postFxSource", request: { method: "photoshop.captureLicensedPostFxSource", args: [{}] } },
+  { feature: "postFx", counter: "postFxPlacement", request: { method: "photoshop.placeLicensedPostFxResult", args: [{}] } },
   { feature: "blendMatch", counter: "blendMatchAnalysis", request: { method: "photoshop.runToolAction", args: [{ action: "blendMatchPreviewSamples" }] } },
   { feature: "localUpscale", counter: "localUpscaleRequest", request: { method: "localUpscale.startEngine", args: [] } }
 ];
@@ -146,7 +149,7 @@ assert.equal(
   "blendMatch",
   "regular blend-match placement remains protected"
 );
-const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
+const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, postFxPreview: 0, postFxSource: 0, postFxPlacement: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
 function invokeProtectedTask(item) {
   hostEnforcer.assertBridgeRequest(item.request);
   executionCounters[item.counter] += 1;
@@ -168,6 +171,9 @@ for (const item of protectedRequests) {
 assert.equal(executionCounters.glow, 1, "authorized glow enters its original Host path");
 assert.equal(executionCounters.spaceFx, 1, "authorized space FX enters its original Host path");
 assert.equal(executionCounters.spaceFxSource, 1, "authorized full-resolution space FX capture enters its Host path");
+assert.equal(executionCounters.postFxPreview, 1, "authorized post FX preview enters its Host path");
+assert.equal(executionCounters.postFxSource, 1, "authorized full-resolution post FX capture enters its Host path");
+assert.equal(executionCounters.postFxPlacement, 1, "authorized post FX placement enters its Host path");
 assert.equal(executionCounters.blendMatchAnalysis, 1, "authorized blend-match enters its original Host path");
 assert.equal(executionCounters.localUpscaleRequest, 1, "authorized local-upscale enters its original Host path");
 

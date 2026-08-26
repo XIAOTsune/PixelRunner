@@ -28,7 +28,7 @@ const deviceCode = deriveDeviceCode(installationId);
 const payload = createLicensePayload({
   licenseId: "PR-ISSUER-TEST-0001",
   deviceCodeHash: deriveDeviceCodeHash(deviceCode),
-  features: ["blendMatch", "glow", "localUpscale", "spaceFx"],
+  features: ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"],
   issuedAt: "2026-07-28T00:00:00.000Z",
   keyId: "issuer-test"
 });
