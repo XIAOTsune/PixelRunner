@@ -77,6 +77,7 @@ const validVerification = verifyActivationCode(validCode, { deviceCode, keyring:
 assert.equal(validVerification.active, true, "valid Ed25519 license verifies locally");
 assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"]);
 assert.equal(isFeatureUnlocked(validVerification, "glow"), true);
+assert.equal(isFeatureUnlocked(validVerification, "postFx"), true, "explicit postFx entitlement remains supported");
 
 const textEncoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextEncoder");
 const textDecoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextDecoder");
@@ -125,6 +126,7 @@ assert.equal(verifyActivationCode(unknownKeyLicense, { deviceCode, keyring: test
 const glowOnlyLicense = issueLicense({ deviceCode, features: ["glow"], licenseId: "PR-TEST-GLOW-ONLY" });
 const glowOnlyVerification = verifyActivationCode(glowOnlyLicense, { deviceCode, keyring: testKeyring });
 assert.equal(glowOnlyVerification.active, true);
+assert.equal(isFeatureUnlocked(glowOnlyVerification, "postFx"), true, "legacy glow license unlocks shared lens and post FX");
 assert.equal(isFeatureUnlocked(glowOnlyVerification, "localUpscale"), false, "missing feature stays locked");
 
 const hostStorage = new MemoryStorage({ [INSTALLATION_ID_STORAGE_KEY]: firstInstallationId });
@@ -149,6 +151,11 @@ assert.equal(
   "blendMatch",
   "regular blend-match placement remains protected"
 );
+hostStorage.setItem(ACTIVATION_STORAGE_KEY, glowOnlyLicense);
+for (const request of protectedRequests.slice(3, 6)) {
+  hostEnforcer.assertBridgeRequest(request.request);
+}
+hostStorage.setItem(ACTIVATION_STORAGE_KEY, "");
 const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, postFxPreview: 0, postFxSource: 0, postFxPlacement: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
 function invokeProtectedTask(item) {
   hostEnforcer.assertBridgeRequest(item.request);

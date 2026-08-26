@@ -10,6 +10,11 @@ const rootDir = path.resolve(__dirname, "..");
 const releaseRoot = path.join(rootDir, "release");
 export const RELEASE_PRODUCT_NAME = "像素起子";
 export const HARDENED_RELEASE_SUFFIX = "-加固版";
+const RELEASE_PACKAGE_VERSION_ALIASES = Object.freeze({
+  // Photoshop requires a valid SemVer in manifest.json, while this release
+  // keeps the user-facing package label requested for testing.
+  "2.8.4-alpha.1": "2.8.4.a"
+});
 
 async function readManifestVersion() {
   const manifestPath = path.join(rootDir, "manifest.json");
@@ -27,7 +32,8 @@ function isHardenedRelease() {
 }
 
 export function getReleasePackageNames(version, { hardened = false } = {}) {
-  const packageDirName = `${RELEASE_PRODUCT_NAME}V${version}${hardened ? HARDENED_RELEASE_SUFFIX : ""}`;
+  const packageVersion = RELEASE_PACKAGE_VERSION_ALIASES[String(version)] || String(version);
+  const packageDirName = `${RELEASE_PRODUCT_NAME}V${packageVersion}${hardened ? HARDENED_RELEASE_SUFFIX : ""}`;
   return { packageDirName, packageZipName: `${packageDirName}.zip` };
 }
 

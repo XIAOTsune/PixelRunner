@@ -3,6 +3,7 @@ import {
   LICENSE_FEATURES,
   deriveDeviceCode,
   ensureInstallationId,
+  isFeatureUnlocked,
   verifyActivationCode
 } from "../shared/license-core.js";
 import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
@@ -70,7 +71,7 @@ export function createHostLicenseEnforcer({ storage, keyring = LICENSE_PUBLIC_KE
 
   function requireFeature(feature) {
     const verification = getVerification();
-    if (!verification.active || !verification.license.features.includes(feature)) {
+    if (!isFeatureUnlocked(verification, feature)) {
       throw new LicenseFeatureError(feature, verification.reason);
     }
     return verification;

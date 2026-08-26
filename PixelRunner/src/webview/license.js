@@ -62,7 +62,10 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
     if (details) details.hidden = !state.verification.active;
     if (detailsText && state.verification.active) {
       const license = state.verification.license;
-      const features = license.features.map(getFeatureLabel).join("、");
+      const features = Object.keys(LICENSE_FEATURES)
+        .filter((feature) => isFeatureUnlocked(state.verification, feature))
+        .map(getFeatureLabel)
+        .join("、");
       detailsText.textContent = `许可证编号：${license.licenseId}\n永久授权：是\n此设备：${state.deviceCode}\n已解锁功能：${features}`;
     }
     document.querySelectorAll("[data-license-feature]").forEach((button) => {
