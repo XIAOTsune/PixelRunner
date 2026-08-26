@@ -6,18 +6,22 @@ const webglSource = await readFile(new URL("../src/webview/post-fx/webgl-rendere
 const rendererSource = await readFile(new URL("../src/webview/post-fx/renderer.js", import.meta.url), "utf8");
 const webviewSource = await readFile(new URL("../src/webview/post-fx.js", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../app.html", import.meta.url), "utf8");
+const styleSource = await readFile(new URL("../app.css", import.meta.url), "utf8");
 assert.match(webglSource, /getContext\("webgl2"/, "post FX exposes a WebGL2 renderer");
 assert.match(webglSource, /returnDataUrl === false/, "preview rendering can avoid PNG encode/readback");
 assert.match(webglSource, /grainNoise/, "WebGL grain uses mixed pixel noise");
 assert.match(webglSource, /uvec2/, "WebGL grain uses an integer hash");
 assert.doesNotMatch(webglSource, /fract\(sin\(dot/, "WebGL grain does not use directionally correlated sine hashing");
 assert.doesNotMatch(rendererSource, /Math\.(?:sin|cos)/, "CPU grain does not use directional trigonometric warping");
-assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 3000/, "preview capture is capped at 3000px");
+assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 4000/, "preview capture is capped at 4000px");
+assert.match(webviewSource, /PREVIEW_MAX_SCALE = 24/, "preview zoom supports up to 24x");
 assert.match(webviewSource, /data-post-fx-zoom/, "preview navigation binds zoom controls");
 assert.doesNotMatch(webviewSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not bound");
 assert.doesNotMatch(appSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not rendered");
 assert.match(appSource, /id="postFxPresetDescription"/, "preset descriptions are visible in the panel");
 assert.match(appSource, /id="postFxDispersionHighlightsInput" type="checkbox"\s*\/>/, "highlight-only dispersion defaults off");
+assert.match(appSource, /最长边 4000px/, "the panel explains the 4000px preview");
+assert.match(styleSource, /\.tool-post-fx-card[\s\S]*?background: var\(--workspace-card-background\)/, "post FX entry uses the shared surface color configuration");
 
 const source = {
   width: 9,

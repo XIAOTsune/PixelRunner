@@ -7,7 +7,8 @@ import {
 
 (function initPostFxModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const PREVIEW_CAPTURE_MAX_DIMENSION = 3000;
+  const PREVIEW_CAPTURE_MAX_DIMENSION = 4000;
+  const PREVIEW_MAX_SCALE = 24;
   const PREVIEW_DEBOUNCE_MS = 90;
   const state = {
     bound: false,
@@ -175,7 +176,7 @@ import {
       : { width: 0, height: 0, left: 0, top: 0 };
     const contentWidth = Number(canvas && canvas.width) || Number(state.sourceImage && state.sourceImage.naturalWidth) || rect.width || 1;
     const contentHeight = Number(canvas && canvas.height) || Number(state.sourceImage && state.sourceImage.naturalHeight) || rect.height || 1;
-    const scale = Math.max(0.35, Math.min(8, Number(state.view.scale) || 1));
+    const scale = Math.max(0.35, Math.min(PREVIEW_MAX_SCALE, Number(state.view.scale) || 1));
     const fitScale = Math.min(rect.width / contentWidth || 1, rect.height / contentHeight || 1);
     const renderedWidth = contentWidth * fitScale * scale;
     const renderedHeight = contentHeight * fitScale * scale;
@@ -216,7 +217,7 @@ import {
     const viewport = getById("postFxPreviewViewport");
     if (!viewport) return;
     const previousScale = Math.max(0.35, Number(state.view.scale) || 1);
-    const scale = Math.max(0.35, Math.min(8, Number(nextScale) || 1));
+    const scale = Math.max(0.35, Math.min(PREVIEW_MAX_SCALE, Number(nextScale) || 1));
     const rect = viewport.getBoundingClientRect();
     const localX = Number(anchorX) - rect.left - rect.width / 2;
     const localY = Number(anchorY) - rect.top - rect.height / 2;
