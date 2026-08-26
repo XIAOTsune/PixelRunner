@@ -173,7 +173,7 @@
                 <span id="postFxPresetBadge" class="status-chip">自然胶片</span>
                 <span class="status-chip license-tool-status" data-license-status-for="postFx">已锁定</span>
               </div>
-              <p class="subtle-note">以当前可见内容为基础，预览写实胶片、亮度响应和轻微色散，确认后生成新盖印图层。</p>
+              <p class="subtle-note">对整张盖印图层施加统一成像与风格化后期：CRT、像素化、风切拖影、破碎与胶片收尾。</p>
             </div>
             <button id="btnOpenPostFxPanel" class="primary-btn post-fx-open-btn" type="button" data-license-feature="postFx">打开镜头与后期</button>
           </div>
@@ -1101,7 +1101,7 @@
           <span id="postFxPresetBadgeModal" class="status-chip">写实胶片</span>
           <span class="status-chip">盖印当前可见内容</span>
         </div>
-        <p class="subtle-note">预览阶段使用最长边 4000px 的压缩图像，应用时会重新读取原始尺寸并生成一张新的结果层。</p>
+          <p class="subtle-note">从效果目录选择一种全图后期；预览阶段使用最长边 4000px 的压缩图像，应用时会重新读取原始尺寸并生成新的结果层。</p>
       </div>
 
       <div class="post-fx-workbench">
@@ -1127,37 +1127,82 @@
         </div>
 
         <div class="post-fx-controls-panel">
-          <div class="post-fx-section-title">胶片风格</div>
-          <label class="field post-fx-field">
-            <span class="glow-param-line"><span class="field-label">预设</span></span>
-            <select id="postFxPresetInput" class="field-input" aria-label="胶片预设">
-              <option value="natural" selected>自然胶片</option>
-              <option value="ccd">CCD 直闪</option>
-              <option value="blueHour">蓝调 Live</option>
-            </select>
-          </label>
-          <p id="postFxPresetDescription" class="post-fx-preset-description">均衡的负片质感：柔和卤化、细颗粒和轻微暗角，适合人像与日常画面。</p>
-          <div class="post-fx-slider-grid">
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">胶片强度</span><span id="postFxAmountValue">68%</span></span><input id="postFxAmountInput" class="field-input" type="range" min="0" max="100" step="1" value="68" /></label>
+          <input id="postFxEffectTypeInput" type="hidden" value="film" />
+          <div class="post-fx-section-title">效果目录</div>
+          <div class="post-fx-effect-catalog" role="listbox" aria-label="镜头与后期效果">
+            <button class="post-fx-effect-card active" type="button" data-post-fx-effect="film" aria-pressed="true"><strong>胶片质感</strong><span>自然、CCD、蓝调</span></button>
+            <button class="post-fx-effect-card" type="button" data-post-fx-effect="crt" aria-pressed="false"><strong>CRT 显像管</strong><span>扫描线与 RGB 荫罩</span></button>
+            <button class="post-fx-effect-card" type="button" data-post-fx-effect="pixelate" aria-pressed="false"><strong>像素化</strong><span>块状重采样与色阶</span></button>
+            <button class="post-fx-effect-card" type="button" data-post-fx-effect="wind" aria-pressed="false"><strong>风切拖影</strong><span>全图方向性拖曳</span></button>
+            <button class="post-fx-effect-card" type="button" data-post-fx-effect="shatter" aria-pressed="false"><strong>破碎</strong><span>碎片位移与裂缝</span></button>
+          </div>
+          <label class="freq-sep-check-field post-fx-check-field"><input id="postFxEffectEnabledInput" type="checkbox" checked /><span>启用主效果</span></label>
+          <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">主效果强度</span><span id="postFxEffectAmountValue">100%</span></span><input id="postFxEffectAmountInput" class="field-input" type="range" min="0" max="100" step="1" value="100" /></label>
+
+          <div class="post-fx-effect-controls" data-post-fx-effect-controls="crt" hidden>
+            <div class="post-fx-section-title">CRT 显像管</div>
+            <div class="post-fx-slider-grid">
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">强度</span><span id="postFxCrtStrengthValue">72%</span></span><input id="postFxCrtStrengthInput" class="field-input" type="range" min="0" max="100" value="72" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">像素格</span><span id="postFxCrtPixelGridValue">58%</span></span><input id="postFxCrtPixelGridInput" class="field-input" type="range" min="0" max="100" value="58" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">扫描线</span><span id="postFxCrtScanlinesValue">46%</span></span><input id="postFxCrtScanlinesInput" class="field-input" type="range" min="0" max="100" value="46" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">曲面</span><span id="postFxCrtCurvatureValue">34%</span></span><input id="postFxCrtCurvatureInput" class="field-input" type="range" min="0" max="100" value="34" /></label>
+            </div>
+          </div>
+          <div class="post-fx-effect-controls" data-post-fx-effect-controls="pixelate" hidden>
+            <div class="post-fx-section-title">像素化</div>
+            <div class="post-fx-slider-grid">
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">块大小</span><span id="postFxPixelBlockSizeValue">6px</span></span><input id="postFxPixelBlockSizeInput" class="field-input" type="range" min="2" max="64" value="6" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色阶</span><span id="postFxPixelLevelsValue">12</span></span><input id="postFxPixelLevelsInput" class="field-input" type="range" min="2" max="32" value="12" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">抖动</span><span id="postFxPixelDitherValue">22%</span></span><input id="postFxPixelDitherInput" class="field-input" type="range" min="0" max="100" value="22" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">边缘保留</span><span id="postFxPixelEdgePreserveValue">28%</span></span><input id="postFxPixelEdgePreserveInput" class="field-input" type="range" min="0" max="100" value="28" /></label>
+            </div>
+          </div>
+          <div class="post-fx-effect-controls" data-post-fx-effect-controls="wind" hidden>
+            <div class="post-fx-section-title">风切拖影</div>
+            <div class="post-fx-slider-grid">
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">方向</span><span id="postFxWindDirectionValue">0°</span></span><input id="postFxWindDirectionInput" class="field-input" type="range" min="-180" max="180" value="0" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">长度</span><span id="postFxWindLengthValue">38%</span></span><input id="postFxWindLengthInput" class="field-input" type="range" min="0" max="100" value="38" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">断续</span><span id="postFxWindBreakupValue">42%</span></span><input id="postFxWindBreakupInput" class="field-input" type="range" min="0" max="100" value="42" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">边缘保留</span><span id="postFxWindEdgeProtectValue">32%</span></span><input id="postFxWindEdgeProtectInput" class="field-input" type="range" min="0" max="100" value="32" /></label>
+            </div>
+          </div>
+          <div class="post-fx-effect-controls" data-post-fx-effect-controls="shatter" hidden>
+            <div class="post-fx-section-title">破碎</div>
+            <div class="post-fx-slider-grid">
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">碎片大小</span><span id="postFxShatterFragmentSizeValue">28px</span></span><input id="postFxShatterFragmentSizeInput" class="field-input" type="range" min="8" max="128" value="28" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">散开</span><span id="postFxShatterScatterValue">36%</span></span><input id="postFxShatterScatterInput" class="field-input" type="range" min="0" max="100" value="36" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">方向</span><span id="postFxShatterDirectionValue">18°</span></span><input id="postFxShatterDirectionInput" class="field-input" type="range" min="-180" max="180" value="18" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">裂缝</span><span id="postFxShatterCracksValue">28%</span></span><input id="postFxShatterCracksInput" class="field-input" type="range" min="0" max="100" value="28" /></label>
+            </div>
           </div>
 
-          <div class="post-fx-section-title">高光与颗粒</div>
-          <div class="post-fx-slider-grid">
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">卤化</span><span id="postFxHalationValue">24%</span></span><input id="postFxHalationInput" class="field-input" type="range" min="0" max="100" step="1" value="24" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">卤化阈值</span><span id="postFxHalationThresholdValue">68%</span></span><input id="postFxHalationThresholdInput" class="field-input" type="range" min="25" max="95" step="1" value="68" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">卤化半径</span><span id="postFxHalationRadiusValue">14px</span></span><input id="postFxHalationRadiusInput" class="field-input" type="range" min="1" max="50" step="1" value="14" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">颗粒</span><span id="postFxGrainValue">16%</span></span><input id="postFxGrainInput" class="field-input" type="range" min="0" max="100" step="1" value="16" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">颗粒尺寸</span><span id="postFxGrainSizeValue">2px</span></span><input id="postFxGrainSizeInput" class="field-input" type="range" min="1" max="8" step="1" value="2" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">彩色颗粒</span><span id="postFxGrainColorValue">18%</span></span><input id="postFxGrainColorInput" class="field-input" type="range" min="0" max="100" step="1" value="18" /></label>
+          <div id="postFxFinishOptions" class="post-fx-finish-options">
+            <div class="post-fx-section-title">质感收尾</div>
+            <label class="freq-sep-check-field post-fx-check-field"><input id="postFxFilmFinishInput" type="checkbox" checked /><span>叠加自然胶片质感</span></label>
           </div>
-
-          <div class="post-fx-section-title">镜头细节</div>
-          <div class="post-fx-slider-grid">
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">暗角</span><span id="postFxVignetteValue">12%</span></span><input id="postFxVignetteInput" class="field-input" type="range" min="0" max="100" step="1" value="12" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色散</span><span id="postFxDispersionValue">10%</span></span><input id="postFxDispersionInput" class="field-input" type="range" min="0" max="100" step="1" value="10" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色散范围</span><span id="postFxDispersionRadiusValue">58%</span></span><input id="postFxDispersionRadiusInput" class="field-input" type="range" min="0" max="100" step="1" value="58" /></label>
+          <div class="post-fx-effect-controls" data-post-fx-effect-controls="film">
+            <div class="post-fx-section-title">胶片质感</div>
+            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">预设</span></span><select id="postFxPresetInput" class="field-input" aria-label="胶片预设"><option value="natural" selected>自然胶片</option><option value="ccd">CCD 直闪</option><option value="blueHour">蓝调 Live</option></select></label>
+            <p id="postFxPresetDescription" class="post-fx-preset-description">均衡的负片质感：柔和卤化、细颗粒和轻微暗角，适合人像与日常画面。</p>
+            <div class="post-fx-slider-grid">
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">胶片强度</span><span id="postFxAmountValue">68%</span></span><input id="postFxAmountInput" class="field-input" type="range" min="0" max="100" value="68" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">卤化</span><span id="postFxHalationValue">24%</span></span><input id="postFxHalationInput" class="field-input" type="range" min="0" max="100" value="24" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">颗粒</span><span id="postFxGrainValue">16%</span></span><input id="postFxGrainInput" class="field-input" type="range" min="0" max="100" value="16" /></label>
+              <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">暗角</span><span id="postFxVignetteValue">12%</span></span><input id="postFxVignetteInput" class="field-input" type="range" min="0" max="100" value="12" /></label>
+            </div>
+            <details class="post-fx-advanced-details">
+              <summary>更多胶片细节</summary>
+              <div class="post-fx-slider-grid">
+                <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">卤化阈值</span><span id="postFxHalationThresholdValue">68%</span></span><input id="postFxHalationThresholdInput" class="field-input" type="range" min="25" max="95" value="68" /></label>
+                <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">卤化半径</span><span id="postFxHalationRadiusValue">14px</span></span><input id="postFxHalationRadiusInput" class="field-input" type="range" min="1" max="50" value="14" /></label>
+                <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">颗粒尺寸</span><span id="postFxGrainSizeValue">2px</span></span><input id="postFxGrainSizeInput" class="field-input" type="range" min="1" max="8" value="2" /></label>
+                <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">彩色颗粒</span><span id="postFxGrainColorValue">18%</span></span><input id="postFxGrainColorInput" class="field-input" type="range" min="0" max="100" value="18" /></label>
+                <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色散</span><span id="postFxDispersionValue">10%</span></span><input id="postFxDispersionInput" class="field-input" type="range" min="0" max="100" value="10" /></label>
+                <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色散范围</span><span id="postFxDispersionRadiusValue">58%</span></span><input id="postFxDispersionRadiusInput" class="field-input" type="range" min="0" max="100" value="58" /></label>
+              </div>
+              <label class="freq-sep-check-field post-fx-check-field"><input id="postFxDispersionHighlightsInput" type="checkbox" /><span>色散仅作用于亮部</span></label>
+            </details>
           </div>
-          <label class="freq-sep-check-field post-fx-check-field"><input id="postFxDispersionHighlightsInput" type="checkbox" /><span>色散仅作用于亮部</span></label>
 
           <div class="post-fx-control-grid">
             <button id="btnPostFxRecapture" class="secondary-btn" type="button">重新捕获</button>
@@ -1168,7 +1213,7 @@
         </div>
       </div>
 
-      <div id="postFxHint" class="summary-strip" role="status" aria-live="polite">打开面板后会捕获当前可见内容，在插件内生成写实胶片预览。</div>
+      <div id="postFxHint" class="summary-strip" role="status" aria-live="polite">打开面板后会捕获当前可见内容，在插件内生成统一的全图后期预览。</div>
     </section>
   </div>
 

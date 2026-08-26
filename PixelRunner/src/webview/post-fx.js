@@ -1,8 +1,9 @@
 import {
   FILM_DEFAULTS,
   getFilmPresets,
-  normalizeFilmParams,
-  renderFilmImageData
+  getPostFxEffects,
+  normalizePostFxParams,
+  renderPostFxImageData
 } from "./post-fx/renderer.js";
 
 (function initPostFxModule(global) {
@@ -14,7 +15,7 @@ import {
     bound: false,
     captured: null,
     sourceImage: null,
-    params: normalizeFilmParams(FILM_DEFAULTS),
+    params: normalizePostFxParams({ ...FILM_DEFAULTS, effectType: "film" }),
     previewTimer: 0,
     previewBusy: false,
     pendingPreview: false,
@@ -102,7 +103,11 @@ import {
   function readParams() {
     const value = (id, fallback) => getById(id) ? getById(id).value : fallback;
     const checked = (id, fallback) => getById(id) ? Boolean(getById(id).checked) : fallback;
-    return normalizeFilmParams({
+    return normalizePostFxParams({
+      effectType: value("postFxEffectTypeInput", state.params.effectType),
+      effectEnabled: checked("postFxEffectEnabledInput", state.params.effectEnabled),
+      effectAmount: value("postFxEffectAmountInput", state.params.effectAmount),
+      filmFinish: checked("postFxFilmFinishInput", state.params.filmFinish),
       preset: value("postFxPresetInput", state.params.preset),
       amount: value("postFxAmountInput", state.params.amount),
       halation: value("postFxHalationInput", state.params.halation),
@@ -131,6 +136,10 @@ import {
 
   function syncControls() {
     const params = state.params;
+    setControlValue("postFxEffectTypeInput", params.effectType);
+    setChecked("postFxEffectEnabledInput", params.effectEnabled);
+    setControlValue("postFxEffectAmountInput", params.effectAmount);
+    setChecked("postFxFilmFinishInput", params.filmFinish);
     setControlValue("postFxPresetInput", params.preset);
     setControlValue("postFxAmountInput", params.amount);
     setControlValue("postFxHalationInput", params.halation);
@@ -153,19 +162,47 @@ import {
       ["postFxGrainColorValue", `${Math.round(params.grainColor)}%`],
       ["postFxVignetteValue", `${Math.round(params.vignette)}%`],
       ["postFxDispersionValue", `${Math.round(params.dispersion)}%`],
-      ["postFxDispersionRadiusValue", `${Math.round(params.dispersionRadius)}%`]
+      ["postFxDispersionRadiusValue", `${Math.round(params.dispersionRadius)}%`],
+      ["postFxEffectAmountValue", `${Math.round(params.effectAmount)}%`],
+      ["postFxCrtStrengthValue", `${Math.round(params.crtStrength)}%`],
+      ["postFxCrtPixelGridValue", `${Math.round(params.crtPixelGrid)}%`],
+      ["postFxCrtScanlinesValue", `${Math.round(params.crtScanlines)}%`],
+      ["postFxCrtCurvatureValue", `${Math.round(params.crtCurvature)}%`],
+      ["postFxPixelBlockSizeValue", `${Math.round(params.pixelBlockSize)}px`],
+      ["postFxPixelLevelsValue", `${Math.round(params.pixelLevels)}`],
+      ["postFxPixelDitherValue", `${Math.round(params.pixelDither)}%`],
+      ["postFxPixelEdgePreserveValue", `${Math.round(params.pixelEdgePreserve)}%`],
+      ["postFxWindDirectionValue", `${Math.round(params.windDirection)}°`],
+      ["postFxWindLengthValue", `${Math.round(params.windLength)}%`],
+      ["postFxWindBreakupValue", `${Math.round(params.windBreakup)}%`],
+      ["postFxWindEdgeProtectValue", `${Math.round(params.windEdgeProtect)}%`],
+      ["postFxShatterFragmentSizeValue", `${Math.round(params.shatterFragmentSize)}px`],
+      ["postFxShatterScatterValue", `${Math.round(params.shatterScatter)}%`],
+      ["postFxShatterDirectionValue", `${Math.round(params.shatterDirection)}°`],
+      ["postFxShatterCracksValue", `${Math.round(params.shatterCracks)}%`]
     ].forEach(([id, value]) => {
       const node = getById(id);
       if (node) node.textContent = value;
     });
     const badge = getById("postFxPresetBadge");
     const preset = getFilmPresets().find((item) => item.id === params.preset) || {};
-    const label = preset.label || "写实胶片";
+    const effect = getPostFxEffects().find((item) => item.id === params.effectType) || {};
+    const label = effect.label || preset.label || "镜头与后期";
     const description = getById("postFxPresetDescription");
-    if (description) description.textContent = preset.description || "选择一种写实胶片基调，再用颗粒、卤化、暗角和色散塑造镜头细节。";
+    if (description) description.textContent = effect.description || preset.description || "选择一种效果，再用胶片质感收尾。";
     if (badge) badge.textContent = label;
     const modalBadge = getById("postFxPresetBadgeModal");
     if (modalBadge) modalBadge.textContent = label;
+    document.querySelectorAll("[data-post-fx-effect]").forEach((button) => {
+      const active = button.getAttribute("data-post-fx-effect") === params.effectType;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+    document.querySelectorAll("[data-post-fx-effect-controls]").forEach((panel) => {
+      panel.hidden = panel.getAttribute("data-post-fx-effect-controls") !== params.effectType;
+    });
+    const finish = getById("postFxFinishOptions");
+    if (finish) finish.hidden = params.effectType === "film";
   }
 
   function getPreviewContentMetrics() {
@@ -380,7 +417,8 @@ import {
     const job = ++state.renderJob;
     state.params = readParams();
     setBadge("正在预览", "pending");
-    setStatus("正在更新写实胶片预览...", "info");
+    const effectLabel = (getPostFxEffects().find((item) => item.id === state.params.effectType) || {}).label || "后期效果";
+    setStatus(`正在更新${effectLabel}预览...`, "info");
     const startedAt = performance.now();
     try {
       let result = null;
@@ -398,7 +436,7 @@ import {
       }
       if (!result) {
         const source = imageToImageData(state.sourceImage);
-        const imageData = renderFilmImageData(source, state.params);
+        const imageData = renderPostFxImageData(source, state.params);
         result = { imageData, width: imageData.width, height: imageData.height };
       }
       if (job !== state.renderJob) return;
@@ -408,7 +446,7 @@ import {
       else if (result.dataUrl) drawPreviewDataUrl(result.dataUrl);
       const elapsed = Math.round(performance.now() - startedAt);
       setBadge("实时预览", "success");
-      setMeta(`预览 ${result.width}×${result.height} · ${elapsed}ms · ${backend} · ${getFilmPresets().find((item) => item.id === state.params.preset)?.label || "自定义"}`);
+      setMeta(`预览 ${result.width}×${result.height} · ${elapsed}ms · ${backend} · ${effectLabel}`);
       setStatus("预览已更新，确认后会重新读取原始尺寸并生成盖印结果层。", "success");
       setButtonsDisabled(false);
     } catch (error) {
@@ -526,12 +564,12 @@ import {
       }
       if (!result) {
         const source = imageToImageData(fullImage);
-        const imageData = renderFilmImageData(source, params);
+        const imageData = renderPostFxImageData(source, params);
         result = { dataUrl: imageDataToDataUrl(imageData), width: imageData.width, height: imageData.height };
       }
       const dataUrl = result.dataUrl;
       const bounds = getFullBounds(fullCapture, result.width, result.height);
-      const label = (getFilmPresets().find((item) => item.id === params.preset) || {}).label || "自定义";
+      const label = (getPostFxEffects().find((item) => item.id === params.effectType) || {}).label || "自定义";
       const response = await modules.runtime.callHost("photoshop.placeLicensedPostFxResult", [{
         dataUrl,
         targetDocumentId: fullCapture.documentId,
@@ -559,7 +597,7 @@ import {
 
   function applyPreset(presetId) {
     const preset = getFilmPresets().some((item) => item.id === presetId) ? presetId : "natural";
-    state.params = normalizeFilmParams({ preset, seed: state.params.seed });
+    state.params = normalizePostFxParams({ ...state.params, preset, effectType: "film", filmFinish: true });
     syncControls();
     schedulePreview();
   }
@@ -615,11 +653,22 @@ import {
     bindPreviewInteractions();
     const presetInput = getById("postFxPresetInput");
     if (presetInput) presetInput.addEventListener("change", () => applyPreset(presetInput.value));
+    document.querySelectorAll("[data-post-fx-effect]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.params = normalizePostFxParams({ ...state.params, effectType: button.getAttribute("data-post-fx-effect") });
+        syncControls();
+        schedulePreview();
+      });
+    });
     [
+      "postFxEffectTypeInput", "postFxEffectEnabledInput", "postFxEffectAmountInput", "postFxFilmFinishInput",
       "postFxAmountInput", "postFxHalationInput",
       "postFxHalationThresholdInput", "postFxHalationRadiusInput", "postFxGrainInput", "postFxGrainSizeInput",
       "postFxGrainColorInput", "postFxVignetteInput", "postFxDispersionInput", "postFxDispersionRadiusInput",
-      "postFxDispersionHighlightsInput"
+      "postFxDispersionHighlightsInput", "postFxCrtStrengthInput", "postFxCrtPixelGridInput", "postFxCrtScanlinesInput", "postFxCrtCurvatureInput",
+      "postFxPixelBlockSizeInput", "postFxPixelLevelsInput", "postFxPixelDitherInput", "postFxPixelEdgePreserveInput",
+      "postFxWindDirectionInput", "postFxWindLengthInput", "postFxWindBreakupInput", "postFxWindEdgeProtectInput",
+      "postFxShatterFragmentSizeInput", "postFxShatterScatterInput", "postFxShatterDirectionInput", "postFxShatterCracksInput"
     ].forEach((id) => {
       const node = getById(id);
       if (!node) return;
@@ -636,7 +685,7 @@ import {
     });
     const seedButton = getById("btnPostFxReseed");
     if (seedButton) seedButton.addEventListener("click", () => {
-      state.params = normalizeFilmParams({ ...state.params, seed: Math.floor(Math.random() * 2147483647) });
+      state.params = normalizePostFxParams({ ...state.params, seed: Math.floor(Math.random() * 2147483647) });
       syncControls();
       schedulePreview();
     });

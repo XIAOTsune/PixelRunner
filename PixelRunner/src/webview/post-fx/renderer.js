@@ -379,3 +379,300 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
 }
 
 export const FILM_DEFAULTS = DEFAULT_FILM_PARAMS;
+
+// The lens stack deliberately has one active image-wide effect. Film remains
+// available as a restrained finishing layer so existing presets keep working.
+const DEFAULT_POST_FX_PARAMS = Object.freeze({
+  effectType: "film",
+  effectEnabled: true,
+  effectAmount: 100,
+  filmFinish: true,
+  crtStrength: 72,
+  crtPixelGrid: 58,
+  crtScanlines: 46,
+  crtCurvature: 34,
+  crtConvergence: 22,
+  pixelBlockSize: 6,
+  pixelLevels: 12,
+  pixelDither: 22,
+  pixelEdgePreserve: 28,
+  windDirection: 0,
+  windLength: 38,
+  windBreakup: 42,
+  windEdgeProtect: 32,
+  shatterFragmentSize: 28,
+  shatterScatter: 36,
+  shatterDirection: 18,
+  shatterCracks: 28
+});
+
+const POST_FX_EFFECTS = Object.freeze([
+  { id: "film", label: "胶片质感", description: "自然胶片、CCD 直闪与蓝调 Live，作为可选质感收尾。", finish: true },
+  { id: "crt", label: "CRT 显像管", description: "扫描线、RGB 荫罩、轻微会聚偏移与曲面暗角。", finish: false },
+  { id: "pixelate", label: "像素化", description: "稳定块状重采样、色阶量化与可控抖动。", finish: false },
+  { id: "wind", label: "风切拖影", description: "全图方向性拖曳，断续破碎并保护画面边缘。", finish: false },
+  { id: "shatter", label: "破碎", description: "画布内不规则碎片位移、旋转、裂缝与边缘色差。", finish: false }
+]);
+
+function normalizeEffectType(value) {
+  const id = String(value || DEFAULT_POST_FX_PARAMS.effectType);
+  return POST_FX_EFFECTS.some((effect) => effect.id === id) ? id : DEFAULT_POST_FX_PARAMS.effectType;
+}
+
+export function normalizePostFxParams(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  const film = normalizeFilmParams(source);
+  const effectType = normalizeEffectType(source.effectType || source.type);
+  return {
+    ...film,
+    effectType,
+    effectEnabled: source.effectEnabled !== false,
+    effectAmount: clamp(source.effectAmount, 0, 100, DEFAULT_POST_FX_PARAMS.effectAmount),
+    filmFinish: source.filmFinish === true || (effectType === "film" && source.filmFinish !== false),
+    crtStrength: clamp(source.crtStrength, 0, 100, DEFAULT_POST_FX_PARAMS.crtStrength),
+    crtPixelGrid: clamp(source.crtPixelGrid, 0, 100, DEFAULT_POST_FX_PARAMS.crtPixelGrid),
+    crtScanlines: clamp(source.crtScanlines, 0, 100, DEFAULT_POST_FX_PARAMS.crtScanlines),
+    crtCurvature: clamp(source.crtCurvature, 0, 100, DEFAULT_POST_FX_PARAMS.crtCurvature),
+    crtConvergence: clamp(source.crtConvergence, 0, 100, DEFAULT_POST_FX_PARAMS.crtConvergence),
+    pixelBlockSize: Math.round(clamp(source.pixelBlockSize, 2, 64, DEFAULT_POST_FX_PARAMS.pixelBlockSize)),
+    pixelLevels: Math.round(clamp(source.pixelLevels, 2, 32, DEFAULT_POST_FX_PARAMS.pixelLevels)),
+    pixelDither: clamp(source.pixelDither, 0, 100, DEFAULT_POST_FX_PARAMS.pixelDither),
+    pixelEdgePreserve: clamp(source.pixelEdgePreserve, 0, 100, DEFAULT_POST_FX_PARAMS.pixelEdgePreserve),
+    windDirection: clamp(source.windDirection, -180, 180, DEFAULT_POST_FX_PARAMS.windDirection),
+    windLength: clamp(source.windLength, 0, 100, DEFAULT_POST_FX_PARAMS.windLength),
+    windBreakup: clamp(source.windBreakup, 0, 100, DEFAULT_POST_FX_PARAMS.windBreakup),
+    windEdgeProtect: clamp(source.windEdgeProtect, 0, 100, DEFAULT_POST_FX_PARAMS.windEdgeProtect),
+    shatterFragmentSize: Math.round(clamp(source.shatterFragmentSize, 8, 128, DEFAULT_POST_FX_PARAMS.shatterFragmentSize)),
+    shatterScatter: clamp(source.shatterScatter, 0, 100, DEFAULT_POST_FX_PARAMS.shatterScatter),
+    shatterDirection: clamp(source.shatterDirection, -180, 180, DEFAULT_POST_FX_PARAMS.shatterDirection),
+    shatterCracks: clamp(source.shatterCracks, 0, 100, DEFAULT_POST_FX_PARAMS.shatterCracks)
+  };
+}
+
+export function getPostFxEffects() {
+  return POST_FX_EFFECTS.map((effect) => ({ ...effect }));
+}
+
+export const getPostFxEffectCatalog = getPostFxEffects;
+
+function cloneSource(sourceImageData) {
+  const { width, height } = getDimensions(sourceImageData);
+  const source = sourceImageData && sourceImageData.data;
+  return createImageData(width, height, new Uint8ClampedArray(source));
+}
+
+function sampleRgb(source, width, height, x, y, channel) {
+  return sampleChannel(source, width, height, x, y, channel) / 255;
+}
+
+function sampleColor(source, width, height, x, y) {
+  return [sampleRgb(source, width, height, x, y, 0), sampleRgb(source, width, height, x, y, 1), sampleRgb(source, width, height, x, y, 2)];
+}
+
+function blendColor(base, effect, amount) {
+  return [
+    lerp(base[0], effect[0], amount),
+    lerp(base[1], effect[1], amount),
+    lerp(base[2], effect[2], amount)
+  ];
+}
+
+function sinApprox(value) {
+  const period = Math.PI * 2;
+  let x = value - Math.floor((value + Math.PI) / period) * period;
+  const sign = x < 0 ? -1 : 1;
+  x = Math.abs(x);
+  if (x > Math.PI) x = period - x;
+  const x2 = x * x;
+  return sign * (x - x2 * x / 6 + x2 * x2 * x / 120 - x2 * x2 * x2 * x / 5040);
+}
+
+function cosApprox(value) {
+  return sinApprox(value + Math.PI * 0.5);
+}
+
+function directionVector(degrees) {
+  const radians = Number(degrees || 0) * Math.PI / 180;
+  return [cosApprox(radians), sinApprox(radians)];
+}
+
+function renderCrt(sourceImageData, params) {
+  const { width, height } = getDimensions(sourceImageData);
+  const source = sourceImageData.data;
+  const output = new Uint8ClampedArray(source);
+  const strength = params.effectAmount / 100 * params.crtStrength / 100;
+  const curvature = params.crtCurvature / 100 * 0.18;
+  const convergence = params.crtConvergence / 100 * 0.012 * Math.max(width, height);
+  const grid = params.crtPixelGrid / 100;
+  const lines = params.crtScanlines / 100;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      let ux = width > 1 ? x / (width - 1) : 0.5;
+      let uy = height > 1 ? y / (height - 1) : 0.5;
+      const dx = ux * 2 - 1;
+      const dy = uy * 2 - 1;
+      const curve = 1 + curvature * (dx * dx + dy * dy);
+      ux = 0.5 + dx * curve * 0.5;
+      uy = 0.5 + dy * curve * 0.5;
+      const radialX = (ux - 0.5) * 2;
+      const radialY = (uy - 0.5) * 2;
+      const red = sampleRgb(source, width, height, ux * (width - 1) - radialX * convergence, uy * (height - 1) - radialY * convergence, 0);
+      const green = sampleRgb(source, width, height, ux * (width - 1), uy * (height - 1), 1);
+      const blue = sampleRgb(source, width, height, ux * (width - 1) + radialX * convergence, uy * (height - 1) + radialY * convergence, 2);
+      const grillePhase = Math.floor(x * (3 + grid * 3)) % 3;
+      const grille = grid * 0.12 * (grillePhase === 0 ? 1.06 : grillePhase === 1 ? 0.94 : 0.9);
+      const scan = 1 - lines * 0.2 * (0.5 + 0.5 * cosApprox((y + 0.5) * Math.PI));
+      const edge = smoothstep(0.58, 1, Math.min(1, Math.sqrt(dx * dx + dy * dy) / 1.4143));
+      const vignette = 1 - edge * strength * 0.28;
+      const effect = [red * scan * vignette * (1 + grille), green * scan * vignette, blue * scan * vignette * (1 - grille * 0.7)];
+      const base = [source[index] / 255, source[index + 1] / 255, source[index + 2] / 255];
+      const color = blendColor(base, effect, strength);
+      output[index] = Math.round(clamp(color[0], 0, 1, 0) * 255);
+      output[index + 1] = Math.round(clamp(color[1], 0, 1, 0) * 255);
+      output[index + 2] = Math.round(clamp(color[2], 0, 1, 0) * 255);
+    }
+  }
+  return createImageData(width, height, output);
+}
+
+const BAYER_4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+function renderPixelate(sourceImageData, params) {
+  const { width, height } = getDimensions(sourceImageData);
+  const source = sourceImageData.data;
+  const output = new Uint8ClampedArray(source);
+  const amount = params.effectAmount / 100;
+  const block = Math.max(2, params.pixelBlockSize);
+  const levels = Math.max(2, params.pixelLevels);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const cellX = Math.floor(x / block) * block + Math.min(block - 1, Math.floor(block * 0.5));
+      const cellY = Math.floor(y / block) * block + Math.min(block - 1, Math.floor(block * 0.5));
+      const color = sampleColor(source, width, height, cellX, cellY);
+      const threshold = (BAYER_4[(y % 4) * 4 + (x % 4)] / 16 - 0.5) * (params.pixelDither / 100) / levels;
+      const quantized = color.map((value) => clamp(Math.round((value + threshold) * (levels - 1)) / (levels - 1), 0, 1, value));
+      const edge = params.pixelEdgePreserve / 100 * smoothstep(0.04, 0.28, Math.abs(sampleRgb(source, width, height, x + 1, y, 0) - sampleRgb(source, width, height, x - 1, y, 0)) + Math.abs(sampleRgb(source, width, height, x, y + 1, 1) - sampleRgb(source, width, height, x, y - 1, 1)));
+      const colorOut = blendColor([source[index] / 255, source[index + 1] / 255, source[index + 2] / 255], quantized, amount * (1 - edge));
+      output[index] = Math.round(colorOut[0] * 255);
+      output[index + 1] = Math.round(colorOut[1] * 255);
+      output[index + 2] = Math.round(colorOut[2] * 255);
+    }
+  }
+  return createImageData(width, height, output);
+}
+
+function renderWind(sourceImageData, params) {
+  const { width, height } = getDimensions(sourceImageData);
+  const source = sourceImageData.data;
+  const output = new Uint8ClampedArray(source);
+  const [dx, dy] = directionVector(params.windDirection);
+  const maxDimension = Math.max(width, height);
+  const length = params.windLength / 100 * maxDimension * 0.16;
+  const amount = params.effectAmount / 100;
+  const breakup = params.windBreakup / 100;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const nx = width > 1 ? x / (width - 1) * 2 - 1 : 0;
+      const ny = height > 1 ? y / (height - 1) * 2 - 1 : 0;
+      const edgeDistance = Math.min(1, 1 - Math.max(Math.abs(nx), Math.abs(ny)));
+      const edgeGate = lerp(1, edgeDistance * 2, params.windEdgeProtect / 100);
+      let sum = [0, 0, 0];
+      let weightSum = 0;
+      for (let tap = 0; tap < 6; tap += 1) {
+        const distance = tap / 5 * length;
+        const cell = hashNoise(Math.floor((x - dx * distance) / Math.max(2, length * 0.35)), Math.floor((y - dy * distance) / Math.max(2, length * 0.35)), 9173);
+        const continuity = lerp(1, cell > 0.5 ? 1 : 0.22, breakup);
+        const weight = (1 - tap / 7) * continuity;
+        const color = sampleColor(source, width, height, x - dx * distance, y - dy * distance);
+        sum[0] += color[0] * weight;
+        sum[1] += color[1] * weight;
+        sum[2] += color[2] * weight;
+        weightSum += weight;
+      }
+      const dragged = sum.map((value) => value / Math.max(0.0001, weightSum));
+      const base = [source[index] / 255, source[index + 1] / 255, source[index + 2] / 255];
+      const color = blendColor(base, dragged, amount * edgeGate);
+      output[index] = Math.round(color[0] * 255);
+      output[index + 1] = Math.round(color[1] * 255);
+      output[index + 2] = Math.round(color[2] * 255);
+    }
+  }
+  return createImageData(width, height, output);
+}
+
+function renderShatter(sourceImageData, params) {
+  const { width, height } = getDimensions(sourceImageData);
+  const source = sourceImageData.data;
+  const output = new Uint8ClampedArray(source);
+  const size = Math.max(8, params.shatterFragmentSize);
+  const [dx, dy] = directionVector(params.shatterDirection);
+  const scatter = params.shatterScatter / 100 * size * 0.75;
+  const amount = params.effectAmount / 100;
+  const crackStrength = params.shatterCracks / 100;
+  const columns = Math.ceil(width / size);
+  const rows = Math.ceil(height / size);
+  const cells = new Array(columns * rows);
+  for (let cellY = 0; cellY < rows; cellY += 1) {
+    for (let cellX = 0; cellX < columns; cellX += 1) {
+      const jitter = hashNoise(cellX, cellY, 73);
+      const angle = (hashNoise(cellX, cellY, 101) - 0.5) * 0.32 * amount;
+      cells[cellY * columns + cellX] = {
+        jitter,
+        c: cosApprox(angle),
+        s: sinApprox(angle)
+      };
+    }
+  }
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const cellX = Math.floor(x / size);
+      const cellY = Math.floor(y / size);
+      const cell = cells[cellY * columns + cellX];
+      const localX = x - (cellX + 0.5) * size;
+      const localY = y - (cellY + 0.5) * size;
+      const rotatedX = localX * cell.c - localY * cell.s;
+      const rotatedY = localX * cell.s + localY * cell.c;
+      const sourceX = (cellX + 0.5) * size + rotatedX - dx * scatter * (cell.jitter - 0.5);
+      const sourceY = (cellY + 0.5) * size + rotatedY - dy * scatter * (cell.jitter - 0.5);
+      const fragment = sampleColor(source, width, height, sourceX, sourceY);
+      const edgeX = (size * 0.5 - Math.abs(localX)) / (size * 0.5);
+      const edgeY = (size * 0.5 - Math.abs(localY)) / (size * 0.5);
+      const crack = smoothstep(0, 0.06 + crackStrength * 0.14, Math.min(edgeX, edgeY));
+      const color = blendColor([source[index] / 255, source[index + 1] / 255, source[index + 2] / 255], [fragment[0] + (1 - crack) * 0.04, fragment[1] * (0.92 + crack * 0.08), fragment[2] + (1 - crack) * 0.06], amount);
+      output[index] = Math.round(clamp(color[0] * (1 - (1 - crack) * crackStrength * 0.45), 0, 1, 0) * 255);
+      output[index + 1] = Math.round(clamp(color[1] * (1 - (1 - crack) * crackStrength * 0.45), 0, 1, 0) * 255);
+      output[index + 2] = Math.round(clamp(color[2] * (1 - (1 - crack) * crackStrength * 0.45), 0, 1, 0) * 255);
+    }
+  }
+  return createImageData(width, height, output);
+}
+
+export function renderPostFxImageData(sourceImageData, inputParams = {}, options = {}) {
+  const params = normalizePostFxParams(inputParams);
+  if (!params.effectEnabled || params.effectAmount <= 0) {
+    return params.filmFinish && params.effectType !== "film"
+      ? renderFilmImageData(sourceImageData, params, options)
+      : cloneSource(sourceImageData);
+  }
+  let result = sourceImageData;
+  if (params.effectType === "crt") result = renderCrt(sourceImageData, params);
+  else if (params.effectType === "pixelate") result = renderPixelate(sourceImageData, params);
+  else if (params.effectType === "wind") result = renderWind(sourceImageData, params);
+  else if (params.effectType === "shatter") result = renderShatter(sourceImageData, params);
+  if (params.effectType === "film" || params.filmFinish) {
+    const filmAmount = params.effectType === "film"
+      ? params.amount * params.effectAmount / 100
+      : params.amount;
+    result = renderFilmImageData(result, { ...params, amount: filmAmount }, options);
+  }
+  return result;
+}
+
+export const renderEffectImageData = renderPostFxImageData;
+export const normalizeEffectParams = normalizePostFxParams;
+
+export const POST_FX_DEFAULTS = DEFAULT_POST_FX_PARAMS;

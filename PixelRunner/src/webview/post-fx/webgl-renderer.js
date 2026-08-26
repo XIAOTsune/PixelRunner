@@ -35,6 +35,27 @@
     uniform float uDispersionRadius;
     uniform float uDispersionHighlightsOnly;
     uniform float uSeed;
+    uniform float uEffectType;
+    uniform float uEffectEnabled;
+    uniform float uEffectAmount;
+    uniform float uCrtStrength;
+    uniform float uCrtPixelGrid;
+    uniform float uCrtScanlines;
+    uniform float uCrtCurvature;
+    uniform float uCrtConvergence;
+    uniform float uPixelBlockSize;
+    uniform float uPixelLevels;
+    uniform float uPixelDither;
+    uniform float uPixelEdgePreserve;
+    uniform vec2 uWindDirection;
+    uniform float uWindLength;
+    uniform float uWindBreakup;
+    uniform float uWindEdgeProtect;
+    uniform float uShatterFragmentSize;
+    uniform float uShatterScatter;
+    uniform vec2 uShatterDirection;
+    uniform float uShatterCracks;
+    uniform float uFilmFinish;
     in vec2 vUv;
     out vec4 outColor;
 
@@ -96,6 +117,86 @@
       return dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
 
+    vec3 applyCrt(vec2 uv, vec3 base) {
+      float strength = clamp(uEffectAmount * uCrtStrength / 10000.0, 0.0, 1.0);
+      float curvature = uCrtCurvature / 100.0 * 0.18;
+      vec2 centered = uv * 2.0 - 1.0;
+      float curve = 1.0 + curvature * dot(centered, centered);
+      vec2 warped = clamp(vec2(0.5) + centered * curve * 0.5, vec2(0.0), vec2(1.0));
+      vec2 radial = (warped - vec2(0.5)) * 2.0;
+      vec2 convergence = radial * (uCrtConvergence / 100.0) * 0.012;
+      vec3 color = vec3(
+        texture(uSource, clamp(warped - convergence, vec2(0.0), vec2(1.0))).r,
+        texture(uSource, warped).g,
+        texture(uSource, clamp(warped + convergence, vec2(0.0), vec2(1.0))).b
+      );
+      float grillePhase = mod(floor(gl_FragCoord.x * (3.0 + uCrtPixelGrid / 100.0 * 3.0)), 3.0);
+      float grille = uCrtPixelGrid / 100.0 * 0.12 * (grillePhase < 0.5 ? 1.06 : grillePhase < 1.5 ? 0.94 : 0.90);
+      float scan = 1.0 - uCrtScanlines / 100.0 * 0.2 * (0.5 + 0.5 * cos(gl_FragCoord.y * 3.14159265));
+      float edge = smoothstep(0.58, 1.0, min(1.0, length(centered) / 1.4143));
+      float vignette = 1.0 - edge * strength * 0.28;
+      color *= scan * vignette;
+      color *= vec3(1.0 + grille, 1.0, 1.0 - grille * 0.7);
+      return mix(base, color, strength);
+    }
+
+    vec3 applyPixelate(vec2 uv, vec3 base) {
+      float amount = clamp(uEffectAmount / 100.0, 0.0, 1.0);
+      vec2 pixels = max(uResolution, vec2(1.0));
+      float block = max(2.0, uPixelBlockSize);
+      vec2 cell = (floor((uv * pixels) / block) * block + block * 0.5) / pixels;
+      vec3 color = texture(uSource, clamp(cell, vec2(0.0), vec2(1.0))).rgb;
+      float levels = max(2.0, uPixelLevels);
+      float bayer = mod(floor(gl_FragCoord.x), 4.0) + mod(floor(gl_FragCoord.y), 4.0) * 4.0;
+      float threshold = (bayer / 16.0 - 0.5) * (uPixelDither / 100.0) / levels;
+      color = clamp(floor((color + threshold) * (levels - 1.0) + 0.5) / (levels - 1.0), 0.0, 1.0);
+      vec2 texel = 1.0 / pixels;
+      float edge = abs(luminance(texture(uSource, clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb) - luminance(texture(uSource, clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb));
+      edge += abs(luminance(texture(uSource, clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb) - luminance(texture(uSource, clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb));
+      float preserve = clamp(uPixelEdgePreserve / 100.0 * smoothstep(0.04, 0.28, edge), 0.0, 1.0);
+      return mix(base, color, amount * (1.0 - preserve));
+    }
+
+    vec3 applyWind(vec2 uv, vec3 base) {
+      float amount = clamp(uEffectAmount / 100.0, 0.0, 1.0);
+      float lengthPx = uWindLength / 100.0 * max(uResolution.x, uResolution.y) * 0.16;
+      float edgeDistance = 1.0 - max(abs(uv.x * 2.0 - 1.0), abs(uv.y * 2.0 - 1.0));
+      float edgeGate = mix(1.0, clamp(edgeDistance * 2.0, 0.0, 1.0), uWindEdgeProtect / 100.0);
+      vec3 sum = vec3(0.0);
+      float weights = 0.0;
+      for (int tap = 0; tap < 6; tap++) {
+        float t = float(tap) / 5.0;
+        vec2 sampleUv = uv - uWindDirection * (lengthPx * t) / max(uResolution, vec2(1.0));
+        vec3 color = texture(uSource, clamp(sampleUv, vec2(0.0), vec2(1.0))).rgb;
+        vec2 block = floor(sampleUv * max(uResolution, vec2(1.0)) / max(2.0, lengthPx * 0.35));
+        float continuity = mix(1.0, hashNoise(block, uSeed + 9173.0) > 0.5 ? 1.0 : 0.22, uWindBreakup / 100.0);
+        float weight = (1.0 - t * 0.86) * continuity;
+        sum += color * weight;
+        weights += weight;
+      }
+      return mix(base, sum / max(0.0001, weights), amount * edgeGate);
+    }
+
+    vec3 applyShatter(vec2 uv, vec3 base) {
+      float amount = clamp(uEffectAmount / 100.0, 0.0, 1.0);
+      float size = max(8.0, uShatterFragmentSize);
+      vec2 pixel = uv * max(uResolution, vec2(1.0));
+      vec2 cell = floor(pixel / size);
+      vec2 local = pixel - (cell + vec2(0.5)) * size;
+      float jitter = hashNoise(cell, uSeed + 73.0);
+      float angle = (hashNoise(cell, uSeed + 101.0) - 0.5) * 0.32 * amount;
+      float c = cos(angle);
+      float s = sin(angle);
+      vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+      vec2 samplePixel = (cell + vec2(0.5)) * size + rotated - uShatterDirection * (uShatterScatter / 100.0 * size * 0.75) * (jitter - 0.5);
+      vec3 fragment = texture(uSource, clamp(samplePixel / max(uResolution, vec2(1.0)), vec2(0.0), vec2(1.0))).rgb;
+      float edge = min((size * 0.5 - abs(local.x)) / (size * 0.5), (size * 0.5 - abs(local.y)) / (size * 0.5));
+      float crack = smoothstep(0.0, 0.06 + uShatterCracks / 100.0 * 0.14, edge);
+      fragment += vec3((1.0 - crack) * 0.04, 0.0, (1.0 - crack) * 0.06);
+      fragment *= 1.0 - (1.0 - crack) * uShatterCracks / 100.0 * 0.45;
+      return mix(base, clamp(fragment, 0.0, 1.0), amount);
+    }
+
     vec3 sampleDispersion(vec2 uv, vec3 center) {
       float radius = max(uResolution.x, uResolution.y);
       float shift = 0.024 * (uDispersion / 100.0) * pow(uDispersionRadius / 100.0, 0.72) * radius;
@@ -133,7 +234,14 @@
     void main() {
       vec4 sourceSample = texture(uSource, vUv);
       vec3 source = sourceSample.rgb;
-      vec3 dispersed = sampleDispersion(vUv, source);
+      vec3 effectColor = source;
+      if (uEffectType > 0.5 && uEffectType < 1.5) effectColor = applyCrt(vUv, source);
+      else if (uEffectType >= 1.5 && uEffectType < 2.5) effectColor = applyPixelate(vUv, source);
+      else if (uEffectType >= 2.5 && uEffectType < 3.5) effectColor = applyWind(vUv, source);
+      else if (uEffectType >= 3.5) effectColor = applyShatter(vUv, source);
+      float filmEnabled = ((uEffectType < 0.5 && uEffectEnabled > 0.5 && uEffectAmount > 0.001) || (uEffectType >= 0.5 && uFilmFinish > 0.5)) ? 1.0 : 0.0;
+      source = effectColor;
+      vec3 dispersed = filmEnabled > 0.5 ? sampleDispersion(vUv, source) : source;
       vec3 linear = srgbToLinear(dispersed);
       float exposure = pow(2.0, uExposure / 100.0);
       linear *= exposure;
@@ -155,9 +263,9 @@
       vec3 graded = linearToSrgb(linear);
       float contrast = 1.0 + uContrast / 100.0 * 0.72;
       graded = (graded - vec3(0.5)) * contrast + vec3(0.5);
-      vec3 outputColor = mix(source, graded, uAmount / 100.0);
+      vec3 outputColor = filmEnabled > 0.5 ? mix(source, graded, uAmount / 100.0) : source;
 
-      if (uHalation > 0.0) {
+      if (filmEnabled > 0.5 && uHalation > 0.0) {
         float threshold = uHalationThreshold / 100.0;
         float radiusPx = max(1.0, uHalationRadius * min(uResolution.x, uResolution.y) / 1200.0);
         vec3 halo = sampleHalation(vUv, threshold, radiusPx);
@@ -166,7 +274,7 @@
         outputColor += halo * vec3(1.1, 0.3, 0.08) * strength;
       }
 
-      float grainStrength = uGrain / 100.0 * uAmount / 100.0 * 0.13;
+      float grainStrength = filmEnabled * uGrain / 100.0 * uAmount / 100.0 * 0.13;
       if (grainStrength > 0.0) {
         vec2 fragmentPoint = vec2(gl_FragCoord.x - 0.5, uResolution.y - gl_FragCoord.y - 0.5) + uOrigin;
         float mono = grainNoise(floor(fragmentPoint), uGrainSize, uSeed) - 0.5;
@@ -188,7 +296,7 @@
       float ny = (vUv.y - 0.5) * 2.0;
       float distance = min(1.0, length(vec2(nx, ny)) / 1.4143);
       float vignetteMask = smoothstep(uVignetteMidpoint / 100.0, min(1.0, uVignetteMidpoint / 100.0 + uVignetteFeather / 100.0), distance);
-      outputColor *= 1.0 - (uVignette / 100.0 * uAmount / 100.0 * 0.72) * vignetteMask;
+      outputColor *= 1.0 - (filmEnabled * uVignette / 100.0 * uAmount / 100.0 * 0.72) * vignetteMask;
       outColor = vec4(clamp(outputColor, 0.0, 1.0), sourceSample.a);
     }
   `;
@@ -267,7 +375,11 @@
           "uSource", "uResolution", "uOrigin", "uAmount", "uExposure", "uContrast", "uSaturation", "uWarmth",
           "uShadowLift", "uHighlightRollOff", "uHalation", "uHalationThreshold", "uHalationRadius", "uGrain",
           "uGrainSize", "uGrainColor", "uVignette", "uVignetteMidpoint", "uVignetteFeather", "uDispersion",
-          "uDispersionRadius", "uDispersionHighlightsOnly", "uSeed"
+          "uDispersionRadius", "uDispersionHighlightsOnly", "uSeed", "uEffectType", "uEffectEnabled", "uEffectAmount",
+          "uCrtStrength", "uCrtPixelGrid", "uCrtScanlines", "uCrtCurvature", "uCrtConvergence",
+          "uPixelBlockSize", "uPixelLevels", "uPixelDither", "uPixelEdgePreserve", "uWindDirection",
+          "uWindLength", "uWindBreakup", "uWindEdgeProtect", "uShatterFragmentSize", "uShatterScatter",
+          "uShatterDirection", "uShatterCracks", "uFilmFinish"
         ].forEach((name) => { this.locations[name] = gl.getUniformLocation(this.program, name); });
         return gl;
       } catch (error) {
@@ -319,9 +431,22 @@
         "amount", "exposure", "contrast", "saturation", "warmth", "shadowLift", "highlightRollOff", "halation",
         "halationThreshold", "halationRadius", "grain", "grainSize", "grainColor", "vignette", "vignetteMidpoint",
         "vignetteFeather", "dispersion", "dispersionRadius"
-      ].forEach((key) => set1(`u${key[0].toUpperCase()}${key.slice(1)}`, p[key]));
+      ].forEach((key) => set1(`u${key[0].toUpperCase()}${key.slice(1)}`, key === "amount" && String(p.effectType || "film") === "film"
+        ? (Number(p.amount) || 0) * (Number(p.effectAmount) || 0) / 100
+        : p[key]));
       set1("uSeed", Math.abs(Math.round(Number(p.seed) || 0)) % 16777216);
       set1("uDispersionHighlightsOnly", p.dispersionHighlightsOnly === true ? 1 : 0);
+      const effectIndex = { film: 0, crt: 1, pixelate: 2, wind: 3, shatter: 4 }[String(p.effectType || "film")] ?? 0;
+      const radians = Number(p.windDirection || 0) * Math.PI / 180;
+      const shatterRadians = Number(p.shatterDirection || 0) * Math.PI / 180;
+      set1("uEffectType", effectIndex);
+      set1("uEffectEnabled", p.effectEnabled === false ? 0 : 1);
+      set1("uEffectAmount", p.effectEnabled === false ? 0 : (Number(p.effectAmount) || 0));
+      ["crtStrength", "crtPixelGrid", "crtScanlines", "crtCurvature", "crtConvergence", "pixelBlockSize", "pixelLevels", "pixelDither", "pixelEdgePreserve", "windLength", "windBreakup", "windEdgeProtect", "shatterFragmentSize", "shatterScatter", "shatterCracks"]
+        .forEach((key) => set1(`u${key[0].toUpperCase()}${key.slice(1)}`, p[key]));
+      set2("uWindDirection", Math.cos(radians), Math.sin(radians));
+      set2("uShatterDirection", Math.cos(shatterRadians), Math.sin(shatterRadians));
+      set1("uFilmFinish", p.filmFinish === true ? 1 : 0);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLES, 0, 3);

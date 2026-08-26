@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { FILM_DEFAULTS, getFilmPresets, normalizeFilmParams, renderFilmImageData } from "../src/webview/post-fx/renderer.js";
+import { FILM_DEFAULTS, POST_FX_DEFAULTS, getFilmPresets, getPostFxEffects, normalizeFilmParams, normalizePostFxParams, renderFilmImageData, renderPostFxImageData } from "../src/webview/post-fx/renderer.js";
 
 const webglSource = await readFile(new URL("../src/webview/post-fx/webgl-renderer.js", import.meta.url), "utf8");
 const rendererSource = await readFile(new URL("../src/webview/post-fx/renderer.js", import.meta.url), "utf8");
@@ -46,6 +46,14 @@ assert.equal(normalized.preset, "natural", "unknown presets fall back to natural
 assert.equal(getFilmPresets().length, 3, "the first release exposes three restrained film presets");
 assert.equal(normalizeFilmParams({}).dispersionHighlightsOnly, false, "highlight-only dispersion defaults off");
 assert.ok(getFilmPresets().every((preset) => preset.description), "every preset explains its intended look");
+assert.deepEqual(getPostFxEffects().map((effect) => effect.id), ["film", "crt", "pixelate", "wind", "shatter"], "effect catalog exposes the four image-wide effects and film");
+const effectNormalized = normalizePostFxParams({ effectType: "missing", effectAmount: 999, pixelBlockSize: 999, pixelLevels: 0, windDirection: -999, shatterFragmentSize: 1 });
+assert.equal(effectNormalized.effectType, "film", "unknown effect types fall back to film");
+assert.equal(effectNormalized.effectAmount, 100, "effect amount clamps to the supported range");
+assert.equal(effectNormalized.pixelBlockSize, 64, "pixel block size clamps to the supported range");
+assert.equal(effectNormalized.pixelLevels, 2, "pixel levels clamps to the supported range");
+assert.equal(effectNormalized.windDirection, -180, "wind direction clamps to the supported range");
+assert.equal(effectNormalized.shatterFragmentSize, 8, "shatter fragment size clamps to the supported range");
 
 const disabled = renderFilmImageData(source, { ...FILM_DEFAULTS, amount: 0, grain: 0, halation: 0, vignette: 0, dispersion: 0 });
 assert.deepEqual(Array.from(disabled.data), Array.from(source.data), "zero-strength processing preserves the source pixels");
@@ -59,6 +67,21 @@ assert.notDeepEqual(Array.from(first.data), Array.from(source.data), "a non-zero
 
 const otherSeed = renderFilmImageData(source, { ...params, seed: 78 });
 assert.notDeepEqual(Array.from(otherSeed.data), Array.from(first.data), "changing the seed changes the grain pattern");
+
+const disabledStack = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "crt", effectEnabled: false, filmFinish: false });
+assert.deepEqual(Array.from(disabledStack.data), Array.from(source.data), "disabled image-wide effect preserves the source pixels");
+for (const effectType of ["crt", "pixelate", "wind", "shatter"]) {
+  const effectParams = { ...POST_FX_DEFAULTS, effectType, effectAmount: 100, filmFinish: false, seed: 9 };
+  const effectFirst = renderPostFxImageData(source, effectParams);
+  const effectSecond = renderPostFxImageData(source, effectParams);
+  assert.deepEqual(Array.from(effectFirst.data), Array.from(effectSecond.data), `${effectType} rendering is deterministic`);
+  assert.notDeepEqual(Array.from(effectFirst.data), Array.from(source.data), `${effectType} changes image pixels`);
+}
+const windHorizontal = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "wind", filmFinish: false, windDirection: 0, windLength: 90 });
+const windVertical = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "wind", filmFinish: false, windDirection: 90, windLength: 90 });
+assert.notDeepEqual(Array.from(windHorizontal.data), Array.from(windVertical.data), "wind direction changes the drag field");
+const pixelGrid = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "pixelate", filmFinish: false, pixelBlockSize: 4, pixelDither: 0, pixelEdgePreserve: 0, pixelLevels: 2 });
+assert.equal(pixelGrid.data[0], pixelGrid.data[4], "pixelation keeps adjacent pixels in a stable block grid");
 
 const flatSize = 192;
 const flatSource = {
