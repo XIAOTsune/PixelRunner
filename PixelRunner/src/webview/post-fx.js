@@ -7,7 +7,7 @@ import {
 
 (function initPostFxModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const PREVIEW_CAPTURE_MAX_DIMENSION = 2200;
+  const PREVIEW_CAPTURE_MAX_DIMENSION = 1500;
   const PREVIEW_DEBOUNCE_MS = 90;
   const state = {
     bound: false,
@@ -19,7 +19,17 @@ import {
     pendingPreview: false,
     renderJob: 0,
     lastRender: null,
-    mode: "effect"
+    mode: "effect",
+    view: {
+      scale: 1,
+      x: 0,
+      y: 0,
+      isPanning: false,
+      startX: 0,
+      startY: 0,
+      startPanX: 0,
+      startPanY: 0
+    }
   };
 
   function getById(id) {
@@ -94,12 +104,6 @@ import {
     return normalizeFilmParams({
       preset: value("postFxPresetInput", state.params.preset),
       amount: value("postFxAmountInput", state.params.amount),
-      exposure: value("postFxExposureInput", state.params.exposure),
-      contrast: value("postFxContrastInput", state.params.contrast),
-      saturation: value("postFxSaturationInput", state.params.saturation),
-      warmth: value("postFxWarmthInput", state.params.warmth),
-      shadowLift: value("postFxShadowLiftInput", state.params.shadowLift),
-      highlightRollOff: value("postFxHighlightRollOffInput", state.params.highlightRollOff),
       halation: value("postFxHalationInput", state.params.halation),
       halationThreshold: value("postFxHalationThresholdInput", state.params.halationThreshold),
       halationRadius: value("postFxHalationRadiusInput", state.params.halationRadius),
@@ -128,12 +132,6 @@ import {
     const params = state.params;
     setControlValue("postFxPresetInput", params.preset);
     setControlValue("postFxAmountInput", params.amount);
-    setControlValue("postFxExposureInput", params.exposure);
-    setControlValue("postFxContrastInput", params.contrast);
-    setControlValue("postFxSaturationInput", params.saturation);
-    setControlValue("postFxWarmthInput", params.warmth);
-    setControlValue("postFxShadowLiftInput", params.shadowLift);
-    setControlValue("postFxHighlightRollOffInput", params.highlightRollOff);
     setControlValue("postFxHalationInput", params.halation);
     setControlValue("postFxHalationThresholdInput", params.halationThreshold);
     setControlValue("postFxHalationRadiusInput", params.halationRadius);
@@ -146,12 +144,6 @@ import {
     setChecked("postFxDispersionHighlightsInput", params.dispersionHighlightsOnly);
     [
       ["postFxAmountValue", `${Math.round(params.amount)}%`],
-      ["postFxExposureValue", `${Math.round(params.exposure)}`],
-      ["postFxContrastValue", `${Math.round(params.contrast)}`],
-      ["postFxSaturationValue", `${Math.round(params.saturation)}`],
-      ["postFxWarmthValue", `${Math.round(params.warmth)}`],
-      ["postFxShadowLiftValue", `${Math.round(params.shadowLift)}%`],
-      ["postFxHighlightRollOffValue", `${Math.round(params.highlightRollOff)}%`],
       ["postFxHalationValue", `${Math.round(params.halation)}%`],
       ["postFxHalationThresholdValue", `${Math.round(params.halationThreshold)}%`],
       ["postFxHalationRadiusValue", `${Math.round(params.halationRadius)}px`],
@@ -166,10 +158,124 @@ import {
       if (node) node.textContent = value;
     });
     const badge = getById("postFxPresetBadge");
-    const label = (getFilmPresets().find((item) => item.id === params.preset) || {}).label || "写实胶片";
+    const preset = getFilmPresets().find((item) => item.id === params.preset) || {};
+    const label = preset.label || "写实胶片";
+    const description = getById("postFxPresetDescription");
+    if (description) description.textContent = preset.description || "选择一种写实胶片基调，再用颗粒、卤化、暗角和色散塑造镜头细节。";
     if (badge) badge.textContent = label;
     const modalBadge = getById("postFxPresetBadgeModal");
     if (modalBadge) modalBadge.textContent = label;
+  }
+
+  function getPreviewContentMetrics() {
+    const viewport = getById("postFxPreviewViewport");
+    const canvas = getById("postFxResultCanvas");
+    const rect = viewport && viewport.getBoundingClientRect
+      ? viewport.getBoundingClientRect()
+      : { width: 0, height: 0, left: 0, top: 0 };
+    const contentWidth = Number(canvas && canvas.width) || Number(state.sourceImage && state.sourceImage.naturalWidth) || rect.width || 1;
+    const contentHeight = Number(canvas && canvas.height) || Number(state.sourceImage && state.sourceImage.naturalHeight) || rect.height || 1;
+    const scale = Math.max(0.35, Math.min(8, Number(state.view.scale) || 1));
+    const fitScale = Math.min(rect.width / contentWidth || 1, rect.height / contentHeight || 1);
+    const renderedWidth = contentWidth * fitScale * scale;
+    const renderedHeight = contentHeight * fitScale * scale;
+    return { rect, renderedWidth, renderedHeight, scale };
+  }
+
+  function clampPreviewView() {
+    const viewport = getById("postFxPreviewViewport");
+    if (!viewport) return;
+    const metrics = getPreviewContentMetrics();
+    state.view.scale = metrics.scale;
+    const maxX = Math.max(0, (metrics.renderedWidth - metrics.rect.width) / 2);
+    const maxY = Math.max(0, (metrics.renderedHeight - metrics.rect.height) / 2);
+    state.view.x = clamp(state.view.x, -maxX, maxX, 0);
+    state.view.y = clamp(state.view.y, -maxY, maxY, 0);
+  }
+
+  function applyPreviewTransform() {
+    clampPreviewView();
+    const transform = `translate(${state.view.x}px, ${state.view.y}px) scale(${state.view.scale})`;
+    [
+      getById("postFxSourceImage"),
+      getById("postFxResultCanvas"),
+      getById("postFxResultImage")
+    ].filter(Boolean).forEach((element) => {
+      element.style.transform = transform;
+    });
+  }
+
+  function resetPreviewTransform() {
+    state.view.scale = 1;
+    state.view.x = 0;
+    state.view.y = 0;
+    applyPreviewTransform();
+  }
+
+  function zoomPreview(nextScale, anchorX, anchorY) {
+    const viewport = getById("postFxPreviewViewport");
+    if (!viewport) return;
+    const previousScale = Math.max(0.35, Number(state.view.scale) || 1);
+    const scale = Math.max(0.35, Math.min(8, Number(nextScale) || 1));
+    const rect = viewport.getBoundingClientRect();
+    const localX = Number(anchorX) - rect.left - rect.width / 2;
+    const localY = Number(anchorY) - rect.top - rect.height / 2;
+    if (Math.abs(scale - previousScale) >= 0.001) {
+      state.view.x = (state.view.x - localX) * (scale / previousScale) + localX;
+      state.view.y = (state.view.y - localY) * (scale / previousScale) + localY;
+    }
+    state.view.scale = scale;
+    if (scale <= 1.001) {
+      state.view.x = 0;
+      state.view.y = 0;
+    }
+    applyPreviewTransform();
+  }
+
+  function bindPreviewInteractions() {
+    const viewport = getById("postFxPreviewViewport");
+    if (!viewport) return;
+    viewport.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const factor = event.deltaY > 0 ? 1 / 1.18 : 1.18;
+      zoomPreview(state.view.scale * factor, event.clientX, event.clientY);
+    }, { passive: false });
+
+    viewport.addEventListener("pointerdown", (event) => {
+      if (event.button != null && event.button !== 0) return;
+      if (event.target && event.target.closest(".post-fx-preview-tools, .post-fx-preview-zoom-tools")) return;
+      event.preventDefault();
+      if ((Number(state.view.scale) || 1) <= 1.001) return;
+      state.view.isPanning = true;
+      state.view.startX = event.clientX;
+      state.view.startY = event.clientY;
+      state.view.startPanX = state.view.x;
+      state.view.startPanY = state.view.y;
+      viewport.classList.add("is-panning");
+    });
+
+    const movePan = (event) => {
+      if (!state.view.isPanning) return;
+      event.preventDefault();
+      state.view.x = state.view.startPanX + event.clientX - state.view.startX;
+      state.view.y = state.view.startPanY + event.clientY - state.view.startY;
+      applyPreviewTransform();
+    };
+    const endPan = (event) => {
+      if (!state.view.isPanning) return;
+      event.preventDefault();
+      state.view.isPanning = false;
+      viewport.classList.remove("is-panning");
+    };
+    window.addEventListener("pointermove", movePan, { passive: false });
+    window.addEventListener("pointerup", endPan, { passive: false });
+    window.addEventListener("pointercancel", endPan, { passive: false });
+    window.addEventListener("blur", () => {
+      state.view.isPanning = false;
+      viewport.classList.remove("is-panning");
+    });
+    window.addEventListener("resize", applyPreviewTransform);
+    viewport.addEventListener("dblclick", resetPreviewTransform);
   }
 
   function setButtonsDisabled(disabled) {
@@ -196,6 +302,7 @@ import {
     const sourceImage = getById("postFxSourceImage");
     if (sourceImage) sourceImage.classList.toggle("is-active", state.mode === "original");
     canvas.classList.toggle("is-hidden-preview", state.mode === "original");
+    applyPreviewTransform();
   }
 
   function drawPreviewCanvas(sourceCanvas) {
@@ -216,6 +323,7 @@ import {
     }
     const sourceImage = getById("postFxSourceImage");
     if (sourceImage) sourceImage.classList.toggle("is-active", state.mode === "original");
+    applyPreviewTransform();
   }
 
   function drawPreviewDataUrl(dataUrl) {
@@ -231,6 +339,7 @@ import {
     const sourceImage = getById("postFxSourceImage");
     if (sourceImage) sourceImage.classList.toggle("is-active", state.mode === "original");
     resultImage.classList.toggle("is-hidden-preview", state.mode === "original");
+    applyPreviewTransform();
   }
 
   function setPreviewMode(mode) {
@@ -247,6 +356,7 @@ import {
       resultImage.classList.toggle("is-active", state.mode === "effect" && resultImage.hasAttribute("src"));
       resultImage.classList.toggle("is-hidden-preview", state.mode === "original");
     }
+    applyPreviewTransform();
   }
 
   async function capturePreview() {
@@ -341,6 +451,7 @@ import {
       const image = await loadImage(captured.dataUrl);
       state.captured = captured;
       state.sourceImage = image;
+      resetPreviewTransform();
       const sourceImage = getById("postFxSourceImage");
       if (sourceImage) {
         sourceImage.src = captured.dataUrl;
@@ -447,7 +558,7 @@ import {
 
   function applyPreset(presetId) {
     const preset = getFilmPresets().some((item) => item.id === presetId) ? presetId : "natural";
-    state.params = normalizeFilmParams({ ...state.params, preset });
+    state.params = normalizeFilmParams({ preset, seed: state.params.seed });
     syncControls();
     schedulePreview();
   }
@@ -484,11 +595,27 @@ import {
     document.querySelectorAll("[data-post-fx-preview-mode]").forEach((button) => {
       button.addEventListener("click", () => setPreviewMode(button.getAttribute("data-post-fx-preview-mode")));
     });
+    document.querySelectorAll("[data-post-fx-zoom]").forEach((button) => {
+      button.addEventListener("pointerdown", (event) => event.stopPropagation());
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const action = String(button.getAttribute("data-post-fx-zoom") || "");
+        if (action === "reset") {
+          resetPreviewTransform();
+          return;
+        }
+        const viewport = getById("postFxPreviewViewport");
+        if (!viewport) return;
+        const rect = viewport.getBoundingClientRect();
+        const factor = action === "in" ? 1.25 : 1 / 1.25;
+        zoomPreview(state.view.scale * factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      });
+    });
+    bindPreviewInteractions();
     const presetInput = getById("postFxPresetInput");
     if (presetInput) presetInput.addEventListener("change", () => applyPreset(presetInput.value));
     [
-      "postFxAmountInput", "postFxExposureInput", "postFxContrastInput", "postFxSaturationInput",
-      "postFxWarmthInput", "postFxShadowLiftInput", "postFxHighlightRollOffInput", "postFxHalationInput",
+      "postFxAmountInput", "postFxHalationInput",
       "postFxHalationThresholdInput", "postFxHalationRadiusInput", "postFxGrainInput", "postFxGrainSizeInput",
       "postFxGrainColorInput", "postFxVignetteInput", "postFxDispersionInput", "postFxDispersionRadiusInput",
       "postFxDispersionHighlightsInput"

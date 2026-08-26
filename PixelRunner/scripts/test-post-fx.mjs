@@ -3,8 +3,17 @@ import { readFile } from "node:fs/promises";
 import { FILM_DEFAULTS, getFilmPresets, normalizeFilmParams, renderFilmImageData } from "../src/webview/post-fx/renderer.js";
 
 const webglSource = await readFile(new URL("../src/webview/post-fx/webgl-renderer.js", import.meta.url), "utf8");
+const webviewSource = await readFile(new URL("../src/webview/post-fx.js", import.meta.url), "utf8");
+const appSource = await readFile(new URL("../app.html", import.meta.url), "utf8");
 assert.match(webglSource, /getContext\("webgl2"/, "post FX exposes a WebGL2 renderer");
 assert.match(webglSource, /returnDataUrl === false/, "preview rendering can avoid PNG encode/readback");
+assert.match(webglSource, /valueNoise/, "WebGL grain uses continuous value noise");
+assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 1500/, "preview capture is capped at 1500px");
+assert.match(webviewSource, /data-post-fx-zoom/, "preview navigation binds zoom controls");
+assert.doesNotMatch(webviewSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not bound");
+assert.doesNotMatch(appSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not rendered");
+assert.match(appSource, /id="postFxPresetDescription"/, "preset descriptions are visible in the panel");
+assert.match(appSource, /id="postFxDispersionHighlightsInput" type="checkbox"\s*\/>/, "highlight-only dispersion defaults off");
 
 const source = {
   width: 9,
@@ -27,6 +36,8 @@ assert.equal(normalized.exposure, -100, "exposure clamps to the supported range"
 assert.equal(normalized.grainSize, 8, "grain size clamps to the supported range");
 assert.equal(normalized.preset, "natural", "unknown presets fall back to natural film");
 assert.equal(getFilmPresets().length, 3, "the first release exposes three restrained film presets");
+assert.equal(normalizeFilmParams({}).dispersionHighlightsOnly, false, "highlight-only dispersion defaults off");
+assert.ok(getFilmPresets().every((preset) => preset.description), "every preset explains its intended look");
 
 const disabled = renderFilmImageData(source, { ...FILM_DEFAULTS, amount: 0, grain: 0, halation: 0, vignette: 0, dispersion: 0 });
 assert.deepEqual(Array.from(disabled.data), Array.from(source.data), "zero-strength processing preserves the source pixels");

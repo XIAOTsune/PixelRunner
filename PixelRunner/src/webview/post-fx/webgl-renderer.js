@@ -62,6 +62,15 @@
       return fract(sin(dot(point + vec2(seed * 0.017, seed * 0.031), vec2(12.9898, 78.233))) * 43758.5453);
     }
 
+    float valueNoise(vec2 point, float seed) {
+      vec2 base = floor(point);
+      vec2 fraction = fract(point);
+      fraction = fraction * fraction * (3.0 - 2.0 * fraction);
+      float top = mix(hashNoise(base, seed), hashNoise(base + vec2(1.0, 0.0), seed), fraction.x);
+      float bottom = mix(hashNoise(base + vec2(0.0, 1.0), seed), hashNoise(base + vec2(1.0, 1.0), seed), fraction.x);
+      return mix(top, bottom, fraction.y);
+    }
+
     float luminance(vec3 color) {
       return dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
@@ -137,15 +146,27 @@
 
       float grainStrength = uGrain / 100.0 * uAmount / 100.0 * 0.16;
       if (grainStrength > 0.0) {
-        vec2 pixel = floor((vec2(gl_FragCoord.x - 0.5, uResolution.y - gl_FragCoord.y - 0.5) + uOrigin) / max(1.0, uGrainSize));
-        float mono = hashNoise(pixel, uSeed) - 0.5;
-        float chroma = hashNoise(pixel + vec2(17.0, -11.0), uSeed + 97.0) - 0.5;
+        vec2 fragmentPoint = vec2(gl_FragCoord.x - 0.5, uResolution.y - gl_FragCoord.y - 0.5) + uOrigin;
+        vec2 grainPoint = fragmentPoint / max(1.0, uGrainSize);
+        float coarse = valueNoise(grainPoint, uSeed);
+        float fine = hashNoise(floor(fragmentPoint), uSeed + 131.0);
+        float micro = hashNoise(floor(fragmentPoint) + vec2(31.0, -17.0), uSeed + 257.0);
+        float mono = coarse * 0.36 + fine * 0.46 + micro * 0.18 - 0.5;
+        float chromaCoarse = valueNoise(grainPoint + vec2(0.31, -0.27), uSeed + 97.0);
+        float chromaFine = hashNoise(floor(fragmentPoint) + vec2(17.0, -11.0), uSeed + 193.0);
+        float chroma = chromaCoarse * 0.35 + chromaFine * 0.65 - 0.5;
+        float grainLuma = luminance(outputColor);
+        float shadowWeight = 1.0 - smoothstep(0.08, 0.56, grainLuma);
+        float highlightWeight = smoothstep(0.60, 0.94, grainLuma);
+        float toneWeight = clamp(0.88 + shadowWeight * 0.48 - highlightWeight * 0.52, 0.30, 1.36);
+        mono *= grainStrength * toneWeight;
+        chroma *= grainStrength * toneWeight;
         float colorMix = uGrainColor / 100.0;
         outputColor += vec3(
           mono * (1.0 - colorMix) + (mono + chroma) * colorMix * 0.45,
           mono * (1.0 - colorMix) + mono * colorMix * 0.25,
           mono * (1.0 - colorMix) + (mono - chroma) * colorMix * 0.45
-        ) * grainStrength;
+        );
       }
 
       float nx = (vUv.x - 0.5) * 2.0;
@@ -284,7 +305,7 @@
         "halationThreshold", "halationRadius", "grain", "grainSize", "grainColor", "vignette", "vignetteMidpoint",
         "vignetteFeather", "dispersion", "dispersionRadius", "seed"
       ].forEach((key) => set1(`u${key[0].toUpperCase()}${key.slice(1)}`, p[key]));
-      set1("uDispersionHighlightsOnly", p.dispersionHighlightsOnly === false ? 0 : 1);
+      set1("uDispersionHighlightsOnly", p.dispersionHighlightsOnly === true ? 1 : 0);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLES, 0, 3);

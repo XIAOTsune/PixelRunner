@@ -1101,7 +1101,7 @@
           <span id="postFxPresetBadgeModal" class="status-chip">写实胶片</span>
           <span class="status-chip">盖印当前可见内容</span>
         </div>
-        <p class="subtle-note">预览阶段使用压缩图像，应用时会重新读取原始尺寸并生成一张新的结果层。</p>
+        <p class="subtle-note">预览阶段使用最长边 1500px 的压缩图像，应用时会重新读取原始尺寸并生成一张新的结果层。</p>
       </div>
 
       <div class="post-fx-workbench">
@@ -1111,6 +1111,11 @@
               <img id="postFxSourceImage" class="post-fx-base-image" alt="镜头与后期原图预览" />
               <canvas id="postFxResultCanvas" class="post-fx-result-canvas" aria-label="镜头与后期效果预览"></canvas>
               <img id="postFxResultImage" class="post-fx-result-image" alt="镜头与后期效果预览" />
+              <div class="post-fx-preview-zoom-tools" aria-label="预览缩放控制">
+                <button class="mini-btn post-fx-preview-tool-btn" type="button" data-post-fx-zoom="out" title="缩小预览">−</button>
+                <button class="mini-btn post-fx-preview-tool-btn" type="button" data-post-fx-zoom="reset" title="重置预览">⟲</button>
+                <button class="mini-btn post-fx-preview-tool-btn" type="button" data-post-fx-zoom="in" title="放大预览">+</button>
+              </div>
               <div class="post-fx-preview-tools" aria-label="预览模式">
                 <button class="mini-btn post-fx-preview-mode-btn active" type="button" data-post-fx-preview-mode="effect">效果</button>
                 <button class="mini-btn post-fx-preview-mode-btn" type="button" data-post-fx-preview-mode="original">原图</button>
@@ -1122,7 +1127,7 @@
         </div>
 
         <div class="post-fx-controls-panel">
-          <div class="post-fx-section-title">胶片基调</div>
+          <div class="post-fx-section-title">胶片风格</div>
           <label class="field post-fx-field">
             <span class="glow-param-line"><span class="field-label">预设</span></span>
             <select id="postFxPresetInput" class="field-input" aria-label="胶片预设">
@@ -1131,14 +1136,9 @@
               <option value="blueHour">蓝调 Live</option>
             </select>
           </label>
+          <p id="postFxPresetDescription" class="post-fx-preset-description">均衡的负片质感：柔和卤化、细颗粒和轻微暗角，适合人像与日常画面。</p>
           <div class="post-fx-slider-grid">
             <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">胶片强度</span><span id="postFxAmountValue">68%</span></span><input id="postFxAmountInput" class="field-input" type="range" min="0" max="100" step="1" value="68" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">曝光</span><span id="postFxExposureValue">0</span></span><input id="postFxExposureInput" class="field-input" type="range" min="-100" max="100" step="1" value="0" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">对比</span><span id="postFxContrastValue">8</span></span><input id="postFxContrastInput" class="field-input" type="range" min="-100" max="100" step="1" value="8" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">饱和度</span><span id="postFxSaturationValue">-4</span></span><input id="postFxSaturationInput" class="field-input" type="range" min="-100" max="100" step="1" value="-4" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色温</span><span id="postFxWarmthValue">8</span></span><input id="postFxWarmthInput" class="field-input" type="range" min="-100" max="100" step="1" value="8" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">阴影抬升</span><span id="postFxShadowLiftValue">10%</span></span><input id="postFxShadowLiftInput" class="field-input" type="range" min="0" max="100" step="1" value="10" /></label>
-            <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">高光柔化</span><span id="postFxHighlightRollOffValue">28%</span></span><input id="postFxHighlightRollOffInput" class="field-input" type="range" min="0" max="100" step="1" value="28" /></label>
           </div>
 
           <div class="post-fx-section-title">高光与颗粒</div>
@@ -1157,7 +1157,7 @@
             <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色散</span><span id="postFxDispersionValue">10%</span></span><input id="postFxDispersionInput" class="field-input" type="range" min="0" max="100" step="1" value="10" /></label>
             <label class="field post-fx-field"><span class="glow-param-line"><span class="field-label">色散范围</span><span id="postFxDispersionRadiusValue">58%</span></span><input id="postFxDispersionRadiusInput" class="field-input" type="range" min="0" max="100" step="1" value="58" /></label>
           </div>
-          <label class="freq-sep-check-field post-fx-check-field"><input id="postFxDispersionHighlightsInput" type="checkbox" checked /><span>色散仅作用于亮部</span></label>
+          <label class="freq-sep-check-field post-fx-check-field"><input id="postFxDispersionHighlightsInput" type="checkbox" /><span>色散仅作用于亮部</span></label>
 
           <div class="post-fx-control-grid">
             <button id="btnPostFxRecapture" class="secondary-btn" type="button">重新捕获</button>

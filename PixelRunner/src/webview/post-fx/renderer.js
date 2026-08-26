@@ -18,13 +18,14 @@ const DEFAULT_FILM_PARAMS = Object.freeze({
   vignetteFeather: 68,
   dispersion: 10,
   dispersionRadius: 58,
-  dispersionHighlightsOnly: true,
+  dispersionHighlightsOnly: false,
   seed: 4817
 });
 
 const PRESETS = Object.freeze({
   natural: {
     label: "自然胶片",
+    description: "均衡的负片质感：柔和卤化、细颗粒和轻微暗角，适合人像与日常画面。",
     amount: 68,
     exposure: 0,
     contrast: 8,
@@ -44,6 +45,7 @@ const PRESETS = Object.freeze({
   },
   ccd: {
     label: "CCD 直闪",
+    description: "模拟小型数码相机直闪：硬朗高光、较强颗粒与边缘色散，适合夜景和闪光灯抓拍。",
     amount: 76,
     exposure: 5,
     contrast: 18,
@@ -63,6 +65,7 @@ const PRESETS = Object.freeze({
   },
   blueHour: {
     label: "蓝调 Live",
+    description: "偏冷的现场蓝调：保留暗部层次、减弱暖色和高光扩散，适合夜景与 Live 氛围。",
     amount: 64,
     exposure: -3,
     contrast: 2,
@@ -115,6 +118,18 @@ function hashNoise(x, y, seed) {
   value = Math.imul(value ^ (value >>> 13), 1274126177);
   value ^= value >>> 16;
   return (value >>> 0) / 4294967295;
+}
+
+function valueNoise(x, y, seed) {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const tx = x - x0;
+  const ty = y - y0;
+  const sx = tx * tx * (3 - 2 * tx);
+  const sy = ty * ty * (3 - 2 * ty);
+  const top = lerp(hashNoise(x0, y0, seed), hashNoise(x0 + 1, y0, seed), sx);
+  const bottom = lerp(hashNoise(x0, y0 + 1, seed), hashNoise(x0 + 1, y0 + 1, seed), sx);
+  return lerp(top, bottom, sy);
 }
 
 function getDimensions(imageData) {
@@ -204,13 +219,13 @@ export function normalizeFilmParams(input = {}) {
     vignetteFeather: clamp(merged.vignetteFeather, 5, 100, DEFAULT_FILM_PARAMS.vignetteFeather),
     dispersion: clamp(merged.dispersion, 0, 100, DEFAULT_FILM_PARAMS.dispersion),
     dispersionRadius: clamp(merged.dispersionRadius, 0, 100, DEFAULT_FILM_PARAMS.dispersionRadius),
-    dispersionHighlightsOnly: merged.dispersionHighlightsOnly !== false,
+    dispersionHighlightsOnly: merged.dispersionHighlightsOnly === true,
     seed: Math.round(clamp(merged.seed, 0, 2147483647, DEFAULT_FILM_PARAMS.seed))
   };
 }
 
 export function getFilmPresets() {
-  return Object.entries(PRESETS).map(([id, preset]) => ({ id, label: preset.label }));
+  return Object.entries(PRESETS).map(([id, preset]) => ({ id, label: preset.label, description: preset.description }));
 }
 
 export function renderFilmImageData(sourceImageData, inputParams = {}, options = {}) {
@@ -324,12 +339,24 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
       const index = (y * width + x) * 4;
       const luma = (output[index] * 0.2126 + output[index + 1] * 0.7152 + output[index + 2] * 0.0722) / 255;
       if (grainStrength > 0) {
-        const noise = hashNoise(Math.floor(globalX / grainSize), Math.floor(globalY / grainSize), params.seed) - 0.5;
-        const monochrome = noise * grainStrength;
-        const chromaNoise = (hashNoise(Math.floor(globalX / grainSize) + 17, Math.floor(globalY / grainSize) - 11, params.seed + 97) - 0.5) * grainStrength;
-        output[index] = Math.round(clamp(output[index] / 255 + monochrome * (1 - colorGrain) + (monochrome + chromaNoise) * colorGrain * 0.45, 0, 1, 0) * 255);
+        const grainX = globalX / grainSize;
+        const grainY = globalY / grainSize;
+        const coarseNoise = valueNoise(grainX, grainY, params.seed);
+        const fineNoise = hashNoise(globalX, globalY, params.seed + 131);
+        const microNoise = hashNoise(globalX + 31, globalY - 17, params.seed + 257);
+        const noise = coarseNoise * 0.36 + fineNoise * 0.46 + microNoise * 0.18 - 0.5;
+        const chromaCoarse = valueNoise(grainX + 0.31, grainY - 0.27, params.seed + 97);
+        const chromaFine = hashNoise(globalX + 17, globalY - 11, params.seed + 193);
+        const chromaNoise = chromaCoarse * 0.35 + chromaFine * 0.65 - 0.5;
+        const shadowWeight = 1 - smoothstep(0.08, 0.56, luma);
+        const highlightWeight = smoothstep(0.60, 0.94, luma);
+        const toneWeight = clamp(0.88 + shadowWeight * 0.48 - highlightWeight * 0.52, 0.30, 1.36, 0.88);
+        const pixelGrainStrength = grainStrength * toneWeight;
+        const monochrome = noise * pixelGrainStrength;
+        const chroma = chromaNoise * pixelGrainStrength;
+        output[index] = Math.round(clamp(output[index] / 255 + monochrome * (1 - colorGrain) + (monochrome + chroma) * colorGrain * 0.45, 0, 1, 0) * 255);
         output[index + 1] = Math.round(clamp(output[index + 1] / 255 + monochrome * (1 - colorGrain) + monochrome * colorGrain * 0.25, 0, 1, 0) * 255);
-        output[index + 2] = Math.round(clamp(output[index + 2] / 255 + monochrome * (1 - colorGrain) + (monochrome - chromaNoise) * colorGrain * 0.45, 0, 1, 0) * 255);
+        output[index + 2] = Math.round(clamp(output[index + 2] / 255 + monochrome * (1 - colorGrain) + (monochrome - chroma) * colorGrain * 0.45, 0, 1, 0) * 255);
       }
       if (vignetteStrength > 0) {
         const nx = (x / Math.max(1, width - 1) - 0.5) * 2;

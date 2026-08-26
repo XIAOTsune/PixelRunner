@@ -7128,6 +7128,13 @@ body[data-theme-preset="focus"] #btnDonateSettings {
   min-height: 0;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.28);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.post-fx-preview-viewport.is-panning {
+  cursor: grabbing;
 }
 
 .post-fx-base-image,
@@ -7139,7 +7146,16 @@ body[data-theme-preset="focus"] #btnDonateSettings {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  transform-origin: center center;
+  transition: transform var(--motion-fast) var(--ease-out);
   pointer-events: none;
+  will-change: transform;
+}
+
+.post-fx-preview-viewport.is-panning .post-fx-base-image,
+.post-fx-preview-viewport.is-panning .post-fx-result-canvas,
+.post-fx-preview-viewport.is-panning .post-fx-result-image {
+  transition: none;
 }
 
 .post-fx-base-image.is-active,
@@ -7165,6 +7181,27 @@ body[data-theme-preset="focus"] #btnDonateSettings {
   border: 1px solid rgba(214, 169, 112, 0.62);
   background: rgba(19, 15, 15, 0.86);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.post-fx-preview-zoom-tools {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(214, 169, 112, 0.62);
+  background: rgba(19, 15, 15, 0.86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.post-fx-preview-tool-btn {
+  min-width: 30px;
+  min-height: 30px;
+  padding-inline: 7px;
+  color: rgba(244, 234, 223, 0.86);
 }
 
 .post-fx-preview-mode-btn {
@@ -7217,6 +7254,13 @@ body[data-theme-preset="focus"] #btnDonateSettings {
   color: rgba(255, 224, 194, 0.92);
   font-size: 11px;
   font-weight: 750;
+}
+
+.post-fx-preset-description {
+  margin: -3px 2px 0;
+  color: rgba(226, 211, 198, 0.76);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .post-fx-slider-grid {
