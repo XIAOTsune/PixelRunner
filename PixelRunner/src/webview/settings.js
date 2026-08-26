@@ -412,7 +412,10 @@
     const value = String(selected || list[0] || "").trim();
     const options = list.includes(value) || !value ? list : [value, ...list];
     select.innerHTML = options
-      .map((model) => `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(String(model))}</option>`)
+      .map((model) => {
+        const label = String(model) === modules.state.MOMO_MIDJOURNEY_MODEL_ID ? "Midjourney Imagine（需梯子/代理）" : String(model);
+        return `<option value="${modules.runtime.escapeHtml(String(model))}" ${String(model) === value ? "selected" : ""}>${modules.runtime.escapeHtml(label)}</option>`;
+      })
       .join("");
   }
 

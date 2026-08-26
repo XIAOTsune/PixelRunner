@@ -50,13 +50,13 @@ assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1k"));
 assert.ok(getGeminiChannelModelDefaults("aji").chatModels.includes("gpt-5.6-sol"));
 assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes("[yu]gemini-3.1-flash-lite-image"));
-assert.ok(!getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[文本]gemini-3.5-flash"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[YZ-k]claude-opus-4-8"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("tsc1-gpt-5.6-terra"));
 assert.equal(getGeminiChannelModelDefaults("aji").imageModels.length, 40);
 assert.equal(getGeminiChannelModelDefaults("aji").chatModels.length, 5);
-assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 6);
+assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 7);
 assert.equal(getGeminiChannelModelDefaults("momo").chatModels.length, 19);
 
 const migrated = normalizeGeminiSettings({
@@ -80,13 +80,21 @@ assert.equal(migrated.channels.aji.modelCatalogVersion, GEMINI_MODEL_CATALOG_VER
 assert.ok(migrated.channels.aji.imageModels.includes("AJbanana3-4k"));
 assert.ok(migrated.channels.momo.chatModels.includes("[文本]gemini-3-flash"));
 
-const hiddenMomoSelection = normalizeGeminiSettings({
+const releasedMomoSelection = normalizeGeminiSettings({
   channelId: "momo",
   selectedModel: MOMO_MIDJOURNEY_MODEL_ID,
   imageModels: [MOMO_MIDJOURNEY_MODEL_ID, "[c]gemini-3-pro-image-preview"]
 });
-assert.equal(hiddenMomoSelection.selectedModel, "[c]gemini-3-pro-image-preview");
-assert.ok(!hiddenMomoSelection.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+assert.equal(releasedMomoSelection.selectedModel, MOMO_MIDJOURNEY_MODEL_ID);
+assert.ok(releasedMomoSelection.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+
+const ajiMidjourneySelection = normalizeGeminiSettings({
+  channelId: "aji",
+  selectedModel: MOMO_MIDJOURNEY_MODEL_ID,
+  imageModels: [MOMO_MIDJOURNEY_MODEL_ID, "aji-image"]
+});
+assert.notEqual(ajiMidjourneySelection.selectedModel, MOMO_MIDJOURNEY_MODEL_ID);
+assert.ok(!ajiMidjourneySelection.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 
 const upgradedLegacyDefaults = normalizeGeminiSettings({
   channelId: "momo",
@@ -218,7 +226,7 @@ const upgradedMomoCatalog = normalizeGeminiSettings({
   channelId: "momo",
   channels: { momo: { modelCatalogVersion: 2, imageModels: ["[c]gemini-3-pro-image-preview"], selectedModel: "[c]gemini-3-pro-image-preview" } }
 });
-assert.ok(!upgradedMomoCatalog.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+assert.ok(upgradedMomoCatalog.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 
 // Aji channel ignores custom apiUrl
 const ajiCustomSettings = normalizeGeminiSettings({
@@ -347,7 +355,7 @@ try {
     assert.equal(options.headers.Authorization, "Bearer mj-key");
     midjourneyRequestCount += 1;
     if (requestUrl.endsWith("/mj/submit/imagine")) {
-      assert.deepEqual(JSON.parse(options.body), { prompt: "a palace", state: "mj-request" });
+      assert.deepEqual(JSON.parse(options.body), { prompt: "a palace --v 8.2 --ar 16:9", mode: "fast", state: "mj-request" });
       return {
         ok: true,
         status: 200,
@@ -372,7 +380,7 @@ try {
   const midjourneySubmitted = await submitThirdPartyGeminiTask([{
     requestId: "mj-request",
     config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
-    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID, prompt: "a palace", state: "mj-request" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID, prompt: "a palace --v 8.2 --ar 16:9", mode: "fast", state: "mj-request" },
     timeoutMs: 1000
   }]);
   assert.equal(midjourneySubmitted.taskId, "mj-task-1");
@@ -543,6 +551,14 @@ assert.equal(thirdParty.grs.apiUrl, "https://grsai.dakka.com.cn");
 assert.equal(thirdParty.gemini.apiKey, "momo-key");
 assert.equal(thirdParty.gemini.channels.aji.apiKey, "aji-key");
 assert.equal(stateModule.getThirdPartyProviderDescriptor(thirdParty).label, "墨墨 Momo");
+
+stateModule.state.thirdPartySettings = stateModule.normalizeThirdPartySettings({
+  provider: "gemini",
+  gemini: { channelId: "momo", channels: { momo: { selectedModel: MOMO_MIDJOURNEY_MODEL_ID } } }
+});
+const midjourneyApp = stateModule.getThirdPartyApp();
+assert.deepEqual(midjourneyApp.inputs.map((input) => input.key), ["prompt", "model", "mode"]);
+assert.equal(midjourneyApp.inputs.find((input) => input.key === "mode").default, "relax");
 
 // Momo with custom apiUrl in descriptor
 const momoCustomState = stateModule.normalizeThirdPartySettings({

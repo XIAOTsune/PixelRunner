@@ -748,9 +748,17 @@ export async function listThirdPartyGeminiModels(args = []) {
   const classified = classifyNewApiModels({ openAiModels, geminiModels, pricingModels });
   const channelId = String(config.channelId || payload.channelId || "").trim().toLowerCase();
   if (channelId === "momo") {
-    classified.models = classified.models.filter((model) => !isMomoMidjourneyModel(model));
-    classified.imageModels = classified.imageModels.filter((model) => !isMomoMidjourneyModel(model));
-    classified.details = classified.details.filter((item) => !isMomoMidjourneyModel(item && item.id));
+    classified.models = [...new Set([...classified.models, MOMO_MIDJOURNEY_MODEL_ID])];
+    classified.imageModels = [...new Set([...classified.imageModels, MOMO_MIDJOURNEY_MODEL_ID])];
+    if (!classified.details.some((item) => isMomoMidjourneyModel(item && item.id))) {
+      classified.details.push({
+        id: MOMO_MIDJOURNEY_MODEL_ID,
+        displayName: "Midjourney Imagine",
+        supportedGenerationMethods: [],
+        supportedEndpointTypes: ["midjourney"],
+        sources: ["momo"]
+      });
+    }
   }
   if (!classified.models.length) throw new Error("当前 NewAPI 渠道未返回可用模型");
   return {

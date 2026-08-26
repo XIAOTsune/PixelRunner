@@ -1,5 +1,5 @@
 const DEFAULT_CHANNEL_ID = "aji";
-export const GEMINI_MODEL_CATALOG_VERSION = 4;
+export const GEMINI_MODEL_CATALOG_VERSION = 5;
 
 export const MOMO_MIDJOURNEY_MODEL_ID = "mj_imagine";
 
@@ -75,7 +75,8 @@ const MOMO_IMAGE_MODEL_IDS = Object.freeze([
   "[m]gemini-3.1-flash-image-preview",
   "[yu]gemini-3-pro-image-preview",
   "[yu]gemini-3.1-flash-image-preview",
-  "[yu]gemini-3.1-flash-lite-image"
+  "[yu]gemini-3.1-flash-lite-image",
+  MOMO_MIDJOURNEY_MODEL_ID
 ]);
 
 const MOMO_CHAT_MODEL_IDS = Object.freeze([
@@ -238,8 +239,8 @@ function normalizeChannelSettings(value, channelId) {
   const fallback = createDefaultChannelSettings(channelId);
   const shouldUpgradeCatalog = Number(source.modelCatalogVersion || 0) < GEMINI_MODEL_CATALOG_VERSION;
   const storedModel = normalizeGeminiModelId(source.selectedModel);
-  const hiddenModel = isMomoMidjourneyModel(storedModel);
-  const requestedModel = hiddenModel || shouldUpgradeCatalog && LEGACY_IMAGE_MODEL_IDS.includes(storedModel) && !fallback.imageModels.includes(storedModel)
+  const unsupportedChannelModel = channelId !== "momo" && isMomoMidjourneyModel(storedModel);
+  const requestedModel = unsupportedChannelModel || shouldUpgradeCatalog && LEGACY_IMAGE_MODEL_IDS.includes(storedModel) && !fallback.imageModels.includes(storedModel)
     ? fallback.selectedModel
     : (storedModel || fallback.selectedModel);
   const rawImageModels = Array.isArray(source.imageModels || source.models)
@@ -249,7 +250,7 @@ function normalizeChannelSettings(value, channelId) {
     [
       ...(shouldUpgradeCatalog ? fallback.imageModels : []),
       ...(rawImageModels.some((item) => String(item || "").trim()) ? rawImageModels : fallback.imageModels)
-        .filter((item) => !isMomoMidjourneyModel(item)),
+        .filter((item) => channelId === "momo" || !isMomoMidjourneyModel(item)),
       requestedModel
     ],
     fallback.imageModels

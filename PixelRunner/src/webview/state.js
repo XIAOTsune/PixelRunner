@@ -23,6 +23,7 @@ import {
   MOMO_DEFAULT_API_URL,
   getGeminiChannelModelDefaults,
   getGeminiChannelPreset,
+  isMomoMidjourneyModel,
   normalizeGeminiChannelId,
   normalizeGeminiSettings,
   normalizeMomoEndpoint
@@ -521,26 +522,82 @@ import {
 
   function getThirdPartyModelCapabilities(model, provider = state.thirdPartySettings && state.thirdPartySettings.provider) {
     if (String(provider || "").trim().toLowerCase() === "gemini") {
+      const normalizedModel = String(model || "").trim();
+      const midjourney = isMomoMidjourneyModel(normalizedModel);
       return {
-        model: String(model || "").trim(),
+        model: normalizedModel,
         family: "gemini",
-        aspectRatios: [...GEMINI_ASPECT_RATIOS],
-        resolutions: [...GEMINI_RESOLUTIONS],
+        midjourney,
+        aspectRatios: midjourney ? [] : [...GEMINI_ASPECT_RATIOS],
+        resolutions: midjourney ? [] : [...GEMINI_RESOLUTIONS],
         allowCustomAspectRatio: false,
         defaultAspectRatio: "auto",
         defaultResolution: "1K",
-        supportsImageSize: true,
+        supportsImageSize: !midjourney,
         experimental: false
       };
     }
     return getGrsImageModelCapabilities(model);
   }
 
-  function getThirdPartyApp() {
+  function getThirdPartyApp(options = {}) {
     const normalized = normalizeThirdPartySettings(state.thirdPartySettings);
     const descriptor = getThirdPartyProviderDescriptor(normalized);
     const config = descriptor.config;
-    const capabilities = getThirdPartyModelCapabilities(config.selectedModel || config.imageModels[0], descriptor.id);
+    const selectedModel = String(options.model || config.selectedModel || config.imageModels[0] || "").trim();
+    const capabilities = getThirdPartyModelCapabilities(selectedModel, descriptor.id);
+    const isMidjourney = descriptor.id === "gemini" && capabilities.midjourney;
+    const inputs = [
+      { key: "prompt", label: "提示词", name: "提示词", type: "textarea", required: true,
+        hint: isMidjourney
+          ? "Midjourney 需要梯子或代理才能访问。参考图 URL 放在开头，版本、画幅、风格、--hd 等参数直接写在末尾。"
+          : "" },
+      {
+        key: "model",
+        label: "模型",
+        name: "模型",
+        type: "select",
+        required: true,
+        options: config.imageModels.map((model) => ({
+          value: model,
+          label: descriptor.id === "grs" ? getGrsImageModelLabel(model) : model
+        }))
+      }
+    ];
+    if (!isMidjourney) {
+      inputs.unshift(
+        { key: "mainImage", label: "主图", name: "主图", type: "image", required: false },
+        { key: "referenceImage", label: "参考图", name: "参考图", type: "image", required: false }
+      );
+    } else {
+      inputs.push({
+        key: "mode",
+        label: "队列模式",
+        name: "队列模式",
+        type: "select",
+        required: true,
+        default: "relax",
+        options: [
+          { value: "relax", label: "Relax（默认）" },
+          { value: "fast", label: "Fast" }
+        ],
+        hint: "mode 是请求字段，不要写成 --fast 或 --relax；默认 Relax。"
+      });
+    }
+    if (!isMidjourney) {
+      inputs.push({
+        key: "aspectRatio",
+        label: "比例",
+        name: "比例",
+        type: "select",
+        required: true,
+        options: capabilities.allowCustomAspectRatio ? [...capabilities.aspectRatios, { value: "__custom__", label: "自定义比例" }] : capabilities.aspectRatios,
+        allowCustom: capabilities.allowCustomAspectRatio,
+        customKey: "aspectRatioCustom",
+        customPlaceholder: "例如 5:4、7:5 或 1328x768"
+      });
+      inputs.push({ key: "resolution", label: "分辨率", name: "分辨率", type: "select", required: true, options: capabilities.resolutions });
+    }
     return {
       id: THIRD_PARTY_APP_ID,
       appId: THIRD_PARTY_APP_ID,
@@ -549,34 +606,7 @@ import {
       provider: descriptor.id,
       channelId: descriptor.channelId,
       thirdParty: true,
-      inputs: [
-        { key: "mainImage", label: "主图", name: "主图", type: "image", required: false },
-        { key: "referenceImage", label: "参考图", name: "参考图", type: "image", required: false },
-        { key: "prompt", label: "提示词", name: "提示词", type: "textarea", required: true },
-        {
-          key: "model",
-          label: "模型",
-          name: "模型",
-          type: "select",
-          required: true,
-          options: config.imageModels.map((model) => ({
-            value: model,
-            label: descriptor.id === "grs" ? getGrsImageModelLabel(model) : model
-          }))
-        },
-        {
-          key: "aspectRatio",
-          label: "比例",
-          name: "比例",
-          type: "select",
-          required: true,
-          options: capabilities.allowCustomAspectRatio ? [...capabilities.aspectRatios, { value: "__custom__", label: "自定义比例" }] : capabilities.aspectRatios,
-          allowCustom: capabilities.allowCustomAspectRatio,
-          customKey: "aspectRatioCustom",
-          customPlaceholder: "例如 5:4、7:5 或 1328x768"
-        },
-        { key: "resolution", label: "分辨率", name: "分辨率", type: "select", required: true, options: capabilities.resolutions }
-      ]
+      inputs
     };
   }
 
