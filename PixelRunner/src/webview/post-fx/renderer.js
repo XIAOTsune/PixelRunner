@@ -120,16 +120,22 @@ function hashNoise(x, y, seed) {
   return (value >>> 0) / 4294967295;
 }
 
-function valueNoise(x, y, seed) {
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const tx = x - x0;
-  const ty = y - y0;
-  const sx = tx * tx * (3 - 2 * tx);
-  const sy = ty * ty * (3 - 2 * ty);
-  const top = lerp(hashNoise(x0, y0, seed), hashNoise(x0 + 1, y0, seed), sx);
-  const bottom = lerp(hashNoise(x0, y0 + 1, seed), hashNoise(x0 + 1, y0 + 1, seed), sx);
-  return lerp(top, bottom, sy);
+function grainNoise(x, y, grainSize, seed) {
+  const radius = Math.max(1, Math.round(Number(grainSize) || 1));
+  const center = hashNoise(x, y, seed);
+  const cardinal = (
+    hashNoise(x + radius, y, seed + 11) +
+    hashNoise(x - radius, y, seed + 23) +
+    hashNoise(x, y + radius, seed + 37) +
+    hashNoise(x, y - radius, seed + 53)
+  ) * 0.055;
+  const diagonal = (
+    hashNoise(x + radius, y + radius, seed + 67) +
+    hashNoise(x - radius, y + radius, seed + 79) +
+    hashNoise(x + radius, y - radius, seed + 97) +
+    hashNoise(x - radius, y - radius, seed + 113)
+  ) * 0.03;
+  return center * 0.66 + cardinal + diagonal;
 }
 
 function getDimensions(imageData) {
@@ -242,7 +248,7 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
   const contrast = 1 + params.contrast / 100 * 0.72;
   const saturation = 1 + params.saturation / 100;
   const warmth = params.warmth / 100;
-  const dispersionShift = maxDimension * 0.012 * (params.dispersion / 100) * (params.dispersionRadius / 100);
+  const dispersionShift = maxDimension * 0.024 * (params.dispersion / 100) * Math.pow(params.dispersionRadius / 100, 0.72);
   const dispersionEnabled = dispersionShift > 0.01;
   const highlightThreshold = params.halationThreshold / 100;
   const haloMask = params.halation > 0 ? new Float32Array(width * height) : null;
@@ -258,11 +264,11 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
       const dx = x / Math.max(1, width - 1) - 0.5;
       const dy = ny - 0.5;
       const distance = Math.min(1, Math.sqrt(dx * dx + dy * dy) * 1.4143);
-      const radial = distance * distance;
       const sourceLuma = r * 0.2126 + g * 0.7152 + b * 0.0722;
       if (dispersionEnabled) {
-        const highlightMix = params.dispersionHighlightsOnly ? smoothstep(0.42, 0.86, sourceLuma) : 1;
-        const shift = dispersionShift * radial * highlightMix;
+        const highlightMix = params.dispersionHighlightsOnly ? smoothstep(0.24, 0.78, sourceLuma) : 1;
+        const edgeInfluence = 0.18 + 0.82 * smoothstep(0.04, 0.94, distance);
+        const shift = dispersionShift * edgeInfluence * highlightMix;
         if (shift > 0.01) {
           r = sampleChannel(source, width, height, x - dx * shift, y - dy * shift, 0) / 255;
           b = sampleChannel(source, width, height, x + dx * shift, y + dy * shift, 2) / 255;
@@ -339,15 +345,8 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
       const index = (y * width + x) * 4;
       const luma = (output[index] * 0.2126 + output[index + 1] * 0.7152 + output[index + 2] * 0.0722) / 255;
       if (grainStrength > 0) {
-        const grainX = globalX / grainSize;
-        const grainY = globalY / grainSize;
-        const coarseNoise = valueNoise(grainX, grainY, params.seed);
-        const fineNoise = hashNoise(globalX, globalY, params.seed + 131);
-        const microNoise = hashNoise(globalX + 31, globalY - 17, params.seed + 257);
-        const noise = coarseNoise * 0.36 + fineNoise * 0.46 + microNoise * 0.18 - 0.5;
-        const chromaCoarse = valueNoise(grainX + 0.31, grainY - 0.27, params.seed + 97);
-        const chromaFine = hashNoise(globalX + 17, globalY - 11, params.seed + 193);
-        const chromaNoise = chromaCoarse * 0.35 + chromaFine * 0.65 - 0.5;
+        const noise = grainNoise(globalX, globalY, grainSize, params.seed) - 0.5;
+        const chromaNoise = grainNoise(globalX + 17, globalY - 11, grainSize, params.seed + 97) - 0.5;
         const shadowWeight = 1 - smoothstep(0.08, 0.56, luma);
         const highlightWeight = smoothstep(0.60, 0.94, luma);
         const toneWeight = clamp(0.88 + shadowWeight * 0.48 - highlightWeight * 0.52, 0.30, 1.36, 0.88);

@@ -3,12 +3,16 @@ import { readFile } from "node:fs/promises";
 import { FILM_DEFAULTS, getFilmPresets, normalizeFilmParams, renderFilmImageData } from "../src/webview/post-fx/renderer.js";
 
 const webglSource = await readFile(new URL("../src/webview/post-fx/webgl-renderer.js", import.meta.url), "utf8");
+const rendererSource = await readFile(new URL("../src/webview/post-fx/renderer.js", import.meta.url), "utf8");
 const webviewSource = await readFile(new URL("../src/webview/post-fx.js", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../app.html", import.meta.url), "utf8");
 assert.match(webglSource, /getContext\("webgl2"/, "post FX exposes a WebGL2 renderer");
 assert.match(webglSource, /returnDataUrl === false/, "preview rendering can avoid PNG encode/readback");
-assert.match(webglSource, /valueNoise/, "WebGL grain uses continuous value noise");
-assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 1500/, "preview capture is capped at 1500px");
+assert.match(webglSource, /grainNoise/, "WebGL grain uses mixed pixel noise");
+assert.match(webglSource, /uvec2/, "WebGL grain uses an integer hash");
+assert.doesNotMatch(webglSource, /fract\(sin\(dot/, "WebGL grain does not use directionally correlated sine hashing");
+assert.doesNotMatch(rendererSource, /Math\.(?:sin|cos)/, "CPU grain does not use directional trigonometric warping");
+assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 3000/, "preview capture is capped at 3000px");
 assert.match(webviewSource, /data-post-fx-zoom/, "preview navigation binds zoom controls");
 assert.doesNotMatch(webviewSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not bound");
 assert.doesNotMatch(appSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not rendered");
@@ -51,5 +55,67 @@ assert.notDeepEqual(Array.from(first.data), Array.from(source.data), "a non-zero
 
 const otherSeed = renderFilmImageData(source, { ...params, seed: 78 });
 assert.notDeepEqual(Array.from(otherSeed.data), Array.from(first.data), "changing the seed changes the grain pattern");
+
+const flatSize = 192;
+const flatSource = {
+  width: flatSize,
+  height: flatSize,
+  data: new Uint8ClampedArray(flatSize * flatSize * 4)
+};
+for (let index = 0; index < flatSource.data.length; index += 4) {
+  flatSource.data[index] = 112;
+  flatSource.data[index + 1] = 112;
+  flatSource.data[index + 2] = 112;
+  flatSource.data[index + 3] = 255;
+}
+const flatGrain = renderFilmImageData(flatSource, {
+  ...FILM_DEFAULTS,
+  amount: 100,
+  exposure: 0,
+  contrast: 0,
+  saturation: 0,
+  warmth: 0,
+  shadowLift: 0,
+  highlightRollOff: 0,
+  halation: 0,
+  grain: 100,
+  grainSize: 3,
+  grainColor: 0,
+  vignette: 0,
+  dispersion: 0,
+  seed: 4817
+});
+const samples = new Float64Array(flatSize * flatSize);
+let sampleMean = 0;
+for (let index = 0; index < samples.length; index += 1) {
+  samples[index] = flatGrain.data[index * 4];
+  sampleMean += samples[index];
+}
+sampleMean /= samples.length;
+let sampleVariance = 0;
+for (const sample of samples) sampleVariance += (sample - sampleMean) ** 2;
+sampleVariance /= samples.length;
+function directionalCorrelation(dx, dy) {
+  let product = 0;
+  let count = 0;
+  const startX = Math.max(0, -dx);
+  const endX = Math.min(flatSize, flatSize - dx);
+  const startY = Math.max(0, -dy);
+  const endY = Math.min(flatSize, flatSize - dy);
+  for (let y = startY; y < endY; y += 1) {
+    for (let x = startX; x < endX; x += 1) {
+      product += (samples[y * flatSize + x] - sampleMean) * (samples[(y + dy) * flatSize + x + dx] - sampleMean);
+      count += 1;
+    }
+  }
+  return product / Math.max(1, count) / Math.max(0.0001, sampleVariance);
+}
+const directionalCorrelations = [
+  [1, 0], [0, 1], [1, 1], [1, -1], [3, 0], [0, 3], [3, 3], [3, -3], [5, 2], [2, -5]
+].map(([dx, dy]) => directionalCorrelation(dx, dy));
+assert.ok(
+  Math.max(...directionalCorrelations.map(Math.abs)) < 0.08,
+  `film grain must not contain directional bands: ${directionalCorrelations.map((value) => value.toFixed(3)).join(", ")}`
+);
 
 console.log("Post FX renderer tests passed.");

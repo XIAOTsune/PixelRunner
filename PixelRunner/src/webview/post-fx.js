@@ -7,7 +7,7 @@ import {
 
 (function initPostFxModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const PREVIEW_CAPTURE_MAX_DIMENSION = 1500;
+  const PREVIEW_CAPTURE_MAX_DIMENSION = 3000;
   const PREVIEW_DEBOUNCE_MS = 90;
   const state = {
     bound: false,
