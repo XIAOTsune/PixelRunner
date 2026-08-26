@@ -1418,13 +1418,39 @@
   function buildTaskStatusRequest(taskId, payload) {
     const remoteTaskId = String(taskId || "").trim();
     if (isThirdPartyRunPayload(payload)) {
+      const sourceInputs = payload && payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
+      const sourceConfig = payload && payload.config && typeof payload.config === "object" ? payload.config : {};
+      let taskModel = String(
+        payload && (payload.model || payload.selectedModel) ||
+        sourceInputs.model || sourceConfig.selectedModel || ""
+      ).trim();
+      // Older task cards did not persist the selected model. Only infer it
+      // from the active Momo selection when that selection is explicitly MJ.
+      if (!taskModel && String(payload.provider || "").trim() === "gemini" && String(payload.channelId || "").trim() === "momo") {
+        const activeDescriptor = modules.state.getThirdPartyProviderDescriptor();
+        const activeModel = String(activeDescriptor && activeDescriptor.config && activeDescriptor.config.selectedModel || "").trim();
+        if (String(activeDescriptor && activeDescriptor.channelId || "").trim() === "momo" && /^mj_imagine$/i.test(activeModel)) {
+          taskModel = activeModel;
+        }
+      }
+      const statusPayload = {
+        ...payload,
+        taskId: remoteTaskId,
+        config: {
+          ...sourceConfig,
+          apiUrl: sourceConfig.apiUrl || payload.apiUrl || "",
+          apiKey: sourceConfig.apiKey || payload.apiKey || "",
+          channelId: sourceConfig.channelId || payload.channelId || "",
+          selectedModel: sourceConfig.selectedModel || taskModel
+        }
+      };
+      if (taskModel) {
+        statusPayload.model = taskModel;
+        statusPayload.inputs = { ...sourceInputs, model: sourceInputs.model || taskModel };
+      }
       return {
         method: getThirdPartyHostMethod(payload, "fetchTaskStatus"),
-        args: [{
-          ...payload,
-          taskId: remoteTaskId,
-          timeoutMs: 30000
-        }]
+        args: [{ ...statusPayload, timeoutMs: 30000 }]
       };
     }
     return {
@@ -2121,6 +2147,7 @@
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
       channelId: String(patch.channelId || "").trim(),
+      model: hasOwn("model") ? String(patch.model || "").trim() : undefined,
       kind: String(patch.kind || "").trim(),
       region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
       apiUrl: hasOwn("apiUrl") ? String(patch.apiUrl || "").trim() : "",
@@ -2168,6 +2195,7 @@
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
         channelId: nextTask.channelId || current.channelId || "",
+        model: nextTask.model || current.model || "",
         kind: nextTask.kind || current.kind || "",
         region: nextTask.region || current.region || "cn",
         apiUrl: nextTask.apiUrl || current.apiUrl || "",
@@ -2433,7 +2461,7 @@
         const statusResult = await modules.runtime.callHost(statusRequest.method, statusRequest.args, { timeoutMs: 35000 });
         const remoteStatus = String((statusResult && statusResult.status) || "").trim().toUpperCase();
 
-        if (statusResult && hasResultReference(statusResult)) {
+        if (statusResult && !statusResult.failed && hasResultReference(statusResult)) {
           await finalizeTrackedTaskSuccess(remoteTaskId, payload, sourceDocument, statusResult);
           return;
         }
@@ -3821,6 +3849,7 @@
       remoteTaskId: "",
       provider: payload.provider || "",
       channelId: payload.channelId || "",
+      model: payload && payload.inputs && payload.inputs.model || payload && payload.config && payload.config.selectedModel || "",
       region: payload.region,
       apiUrl: payload.apiUrl || (payload.config && payload.config.apiUrl) || "",
       apiKey: payload.apiKey,

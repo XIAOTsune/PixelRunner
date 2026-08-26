@@ -70,6 +70,9 @@ assert.deepEqual(
 );
 assert.match(workspaceSource, /photoshop\.cacheResultFromUrl/);
 assert.match(workspaceSource, /refreshAutoPlacementResultReference\(queued\)/);
+assert.match(workspaceSource, /!statusResult\.failed && hasResultReference\(statusResult\)/);
+assert.match(workspaceSource, /selectedModel: sourceConfig\.selectedModel \|\| taskModel/);
+assert.match(workspaceSource, /model: payload && payload\.inputs && payload\.inputs\.model/);
 assert.match(workspaceSource, /data-action="place-in-current-document"/);
 assert.match(workspaceSource, /errorType: "target-document"/);
 assert.ok(

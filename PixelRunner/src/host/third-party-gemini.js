@@ -327,22 +327,74 @@ async function submitMomoMidjourneyTask(payload, config, inputs, apiKey) {
   return { ok: true, taskId, status: "RUNNING", stillRunning: true, immediate: false, model: MOMO_MIDJOURNEY_MODEL_ID };
 }
 
-async function fetchMomoMidjourneyImage(payload, taskId) {
-  const config = getConfig(payload);
-  const apiKey = String(config.apiKey || payload.apiKey || "").trim();
-  const request = buildMomoMidjourneyImageRequest({ apiUrl: getApiBaseUrl(payload), apiKey, taskId });
-  const { buffer, mimeType } = await fetchGeminiBinary(request, { timeoutMs: getTimeoutMs(payload, 30000) });
+function isTrustedMidjourneyImageUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    const hostname = url.hostname.toLowerCase();
+    const trustedHost = hostname === "midjourney.com" || hostname.endsWith(".midjourney.com") ||
+      hostname === "discordapp.com" || hostname.endsWith(".discordapp.com") ||
+      hostname === "discordapp.net" || hostname.endsWith(".discordapp.net");
+    return url.protocol === "https:" && trustedHost;
+  } catch (_) {
+    return false;
+  }
+}
+
+function getMomoMidjourneyImageFailure(error) {
+  const status = Number(error && error.status) || 0;
+  const code = String(error && error.code || "").trim();
+  if (status === 401 || status === 403 || code === "auth") {
+    return `Momo Midjourney 取图鉴权失败${status ? `（HTTP ${status}）` : ""}。任务已完成，请检查 API Key 的 /mj/image 权限，或联系中转站处理`;
+  }
+  if (code === "timeout") return "Momo Midjourney 取图超时，请确认已开启梯子后重试";
+  const detail = String(error && error.message || error || "未知错误")
+    .replace(/^Gemini\s*/i, "")
+    .trim();
+  return `Momo Midjourney 取图失败${status ? `（HTTP ${status}）` : ""}${detail ? `：${detail}` : ""}`;
+}
+
+async function createMomoMidjourneyDelivery(buffer, mimeType, taskId) {
   const data = arrayBufferToBase64(buffer);
   const image = { mimeType, data, dataUrl: `data:${mimeType};base64,${data}` };
   const delivery = await createGeminiDelivery(image, `momo-mj-${taskId}`);
   return {
-    outputUrl: "",
     dataUrl: delivery.dataUrl,
     filePath: delivery.filePath,
     mimeType: delivery.mimeType,
     byteLength: delivery.byteLength,
     delivery: delivery.delivery
   };
+}
+
+async function fetchMomoMidjourneyImage(payload, taskId, fallbackUrl = "") {
+  const config = getConfig(payload);
+  const apiKey = String(config.apiKey || payload.apiKey || "").trim();
+  const request = buildMomoMidjourneyImageRequest({ apiUrl: getApiBaseUrl(payload), apiKey, taskId });
+  const timeoutMs = getTimeoutMs(payload, 30000);
+  let proxyError = null;
+  try {
+    const image = await fetchGeminiBinary(request, { timeoutMs });
+    return await createMomoMidjourneyDelivery(image.buffer, image.mimeType, taskId);
+  } catch (error) {
+    proxyError = error;
+  }
+
+  const directUrl = String(fallbackUrl || "").trim();
+  if (directUrl !== request.url && isTrustedMidjourneyImageUrl(directUrl)) {
+    try {
+      const image = await fetchGeminiBinary({
+        url: directUrl,
+        options: { method: "GET", headers: { Accept: "image/*" } }
+      }, { timeoutMs });
+      return await createMomoMidjourneyDelivery(image.buffer, image.mimeType, taskId);
+    } catch (directError) {
+      const proxyMessage = getMomoMidjourneyImageFailure(proxyError);
+      const directMessage = getMomoMidjourneyImageFailure(directError);
+      throw new Error(`${proxyMessage}；CDN 回退同样失败：${directMessage}`);
+    }
+  }
+
+  throw new Error(getMomoMidjourneyImageFailure(proxyError));
 }
 
 async function fetchMomoMidjourneyTaskStatus(payload, taskId) {
@@ -353,10 +405,8 @@ async function fetchMomoMidjourneyTaskStatus(payload, taskId) {
   const { json } = await fetchGeminiJson(request, { timeoutMs: getTimeoutMs(payload, 30000) });
   const result = normalizeMidjourneyStatus(json, taskId);
   const explicitFailure = ["FAILURE", "FAILED", "ERROR", "CANCELLED", "CANCELED", "REJECTED", "TIMEOUT", "TIMED_OUT"].includes(result.status);
-  // The task response often exposes a direct cdn.midjourney.com URL. Photoshop's
-  // UXP network policy may reject that host, and the URL may also require no
-  // authentication context. Always download through Momo's authenticated proxy
-  // before handing the result to the placement pipeline.
+  // Prefer Momo's authenticated grid proxy. If that endpoint is unavailable,
+  // use the trusted Midjourney CDN URL returned by the completed task.
   if (result.stillRunning || explicitFailure) return result;
   try {
     return {
@@ -364,7 +414,7 @@ async function fetchMomoMidjourneyTaskStatus(payload, taskId) {
       ok: true,
       failed: false,
       stillRunning: false,
-      ...(await fetchMomoMidjourneyImage(payload, taskId)),
+      ...(await fetchMomoMidjourneyImage(payload, taskId, result.outputUrl)),
       outputUrl: result.outputUrl
     };
   } catch (error) {

@@ -352,8 +352,18 @@ try {
   let midjourneyRequestCount = 0;
   globalThis.fetch = async (url, options = {}) => {
     const requestUrl = String(url);
-    assert.equal(options.headers.Authorization, "Bearer mj-key");
     midjourneyRequestCount += 1;
+    if (requestUrl === "https://cdn.discordapp.com/mj.png") {
+      assert.equal(options.headers.Authorization, undefined);
+      assert.equal(options.headers.Accept, "image/*");
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (name) => name === "content-type" ? "image/png" : "" },
+        arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer
+      };
+    }
+    assert.equal(options.headers.Authorization, "Bearer mj-key");
     if (requestUrl.endsWith("/mj/submit/imagine")) {
       assert.deepEqual(JSON.parse(options.body), { prompt: "a palace --v 8.2 --ar 16:9", mode: "fast", state: "mj-request" });
       return {
@@ -366,15 +376,14 @@ try {
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true, properties: { images: ["https://cdn.midjourney.com/mj.png"] } })
+        text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true, properties: { images: ["https://cdn.discordapp.com/mj.png"] } })
       };
     }
     assert.equal(requestUrl, "https://api.momoapi.icu/mj/image/mj-task-1");
     return {
-      ok: true,
-      status: 200,
-      headers: { get: (name) => name === "content-type" ? "image/png" : "" },
-      arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer
+      ok: false,
+      status: 401,
+      text: async () => JSON.stringify({ error: { message: "image proxy rejected token" } })
     };
   };
   const midjourneySubmitted = await submitThirdPartyGeminiTask([{
@@ -392,10 +401,10 @@ try {
     settings: { pollInterval: 0.01 }
   }]);
   assert.equal(midjourneyPolled.status, "SUCCESS");
-  assert.equal(midjourneyPolled.outputUrl, "https://cdn.midjourney.com/mj.png");
+  assert.equal(midjourneyPolled.outputUrl, "https://cdn.discordapp.com/mj.png");
   assert.equal(midjourneyPolled.failed, false);
   assert.ok(midjourneyPolled.filePath || midjourneyPolled.dataUrl);
-  assert.equal(midjourneyRequestCount, 3);
+  assert.equal(midjourneyRequestCount, 4);
 
   globalThis.fetch = async (url, options = {}) => {
     const requestUrl = String(url);
