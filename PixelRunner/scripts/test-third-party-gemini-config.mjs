@@ -5,6 +5,9 @@ import {
   GEMINI_CHANNEL_PRESETS,
   buildGeminiGenerateRequest,
   buildGeminiModelsRequest,
+  buildMomoMidjourneyImageRequest,
+  buildMomoMidjourneyImagineRequest,
+  buildMomoMidjourneyTaskRequest,
   buildNewApiChatRequest,
   buildNewApiModelsRequest,
   buildNewApiPricingRequest,
@@ -20,10 +23,16 @@ import {
   parseGeminiTextResponse,
   parseNewApiChatResponse,
   parseNewApiModelsResponse,
-  parseNewApiPricingResponse
+  parseNewApiPricingResponse,
+  MOMO_SERVICE_ENDPOINTS,
+  MOMO_DEFAULT_API_URL,
+  MOMO_MIDJOURNEY_MODEL_ID,
+  isMomoMidjourneyModel,
+  normalizeMomoEndpoint
 } from "../src/shared/gemini-config.js";
 import {
   cancelThirdPartyGeminiTask,
+  checkThirdPartyGeminiEndpoint,
   fetchThirdPartyGeminiAccountStatus,
   fetchThirdPartyGeminiTaskCharge,
   listThirdPartyGeminiModels,
@@ -41,12 +50,13 @@ assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1k"));
 assert.ok(getGeminiChannelModelDefaults("aji").chatModels.includes("gpt-5.6-sol"));
 assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes("[yu]gemini-3.1-flash-lite-image"));
+assert.ok(getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[文本]gemini-3.5-flash"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("[YZ-k]claude-opus-4-8"));
 assert.ok(getGeminiChannelModelDefaults("momo").chatModels.includes("tsc1-gpt-5.6-terra"));
 assert.equal(getGeminiChannelModelDefaults("aji").imageModels.length, 40);
 assert.equal(getGeminiChannelModelDefaults("aji").chatModels.length, 5);
-assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 6);
+assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 7);
 assert.equal(getGeminiChannelModelDefaults("momo").chatModels.length, 19);
 
 const migrated = normalizeGeminiSettings({
@@ -69,6 +79,22 @@ assert.equal(migrated.channels.aji.selectedModel, "aji-image");
 assert.equal(migrated.channels.aji.modelCatalogVersion, GEMINI_MODEL_CATALOG_VERSION);
 assert.ok(migrated.channels.aji.imageModels.includes("AJbanana3-4k"));
 assert.ok(migrated.channels.momo.chatModels.includes("[文本]gemini-3-flash"));
+
+const releasedMomoSelection = normalizeGeminiSettings({
+  channelId: "momo",
+  selectedModel: MOMO_MIDJOURNEY_MODEL_ID,
+  imageModels: [MOMO_MIDJOURNEY_MODEL_ID, "[c]gemini-3-pro-image-preview"]
+});
+assert.equal(releasedMomoSelection.selectedModel, MOMO_MIDJOURNEY_MODEL_ID);
+assert.ok(releasedMomoSelection.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+
+const ajiMidjourneySelection = normalizeGeminiSettings({
+  channelId: "aji",
+  selectedModel: MOMO_MIDJOURNEY_MODEL_ID,
+  imageModels: [MOMO_MIDJOURNEY_MODEL_ID, "aji-image"]
+});
+assert.notEqual(ajiMidjourneySelection.selectedModel, MOMO_MIDJOURNEY_MODEL_ID);
+assert.ok(!ajiMidjourneySelection.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
 
 const upgradedLegacyDefaults = normalizeGeminiSettings({
   channelId: "momo",
@@ -160,6 +186,80 @@ assert.equal(normalizeGeminiFailure({ json: { promptFeedback: { blockReason: "SA
 assert.ok(!normalizeGeminiFailure({ status: 500, rawText: "Bearer super-secret" }).message.includes("super-secret"));
 assert.ok(!normalizeGeminiFailure({ status: 500, rawText: "upstream echoed abc-123", apiKey: "abc-123" }).message.includes("abc-123"));
 
+// Momo endpoint whitelist
+assert.equal(MOMO_SERVICE_ENDPOINTS.length, 3);
+assert.equal(MOMO_SERVICE_ENDPOINTS[0].url, "https://api.momoapi.icu");
+assert.equal(MOMO_SERVICE_ENDPOINTS[1].url, "https://api1.momoapi.icu");
+assert.equal(MOMO_SERVICE_ENDPOINTS[2].url, "https://api2.momoapi.icu");
+assert.equal(MOMO_DEFAULT_API_URL, "https://api.momoapi.icu");
+
+assert.equal(normalizeMomoEndpoint("https://api.momoapi.icu"), "https://api.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api1.momoapi.icu"), "https://api1.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api2.momoapi.icu"), "https://api2.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api.momoapi.icu/"), "https://api.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api1.momoapi.icu/"), "https://api1.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://api2.momoapi.icu/"), "https://api2.momoapi.icu");
+assert.equal(normalizeMomoEndpoint("https://evil.example.com"), MOMO_DEFAULT_API_URL);
+assert.equal(normalizeMomoEndpoint(""), MOMO_DEFAULT_API_URL);
+assert.equal(normalizeMomoEndpoint("  "), MOMO_DEFAULT_API_URL);
+
+// normalizeGeminiSettings preserves Momo user-chosen apiUrl
+const momoCustomSettings = normalizeGeminiSettings({
+  channelId: "momo",
+  channels: {
+    momo: { apiUrl: "https://api2.momoapi.icu", apiKey: "momo-key", selectedModel: "model-a" }
+  }
+});
+assert.equal(momoCustomSettings.channelId, "momo");
+assert.equal(momoCustomSettings.apiUrl, "https://api2.momoapi.icu");
+assert.equal(momoCustomSettings.channels.momo.apiUrl, "https://api2.momoapi.icu");
+
+// Old momo config without apiUrl defaults to default
+const oldMomoSettings = normalizeGeminiSettings({
+  channelId: "momo",
+  channels: { momo: { apiKey: "old-key" } }
+});
+assert.equal(oldMomoSettings.channels.momo.apiUrl, MOMO_DEFAULT_API_URL);
+assert.equal(oldMomoSettings.apiUrl, MOMO_DEFAULT_API_URL);
+
+const upgradedMomoCatalog = normalizeGeminiSettings({
+  channelId: "momo",
+  channels: { momo: { modelCatalogVersion: 2, imageModels: ["[c]gemini-3-pro-image-preview"], selectedModel: "[c]gemini-3-pro-image-preview" } }
+});
+assert.ok(upgradedMomoCatalog.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID));
+
+// Aji channel ignores custom apiUrl
+const ajiCustomSettings = normalizeGeminiSettings({
+  channelId: "aji",
+  channels: { aji: { apiUrl: "https://custom.example.com", apiKey: "aji-key", selectedModel: "model-b" } }
+});
+assert.equal(ajiCustomSettings.channelId, "aji");
+assert.equal(ajiCustomSettings.apiUrl, "https://ai.ajiai.top");
+assert.equal(ajiCustomSettings.channels.aji.apiUrl, "https://ai.ajiai.top");
+
+// Build requests use Momo current apiUrl
+const momoGenReq = buildGeminiGenerateRequest({
+  apiUrl: "https://api2.momoapi.icu", apiKey: "secret", model: "gemini-image", prompt: "hello"
+});
+assert.equal(momoGenReq.url, "https://api2.momoapi.icu/v1beta/models/gemini-image:generateContent");
+
+const momoNewApiReq = buildNewApiModelsRequest({ apiUrl: "https://api1.momoapi.icu", apiKey: "key" });
+assert.equal(momoNewApiReq.url, "https://api1.momoapi.icu/v1/models");
+
+const momoPricingReq = buildNewApiPricingRequest({ apiUrl: "https://api2.momoapi.icu" });
+assert.equal(momoPricingReq.url, "https://api2.momoapi.icu/api/pricing");
+
+const mjImagineReq = buildMomoMidjourneyImagineRequest({
+  apiUrl: "https://api2.momoapi.icu", apiKey: "secret", prompt: "a palace", mode: "fast", state: "order-1"
+});
+assert.equal(mjImagineReq.url, "https://api2.momoapi.icu/mj/submit/imagine");
+assert.deepEqual(JSON.parse(mjImagineReq.options.body), { prompt: "a palace", mode: "fast", state: "order-1" });
+const mjTaskReq = buildMomoMidjourneyTaskRequest({ apiUrl: "https://api2.momoapi.icu", apiKey: "secret", taskId: "task/1" });
+assert.equal(mjTaskReq.url, "https://api2.momoapi.icu/mj/task/task%2F1/fetch");
+const mjImageReq = buildMomoMidjourneyImageRequest({ apiUrl: "https://api2.momoapi.icu", apiKey: "secret", taskId: "task/1" });
+assert.equal(mjImageReq.url, "https://api2.momoapi.icu/mj/image/task%2F1");
+assert.equal(isMomoMidjourneyModel("models/mj_imagine"), true);
+
 const originalFetch = globalThis.fetch;
 try {
   globalThis.fetch = async (url, options = {}) => {
@@ -249,6 +349,92 @@ try {
   assert.equal(polled.status, "SUCCEEDED");
   assert.equal(polled.dataUrl, "data:image/png;base64,b3V0cHV0");
 
+  let midjourneyRequestCount = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    midjourneyRequestCount += 1;
+    if (requestUrl === "https://cdn.discordapp.com/mj.png") {
+      assert.equal(options.headers.Authorization, undefined);
+      assert.equal(options.headers.Accept, "image/*");
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (name) => name === "content-type" ? "image/png" : "" },
+        arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer
+      };
+    }
+    assert.equal(options.headers.Authorization, "Bearer mj-key");
+    if (requestUrl.endsWith("/mj/submit/imagine")) {
+      assert.deepEqual(JSON.parse(options.body), { prompt: "a palace --v 8.2 --ar 16:9", mode: "fast", state: "mj-request" });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ code: 1, description: "success", result: "mj-task-1" })
+      };
+    }
+    if (requestUrl.endsWith("/mj/task/mj-task-1/fetch")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true, properties: { images: ["https://cdn.discordapp.com/mj.png"] } })
+      };
+    }
+    assert.equal(requestUrl, "https://api.momoapi.icu/mj/image/mj-task-1");
+    return {
+      ok: false,
+      status: 401,
+      text: async () => JSON.stringify({ error: { message: "image proxy rejected token" } })
+    };
+  };
+  const midjourneySubmitted = await submitThirdPartyGeminiTask([{
+    requestId: "mj-request",
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID, prompt: "a palace --v 8.2 --ar 16:9", mode: "fast", state: "mj-request" },
+    timeoutMs: 1000
+  }]);
+  assert.equal(midjourneySubmitted.taskId, "mj-task-1");
+  const midjourneyPolled = await pollThirdPartyGeminiTask([{
+    taskId: midjourneySubmitted.taskId,
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID },
+    timeoutMs: 1000,
+    settings: { pollInterval: 0.01 }
+  }]);
+  assert.equal(midjourneyPolled.status, "SUCCESS");
+  assert.equal(midjourneyPolled.outputUrl, "https://cdn.discordapp.com/mj.png");
+  assert.equal(midjourneyPolled.failed, false);
+  assert.ok(midjourneyPolled.filePath || midjourneyPolled.dataUrl);
+  assert.equal(midjourneyRequestCount, 4);
+
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    assert.equal(options.headers.Authorization, "Bearer mj-key");
+    if (requestUrl.endsWith("/mj/task/mj-task-2/fetch")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ status: "SUCCESS", isCompleted: true })
+      };
+    }
+    assert.equal(requestUrl, "https://api.momoapi.icu/mj/image/mj-task-2");
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (name) => name === "content-type" ? "image/png" : "" },
+      arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer
+    };
+  };
+  const directImageResult = await pollThirdPartyGeminiTask([{
+    taskId: "mj-task-2",
+    config: { apiUrl: "https://api.momoapi.icu", apiKey: "mj-key", selectedModel: MOMO_MIDJOURNEY_MODEL_ID, channelId: "momo" },
+    inputs: { model: MOMO_MIDJOURNEY_MODEL_ID },
+    timeoutMs: 1000,
+    settings: { pollInterval: 0.01 }
+  }]);
+  assert.equal(directImageResult.status, "SUCCESS");
+  assert.equal(directImageResult.failed, false);
+  assert.ok(directImageResult.filePath || directImageResult.dataUrl);
+
   globalThis.fetch = async (url, options = {}) => {
     assert.equal(options.headers.Authorization === "Bearer account-key" || options.headers.Authorization === undefined, true);
     if (String(url).endsWith("/api/status")) {
@@ -332,6 +518,29 @@ try {
   globalThis.fetch = originalFetch;
 }
 
+// checkThirdPartyGeminiEndpoint
+{
+  globalThis.fetch = async (url) => {
+    assert.equal(String(url), "https://api1.momoapi.icu/api/status");
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ data: {} })
+    };
+  };
+  const checkOk = await checkThirdPartyGeminiEndpoint([{ apiUrl: "https://api1.momoapi.icu" }]);
+  assert.equal(checkOk.ok, true);
+  assert.equal(checkOk.apiUrl, "https://api1.momoapi.icu");
+
+  globalThis.fetch = async () => {
+    const error = new Error("network error");
+    throw error;
+  };
+  const checkFail = await checkThirdPartyGeminiEndpoint([{ apiUrl: "https://api2.momoapi.icu", timeoutMs: 5000 }]);
+  assert.equal(checkFail.ok, false);
+  assert.ok(checkFail.message.includes("network error") || checkFail.message.includes("不可达"));
+}
+
 globalThis.window = {};
 await import("../src/webview/state.js");
 const stateModule = globalThis.window.PixelRunnerModules.state;
@@ -351,8 +560,44 @@ assert.equal(thirdParty.grs.apiUrl, "https://grsai.dakka.com.cn");
 assert.equal(thirdParty.gemini.apiKey, "momo-key");
 assert.equal(thirdParty.gemini.channels.aji.apiKey, "aji-key");
 assert.equal(stateModule.getThirdPartyProviderDescriptor(thirdParty).label, "墨墨 Momo");
+
+stateModule.state.thirdPartySettings = stateModule.normalizeThirdPartySettings({
+  provider: "gemini",
+  gemini: { channelId: "momo", channels: { momo: { selectedModel: MOMO_MIDJOURNEY_MODEL_ID } } }
+});
+const midjourneyApp = stateModule.getThirdPartyApp();
+assert.deepEqual(midjourneyApp.inputs.map((input) => input.key), ["prompt", "model", "mode"]);
+assert.equal(midjourneyApp.inputs.find((input) => input.key === "mode").default, "relax");
+
+// Momo with custom apiUrl in descriptor
+const momoCustomState = stateModule.normalizeThirdPartySettings({
+  enabled: true,
+  provider: "gemini",
+  gemini: {
+    channelId: "momo",
+    channels: { momo: { apiUrl: "https://api2.momoapi.icu", apiKey: "momo-key", selectedModel: "img" } }
+  }
+});
+assert.equal(stateModule.getThirdPartyProviderDescriptor(momoCustomState).apiUrl, "https://api2.momoapi.icu");
+
+// Old momo without apiUrl defaults in descriptor
+const momoOldState = stateModule.normalizeThirdPartySettings({
+  enabled: true,
+  provider: "gemini",
+  gemini: {
+    channelId: "momo",
+    channels: { momo: { apiKey: "old-momo" } }
+  }
+});
+assert.equal(stateModule.getThirdPartyProviderDescriptor(momoOldState).apiUrl, MOMO_DEFAULT_API_URL);
+
 const legacyThirdParty = stateModule.normalizeThirdPartySettings({ enabled: true, grs: { apiKey: "legacy-grs-key" } });
 assert.equal(legacyThirdParty.provider, "grs");
 assert.equal(legacyThirdParty.grs.apiKey, "legacy-grs-key");
 
-console.log("Gemini channel, migration, request, response, and failure contract checks passed.");
+assert.equal(stateModule.MOMO_DEFAULT_API_URL, MOMO_DEFAULT_API_URL);
+assert.equal(stateModule.MOMO_SERVICE_ENDPOINTS.length, 3);
+assert.equal(stateModule.normalizeMomoEndpoint("https://api1.momoapi.icu"), "https://api1.momoapi.icu");
+assert.equal(stateModule.normalizeMomoEndpoint("bad-url"), MOMO_DEFAULT_API_URL);
+
+console.log("Gemini channel, migration, request, response, failure contract, and Momo endpoint checks passed.");

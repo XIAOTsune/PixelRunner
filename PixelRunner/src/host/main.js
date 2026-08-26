@@ -18,6 +18,7 @@ import {
 } from "./third-party-grs.js";
 import {
   cancelThirdPartyGeminiTask,
+  checkThirdPartyGeminiEndpoint,
   fetchThirdPartyGeminiAccountStatus,
   fetchThirdPartyGeminiTaskStatus,
   listThirdPartyGeminiModels,
@@ -371,6 +372,9 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "thirdParty.gemini.optimizePrompt":
         result = await runThirdPartyGeminiPromptOptimize(message.args);
+        break;
+      case "thirdParty.gemini.checkEndpoint":
+        result = await checkThirdPartyGeminiEndpoint(message.args);
         break;
       case "photoshop.getActiveDocumentInfo":
         result = await enqueuePhotoshopBridgeOperation(message, () => getPhotoshopDocumentInfo(), {

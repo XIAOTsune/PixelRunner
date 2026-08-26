@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<script type="module">
+  import {
+    MOMO_MIDJOURNEY_MODEL_ID,
+    getGeminiChannelModelDefaults,
+    normalizeGeminiSettings,
+    buildMomoMidjourneyImagineRequest,
+    buildMomoMidjourneyTaskRequest
+  } from "./src/shared/gemini-config.js";
+  const settings = normalizeGeminiSettings({
+    channelId: "momo",
+    channels: { momo: { modelCatalogVersion: 2, imageModels: ["[c]gemini-3-pro-image-preview"] } }
+  });
+  const imagine = buildMomoMidjourneyImagineRequest({ apiUrl: "https://api.momoapi.icu", apiKey: "key", prompt: "test" });
+  const task = buildMomoMidjourneyTaskRequest({ apiUrl: "https://api.momoapi.icu", apiKey: "key", taskId: "task-1" });
+  document.body.textContent = [
+    getGeminiChannelModelDefaults("momo").imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID),
+    settings.channels.momo.imageModels.includes(MOMO_MIDJOURNEY_MODEL_ID),
+    imagine.url,
+    task.url
+  ].join("|");
+</script>

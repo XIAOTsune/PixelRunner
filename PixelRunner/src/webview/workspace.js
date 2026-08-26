@@ -541,6 +541,11 @@
     return `<div class="prompt-length-hint ${length >= modules.templates.PROMPT_WARN_CHARS ? "is-warning" : ""}">长度 ${modules.runtime.escapeHtml(String(length))} 字符 | 末尾预览 ${modules.runtime.escapeHtml(tail)}</div>`;
   }
 
+  function renderFieldHint(input) {
+    const hint = String(input && (input.hint || input.description || "") || "").trim();
+    return hint ? `<span class="field-hint dynamic-field-hint">${modules.runtime.escapeHtml(hint)}</span>` : "";
+  }
+
   function renderAppMeta(app) {
     const runtime = modules.runtime;
     if (!app) return '<div class="workspace-app-placeholder">请先点击右侧切换应用</div>';
@@ -1413,13 +1418,39 @@
   function buildTaskStatusRequest(taskId, payload) {
     const remoteTaskId = String(taskId || "").trim();
     if (isThirdPartyRunPayload(payload)) {
+      const sourceInputs = payload && payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
+      const sourceConfig = payload && payload.config && typeof payload.config === "object" ? payload.config : {};
+      let taskModel = String(
+        payload && (payload.model || payload.selectedModel) ||
+        sourceInputs.model || sourceConfig.selectedModel || ""
+      ).trim();
+      // Older task cards did not persist the selected model. Only infer it
+      // from the active Momo selection when that selection is explicitly MJ.
+      if (!taskModel && String(payload.provider || "").trim() === "gemini" && String(payload.channelId || "").trim() === "momo") {
+        const activeDescriptor = modules.state.getThirdPartyProviderDescriptor();
+        const activeModel = String(activeDescriptor && activeDescriptor.config && activeDescriptor.config.selectedModel || "").trim();
+        if (String(activeDescriptor && activeDescriptor.channelId || "").trim() === "momo" && /^mj_imagine$/i.test(activeModel)) {
+          taskModel = activeModel;
+        }
+      }
+      const statusPayload = {
+        ...payload,
+        taskId: remoteTaskId,
+        config: {
+          ...sourceConfig,
+          apiUrl: sourceConfig.apiUrl || payload.apiUrl || "",
+          apiKey: sourceConfig.apiKey || payload.apiKey || "",
+          channelId: sourceConfig.channelId || payload.channelId || "",
+          selectedModel: sourceConfig.selectedModel || taskModel
+        }
+      };
+      if (taskModel) {
+        statusPayload.model = taskModel;
+        statusPayload.inputs = { ...sourceInputs, model: sourceInputs.model || taskModel };
+      }
       return {
         method: getThirdPartyHostMethod(payload, "fetchTaskStatus"),
-        args: [{
-          ...payload,
-          taskId: remoteTaskId,
-          timeoutMs: 30000
-        }]
+        args: [{ ...statusPayload, timeoutMs: 30000 }]
       };
     }
     return {
@@ -1684,6 +1715,7 @@
           </span>
           <textarea id="${runtime.escapeHtml(fieldId)}" class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
           ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
+          ${renderFieldHint(input)}
         </div>
       `;
     }
@@ -1717,7 +1749,7 @@
         input.allowCustom
           ? `<input class="field-input third-party-custom-input ${selectedValue === "__custom__" ? "" : "is-hidden"}" type="text" data-form-key="${runtime.escapeHtml(customKey)}" value="${runtime.escapeHtml(isCustomSelected ? currentValue : customValue)}" placeholder="${runtime.escapeHtml(input.customPlaceholder || "输入自定义值")}" />`
           : ""
-      }</label>`;
+      }${renderFieldHint(input)}</label>`;
     }
 
     return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
@@ -1899,7 +1931,21 @@
     const state = modules.state.state;
     if (!modules.state.isThirdPartyApp(state.currentApp)) return false;
     const model = String(modelValue || state.formValues.model || "").trim();
+    const selectedMode = String(state.formValues.mode || "relax").trim().toLowerCase() === "fast" ? "fast" : "relax";
     const capabilities = modules.state.getThirdPartyModelCapabilities(model);
+    const currentApp = modules.state.getThirdPartyApp({ model });
+    const currentKeys = (state.currentApp.inputs || []).map((input) => String(input.key || "")).join(",");
+    const nextKeys = (currentApp.inputs || []).map((input) => String(input.key || "")).join(",");
+    if (currentKeys !== nextKeys) {
+      state.currentApp = currentApp;
+      state.formValues = {
+        ...modules.state.buildDefaultFormValues(currentApp),
+        ...state.formValues,
+        model,
+        mode: selectedMode
+      };
+      return true;
+    }
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
     const ratioInput = inputs.find((input) => String(input.key || "") === "aspectRatio");
     const resolutionInput = inputs.find((input) => String(input.key || "") === "resolution");
@@ -1937,6 +1983,7 @@
       provider: String(state.thirdPartySettings && state.thirdPartySettings.provider || "grs"),
       channelId: String(state.thirdPartySettings && state.thirdPartySettings.gemini && state.thirdPartySettings.gemini.channelId || ""),
       model: String(state.formValues.model || "").trim(),
+      mode: String(state.formValues.mode || "").trim(),
       aspectRatio: String(state.formValues.aspectRatio || state.formValues.aspectRatioCustom || "").trim(),
       aspectRatioCustom: String(state.formValues.aspectRatioCustom || "").trim(),
       resolution: String(state.formValues.resolution || "").trim()
@@ -2100,6 +2147,7 @@
       remoteTaskId: String(patch.remoteTaskId || patch.taskId || "").trim(),
       provider: String(patch.provider || "").trim(),
       channelId: String(patch.channelId || "").trim(),
+      model: hasOwn("model") ? String(patch.model || "").trim() : undefined,
       kind: String(patch.kind || "").trim(),
       region: hasOwn("region") ? modules.state.normalizeRunningHubRegion(patch.region) : "",
       apiUrl: hasOwn("apiUrl") ? String(patch.apiUrl || "").trim() : "",
@@ -2147,6 +2195,7 @@
         ...nextTask,
         provider: nextTask.provider || current.provider || "",
         channelId: nextTask.channelId || current.channelId || "",
+        model: nextTask.model || current.model || "",
         kind: nextTask.kind || current.kind || "",
         region: nextTask.region || current.region || "cn",
         apiUrl: nextTask.apiUrl || current.apiUrl || "",
@@ -2412,7 +2461,7 @@
         const statusResult = await modules.runtime.callHost(statusRequest.method, statusRequest.args, { timeoutMs: 35000 });
         const remoteStatus = String((statusResult && statusResult.status) || "").trim().toUpperCase();
 
-        if (statusResult && hasResultReference(statusResult)) {
+        if (statusResult && !statusResult.failed && hasResultReference(statusResult)) {
           await finalizeTrackedTaskSuccess(remoteTaskId, payload, sourceDocument, statusResult);
           return;
         }
@@ -3800,6 +3849,7 @@
       remoteTaskId: "",
       provider: payload.provider || "",
       channelId: payload.channelId || "",
+      model: payload && payload.inputs && payload.inputs.model || payload && payload.config && payload.config.selectedModel || "",
       region: payload.region,
       apiUrl: payload.apiUrl || (payload.config && payload.config.apiUrl) || "",
       apiKey: payload.apiKey,

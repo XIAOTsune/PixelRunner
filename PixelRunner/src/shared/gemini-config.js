@@ -1,5 +1,7 @@
 const DEFAULT_CHANNEL_ID = "aji";
-export const GEMINI_MODEL_CATALOG_VERSION = 2;
+export const GEMINI_MODEL_CATALOG_VERSION = 5;
+
+export const MOMO_MIDJOURNEY_MODEL_ID = "mj_imagine";
 
 const LEGACY_IMAGE_MODEL_IDS = Object.freeze([
   "gemini-2.5-flash-image",
@@ -73,7 +75,8 @@ const MOMO_IMAGE_MODEL_IDS = Object.freeze([
   "[m]gemini-3.1-flash-image-preview",
   "[yu]gemini-3-pro-image-preview",
   "[yu]gemini-3.1-flash-image-preview",
-  "[yu]gemini-3.1-flash-lite-image"
+  "[yu]gemini-3.1-flash-lite-image",
+  MOMO_MIDJOURNEY_MODEL_ID
 ]);
 
 const MOMO_CHAT_MODEL_IDS = Object.freeze([
@@ -103,6 +106,20 @@ export const GEMINI_CHANNEL_MODEL_DEFAULTS = Object.freeze({
   momo: Object.freeze({ imageModels: MOMO_IMAGE_MODEL_IDS, chatModels: MOMO_CHAT_MODEL_IDS })
 });
 
+export const MOMO_SERVICE_ENDPOINTS = Object.freeze([
+  Object.freeze({ url: "https://api.momoapi.icu", label: "国内优化（默认）", description: "默认地址，推荐使用" }),
+  Object.freeze({ url: "https://api1.momoapi.icu", label: "国内优化（备用）", description: "备用地址" }),
+  Object.freeze({ url: "https://api2.momoapi.icu", label: "无国内优化", description: "有代理时优先使用" })
+]);
+
+export const MOMO_DEFAULT_API_URL = "https://api.momoapi.icu";
+
+export function normalizeMomoEndpoint(value) {
+  const input = String(value || "").trim().replace(/\/+$/, "");
+  const match = MOMO_SERVICE_ENDPOINTS.find((ep) => ep.url === input);
+  return match ? match.url : MOMO_DEFAULT_API_URL;
+}
+
 export const GEMINI_CHANNEL_PRESETS = Object.freeze({
   aji: Object.freeze({
     id: "aji",
@@ -113,12 +130,13 @@ export const GEMINI_CHANNEL_PRESETS = Object.freeze({
   momo: Object.freeze({
     id: "momo",
     label: "墨墨 Momo",
-    apiUrl: "https://api.momoapi.icu",
-    keyUrl: "https://api.momoapi.icu"
+    apiUrl: MOMO_DEFAULT_API_URL,
+    keyUrl: MOMO_DEFAULT_API_URL
   })
 });
 
-export const GEMINI_IMAGE_MODEL_IDS = Object.freeze([...new Set([...AJI_IMAGE_MODEL_IDS, ...MOMO_IMAGE_MODEL_IDS])]);
+export const GEMINI_IMAGE_MODEL_IDS = Object.freeze([...new Set([...AJI_IMAGE_MODEL_IDS, ...MOMO_IMAGE_MODEL_IDS])]
+  .filter((model) => !isMomoMidjourneyModel(model)));
 
 export const GEMINI_CHAT_MODEL_IDS = Object.freeze([...new Set([...AJI_CHAT_MODEL_IDS, ...MOMO_CHAT_MODEL_IDS])]);
 
@@ -165,6 +183,10 @@ export function normalizeGeminiModelId(value) {
   return String(value || "").trim().replace(/^models\//i, "");
 }
 
+export function isMomoMidjourneyModel(value) {
+  return normalizeGeminiModelId(value).toLowerCase() === MOMO_MIDJOURNEY_MODEL_ID;
+}
+
 function normalizeStringList(value, fallback = []) {
   const source = Array.isArray(value) ? value : String(value || "").split(",");
   const seen = new Set();
@@ -203,12 +225,22 @@ export const DEFAULT_GEMINI_SETTINGS = Object.freeze({
   })
 });
 
+function normalizeChannelApiUrl(sourceApiUrl, channelId) {
+  if (channelId === "momo") {
+    const stored = String(sourceApiUrl || "").trim().replace(/\/+$/, "");
+    if (stored) return normalizeMomoEndpoint(stored);
+    return MOMO_DEFAULT_API_URL;
+  }
+  return getGeminiChannelPreset(channelId).apiUrl;
+}
+
 function normalizeChannelSettings(value, channelId) {
   const source = value && typeof value === "object" ? value : {};
   const fallback = createDefaultChannelSettings(channelId);
   const shouldUpgradeCatalog = Number(source.modelCatalogVersion || 0) < GEMINI_MODEL_CATALOG_VERSION;
   const storedModel = normalizeGeminiModelId(source.selectedModel);
-  const requestedModel = shouldUpgradeCatalog && LEGACY_IMAGE_MODEL_IDS.includes(storedModel) && !fallback.imageModels.includes(storedModel)
+  const unsupportedChannelModel = channelId !== "momo" && isMomoMidjourneyModel(storedModel);
+  const requestedModel = unsupportedChannelModel || shouldUpgradeCatalog && LEGACY_IMAGE_MODEL_IDS.includes(storedModel) && !fallback.imageModels.includes(storedModel)
     ? fallback.selectedModel
     : (storedModel || fallback.selectedModel);
   const rawImageModels = Array.isArray(source.imageModels || source.models)
@@ -217,7 +249,8 @@ function normalizeChannelSettings(value, channelId) {
   const imageModels = normalizeStringList(
     [
       ...(shouldUpgradeCatalog ? fallback.imageModels : []),
-      ...(rawImageModels.some((item) => String(item || "").trim()) ? rawImageModels : fallback.imageModels),
+      ...(rawImageModels.some((item) => String(item || "").trim()) ? rawImageModels : fallback.imageModels)
+        .filter((item) => channelId === "momo" || !isMomoMidjourneyModel(item)),
       requestedModel
     ],
     fallback.imageModels
@@ -238,7 +271,7 @@ function normalizeChannelSettings(value, channelId) {
   const requestedRatio = String(source.aspectRatio || fallback.aspectRatio).trim();
   const requestedResolution = String(source.resolution || fallback.resolution).trim().toUpperCase();
   return {
-    apiUrl: getGeminiChannelPreset(channelId).apiUrl,
+    apiUrl: normalizeChannelApiUrl(source.apiUrl, channelId),
     apiKey: String(source.apiKey || "").trim(),
     modelCatalogVersion: GEMINI_MODEL_CATALOG_VERSION,
     imageModels,
@@ -433,7 +466,47 @@ export function parseNewApiPricingResponse(value) {
 }
 
 export function isLikelyGeminiImageModel(value) {
-  return /(?:image|banana)/i.test(normalizeGeminiModelId(value));
+  const model = normalizeGeminiModelId(value);
+  return model.toLowerCase() === MOMO_MIDJOURNEY_MODEL_ID || /(?:image|banana)/i.test(model);
+}
+
+export function buildMomoMidjourneyImagineRequest(config = {}) {
+  const body = { prompt: String(config.prompt || "").trim() };
+  const mode = String(config.mode || "").trim().toLowerCase();
+  if (mode === "fast" || mode === "relax") body.mode = mode;
+  const state = String(config.state || "").trim();
+  if (state) body.state = state;
+  return {
+    url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/submit/imagine`,
+    options: {
+      method: "POST",
+      headers: buildGeminiHeaders(config.apiKey),
+      body: JSON.stringify(body)
+    },
+    body
+  };
+}
+
+export function buildMomoMidjourneyTaskRequest(config = {}) {
+  const taskId = encodeURIComponent(String(config.taskId || "").trim());
+  return {
+    url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/task/${taskId}/fetch`,
+    options: {
+      method: "GET",
+      headers: buildGeminiHeaders(config.apiKey)
+    }
+  };
+}
+
+export function buildMomoMidjourneyImageRequest(config = {}) {
+  const taskId = encodeURIComponent(String(config.taskId || "").trim());
+  return {
+    url: `${normalizeGeminiBaseUrl(config.apiUrl, "momo")}/mj/image/${taskId}`,
+    options: {
+      method: "GET",
+      headers: buildGeminiHeaders(config.apiKey)
+    }
+  };
 }
 
 export function isLikelyTextGenerationModel(value) {

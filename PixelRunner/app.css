@@ -5676,6 +5676,14 @@ button {
   color: var(--sun);
 }
 
+.dynamic-field-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .checkbox-line {
   display: inline-flex;
   align-items: center;
