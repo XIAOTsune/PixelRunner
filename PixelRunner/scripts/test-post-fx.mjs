@@ -18,6 +18,8 @@ assert.doesNotMatch(webglSource, /fract\(sin\(dot/, "WebGL grain does not use di
 assert.doesNotMatch(rendererSource, /Math\.(?:sin|cos)/, "CPU grain does not use directional trigonometric warping");
 assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 4000/, "preview capture is capped at 4000px");
 assert.match(webviewSource, /PREVIEW_MAX_SCALE = 24/, "preview zoom supports up to 24x");
+assert.match(webviewSource, /fitMode: "original"/, "full-resolution post FX placement uses native pixel alignment");
+assert.match(webviewSource, /后期结果尺寸不一致/, "post FX application rejects mismatched output dimensions");
 assert.match(webviewSource, /data-post-fx-zoom/, "preview navigation binds zoom controls");
 assert.doesNotMatch(webviewSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not bound");
 assert.doesNotMatch(appSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not rendered");

@@ -586,6 +586,9 @@ import {
         result = { dataUrl: imageDataToDataUrl(imageData), width: imageData.width, height: imageData.height };
       }
       const dataUrl = result.dataUrl;
+      if (Number(result.width) !== Number(fullCapture.width) || Number(result.height) !== Number(fullCapture.height)) {
+        throw new Error(`后期结果尺寸不一致：结果 ${result.width}×${result.height}，来源 ${fullCapture.width}×${fullCapture.height}`);
+      }
       const bounds = getFullBounds(fullCapture, result.width, result.height);
       const label = (getPostFxEffects().find((item) => item.id === params.effectType) || {}).label || "自定义";
       const response = await modules.runtime.callHost("photoshop.placeLicensedPostFxResult", [{
@@ -593,7 +596,10 @@ import {
         targetDocumentId: fullCapture.documentId,
         sourceDocumentId: fullCapture.documentId,
         targetBounds: bounds,
-        fitMode: "stretch",
+        // The result is rendered from a full-resolution document capture. Keep
+        // Photoshop's native pixel placement so the layer cannot be enlarged
+        // or shifted by a second stretch transform.
+        fitMode: "original",
         preserveCanvasBounds: true,
         anchorTransparentCanvas: true,
         applyMask: false,

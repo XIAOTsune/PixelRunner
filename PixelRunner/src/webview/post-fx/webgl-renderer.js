@@ -127,11 +127,13 @@
       float strength = clamp(uEffectAmount * uCrtStrength / 10000.0, 0.0, 1.0);
       float curvature = uCrtCurvature / 100.0 * 0.12;
       vec2 centered = uv * 2.0 - 1.0;
-      float curve = 1.0 + curvature * dot(centered, centered);
-      vec2 rawWarped = vec2(0.5) + centered * curve * 0.5;
-      vec2 warped = clamp(rawWarped, vec2(0.0), vec2(1.0));
-      float outside = max(abs(rawWarped.x * 2.0 - 1.0), abs(rawWarped.y * 2.0 - 1.0)) - 1.0;
-      float screenMask = 1.0 - smoothstep(0.0, 0.08, max(0.0, outside));
+      float aspect = uResolution.x / max(1.0, uResolution.y);
+      vec2 aspectCentered = vec2(centered.x * aspect, centered.y);
+      float radiusSquared = min(1.0, dot(aspectCentered, aspectCentered) / (aspect * aspect + 1.0));
+      // Keep the outermost sample on the source edge. The previous unbounded
+      // warp clipped the corners and made CRT output look zoomed and shifted.
+      float curve = (1.0 + curvature * radiusSquared) / (1.0 + curvature);
+      vec2 warped = clamp(vec2(0.5) + centered * curve * 0.5, vec2(0.0), vec2(1.0));
       vec2 radial = (warped - vec2(0.5)) * 2.0;
       vec2 convergence = radial * (uCrtConvergence / 100.0) * 0.008;
       vec3 color = vec3(
@@ -140,15 +142,16 @@
         texture(uSource, clamp(warped + convergence, vec2(0.0), vec2(1.0))).b
       );
       float luma = luminance(color);
-      float scan = 1.0 - uCrtScanlines / 100.0 * (0.045 + luma * 0.11) * (0.5 + 0.5 * cos((gl_FragCoord.y + 0.5) * 3.14159265));
+      float scanPhase = 0.5 + 0.5 * cos((gl_FragCoord.y + 0.5) * 3.14159265);
+      float scan = 1.0 - uCrtScanlines / 100.0 * (0.035 + luma * 0.13) * scanPhase;
       float grillePhase = mod(floor(gl_FragCoord.x) + mod(floor(gl_FragCoord.y), 2.0), 3.0);
       float grid = uCrtPixelGrid / 100.0 * 0.038;
-      float redMask = grid * (grillePhase < 0.5 ? 1.0 : -0.38);
-      float greenMask = grid * (grillePhase > 0.5 && grillePhase < 1.5 ? 1.0 : -0.28);
-      float blueMask = grid * (grillePhase > 1.5 ? 1.0 : -0.38);
-      float edge = smoothstep(0.56, 0.98, min(1.0, length(centered) / 1.4143));
+      float redMask = grid * (grillePhase < 0.5 ? 1.15 : -0.32);
+      float greenMask = grid * (grillePhase > 0.5 && grillePhase < 1.5 ? 1.05 : -0.24);
+      float blueMask = grid * (grillePhase > 1.5 ? 1.15 : -0.32);
+      float edge = smoothstep(0.56, 0.98, sqrt(radiusSquared));
       float vignette = 1.0 - edge * (0.08 + strength * 0.22);
-      color *= scan * vignette * screenMask;
+      color *= scan * vignette;
       color *= vec3(1.0 + redMask, 1.0 + greenMask, 1.0 + blueMask);
       return mix(base, color, strength);
     }

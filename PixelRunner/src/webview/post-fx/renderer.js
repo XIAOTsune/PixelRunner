@@ -527,33 +527,38 @@ function renderCrt(sourceImageData, params) {
   const convergence = params.crtConvergence / 100 * 0.008 * Math.max(width, height);
   const grid = params.crtPixelGrid / 100 * 0.038;
   const lines = params.crtScanlines / 100;
+  const aspect = width / Math.max(1, height);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      const ux = width > 1 ? x / (width - 1) : 0.5;
-      const uy = height > 1 ? y / (height - 1) : 0.5;
+      // Use pixel-center coordinates so CPU and WebGL paths sample the same
+      // source location and never introduce a half-pixel translation.
+      const ux = (x + 0.5) / width;
+      const uy = (y + 0.5) / height;
       const dx = ux * 2 - 1;
       const dy = uy * 2 - 1;
-      const radius = Math.min(1, Math.sqrt(dx * dx + dy * dy) / 1.4143);
-      const curve = 1 + curvature * (dx * dx + dy * dy);
+      const radialX = dx * aspect;
+      const radiusSquared = Math.min(1, (radialX * radialX + dy * dy) / (aspect * aspect + 1));
+      // Normalize the warp at the outer edge. This preserves the full canvas
+      // bounds instead of cropping/zooming the image as curvature increases.
+      const curve = (1 + curvature * radiusSquared) / (1 + curvature);
       const warpedX = 0.5 + dx * curve * 0.5;
       const warpedY = 0.5 + dy * curve * 0.5;
-      const outside = Math.max(Math.abs(warpedX * 2 - 1), Math.abs(warpedY * 2 - 1)) - 1;
-      const screenMask = 1 - smoothstep(0, 0.08, Math.max(0, outside));
-      const radialX = (warpedX - 0.5) * 2;
-      const radialY = (warpedY - 0.5) * 2;
-      const red = sampleRgb(source, width, height, warpedX * (width - 1) - radialX * convergence, warpedY * (height - 1) - radialY * convergence, 0);
-      const green = sampleRgb(source, width, height, warpedX * (width - 1), warpedY * (height - 1), 1);
-      const blue = sampleRgb(source, width, height, warpedX * (width - 1) + radialX * convergence, warpedY * (height - 1) + radialY * convergence, 2);
+      const warpedRadialX = (warpedX - 0.5) * 2;
+      const warpedRadialY = (warpedY - 0.5) * 2;
+      const red = sampleRgb(source, width, height, warpedX * width - 0.5 - warpedRadialX * convergence, warpedY * height - 0.5 - warpedRadialY * convergence, 0);
+      const green = sampleRgb(source, width, height, warpedX * width - 0.5, warpedY * height - 0.5, 1);
+      const blue = sampleRgb(source, width, height, warpedX * width - 0.5 + warpedRadialX * convergence, warpedY * height - 0.5 + warpedRadialY * convergence, 2);
       const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
-      const scan = 1 - lines * (0.045 + luma * 0.11) * (0.5 + 0.5 * cosApprox((y + 0.5) * Math.PI));
+      const scanPhase = 0.5 + 0.5 * cosApprox((y + 0.5) * Math.PI);
+      const scan = 1 - lines * (0.035 + luma * 0.13) * scanPhase;
       const grillePhase = (((x + (y & 1)) % 3) + 3) % 3;
-      const redMask = grid * (grillePhase === 0 ? 1 : -0.38);
-      const greenMask = grid * (grillePhase === 1 ? 1 : -0.28);
-      const blueMask = grid * (grillePhase === 2 ? 1 : -0.38);
-      const edge = smoothstep(0.56, 0.98, radius);
-      const vignette = 1 - edge * (0.08 + strength * 0.22);
-      const phosphor = scan * vignette * screenMask;
+      const redMask = grid * (grillePhase === 0 ? 1.15 : -0.32);
+      const greenMask = grid * (grillePhase === 1 ? 1.05 : -0.24);
+      const blueMask = grid * (grillePhase === 2 ? 1.15 : -0.32);
+      const radius = Math.min(1, Math.sqrt(radiusSquared));
+      const vignette = 1 - smoothstep(0.56, 0.98, radius) * (0.08 + strength * 0.22);
+      const phosphor = scan * vignette;
       const effect = [red * phosphor * (1 + redMask), green * phosphor * (1 + greenMask), blue * phosphor * (1 + blueMask)];
       const base = [source[index] / 255, source[index + 1] / 255, source[index + 2] / 255];
       const color = blendColor(base, effect, strength);
