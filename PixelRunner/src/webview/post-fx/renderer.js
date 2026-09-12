@@ -10,7 +10,7 @@ const DEFAULT_FILM_PARAMS = Object.freeze({
   halation: 24,
   halationThreshold: 68,
   halationRadius: 14,
-  grain: 16,
+  grain: 28,
   grainSize: 2,
   grainColor: 18,
   vignette: 12,
@@ -36,7 +36,7 @@ const PRESETS = Object.freeze({
     halation: 24,
     halationThreshold: 68,
     halationRadius: 14,
-    grain: 16,
+    grain: 28,
     grainSize: 2,
     grainColor: 18,
     vignette: 12,
@@ -56,7 +56,7 @@ const PRESETS = Object.freeze({
     halation: 34,
     halationThreshold: 61,
     halationRadius: 18,
-    grain: 22,
+    grain: 34,
     grainSize: 2,
     grainColor: 24,
     vignette: 16,
@@ -76,7 +76,7 @@ const PRESETS = Object.freeze({
     halation: 14,
     halationThreshold: 72,
     halationRadius: 12,
-    grain: 12,
+    grain: 20,
     grainSize: 2,
     grainColor: 12,
     vignette: 8,
@@ -337,7 +337,10 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
     }
   }
 
-  const grainStrength = params.grain / 100 * amount * 0.13;
+  // Film grain needs enough amplitude to survive 8-bit quantization and the
+  // Photoshop placement/readback path. Tone weighting keeps highlights clean
+  // while giving shadows the denser grain seen in real negative film.
+  const grainStrength = params.grain / 100 * amount * 0.22;
   const grainSize = Math.max(1, Math.round(params.grainSize));
   const colorGrain = params.grainColor / 100;
   const vignetteStrength = params.vignette / 100 * amount * 0.72;
@@ -528,6 +531,10 @@ function renderCrt(sourceImageData, params) {
   const grid = params.crtPixelGrid / 100 * 0.038;
   const lines = params.crtScanlines / 100;
   const aspect = width / Math.max(1, height);
+  // Scanline density is defined as a fraction of the image height, rather
+  // than a fixed physical-pixel period. This keeps CRT character consistent
+  // when the same effect is applied to a 1080px or 6000px image.
+  const scanlineCount = 18 + lines * 142;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
@@ -550,7 +557,7 @@ function renderCrt(sourceImageData, params) {
       const green = sampleRgb(source, width, height, warpedX * width - 0.5, warpedY * height - 0.5, 1);
       const blue = sampleRgb(source, width, height, warpedX * width - 0.5 + warpedRadialX * convergence, warpedY * height - 0.5 + warpedRadialY * convergence, 2);
       const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
-      const scanPhase = 0.5 + 0.5 * cosApprox((y + 0.5) * Math.PI);
+      const scanPhase = 0.5 + 0.5 * cosApprox(((y + 0.5) / height) * scanlineCount * Math.PI * 2);
       const scan = 1 - lines * (0.035 + luma * 0.13) * scanPhase;
       const grillePhase = (((x + (y & 1)) % 3) + 3) % 3;
       const redMask = grid * (grillePhase === 0 ? 1.15 : -0.32);

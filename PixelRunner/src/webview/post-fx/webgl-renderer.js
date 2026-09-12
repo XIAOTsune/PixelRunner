@@ -142,7 +142,10 @@
         texture(uSource, clamp(warped + convergence, vec2(0.0), vec2(1.0))).b
       );
       float luma = luminance(color);
-      float scanPhase = 0.5 + 0.5 * cos((gl_FragCoord.y + 0.5) * 3.14159265);
+      // Use normalized screen height so scanline density scales with the
+      // rendered image instead of staying locked to two physical pixels.
+      float scanlineCount = 18.0 + (uCrtScanlines / 100.0) * 142.0;
+      float scanPhase = 0.5 + 0.5 * cos(((gl_FragCoord.y - 0.5) / max(1.0, uResolution.y)) * scanlineCount * 6.2831853);
       float scan = 1.0 - uCrtScanlines / 100.0 * (0.035 + luma * 0.13) * scanPhase;
       float grillePhase = mod(floor(gl_FragCoord.x) + mod(floor(gl_FragCoord.y), 2.0), 3.0);
       float grid = uCrtPixelGrid / 100.0 * 0.038;
@@ -324,7 +327,7 @@
         outputColor += halo * vec3(1.1, 0.3, 0.08) * strength;
       }
 
-      float grainStrength = filmEnabled * uGrain / 100.0 * uAmount / 100.0 * 0.13;
+      float grainStrength = filmEnabled * uGrain / 100.0 * uAmount / 100.0 * 0.22;
       if (grainStrength > 0.0) {
         vec2 fragmentPoint = vec2(gl_FragCoord.x - 0.5, uResolution.y - gl_FragCoord.y - 0.5) + uOrigin;
         float mono = grainNoise(floor(fragmentPoint), uGrainSize, uSeed) - 0.5;
@@ -352,6 +355,10 @@
   `;
 
   const FULLSCREEN_TRIANGLE = new Float32Array([-1, -1, 3, -1, -1, 3]);
+  // Large canvases can pass MAX_TEXTURE_SIZE yet still be clipped by the
+  // browser's total framebuffer/bitmap allocation limit. Fall back to CPU
+  // before that silent truncation can reach Photoshop.
+  const MAX_RENDER_PIXELS = 12000000;
 
   function compileShader(gl, type, source) {
     const shader = gl.createShader(type);
@@ -445,7 +452,11 @@
           ? modules.glowGpuCapabilities.getReport()
           : null;
         const maxTextureSize = Number(report && report.maxTextureSize) || Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 0;
-        return Boolean(maxTextureSize > 0 && width > 0 && height > 0 && width <= maxTextureSize && height <= maxTextureSize);
+        return Boolean(
+          maxTextureSize > 0 && width > 0 && height > 0 &&
+          width <= maxTextureSize && height <= maxTextureSize &&
+          width * height <= MAX_RENDER_PIXELS
+        );
       } catch (_) {
         return false;
       }

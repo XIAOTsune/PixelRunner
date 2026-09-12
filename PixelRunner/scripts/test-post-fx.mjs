@@ -10,6 +10,9 @@ const styleSource = await readFile(new URL("../app.css", import.meta.url), "utf8
 assert.match(webglSource, /getContext\("webgl2"/, "post FX exposes a WebGL2 renderer");
 assert.match(webglSource, /returnDataUrl === false/, "preview rendering can avoid PNG encode/readback");
 assert.match(webglSource, /grainNoise/, "WebGL grain uses mixed pixel noise");
+assert.match(webglSource, /MAX_RENDER_PIXELS = 12000000/, "WebGL avoids oversized framebuffer truncation");
+assert.match(webglSource, /scanlineCount = 18\.0/, "WebGL CRT scanlines scale with normalized image height");
+assert.match(rendererSource, /scanlineCount = 18 \+ lines \* 142/, "CPU CRT scanlines scale with normalized image height");
 assert.match(webglSource, /valueNoise/, "WebGL directional effects use continuous value noise");
 assert.match(webglSource, /nearestDistance/, "WebGL shatter uses irregular nearest-site fragments");
 assert.match(rendererSource, /function shatterSite/, "CPU shatter precomputes deterministic fragment sites");
@@ -18,8 +21,10 @@ assert.doesNotMatch(webglSource, /fract\(sin\(dot/, "WebGL grain does not use di
 assert.doesNotMatch(rendererSource, /Math\.(?:sin|cos)/, "CPU grain does not use directional trigonometric warping");
 assert.match(webviewSource, /PREVIEW_CAPTURE_MAX_DIMENSION = 4000/, "preview capture is capped at 4000px");
 assert.match(webviewSource, /PREVIEW_MAX_SCALE = 24/, "preview zoom supports up to 24x");
-assert.match(webviewSource, /fitMode: "original"/, "full-resolution post FX placement uses native pixel alignment");
+assert.match(webviewSource, /fitMode: "stretch"/, "full-resolution post FX placement uses exact document bounds");
+assert.match(webviewSource, /preferTransformBounds: false/, "post FX placement ignores visible smart-object transform bounds");
 assert.match(webviewSource, /后期结果尺寸不一致/, "post FX application rejects mismatched output dimensions");
+assert.match(webviewSource, /原始捕获尺寸不完整/, "post FX application rejects incomplete high-resolution captures");
 assert.match(webviewSource, /data-post-fx-zoom/, "preview navigation binds zoom controls");
 assert.doesNotMatch(webviewSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not bound");
 assert.doesNotMatch(appSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not rendered");

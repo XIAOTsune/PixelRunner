@@ -1557,7 +1557,7 @@ async function alignPlacedLayerToBounds(doc, action, targetBounds, options = {})
       }
 
       const nextLayer = doc && doc.activeLayers && doc.activeLayers[0];
-      const nextTransformBounds = options.preferTransformBounds ? await getActivePlacedLayerTransformBounds(action) : null;
+      const nextTransformBounds = options.preferTransformBounds === true ? await getActivePlacedLayerTransformBounds(action) : null;
       const nextBounds = nextTransformBounds || parseLayerBounds(nextLayer && nextLayer.bounds);
       if (!nextLayer || !nextBounds) return;
 
@@ -1613,7 +1613,7 @@ async function alignPlacedLayerToBounds(doc, action, targetBounds, options = {})
   }
 
   const nextLayer = doc && doc.activeLayers && doc.activeLayers[0];
-  const nextTransformBounds = options.preferTransformBounds ? await getActivePlacedLayerTransformBounds(action) : null;
+  const nextTransformBounds = options.preferTransformBounds === true ? await getActivePlacedLayerTransformBounds(action) : null;
   const nextBounds = nextTransformBounds || parseLayerBounds(nextLayer && nextLayer.bounds);
   if (!nextLayer || !nextBounds) return;
 
@@ -1838,6 +1838,11 @@ async function captureDocumentPreviewInternal(options = {}) {
             componentSize: 8,
             applyAlpha: true
           });
+          const actualWidth = Math.max(1, Number(pixels && pixels.imageData && pixels.imageData.width) || 0);
+          const actualHeight = Math.max(1, Number(pixels && pixels.imageData && pixels.imageData.height) || 0);
+          if (options.fullResolution === true && (actualWidth !== targetSize.width || actualHeight !== targetSize.height)) {
+            throw new Error(`Photoshop 返回的原始像素不完整：${actualWidth}×${actualHeight}，期望 ${targetSize.width}×${targetSize.height}`);
+          }
 
           const encodeOptions = {
             imageData: pixels.imageData,
@@ -1848,6 +1853,8 @@ async function captureDocumentPreviewInternal(options = {}) {
           const encoded = await imaging.encodeImageData(encodeOptions);
           base64 = extractEncodedBase64(encoded);
           if (captureFormat === "png") previewQuality = 0;
+          previewWidth = actualWidth;
+          previewHeight = actualHeight;
         }
         if (!base64) throw new Error("Photoshop returned an empty capture payload");
         const result = {
@@ -2365,7 +2372,7 @@ export async function placeImageFromUrl(payload, runtime = {}) {
         mode: placementMode,
         imageSize: pngInfo,
         applyMask: applyMask && !selectionSnapshotChannelName && !placementMaskSessionToken,
-        preferTransformBounds: isTransparentPngResult
+        preferTransformBounds: options.preferTransformBounds === false ? false : isTransparentPngResult
       });
       if (applyMask && !selectionSnapshotChannelName && !placementMaskSessionToken) appliedMaskMode = "bounds";
     }

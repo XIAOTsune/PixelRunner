@@ -565,6 +565,7 @@ import {
     try {
       const fullCapture = await captureFullResolution();
       const fullImage = await loadImage(fullCapture.dataUrl);
+      const expectedBounds = getFullBounds(fullCapture);
       const params = readParams();
       setStatus("正在按预览参数处理原始尺寸图像...", "info");
       let result = null;
@@ -572,6 +573,11 @@ import {
       const gpuRenderer = modules.postFxWebglRenderer;
       const sourceWidth = Number(fullImage.naturalWidth || fullImage.width) || 0;
       const sourceHeight = Number(fullImage.naturalHeight || fullImage.height) || 0;
+      const expectedWidth = Math.max(1, Math.round(expectedBounds.right - expectedBounds.left));
+      const expectedHeight = Math.max(1, Math.round(expectedBounds.bottom - expectedBounds.top));
+      if (sourceWidth !== expectedWidth || sourceHeight !== expectedHeight) {
+        throw new Error(`原始捕获尺寸不完整：${sourceWidth}×${sourceHeight}，文档应为 ${expectedWidth}×${expectedHeight}。请降低图像尺寸或重新捕获`);
+      }
       if (gpuRenderer && gpuRenderer.canRender(sourceWidth, sourceHeight)) {
         try {
           result = gpuRenderer.renderImage(fullImage, params);
@@ -596,12 +602,13 @@ import {
         targetDocumentId: fullCapture.documentId,
         sourceDocumentId: fullCapture.documentId,
         targetBounds: bounds,
-        // The result is rendered from a full-resolution document capture. Keep
-        // Photoshop's native pixel placement so the layer cannot be enlarged
-        // or shifted by a second stretch transform.
-        fitMode: "original",
+        // The result and capture share the complete document canvas. Stretch
+        // against those exact bounds so transparent content cannot make
+        // Photoshop treat the visible subject bounds as the image canvas.
+        fitMode: "stretch",
         preserveCanvasBounds: true,
         anchorTransparentCanvas: true,
+        preferTransformBounds: false,
         applyMask: false,
         opacity: 100,
         blendMode: "normal",
