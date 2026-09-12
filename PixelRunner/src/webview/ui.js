@@ -1490,6 +1490,7 @@
     const toolConfigs = [
       { id: "btnObserver", payload: { action: "observerLayer", layerName: "黑白观察层" }, pending: "正在创建黑白观察层...", success: (result) => (result && result.message ? result.message : "已创建黑白观察层") },
       { id: "btnNeutralGray", payload: { action: "neutralGrayLayer" }, pending: "正在创建中性灰图层...", success: (result) => (result && result.message ? result.message : "已创建中性灰图层") },
+      { id: "btnSaturationObserver", payload: { action: "saturationObserverLayer", layerName: "饱和度观察层" }, pending: "正在创建饱和度观察层...", success: (result) => (result && result.message ? result.message : "已创建饱和度观察层") },
       { id: "btnFreqSep", openModal: openFreqSepModal },
       { id: "btnGaussianBlur", payload: { action: "gaussianBlur", radius: 4 }, pending: "正在打开高斯模糊...", success: (result) => (result && result.message ? result.message : "已打开高斯模糊") },
       { id: "btnSharpen", payload: { action: "sharpen" }, pending: "正在打开锐化...", success: (result) => (result && result.message ? result.message : "已打开锐化") },

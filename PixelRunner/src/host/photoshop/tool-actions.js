@@ -1537,6 +1537,43 @@ async function runModalToolAction(actionName, payload, app, document, action, co
         layerName: String((activeLayer && activeLayer.name) || payload.layerName || "Black & White Observer")
       });
     }
+    case "saturationObserverLayer": {
+      const layerName = String(payload.layerName || "Saturation Observer Layer");
+      const result = await action.batchPlay([
+        {
+          _obj: "make",
+          _target: [{ _ref: "adjustmentLayer" }],
+          using: {
+            _obj: "adjustmentLayer",
+            name: layerName,
+            type: { _obj: "hueSaturation" }
+          }
+        },
+        {
+          _obj: "set",
+          _target: [{ _ref: "adjustmentLayer", _enum: "ordinal", _value: "targetEnum" }],
+          to: {
+            _obj: "hueSaturation",
+            presetKind: {
+              _enum: "presetKindType",
+              _value: "presetKindCustom"
+            },
+            colorize: false,
+            adjustment: [{
+              _obj: "hueSatAdjustmentV2",
+              hue: 0,
+              saturation: -100,
+              lightness: 0
+            }]
+          }
+        }
+      ], {});
+      const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      return buildToolCommandResponse(actionName, app, "Created saturation observer layer.", {
+        result,
+        layerName: String((activeLayer && activeLayer.name) || layerName)
+      });
+    }
     case "neutralGrayLayer": {
       const layer = await document.createLayer({
         name: "Neutral Gray Layer",
