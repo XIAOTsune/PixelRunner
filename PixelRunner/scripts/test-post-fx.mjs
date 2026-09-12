@@ -10,6 +10,9 @@ const styleSource = await readFile(new URL("../app.css", import.meta.url), "utf8
 assert.match(webglSource, /getContext\("webgl2"/, "post FX exposes a WebGL2 renderer");
 assert.match(webglSource, /returnDataUrl === false/, "preview rendering can avoid PNG encode/readback");
 assert.match(webglSource, /grainNoise/, "WebGL grain uses mixed pixel noise");
+assert.match(webglSource, /valueNoise/, "WebGL directional effects use continuous value noise");
+assert.match(webglSource, /nearestDistance/, "WebGL shatter uses irregular nearest-site fragments");
+assert.match(rendererSource, /function shatterSite/, "CPU shatter precomputes deterministic fragment sites");
 assert.match(webglSource, /uvec2/, "WebGL grain uses an integer hash");
 assert.doesNotMatch(webglSource, /fract\(sin\(dot/, "WebGL grain does not use directionally correlated sine hashing");
 assert.doesNotMatch(rendererSource, /Math\.(?:sin|cos)/, "CPU grain does not use directional trigonometric warping");
@@ -20,6 +23,9 @@ assert.doesNotMatch(webviewSource, /postFxExposureInput|postFxContrastInput|post
 assert.doesNotMatch(appSource, /postFxExposureInput|postFxContrastInput|postFxSaturationInput|postFxWarmthInput|postFxShadowLiftInput|postFxHighlightRollOffInput/, "duplicate Photoshop tone controls are not rendered");
 assert.match(appSource, /id="postFxPresetDescription"/, "preset descriptions are visible in the panel");
 assert.match(appSource, /id="postFxDispersionHighlightsInput" type="checkbox"\s*\/>/, "highlight-only dispersion defaults off");
+assert.match(appSource, /id="postFxCrtConvergenceInput"/, "CRT convergence has a dedicated control");
+assert.match(webviewSource, /crtConvergence: value\("postFxCrtConvergenceInput"/, "UI reads CRT convergence changes");
+assert.match(webviewSource, /shatterCracks: value\("postFxShatterCracksInput"/, "UI reads shatter crack changes");
 assert.match(appSource, /最长边 4000px/, "the panel explains the 4000px preview");
 assert.match(styleSource, /\.tool-post-fx-card[\s\S]*?background: var\(--workspace-card-background\)/, "post FX entry uses the shared surface color configuration");
 
@@ -80,6 +86,18 @@ for (const effectType of ["crt", "pixelate", "wind", "shatter"]) {
 const windHorizontal = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "wind", filmFinish: false, windDirection: 0, windLength: 90 });
 const windVertical = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "wind", filmFinish: false, windDirection: 90, windLength: 90 });
 assert.notDeepEqual(Array.from(windHorizontal.data), Array.from(windVertical.data), "wind direction changes the drag field");
+const crtFlat = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "crt", filmFinish: false, crtCurvature: 0, crtConvergence: 0 });
+const crtCurved = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "crt", filmFinish: false, crtCurvature: 100, crtConvergence: 100 });
+assert.notDeepEqual(Array.from(crtFlat.data), Array.from(crtCurved.data), "CRT curvature and convergence affect the image");
+const pixelNoDither = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "pixelate", filmFinish: false, pixelBlockSize: 4, pixelLevels: 4, pixelDither: 0 });
+const pixelDithered = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "pixelate", filmFinish: false, pixelBlockSize: 4, pixelLevels: 4, pixelDither: 100 });
+assert.notDeepEqual(Array.from(pixelNoDither.data), Array.from(pixelDithered.data), "pixel dithering changes quantization thresholds");
+const windSmooth = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "wind", filmFinish: false, windLength: 90, windBreakup: 0 });
+const windBroken = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "wind", filmFinish: false, windLength: 90, windBreakup: 100 });
+assert.notDeepEqual(Array.from(windSmooth.data), Array.from(windBroken.data), "wind breakup changes the directional drag weighting");
+const shatterSoft = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "shatter", filmFinish: false, shatterCracks: 0, seed: 9 });
+const shatterCracked = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "shatter", filmFinish: false, shatterCracks: 100, seed: 9 });
+assert.notDeepEqual(Array.from(shatterSoft.data), Array.from(shatterCracked.data), "shatter crack strength changes fragment boundaries");
 const pixelGrid = renderPostFxImageData(source, { ...POST_FX_DEFAULTS, effectType: "pixelate", filmFinish: false, pixelBlockSize: 4, pixelDither: 0, pixelEdgePreserve: 0, pixelLevels: 2 });
 assert.equal(pixelGrid.data[0], pixelGrid.data[4], "pixelation keeps adjacent pixels in a stable block grid");
 

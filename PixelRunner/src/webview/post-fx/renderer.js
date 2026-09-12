@@ -496,36 +496,65 @@ function directionVector(degrees) {
   return [cosApprox(radians), sinApprox(radians)];
 }
 
+function valueNoise2d(x, y, seed) {
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const tx = smoothstep(0, 1, x - x0);
+  const ty = smoothstep(0, 1, y - y0);
+  const top = lerp(hashNoise(x0, y0, seed), hashNoise(x0 + 1, y0, seed), tx);
+  const bottom = lerp(hashNoise(x0, y0 + 1, seed), hashNoise(x0 + 1, y0 + 1, seed), tx);
+  return lerp(top, bottom, ty);
+}
+
+function shatterSite(cellX, cellY, size, seed) {
+  const jitterX = (hashNoise(cellX, cellY, seed + 73) - 0.5) * 0.62;
+  const jitterY = (hashNoise(cellX, cellY, seed + 89) - 0.5) * 0.62;
+  return {
+    x: (cellX + 0.5 + jitterX) * size,
+    y: (cellY + 0.5 + jitterY) * size,
+    angle: (hashNoise(cellX, cellY, seed + 101) - 0.5) * 0.45,
+    scatter: hashNoise(cellX, cellY, seed + 149),
+    cross: hashNoise(cellX, cellY, seed + 191) - 0.5
+  };
+}
+
 function renderCrt(sourceImageData, params) {
   const { width, height } = getDimensions(sourceImageData);
   const source = sourceImageData.data;
   const output = new Uint8ClampedArray(source);
   const strength = params.effectAmount / 100 * params.crtStrength / 100;
-  const curvature = params.crtCurvature / 100 * 0.18;
-  const convergence = params.crtConvergence / 100 * 0.012 * Math.max(width, height);
-  const grid = params.crtPixelGrid / 100;
+  const curvature = params.crtCurvature / 100 * 0.12;
+  const convergence = params.crtConvergence / 100 * 0.008 * Math.max(width, height);
+  const grid = params.crtPixelGrid / 100 * 0.038;
   const lines = params.crtScanlines / 100;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      let ux = width > 1 ? x / (width - 1) : 0.5;
-      let uy = height > 1 ? y / (height - 1) : 0.5;
+      const ux = width > 1 ? x / (width - 1) : 0.5;
+      const uy = height > 1 ? y / (height - 1) : 0.5;
       const dx = ux * 2 - 1;
       const dy = uy * 2 - 1;
+      const radius = Math.min(1, Math.sqrt(dx * dx + dy * dy) / 1.4143);
       const curve = 1 + curvature * (dx * dx + dy * dy);
-      ux = 0.5 + dx * curve * 0.5;
-      uy = 0.5 + dy * curve * 0.5;
-      const radialX = (ux - 0.5) * 2;
-      const radialY = (uy - 0.5) * 2;
-      const red = sampleRgb(source, width, height, ux * (width - 1) - radialX * convergence, uy * (height - 1) - radialY * convergence, 0);
-      const green = sampleRgb(source, width, height, ux * (width - 1), uy * (height - 1), 1);
-      const blue = sampleRgb(source, width, height, ux * (width - 1) + radialX * convergence, uy * (height - 1) + radialY * convergence, 2);
-      const grillePhase = Math.floor(x * (3 + grid * 3)) % 3;
-      const grille = grid * 0.12 * (grillePhase === 0 ? 1.06 : grillePhase === 1 ? 0.94 : 0.9);
-      const scan = 1 - lines * 0.2 * (0.5 + 0.5 * cosApprox((y + 0.5) * Math.PI));
-      const edge = smoothstep(0.58, 1, Math.min(1, Math.sqrt(dx * dx + dy * dy) / 1.4143));
-      const vignette = 1 - edge * strength * 0.28;
-      const effect = [red * scan * vignette * (1 + grille), green * scan * vignette, blue * scan * vignette * (1 - grille * 0.7)];
+      const warpedX = 0.5 + dx * curve * 0.5;
+      const warpedY = 0.5 + dy * curve * 0.5;
+      const outside = Math.max(Math.abs(warpedX * 2 - 1), Math.abs(warpedY * 2 - 1)) - 1;
+      const screenMask = 1 - smoothstep(0, 0.08, Math.max(0, outside));
+      const radialX = (warpedX - 0.5) * 2;
+      const radialY = (warpedY - 0.5) * 2;
+      const red = sampleRgb(source, width, height, warpedX * (width - 1) - radialX * convergence, warpedY * (height - 1) - radialY * convergence, 0);
+      const green = sampleRgb(source, width, height, warpedX * (width - 1), warpedY * (height - 1), 1);
+      const blue = sampleRgb(source, width, height, warpedX * (width - 1) + radialX * convergence, warpedY * (height - 1) + radialY * convergence, 2);
+      const luma = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+      const scan = 1 - lines * (0.045 + luma * 0.11) * (0.5 + 0.5 * cosApprox((y + 0.5) * Math.PI));
+      const grillePhase = (((x + (y & 1)) % 3) + 3) % 3;
+      const redMask = grid * (grillePhase === 0 ? 1 : -0.38);
+      const greenMask = grid * (grillePhase === 1 ? 1 : -0.28);
+      const blueMask = grid * (grillePhase === 2 ? 1 : -0.38);
+      const edge = smoothstep(0.56, 0.98, radius);
+      const vignette = 1 - edge * (0.08 + strength * 0.22);
+      const phosphor = scan * vignette * screenMask;
+      const effect = [red * phosphor * (1 + redMask), green * phosphor * (1 + greenMask), blue * phosphor * (1 + blueMask)];
       const base = [source[index] / 255, source[index + 1] / 255, source[index + 2] / 255];
       const color = blendColor(base, effect, strength);
       output[index] = Math.round(clamp(color[0], 0, 1, 0) * 255);
@@ -548,13 +577,22 @@ function renderPixelate(sourceImageData, params) {
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      const cellX = Math.floor(x / block) * block + Math.min(block - 1, Math.floor(block * 0.5));
-      const cellY = Math.floor(y / block) * block + Math.min(block - 1, Math.floor(block * 0.5));
+      const blockX = Math.floor(x / block);
+      const blockY = Math.floor(y / block);
+      const cellX = blockX * block + Math.floor((block - 1) * 0.5);
+      const cellY = blockY * block + Math.floor((block - 1) * 0.5);
       const color = sampleColor(source, width, height, cellX, cellY);
-      const threshold = (BAYER_4[(y % 4) * 4 + (x % 4)] / 16 - 0.5) * (params.pixelDither / 100) / levels;
+      const threshold = (BAYER_4[(blockY % 4) * 4 + (blockX % 4)] / 16 - 0.5) * (params.pixelDither / 100) / levels;
       const quantized = color.map((value) => clamp(Math.round((value + threshold) * (levels - 1)) / (levels - 1), 0, 1, value));
-      const edge = params.pixelEdgePreserve / 100 * smoothstep(0.04, 0.28, Math.abs(sampleRgb(source, width, height, x + 1, y, 0) - sampleRgb(source, width, height, x - 1, y, 0)) + Math.abs(sampleRgb(source, width, height, x, y + 1, 1) - sampleRgb(source, width, height, x, y - 1, 1)));
-      const colorOut = blendColor([source[index] / 255, source[index + 1] / 255, source[index + 2] / 255], quantized, amount * (1 - edge));
+      const lumaAt = (sx, sy) => {
+        const r = sampleRgb(source, width, height, sx, sy, 0);
+        const g = sampleRgb(source, width, height, sx, sy, 1);
+        const b = sampleRgb(source, width, height, sx, sy, 2);
+        return r * 0.2126 + g * 0.7152 + b * 0.0722;
+      };
+      const edgeGradient = Math.abs(lumaAt(x + 1, y) - lumaAt(x - 1, y)) + Math.abs(lumaAt(x, y + 1) - lumaAt(x, y - 1));
+      const preserve = params.pixelEdgePreserve / 100 * smoothstep(0.035, 0.24, edgeGradient);
+      const colorOut = blendColor([source[index] / 255, source[index + 1] / 255, source[index + 2] / 255], quantized, amount * (1 - preserve));
       output[index] = Math.round(colorOut[0] * 255);
       output[index + 1] = Math.round(colorOut[1] * 255);
       output[index + 2] = Math.round(colorOut[2] * 255);
@@ -569,30 +607,41 @@ function renderWind(sourceImageData, params) {
   const output = new Uint8ClampedArray(source);
   const [dx, dy] = directionVector(params.windDirection);
   const maxDimension = Math.max(width, height);
-  const length = params.windLength / 100 * maxDimension * 0.16;
+  const length = params.windLength / 100 * maxDimension * 0.14;
   const amount = params.effectAmount / 100;
   const breakup = params.windBreakup / 100;
+  const noiseScale = Math.max(3, length * 0.22);
+  const tapCount = width * height > 2000000 ? 3 : 9;
+  const tapFractions = new Float32Array(tapCount);
+  for (let tap = 0; tap < tapFractions.length; tap += 1) {
+    const t = tap / Math.max(1, tapFractions.length - 1);
+    tapFractions[tap] = clamp(t + (valueNoise2d(t * 2, 0, 9137) - 0.5) * 0.18, 0, 1, t);
+  }
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      const nx = width > 1 ? x / (width - 1) * 2 - 1 : 0;
-      const ny = height > 1 ? y / (height - 1) * 2 - 1 : 0;
-      const edgeDistance = Math.min(1, 1 - Math.max(Math.abs(nx), Math.abs(ny)));
-      const edgeGate = lerp(1, edgeDistance * 2, params.windEdgeProtect / 100);
+      const ux = width > 1 ? x / (width - 1) : 0.5;
+      const uy = height > 1 ? y / (height - 1) : 0.5;
+      const edgeDistance = Math.min(1, Math.min(Math.min(ux, 1 - ux), Math.min(uy, 1 - uy)) * 2);
+      const edgeGate = lerp(1, 0.35 + 0.65 * smoothstep(0.02, 0.34, edgeDistance), params.windEdgeProtect / 100);
       let sum = [0, 0, 0];
       let weightSum = 0;
-      for (let tap = 0; tap < 6; tap += 1) {
-        const distance = tap / 5 * length;
-        const cell = hashNoise(Math.floor((x - dx * distance) / Math.max(2, length * 0.35)), Math.floor((y - dy * distance) / Math.max(2, length * 0.35)), 9173);
-        const continuity = lerp(1, cell > 0.5 ? 1 : 0.22, breakup);
-        const weight = (1 - tap / 7) * continuity;
-        const color = sampleColor(source, width, height, x - dx * distance, y - dy * distance);
+      for (let tap = 0; tap < tapCount; tap += 1) {
+        const jitteredT = tapFractions[tap];
+        const distance = jitteredT * length;
+        const sampleX = x - dx * distance;
+        const sampleY = y - dy * distance;
+        const inside = sampleX >= 0 && sampleX <= width - 1 && sampleY >= 0 && sampleY <= height - 1 ? 1 : 0;
+        const noise = valueNoise2d(sampleX / noiseScale, sampleY / noiseScale, 9173);
+        const continuity = lerp(1, smoothstep(0.18, 0.82, noise), breakup);
+        const weight = (0.14 + 0.86 * Math.pow(1 - jitteredT, 1.55)) * continuity * inside;
+        const color = sampleColor(source, width, height, sampleX, sampleY);
         sum[0] += color[0] * weight;
         sum[1] += color[1] * weight;
         sum[2] += color[2] * weight;
         weightSum += weight;
       }
-      const dragged = sum.map((value) => value / Math.max(0.0001, weightSum));
+      const dragged = weightSum > 0.0001 ? sum.map((value) => value / weightSum) : [source[index] / 255, source[index + 1] / 255, source[index + 2] / 255];
       const base = [source[index] / 255, source[index + 1] / 255, source[index + 2] / 255];
       const color = blendColor(base, dragged, amount * edgeGate);
       output[index] = Math.round(color[0] * 255);
@@ -609,43 +658,69 @@ function renderShatter(sourceImageData, params) {
   const output = new Uint8ClampedArray(source);
   const size = Math.max(8, params.shatterFragmentSize);
   const [dx, dy] = directionVector(params.shatterDirection);
-  const scatter = params.shatterScatter / 100 * size * 0.75;
+  const perpendicularX = -dy;
+  const perpendicularY = dx;
+  const scatter = params.shatterScatter / 100 * size * 0.92;
   const amount = params.effectAmount / 100;
   const crackStrength = params.shatterCracks / 100;
-  const columns = Math.ceil(width / size);
-  const rows = Math.ceil(height / size);
-  const cells = new Array(columns * rows);
-  for (let cellY = 0; cellY < rows; cellY += 1) {
-    for (let cellX = 0; cellX < columns; cellX += 1) {
-      const jitter = hashNoise(cellX, cellY, 73);
-      const angle = (hashNoise(cellX, cellY, 101) - 0.5) * 0.32 * amount;
-      cells[cellY * columns + cellX] = {
-        jitter,
-        c: cosApprox(angle),
-        s: sinApprox(angle)
-      };
+  const seed = Math.round(params.seed || 0);
+  const siteColumns = Math.ceil(width / size) + 2;
+  const siteRows = Math.ceil(height / size) + 2;
+  const sites = new Array(siteColumns * siteRows);
+  for (let cellY = -1; cellY <= Math.ceil(height / size); cellY += 1) {
+    for (let cellX = -1; cellX <= Math.ceil(width / size); cellX += 1) {
+      sites[(cellY + 1) * siteColumns + cellX + 1] = shatterSite(cellX, cellY, size, seed);
     }
   }
+  const getSite = (cellX, cellY) => sites[(cellY + 1) * siteColumns + cellX + 1];
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = (y * width + x) * 4;
-      const cellX = Math.floor(x / size);
-      const cellY = Math.floor(y / size);
-      const cell = cells[cellY * columns + cellX];
-      const localX = x - (cellX + 0.5) * size;
-      const localY = y - (cellY + 0.5) * size;
-      const rotatedX = localX * cell.c - localY * cell.s;
-      const rotatedY = localX * cell.s + localY * cell.c;
-      const sourceX = (cellX + 0.5) * size + rotatedX - dx * scatter * (cell.jitter - 0.5);
-      const sourceY = (cellY + 0.5) * size + rotatedY - dy * scatter * (cell.jitter - 0.5);
+      const baseCellX = Math.floor(x / size);
+      const baseCellY = Math.floor(y / size);
+      const localGridX = x / size - baseCellX;
+      const localGridY = y / size - baseCellY;
+      const originCellX = baseCellX + (localGridX < 0.5 ? -1 : 0);
+      const originCellY = baseCellY + (localGridY < 0.5 ? -1 : 0);
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      let secondDistance = Number.POSITIVE_INFINITY;
+      let nearestSite = null;
+      for (let oy = 0; oy < 2; oy += 1) {
+        for (let ox = 0; ox < 2; ox += 1) {
+          const candidateX = originCellX + ox;
+          const candidateY = originCellY + oy;
+          const site = getSite(candidateX, candidateY);
+          const distance = (x - site.x) ** 2 + (y - site.y) ** 2;
+          if (distance < nearestDistance) {
+            secondDistance = nearestDistance;
+            nearestDistance = distance;
+            nearestSite = site;
+          } else if (distance < secondDistance) {
+            secondDistance = distance;
+          }
+        }
+      }
+      const localX = x - nearestSite.x;
+      const localY = y - nearestSite.y;
+      const c = cosApprox(nearestSite.angle * amount);
+      const s = sinApprox(nearestSite.angle * amount);
+      const rotatedX = localX * c - localY * s;
+      const rotatedY = localX * s + localY * c;
+      const scatterDistance = scatter * (0.22 + nearestSite.scatter * 0.78) * amount;
+      const crossDistance = scatter * nearestSite.cross * 0.34 * amount;
+      const sourceX = nearestSite.x + rotatedX - dx * scatterDistance - perpendicularX * crossDistance;
+      const sourceY = nearestSite.y + rotatedY - dy * scatterDistance - perpendicularY * crossDistance;
       const fragment = sampleColor(source, width, height, sourceX, sourceY);
-      const edgeX = (size * 0.5 - Math.abs(localX)) / (size * 0.5);
-      const edgeY = (size * 0.5 - Math.abs(localY)) / (size * 0.5);
-      const crack = smoothstep(0, 0.06 + crackStrength * 0.14, Math.min(edgeX, edgeY));
-      const color = blendColor([source[index] / 255, source[index + 1] / 255, source[index + 2] / 255], [fragment[0] + (1 - crack) * 0.04, fragment[1] * (0.92 + crack * 0.08), fragment[2] + (1 - crack) * 0.06], amount);
-      output[index] = Math.round(clamp(color[0] * (1 - (1 - crack) * crackStrength * 0.45), 0, 1, 0) * 255);
-      output[index + 1] = Math.round(clamp(color[1] * (1 - (1 - crack) * crackStrength * 0.45), 0, 1, 0) * 255);
-      output[index + 2] = Math.round(clamp(color[2] * (1 - (1 - crack) * crackStrength * 0.45), 0, 1, 0) * 255);
+      const boundaryGap = Math.max(0, Math.sqrt(secondDistance) - Math.sqrt(nearestDistance));
+      const crack = smoothstep(0, size * (0.008 + crackStrength * 0.052), boundaryGap);
+      const crackEdge = 1 - crack;
+      const aberration = crackEdge * crackStrength * 0.05;
+      const shaded = 1 - crackEdge * crackStrength * 0.72;
+      const fragmentColor = [fragment[0] + aberration, fragment[1] * (0.96 + crack * 0.04), fragment[2] + aberration * 1.25];
+      const color = blendColor([source[index] / 255, source[index + 1] / 255, source[index + 2] / 255], fragmentColor.map((value) => value * shaded), amount);
+      output[index] = Math.round(clamp(color[0], 0, 1, 0) * 255);
+      output[index + 1] = Math.round(clamp(color[1], 0, 1, 0) * 255);
+      output[index + 2] = Math.round(clamp(color[2], 0, 1, 0) * 255);
     }
   }
   return createImageData(width, height, output);

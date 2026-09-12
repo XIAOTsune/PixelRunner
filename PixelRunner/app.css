@@ -7208,15 +7208,15 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 }
 
 .post-fx-preview-tool-btn {
-  min-width: 30px;
-  min-height: 30px;
+  min-width: 38px;
+  min-height: 38px;
   padding-inline: 7px;
   color: rgba(244, 234, 223, 0.86);
 }
 
 .post-fx-preview-mode-btn {
   min-width: 44px;
-  min-height: 30px;
+  min-height: 38px;
   padding-inline: 8px;
   color: rgba(244, 234, 223, 0.86);
 }
@@ -7295,7 +7295,8 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 .post-fx-effect-card:hover,
 .post-fx-effect-card:focus-visible {
   border-color: rgba(226, 169, 106, 0.76);
-  outline: none;
+  outline: 2px solid rgba(226, 169, 106, 0.9);
+  outline-offset: 2px;
 }
 
 .post-fx-effect-card.active {

@@ -82,12 +82,10 @@
     float hashNoise(vec2 point, float seed) {
       uvec2 pixel = uvec2(ivec2(floor(point)));
       uint seedValue = uint(max(0.0, floor(seed)));
-      uint value = pixel.x * 374761393u;
-      value ^= pixel.y * 668265263u;
-      value ^= seedValue * 2246822519u;
+      uint value = (pixel.x ^ (pixel.y * 374761393u) ^ (seedValue * 1442695041u)) * 668265263u;
       value = (value ^ (value >> 13u)) * 1274126177u;
       value ^= value >> 16u;
-      return float(value & 16777215u) / 16777215.0;
+      return float(value) / 4294967295.0;
     }
 
     float grainNoise(vec2 pixel, float grainSize, float seed) {
@@ -113,30 +111,45 @@
       return fine * 0.46 + soft * 0.36 + broad * 0.18;
     }
 
+    float valueNoise(vec2 point, float seed) {
+      vec2 cell = floor(point);
+      vec2 local = smoothstep(vec2(0.0), vec2(1.0), fract(point));
+      float top = mix(hashNoise(cell, seed), hashNoise(cell + vec2(1.0, 0.0), seed), local.x);
+      float bottom = mix(hashNoise(cell + vec2(0.0, 1.0), seed), hashNoise(cell + vec2(1.0, 1.0), seed), local.x);
+      return mix(top, bottom, local.y);
+    }
+
     float luminance(vec3 color) {
       return dot(color, vec3(0.2126, 0.7152, 0.0722));
     }
 
     vec3 applyCrt(vec2 uv, vec3 base) {
       float strength = clamp(uEffectAmount * uCrtStrength / 10000.0, 0.0, 1.0);
-      float curvature = uCrtCurvature / 100.0 * 0.18;
+      float curvature = uCrtCurvature / 100.0 * 0.12;
       vec2 centered = uv * 2.0 - 1.0;
       float curve = 1.0 + curvature * dot(centered, centered);
-      vec2 warped = clamp(vec2(0.5) + centered * curve * 0.5, vec2(0.0), vec2(1.0));
+      vec2 rawWarped = vec2(0.5) + centered * curve * 0.5;
+      vec2 warped = clamp(rawWarped, vec2(0.0), vec2(1.0));
+      float outside = max(abs(rawWarped.x * 2.0 - 1.0), abs(rawWarped.y * 2.0 - 1.0)) - 1.0;
+      float screenMask = 1.0 - smoothstep(0.0, 0.08, max(0.0, outside));
       vec2 radial = (warped - vec2(0.5)) * 2.0;
-      vec2 convergence = radial * (uCrtConvergence / 100.0) * 0.012;
+      vec2 convergence = radial * (uCrtConvergence / 100.0) * 0.008;
       vec3 color = vec3(
         texture(uSource, clamp(warped - convergence, vec2(0.0), vec2(1.0))).r,
         texture(uSource, warped).g,
         texture(uSource, clamp(warped + convergence, vec2(0.0), vec2(1.0))).b
       );
-      float grillePhase = mod(floor(gl_FragCoord.x * (3.0 + uCrtPixelGrid / 100.0 * 3.0)), 3.0);
-      float grille = uCrtPixelGrid / 100.0 * 0.12 * (grillePhase < 0.5 ? 1.06 : grillePhase < 1.5 ? 0.94 : 0.90);
-      float scan = 1.0 - uCrtScanlines / 100.0 * 0.2 * (0.5 + 0.5 * cos(gl_FragCoord.y * 3.14159265));
-      float edge = smoothstep(0.58, 1.0, min(1.0, length(centered) / 1.4143));
-      float vignette = 1.0 - edge * strength * 0.28;
-      color *= scan * vignette;
-      color *= vec3(1.0 + grille, 1.0, 1.0 - grille * 0.7);
+      float luma = luminance(color);
+      float scan = 1.0 - uCrtScanlines / 100.0 * (0.045 + luma * 0.11) * (0.5 + 0.5 * cos((gl_FragCoord.y + 0.5) * 3.14159265));
+      float grillePhase = mod(floor(gl_FragCoord.x) + mod(floor(gl_FragCoord.y), 2.0), 3.0);
+      float grid = uCrtPixelGrid / 100.0 * 0.038;
+      float redMask = grid * (grillePhase < 0.5 ? 1.0 : -0.38);
+      float greenMask = grid * (grillePhase > 0.5 && grillePhase < 1.5 ? 1.0 : -0.28);
+      float blueMask = grid * (grillePhase > 1.5 ? 1.0 : -0.38);
+      float edge = smoothstep(0.56, 0.98, min(1.0, length(centered) / 1.4143));
+      float vignette = 1.0 - edge * (0.08 + strength * 0.22);
+      color *= scan * vignette * screenMask;
+      color *= vec3(1.0 + redMask, 1.0 + greenMask, 1.0 + blueMask);
       return mix(base, color, strength);
     }
 
@@ -144,33 +157,37 @@
       float amount = clamp(uEffectAmount / 100.0, 0.0, 1.0);
       vec2 pixels = max(uResolution, vec2(1.0));
       float block = max(2.0, uPixelBlockSize);
-      vec2 cell = (floor((uv * pixels) / block) * block + block * 0.5) / pixels;
+      vec2 blockCell = floor((uv * pixels) / block);
+      vec2 cell = (blockCell * block + floor((block - 1.0) * 0.5) + 0.5) / pixels;
       vec3 color = texture(uSource, clamp(cell, vec2(0.0), vec2(1.0))).rgb;
       float levels = max(2.0, uPixelLevels);
-      float bayer = mod(floor(gl_FragCoord.x), 4.0) + mod(floor(gl_FragCoord.y), 4.0) * 4.0;
+      float bayer = mod(blockCell.x, 4.0) + mod(blockCell.y, 4.0) * 4.0;
       float threshold = (bayer / 16.0 - 0.5) * (uPixelDither / 100.0) / levels;
       color = clamp(floor((color + threshold) * (levels - 1.0) + 0.5) / (levels - 1.0), 0.0, 1.0);
       vec2 texel = 1.0 / pixels;
       float edge = abs(luminance(texture(uSource, clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb) - luminance(texture(uSource, clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb));
       edge += abs(luminance(texture(uSource, clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb) - luminance(texture(uSource, clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb));
-      float preserve = clamp(uPixelEdgePreserve / 100.0 * smoothstep(0.04, 0.28, edge), 0.0, 1.0);
+      float preserve = clamp(uPixelEdgePreserve / 100.0 * smoothstep(0.035, 0.24, edge), 0.0, 1.0);
       return mix(base, color, amount * (1.0 - preserve));
     }
 
     vec3 applyWind(vec2 uv, vec3 base) {
       float amount = clamp(uEffectAmount / 100.0, 0.0, 1.0);
-      float lengthPx = uWindLength / 100.0 * max(uResolution.x, uResolution.y) * 0.16;
-      float edgeDistance = 1.0 - max(abs(uv.x * 2.0 - 1.0), abs(uv.y * 2.0 - 1.0));
-      float edgeGate = mix(1.0, clamp(edgeDistance * 2.0, 0.0, 1.0), uWindEdgeProtect / 100.0);
+      float lengthPx = uWindLength / 100.0 * max(uResolution.x, uResolution.y) * 0.14;
+      float edgeDistance = min(1.0, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y)) * 2.0);
+      float edgeGate = mix(1.0, 0.35 + 0.65 * smoothstep(0.02, 0.34, edgeDistance), uWindEdgeProtect / 100.0);
       vec3 sum = vec3(0.0);
       float weights = 0.0;
-      for (int tap = 0; tap < 6; tap++) {
-        float t = float(tap) / 5.0;
-        vec2 sampleUv = uv - uWindDirection * (lengthPx * t) / max(uResolution, vec2(1.0));
+      float noiseScale = max(3.0, lengthPx * 0.22);
+      for (int tap = 0; tap < 9; tap++) {
+        float t = float(tap) / 8.0;
+        float jitteredT = clamp(t + (valueNoise(vec2(t * 2.0, 0.0), 9137.0) - 0.5) * 0.18, 0.0, 1.0);
+        vec2 sampleUv = uv - uWindDirection * (lengthPx * jitteredT) / max(uResolution, vec2(1.0));
         vec3 color = texture(uSource, clamp(sampleUv, vec2(0.0), vec2(1.0))).rgb;
-        vec2 block = floor(sampleUv * max(uResolution, vec2(1.0)) / max(2.0, lengthPx * 0.35));
-        float continuity = mix(1.0, hashNoise(block, uSeed + 9173.0) > 0.5 ? 1.0 : 0.22, uWindBreakup / 100.0);
-        float weight = (1.0 - t * 0.86) * continuity;
+        vec2 samplePixel = sampleUv * max(uResolution, vec2(1.0));
+        float continuity = mix(1.0, smoothstep(0.18, 0.82, valueNoise(samplePixel / noiseScale, uSeed + 9173.0)), uWindBreakup / 100.0);
+        float inside = step(0.0, sampleUv.x) * step(sampleUv.x, 1.0) * step(0.0, sampleUv.y) * step(sampleUv.y, 1.0);
+        float weight = (0.14 + 0.86 * pow(1.0 - jitteredT, 1.55)) * continuity * inside;
         sum += color * weight;
         weights += weight;
       }
@@ -181,19 +198,49 @@
       float amount = clamp(uEffectAmount / 100.0, 0.0, 1.0);
       float size = max(8.0, uShatterFragmentSize);
       vec2 pixel = uv * max(uResolution, vec2(1.0));
-      vec2 cell = floor(pixel / size);
-      vec2 local = pixel - (cell + vec2(0.5)) * size;
-      float jitter = hashNoise(cell, uSeed + 73.0);
-      float angle = (hashNoise(cell, uSeed + 101.0) - 0.5) * 0.32 * amount;
+      vec2 baseCell = floor(pixel / size);
+      vec2 localGrid = fract(pixel / size);
+      vec2 originCell = baseCell + vec2(localGrid.x < 0.5 ? -1.0 : 0.0, localGrid.y < 0.5 ? -1.0 : 0.0);
+      float nearestDistance = 1e20;
+      float secondDistance = 1e20;
+      vec2 nearestCell = baseCell;
+      vec2 nearestSite = vec2(0.0);
+      for (int oy = 0; oy < 2; oy++) {
+        for (int ox = 0; ox < 2; ox++) {
+          vec2 candidateCell = originCell + vec2(float(ox), float(oy));
+          vec2 jitter = vec2(
+            hashNoise(candidateCell, uSeed + 73.0),
+            hashNoise(candidateCell, uSeed + 89.0)
+          ) - vec2(0.5);
+          vec2 candidateSite = (candidateCell + vec2(0.5) + jitter * 0.62) * size;
+          float distance = dot(pixel - candidateSite, pixel - candidateSite);
+          if (distance < nearestDistance) {
+            secondDistance = nearestDistance;
+            nearestDistance = distance;
+            nearestCell = candidateCell;
+            nearestSite = candidateSite;
+          } else if (distance < secondDistance) {
+            secondDistance = distance;
+          }
+        }
+      }
+      vec2 local = pixel - nearestSite;
+      float angle = (hashNoise(nearestCell, uSeed + 101.0) - 0.5) * 0.45 * amount;
       float c = cos(angle);
       float s = sin(angle);
       vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-      vec2 samplePixel = (cell + vec2(0.5)) * size + rotated - uShatterDirection * (uShatterScatter / 100.0 * size * 0.75) * (jitter - 0.5);
+      float fragmentScatter = uShatterScatter / 100.0 * size * 0.92 * (0.22 + hashNoise(nearestCell, uSeed + 149.0) * 0.78) * amount;
+      float crossScatter = uShatterScatter / 100.0 * size * 0.92 * (hashNoise(nearestCell, uSeed + 191.0) - 0.5) * 0.34 * amount;
+      vec2 perpendicular = vec2(-uShatterDirection.y, uShatterDirection.x);
+      vec2 samplePixel = nearestSite + rotated - uShatterDirection * fragmentScatter - perpendicular * crossScatter;
       vec3 fragment = texture(uSource, clamp(samplePixel / max(uResolution, vec2(1.0)), vec2(0.0), vec2(1.0))).rgb;
-      float edge = min((size * 0.5 - abs(local.x)) / (size * 0.5), (size * 0.5 - abs(local.y)) / (size * 0.5));
-      float crack = smoothstep(0.0, 0.06 + uShatterCracks / 100.0 * 0.14, edge);
-      fragment += vec3((1.0 - crack) * 0.04, 0.0, (1.0 - crack) * 0.06);
-      fragment *= 1.0 - (1.0 - crack) * uShatterCracks / 100.0 * 0.45;
+      float boundaryGap = max(0.0, sqrt(secondDistance) - sqrt(nearestDistance));
+      float crack = smoothstep(0.0, size * (0.008 + uShatterCracks / 100.0 * 0.052), boundaryGap);
+      float crackEdge = 1.0 - crack;
+      float aberration = crackEdge * uShatterCracks / 100.0 * 0.05;
+      float shaded = 1.0 - crackEdge * uShatterCracks / 100.0 * 0.72;
+      fragment += vec3(aberration, 0.0, aberration * 1.25);
+      fragment *= shaded;
       return mix(base, clamp(fragment, 0.0, 1.0), amount);
     }
 
