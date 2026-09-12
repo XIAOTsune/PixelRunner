@@ -90,25 +90,10 @@
 
     float grainNoise(vec2 pixel, float grainSize, float seed) {
       float radius = max(1.0, floor(grainSize + 0.5));
-      float fine = (
-        hashNoise(pixel, seed + 3.0) +
-        hashNoise(pixel + vec2(5.0, -7.0), seed + 31.0) +
-        hashNoise(pixel + vec2(-9.0, 4.0), seed + 67.0)
-      ) / 3.0;
-      float soft = (
-        hashNoise(pixel + vec2(radius, 0.0), seed + 11.0) +
-        hashNoise(pixel + vec2(-radius, 0.0), seed + 23.0) +
-        hashNoise(pixel + vec2(0.0, radius), seed + 37.0) +
-        hashNoise(pixel + vec2(0.0, -radius), seed + 53.0)
-      ) / 4.0;
-      float broadRadius = radius * 2.0 + 1.0;
-      float broad = (
-        hashNoise(pixel + vec2(broadRadius, broadRadius), seed + 79.0) +
-        hashNoise(pixel + vec2(-broadRadius, broadRadius), seed + 97.0) +
-        hashNoise(pixel + vec2(broadRadius, -broadRadius), seed + 113.0) +
-        hashNoise(pixel + vec2(-broadRadius, -broadRadius), seed + 131.0)
-      ) / 4.0;
-      return fine * 0.46 + soft * 0.36 + broad * 0.18;
+      float fine = (hashNoise(pixel, seed + 3.0) + hashNoise(pixel + vec2(5.0, -7.0), seed + 31.0)) * 0.5;
+      float medium = hashNoise(pixel + vec2(-radius * 2.0, radius * 3.0), seed + 67.0);
+      float broad = hashNoise(pixel + vec2(radius * 5.0, -radius * 4.0), seed + 113.0);
+      return fine * 0.52 + medium * 0.32 + broad * 0.16;
     }
 
     float valueNoise(vec2 point, float seed) {
@@ -337,7 +322,7 @@
         float highlightWeight = smoothstep(0.58, 0.92, grainLuma);
         float toneWeight = clamp(0.92 + shadowWeight * 0.24 - highlightWeight * 0.58, 0.26, 1.18);
         mono *= grainStrength * toneWeight;
-        chroma *= grainStrength * toneWeight * (uGrainColor / 100.0) * 0.16;
+        chroma *= grainStrength * toneWeight * (uGrainColor / 100.0) * 0.08;
         outputColor += vec3(
           mono + chroma * 0.55,
           mono - chroma * 0.20,

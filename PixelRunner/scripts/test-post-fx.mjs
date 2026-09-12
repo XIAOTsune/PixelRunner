@@ -10,6 +10,8 @@ const styleSource = await readFile(new URL("../app.css", import.meta.url), "utf8
 assert.match(webglSource, /getContext\("webgl2"/, "post FX exposes a WebGL2 renderer");
 assert.match(webglSource, /returnDataUrl === false/, "preview rendering can avoid PNG encode/readback");
 assert.match(webglSource, /grainNoise/, "WebGL grain uses mixed pixel noise");
+assert.match(rendererSource, /Multi-scale grain with four hash calls/, "CPU grain uses an efficient multi-scale mix");
+assert.match(webglSource, /float medium = hashNoise\(pixel/, "WebGL grain uses an efficient multi-scale mix");
 assert.match(webglSource, /MAX_RENDER_PIXELS = 12000000/, "WebGL avoids oversized framebuffer truncation");
 assert.match(webglSource, /scanlineCount = 18\.0/, "WebGL CRT scanlines scale with normalized image height");
 assert.match(rendererSource, /scanlineCount = 18 \+ lines \* 142/, "CPU CRT scanlines scale with normalized image height");

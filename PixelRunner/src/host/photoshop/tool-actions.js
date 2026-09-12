@@ -1538,40 +1538,97 @@ async function runModalToolAction(actionName, payload, app, document, action, co
       });
     }
     case "saturationObserverLayer": {
-      const layerName = String(payload.layerName || "Saturation Observer Layer");
+      const groupName = String(payload.layerName || "饱和度观察层");
+      const selectiveName = "选区颜色 - 饱和度观察";
+      const curvesName = "曲线 - 饱和度观察";
+      const colorRanges = [
+        ["reds", -100], ["yellows", -100], ["greens", -100],
+        ["cyans", -100], ["blues", -100], ["magentas", -100],
+        ["whites", 100], ["neutrals", 100], ["blacks", 100]
+      ];
+      const selectiveAdjustment = colorRanges.map(([color, black]) => ({
+        _obj: "selectiveColorAdjustmentV2",
+        cyan: 0,
+        magenta: 0,
+        yellow: 0,
+        black,
+        color: { _enum: "colors", _value: color }
+      }));
       const result = await action.batchPlay([
         {
           _obj: "make",
           _target: [{ _ref: "adjustmentLayer" }],
           using: {
             _obj: "adjustmentLayer",
-            name: layerName,
-            type: { _obj: "hueSaturation" }
+            name: selectiveName,
+            type: { _obj: "selectiveColor" }
           }
         },
         {
           _obj: "set",
           _target: [{ _ref: "adjustmentLayer", _enum: "ordinal", _value: "targetEnum" }],
           to: {
-            _obj: "hueSaturation",
-            presetKind: {
-              _enum: "presetKindType",
-              _value: "presetKindCustom"
-            },
-            colorize: false,
+            _obj: "selectiveColor",
+            presetKind: { _enum: "presetKindType", _value: "presetKindCustom" },
+            method: { _enum: "method", _value: "absolute" },
+            adjustment: selectiveAdjustment
+          }
+        }
+      ], {});
+      const selectiveLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      const selectiveLayerId = Number(selectiveLayer && selectiveLayer.id) || 0;
+      if (!selectiveLayerId) throw new Error("选区颜色观察层创建失败");
+
+      const curvesResult = await action.batchPlay([
+        {
+          _obj: "make",
+          _target: [{ _ref: "adjustmentLayer" }],
+          using: {
+            _obj: "adjustmentLayer",
+            name: curvesName,
+            type: { _obj: "curves" }
+          }
+        },
+        {
+          _obj: "set",
+          _target: [{ _ref: "adjustmentLayer", _enum: "ordinal", _value: "targetEnum" }],
+          to: {
+            _obj: "curves",
+            presetKind: { _enum: "presetKindType", _value: "presetKindCustom" },
             adjustment: [{
-              _obj: "hueSatAdjustmentV2",
-              hue: 0,
-              saturation: -100,
-              lightness: 0
+              _obj: "curvesAdjustment",
+              channel: { _ref: "channel", _enum: "channel", _value: "composite" },
+              curve: [
+                { _obj: "curvePoint", horizontal: 0, vertical: 0 },
+                { _obj: "curvePoint", horizontal: 128, vertical: 128 },
+                { _obj: "curvePoint", horizontal: 255, vertical: 255 }
+              ]
             }]
           }
         }
       ], {});
-      const activeLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
-      return buildToolCommandResponse(actionName, app, "Created saturation observer layer.", {
-        result,
-        layerName: String((activeLayer && activeLayer.name) || layerName)
+      const curvesLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      const curvesLayerId = Number(curvesLayer && curvesLayer.id) || 0;
+      if (!curvesLayerId) throw new Error("曲线观察层创建失败");
+
+      const groupLayer = await createLayerGroupFromLayerIds(
+        app.activeDocument,
+        [selectiveLayerId, curvesLayerId],
+        groupName
+      );
+      const groupId = Number(groupLayer && groupLayer.id) || 0;
+      if (groupId > 0 && groupLayer.layers) {
+        const bottomLayer = findDocumentLayerById(app.activeDocument, selectiveLayerId);
+        const topLayer = findDocumentLayerById(app.activeDocument, curvesLayerId);
+        if (bottomLayer && topLayer) {
+          await moveLayerRelative(topLayer, bottomLayer, constants, "PLACEBEFORE");
+        }
+      }
+      return buildToolCommandResponse(actionName, app, "Created saturation observer layer group.", {
+        result: [result, curvesResult],
+        groupId,
+        layerName: groupName,
+        layers: { curves: curvesName, selectiveColor: selectiveName }
       });
     }
     case "neutralGrayLayer": {

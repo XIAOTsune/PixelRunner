@@ -122,25 +122,11 @@ function hashNoise(x, y, seed) {
 
 function grainNoise(x, y, grainSize, seed) {
   const radius = Math.max(1, Math.round(Number(grainSize) || 1));
-  const fine = (
-    hashNoise(x, y, seed + 3) +
-    hashNoise(x + 5, y - 7, seed + 31) +
-    hashNoise(x - 9, y + 4, seed + 67)
-  ) / 3;
-  const soft = (
-    hashNoise(x + radius, y, seed + 11) +
-    hashNoise(x - radius, y, seed + 23) +
-    hashNoise(x, y + radius, seed + 37) +
-    hashNoise(x, y - radius, seed + 53)
-  ) / 4;
-  const broadRadius = radius * 2 + 1;
-  const broad = (
-    hashNoise(x + broadRadius, y + broadRadius, seed + 79) +
-    hashNoise(x - broadRadius, y + broadRadius, seed + 97) +
-    hashNoise(x + broadRadius, y - broadRadius, seed + 113) +
-    hashNoise(x - broadRadius, y - broadRadius, seed + 131)
-  ) / 4;
-  return fine * 0.46 + soft * 0.36 + broad * 0.18;
+  // Multi-scale grain with four hash calls instead of eleven per pixel.
+  const fine = (hashNoise(x, y, seed + 3) + hashNoise(x + 5, y - 7, seed + 31)) * 0.5;
+  const medium = hashNoise(x - radius * 2, y + radius * 3, seed + 67);
+  const broad = hashNoise(x + radius * 5, y - radius * 4, seed + 113);
+  return fine * 0.52 + medium * 0.32 + broad * 0.16;
 }
 
 function getDimensions(imageData) {
@@ -249,6 +235,8 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
   const originY = Math.round(Number(options.originY) || 0);
   const maxDimension = Math.max(width, height);
   const amount = params.amount / 100;
+  const srgbLut = new Float32Array(256);
+  for (let value = 0; value < 256; value += 1) srgbLut[value] = srgbToLinear(value / 255);
   const exposure = Math.pow(2, params.exposure / 100);
   const contrast = 1 + params.contrast / 100 * 0.72;
   const saturation = 1 + params.saturation / 100;
@@ -279,9 +267,9 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
           b = sampleChannel(source, width, height, x + dx * shift, y + dy * shift, 2) / 255;
         }
       }
-      let linearR = srgbToLinear(r) * exposure;
-      let linearG = srgbToLinear(g) * exposure;
-      let linearB = srgbToLinear(b) * exposure;
+      let linearR = srgbLut[source[index]] * exposure;
+      let linearG = srgbLut[source[index + 1]] * exposure;
+      let linearB = srgbLut[source[index + 2]] * exposure;
       const linearLuma = linearR * 0.2126 + linearG * 0.7152 + linearB * 0.0722;
       const shadowMask = 1 - smoothstep(0.08, 0.58, linearLuma);
       const highlightMask = smoothstep(0.56, 1, linearLuma);
@@ -360,7 +348,7 @@ export function renderFilmImageData(sourceImageData, inputParams = {}, options =
         const toneWeight = clamp(0.92 + shadowWeight * 0.24 - highlightWeight * 0.58, 0.26, 1.18, 0.92);
         const pixelGrainStrength = grainStrength * toneWeight;
         const monochrome = noise * pixelGrainStrength;
-        const chroma = chromaNoise * pixelGrainStrength * colorGrain * 0.16;
+        const chroma = chromaNoise * pixelGrainStrength * colorGrain * 0.08;
         output[index] = Math.round(clamp(output[index] / 255 + monochrome + chroma * 0.55, 0, 1, 0) * 255);
         output[index + 1] = Math.round(clamp(output[index + 1] / 255 + monochrome - chroma * 0.20, 0, 1, 0) * 255);
         output[index + 2] = Math.round(clamp(output[index + 2] / 255 + monochrome - chroma * 0.45, 0, 1, 0) * 255);
