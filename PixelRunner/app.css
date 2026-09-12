@@ -7015,8 +7015,8 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 }
 
 .tool-post-fx-card {
-  gap: 2px;
-  padding: 4px 8px 5px;
+  gap: 4px;
+  padding: 6px 8px;
   border-radius: 10px;
   border: var(--workspace-card-border);
   background: var(--workspace-card-background);
@@ -7031,11 +7031,14 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 }
 
 .tool-post-fx-launcher {
+  flex: 1 1 auto;
   flex-direction: row;
+  min-width: 0;
 }
 
 .tool-post-fx-summary-main {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 0;
   min-width: 0;
@@ -7043,16 +7046,31 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 
 .tool-post-fx-header-line {
   justify-content: flex-start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.tool-post-fx-header-line .card-title,
+.tool-post-fx-header-line .status-chip {
+  flex: 0 0 auto;
+}
+
+.tool-post-fx-header-line .card-title {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #viewTools .post-fx-open-btn {
   flex: 0 0 auto;
   width: auto;
-  min-width: 112px;
-  min-height: 24px;
-  padding-inline: 9px;
-  border-radius: 10px;
-  font-size: 10px;
+  min-width: 104px;
+  min-height: 26px;
+  padding-inline: 10px;
+  border-radius: 11px;
+  font-size: 11px;
   box-shadow: 2px 3px 0 var(--btn-shadow);
 }
 
@@ -7395,8 +7413,19 @@ body[data-theme-preset="focus"] #btnDonateSettings {
     flex-direction: column;
   }
 
+  .tool-post-fx-header-line {
+    align-items: flex-start;
+  }
+
   #viewTools .post-fx-open-btn {
     width: 100%;
+  }
+
+  #viewTools .tool-post-fx-card .subtle-note {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .post-fx-slider-grid,

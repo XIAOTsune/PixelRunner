@@ -1,6 +1,6 @@
 # PixelRunner Offline License
 
-PixelRunner 2.8.4.a uses an offline Ed25519 signature for permanent licenses. The
+PixelRunner 2.8.4 uses an offline Ed25519 signature for permanent licenses. The
 plugin contains public verification keys only. It does not collect hardware
 serial numbers, MAC addresses, CPU IDs, or invasive machine fingerprints.
 

@@ -10,11 +10,7 @@ const rootDir = path.resolve(__dirname, "..");
 const releaseRoot = path.join(rootDir, "release");
 export const RELEASE_PRODUCT_NAME = "像素起子";
 export const HARDENED_RELEASE_SUFFIX = "-加固版";
-const RELEASE_PACKAGE_VERSION_ALIASES = Object.freeze({
-  // Photoshop requires a valid SemVer in manifest.json, while this release
-  // keeps the user-facing package label requested for testing.
-  "2.8.4-alpha.1": "2.8.4.a"
-});
+const RELEASE_PACKAGE_VERSION_ALIASES = Object.freeze({});
 
 async function readManifestVersion() {
   const manifestPath = path.join(rootDir, "manifest.json");

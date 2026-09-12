@@ -2,7 +2,7 @@ Option Explicit
 
 Dim shell, fileSystem, rootPath, serverPath, runtimePath
 Const RequiredProtocolVersion = "2"
-Const RequiredBuildId = "PixelRunnerV2.8.4-alpha.1-local-ai-bundled-runtime"
+Const RequiredBuildId = "PixelRunnerV2.8.4-local-ai-bundled-runtime"
 Const FirstPort = 17836
 Const LastPort = 17845
 Set shell = CreateObject("WScript.Shell")
