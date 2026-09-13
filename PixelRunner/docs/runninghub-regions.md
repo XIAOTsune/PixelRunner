@@ -34,7 +34,7 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 - 本地应用存储与资料包均使用 `appsByRegion.cn/global` 分区；旧资料包中无区域信息的应用默认归入 `cn`。
 - 提交时把区域复制到任务载荷，后续轮询和取消始终使用任务原区域。
 - `.ai` 域名必须同时加入 UXP 的 `webview.domains` 和 `network.domains`。
-- 返图会使用 `xiaoyaoyou.com` 下的 RunningHub CDN，也可能按存储区域返回 `myqcloud.com` 下的 COS 域名；两类域名的通配权限都必须加入 UXP WebView 和网络权限，避免国际版任务在 CDN 切换或重定向后无法返图。
+- 返图会使用 `xiaoyaoyou.com` 下的 RunningHub CDN，也可能按存储区域返回 `myqcloud.com` 或 `volces.com` 下的对象存储域名；这些域名的通配权限都必须同时加入 UXP WebView 和网络权限，避免任务在 CDN 切换或重定向后无法返图。
 - V2 轮询只能在 `status` 进入成功终态后接受 `results[]` 中的图片 URL；`RUNNING` 阶段即使提前出现预览或中间产物 URL，也必须继续等待最终结果。
 - V2 结果可能是 PNG、JPG 或 WebP；下载时必须按字节签名和响应 MIME 确定临时文件扩展名，不能一律写成 `.png`。
 - 国际版 AI 优化默认应用 ID 为 `2077336528350871553`，创成式填充默认应用 ID 为 `2077331388482748417`；用户保存的非空自定义 ID 优先。

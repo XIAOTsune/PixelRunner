@@ -1471,6 +1471,7 @@
     const refreshGeminiModelsButton = runtime.getById("btnRefreshThirdPartyGeminiModels");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
+    const clearPromptHistoryButton = runtime.getById("btnClearPromptHistory");
     const fieldIds = [
       "settingsApiKeyInput",
       "settingsApiProfileNameInput",
@@ -1519,6 +1520,18 @@
     let advancedSaveQueue = Promise.resolve();
 
     bindAppManagerControls();
+
+    if (clearPromptHistoryButton) {
+      clearPromptHistoryButton.addEventListener("click", async () => {
+        try {
+          await modules.promptHistory.clearHistory();
+          modules.ui.logToWorkspace("提示词历史已清空。", "info");
+        } catch (error) {
+          const status = runtime.getById("promptHistorySettingsStatus");
+          if (status) runtime.setSummaryStatus(status, `清空提示词历史失败：${error.message}`, "error");
+        }
+      });
+    }
 
     function scheduleAdvancedSettingsSave(sourceId, options = {}) {
       const sectionLabel = generativeFillSettingFieldIds.has(sourceId) ? "创成式填充设置" : "高级设置";

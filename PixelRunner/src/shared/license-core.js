@@ -9,8 +9,16 @@ export const ACTIVATION_STORAGE_KEY = "pixelrunner.license.activation.v1";
 export const LICENSE_FEATURES = Object.freeze({
   glow: "辉光",
   spaceFx: "空间特效",
+  postFx: "镜头与后期",
   blendMatch: "对齐与校色",
   localUpscale: "本地超分"
+});
+
+// Lens and post-processing effects ship under the existing Glow entitlement.
+// Keep accepting postFx in newly issued payloads, but let older glow licenses
+// unlock the feature without requiring a new activation code.
+const SHARED_FEATURE_ENTITLEMENTS = Object.freeze({
+  postFx: "glow"
 });
 
 const FEATURE_IDS = new Set(Object.keys(LICENSE_FEATURES));
@@ -346,11 +354,14 @@ export function verifyActivationCode(code, { deviceCode, keyring, productId = LI
 }
 
 export function isFeatureUnlocked(verification, feature) {
+  const featureId = String(feature || "").trim();
+  const sharedEntitlement = SHARED_FEATURE_ENTITLEMENTS[featureId];
   return Boolean(
     verification &&
     verification.active &&
     verification.license &&
     Array.isArray(verification.license.features) &&
-    verification.license.features.includes(feature)
+    (verification.license.features.includes(featureId) ||
+      (sharedEntitlement && verification.license.features.includes(sharedEntitlement)))
   );
 }

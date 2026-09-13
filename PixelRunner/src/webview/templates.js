@@ -986,6 +986,14 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       message,
       "success"
     );
+    // The import controls live in Settings, whose always-visible status area
+    // is the reliable place to show completion when the template editor is
+    // collapsed or not rendered in the current view.
+    modules.runtime.setSummaryStatus(
+      modules.runtime.getById("settingsStatusSummary"),
+      message,
+      "success"
+    );
     modules.runtime.setSummaryStatus(
       modules.runtime.getById("savedTemplatesSummary"),
       `已保存模板：${summary.total} 条`,

@@ -18,6 +18,7 @@ function initializePixelRunnerApp() {
   modules.localUpscale.bindActions();
   modules.blendMatch.bindBlendMatchActions();
   modules.spaceFx.bindSpaceFxActions();
+  modules.postFx.bindActions();
   modules.apps.bindAppPicker();
   modules.workspace.bindWorkspaceActions();
   modules.generativeFill.bindActions();
@@ -29,6 +30,7 @@ function initializePixelRunnerApp() {
   modules.sound.initialize();
 
   modules.settings.initializeSettings()
+    .then(() => modules.promptHistory.initialize())
     .then(() => modules.license.initialize())
     .then(() =>
       Promise.all([
@@ -40,6 +42,7 @@ function initializePixelRunnerApp() {
     .then(() => {
       modules.apps.renderSavedAppsList();
       modules.templates.renderSavedTemplatesList();
+      modules.promptHistory.renderSettingsSummary();
       modules.workspace.renderWorkspace();
       modules.ui.setActiveView("tabWorkspace");
       modules.localUpscale.initialize();

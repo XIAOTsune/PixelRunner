@@ -13,6 +13,8 @@ import "./webview/glow-cpu.js";
 import "./webview/blend-match/gpu/webgl-blend-preview.js";
 import "./webview/blend-match/gpu/webgl-alignment.js";
 import "./webview/space-fx.js";
+import "./webview/post-fx.js";
+import "./webview/post-fx/webgl-renderer.js";
 import "./webview/blend-match.js";
 import "./webview/local-upscale.js";
 import "./webview/ratio-offset-correction.js";

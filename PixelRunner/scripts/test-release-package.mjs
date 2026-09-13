@@ -15,6 +15,7 @@ assert.equal(RELEASE_PRODUCT_NAME, "像素起子");
 assert.equal(manifest.id, "com.tsune.pixelrunner");
 assert.equal(manifest.name, RELEASE_PRODUCT_NAME);
 assert.equal(manifest.entrypoints[0].label.default, RELEASE_PRODUCT_NAME);
+assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "UXP manifest version must be valid SemVer");
 assert.equal(manifest.version, "2.8.4");
 assert.equal(packageJson.name, "pixelrunner-uxp");
 assert.equal(packageJson.version, manifest.version);
