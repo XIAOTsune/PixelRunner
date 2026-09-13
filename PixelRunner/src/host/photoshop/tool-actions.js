@@ -1547,51 +1547,101 @@ async function runModalToolAction(actionName, payload, app, document, action, co
         ["whites", 100], ["neutrals", 100], ["blacks", 100]
       ];
       const selectiveAdjustment = colorRanges.map(([color, black]) => ({
-        _obj: "selectiveColorAdjustmentV2",
+        // Photoshop stores each Selective Color range as colorCorrection.
+        // The earlier selectiveColorAdjustmentV2 descriptor was accepted but
+        // silently discarded every CMYK value on current Photoshop builds.
+        _obj: "colorCorrection",
         cyan: 0,
         magenta: 0,
         yellow: 0,
         black,
         color: { _enum: "colors", _value: color }
       }));
-      const result = await action.batchPlay([
-        {
-          _obj: "make",
-          _target: [{ _ref: "adjustmentLayer" }],
-          using: {
-            _obj: "adjustmentLayer",
-            name: selectiveName,
-            type: { _obj: "selectiveColor" }
-          }
-        },
-        {
-          _obj: "set",
-          _target: [{ _ref: "adjustmentLayer", _enum: "ordinal", _value: "targetEnum" }],
-          to: {
-            _obj: "selectiveColor",
-            presetKind: { _enum: "presetKindType", _value: "presetKindCustom" },
-            method: { _enum: "method", _value: "absolute" },
-            adjustment: selectiveAdjustment
-          }
+      const makeSelectiveResult = await action.batchPlay([{
+        _obj: "make",
+        _target: [{ _ref: "adjustmentLayer" }],
+        using: {
+          _obj: "adjustmentLayer",
+          name: selectiveName,
+          type: { _obj: "selectiveColor" }
         }
-      ], {});
+      }], {});
       const selectiveLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
       const selectiveLayerId = Number(selectiveLayer && selectiveLayer.id) || 0;
       if (!selectiveLayerId) throw new Error("选区颜色观察层创建失败");
+      // A layer get descriptor exposes the adjustment under the `adjustment`
+      // property. Set that property explicitly on the adjustment-layer
+      // reference so Photoshop persists the custom colorCorrection values.
+      const selectiveTarget = [
+        { _property: "adjustment" },
+        { _ref: "adjustmentLayer", _id: selectiveLayerId }
+      ];
+      const selectiveSet = {
+        _obj: "set",
+        _target: selectiveTarget,
+        to: {
+          _obj: "selectiveColor",
+          presetKind: { _enum: "presetKindType", _value: "presetKindCustom" },
+          method: { _enum: "correctionMethod", _value: "absolute" },
+          adjustment: selectiveAdjustment
+        }
+      };
+      let selectiveSetResult;
+      let selectiveSetSucceeded = false;
+      try {
+        selectiveSetResult = await action.batchPlay([selectiveSet], {});
+        selectiveSetSucceeded = true;
+      } catch (error) {
+        selectiveSetResult = [];
+      }
+      // Photoshop versions differ in the class name accepted after the
+      // adjustment property. Retry the same descriptor against the layer
+      // class when the adjustment-layer target is rejected or ignored.
+      if (!selectiveSetSucceeded) try {
+        const layerTargetSet = {
+          _obj: "set",
+          _target: [{ _property: "adjustment" }, { _ref: "layer", _id: selectiveLayerId }],
+          to: {
+            _obj: "selectiveColor",
+            presetKind: { _enum: "presetKindType", _value: "presetKindCustom" },
+            method: { _enum: "correctionMethod", _value: "absolute" },
+            adjustment: selectiveAdjustment
+          }
+        };
+        const layerTargetResult = await action.batchPlay([layerTargetSet], {});
+        selectiveSetResult = [...(Array.isArray(selectiveSetResult) ? selectiveSetResult : []), ...layerTargetResult];
+      } catch (_) {
+        // Both target forms were rejected; verification below exposes that.
+      }
+      let selectiveVerification = null;
+      try {
+        const verificationResult = await action.batchPlay([{
+          _obj: "get",
+          _target: [{ _ref: "layer", _id: selectiveLayerId }],
+          _options: { dialogOptions: "dontDisplay" }
+        }], {});
+        selectiveVerification = verificationResult && verificationResult[0] ? verificationResult[0] : null;
+        console.log("[PixelRunner] saturation observer selective-color descriptor", JSON.stringify(selectiveVerification));
+      } catch (error) {
+        console.warn("[PixelRunner] saturation observer descriptor verification unavailable", error);
+      }
 
+      const makeCurvesResult = await action.batchPlay([{
+        _obj: "make",
+        _target: [{ _ref: "adjustmentLayer" }],
+        using: {
+          _obj: "adjustmentLayer",
+          name: curvesName,
+          type: { _obj: "curves" }
+        }
+      }], {});
+      const curvesLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
+      const curvesLayerId = Number(curvesLayer && curvesLayer.id) || 0;
+      if (!curvesLayerId) throw new Error("曲线观察层创建失败");
       const curvesResult = await action.batchPlay([
         {
-          _obj: "make",
-          _target: [{ _ref: "adjustmentLayer" }],
-          using: {
-            _obj: "adjustmentLayer",
-            name: curvesName,
-            type: { _obj: "curves" }
-          }
-        },
-        {
           _obj: "set",
-          _target: [{ _ref: "adjustmentLayer", _enum: "ordinal", _value: "targetEnum" }],
+          _target: [{ _ref: "adjustmentLayer", _id: curvesLayerId }],
           to: {
             _obj: "curves",
             presetKind: { _enum: "presetKindType", _value: "presetKindCustom" },
@@ -1607,9 +1657,6 @@ async function runModalToolAction(actionName, payload, app, document, action, co
           }
         }
       ], {});
-      const curvesLayer = app.activeDocument && app.activeDocument.activeLayers && app.activeDocument.activeLayers[0];
-      const curvesLayerId = Number(curvesLayer && curvesLayer.id) || 0;
-      if (!curvesLayerId) throw new Error("曲线观察层创建失败");
 
       const groupLayer = await createLayerGroupFromLayerIds(
         app.activeDocument,
@@ -1625,7 +1672,8 @@ async function runModalToolAction(actionName, payload, app, document, action, co
         }
       }
       return buildToolCommandResponse(actionName, app, "Created saturation observer layer group.", {
-        result: [result, curvesResult],
+        result: [makeSelectiveResult, selectiveSetResult, makeCurvesResult, curvesResult],
+        selectiveVerification,
         groupId,
         layerName: groupName,
         layers: { curves: curvesName, selectiveColor: selectiveName }

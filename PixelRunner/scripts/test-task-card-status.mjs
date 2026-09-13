@@ -20,6 +20,12 @@ const toolActionsSource = await readFile(new URL("../src/host/photoshop/tool-act
 assert.match(toolActionsSource, /case "saturationObserverLayer"/);
 assert.match(toolActionsSource, /type: \{ _obj: "selectiveColor" \}/);
 assert.match(toolActionsSource, /_value: "absolute"/);
+assert.match(toolActionsSource, /_obj: "colorCorrection"/);
+assert.match(toolActionsSource, /method: \{ _enum: "correctionMethod", _value: "absolute" \}/);
+assert.match(toolActionsSource, /_id: selectiveLayerId/);
+assert.match(toolActionsSource, /_property: "adjustment"/);
+assert.match(toolActionsSource, /_ref: "layer", _id: selectiveLayerId/);
+assert.match(toolActionsSource, /saturation observer selective-color descriptor/);
 assert.match(toolActionsSource, /type: \{ _obj: "curves" \}/);
 assert.match(toolActionsSource, /createLayerGroupFromLayerIds/);
 assert.match(workspaceSource, /const RUN_BUTTON_COOLDOWN_MS = 600;/);
