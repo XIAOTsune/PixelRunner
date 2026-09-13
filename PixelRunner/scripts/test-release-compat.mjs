@@ -20,6 +20,7 @@ for (let port = 17836; port <= 17845; port += 1) {
 }
 assert.ok(manifest.requiredPermissions.launchProcess.extensions.includes(".vbs"), "Windows Local AI launcher remains allowed");
 assert.ok(!manifest.requiredPermissions.launchProcess.extensions.includes(".app"), "Windows-only release must not request an unavailable macOS companion");
+assert.ok(networkDomains.includes("https://*.volces.com"), "RunningHub Volcengine result CDN remains allowed");
 
 const tempDir = await mkdtemp(path.join(os.tmpdir(), "pixelrunner-release-compat-"));
 const outputDir = path.join(tempDir, "dist");

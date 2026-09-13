@@ -3639,6 +3639,7 @@ button {
 #viewTools .tool-glow-card .subtle-note,
 #viewTools .tool-space-fx-card .subtle-note,
 #viewTools .tool-blend-match-card .subtle-note,
+#viewTools .tool-post-fx-card .subtle-note,
 #viewTools .tool-local-upscale-card .subtle-note {
   display: -webkit-box;
   overflow: hidden;
@@ -7033,6 +7034,7 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 .tool-post-fx-launcher {
   flex: 1 1 auto;
   flex-direction: row;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -7040,7 +7042,7 @@ body[data-theme-preset="focus"] #btnDonateSettings {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 0;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -7072,21 +7074,6 @@ body[data-theme-preset="focus"] #btnDonateSettings {
   border-radius: 11px;
   font-size: 11px;
   box-shadow: 2px 3px 0 var(--btn-shadow);
-}
-
-#viewTools .tool-post-fx-card .subtle-note {
-  display: block;
-  overflow: hidden;
-  font-size: 10px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-#viewTools .tool-post-fx-card .summary-strip {
-  padding-block: 2px;
-  font-size: 9px;
-  line-height: 1.2;
 }
 
 .overlay-card.post-fx-modal-card {
@@ -7408,26 +7395,6 @@ body[data-theme-preset="focus"] #btnDonateSettings {
 }
 
 @media (max-width: 520px) {
-  .tool-post-fx-launcher {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .tool-post-fx-header-line {
-    align-items: flex-start;
-  }
-
-  #viewTools .post-fx-open-btn {
-    width: 100%;
-  }
-
-  #viewTools .tool-post-fx-card .subtle-note {
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
   .post-fx-slider-grid,
   .post-fx-control-grid {
     grid-template-columns: 1fr;
