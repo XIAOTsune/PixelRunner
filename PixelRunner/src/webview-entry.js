@@ -6,5 +6,6 @@ import "./webview/sound.js";
 import "./webview/quick-entries.js";
 import "./webview/apps.js";
 import "./webview/templates.js";
+import "./webview/prompt-history.js";
 import "./webview/settings.js";
 import "./webview/main.js";

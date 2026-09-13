@@ -1702,6 +1702,7 @@
               isPromptField(input)
                 ? `
                   <span class="prompt-action-group">
+                    ${modules.promptHistory && typeof modules.promptHistory.renderTrigger === "function" ? modules.promptHistory.renderTrigger(key) : ""}
                     <button class="mini-btn template-trigger-btn" type="button" data-action="open-template-picker" data-form-key="${escapedKey}">预设</button>
                     ${
                       showAiOptimizeButton
@@ -2400,6 +2401,9 @@
       taskId: remoteTaskId
     });
     modules.ui.logToWorkspace(`后台追踪发现任务已完成，已取得${filePath ? "宿主临时文件" : dataUrl ? "内联图片" : "结果地址"}。`, "success");
+    if (modules.promptHistory && typeof modules.promptHistory.recordSuccessfulRun === "function") {
+      await modules.promptHistory.recordSuccessfulRun(payload);
+    }
 
       try {
         const placementResponse = await autoPlaceResult({
@@ -4019,6 +4023,9 @@
         taskId: remoteTaskId
       });
       modules.ui.logToWorkspace(`任务已完成，已取得${pollResult.filePath ? "宿主临时文件" : pollResult.dataUrl ? "内联图片" : "结果地址"}。`, "success");
+      if (modules.promptHistory && typeof modules.promptHistory.recordSuccessfulRun === "function") {
+        await modules.promptHistory.recordSuccessfulRun(payload);
+      }
       let placementResponse = null;
       try {
         placementResponse = await autoPlaceResult({
@@ -4378,6 +4385,16 @@
 
         if (action === "open-template-picker") {
           modules.templates.openTemplatePicker({ mode: "multiple", maxSelection: 5, targetKey: key });
+          return;
+        }
+
+        if (action === "apply-prompt-history") {
+          event.preventDefault();
+          const historyId = actionTarget.getAttribute("data-history-id");
+          if (modules.promptHistory && modules.promptHistory.applyHistoryItem(historyId, key)) {
+            renderWorkspace();
+            modules.ui.logToWorkspace("已填入最近使用的提示词。", "info");
+          }
           return;
         }
 

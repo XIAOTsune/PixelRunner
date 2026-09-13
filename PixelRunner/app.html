@@ -429,6 +429,20 @@
             </div>
           </section>
 
+          <details class="surface-card settings-collapsible prompt-history-settings-card">
+            <summary class="settings-collapse-summary">
+              <span>提示词历史</span>
+              <span id="promptHistorySettingsSummary" class="status-chip">0 条</span>
+            </summary>
+            <div class="collapsible-body prompt-history-settings-body">
+              <div class="prompt-history-settings-row">
+                <span class="settings-field-hint">保留最近 30 条成功使用过的提示词。</span>
+                <button id="btnClearPromptHistory" class="secondary-btn" type="button">清空历史</button>
+              </div>
+              <div id="promptHistorySettingsStatus" class="summary-strip">暂无历史记录。</div>
+            </div>
+          </details>
+
           <details class="surface-card settings-collapsible">
             <summary class="settings-collapse-summary">高级设置</summary>
             <div class="form-stack collapsible-body">

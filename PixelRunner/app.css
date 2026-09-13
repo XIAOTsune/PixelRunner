@@ -1759,6 +1759,10 @@ button {
   overflow: hidden;
 }
 
+.workspace-input-card #dynamicInputContainer {
+  overflow: visible;
+}
+
 .workspace-input-card .empty-panel,
 .workspace-input-card .dynamic-form,
 .workspace-input-card .image-capture-shell,
@@ -5494,6 +5498,116 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.prompt-history-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.prompt-history-trigger-btn {
+  min-width: 42px;
+}
+
+.prompt-history-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.prompt-history-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-history-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  width: min(320px, 72vw);
+  max-height: 280px;
+  flex-direction: column;
+  gap: 2px;
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--control-edge);
+  border-radius: 9px;
+  background: var(--surface-card-background, var(--surface-soft));
+  box-shadow: var(--chrome-shadow);
+}
+
+.prompt-history-item {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-history-item:hover,
+.prompt-history-item:focus-visible {
+  background: var(--accent-wash);
+}
+
+.prompt-history-item strong,
+.prompt-history-item span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt-history-item strong {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.prompt-history-item span,
+.prompt-history-empty {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.prompt-history-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 8px;
+  line-height: 1.35;
+}
+
+.prompt-history-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.prompt-history-settings-row .secondary-btn {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding-inline: 9px;
+  font-size: 11px;
+}
+
+@media (max-width: 520px) {
+  .prompt-history-settings-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prompt-history-settings-row .secondary-btn {
+    align-self: flex-end;
+  }
 }
 
 .template-trigger-btn {
