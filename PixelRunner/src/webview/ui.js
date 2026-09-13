@@ -1526,6 +1526,12 @@
         try {
           const result = await runtime.callHost("photoshop.runToolAction", [config.payload], { timeoutMs: 45000 });
           logToWorkspace(config.success(result), "success");
+          if (config.id === "btnSaturationObserver") {
+            logToWorkspace(
+              "请在“选区颜色”属性中手动调整：黑色、中性色、白色的“黑色”数值设为 +100%；红色、黄色、绿色、青色、蓝色、洋红色的“黑色”数值设为 -100%。",
+              "info"
+            );
+          }
         } catch (error) {
           logToWorkspace(`工具执行失败：${error.message}`, "error");
         } finally {

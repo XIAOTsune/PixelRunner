@@ -1525,15 +1525,6 @@
       clearPromptHistoryButton.addEventListener("click", async () => {
         try {
           await modules.promptHistory.clearHistory();
-          const status = runtime.getById("promptHistorySettingsStatus");
-          if (status) {
-            status.dataset.customStatus = "true";
-            runtime.setSummaryStatus(status, "提示词历史已清空。", "success");
-            window.setTimeout(() => {
-              delete status.dataset.customStatus;
-              modules.promptHistory.renderSettingsSummary();
-            }, 1800);
-          }
           modules.ui.logToWorkspace("提示词历史已清空。", "info");
         } catch (error) {
           const status = runtime.getById("promptHistorySettingsStatus");

@@ -1714,6 +1714,7 @@
                 : ""
             }
           </span>
+          ${isPromptField(input) && modules.promptHistory ? modules.promptHistory.renderPanel(key) : ""}
           <textarea id="${runtime.escapeHtml(fieldId)}" class="field-input field-textarea" rows="4" data-form-key="${escapedKey}">${runtime.escapeHtml(currentValue)}</textarea>
           ${isPromptField(input) ? renderPromptHint(currentValue) : ""}
           ${renderFieldHint(input)}
@@ -4385,6 +4386,12 @@
 
         if (action === "open-template-picker") {
           modules.templates.openTemplatePicker({ mode: "multiple", maxSelection: 5, targetKey: key });
+          return;
+        }
+
+        if (action === "toggle-prompt-history") {
+          event.preventDefault();
+          modules.promptHistory.togglePanel(actionTarget);
           return;
         }
 

@@ -1759,10 +1759,6 @@ button {
   overflow: hidden;
 }
 
-.workspace-input-card #dynamicInputContainer {
-  overflow: visible;
-}
-
 .workspace-input-card .empty-panel,
 .workspace-input-card .dynamic-form,
 .workspace-input-card .image-capture-shell,
@@ -5492,39 +5488,42 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+}
+
+.prompt-field .field-label > label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prompt-action-group {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
 }
 
-.prompt-history-menu {
-  position: relative;
+.workspace-input-card .prompt-action-group .mini-btn {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 28px;
+  line-height: 1.2;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
-.prompt-history-trigger-btn {
-  min-width: 42px;
-}
-
-.prompt-history-menu > summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.prompt-history-menu > summary::-webkit-details-marker {
-  display: none;
-}
-
-.prompt-history-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
+.prompt-history-panel,
+.prompt-history-settings-list {
+  position: static;
   display: flex;
-  width: min(320px, 72vw);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   max-height: 280px;
   flex-direction: column;
   gap: 2px;
@@ -5536,9 +5535,20 @@ button {
   box-shadow: var(--chrome-shadow);
 }
 
+.prompt-history-panel[hidden] {
+  display: none;
+}
+
+.prompt-history-settings-list {
+  max-height: 420px;
+  margin-top: 8px;
+}
+
 .prompt-history-item {
   display: flex;
   width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
@@ -5549,11 +5559,15 @@ button {
   background: transparent;
   color: var(--text);
   text-align: left;
+  line-height: 1.4;
+}
+
+button.prompt-history-item {
   cursor: pointer;
 }
 
-.prompt-history-item:hover,
-.prompt-history-item:focus-visible {
+button.prompt-history-item:hover,
+button.prompt-history-item:focus-visible {
   background: var(--accent-wash);
 }
 
@@ -5575,6 +5589,11 @@ button {
 .prompt-history-empty {
   color: var(--muted);
   font-size: 10px;
+}
+
+.prompt-history-item span {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .prompt-history-empty {
