@@ -1,0 +1,5 @@
+RunningHub API 为生产环境而设计，一个接口驱动全模态 AI 生产力！无需管理多个服务商，即可生成图片、视频和 AI 内容：单一接口直连 400+ 主流大模型，一秒轻松集成。ComfyUI 工作流免运维托管，按需弹性计量，支持细粒度权限控制与全链路加密，严格守护企业安全与业务隐私。邮件联系获取折扣与接入支持zhenyuedong@haima.me
+
+Fast and affordable AI video generation API - RunningHub API is built for production. Access 400+ leading AI models through one API to generate images, videos, and more. Enjoy managed ComfyUI workflows, usage-based pricing, and enterprise-grade security. For discounts and integration support: zhenyuedong@haima.me
+
+https://www.runninghub.ai/zh-cn/call-api?source=github

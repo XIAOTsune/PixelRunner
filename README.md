@@ -22,6 +22,7 @@
   <a href="#为什么需要像素起子">为什么需要它</a> ·
   <a href="#核心功能">核心功能</a> ·
   <a href="#快速上手">快速上手</a> ·
+  <a href="#runninghub-合作">RunningHub 合作</a> ·
   <a href="#开发与构建">开发与构建</a>
 </p>
 
@@ -351,6 +352,28 @@ npm run package:release
 - 私人调试日志。
 - 本地构建包和历史发布包。
 - 只在个人机器上有效的绝对路径。
+
+## RunningHub 合作
+
+<p align="center">
+  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">
+    <img src="runninghub合作/logo.png" width="150" alt="RunningHub Logo" />
+  </a>
+</p>
+
+RunningHub API 为生产环境而设计，提供一个接口驱动的全模态 AI 生产力平台。无需管理多个服务商，即可通过单一 API 接入 400+ 主流大模型，生成图片、视频和其他 AI 内容。
+
+平台支持 ComfyUI 工作流免运维托管、按需弹性计量、细粒度权限控制与全链路加密，帮助团队降低部署和维护成本，同时保护业务数据与隐私。像素起子通过 RunningHub 将 AI 图像工作流接入 Photoshop，让创作者可以在熟悉的修图环境中完成素材提交、任务追踪和结果回贴。
+
+RunningHub API is built for production. Access 400+ leading AI models through one API to generate images, videos, and more. It also provides managed ComfyUI workflows, usage-based pricing, fine-grained access control, and end-to-end encryption for reliable and secure AI production.
+
+了解 API、工作流托管与接入方式：
+
+<p align="center">
+  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github"><strong>访问 RunningHub API 官方页面</strong></a>
+</p>
+
+如需获取折扣或接入支持，请联系：<a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>
 
 ## 常见问题
 
