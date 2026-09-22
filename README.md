@@ -23,7 +23,6 @@
   <a href="#一条顺手的-ai-修图链路">工作流</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#项目结构">项目结构</a> ·
-  <a href="#赞助支持--sponsor">赞助支持</a> ·
   <a href="#runninghub-合作">RunningHub 合作</a>
 </p>
 
@@ -199,40 +198,6 @@ RunningHub API is built for production. Access 400+ leading AI models through on
   <a href="https://www.runninghub.ai/zh-cn/call-api?source=github"><strong>访问 RunningHub API 官方页面</strong></a>
   ·
   <a href="mailto:zhenyuedong@haima.me"><strong>获取折扣与接入支持</strong></a>
-</p>
-
-## 赞助支持 · SPONSOR
-
-### RunningHub API
-
-Access 400+ leading AI models via API — Seedance, Kling, MiniMax, Nano Banana, Veo, and more — at highly competitive prices.
-
-- High-Concurrency Support
-- Free API Testing
-- End-to-End Encryption
-
-<p align="center">
-  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github"><strong>CTA：Test the API for Free</strong></a>
-</p>
-
-RunningHub 为本项目提供 AI 能力支持：
-
-- Seedance 满血版 API 接入全网骨折价，在线工具低至 0.21 元/秒，节省 60%-80% 成本
-- 超稳定高并发高折扣，随用随充、按需弹性付费，不捆绑、不排队、不抽卡
-- 无限画布、ComfyUI、Agent 等在线工具，支持从剧本到成片的全链路制作
-- 一站式接入 LLM API、多模态 API、工作流 API、AI 应用
-- 400+ 主流模型，支持国际版权限，8000+ 版本任选
-- 数千家企业信赖，500 万 C 端月活验证
-
-<p align="center">
-  <strong>RunningHub 折扣获取与免费测试联系：</strong>
-  <a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>
-</p>
-
-<p align="center">
-  本项目由 RunningHub 提供支持 · 单一接口直连 400+ 主流大模型 · 免费测试
-  <br />
-  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">https://www.runninghub.ai/zh-cn/call-api?source=github</a>
 </p>
 
 ## 隐私与安全
