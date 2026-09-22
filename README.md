@@ -1,218 +1,114 @@
-# 像素起子（小T修图助手）
+# 像素起子 · Photoshop AI 修图工作台
 
 <p align="center">
   <img src="PixelRunner/icons/icon.png" width="128" height="128" alt="像素起子图标" />
 </p>
 
-<h3 align="center">Photoshop 里的 AI 修图工作台</h3>
+<h2 align="center">把 RunningHub AI 工作流，直接带进 Photoshop</h2>
 
 <p align="center">
-  <strong>选区捕获、RunningHub 工作流、提示词模板、AI 优化、常用修图工具、辉光预览，一块面板里全部搞定。</strong>
+  在熟悉的 Photoshop 面板里完成选区捕获、AI 任务提交、进度追踪与结果回贴。
+  <br />少一次窗口切换，多一点创作专注。
 </p>
 
 <p align="center">
-  <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Version" src="https://img.shields.io/badge/version-2.7.0-2f855a">
-  <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff">
-  <img alt="UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6">
-  <img alt="RunningHub" src="https://img.shields.io/badge/RunningHub-ready-111827">
+  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="Version" src="https://img.shields.io/badge/version-2.8.4-2f855a?style=for-the-badge"></a>
+  <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2563eb?style=for-the-badge"></a>
+  <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff?style=for-the-badge">
+  <img alt="UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6?style=for-the-badge">
 </p>
 
 <p align="center">
-  <a href="#为什么需要像素起子">为什么需要它</a> ·
-  <a href="#核心功能">核心功能</a> ·
-  <a href="#快速上手">快速上手</a> ·
-  <a href="#runninghub-合作">RunningHub 合作</a> ·
-  <a href="#开发与构建">开发与构建</a>
+  <a href="#它能做什么">功能亮点</a> ·
+  <a href="#一条顺手的-ai-修图链路">工作流</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#项目结构">项目结构</a> ·
+  <a href="#runninghub-合作">RunningHub 合作</a>
 </p>
 
-## 一句话介绍
+---
 
-像素起子（小T修图助手）是一个面向 Photoshop 的 UXP 插件。它把 Photoshop 和 RunningHub 图像工作流接在一起，让你可以在 PS 里直接框选画面、提交 AI 任务、等待结果、自动贴回图层。
+## 为什么是像素起子？
 
-如果你平时要反复做这些事：
+AI 修图真正耗时的部分，常常不是生成本身，而是反复导出、上传、等待、下载、对齐，再回到 Photoshop 继续工作。
 
-- 从 Photoshop 导出局部图像。
-- 打开网页或别的工具上传图片。
-- 复制粘贴提示词和参数。
-- 等任务完成后下载结果。
-- 再把图片拖回 Photoshop 对齐。
-- 下次换一个工作流，又要重新配一遍。
+像素起子把这条链路收进一个 UXP 面板：当前文档或选区可以直接成为输入，RunningHub 负责执行图像工作流，结果完成后自动回到 Photoshop。你可以把它理解成一把连接 **Photoshop × RunningHub × 日常修图工具** 的工作台。
 
-像素起子想解决的就是这条来回折腾的链路。它把“修图动作”和“AI 工作流”合到 Photoshop 面板里，让创作过程更像一次连续操作，而不是在多个窗口之间搬运素材。
-
-## 为什么需要像素起子
-
-| 以前的流程 | 使用像素起子后 |
+| 传统流程 | 像素起子工作流 |
 | --- | --- |
-| 手动导出选区或整图 | 在 PS 内一键捕获当前选区或文档 |
-| 去网页上传图片 | 插件直接提交 RunningHub 工作流 |
-| 反复复制提示词 | 模板、快捷入口和应用参数本地保存 |
-| 盯着任务状态刷新 | 插件内显示任务进度，可取消和追踪 |
-| 下载结果再拖回 PS | 任务完成后自动贴回 Photoshop |
-| 常用修图动作分散在菜单里 | 黑白观察、中性灰、盖印、模糊、锐化等集中在工具箱 |
-| 辉光效果靠试错 | 先在插件内预览，再确认写回图层 |
+| 导出图片，切到网页上传 | 在 Photoshop 内捕获当前选区或文档 |
+| 手动复制应用参数和提示词 | 保存应用、模板和快捷入口 |
+| 反复刷新页面查看进度 | 在任务卡片中查看状态、日志和失败原因 |
+| 下载结果，再拖回并重新对齐 | 任务完成后自动贴回 Photoshop |
+| AI 工具和修图动作分散 | AI 工作台、观察层、锐化、辉光预览集中在同一面板 |
 
-## 适合谁
+## 它能做什么
 
-像素起子对这几类用户尤其有用：
+### RunningHub 工作台
 
-| 用户 | 能得到什么 |
+从应用解析到结果回贴，完整覆盖一次 AI 修图任务：
+
+- 通过应用 ID 或链接解析 RunningHub 应用输入项
+- 按应用结构生成图片、文本、数字等动态表单
+- 捕获 Photoshop 当前选区或整个文档
+- 提交任务、显示运行状态、取消任务、追踪超时
+- 支持多任务并发，完成后自动把结果贴回 Photoshop
+
+### 把常用流程保存下来
+
+一次配置，之后重复使用：
+
+- **应用管理**：保存、搜索、排序和维护常用 RunningHub 应用
+- **提示词模板**：沉淀人像、产品、局部重绘、风格化和画质增强 prompt
+- **快捷入口**：固定应用与参数，框选区域后即可一键运行
+- **导入导出**：备份模板、应用与快捷入口，方便迁移和分享
+
+### AI 与 Photoshop 工具并行工作
+
+像素起子不只负责提交 AI 任务，也把高频后期动作放在手边：
+
+| 模块 | 适合做什么 |
 | --- | --- |
-| 修图师 | 把局部重绘、细节增强、风格化处理接进 Photoshop 工作流 |
-| 摄影后期 | 选区捕获、结果回贴、观察层和中性灰等工具集中管理 |
-| AI 绘图用户 | 保存常用应用、提示词模板和快捷入口，减少重复输入 |
-| RunningHub 用户 | 把网页工作流变成 Photoshop 内的可复用面板 |
-| 插件开发者 | 参考 UXP Host + WebView 的插件架构和桥接方式 |
+| AI 优化提示词 | 结合参考图优化 prompt，确认后替换或追加 |
+| 黑白观察层 | 检查明暗、结构和画面脏点 |
+| 中性灰图层 | 辅助 Dodge & Burn |
+| 盖印、模糊、锐化 | 快速进入常见后期处理 |
+| 内容识别填充、选择并遮住 | 调用 Photoshop 原生能力 |
+| 辉光预览 | 调节强度、半径、阈值和饱和度后再写回图层 |
 
-## 核心优势
-
-### 1. 不离开 Photoshop
-
-像素起子的核心体验是“在 PS 里完成 AI 往返”。你可以直接使用当前文档或选区作为输入，任务完成后结果会回到 Photoshop，不需要手动导出、下载、拖拽和重新对齐。
-
-### 2. 小白也能跑工作流
-
-你不需要理解复杂接口。保存 RunningHub API Key 后，把应用 ID 或链接填进插件，像素起子会解析应用输入项，并自动生成表单。该填图片的地方捕获图片，该填文字的地方写提示词。
-
-### 3. 常用配置可以沉淀下来
-
-像素起子不只是“跑一次任务”。它可以保存：
-
-- RunningHub 应用
-- 应用参数
-- 提示词模板
-- 快捷入口
-- AI 优化应用 ID
-- 并发、轮询、超时等运行设置
-
-这意味着你可以把常用工作流整理成自己的修图工具箱。
-
-### 4. AI 任务状态可见、可控
-
-提交任务后，插件会显示运行状态，支持多任务并发、取消任务、超时追踪和任务完成回贴。比起把任务扔出去之后盲等，像素起子更适合真实生产里的反复试错。
-
-### 5. 修图工具和 AI 工具在同一个面板
-
-修图不是只有 AI。像素起子也内置了一组高频 Photoshop 辅助工具，让你在使用 AI 前后都能快速处理画面。
-
-## 核心功能
-
-### RunningHub 任务工作台
-
-工作台是像素起子的主场。它负责选择应用、填写参数、捕获图片、提交任务和接收结果。
-
-| 能力 | 说明 |
-| --- | --- |
-| 应用解析 | 支持通过 RunningHub 应用 ID 或链接解析应用输入结构 |
-| 动态表单 | 根据应用输入项自动生成图片、文本、数字等参数表单 |
-| 图片捕获 | 可捕获 Photoshop 当前选区或当前文档 |
-| 任务提交 | 在插件内提交 RunningHub 图像任务 |
-| 状态追踪 | 显示任务运行、成功、失败、超时等状态 |
-| 结果回贴 | 任务完成后自动把结果贴回 Photoshop |
-| 并发控制 | 支持配置最大并发任务数 |
-| 任务取消 | 支持取消进行中的任务 |
-
-### 应用管理
-
-把常用 RunningHub 应用保存起来，之后就不用每次重新找链接、重新填参数。
-
-支持：
-
-- 保存应用
-- 修改应用名称和描述
-- 删除应用
-- 搜索应用
-- 排序应用
-- 解析应用输入项
-- 查看最近一次解析调试信息
-
-### 提示词模板
-
-常用 prompt 可以保存成模板，在工作台中快速插入。
-
-适合保存：
-
-- 人像修图提示词
-- 产品图优化提示词
-- 局部重绘提示词
-- 风格化提示词
-- 负向描述
-- 常见画质增强描述
-
-模板支持保存、删除、搜索、排序、导入和导出。
-
-### 快捷入口
-
-快捷入口适合把一个常用应用和它的非图片参数固定下来。之后只需要在 Photoshop 里框选区域，点击入口就能跑。
-
-这对于固定工作流很省时间，例如：
-
-- 一键局部精修
-- 一键皮肤细节优化
-- 一键背景补全
-- 一键服装纹理增强
-- 一键产品图清理
-
-### AI 优化提示词
-
-像素起子可以使用参考图和当前主 prompt，调用你配置的 RunningHub AI 优化应用，生成更清晰、更适合图像工作流使用的提示词。
-
-它的设计比较克制：AI 返回结果不会自动覆盖原 prompt，而是先展示在弹窗里。你确认之后，可以选择“替换当前”或“追加到当前”。
-
-### Photoshop 工具箱
-
-内置工具箱聚合了一组修图时经常用到的动作：
-
-| 工具 | 用途 |
-| --- | --- |
-| 黑白观察层 | 快速观察明暗、结构和脏点 |
-| 中性灰图层 | 辅助 Dodge & Burn 修图 |
-| 盖印图层 | 快速生成当前可见效果图层 |
-| 高斯模糊 | 调用 Photoshop 模糊能力 |
-| 智能锐化 | 快速进入锐化流程 |
-| 高反差保留 | 常见质感和锐化辅助 |
-| 内容识别填充 | 调用 Photoshop 原生填充能力 |
-| 选择并遮住 | 快速打开原生选区优化面板 |
-
-### 辉光预览面板
-
-辉光模块用于制作高光扩散和梦幻光感。它会先捕获当前图像，在插件内预览辉光效果。你可以调节强度、半径、阈值、饱和度等参数，满意后再应用到 Photoshop。
-
-这个流程的好处是：
-
-- 先预览，再写回。
-- 减少大图层反复交换。
-- 更容易控制高光范围。
-- 结果图层适合在 Photoshop 中继续调整。
-
-## 使用流程
+## 一条顺手的 AI 修图链路
 
 ```text
 打开 Photoshop
-  ↓
-加载像素起子插件
-  ↓
-在设置页保存 RunningHub API Key
-  ↓
-添加或解析 RunningHub 应用
-  ↓
-回到工作台选择应用
-  ↓
-框选 Photoshop 区域或使用当前文档
-  ↓
-填写 prompt 和参数
-  ↓
-提交任务
-  ↓
-等待结果自动贴回 Photoshop
+      ↓
+加载像素起子
+      ↓
+保存 RunningHub API Key
+      ↓
+添加或解析一个 AI 应用
+      ↓
+框选区域 / 使用当前文档
+      ↓
+填写 prompt 与参数
+      ↓
+提交任务并查看进度
+      ↓
+结果自动回到 Photoshop
 ```
 
-## 快速上手
+## 适合谁
 
-### 1. 准备环境
+| 角色 | 使用方式 |
+| --- | --- |
+| 修图师 | 把局部重绘、细节增强、风格化处理接入现有修图流程 |
+| 摄影后期 | 在 Photoshop 内完成捕获、返图、观察和基础后期 |
+| AI 绘图用户 | 保存应用、参数和 prompt，减少重复输入 |
+| RunningHub 用户 | 将网页工作流变成可复用的 Photoshop 面板 |
+| 插件开发者 | 参考 UXP Host + WebView + RunningHub 桥接架构 |
 
-你需要：
+## 快速开始
+
+### 环境要求
 
 - Adobe Photoshop 26.0 或更高版本
 - Adobe UXP Developer Tool
@@ -220,138 +116,69 @@
 - npm
 - RunningHub API Key
 
-### 2. 获取项目
+### 获取并构建
 
 ```bash
 git clone https://github.com/XIAOTsune/PixelRunner.git
 cd PixelRunner/PixelRunner
-```
-
-### 3. 安装依赖并构建
-
-```bash
 npm install
 npm run build
 ```
 
-### 4. 在 UXP Developer Tool 中加载
+### 在 Photoshop 中加载
 
 1. 打开 Adobe UXP Developer Tool。
-2. 点击 `Add Plugin`。
-3. 选择 `PixelRunner/manifest.json`。
-4. 点击 `Load` 或 `Watch`。
-5. 在 Photoshop 中打开 `Plugins -> Development -> 像素起子（小T修图助手）`。
+2. 点击 `Add Plugin`，选择 `PixelRunner/manifest.json`。
+3. 点击 `Load` 或 `Watch`。
+4. 在 Photoshop 中打开 `Plugins -> Development -> 像素起子`。
+5. 在插件设置中保存 RunningHub API Key，添加一个应用 ID 或应用链接。
 
-### 5. 第一次使用
-
-1. 打开插件设置页。
-2. 填入 RunningHub API Key。
-3. 添加一个 RunningHub 应用 ID 或应用链接。
-4. 回到工作台选择应用。
-5. 在 Photoshop 中框选区域，或使用当前文档作为输入。
-6. 填写提示词和参数，提交任务。
+更完整的 RunningHub 配置、区域选择、余额和故障排查说明，见 [RunningHub 使用文档](PixelRunner/pages/runninghub-guide.html)。
 
 ## 项目结构
 
 ```text
 .
+├── README.md                         # 项目展示与使用说明
 ├── LICENSE
-├── README.md
-├── .gitignore
+├── runninghub合作/                   # 合作文案与品牌素材
 └── PixelRunner/
-    ├── app.html                 # WebView 主界面
-    ├── app.css                  # WebView 样式
-    ├── index.html               # UXP Host Shell
-    ├── manifest.json            # Adobe UXP 插件清单
-    ├── package.json
-    ├── package-lock.json
-    ├── pages/                   # 独立帮助页面
-    ├── icons/                   # 插件图标与界面素材
-    ├── video/                   # 提示音等静态资源
-    ├── scripts/                 # 构建与打包脚本
-    ├── docs/                    # 技术方案和开发记录
+    ├── manifest.json                 # Adobe UXP 插件清单
+    ├── index.html                    # UXP Host 入口
+    ├── app.html / app.css            # WebView 界面
+    ├── icons/                        # 插件图标与界面资源
+    ├── pages/                        # 独立帮助页面
+    ├── docs/                         # 技术说明与专题文档
+    ├── scripts/                      # 构建、测试与打包脚本
+    ├── local-ai/                     # 本地 AI 放大能力与运行时
     └── src/
-        ├── host/                # Photoshop、UXP、RunningHub 桥接能力
-        ├── webview/             # UI、状态、任务、模板、辉光等逻辑
+        ├── host/                     # Photoshop、UXP、RunningHub 桥接
+        ├── webview/                  # UI、状态、任务、模板与效果
         ├── host-entry.js
         └── webview-entry.js
 ```
 
 ## 开发与构建
 
-进入插件目录：
-
-```bash
-cd PixelRunner
-```
-
-安装依赖：
+所有命令在 `PixelRunner/` 目录执行：
 
 ```bash
 npm install
+npm run build                 # 构建插件 bundle
+npm run build:watch           # 监听源码并持续构建
+npm run check:dist            # 检查构建产物同步状态
+npm test                      # 运行项目测试
+npm run package:test          # 生成测试包
+npm run package:release       # 生成正式发布包
 ```
 
-构建插件 bundle：
+开发约定：
 
-```bash
-npm run build
-```
-
-开发时监听构建：
-
-```bash
-npm run build:watch
-```
-
-检查构建产物是否与源码同步：
-
-```bash
-npm run check:dist
-```
-
-生成测试包：
-
-```bash
-npm run package:test
-```
-
-生成正式发布包：
-
-```bash
-npm run package:release
-```
-
-## 开发约定
-
-- 正式源码入口是 `src/host-entry.js` 和 `src/webview-entry.js`。
-- Photoshop、UXP、RunningHub 相关桥接能力放在 `src/host/`。
-- UI、状态、任务列表、模板、快捷入口、辉光预览等逻辑放在 `src/webview/`。
+- 源码入口是 `src/host-entry.js` 和 `src/webview-entry.js`。
+- Photoshop、UXP、RunningHub 相关桥接代码位于 `src/host/`。
+- UI、任务、模板、快捷入口和效果模块位于 `src/webview/`。
 - 不直接编辑 `dist/*.bundle.js`。
-- 不提交 `node_modules/`、`dist/`、`release/` 或本地打包文件。
-- 修改源码后建议执行 `npm run build`。
-
-## 构建产物说明
-
-以下内容会被 `.gitignore` 忽略：
-
-- `node_modules/`
-- `dist/`
-- `release/`
-- `.ccx`、`.zip`、`.tgz` 等打包结果
-- `.env`、日志、编辑器缓存和本地临时文件
-
-克隆仓库后执行 `npm install && npm run build` 即可重新生成运行所需的 bundle。
-
-## 隐私与安全
-
-像素起子不需要你把任何密钥提交到仓库。RunningHub API Key 保存在本机 UXP 存储中，用于向 RunningHub 提交任务和查询状态。
-
-请不要提交：
-
-- 真实 API Key、Token、Cookie 或账号凭证。
-- 私人调试日志。
-- 本地构建包和历史发布包。
-- 只在个人机器上有效的绝对路径。
+- `node_modules/`、`dist/`、`release/` 和本地打包文件不提交到仓库。
 
 ## RunningHub 合作
 
@@ -363,17 +190,19 @@ npm run package:release
 
 RunningHub API 为生产环境而设计，提供一个接口驱动的全模态 AI 生产力平台。无需管理多个服务商，即可通过单一 API 接入 400+ 主流大模型，生成图片、视频和其他 AI 内容。
 
-平台支持 ComfyUI 工作流免运维托管、按需弹性计量、细粒度权限控制与全链路加密，帮助团队降低部署和维护成本，同时保护业务数据与隐私。像素起子通过 RunningHub 将 AI 图像工作流接入 Photoshop，让创作者可以在熟悉的修图环境中完成素材提交、任务追踪和结果回贴。
+平台支持 ComfyUI 工作流免运维托管、按需弹性计量、细粒度权限控制与全链路加密。像素起子通过 RunningHub 将 AI 图像工作流接入 Photoshop，让创作者可以在熟悉的修图环境中完成素材提交、任务追踪和结果回贴。
 
 RunningHub API is built for production. Access 400+ leading AI models through one API to generate images, videos, and more. It also provides managed ComfyUI workflows, usage-based pricing, fine-grained access control, and end-to-end encryption for reliable and secure AI production.
 
-了解 API、工作流托管与接入方式：
-
 <p align="center">
   <a href="https://www.runninghub.ai/zh-cn/call-api?source=github"><strong>访问 RunningHub API 官方页面</strong></a>
+  ·
+  <a href="mailto:zhenyuedong@haima.me"><strong>获取折扣与接入支持</strong></a>
 </p>
 
-如需获取折扣或接入支持，请联系：<a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>
+## 隐私与安全
+
+RunningHub API Key 保存在本机 UXP 存储中，用于提交任务和查询状态。请不要将 API Key、Token、Cookie、私人调试日志或本地绝对路径提交到仓库。
 
 ## 常见问题
 
@@ -383,27 +212,18 @@ RunningHub API is built for production. Access 400+ leading AI models through on
 
 ### 必须有 RunningHub 账号吗？
 
-如果你要使用 AI 工作流提交、任务查询和结果回贴，就需要 RunningHub API Key。工具箱中的部分 Photoshop 辅助能力不依赖 RunningHub。
+使用 AI 工作流提交、任务查询和结果回贴需要 RunningHub API Key。工具箱中的部分 Photoshop 辅助能力不依赖 RunningHub。
 
 ### 为什么仓库里没有 dist？
 
-`dist/` 是构建产物，可以通过 `npm run build` 重新生成。开源仓库只保留源码、资源、脚本和文档，方便长期维护。
-
-### 小白能用吗？
-
-可以。第一次配置会稍微多一步：安装依赖、构建、用 UXP Developer Tool 加载插件、保存 RunningHub API Key。配置完成后，日常使用主要是在插件面板里选择应用、框选图片、填写提示词和提交任务。
+`dist/` 是构建产物，执行 `npm run build` 即可重新生成。仓库保留源码、资源、脚本和文档，便于维护。
 
 ## 路线方向
 
-像素起子会继续围绕一个目标迭代：让 Photoshop 内的 AI 修图流程更顺手。
-
-接下来值得继续增强的方向：
-
-- 更清晰的新手引导。
-- 更稳定的任务失败诊断。
-- 更完善的 AI 优化提示词历史。
-- 更强的辉光预览和 GPU 加速体验。
-- 更方便的应用、模板、快捷入口分享方式。
+- 更清晰的新手引导与任务诊断
+- 更完善的提示词历史和工作流分享
+- 更强的辉光预览与 GPU 加速体验
+- 更稳定的本地 AI 能力和跨服务商配置
 
 ## 许可证
 
