@@ -198,10 +198,6 @@ Access 400+ leading AI models via API — Seedance, Kling, MiniMax, Nano Banana,
 - Free API Testing
 - End-to-End Encryption
 
-<p align="center">
-  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github"><strong>CTA：Test the API for Free</strong></a>
-</p>
-
 RunningHub 为本项目提供 AI 能力支持：
 
 - Seedance 满血版 API 接入全网骨折价，在线工具低至 0.21 元/秒，节省 60%-80% 成本
@@ -217,9 +213,7 @@ RunningHub 为本项目提供 AI 能力支持：
 </p>
 
 <p align="center">
-  本项目由 RunningHub 提供支持 · 单一接口直连 400+ 主流大模型 · 免费测试
-  <br />
-  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">https://www.runninghub.ai/zh-cn/call-api?source=github</a>
+  本项目由 <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">RunningHub</a> 提供支持 · 单一接口直连 400+ 主流大模型 · 免费测试
 </p>
 
 ## 隐私与安全
