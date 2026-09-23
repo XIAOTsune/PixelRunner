@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { computeSharedContentReference, estimateTranslationReference } from "../src/shared/blend-match-reference.js";
+import { applyBlendMatchColorToRgb, applyBlendMatchColorToRgba } from "../src/shared/blend-match-color.js";
 import { buildConservativeCpuFallbackAlignment, buildCpuBlendMatchPlanFromSamples, buildTrustedGpuBlendMatchPlanFromSamples, getBlendMatchConfig } from "../src/host/photoshop/blend-match.js";
 
 function makeSample(width, height, color = [92, 118, 144, 255]) {
@@ -323,6 +324,15 @@ const residualOutlierPlan = buildAllSharedColorPlan(residualOutlierSource, stabl
 const stableProfile = stableColorPlan.color.profile;
 const residualProfile = residualOutlierPlan.color.profile;
 assert.ok(stableProfile && residualProfile, "robust shared-region ColorPlans must be available");
+assert.equal(stableColorPlan.color.previewRenderable, true, "profile ColorPlan must be renderable in preview");
+const sharedColorOptions = {
+  config: colorConsistencyConfig,
+  corrections: stableColorPlan.color.corrections,
+  profile: stableProfile
+};
+const sharedRgb = applyBlendMatchColorToRgb(82, 106, 132, sharedColorOptions);
+const sharedRgba = applyBlendMatchColorToRgba({ width: 1, height: 1, scaleX: 1, scaleY: 1, data: new Uint8Array([82, 106, 132, 255]) }, sharedColorOptions);
+assert.deepEqual(Array.from(sharedRgba.data), [...sharedRgb, 255], "RGBA and preview RGB color paths must agree");
 assert.ok(Math.abs(residualProfile.midDelta - stableProfile.midDelta) < 1.5, "a minority changed region must not drag global luminance correction");
 assert.ok(Math.abs(residualProfile.uDelta - stableProfile.uDelta) < 1.5, "a minority changed region must not drag blue/yellow correction");
 assert.ok(Math.abs(residualProfile.vDelta - stableProfile.vDelta) < 1.5, "a minority changed region must not drag red/cyan correction");

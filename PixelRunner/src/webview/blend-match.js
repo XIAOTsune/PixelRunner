@@ -1,3 +1,5 @@
+import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
+
 (function initBlendMatchModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
 
@@ -1067,25 +1069,13 @@
     return Math.max(0, Math.min(255, Math.round(value)));
   }
 
-  function applyPreviewCorrection(r, g, b, corrections) {
-    const brightness = Number(corrections && corrections.brightness) || 0;
-    const contrast = Number(corrections && corrections.contrast) || 0;
-    const saturation = Number(corrections && corrections.saturation) || 0;
-    const balance = corrections && corrections.colorBalance ? corrections.colorBalance : {};
-    let nr = r + brightness + (Number(balance.cyanRed) || 0);
-    let ng = g + brightness + (Number(balance.magentaGreen) || 0);
-    let nb = b + brightness + (Number(balance.yellowBlue) || 0);
-    const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-    nr = contrastFactor * (nr - 128) + 128;
-    ng = contrastFactor * (ng - 128) + 128;
-    nb = contrastFactor * (nb - 128) + 128;
-    const luma = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
-    const satFactor = 1 + saturation / 100;
-    return [
-      clampByte(luma + (nr - luma) * satFactor),
-      clampByte(luma + (ng - luma) * satFactor),
-      clampByte(luma + (nb - luma) * satFactor)
-    ];
+  function applyPreviewCorrection(r, g, b, preview) {
+    const colorPlan = getPreviewColorPlan(preview);
+    return applyBlendMatchColorToRgb(r, g, b, {
+      config: preview && preview.config || localState.settings,
+      corrections: colorPlan && colorPlan.corrections || preview && preview.corrections || {},
+      profile: colorPlan && colorPlan.previewRenderable === true ? colorPlan.profile || null : null
+    });
   }
 
   function createCanvas(width, height) {
@@ -1486,7 +1476,7 @@
         nextAssets.sourceImageData.data[i],
         nextAssets.sourceImageData.data[i + 1],
         nextAssets.sourceImageData.data[i + 2],
-        preview.corrections
+        preview
       );
       const alpha = clamp01(blurred[p]);
       afterImage.data[i] = clampByte(nextAssets.referenceImageData.data[i] * (1 - alpha) + corrected[0] * alpha);
@@ -1503,6 +1493,7 @@
       afterCanvas: afterDisplay,
       sourceImageData: nextAssets.sourceImageData,
       referenceImageData: nextAssets.referenceImageData,
+      afterImageData: afterImage,
       mask: nextAssets.mask,
       baseMask,
       blurred,
@@ -1524,21 +1515,18 @@
     if (!ctx) return false;
     const display = ctx.createImageData(width, height);
     const source = cache.sourceImageData.data;
-    const reference = cache.referenceImageData.data;
+    const after = cache.afterImageData && cache.afterImageData.data;
+    if (!after) return false;
     const blurred = cache.blurred;
     const mask = cache.mask;
     const splitX = Math.round(width * clamp01(split));
     for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
-      const corrected = applyPreviewCorrection(source[i], source[i + 1], source[i + 2], localState.preview && localState.preview.corrections);
       const alpha = Math.max(0, Math.min(1, blurred[p] || 0));
-      const afterR = clampByte(reference[i] * (1 - alpha) + corrected[0] * alpha);
-      const afterG = clampByte(reference[i + 1] * (1 - alpha) + corrected[1] * alpha);
-      const afterB = clampByte(reference[i + 2] * (1 - alpha) + corrected[2] * alpha);
       const x = p % width;
       const useAfter = x >= splitX;
-      display.data[i] = useAfter ? afterR : source[i];
-      display.data[i + 1] = useAfter ? afterG : source[i + 1];
-      display.data[i + 2] = useAfter ? afterB : source[i + 2];
+      display.data[i] = useAfter ? after[i] : source[i];
+      display.data[i + 1] = useAfter ? after[i + 1] : source[i + 1];
+      display.data[i + 2] = useAfter ? after[i + 2] : source[i + 2];
       display.data[i + 3] = 255;
       const band = alpha > 0.08 && alpha < 0.92 ? Math.min(0.34, 0.08 + Math.sin(alpha * Math.PI) * 0.22) : 0;
       if (band > 0) {
@@ -1580,7 +1568,8 @@
     if (!renderer || !preview) return false;
     // The preview renderer has no mask texture input. Use the CPU compositor whenever
     // a trusted shared mask exists so preview and Apply consume the same plan data.
-    if (getPreviewSharedMask(preview)) return false;
+    const previewColorPlan = getPreviewColorPlan(preview);
+    if (getPreviewSharedMask(preview) || previewColorPlan && previewColorPlan.method === "internal-color-profile") return false;
     const sourceImage = preview.sourceTextureInput || preview.sourceCanvas || preview.sourceImage;
     const referenceImage = preview.referenceTextureInput || preview.referenceCanvas || preview.referenceImage;
     if (!sourceImage || !referenceImage) return false;

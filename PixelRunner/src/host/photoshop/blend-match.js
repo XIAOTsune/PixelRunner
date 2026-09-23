@@ -1,6 +1,10 @@
 import { activateDocument, getDocumentInfo, normalizeBounds } from "./document.js";
 import { ensureDeps } from "./deps.js";
 import { computeSharedContentReference, estimateTranslationReference } from "../../shared/blend-match-reference.js";
+import {
+  applyBlendMatchColorToRgba,
+  summarizeBlendMatchToneCurve
+} from "../../shared/blend-match-color.js";
 
 const DEFAULT_BLEND_MATCH_CONFIG = {
   mode: "balanced",
@@ -1254,8 +1258,8 @@ function buildBlendMatchColorPlan({ corrections, colorProfile, configHash, sampl
     backend: "cpu",
     method,
     executable: true,
-    previewRenderable: false,
-    previewFallback: "simplified-corrections",
+    previewRenderable: true,
+    previewFallback: "",
     corrections: cloneJsonValue(corrections),
     profile: cloneJsonValue(colorProfile),
     summary,
@@ -2628,8 +2632,6 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
   if (!sourceSample || !sourceSample.data) throw new Error("内部融合缺少 source 像素。");
   const width = Math.max(1, Number(sourceSample.width) || 1);
   const height = Math.max(1, Number(sourceSample.height) || 1);
-  const sourceData = sourceSample.data;
-  const out = new Uint8Array(sourceData.length);
   const profile = options.colorProfile || null;
   const total = Math.max(0, Math.min(1, Number(config && config.totalStrength) / 100 || 0));
   const brightness = (Number(corrections && corrections.brightness) || 0) * (0.72 + total * 0.28);
@@ -2639,71 +2641,22 @@ function applyInternalColorCorrectionsToRgba(sourceSample, config, corrections, 
   const colorScale = 0.85 + total * 0.15;
   const contrastFactor = (259 * (contrast + 255)) / Math.max(1, 255 * (259 - contrast));
   const saturationFactor = Math.max(0.45, Math.min(1.75, 1 + saturation / 100));
-  const forceOpaque = options.forceOpaque === true;
-  for (let index = 0; index < sourceData.length; index += 4) {
-    const alpha = sourceData[index + 3];
-    if (alpha <= 0) {
-      out[index] = 0;
-      out[index + 1] = 0;
-      out[index + 2] = 0;
-      out[index + 3] = 0;
-      continue;
-    }
-    let r = sourceData[index];
-    let g = sourceData[index + 1];
-    let b = sourceData[index + 2];
-    if (profile) {
-      const y0 = 0.299 * r + 0.587 * g + 0.114 * b;
-      const u0 = b - y0;
-      const v0 = r - y0;
-      const maxChannel = Math.max(r, g, b);
-      const minChannel = Math.min(r, g, b);
-      const sat0 = maxChannel <= 0 ? 0 : (maxChannel - minChannel) / maxChannel;
-      const shadowWeight = 1 - smoothstep(42, 118, y0);
-      const highlightWeight = smoothstep(172, 238, y0);
-      const midWeight = Math.max(0, 1 - Math.max(shadowWeight, highlightWeight));
-      let toneDelta =
-        (Number(profile.shadowDelta) || 0) * shadowWeight +
-        (Number(profile.midDelta) || 0) * midWeight +
-        (Number(profile.highlightDelta) || 0) * highlightWeight;
-      const curveDelta = getToneCurveDelta(y0, profile.toneCurve);
-      if (Number.isFinite(curveDelta)) {
-        toneDelta = lerp(toneDelta, curveDelta, Math.max(0, Math.min(1, Number(profile.toneCurve && profile.toneCurve.mix) || 0.62)));
-      }
-      if (y0 > 218 && toneDelta > 0) toneDelta *= 0.35;
-      if (y0 < 32 && toneDelta < 0) toneDelta *= 0.35;
-      const y = y0 + toneDelta;
-      const chromaProtect = 0.52 + midWeight * 0.48;
-      const neutralWeight = (1 - smoothstep(0.06, 0.32, sat0)) * (0.36 + midWeight * 0.64);
-      const chromaScale = Number(profile.chromaScale) || 1;
-      const u = u0 * (1 + (chromaScale - 1) * chromaProtect) + profile.uDelta * chromaProtect + (Number(profile.neutralUDelta) || 0) * neutralWeight;
-      const v = v0 * (1 + (chromaScale - 1) * chromaProtect) + profile.vDelta * chromaProtect + (Number(profile.neutralVDelta) || 0) * neutralWeight;
-      [r, g, b] = yuvToRgb(y, u, v);
-      [r, g, b] = applySaturationToRgb(r, g, b, 1 + (profile.saturationFactor - 1) * chromaProtect);
-    } else {
-      r += brightness + (Number(balance.cyanRed) || 0) * colorScale;
-      g += brightness + (Number(balance.magentaGreen) || 0) * colorScale;
-      b += brightness + (Number(balance.yellowBlue) || 0) * colorScale;
-      r = contrastFactor * (r - 128) + 128;
-      g = contrastFactor * (g - 128) + 128;
-      b = contrastFactor * (b - 128) + 128;
-      [r, g, b] = applySaturationToRgb(r, g, b, saturationFactor);
-    }
-    out[index] = clampByte(r);
-    out[index + 1] = clampByte(g);
-    out[index + 2] = clampByte(b);
-    out[index + 3] = forceOpaque ? 255 : alpha;
-  }
+  const rendered = applyBlendMatchColorToRgba(sourceSample, {
+    config,
+    corrections,
+    profile,
+    forceOpaque: options.forceOpaque === true
+  });
   return {
     width,
     height,
     scaleX: sourceSample.scaleX,
     scaleY: sourceSample.scaleY,
-    data: out,
+    data: rendered.data,
     color: {
       method: profile ? (profile.significantMismatch ? "enhanced-tone-chroma-profile" : "protected-tone-chroma-profile") : "legacy-correction-profile",
       brightness: profile ? Number(profile.midDelta.toFixed(2)) : Number(brightness.toFixed(2)),
-      contrast: profile ? Number(summarizeToneCurveStrength(profile.toneCurve).toFixed(2)) : Number(contrast.toFixed(2)),
+      contrast: profile ? Number(summarizeBlendMatchToneCurve(profile.toneCurve).toFixed(2)) : Number(contrast.toFixed(2)),
       saturation: profile ? Number(((profile.saturationFactor - 1) * 100).toFixed(2)) : Number(saturation.toFixed(2)),
       colorBalance: profile
         ? {
