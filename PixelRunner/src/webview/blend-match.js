@@ -629,6 +629,19 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
 
   function decodePreviewSample(rawSample) {
     if (!rawSample || typeof rawSample !== "object") return null;
+    if (rawSample.data instanceof Uint8Array || rawSample.data instanceof Uint8ClampedArray) {
+      return {
+        width: Math.max(1, Number(rawSample.width) || 1),
+        height: Math.max(1, Number(rawSample.height) || 1),
+        scaleX: Number(rawSample.scaleX) || 1,
+        scaleY: Number(rawSample.scaleY) || 1,
+        data: rawSample.data,
+        byteLength: rawSample.data.byteLength,
+        stats: rawSample.stats || null,
+        decodeMs: 0,
+        transferMode: "typed-array"
+      };
+    }
     const startedAt = getPreviewNowMs();
     const data = decodeBase64Bytes(rawSample.base64);
     return data
@@ -640,7 +653,8 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
           data,
           byteLength: data.byteLength,
           stats: rawSample.stats || null,
-          decodeMs: getPreviewNowMs() - startedAt
+          decodeMs: getPreviewNowMs() - startedAt,
+          transferMode: "base64"
         }
       : null;
   }
@@ -1303,6 +1317,10 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
         JSON.stringify(colorSummary.profile || {})
       ].join(":") : "",
       sharedMask && sharedMask.maskHash ? String(sharedMask.maskHash) : "",
+      preview && preview.planId ? String(preview.planId) : "",
+      preview && preview.alignment && preview.alignment.search && preview.alignment.search.source
+        ? String(preview.alignment.search.source)
+        : "",
       Number(settings && settings.featherRadius) || 0
     ].join("|");
   }
@@ -2290,7 +2308,7 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
       }
       const transferredBytes = Number(sourceSample.byteLength || 0) + Number(referenceSample.byteLength || 0);
       if (modules.ui && typeof modules.ui.logToWorkspace === "function") {
-        modules.ui.logToWorkspace(`[对齐与校色] bridge transfer + decode：raw payload ${transferredBytes} bytes，source decode ${formatPreviewMs(sourceSample.decodeMs)} / reference decode ${formatPreviewMs(referenceSample.decodeMs)} / 前端 decode 总计 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)}。`, "info");
+        modules.ui.logToWorkspace(`[对齐与校色] bridge transfer + decode：raw payload ${transferredBytes} bytes，mode=${sourceSample.transferMode || "base64"}，source decode ${formatPreviewMs(sourceSample.decodeMs)} / reference decode ${formatPreviewMs(referenceSample.decodeMs)} / 前端 decode 总计 ${formatPreviewMs(decodeDoneAt - decodeStartedAt)}。`, "info");
       }
       sampleResult.sourceSample = sourceSample;
       sampleResult.referenceSample = referenceSample;
