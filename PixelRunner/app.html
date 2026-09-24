@@ -1480,12 +1480,35 @@
 
       <div class="blend-match-controls">
         <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">模式</span></span>
+          <select id="blendMatchModeInput" class="field-input">
+            <option value="natural">自然</option>
+            <option value="balanced" selected>均衡</option>
+            <option value="strong">强融合</option>
+          </select>
+        </label>
+        <label class="field blend-match-field">
           <span class="glow-param-line"><span class="field-label">总强度</span><span id="blendMatchTotalValue">100</span></span>
           <input id="blendMatchTotalInput" class="field-input glow-strength-slider" type="range" min="0" max="100" step="1" value="100" />
         </label>
+        <label class="field blend-match-field">
+          <span class="glow-param-line"><span class="field-label">羽化半径</span><span><span id="blendMatchFeatherValue">72</span> px</span></span>
+          <input id="blendMatchFeatherInput" class="field-input glow-strength-slider" type="range" min="0" max="128" step="1" value="72" />
+        </label>
       </div>
 
-      <div class="summary-strip">色调、色彩、像素对齐、羽化和原图备份会自动处理；新增或替换内容不参与颜色推断。</div>
+      <div class="blend-match-options">
+        <label class="freq-sep-check-field">
+          <input id="blendMatchBackupToggle" type="checkbox" checked />
+          <span>保留原返图图层作为隐藏备份</span>
+        </label>
+        <label class="freq-sep-check-field">
+          <input id="blendMatchAlignmentToggle" type="checkbox" checked />
+          <span>像素级精确对齐（处理较慢）</span>
+        </label>
+      </div>
+
+      <div class="summary-strip">新增或替换内容不参与颜色推断；像素级对齐与校色会根据有效重合区域自动保护。</div>
 
       <div class="action-row blend-match-actions">
         <button id="btnBlendMatchReset" class="secondary-btn" type="button">重置</button>

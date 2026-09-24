@@ -48,6 +48,11 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
     balanced: { toneStrength: 78, colorMatchStrength: 76, alignmentMaxOffset: 120, alignmentFlex: 56 },
     strong: { toneStrength: 90, colorMatchStrength: 86, alignmentMaxOffset: 120, alignmentFlex: 56 }
   };
+  const MODE_LABELS = {
+    natural: "自然",
+    balanced: "均衡",
+    strong: "强融合"
+  };
 
   const localState = {
     settings: { ...DEFAULT_SETTINGS },
@@ -89,13 +94,14 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
 
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" ? settings : {};
-    // Keep the user-facing flow to one strength control. Legacy mode, feather,
-    // alignment, and backup values are intentionally normalized to the automatic profile.
-    const mode = DEFAULT_SETTINGS.mode;
+    const requestedMode = String(source.mode || "");
+    const mode = Object.prototype.hasOwnProperty.call(MODE_LABELS, requestedMode)
+      ? requestedMode
+      : DEFAULT_SETTINGS.mode;
     const preset = MODE_PRESETS[mode];
-    const toneStrength = preset.toneStrength;
-    const colorMatchStrength = preset.colorMatchStrength;
-    const alignmentFlex = preset.alignmentFlex;
+    const toneStrength = clampNumber(source.toneStrength, 0, 100, preset.toneStrength);
+    const colorMatchStrength = clampNumber(source.colorMatchStrength, 0, 100, preset.colorMatchStrength);
+    const alignmentFlex = clampNumber(source.alignmentFlex, 0, 100, preset.alignmentFlex);
     const detailed = deriveDetailedSettings({
       toneStrength,
       colorMatchStrength,
@@ -112,11 +118,11 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
       colorStrength: detailed.colorStrength,
       saturationStrength: detailed.saturationStrength,
       contrastStrength: detailed.contrastStrength,
-      featherRadius: DEFAULT_SETTINGS.featherRadius,
-      createBackupLayer: true,
+      featherRadius: clampNumber(source.featherRadius, 0, 128, DEFAULT_SETTINGS.featherRadius),
+      createBackupLayer: source.createBackupLayer !== false,
       pixelPipelineEnabled: true,
-      alignmentEnabled: true,
-      alignmentMaxOffset: preset.alignmentMaxOffset,
+      alignmentEnabled: source.alignmentEnabled !== false,
+      alignmentMaxOffset: clampNumber(source.alignmentMaxOffset, 1, 320, preset.alignmentMaxOffset),
       alignmentScaleEnabled: detailed.alignmentScaleEnabled,
       alignmentFlex,
       alignmentMaxScale: detailed.alignmentMaxScale,
@@ -193,8 +199,9 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
 
   function renderSettings() {
     const settings = localState.settings;
-    setText("blendMatchModeBadge", "自动");
-    setText("blendMatchQuickHint", `强度 ${settings.totalStrength}% / 自动对齐与校色`);
+    const modeLabel = MODE_LABELS[settings.mode] || MODE_LABELS.balanced;
+    setText("blendMatchModeBadge", modeLabel);
+    setText("blendMatchQuickHint", `模式 ${modeLabel} / 强度 ${settings.totalStrength}% / 羽化 ${settings.featherRadius}px`);
     setText("blendMatchTotalValue", settings.totalStrength);
     setText("blendMatchToneValue", settings.toneStrength);
     setText("blendMatchColorMatchValue", settings.colorMatchStrength);
