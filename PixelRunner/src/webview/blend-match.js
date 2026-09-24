@@ -42,11 +42,6 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
   const GPU_ALIGNMENT_SEED_GRACE_MS = 120;
   const GPU_ALIGNMENT_SEED_TTL_MS = 30000;
 
-  const MODE_LABELS = {
-    natural: "自然",
-    balanced: "均衡",
-    strong: "强融合"
-  };
   const MODE_PRESETS = {
     natural: { toneStrength: 68, colorMatchStrength: 62, alignmentMaxOffset: 72, alignmentFlex: 30 },
     // Color modes must not silently reduce the baseline correction range.
@@ -94,11 +89,9 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
 
   function normalizeSettings(settings) {
     const source = settings && typeof settings === "object" ? settings : {};
-    const requestedMode = String(source.mode || "");
-    const migratedMode = requestedMode === "edgeOnly" ? "natural" : requestedMode === "colorOnly" ? "balanced" : requestedMode;
-    const mode = Object.prototype.hasOwnProperty.call(MODE_LABELS, migratedMode)
-      ? migratedMode
-      : DEFAULT_SETTINGS.mode;
+    // Keep the user-facing flow to one strength control. Legacy mode, feather,
+    // alignment, and backup values are intentionally normalized to the automatic profile.
+    const mode = DEFAULT_SETTINGS.mode;
     const preset = MODE_PRESETS[mode];
     const toneStrength = preset.toneStrength;
     const colorMatchStrength = preset.colorMatchStrength;
@@ -107,7 +100,7 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
       toneStrength,
       colorMatchStrength,
       alignmentFlex,
-      alignmentEnabled: source.alignmentEnabled !== false
+      alignmentEnabled: true
     });
     return {
       autoEnabled: Boolean(source.autoEnabled),
@@ -119,10 +112,10 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
       colorStrength: detailed.colorStrength,
       saturationStrength: detailed.saturationStrength,
       contrastStrength: detailed.contrastStrength,
-      featherRadius: clampNumber(source.featherRadius, 0, 128, DEFAULT_SETTINGS.featherRadius),
-      createBackupLayer: source.createBackupLayer !== false,
+      featherRadius: DEFAULT_SETTINGS.featherRadius,
+      createBackupLayer: true,
       pixelPipelineEnabled: true,
-      alignmentEnabled: source.alignmentEnabled !== false,
+      alignmentEnabled: true,
       alignmentMaxOffset: preset.alignmentMaxOffset,
       alignmentScaleEnabled: detailed.alignmentScaleEnabled,
       alignmentFlex,
@@ -200,9 +193,8 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
 
   function renderSettings() {
     const settings = localState.settings;
-    const modeLabel = MODE_LABELS[settings.mode] || MODE_LABELS.balanced;
-    setText("blendMatchModeBadge", modeLabel);
-    setText("blendMatchQuickHint", `模式 ${modeLabel} / 强度 ${settings.totalStrength}% / 羽化 ${settings.featherRadius}px`);
+    setText("blendMatchModeBadge", "自动");
+    setText("blendMatchQuickHint", `强度 ${settings.totalStrength}% / 自动对齐与校色`);
     setText("blendMatchTotalValue", settings.totalStrength);
     setText("blendMatchToneValue", settings.toneStrength);
     setText("blendMatchColorMatchValue", settings.colorMatchStrength);
@@ -223,19 +215,29 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
   }
 
   function readSettingsFromInputs() {
+    const modeInput = getById("blendMatchModeInput");
+    const totalInput = getById("blendMatchTotalInput");
+    const toneInput = getById("blendMatchToneInput");
+    const colorMatchInput = getById("blendMatchColorMatchInput");
+    const featherInput = getById("blendMatchFeatherInput");
+    const alignInput = getById("blendMatchAlignInput");
+    const alignmentFlexInput = getById("blendMatchAlignmentFlexInput");
+    const backupToggle = getById("blendMatchBackupToggle");
+    const alignmentToggle = getById("blendMatchAlignmentToggle");
+    const autoToggle = getById("blendMatchAutoToggle");
     localState.settings = normalizeSettings({
       ...localState.settings,
-      mode: String((getById("blendMatchModeInput") && getById("blendMatchModeInput").value) || localState.settings.mode),
-      totalStrength: getById("blendMatchTotalInput") && getById("blendMatchTotalInput").value,
-      toneStrength: getById("blendMatchToneInput") && getById("blendMatchToneInput").value,
-      colorMatchStrength: getById("blendMatchColorMatchInput") && getById("blendMatchColorMatchInput").value,
-      featherRadius: getById("blendMatchFeatherInput") && getById("blendMatchFeatherInput").value,
-      alignmentMaxOffset: getById("blendMatchAlignInput") && getById("blendMatchAlignInput").value,
-      alignmentFlex: getById("blendMatchAlignmentFlexInput") && getById("blendMatchAlignmentFlexInput").value,
-      createBackupLayer: !getById("blendMatchBackupToggle") || getById("blendMatchBackupToggle").checked,
+      mode: modeInput ? String(modeInput.value || localState.settings.mode) : localState.settings.mode,
+      totalStrength: totalInput ? totalInput.value : localState.settings.totalStrength,
+      toneStrength: toneInput ? toneInput.value : localState.settings.toneStrength,
+      colorMatchStrength: colorMatchInput ? colorMatchInput.value : localState.settings.colorMatchStrength,
+      featherRadius: featherInput ? featherInput.value : localState.settings.featherRadius,
+      alignmentMaxOffset: alignInput ? alignInput.value : localState.settings.alignmentMaxOffset,
+      alignmentFlex: alignmentFlexInput ? alignmentFlexInput.value : localState.settings.alignmentFlex,
+      createBackupLayer: backupToggle ? backupToggle.checked : true,
       pixelPipelineEnabled: true,
-      alignmentEnabled: Boolean(getById("blendMatchAlignmentToggle") && getById("blendMatchAlignmentToggle").checked),
-      autoEnabled: Boolean(getById("blendMatchAutoToggle") && getById("blendMatchAutoToggle").checked)
+      alignmentEnabled: alignmentToggle ? alignmentToggle.checked : true,
+      autoEnabled: autoToggle ? autoToggle.checked : localState.settings.autoEnabled
     });
     renderSettings();
     void persistSettings();
@@ -275,7 +277,7 @@ import { applyBlendMatchColorToRgb } from "../shared/blend-match-color.js";
     renderSettings();
     void persistSettings();
     if (modules.ui && modules.ui.logToWorkspace) {
-      modules.ui.logToWorkspace("对齐与校色参数已重置为均衡默认值。", "info");
+      modules.ui.logToWorkspace("对齐与校色已重置为自动默认值。", "info");
     }
   }
 

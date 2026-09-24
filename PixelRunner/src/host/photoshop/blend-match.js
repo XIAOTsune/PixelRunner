@@ -120,7 +120,7 @@ export function getBlendMatchConfig(payload = {}) {
   const alignmentMaxOffset = mode === "balanced"
     ? Math.max(DEFAULT_BLEND_MATCH_CONFIG.alignmentMaxOffset, requestedAlignmentMaxOffset)
     : requestedAlignmentMaxOffset;
-  return {
+  const config = {
     mode,
     totalStrength: clampNumber(payload.totalStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.totalStrength),
     luminanceStrength: edgeOnly || colorOnly ? 0 : clampNumber(payload.luminanceStrength, 0, 100, DEFAULT_BLEND_MATCH_CONFIG.luminanceStrength) * modeBoost,
@@ -142,6 +142,8 @@ export function getBlendMatchConfig(payload = {}) {
     localMeshMaxEdge: clampNumber(payload.localMeshMaxEdge, 512, 2048, DEFAULT_BLEND_MATCH_CONFIG.localMeshMaxEdge),
     previewMaxEdge: clampNumber(payload.previewMaxEdge, 256, 768, DEFAULT_BLEND_MATCH_CONFIG.previewMaxEdge)
   };
+
+  return config;
 }
 
 function getBlendMatchAnalysisConfigKey(config) {
@@ -2763,10 +2765,15 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
   const reportedSharedRatio = alignment && alignment.sharedMask
     ? Math.max(0, Math.min(1, Number(alignment.sharedMask.sharedRatio) || 0))
     : 1;
+  // A small shared patch can still provide a hint, but it must not drive a
+  // full-frame correction when the AI result replaced most of the image.
+  const sharedEvidenceScale = reportedSharedRatio < 0.32
+    ? lerp(0.52, 1, smoothstep(0.12, 0.32, reportedSharedRatio))
+    : 1;
   const evidenceReliability = (
     lerp(0.72, 1, smoothstep(0.14, 0.5, reportedSharedRatio)) *
     lerp(0.82, 1, smoothstep(18, 96, sourceY.weight))
-  );
+  ) * sharedEvidenceScale;
   const limits = getColorProfileLimits(config, mismatchSeverity);
   const toneStrength = Math.min(lerp(0.72, 0.88, mismatchSeverity), luminanceAmount * lerp(0.82, 0.98, mismatchSeverity)) * evidenceReliability;
   const colorStrength = Math.min(lerp(0.82, 0.92, mismatchSeverity), colorAmount * lerp(0.86, 1.02, mismatchSeverity)) * evidenceReliability;
