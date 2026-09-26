@@ -38,7 +38,12 @@ export async function fetchBinaryWithMetadata(url, options = {}) {
     : 0;
 
   try {
-    const response = await fetch(url, controller ? { signal: controller.signal } : undefined);
+    const response = await fetch(
+      url,
+      controller
+        ? { signal: controller.signal, cache: "no-store" }
+        : { cache: "no-store" }
+    );
     if (!response.ok) {
       throw new Error(`Failed to download result (HTTP ${response.status})`);
     }

@@ -3032,12 +3032,24 @@
     );
   }
 
+  function isResultDownloadPermanentError(error) {
+    const message = getAutoPlacementErrorMessage(error).toLowerCase();
+    if (!message) return false;
+    return (
+      message.includes("不是可识别的图片") ||
+      message.includes("not a valid base64 image") ||
+      message.includes("result image is missing") ||
+      /failed to download result\s*\(http\s+(?:400|401|405|422)\)/.test(message)
+    );
+  }
+
   function isResultDownloadRetryableError(error) {
-    if (isResultDownloadInvalidError(error) || isAutoPlacementTargetDocumentError(error)) return false;
+    if (isResultDownloadPermanentError(error) || isAutoPlacementTargetDocumentError(error)) return false;
     const message = getAutoPlacementErrorMessage(error).toLowerCase();
     if (!message) return false;
     return (
       message.includes("failed to download result") ||
+      message.includes("重新查询任务后仍未取得可用结果地址") ||
       message.includes("timeout") ||
       message.includes("timed out") ||
       message.includes("超时") ||
@@ -3045,7 +3057,9 @@
       message.includes("fetch failed") ||
       message.includes("failed to fetch") ||
       message.includes("load failed") ||
-      /http (408|409|425|429|5\d\d)/.test(message) ||
+      /failed to download result\s*\(http\s+(?:403|404|408|409|410|425|429|5\d\d)\)/.test(message) ||
+      message.includes("宿主通信超时") ||
+      message.includes("宿主通信请求失败") ||
       message.includes("econnreset") ||
       message.includes("enotfound") ||
       message.includes("etimedout") ||
@@ -4700,6 +4714,7 @@
     isAutoPlacementRetryableError,
     isAutoPlacementTargetDocumentError,
     isResultDownloadInvalidError,
+    isResultDownloadPermanentError,
     isResultDownloadRetryableError,
     getAutoPlacementErrorType,
     getAutoPlacementRetryDelayMs,

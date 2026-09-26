@@ -74,8 +74,16 @@ assert.equal(workspace.getAutoPlacementErrorType(new Error("Target document is u
 assert.equal(workspace.getAutoPlacementErrorType(new Error("Photoshop is busy")), "photoshop-busy");
 assert.equal(workspace.getAutoPlacementErrorType(new Error("Failed to download result (HTTP 503)")), "result-download");
 assert.equal(workspace.isResultDownloadInvalidError(new Error("Failed to download result (HTTP 404)")), true);
-assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 404)")), false);
+assert.equal(workspace.isResultDownloadPermanentError(new Error("Failed to download result (HTTP 404)")), false);
+assert.equal(workspace.isResultDownloadPermanentError(new Error("RunningHub 返回内容不是可识别的图片")), true);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 403)")), true);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 404)")), true);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 410)")), true);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 401)")), false);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 422)")), false);
 assert.equal(workspace.isResultDownloadRetryableError(new Error("Failed to download result (HTTP 503)")), true);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("宿主通信超时：runninghub.fetchTaskStatus")), true);
+assert.equal(workspace.isResultDownloadRetryableError(new Error("重新查询任务后仍未取得可用结果地址")), true);
 assert.deepEqual(
   [0, 1, 2, 3, 4, 20].map((attempt) => workspace.getResultDownloadRetryDelayMs(attempt)),
   [5000, 5000, 15000, 30000, 30000, 30000]
