@@ -458,6 +458,9 @@
     const mode = getOpticalMode(params);
     if (!isOpticalMode(mode) || !sourceLayer) return { layer: sourceLayer, activeRatio: 1 };
     const optics = params && params.blur && params.blur.optics || {};
+    if (mode === "starburst") {
+      return modules.glowCrossStar.selectSources(sourceLayer.starAnalysis, optics);
+    }
     const visibility = Math.max(0, Math.min(1, Number(optics.visibility) || 0));
     const out = createLayer(sourceLayer.width, sourceLayer.height);
     if (visibility <= 0.0001) return { layer: out, activeRatio: 0 };
@@ -530,8 +533,6 @@
     const coreMix = Math.max(0.08, Math.min(0.82, Number(optics.coreMix) || 0.35));
     const sourceCoreMix = Math.max(0, Math.min(0.42, Number(optics.softSourceMix) || 0.05));
     const verticalTightness = Math.max(0.18, Math.min(1, Number(optics.verticalTightness) || 0.55));
-    const starCount = Math.max(4, Math.min(12, Math.round(Number(optics.starCount) || 6)));
-    const rotation = (Number(optics.rotation) || 0) * Math.PI / 180;
     const sourceGate = Math.max(0, Math.min(1, Number(optics.sourceGate) || 0));
     const sourceSoftness = Math.max(0.01, Math.min(0.24, Number(optics.sourceGateSoftness) || (0.13 + (1 - visibility) * 0.08)));
     const baseVeil = Math.max(0, Math.min(0.28, Number(optics.baseVeil) || 0));
@@ -572,29 +573,6 @@
           if (mode === "anamorphic") {
             totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 1, 0, distance, falloff, sourceGate, sourceSoftness, spread, accum);
             totalWeight += addGatedDirectionalSample(layer, sourceLayer, x, y, 0, 1, distance * 0.055, falloff * 0.018 * verticalTightness, sourceGate, sourceSoftness, spread * 0.75, accum);
-          } else {
-            for (let ray = 0; ray < starCount; ray += 1) {
-              const rayJitter = (hash01(ray, starCount, 23) - 0.5) * 0.026;
-              const angle = rotation + Math.PI * 2 * ray / starCount + rayJitter;
-              const axisWeight = (ray === 0 || (starCount % 2 === 0 && ray === starCount / 2))
-                ? 1
-                : (0.34 + 0.28 * Math.abs(Math.cos(angle)));
-              const rayScale = 0.82 + hash01(ray, starCount, 41) * 0.2;
-              totalWeight += addGatedDirectionalSample(
-                layer,
-                sourceLayer,
-                x,
-                y,
-                Math.cos(angle),
-                Math.sin(angle),
-                distance * rayScale,
-                falloff * axisWeight,
-                sourceGate,
-                sourceSoftness,
-                spread,
-                accum
-              );
-            }
           }
         }
 
@@ -613,6 +591,9 @@
   }
 
   function buildMultiScaleGlow(sourceLayer, params) {
+    if (getOpticalMode(params) === "starburst") {
+      return modules.glowCrossStar.buildGeometry(sourceLayer.starAnalysis, params.blur.optics);
+    }
     const mode = getOpticalMode(params);
     const opticalSource = isOpticalMode(mode) ? buildOpticalSourceLayer(sourceLayer, params) : null;
     const blurSource = opticalSource ? opticalSource.layer : sourceLayer;

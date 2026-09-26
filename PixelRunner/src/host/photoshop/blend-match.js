@@ -2093,6 +2093,11 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       }
       const sourceY = sourceChannels.y[i];
       const refY = referenceChannels.y[i];
+      const referenceAlpha = Math.max(0, Math.min(1, referenceChannels.alpha[i]));
+      if (referenceAlpha <= 0.04) {
+        weights[i] = 0;
+        continue;
+      }
       const sourceEdge = sourceGrad[i];
       const refEdge = refGrad[i];
       const edge = Math.max(sourceEdge, refEdge);
@@ -2107,6 +2112,11 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       const shadowPenalty = (1 - smoothstep(12, 38, Math.min(sourceY, refY))) * 0.62;
       const flatBackgroundPenalty = edge < 6 ? 0.58 : 0;
       const sharedInlierWeight = sharedMask ? Math.max(0, Math.min(1, Number(sharedMask[i]) || 0)) : 1;
+      const exposureMismatch = Math.abs(sourceY - refY);
+      // A large one-pixel exposure jump is usually a boundary, clipping artifact,
+      // or newly generated content. It should not determine the full-frame grade.
+      const exposureGuard = 1 - 0.48 * smoothstep(72, 168, exposureMismatch);
+      const sharedAlpha = Math.min(alpha, referenceAlpha);
       let existingSubjectWeight = (
         0.08 +
         edgeCue * 0.36 +
@@ -2117,7 +2127,7 @@ function buildSubjectAwareColorWeights(sourceChannels, referenceChannels, width,
       existingSubjectWeight *= 1 - Math.min(0.82, highlightPenalty + shadowPenalty + flatBackgroundPenalty);
       // New/deleted content never gets color-inference weight. The only inputs are
       // the existing subject heuristic, alpha, and the shared-structure inlier mask.
-      weights[i] = Math.max(0, existingSubjectWeight * sharedInlierWeight * alpha);
+      weights[i] = Math.max(0, existingSubjectWeight * sharedInlierWeight * sharedAlpha * exposureGuard);
     }
   }
   return weights;
@@ -2771,8 +2781,8 @@ function buildInternalColorProfile(sourceSample, referenceSample, config, alignm
     ? lerp(0.52, 1, smoothstep(0.12, 0.32, reportedSharedRatio))
     : 1;
   const evidenceReliability = (
-    lerp(0.72, 1, smoothstep(0.14, 0.5, reportedSharedRatio)) *
-    lerp(0.82, 1, smoothstep(18, 96, sourceY.weight))
+    lerp(0.56, 1, smoothstep(0.14, 0.5, reportedSharedRatio)) *
+    lerp(0.72, 1, smoothstep(18, 96, sourceY.weight))
   ) * sharedEvidenceScale;
   const limits = getColorProfileLimits(config, mismatchSeverity);
   const toneStrength = Math.min(lerp(0.72, 0.88, mismatchSeverity), luminanceAmount * lerp(0.82, 0.98, mismatchSeverity)) * evidenceReliability;
@@ -3795,13 +3805,16 @@ function buildAlignmentMask(sourceSample, referenceSample) {
   const referenceField = buildSobelField(referenceLuma, width, height);
   const length = width * height;
   const alpha = new Float32Array(length);
+  const referenceAlpha = new Float32Array(length);
   const mask = new Float32Array(length);
   let edgeSum = 0;
   let alphaCount = 0;
   for (let pixel = 0, index = 3; pixel < length; pixel += 1, index += 4) {
     const a = Math.max(0, Math.min(1, (Number(sourceSample.data[index]) || 0) / 255));
+    const refA = Math.max(0, Math.min(1, (Number(referenceSample.data[index]) || 0) / 255));
     alpha[pixel] = a;
-    if (a > 0.08) {
+    referenceAlpha[pixel] = refA;
+    if (a > 0.08 && refA > 0.08) {
       edgeSum += Math.max(sourceField.mag[pixel], referenceField.mag[pixel]);
       alphaCount += 1;
     }
@@ -3818,7 +3831,8 @@ function buildAlignmentMask(sourceSample, referenceSample) {
       if (x <= border || y <= border || x >= width - border - 1 || y >= height - border - 1) continue;
       const pixel = y * width + x;
       const a = alpha[pixel];
-      if (a <= 0.06) continue;
+      const refA = referenceAlpha[pixel];
+      if (a <= 0.06 || refA <= 0.06) continue;
       const edge = Math.max(sourceField.mag[pixel], referenceField.mag[pixel]);
       const edgeAgreement = Math.min(sourceField.mag[pixel], referenceField.mag[pixel]) / Math.max(1, edge);
       const alphaEdge = Math.max(
@@ -3833,7 +3847,10 @@ function buildAlignmentMask(sourceSample, referenceSample) {
       // Alignment confidence must come from alpha and structure agreement only.
       // Raw RGB disagreement describes a possible color cast or content edit, not
       // a more trustworthy alignment feature.
-      const weight = a * (0.12 + edgeWeight * (0.46 + edgeAgreement * 0.34) + alphaEdgeWeight * 0.48);
+      const sharedAlpha = Math.min(a, refA) * (0.72 + Math.min(a, refA) * 0.28);
+      const boundaryDistance = Math.min(x, y, width - 1 - x, height - 1 - y) / Math.max(1, border * 2.5);
+      const borderGuard = 0.42 + 0.58 * Math.min(1, boundaryDistance);
+      const weight = sharedAlpha * borderGuard * (0.12 + edgeWeight * (0.46 + edgeAgreement * 0.34) + alphaEdgeWeight * 0.48);
       if (weight <= 0.04) continue;
       mask[pixel] = weight;
       covered += 1;

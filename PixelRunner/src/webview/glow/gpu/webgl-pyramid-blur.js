@@ -94,13 +94,9 @@
     uniform float uOpticsMode;
     uniform float uOpticsStrength;
     uniform float uOpticsLength;
-    uniform float uOpticsSharpness;
     uniform float uOpticsCoreMix;
-    uniform float uOpticsDiagonalMix;
     uniform float uOpticsVerticalTightness;
-    uniform float uOpticsStarCount;
     uniform float uOpticsRotation;
-    uniform float uOpticsVisibility;
     uniform float uOpticsSourceGate;
     uniform float uOpticsSourceGateSoftness;
     uniform float uOpticsSoftSourceMix;
@@ -145,11 +141,7 @@
         vec3 sourceB = texture(uSource, uvB).rgb;
         vec3 softA = mix(sourceA, texture(uCombined, uvA).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
         vec3 softB = mix(sourceB, texture(uCombined, uvB).rgb, clamp(uOpticsSoftSourceMix + 0.06, 0.0, 0.38));
-        float warmA = hash12(floor(uvA / max(uTexel * 8.0, vec2(0.0001))));
-        float warmB = hash12(floor(uvB / max(uTexel * 8.0, vec2(0.0001))) + vec2(17.0, 3.0));
-        vec3 tintA = softA * vec3(1.0 + warmA * 0.08, 1.0 + warmA * 0.02, 1.0 - warmA * 0.035);
-        vec3 tintB = softB * vec3(1.0 + warmB * 0.06, 1.0 + warmB * 0.01, 1.0 + warmB * 0.05);
-        accum += (tintA * gateA * (0.38 + gateA * 0.62) + tintB * gateB * (0.38 + gateB * 0.62)) * pairWeight;
+        accum += (softA * gateA * (0.38 + gateA * 0.62) + softB * gateB * (0.38 + gateB * 0.62)) * pairWeight;
         localWeight += pairWeight * 2.0;
       }
 
@@ -182,23 +174,10 @@
           ? clamp(0.82 + uOpticsLength / 220.0, 0.65, 2.5)
           : clamp(0.68 + uOpticsLength / 280.0, 0.55, 2.1);
 
-        if (uOpticsMode > 1.5) {
-          float shimmer = mix(0.96, 1.04, hash12(vec2(stepIndex, uOpticsLength * 0.017)));
-          accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff * shimmer, spread, totalWeight);
-          accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.055, falloff * 0.018 * uOpticsVerticalTightness, spread * 0.75, totalWeight);
-        } else {
-          float rays = clamp(floor(uOpticsStarCount + 0.5), 4.0, 12.0);
-          for (int ray = 0; ray < 12; ray += 1) {
-            float rayIndex = float(ray);
-            if (rayIndex >= rays) break;
-            float rayHash = hash12(vec2(rayIndex * 19.0, rays * 7.0 + uOpticsRotation * 0.013));
-            float angle = 6.28318530718 * rayIndex / rays + (rayHash - 0.5) * 0.03;
-            vec2 direction = rot * vec2(cos(angle), sin(angle));
-            float axisWeight = ray == 0 ? 1.0 : mix(0.28, 0.58, abs(cos(angle)));
-            float rayGain = axisWeight * mix(0.78, 1.12, rayHash);
-            accum += samplePair(direction, distance * mix(0.72, 1.04, rayHash), falloff * rayGain, spread, totalWeight);
-          }
-        }
+        float shimmer = mix(0.98, 1.02, hash12(vec2(stepIndex, uOpticsLength * 0.017)));
+        accum += samplePair(rot * vec2(1.0, 0.0), distance, falloff * shimmer, spread, totalWeight);
+        accum += samplePair(rot * vec2(0.0, 1.0), distance * 0.055, falloff * 0.018 * uOpticsVerticalTightness, spread * 0.75, totalWeight);
+
       }
 
       vec3 shaped = accum / max(0.0001, totalWeight * clamp(uOpticsNormalization, 0.18, 1.4));
@@ -478,13 +457,9 @@
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsMode"), opticsMode);
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsStrength"), Math.max(0, Number(optics.strength) || 0));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsLength"), Math.max(0, Number(optics.length) || 0));
-      gl.uniform1f(gl.getUniformLocation(program, "uOpticsSharpness"), Math.max(0.7, Number(optics.sharpness) || 1.6));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsCoreMix"), Math.max(0.08, Math.min(0.82, Number(optics.coreMix) || 0.35)));
-      gl.uniform1f(gl.getUniformLocation(program, "uOpticsDiagonalMix"), Math.max(0, Math.min(1, Number(optics.diagonalMix) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsVerticalTightness"), Math.max(0.25, Math.min(1, Number(optics.verticalTightness) || 1)));
-      gl.uniform1f(gl.getUniformLocation(program, "uOpticsStarCount"), Math.max(4, Math.min(12, Number(optics.starCount) || 6)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsRotation"), Math.max(-180, Math.min(180, Number(optics.rotation) || 0)));
-      gl.uniform1f(gl.getUniformLocation(program, "uOpticsVisibility"), Math.max(0, Math.min(1, Number(optics.visibility) || 1)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSourceGate"), Math.max(0, Math.min(1, Number(optics.sourceGate) || 0)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSourceGateSoftness"), Math.max(0.006, Math.min(0.24, Number(optics.sourceGateSoftness) || 0.08)));
       gl.uniform1f(gl.getUniformLocation(program, "uOpticsSoftSourceMix"), Math.max(0, Math.min(0.35, Number(optics.softSourceMix) || 0)));
@@ -501,6 +476,7 @@
       }
       const optics = params && params.blur && params.blur.optics ? params.blur.optics : {};
       const mode = String(optics.mode || "soft");
+      if (mode === "starburst") throw new Error("Cross-Star is CPU-only; use the shared CPU geometry path");
       let blurSource = sourceLayer;
       let activeRatio = 1;
       if (

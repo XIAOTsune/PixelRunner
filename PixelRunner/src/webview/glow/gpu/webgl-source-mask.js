@@ -549,6 +549,9 @@
     if (!imageData || !imageData.width || !imageData.height) {
       throw new Error("Glow source image is invalid");
     }
+    if (params && String(params.style || "") === "starburst") {
+      throw new Error("Cross-Star source analysis is CPU-only; use the shared CPU path");
+    }
     if (!modules.glowGpuCapabilities.canUseWebgl2(imageData.width, imageData.height)) {
       throw new Error("Image exceeds WebGL2 texture limits");
     }

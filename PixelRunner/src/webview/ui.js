@@ -20,8 +20,7 @@
     colorAmount: 0,
     colorHex: "#ffd27a",
     chromatic: 0,
-    starLength: 58,
-    starCount: 6,
+    starLength: 52,
     starRotation: 0,
     starVisible: 68,
     streakLength: 86,
@@ -265,7 +264,6 @@
     const glowStrengthInput = runtime.getById("glowStrengthInput");
     const glowRadiusInput = runtime.getById("glowRadiusInput");
     const glowStarLengthInput = runtime.getById("glowStarLengthInput");
-    const glowStarCountInput = runtime.getById("glowStarCountInput");
     const glowStarRotationInput = runtime.getById("glowStarRotationInput");
     const glowStarVisibleInput = runtime.getById("glowStarVisibleInput");
     const glowStreakLengthInput = runtime.getById("glowStreakLengthInput");
@@ -281,7 +279,6 @@
     const glowStrengthParamValue = runtime.getById("glowStrengthParamValue");
     const glowRadiusParamValue = runtime.getById("glowRadiusParamValue");
     const glowStarLengthParamValue = runtime.getById("glowStarLengthParamValue");
-    const glowStarCountParamValue = runtime.getById("glowStarCountParamValue");
     const glowStarRotationParamValue = runtime.getById("glowStarRotationParamValue");
     const glowStarVisibleParamValue = runtime.getById("glowStarVisibleParamValue");
     const glowStreakLengthParamValue = runtime.getById("glowStreakLengthParamValue");
@@ -391,9 +388,8 @@
         colorHex: readGlowColorHex(),
         chromaticEnabled: !!(glowChromaticEnabledInput && glowChromaticEnabledInput.checked),
         chromatic: readGlowSlider(glowChromaticInput, GLOW_DEFAULTS.chromatic, 0, 100),
-        starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 10, 220),
-        starCount: readGlowSlider(glowStarCountInput, GLOW_DEFAULTS.starCount, 4, 12),
-        starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -90, 90),
+        starLength: readGlowSlider(glowStarLengthInput, GLOW_DEFAULTS.starLength, 1, 100),
+        starRotation: readGlowSlider(glowStarRotationInput, GLOW_DEFAULTS.starRotation, -45, 45),
         starVisible: readGlowSlider(glowStarVisibleInput, GLOW_DEFAULTS.starVisible, 0, 100),
         streakLength: readGlowSlider(glowStreakLengthInput, GLOW_DEFAULTS.streakLength, 16, 300),
         streakVisible: readGlowSlider(glowStreakVisibleInput, GLOW_DEFAULTS.streakVisible, 0, 100)
@@ -424,7 +420,7 @@
       const thresholdLabel = isOpticalGlowStyle(state.style) ? "触发阈值" : "阈值";
       const base = `${getGlowStyleLabel(state.style)} / 强度 ${state.strength}% / ${thresholdLabel} ${(state.threshold / 100).toFixed(2)}`;
       if (state.style === "starburst") {
-        return `${base} / 星芒长度 ${state.starLength} / 边数 ${state.starCount} / 显示 ${state.starVisible}%`;
+        return `${base} / 星芒长度 ${state.starLength} / 旋转 ${state.starRotation}° / 显示 ${state.starVisible}%`;
       }
       if (state.style === "anamorphic") {
         return `${base} / 拉丝长度 ${state.streakLength} / 显示 ${state.streakVisible}%`;
@@ -449,7 +445,6 @@
       if (glowStrengthParamValue) glowStrengthParamValue.textContent = String(state.strength);
       if (glowRadiusParamValue) glowRadiusParamValue.textContent = String(state.radius);
       if (glowStarLengthParamValue) glowStarLengthParamValue.textContent = String(state.starLength);
-      if (glowStarCountParamValue) glowStarCountParamValue.textContent = String(state.starCount);
       if (glowStarRotationParamValue) glowStarRotationParamValue.textContent = `${state.starRotation}°`;
       if (glowStarVisibleParamValue) glowStarVisibleParamValue.textContent = String(state.starVisible);
       if (glowStreakLengthParamValue) glowStreakLengthParamValue.textContent = String(state.streakLength);
@@ -789,7 +784,6 @@
         state.strength,
         state.radius,
         state.starLength,
-        state.starCount,
         state.starRotation,
         state.starVisible,
         state.streakLength,
@@ -1055,7 +1049,6 @@
       glowStrengthInput,
       glowRadiusInput,
       glowStarLengthInput,
-      glowStarCountInput,
       glowStarRotationInput,
       glowStarVisibleInput,
       glowStreakLengthInput,
@@ -1106,7 +1099,6 @@
       glowStrengthInput,
       glowRadiusInput,
       glowStarLengthInput,
-      glowStarCountInput,
       glowStarRotationInput,
       glowStarVisibleInput,
       glowStreakLengthInput,

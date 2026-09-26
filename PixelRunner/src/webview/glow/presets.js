@@ -140,10 +140,16 @@
     const colorAmount = colorEnabled ? clamp(config.colorAmount, 0, 100, 0) : 0;
     const colorTint = hexToRgb01(config.colorHex);
     const chromatic = config.chromaticEnabled === false ? 0 : clamp(config.chromatic, 0, 100, 0);
-    const starLength = clamp(config.starLength, 10, 220, 58);
+    // Cross-Star uses the reference project's 1–100 semantic range. Keep
+    // accepting the older 10–220 UI values by clamping into the same unit.
+    const starLength = clamp(config.starLength, 1, 100, 52);
     const starCount = Math.round(clamp(config.starCount, 4, 12, 6));
-    const starRotation = clamp(config.starRotation, -90, 90, 0);
+    const starRotation = clamp(config.starRotation, -45, 45, 0);
     const starVisible = clamp(config.starVisible, 0, 100, 68);
+    const starSoftGlow = clamp(config.starSoftGlow, 0, 100, 10);
+    const starShape = ["crisp", "natural", "dreamy"].includes(String(config.starShape || "").toLowerCase())
+      ? String(config.starShape).toLowerCase()
+      : "natural";
     const streakLength = clamp(config.streakLength, 16, 300, 86);
     const streakVisible = clamp(config.streakVisible, 0, 100, 62);
     const strengthRatio = strength / 100;
@@ -301,7 +307,7 @@
           triggerMode: 0
         };
 
-    return {
+    const normalized = {
       style,
       strength,
       radius,
@@ -328,12 +334,12 @@
         optics: {
           mode: style === "starburst" ? "starburst" : (style === "anamorphic" ? "anamorphic" : "soft"),
           strength: style === "starburst"
-            ? clamp((0.28 + strengthRatio * 0.72 + triggerOpen * 0.08) * (0.9 + Math.pow(starLength / 220, 0.7) * 0.2), 0, 1.25, 0.68)
+            ? strengthRatio
             : (style === "anamorphic"
               ? clamp((0.3 + strengthRatio * 0.76 + triggerOpen * 0.075) * (0.95 + Math.pow(streakLength / 300, 0.72) * 0.22), 0, 1.32, 0.72)
               : 0),
           length: style === "starburst"
-            ? clamp(starLength * (0.92 + strengthRatio * 0.16), 8, 260, 58)
+            ? starLength
             : (style === "anamorphic"
               ? clamp(streakLength * (0.96 + strengthRatio * 0.2), 14, 360, 86)
               : 0),
@@ -341,9 +347,13 @@
           coreMix: style === "starburst" ? 0.32 : (style === "anamorphic" ? 0.26 : 1),
           verticalTightness: style === "anamorphic" ? 0.48 : 1,
           diagonalMix: style === "starburst" ? 0.58 : 0,
+          // Retained for backwards-compatible reads. Cross-Star never uses it.
           starCount,
           rotation: style === "starburst" ? starRotation : 0,
           visibility: opticalVisibility,
+          starRange: starVisible,
+          starShape,
+          starSoftGlow,
           candidateCount: opticalCandidateCount,
           suppressionRadius: opticalSuppressionRadius,
           candidateSoftness: style === "starburst"
@@ -399,6 +409,27 @@
         gamma: clamp(1 - exposureRatio * 0.16, 0.82, 1.18, 1)
       }
     };
+    if (style === "starburst") {
+      // Analysis is independent of source selection, geometry and final color.
+      normalized.source = {
+        thresholdLow: 0.5 + thresholdRatio * 0.3,
+        thresholdHigh: 0.6 + thresholdRatio * 0.3,
+        contrastLow: 0.02 - exposureRatio * 0.008,
+        contrastHigh: 0.2 - exposureRatio * 0.04,
+        localRadius: 0.012, // fraction of image long edge; minimum 3 pixels
+        skinProtect: 0
+      };
+      normalized.starCount = starCount; // deprecated compatibility read only
+      normalized.blur = { optics: {
+        mode: "starburst", strength: strengthRatio, starShape, length: starLength, rotation: starRotation,
+        starRange: starVisible, visibility: starVisible / 100, starSoftGlow
+      } };
+      normalized.composite.intensity = strengthRatio * 6;
+      normalized.composite.shoulder = 0.14;
+      normalized.composite.warmth = 0;
+      normalized.composite.energyFloor = 0;
+    }
+    return normalized;
   }
 
   modules.glowPresets = {

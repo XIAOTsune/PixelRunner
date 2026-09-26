@@ -49,6 +49,7 @@ function loadModule(relativePath) {
 
 [
   "src/webview/glow/presets.js",
+  "src/webview/glow/cross-star.js",
   "src/webview/glow/source-mask.js",
   "src/webview/glow/pyramid-blur.js",
   "src/webview/glow/compositor.js",
@@ -331,6 +332,12 @@ assert.ok(darkActivity < 0.001, "deep shadows must not become glow sources");
 assert.ok(neonActivity > darkActivity, "colored neon must remain a valid glow source");
 assert.ok(sumRgb(glowLayer) > 0, "synthetic image must produce visible glow energy");
 
+const starSyntheticParams = presets.normalizeGlowParams({ style: "starburst", strength: 70, starVisible: 100 });
+const starSynthetic = modules.glowSourceMask.buildSourceMask(synthetic, starSyntheticParams, { includeDebug: false });
+assert.ok(starSynthetic.starSources.every((source) => !(source.x >= 26 && source.x < 50 && source.y >= 4 && source.y < 34)), "white flat planes must not become Cross-Star sources");
+assert.ok(starSynthetic.starSources.every((source) => !(source.x >= 54 && source.x < 80 && source.y >= 4 && source.y < 38)), "skin-like regions must not become Cross-Star sources");
+assert.ok(starSynthetic.starSources.every((source) => !(source.x >= 84 && source.y < 42)), "dark regions must not become Cross-Star sources");
+
 const finalSimulation = screenPreview(synthetic, glowLayer);
 assertImageEqual(composed, finalSimulation, "CPU preview must match the final Photoshop Screen contract");
 
@@ -357,6 +364,77 @@ for (const radii of [[63, 64, 65, 66], [144, 145, 146, 147]]) {
     previousEnergy = energy;
   }
 }
+
+// Cross-Star source and geometry contract.
+function createStarImage(width = 96, height = 64, points = [[28, 32], [36, 32]]) {
+  const image = new TestImageData(width, height);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      image.data[index] = 5; image.data[index + 1] = 5; image.data[index + 2] = 7; image.data[index + 3] = 255;
+      for (const [cx, cy] of points) {
+        if (Math.hypot(x - cx, y - cy) < 4) {
+          image.data[index] = 255; image.data[index + 1] = 220; image.data[index + 2] = 180;
+        }
+      }
+    }
+  }
+  return image;
+}
+
+const starImage = createStarImage();
+const starParams = presets.normalizeGlowParams({ style: "starburst", strength: 70, starLength: 52, starVisible: 68, starRotation: 0 });
+assert.equal(starParams.blur.optics.starShape, "natural", "Cross-Star must default to natural shape");
+assert.equal(starParams.blur.optics.starCount, undefined, "starCount must not participate in Cross-Star optics");
+const starSource = modules.glowSourceMask.buildSourceMask(starImage, starParams, { includeDebug: false });
+assert.equal(starSource.starSources.length, 2, "two independent highlights must retain separate centers");
+assert.ok(Math.abs(starSource.starSources[0].x - 28) < 1 && Math.abs(starSource.starSources[1].x - 36) < 1, "source centers must remain stable");
+const starBlur = modules.glowPyramidBlur.buildMultiScaleGlow(starSource.sourceLayer, starParams);
+assert.equal(starBlur.starSources.length, 2, "geometry must emit one cross per source");
+const centerIndex = 32 * 96 + 28;
+const horizontal = starBlur.glowLayer.r[32 * 96 + 35];
+const diagonal = starBlur.glowLayer.r[35 * 96 + 31];
+assert.ok(horizontal > diagonal * 1.15, "Cross-Star must favor its horizontal and vertical axes");
+const zeroStrengthParams = presets.normalizeGlowParams({ style: "starburst", strength: 0, starVisible: 68 });
+const zeroVisibleParams = presets.normalizeGlowParams({ style: "starburst", strength: 70, starVisible: 0 });
+const zeroStrength = modules.glowPyramidBlur.buildMultiScaleGlow(modules.glowSourceMask.buildSourceMask(starImage, zeroStrengthParams, { includeDebug: false }).sourceLayer, zeroStrengthParams);
+const zeroVisible = modules.glowPyramidBlur.buildMultiScaleGlow(modules.glowSourceMask.buildSourceMask(starImage, zeroVisibleParams, { includeDebug: false }).sourceLayer, zeroVisibleParams);
+assert.equal(sumRgb(modules.glowCompositor.renderGlowLayer(zeroStrength.glowLayer, starSource.masks, zeroStrengthParams)), 0, "strength=0 must close Cross-Star energy");
+assert.equal(sumRgb(modules.glowCompositor.renderGlowLayer(zeroVisible.glowLayer, starSource.masks, zeroVisibleParams)), 0, "visible=0 must close Cross-Star energy");
+const edgeImage = createStarImage(96, 64, [[1, 32]]);
+const edgeParams = presets.normalizeGlowParams({ style: "starburst", strength: 70, starLength: 100, starVisible: 100 });
+const edgeResult = modules.glowPyramidBlur.buildMultiScaleGlow(modules.glowSourceMask.buildSourceMask(edgeImage, edgeParams, { includeDebug: false }).sourceLayer, edgeParams);
+assert.ok(edgeResult.glowLayer.r[32 * 96 + 95] < 0.0001, "out-of-bounds rays must not replicate onto the opposite edge");
+const starEnergy = (config) => {
+  const params = presets.normalizeGlowParams({ style: "starburst", strength: 70, starVisible: 100, ...config });
+  const source = modules.glowSourceMask.buildSourceMask(starImage, params, { includeDebug: false });
+  const blur = modules.glowPyramidBlur.buildMultiScaleGlow(source.sourceLayer, params);
+  return { params, image: modules.glowCompositor.renderGlowLayer(blur.glowLayer, source.masks, params) };
+};
+const shortStar = starEnergy({ starLength: 20 });
+const mediumStar = starEnergy({ starLength: 50 });
+const longStar = starEnergy({ starLength: 90 });
+assert.ok(sumRgb(mediumStar.image) >= sumRgb(shortStar.image), "Cross-Star energy must grow with length");
+assert.ok(sumRgb(longStar.image) >= sumRgb(mediumStar.image), "Cross-Star energy must remain monotonic at long lengths");
+const rotation0 = starEnergy({ starRotation: 0 }).image;
+const rotation15 = starEnergy({ starRotation: 15 }).image;
+const rotation30 = starEnergy({ starRotation: 30 }).image;
+const imageDistance = (a, b) => {
+  let total = 0;
+  for (let index = 0; index < a.data.length; index += 4) {
+    total += Math.abs(a.data[index] - b.data[index]) + Math.abs(a.data[index + 1] - b.data[index + 1]) + Math.abs(a.data[index + 2] - b.data[index + 2]);
+  }
+  return total;
+};
+assert.ok(imageDistance(rotation0, rotation15) > 0 && imageDistance(rotation15, rotation30) > 0, "rotation must affect Cross-Star geometry");
+assert.ok(imageDistance(rotation0, rotation15) < imageDistance(rotation0, rotation30) * 1.15, "rotation changes must remain continuous");
+const weakStar = starEnergy({ strength: 25 }).image;
+const strongStar = starEnergy({ strength: 90 }).image;
+assert.ok(sumRgb(strongStar) >= sumRgb(weakStar), "Cross-Star energy must grow with strength");
+const starSourceKey = modules.glowPreviewEngine.getSourceCacheKey(starParams, 96, 64);
+assert.equal(modules.glowPreviewEngine.getSourceCacheKey(presets.normalizeGlowParams({ style: "starburst", strength: 20, starLength: 70 }), 96, 64), starSourceKey, "star geometry changes must keep source analysis hot");
+assert.notEqual(modules.glowPreviewEngine.getGeometryCacheKey(starParams, starBlur), modules.glowPreviewEngine.getGeometryCacheKey(presets.normalizeGlowParams({ style: "starburst", strength: 70, starLength: 70 }), starBlur), "length must invalidate geometry only");
+assert.notEqual(modules.glowPreviewEngine.getCompositeCacheKey(starParams, "geometry"), modules.glowPreviewEngine.getCompositeCacheKey(presets.normalizeGlowParams({ style: "starburst", strength: 20 }), "geometry"), "strength must invalidate composite only");
 
 const shaderSource = fs.readFileSync(path.join(repoRoot, "src/webview/glow/gpu/webgl-compositor.js"), "utf8");
 const gpuBlurSource = fs.readFileSync(path.join(repoRoot, "src/webview/glow/gpu/webgl-pyramid-blur.js"), "utf8");
