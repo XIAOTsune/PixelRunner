@@ -36,6 +36,7 @@ function initializePixelRunnerApp() {
       Promise.all([
         modules.apps.refreshWorkspaceApps({ quiet: true }),
         modules.quickEntries.initializeQuickEntries(),
+        modules.templates.initializeBuiltinBundle(),
         modules.templates.refreshTemplates({ quiet: true })
       ])
     )
@@ -52,7 +53,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.8.5"
+        version: "2.9.0"
       });
     })
     .catch((error) => {

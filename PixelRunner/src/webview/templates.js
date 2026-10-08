@@ -262,7 +262,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       schema: "pixelrunner.bundle",
       version: 3,
       exportedAt: new Date().toISOString(),
-      name: "像素起子资料包",
+      name: String(modules.state.state.activePromptBundleName || "像素起子资料包"),
       apps,
       appsByRegion: {
         cn: apps.filter((app) => app.region === modules.state.RUNNINGHUB_REGIONS.CN),
@@ -322,6 +322,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       categoryId: template.categoryId,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt
+      ,favorite: template.favorite === true
     }));
   }
 
@@ -844,6 +845,51 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     };
   }
 
+  async function initializeBuiltinBundle() {
+    const markerKey = "pixelrunner.builtinBundle.v1";
+    const installed = await modules.runtime.storageGetItem(markerKey);
+    if (installed === "true") return;
+    try {
+      const response = await fetch("assets/prompt-bundles/pixelrunner-builtin-v8.1.json");
+      if (!response.ok) return;
+      const text = await response.text();
+      const currentTemplates = modules.state.state.templates;
+      const currentApps = modules.state.state.apps;
+      modules.state.state.templates = [];
+      modules.state.state.apps = [];
+      const summary = await importTransferPackageText(text);
+      modules.state.state.templates = modules.state.state.templates.length ? modules.state.state.templates : currentTemplates;
+      modules.state.state.apps = modules.state.state.apps.length ? modules.state.state.apps : currentApps;
+      if (!summary || summary.cancelled) return;
+      await modules.runtime.storageSetItem(markerKey, "true");
+    } catch (_) {
+      // The bundled asset is optional in browser preview and older packaged builds.
+    }
+  }
+
+  async function chooseImportStrategy() {
+    const existing = modules.state.state.templates.length || modules.state.state.apps.length;
+    if (!existing) return "merge";
+    const result = await showTemplateFormDialog({
+      title: "导入资料包",
+      message: "请选择如何处理当前资料包。合并会保留两边内容，同名项目使用新资料包版本。",
+      bodyHtml: `<div class="template-action-menu"><button class="template-action-menu-item" type="button" data-template-form-menu-action="merge"><span>合并导入</span><small>保留现有内容并更新同名项目</small></button><button class="template-action-menu-item" type="button" data-template-form-menu-action="replace"><span>替换当前资料包</span><small>先清空现有应用、提示词和快捷入口</small></button><button class="template-action-menu-item" type="button" data-template-form-menu-action="new"><span>作为新资料包</span><small>保存为独立资料包，之后可切换</small></button></div>`,
+      submitLabel: "取消",
+      onSubmit: () => ""
+    });
+    return ["replace", "new", "merge"].includes(result) ? result : null;
+  }
+
+  async function persistBundleSnapshot(name, bundleText) {
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES);
+    const bundles = modules.runtime.readJsonText(raw, []);
+    const id = modules.runtime.createId("bundle");
+    bundles.push({ id, name, content: bundleText, createdAt: Date.now(), updatedAt: Date.now() });
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, JSON.stringify(bundles));
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, id);
+    return id;
+  }
+
   function getAppMergeKey(app) {
     const region = modules.state.normalizeRunningHubRegion(app && (app.region || app.runningHubRegion));
     const name = String((app && (app.name || app.title)) || "").trim().toLowerCase();
@@ -909,6 +955,16 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (!text) throw new Error("请先粘贴模板 JSON");
 
     const transfer = parseTransferPackageText(text);
+    try { transfer.name = String((JSON.parse(text) || {}).name || "").trim(); } catch (_) { transfer.name = ""; }
+    const strategy = await chooseImportStrategy();
+    if (!strategy) return { cancelled: true, kind: transfer.kind };
+    modules.state.state.activePromptBundleName = transfer.name || modules.state.state.activePromptBundleName || "像素起子资料包";
+    if (strategy === "replace") {
+      await modules.apps.saveAppsToStorage([]);
+      await saveTemplatesToStorage([]);
+      await saveTemplateCategoriesToStorage([]);
+      if (modules.quickEntries) await modules.quickEntries.saveQuickEntriesToStorage([]);
+    }
     const importedTemplates = normalizeTemplateListWithFallback(transfer.templates);
     if (transfer.kind !== "bundle" && importedTemplates.length === 0) throw new Error("没有解析到可导入的模板");
     if (transfer.kind === "bundle" && importedTemplates.length === 0 && transfer.apps.length === 0 && transfer.quickEntries.length === 0) {
@@ -938,6 +994,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
 
     exportTemplatesToTextarea();
+    if (strategy === "new") await persistBundleSnapshot(String(transfer.name || `资料包 ${new Date().toLocaleDateString("zh-CN")}`), text);
     return {
       appsAdded: mergedApps.added,
       appsReplaced: mergedApps.replaced,
@@ -949,6 +1006,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       appsTotal: modules.state.state.apps.length,
       quickEntriesTotal: modules.state.state.quickEntries.length,
       kind: transfer.kind
+      ,strategy
     };
   }
 
@@ -1089,7 +1147,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     listEl.innerHTML = templates
       .map((item) => {
         const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
-        return `<article class="list-item saved-template-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符 · ${getCategoryName(item.categoryId)}`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
+        return `<article class="list-item saved-template-item compact-card is-draggable ${item.favorite ? "is-favorite" : ""} ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn template-favorite-btn" type="button" data-action="toggle-template-favorite" data-template-id="${modules.runtime.escapeHtml(String(item.id))}" title="${item.favorite ? "取消收藏" : "收藏提示词"}">${item.favorite ? "★" : "☆"}</button><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符 · ${getCategoryName(item.categoryId)}`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
       })
       .join("");
   }
@@ -1412,6 +1470,15 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       if (actionTarget) {
         const action = actionTarget.getAttribute("data-action");
         const templateId = actionTarget.getAttribute("data-template-id");
+        if (action === "toggle-template-favorite") {
+          event.preventDefault();
+          const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+          if (target) {
+            target.favorite = !target.favorite;
+            await saveTemplatesToStorage(modules.state.state.templates);
+          }
+          return;
+        }
         if (action === "open-picker-template-menu") {
           event.preventDefault();
           event.stopPropagation();
@@ -1582,6 +1649,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     fillTemplateEditor,
     updateTemplateLengthHint,
     refreshTemplates,
+    initializeBuiltinBundle,
     renderSavedTemplatesList,
     saveEditedTemplate,
     deleteTemplateById,

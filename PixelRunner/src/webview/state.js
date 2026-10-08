@@ -40,6 +40,8 @@ import {
     PROMPT_TEMPLATES: "rh_prompt_templates",
     PROMPT_TEMPLATE_CATEGORIES: "pixelrunner.promptTemplateCategories.v1",
     PROMPT_HISTORY: "pixelrunner.promptHistory.v1",
+    PROMPT_BUNDLES: "pixelrunner.promptBundles.v1",
+    ACTIVE_PROMPT_BUNDLE: "pixelrunner.activePromptBundle.v1",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
     CURRENT_APP_ID: "pixelrunner.current_app_id",
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
@@ -168,6 +170,7 @@ import {
     quickEntries: [],
     templates: [],
     templateCategories: [],
+    activePromptBundleName: "像素起子资料包",
     promptHistory: [],
     appPickerKeyword: "",
     appPickerView: "picker",
@@ -370,6 +373,7 @@ import {
       region: normalizeRunningHubRegion(source.region || source.runningHubRegion),
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+      ,favorite: source.favorite === true || source.isFavorite === true
     };
   }
 

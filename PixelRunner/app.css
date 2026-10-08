@@ -5562,6 +5562,10 @@ button {
   line-height: 1.4;
 }
 
+.prompt-history-item.is-favorite {
+  background: rgba(215, 166, 42, .12);
+}
+
 button.prompt-history-item {
   cursor: pointer;
 }
@@ -5719,6 +5723,43 @@ button.prompt-history-item:focus-visible {
 
 .saved-template-item {
   align-items: flex-start;
+}
+
+.saved-template-item.is-favorite {
+  border-color: #d7a62a;
+  box-shadow: 0 0 0 1px rgba(215, 166, 42, .22);
+}
+
+.template-favorite-btn,
+.prompt-history-favorite {
+  color: #b88713;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.prompt-history-item {
+  position: relative;
+}
+
+.prompt-history-apply {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.prompt-history-favorite {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .saved-template-main {

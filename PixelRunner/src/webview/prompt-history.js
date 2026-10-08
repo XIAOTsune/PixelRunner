@@ -22,6 +22,7 @@
       fieldKey, fieldLabel, content,
       createdAt,
       lastUsedAt: validTime(source.lastUsedAt) ? Number(source.lastUsedAt) : createdAt
+      ,favorite: source.favorite === true || source.isFavorite === true
     };
   }
 
@@ -29,7 +30,7 @@
     const seen = new Set();
     const ids = new Set();
     return (Array.isArray(value) ? value : []).map((item) => normalizeItem(item)).filter(Boolean)
-      .sort((a, b) => b.lastUsedAt - a.lastUsedAt).filter((item) => {
+      .sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.lastUsedAt - a.lastUsedAt).filter((item) => {
       const fingerprint = JSON.stringify([item.appId, item.fieldKey, item.content.trim()]);
       if (seen.has(fingerprint)) return false;
       seen.add(fingerprint);
@@ -82,8 +83,9 @@
     const content = String(item.content || "").replace(/\s+/g, " ").trim();
     const preview = content.length > 180 ? `${content.slice(0, 180)}…` : content;
     const meta = `${item.appName || "未命名应用"} · ${item.fieldLabel || item.fieldKey || "提示词"} · ${formatAge(item.lastUsedAt)}`;
-    if (options.selectable === false) return `<div class="prompt-history-item"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></div>`;
-    return `<button class="prompt-history-item" type="button" data-action="apply-prompt-history" data-form-key="${runtime.escapeHtml(key)}" data-history-id="${runtime.escapeHtml(item.id)}"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></button>`;
+    const favorite = `<button class="prompt-history-favorite ${item.favorite ? "is-favorite" : ""}" type="button" data-action="toggle-prompt-history-favorite" data-history-id="${runtime.escapeHtml(item.id)}" aria-label="${item.favorite ? "取消收藏" : "收藏提示词"}">${item.favorite ? "★" : "☆"}</button>`;
+    if (options.selectable === false) return `<div class="prompt-history-item"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span>${favorite}</div>`;
+    return `<div class="prompt-history-item"><button class="prompt-history-apply" type="button" data-action="apply-prompt-history" data-form-key="${runtime.escapeHtml(key)}" data-history-id="${runtime.escapeHtml(item.id)}"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></button>${favorite}</div>`;
   }
 
   function renderTrigger(fieldKey) {
@@ -115,6 +117,16 @@
     panel.innerHTML = renderList(getCandidates(key), key, true);
     panel.hidden = !expanded;
     button.setAttribute("aria-expanded", String(expanded));
+  }
+
+  async function toggleFavorite(historyId) {
+    const item = (modules.state.state.promptHistory || []).find((entry) => String(entry.id) === String(historyId));
+    if (!item) return false;
+    item.favorite = !item.favorite;
+    modules.state.state.promptHistory = normalizeList(modules.state.state.promptHistory);
+    refreshViews();
+    await persist();
+    return true;
   }
 
   function refreshViews() {
@@ -171,8 +183,8 @@
     const list = modules.runtime.getById("promptHistorySettingsList");
     if (badge) badge.textContent = `${items.length} 条`;
     if (status) modules.runtime.setSummaryStatus(status, items.length ? `已保存 ${items.length} 条成功使用过的提示词。` : historyCleared ? "提示词历史已清空。" : "暂无历史记录。", historyCleared ? "success" : "info");
-    if (list) list.innerHTML = renderList(items);
+    if (list) { list.innerHTML = renderList(items); list.parentElement?.classList.add("is-expanded"); }
   }
 
-  modules.promptHistory = { initialize, getItems, getForField, getCandidates, renderTrigger, renderPanel, togglePanel, recordSuccessfulRun, applyHistoryItem, clearHistory, renderSettingsSummary };
+  modules.promptHistory = { initialize, getItems, getForField, getCandidates, renderTrigger, renderPanel, togglePanel, toggleFavorite, recordSuccessfulRun, applyHistoryItem, clearHistory, renderSettingsSummary };
 })(window);
