@@ -48,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持与教程</button>
-              <span class="version-text">v2.8.5</span>
+              <span class="version-text">v2.9.0</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -116,7 +116,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.8.5 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.9.0 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -131,7 +131,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持与教程</button>
-            <span class="version-text">v2.8.5</span>
+            <span class="version-text">v2.9.0</span>
           </div>
         </div>
 
@@ -322,7 +322,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持与教程</button>
-          <span class="version-text">v2.8.5</span>
+          <span class="version-text">v2.9.0</span>
           </div>
         </div>
 
@@ -423,6 +423,11 @@
               <span>导入按“区域 + 名称”合并，同名应用不会串区</span>
               <span>新版分类完全兼容旧模板 JSON</span>
             </div>
+            <div class="bundle-manager-head">
+              <span class="field-label">当前资料包</span>
+              <span id="activePromptBundleStatus" class="status-chip">像素起子资料包（内置基础版）</span>
+            </div>
+            <div id="promptBundleList" class="prompt-bundle-list" role="list" aria-label="资料包列表"></div>
             <div class="action-row">
               <button id="btnExportTemplatesJson" class="secondary-btn" type="button">导出资料包</button>
               <button id="btnImportTemplatesJson" class="primary-btn" type="button">导入资料包</button>

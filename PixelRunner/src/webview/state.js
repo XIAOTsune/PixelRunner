@@ -171,6 +171,7 @@ import {
     templates: [],
     templateCategories: [],
     activePromptBundleName: "像素起子资料包",
+    activePromptBundleId: "builtin",
     promptHistory: [],
     appPickerKeyword: "",
     appPickerView: "picker",

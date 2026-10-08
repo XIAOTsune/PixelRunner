@@ -43,6 +43,7 @@ function initializePixelRunnerApp() {
     .then(() => {
       modules.apps.renderSavedAppsList();
       modules.templates.renderSavedTemplatesList();
+      modules.templates.renderPromptBundleManager();
       modules.promptHistory.renderSettingsSummary();
       modules.workspace.renderWorkspace();
       modules.ui.setActiveView("tabWorkspace");
