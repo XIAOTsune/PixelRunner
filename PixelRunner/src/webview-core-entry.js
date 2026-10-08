@@ -1,6 +1,7 @@
 // This entry is loaded before app.bundle.js. It contains product-specific
 // implementations that can be release-hardened without transforming UXP glue.
 import "./webview/glow/presets.js";
+import "./webview/glow/cross-star.js";
 import "./webview/glow/source-mask.js";
 import "./webview/glow/pyramid-blur.js";
 import "./webview/glow/gpu/capabilities.js";

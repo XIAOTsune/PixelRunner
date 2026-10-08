@@ -639,6 +639,25 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   function getPickerTargetFieldValue() {
     const key = String(modules.state.state.templatePicker.targetKey || "").trim();
     if (!key) return "";
+
+    // The picker can be opened while the workspace textarea still owns a
+    // value that has not reached state.formValues yet (notably after an app
+    // switch or in UXP's input event timing). Synchronize once before reading
+    // so creating a preset always uses the value visible to the user.
+    if (modules.workspace && typeof modules.workspace.collectFormValuesFromDom === "function") {
+      modules.workspace.collectFormValuesFromDom();
+    }
+
+    const container = modules.runtime.getById("dynamicInputContainer");
+    if (container) {
+      const liveField = Array.from(container.querySelectorAll("[data-form-key]"))
+        .find((element) =>
+          String(element.getAttribute("data-form-key") || "") === key &&
+          element.matches("input, textarea, select")
+        );
+      if (liveField && "value" in liveField) return String(liveField.value ?? "");
+    }
+
     return String(modules.state.state.formValues[key] || "");
   }
 

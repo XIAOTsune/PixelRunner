@@ -98,6 +98,7 @@
   }
 
   function buildSourceMask(imageData, params, options = {}) {
+    if (params.style === "starburst") return modules.glowCrossStar.analyze(imageData, params.source, options);
     const { width, height, data } = imageData;
     const total = width * height;
     const luma = new Float32Array(total);

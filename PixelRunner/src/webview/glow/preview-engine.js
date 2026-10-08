@@ -1,6 +1,6 @@
 (function initGlowPreviewEngineModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
-  const GLOW_ALGORITHM_VERSION = "engine-smooth-core-v17";
+  const GLOW_ALGORITHM_VERSION = "engine-smooth-core-v18-cross-star-v1";
 
   function createCanvas(width, height) {
     const canvas = document.createElement("canvas");
@@ -124,9 +124,10 @@
       sourceKey,
       params.radius,
       params.blur && params.blur.optics && params.blur.optics.mode,
-      params.blur && params.blur.optics && params.blur.optics.strength,
+      params.style === "starburst" ? "composite-strength" : (params.blur && params.blur.optics && params.blur.optics.strength),
       params.blur && params.blur.optics && params.blur.optics.length,
-      params.blur && params.blur.optics && params.blur.optics.starCount,
+      params.blur && params.blur.optics && params.blur.optics.starShape,
+      params.blur && params.blur.optics && params.blur.optics.starSoftGlow,
       params.blur && params.blur.optics && params.blur.optics.rotation,
       params.blur && params.blur.optics && params.blur.optics.visibility,
       params.blur && params.blur.optics && params.blur.optics.candidateCount,
@@ -144,6 +145,35 @@
       blur.pyramidWeight,
       ...(Array.isArray(blur.mipWeights) ? blur.mipWeights : [])
     ].join("|");
+  }
+
+  function getGeometryCacheKey(params, sourceResult = null) {
+    const optics = params && params.blur && params.blur.optics || {};
+    const sources = sourceResult && Array.isArray(sourceResult.starSources)
+      ? sourceResult.starSources.map((source) => [source.x, source.y, source.quality, source.area,
+        source.sourceR ?? source.r, source.sourceG ?? source.g, source.sourceB ?? source.b].join(",")).join(";")
+      : "source-analysis-pending";
+    return [
+      GLOW_ALGORITHM_VERSION,
+      params.style,
+      sources,
+      optics.starShape || "natural",
+      optics.length,
+      optics.rotation,
+      optics.visibility,
+      optics.starRange,
+      optics.starSoftGlow
+    ].join("|");
+  }
+
+  function getCompositeCacheKey(params, geometryKey = "") {
+    const composite = params && params.composite || {};
+    return [GLOW_ALGORITHM_VERSION, geometryKey, params.strength, composite.intensity, composite.saturation,
+      composite.warmth, composite.shoulder, composite.colorShift, composite.colorAmount, composite.chromatic].join("|");
+  }
+
+  function isCpuStarburst(params) {
+    return String(params && params.style || "") === "starburst";
   }
 
   let previewCache = {
@@ -198,6 +228,7 @@
         if (
           !includeDebug &&
           config.useGpu !== false &&
+          !isCpuStarburst(params) &&
           modules.glowWebglSourceMask &&
           modules.glowGpuCapabilities &&
           modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
@@ -213,6 +244,7 @@
             if (
               !includeDebug &&
               config.useGpu !== false &&
+              !isCpuStarburst(params) &&
               modules.glowGpuCapabilities &&
               modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
             ) {
@@ -255,6 +287,7 @@
       try {
         if (
           config.useGpu !== false &&
+          !isCpuStarburst(params) &&
           modules.glowWebglPyramidBlur &&
           modules.glowGpuCapabilities &&
           modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
@@ -269,6 +302,7 @@
             modules.glowWebglPyramidBlur.reset();
             if (
               config.useGpu !== false &&
+              !isCpuStarburst(params) &&
               modules.glowGpuCapabilities &&
               modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
             ) {
@@ -295,6 +329,8 @@
       }
     }
     const blurMs = performance.now() - blurStartedAt;
+    const geometryKey = getGeometryCacheKey(params, blurResult);
+    const compositeKey = getCompositeCacheKey(params, geometryKey);
 
     const compositeStartedAt = performance.now();
     let previewImageData;
@@ -304,6 +340,7 @@
     try {
       if (
         config.useGpu !== false &&
+        !isCpuStarburst(params) &&
         modules.glowWebglCompositor &&
         modules.glowGpuCapabilities &&
         modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
@@ -327,6 +364,7 @@
           modules.glowWebglCompositor.reset();
           if (
             config.useGpu !== false &&
+            !isCpuStarburst(params) &&
             modules.glowGpuCapabilities &&
             modules.glowGpuCapabilities.canUseWebgl2(source.width, source.height)
           ) {
@@ -415,6 +453,8 @@
         sourceCacheHit,
         blurCacheHit
       },
+      cacheKeys: { source: sourceKey, geometry: geometryKey, composite: compositeKey },
+      starSources: Array.isArray(blurResult.starSources) ? blurResult.starSources : [],
       params
     };
   }
@@ -423,6 +463,8 @@
     createPreview,
     getSourceCacheKey,
     getBlurCacheKey,
+    getGeometryCacheKey,
+    getCompositeCacheKey,
     getCacheInfo() {
       return {
         hasSourceImage: !!sourceImageCache.image,
