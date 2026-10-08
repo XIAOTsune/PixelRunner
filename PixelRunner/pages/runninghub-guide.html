@@ -749,9 +749,9 @@
     <header class="hero">
       <section class="hero-main">
         <p class="eyebrow">像素起子本地帮助中心</p>
-        <h1>像素起子连接 RunningHub，从第一次配置到返图</h1>
+        <h1>像素起子引导与资产管理</h1>
         <p class="lead">
-          这份文档按 RunningHub 当前官网入口和像素起子的实际使用顺序整理：先到消费级 API 控制台复制 API Key，再从 AI 应用页找到合适应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
+          这份本地教程按像素起子当前插件功能整理：先选对 RunningHub 区域和 API 类型，再添加应用、捕获 Photoshop 图片、运行任务和查看返图。文档也覆盖第三方 API、辉光与后期、本地超分、创成式填充、资料包备份、快捷入口和常见失败排查。
         </p>
         <div class="hero-actions">
           <a class="btn primary" href="#first-run">
@@ -786,7 +786,9 @@
         <div class="nav-links">
           <a href="#quick-answer">快速定位</a>
           <a href="#first-run">首次配置</a>
+          <a href="#billing">API 计费与并发</a>
           <a href="#daily-use">日常运行</a>
+          <a href="#toolbox">插件工具箱</a>
           <a href="#save-view">保存查看</a>
           <a href="#templates">提示词模板</a>
           <a href="#quick-entry">快捷入口</a>
@@ -823,6 +825,53 @@
               <strong>配置怎么备份？</strong>
               <span>设置页导出资料包，备份应用、模板、快捷入口。</span>
             </a>
+            <a class="quick-help" href="#billing">
+              <strong>为什么扣币或扣余额？</strong>
+              <span>消费级 API 按模型计费；企业级共享 API 只扣余额并支持更高并发。</span>
+            </a>
+            <a class="quick-help" href="#region-limit">
+              <strong>国内版和国际版能混用吗？</strong>
+              <span>不能。API 区域与应用区域必须一致。</span>
+            </a>
+          </div>
+        </section>
+
+        <section class="doc-card" id="billing">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Billing And Concurrency</p>
+              <h2>先看懂 API 计费和并发</h2>
+              <p class="muted">选择 API 前先确认账户余额和模型类型。插件里的最大并发设置不能突破服务商对当前 API 类型的限制。</p>
+            </div>
+            <span class="tag">必须阅读</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>API 类型</th><th>扣费方式</th><th>并发能力</th><th>使用提醒</th></tr></thead>
+              <tbody>
+                <tr><td>消费级 API + 开源模型</td><td>扣 RunningHub 币</td><td>1 个并发</td><td>账户没有余额时无法扣币；继续尝试调用可能触发风控。</td></tr>
+                <tr><td>消费级 API + 闭源模型</td><td>同时扣余额和币</td><td>1 个并发</td><td>余额和币都要充足，不能只看插件右上角的一项余额。</td></tr>
+                <tr><td>企业级共享 API</td><td>只扣余额</td><td>最多 100 个并发</td><td>适合批量任务；仍需遵守账户、应用和服务商的实际限额。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="notice danger"><strong>消费级 API 的风控提醒：</strong>账户余额为 0 时，消费级 API 无法完成扣币。不要连续重复提交；先充值并确认区域、API Key 和模型类型，再重试。</div>
+          <div class="notice"><strong>插件设置建议：</strong>消费级 API 将“最大并发任务数”设为 1；企业级共享 API 可按团队额度逐步调高，最多按服务商允许值设置到 100。</div>
+        </section>
+
+        <section class="doc-card" id="region-limit">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Region Matching</p>
+              <h2>国内版与国际版必须成套使用</h2>
+              <p class="muted">区域不是网页语言选项，而是 API Key、余额、应用和请求地址的匹配关系。</p>
+            </div>
+            <span class="tag">避免解析失败</span>
+          </div>
+          <div class="cards-grid">
+            <article class="callout"><h3>国内版 API</h3><p>选择插件中的“国内版”，使用 <code>runninghub.cn</code> 的 API Key 和国内版 AI 应用。国际版应用不能添加到当前国内版配置。</p></article>
+            <article class="callout"><h3>国际版 API</h3><p>选择插件中的“国际版”，使用 <code>runninghub.ai</code> 的 API Key 和国际版 AI 应用。国内版应用不能添加到当前国际版配置。</p></article>
+            <article class="callout"><h3>切换区域的正确顺序</h3><p>先切换服务区域，再保存对应 API 档案，最后添加同一区域的应用。已有资料包会按区域分开保存，导入后请检查当前区域。</p></article>
           </div>
         </section>
 
@@ -988,6 +1037,25 @@
               <span class="check-mark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5"></path></svg></span>
               <span><strong>网络检查</strong><br /><span class="muted">RunningHub 任务建议关闭代理、加速器或异常网络转发。</span></span>
             </div>
+          </div>
+        </section>
+
+        <section class="doc-card" id="toolbox">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Built-in Tools</p>
+              <h2>插件里还有这些本地工具</h2>
+              <p class="muted">不需要 RunningHub 的功能会直接在 Photoshop 本地处理；需要云端模型的功能会在运行前明确要求 API 配置。</p>
+            </div>
+            <span class="tag">功能地图</span>
+          </div>
+          <div class="cards-grid">
+            <article class="callout"><h3>辉光、镜头与后期、空间特效</h3><p>在工具箱中预览并应用效果。辉光和后期支持预览后再写回；空间特效会生成独立图层，便于继续调整。</p></article>
+            <article class="callout"><h3>对齐与校色</h3><p>用于返图与原图的像素级对齐、色彩匹配和结果分析。处理前先确认源图层和返图尺寸一致。</p></article>
+            <article class="callout"><h3>本地超分</h3><p>在本地放大图像，不消耗 RunningHub API 额度。大图处理时间取决于 Photoshop 和设备性能。</p></article>
+            <article class="callout"><h3>创成式填充与 AI 优化</h3><p>创成式填充可选择 RunningHub 应用或第三方 API；AI 优化会使用当前应用的主提示词生成建议，运行前仍需检查实际字段。</p></article>
+            <article class="callout"><h3>第三方 API</h3><p>在设置的“第三方支持”中配置 GRS 或 Gemini / NewAPI 渠道、Key 和模型。模型列表来自当前渠道，刷新失败时保留已保存模型。</p></article>
+            <article class="callout"><h3>资料包资产</h3><p>资料包会保存应用、提示词分类、提示词预设和快捷入口，并按国内版、国际版分区。换电脑前先导出，换机后再导入。</p></article>
           </div>
         </section>
 
