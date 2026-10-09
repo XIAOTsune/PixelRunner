@@ -1706,11 +1706,40 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       }
     });
 
+    const bundleList = runtime.getById("promptBundleList");
+    if (bundleList) {
+      bundleList.addEventListener("click", async (event) => {
+        const button = event.target && event.target.closest("button[data-action][data-bundle-id]");
+        if (!button || !bundleList.contains(button)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const action = button.getAttribute("data-action");
+        const bundleId = button.getAttribute("data-bundle-id");
+        if (action === "select-prompt-bundle") await switchPromptBundle(bundleId);
+        else if (action === "rename-prompt-bundle") await renamePromptBundle(bundleId);
+        else if (action === "delete-prompt-bundle") await deletePromptBundle(bundleId);
+      }, true);
+    }
+
     if (pickerCloseButton) pickerCloseButton.addEventListener("click", closeTemplatePicker);
 
     if (pickerList) {
+      pickerList.addEventListener("click", async (event) => {
+        const button = event.target && event.target.closest("button[data-action][data-template-id]");
+        if (!button || !pickerList.contains(button)) return;
+        const action = button.getAttribute("data-action");
+        if (action !== "toggle-template-favorite") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const templateId = button.getAttribute("data-template-id");
+        const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+        if (!target) return;
+        target.favorite = !target.favorite;
+        await saveTemplatesToStorage(modules.state.state.templates);
+        renderTemplatePickerList();
+      }, true);
       ["pointerdown", "dragstart"].forEach((eventName) => pickerList.addEventListener(eventName, (event) => {
-        if (event.target && event.target.closest("[data-action], [data-template-inline-action]")) {
+        if (eventName === "dragstart" && event.target && event.target.closest("[data-action], [data-template-inline-action]")) {
           event.preventDefault();
           event.stopPropagation();
         }

@@ -5239,6 +5239,8 @@ button {
 }
 
 .template-preset-select {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-rows: minmax(22px, 1fr) auto;
   width: 100%;
@@ -5281,7 +5283,8 @@ button {
   position: absolute;
   top: 5px;
   right: 5px;
-  z-index: 5;
+  z-index: 20;
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -5298,6 +5301,7 @@ button {
   flex: 0 0 20px;
   width: 20px;
   height: 19px;
+  pointer-events: auto;
 }
 
 .template-preset-tile .picker-item-meta {
