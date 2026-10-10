@@ -83,11 +83,66 @@ assert.equal(gptRequest.body.aspectRatio, "auto");
 assert.equal(gptRequest.body.imageSize, undefined);
 assert.equal(gptRequest.body.cdn, undefined);
 
+const gptSunburstRequest = buildThirdPartyGrsImageRequest({
+  inputs: {
+    model: "gpt-image-2.5-sunburst",
+    prompt: "test",
+    aspectRatio: "1:1",
+    resolution: "4K"
+  }
+});
+assert.equal(gptSunburstRequest.endpointPath, "/v1/draw/completions");
+assert.equal(gptSunburstRequest.body.imageSize, "4K");
+
+const banana21Request = buildThirdPartyGrsImageRequest({
+  inputs: {
+    model: "nano-banana-2.1",
+    prompt: "test",
+    resolution: "2K"
+  }
+});
+assert.equal(banana21Request.endpointPath, "/v1/draw/nano-banana");
+assert.equal(banana21Request.body.imageSize, "2K");
+
 const builtinModels = await listThirdPartyGrsModels([{ kind: "image" }]);
 assert.equal(builtinModels.source, "builtin");
 assert.deepEqual(builtinModels.models, GRS_IMAGE_MODEL_IDS);
 
 const originalFetch = globalThis.fetch;
+globalThis.fetch = async (url, options = {}) => {
+  assert.equal(String(url), "https://grsai.dakka.com.cn/client/serverGrsai/getModelListV2");
+  assert.equal(options.method, "POST");
+  assert.match(String(options.headers && options.headers.Authorization || ""), /^Bearer sk-test$/);
+  return {
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      code: 0,
+      data: {
+        list: [
+          { name: "new-image-model", type: "image", desc: "new image" },
+          { name: "new-text-model", type: "text", costType: 1, desc: "new text" },
+          { name: "new-video-model", type: "video", desc: "new video" }
+        ]
+      }
+    })
+  };
+};
+try {
+  const scannedModels = await listThirdPartyGrsModels([{
+    kind: "all",
+    config: { apiKey: "sk-test", apiUrl: "https://grsai.dakka.com.cn" },
+    timeoutMs: 1000
+  }]);
+  assert.equal(scannedModels.source, "grs-api");
+  assert.deepEqual(scannedModels.imageModels, ["new-image-model"]);
+  assert.deepEqual(scannedModels.chatModels, ["new-text-model"]);
+  assert.deepEqual(scannedModels.models, ["new-image-model", "new-text-model"]);
+  assert.equal(scannedModels.details[0].kind, "image");
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 globalThis.fetch = async (url, options = {}) => {
   assert.equal(String(url), "https://grsai.dakka.com.cn/client/common/getCredits?apikey=sk-test");
   assert.equal(options.method, "GET");
@@ -115,6 +170,7 @@ await import("../src/webview/state.js");
 const stateModule = globalThis.window.PixelRunnerModules.state;
 assert.equal(stateModule.DEFAULT_THIRD_PARTY_SETTINGS.grs.region, "cn");
 assert.equal(stateModule.DEFAULT_THIRD_PARTY_SETTINGS.grs.apiUrl, "https://grsai.dakka.com.cn");
+assert.ok(stateModule.DEFAULT_THIRD_PARTY_SETTINGS.grs.chatModels.includes("gpt-6-astra"));
 
 const migratedGlobal = stateModule.normalizeThirdPartySettings({
   enabled: true,
@@ -128,6 +184,18 @@ assert.equal(migratedGlobal.grs.region, "global");
 assert.equal(migratedGlobal.grs.apiUrl, "https://grsaiapi.com");
 assert.equal(migratedGlobal.grs.resolution, "2K");
 assert.ok(migratedGlobal.grs.imageModels.includes("nano-banana-2-lite"));
+
+const migratedRemoteModels = stateModule.normalizeThirdPartySettings({
+  grs: {
+    chatModels: ["new-text-model"],
+    chatModel: "new-text-model",
+    imageModels: ["new-image-model"],
+    selectedModel: "new-image-model"
+  }
+});
+assert.ok(migratedRemoteModels.grs.chatModels.includes("new-text-model"));
+assert.equal(migratedRemoteModels.grs.chatModel, "new-text-model");
+assert.ok(migratedRemoteModels.grs.imageModels.includes("new-image-model"));
 
 const migratedCn = stateModule.normalizeThirdPartySettings({
   grs: { apiUrl: "https://grsai.dakka.com.cn/v1/draw/nano-banana" }

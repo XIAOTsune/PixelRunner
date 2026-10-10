@@ -19,8 +19,12 @@ export const GRS_REGION_CONFIG = Object.freeze({
 export const GRS_IMAGE_MODEL_CATALOG = Object.freeze([
   Object.freeze({ id: "gpt-image-2", label: "gpt-image-2" }),
   Object.freeze({ id: "gpt-image-2-vip", label: "gpt-image-2-vip" }),
+  Object.freeze({ id: "gpt-image-2.5", label: "gpt-image-2.5" }),
+  Object.freeze({ id: "gpt-image-2.5-sunburst", label: "gpt-image-2.5-sunburst" }),
+  Object.freeze({ id: "gpt-image-2.5-flare", label: "gpt-image-2.5-flare" }),
   Object.freeze({ id: "nano-banana-2-lite", label: "nano-banana-2-lite（实验）", experimental: true }),
   Object.freeze({ id: "nano-banana-2", label: "nano-banana-2" }),
+  Object.freeze({ id: "nano-banana-2.1", label: "nano-banana-2.1" }),
   Object.freeze({ id: "nano-banana-2-cl", label: "nano-banana-2-cl" }),
   Object.freeze({ id: "nano-banana-2-2k-cl", label: "nano-banana-2-2k-cl" }),
   Object.freeze({ id: "nano-banana-2-4k-cl", label: "nano-banana-2-4k-cl" }),
@@ -36,9 +40,15 @@ export const GRS_IMAGE_MODEL_CATALOG = Object.freeze([
 export const GRS_IMAGE_MODEL_IDS = Object.freeze(GRS_IMAGE_MODEL_CATALOG.map((item) => item.id));
 
 export const GRS_CHAT_MODEL_IDS = Object.freeze([
+  "gpt-6-astra",
+  "gpt-5.6-terra",
+  "gpt-5.6-sol",
   "gpt-5.5",
   "gpt-5.4",
   "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
   "gemini-3.1-pro",
   "gemini-3.1-flash-lite",
   "gemini-3-pro",
@@ -177,28 +187,31 @@ export function isGrsNanoBananaModel(value) {
 }
 
 export function isGrsGptImageModel(value) {
-  return /^gpt-image-2(?:-vip)?$/i.test(normalizeGrsModelId(value));
+  return /^gpt-image(?:-|$)/i.test(normalizeGrsModelId(value));
 }
 
 export function getGrsImageModelCapabilities(value) {
   const model = normalizeGrsModelId(value);
-  if (model === "gpt-image-2" || model === "gpt-image-2-vip") {
+  if (model === "gpt-image-2" || model === "gpt-image-2-vip" || /^gpt-image-2\.5(?:-|$)/i.test(model)) {
+    const isVip = model === "gpt-image-2-vip" || /^(?:gpt-image-2\.5-(?:sunburst|flare))$/i.test(model);
+    const supportsMultipleResolutions = /^(?:gpt-image-2-vip|gpt-image-2\.5-(?:sunburst|flare))$/i.test(model);
     return {
       model,
       family: "gpt-image",
-      aspectRatios: [...(model === "gpt-image-2" ? GPT_IMAGE_2_SIZES : GPT_IMAGE_2_VIP_SIZES)],
-      resolutions: ["1K"],
+      aspectRatios: [...(isVip ? GPT_IMAGE_2_VIP_SIZES : GPT_IMAGE_2_SIZES)],
+      resolutions: [...(supportsMultipleResolutions ? ["1K", "2K", "4K"] : ["1K"])],
       allowCustomAspectRatio: false,
       defaultAspectRatio: "auto",
       defaultResolution: "1K",
-      supportsImageSize: false,
+      supportsImageSize: supportsMultipleResolutions,
       experimental: false
     };
   }
 
   if (isGrsNanoBananaModel(model)) {
-    const resolutions = BANANA_RESOLUTIONS[model] || ["1K"];
-    const aspectRatios = BANANA_2_MODELS.has(model)
+    const isBanana2 = BANANA_2_MODELS.has(model) || /^nano-banana-2(?:\.|-|$)/i.test(model);
+    const resolutions = BANANA_RESOLUTIONS[model] || (isBanana2 ? ["1K", "2K", "4K"] : ["1K"]);
+    const aspectRatios = isBanana2
       ? [...GRS_COMMON_BANANA_RATIOS, ...GRS_BANANA_2_EXTRA_RATIOS]
       : [...GRS_COMMON_BANANA_RATIOS];
     return {
@@ -209,7 +222,7 @@ export function getGrsImageModelCapabilities(value) {
       allowCustomAspectRatio: false,
       defaultAspectRatio: "auto",
       defaultResolution: resolutions[0] || "1K",
-      supportsImageSize: Object.prototype.hasOwnProperty.call(BANANA_RESOLUTIONS, model),
+      supportsImageSize: Object.prototype.hasOwnProperty.call(BANANA_RESOLUTIONS, model) || model === "nano-banana-2" || /^nano-banana-2\.\d+$/i.test(model),
       experimental: Boolean(getGrsImageModelDefinition(model)?.experimental)
     };
   }

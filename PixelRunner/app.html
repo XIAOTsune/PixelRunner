@@ -621,10 +621,13 @@
                   </label>
                 </div>
                 <div class="dual-grid">
-                  <label class="field">
-                    <span class="field-label">默认生图模型</span>
-                    <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
-                  </label>
+                  <div class="field">
+                    <label class="field-label" for="thirdPartyGrsDefaultModelInput">默认生图模型</label>
+                    <div class="third-party-model-row">
+                      <select id="thirdPartyGrsDefaultModelInput" class="field-input"></select>
+                      <button id="btnRefreshThirdPartyGrsModels" class="mini-btn" type="button">刷新模型</button>
+                    </div>
+                  </div>
                   <label class="field">
                     <span class="field-label">AI 优化文本模型</span>
                     <select id="thirdPartyGrsChatModelInput" class="field-input"></select>

@@ -129,6 +129,7 @@ import {
       apiUrl: getGrsApiUrl(GRS_REGIONS.CN),
       apiKey: "",
       imageModels: [...GRS_IMAGE_MODEL_IDS],
+      chatModels: [...GRS_CHAT_MODEL_IDS],
       chatModel: "gpt-5.5",
       selectedModel: "gpt-image-2",
       aspectRatio: "auto",
@@ -429,6 +430,13 @@ import {
       .map(normalizeSharedGrsModelId)
       .filter((model, index, models) => Boolean(model) && models.indexOf(model) === index);
     const selectedModel = requestedModel || imageModels[0] || fallback.selectedModel;
+    const storedChatModels = Array.isArray(grsSource.chatModels)
+      ? grsSource.chatModels
+      : String(grsSource.chatModels || "").split(",");
+    const requestedChatModel = normalizeSharedGrsModelId(grsSource.chatModel || fallback.chatModel);
+    const chatModels = normalizeModelList([...fallback.chatModels, ...storedChatModels, requestedChatModel], fallback.chatModels)
+      .map(normalizeSharedGrsModelId)
+      .filter((model, index, models) => Boolean(model) && models.indexOf(model) === index);
     const capabilities = getGrsImageModelCapabilities(selectedModel);
     const requestedAspectRatio = String(grsSource.aspectRatio || fallback.aspectRatio).trim();
     const requestedResolution = String(grsSource.resolution || fallback.resolution).trim();
@@ -447,7 +455,8 @@ import {
         apiUrl: getGrsApiUrl(region),
         apiKey: String(grsSource.apiKey || "").trim(),
         imageModels,
-        chatModel: String(grsSource.chatModel || fallback.chatModel).trim() || fallback.chatModel,
+        chatModels,
+        chatModel: requestedChatModel || chatModels[0] || fallback.chatModel,
         selectedModel: selectedModel || fallback.selectedModel,
         aspectRatio: aspectRatio || capabilities.defaultAspectRatio,
         resolution: resolution || capabilities.defaultResolution,

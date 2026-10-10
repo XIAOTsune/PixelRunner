@@ -340,13 +340,15 @@
     }
   }
 
-  function fillThirdPartyChatModelSelect(selected) {
+  function fillThirdPartyChatModelSelect(models, selected, fallbackModels = []) {
     const select = modules.runtime.getById("thirdPartyGrsChatModelInput");
     if (!select) return;
-    const value = String(selected || modules.state.GRS_CHAT_MODEL_IDS[0] || "").trim();
-    const models = [...modules.state.GRS_CHAT_MODEL_IDS];
-    if (value && !models.includes(value)) models.unshift(value);
-    select.innerHTML = models
+    const source = Array.isArray(models) && models.length
+      ? models
+      : (Array.isArray(fallbackModels) && fallbackModels.length ? fallbackModels : modules.state.GRS_CHAT_MODEL_IDS);
+    const value = String(selected || source[0] || "").trim();
+    const options = source.includes(value) || !value ? source : [value, ...source];
+    select.innerHTML = options
       .map((model) => `<option value="${modules.runtime.escapeHtml(model)}" ${model === value ? "selected" : ""}>${modules.runtime.escapeHtml(model)}</option>`)
       .join("");
   }
@@ -500,7 +502,7 @@
     renderGrsRegionControl(grs.region);
     if (modules.runtime.getById("thirdPartyGrsApiKeyInput")) modules.runtime.getById("thirdPartyGrsApiKeyInput").value = grs.apiKey || "";
     fillThirdPartyModelSelect(grs.imageModels, grs.selectedModel);
-    fillThirdPartyChatModelSelect(grs.chatModel);
+    fillThirdPartyChatModelSelect(grs.chatModels, grs.chatModel, modules.state.GRS_CHAT_MODEL_IDS);
     fillThirdPartyCapabilitySelects(grs.selectedModel, grs.aspectRatio, grs.resolution);
     fillGeminiSettingsForm(normalized.gemini);
     const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
@@ -537,6 +539,7 @@
         region: getSelectedGrsRegion(),
         apiKey: modules.runtime.getById("thirdPartyGrsApiKeyInput")?.value || "",
         imageModels: modules.state.state.thirdPartySettings?.grs?.imageModels || modules.state.GRS_IMAGE_MODEL_IDS,
+        chatModels: modules.state.state.thirdPartySettings?.grs?.chatModels || modules.state.GRS_CHAT_MODEL_IDS,
         chatModel: modules.runtime.getById("thirdPartyGrsChatModelInput")?.value || "",
         selectedModel: modules.runtime.getById("thirdPartyGrsDefaultModelInput")?.value || "",
         aspectRatio: modules.runtime.getById("thirdPartyGrsDefaultRatioInput")?.value || "",
@@ -1468,6 +1471,7 @@
     const resetTemplateButton = runtime.getById("btnResetTemplateEditor");
     const loadParseDebugButton = runtime.getById("btnLoadParseDebug");
     const saveThirdPartySettingsButton = runtime.getById("btnSaveThirdPartySettings");
+    const refreshGrsModelsButton = runtime.getById("btnRefreshThirdPartyGrsModels");
     const refreshGeminiModelsButton = runtime.getById("btnRefreshThirdPartyGeminiModels");
     const themeImageInput = runtime.getById("themeImageInput");
     const clearThemeImageButton = runtime.getById("btnClearThemeImage");
@@ -1852,6 +1856,67 @@ if (momoEndpointSelect) {
       }
       element.addEventListener("input", () => renderSettingsStatus("检测到未保存修改。", "pending"));
     });
+
+    if (refreshGrsModelsButton) {
+      refreshGrsModelsButton.addEventListener("click", async () => {
+        const statusEl = runtime.getById("thirdPartyStatusSummary");
+        const snapshot = readThirdPartySettingsForm();
+        const grs = snapshot.grs;
+        if (!String(grs.apiKey || "").trim()) {
+          runtime.setSummaryStatus(statusEl, "请先填写 GRS API Key。", "warn");
+          return;
+        }
+        if (!modules.runtime.isPluginRuntime()) {
+          runtime.setSummaryStatus(statusEl, "浏览器预览模式无法请求 GRS 模型列表。", "warn");
+          return;
+        }
+        refreshGrsModelsButton.disabled = true;
+        runtime.setSummaryStatus(statusEl, "正在从 GRS 获取模型列表...", "info");
+        try {
+          const result = await modules.runtime.callHost(
+            "thirdParty.grs.listModels",
+            [{ config: grs, kind: "all" }],
+            { timeoutMs: 30000 }
+          );
+          const normalizeModels = (models) => (Array.isArray(models) ? models : [])
+            .map((model) => String(model && (model.id || model.name) || model || "").replace(/^models\//i, "").trim())
+            .filter((model, index, list) => model && list.indexOf(model) === index);
+          const remoteModels = normalizeModels(result && result.models);
+          const imageModels = normalizeModels(result && result.imageModels);
+          const chatModels = normalizeModels(result && result.chatModels);
+          if (!remoteModels.length && !imageModels.length && !chatModels.length) {
+            throw new Error("GRS 未返回可用模型");
+          }
+          const effectiveImageModels = imageModels.length ? imageModels : grs.imageModels;
+          const effectiveChatModels = chatModels.length ? chatModels : grs.chatModels;
+          if (!effectiveImageModels.length || !effectiveChatModels.length) {
+            throw new Error("GRS 没有返回完整的生图和文字模型分类");
+          }
+          const nextGrs = {
+            ...grs,
+            imageModels: effectiveImageModels,
+            chatModels: effectiveChatModels,
+            selectedModel: effectiveImageModels.includes(grs.selectedModel) ? grs.selectedModel : effectiveImageModels[0],
+            chatModel: effectiveChatModels.includes(grs.chatModel) ? grs.chatModel : effectiveChatModels[0]
+          };
+          modules.state.state.thirdPartySettings = modules.state.normalizeThirdPartySettings({
+            ...snapshot,
+            grs: nextGrs
+          });
+          fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
+          refreshThirdPartyWorkspacePreview();
+          runtime.setSummaryStatus(
+            statusEl,
+            `已获取 ${effectiveImageModels.length} 个生图模型、${effectiveChatModels.length} 个文字模型，请保存第三方设置。`,
+            "success"
+          );
+        } catch (error) {
+          runtime.setSummaryStatus(statusEl, `模型刷新失败，已保留现有列表：${error.message}`, "error");
+        } finally {
+          refreshGrsModelsButton.disabled = false;
+        }
+      });
+    }
 
     if (refreshGeminiModelsButton) {
       refreshGeminiModelsButton.addEventListener("click", async () => {
