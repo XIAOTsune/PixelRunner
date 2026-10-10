@@ -142,8 +142,8 @@ import {
   const GENERATIVE_FILL_APP_ID = "__pixelrunner_generative_fill__";
 
   const DEFAULT_THEME = {
-    preset: "classic",
-    basePreset: "classic",
+    preset: "focus",
+    basePreset: "focus",
     customImage: "",
     customImageName: "",
     glass: false
@@ -713,7 +713,8 @@ import {
       content,
       categoryId,
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
-      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index,
+      favorite: source.favorite === true || source.isFavorite === true
     };
   }
 

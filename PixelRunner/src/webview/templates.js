@@ -453,6 +453,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     const now = Date.now();
     const nextItem = modules.state.normalizeTemplateRecord({
       ...formValue,
+      favorite: existingIndex >= 0 && templates[existingIndex].favorite === true,
       createdAt: existingIndex >= 0 ? templates[existingIndex].createdAt : now,
       updatedAt: now
     });
@@ -1000,7 +1001,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     const bundles = await loadPromptBundles();
     const target = bundles.find((item) => String(item.id) === String(bundleId));
     if (!target) return false;
-    const result = await showTemplateFormModal({
+    const result = await showTemplateFormDialog({
       title: "重命名资料包",
       kicker: "资料包",
       bodyHtml: buildNameFormBody({ label: "资料包名称", value: target.name || "", placeholder: "例如：人像修图工作流" }),
