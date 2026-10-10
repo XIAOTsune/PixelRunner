@@ -11,7 +11,6 @@ import {
   ensureActiveDocument,
   findOpenDocumentById,
   getDocumentInfo,
-  normalizeBitsPerChannel,
   normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
@@ -31,27 +30,23 @@ function getUrlHost(value) {
     return match ? match[1] : "";
   }
 }
-
 function getBoundsSize(bounds) {
   return {
     width: Math.max(1, Number(bounds.right) - Number(bounds.left)),
     height: Math.max(1, Number(bounds.bottom) - Number(bounds.top))
   };
 }
-
 function getBoundsCenter(bounds) {
   return {
     x: (Number(bounds.left) + Number(bounds.right)) / 2,
     y: (Number(bounds.top) + Number(bounds.bottom)) / 2
   };
 }
-
 function getAspectRatio(width, height) {
   const w = Number(width);
   const h = Number(height);
   return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? w / h : 0;
 }
-
 function isFullDocumentBounds(bounds, docInfo) {
   if (!bounds || !docInfo) return false;
   const width = Math.max(1, Number(docInfo.width) || 1);
@@ -539,7 +534,6 @@ async function getActivePlacedLayerTransformBounds(action) {
     return null;
   }
 }
-
 function clampBoundsToDocument(bounds, docInfo) {
   const width = Math.max(1, Number(docInfo && docInfo.width) || 1);
   const height = Math.max(1, Number(docInfo && docInfo.height) || 1);
@@ -597,7 +591,6 @@ async function getPixelsWithFallback(imaging, options) {
     return imaging.getPixels(fallbackOptions);
   }
 }
-
 async function getSelectionPixels(imaging, options) {
   if (!imaging || typeof imaging.getSelection !== "function") {
     throw new Error("当前 Photoshop 版本不支持读取不规则选区蒙版");
@@ -1935,173 +1928,6 @@ export async function captureDocumentPreview(options = {}) {
   }
 }
 
-function createLocalUpscaleFileKey(value) {
-  const source = String(value || "")
-    .replace(/[^a-z0-9_-]+/gi, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(-16);
-  const taskToken = source.split("-").filter(Boolean).at(-1) || Math.random().toString(36).slice(2, 8);
-  return `${Date.now().toString(36)}-${taskToken.slice(-8)}`;
-}
-
-function createSiblingNativePath(nativePath, filename) {
-  const source = String(nativePath || "").trim();
-  const targetName = String(filename || "").trim();
-  if (!source || !targetName) return "";
-  const separator = source.includes("\\") && !source.includes("/") ? "\\" : "/";
-  const lastSeparator = Math.max(source.lastIndexOf("/"), source.lastIndexOf("\\"));
-  if (lastSeparator < 0) return "";
-  return `${source.slice(0, lastSeparator + 1)}${targetName}`.replace(/[\\/]/g, separator);
-}
-
-const LOCAL_UPSCALE_MODEL_CONTEXT_PADDING = 64;
-
-function getLocalUpscaleSelectionPadding(selectionBounds, docInfo) {
-  const selectionWidth = Math.max(1, Number(selectionBounds.right) - Number(selectionBounds.left));
-  const selectionHeight = Math.max(1, Number(selectionBounds.bottom) - Number(selectionBounds.top));
-  const documentLongEdge = Math.max(1, Number(docInfo && docInfo.width) || 1, Number(docInfo && docInfo.height) || 1);
-  // Real-ESRGAN external tiles use a 64 px overlap. A small adaptive term keeps
-  // enough receptive-field context for very large documents without exporting
-  // an unexpectedly large portion of the canvas.
-  const adaptive = Math.ceil(Math.min(selectionWidth, selectionHeight, documentLongEdge) / 192);
-  return Math.max(LOCAL_UPSCALE_MODEL_CONTEXT_PADDING, Math.min(192, LOCAL_UPSCALE_MODEL_CONTEXT_PADDING + adaptive));
-}
-
-export function resolveLocalUpscaleCapturePlan(options = {}) {
-  const docInfo = options.document && typeof options.document === "object" ? options.document : options;
-  const documentBounds = {
-    left: 0,
-    top: 0,
-    right: Math.max(1, Number(docInfo && docInfo.width) || 1),
-    bottom: Math.max(1, Number(docInfo && docInfo.height) || 1)
-  };
-  const requestedMode = String(options.mode || options.captureMode || "auto").trim().toLowerCase();
-  const explicitSelection = requestedMode === "selection";
-  const forceFullDocument = requestedMode === "full" || requestedMode === "full-document";
-  const rawSelectionBounds = forceFullDocument ? null : normalizeBounds(options.selectionBounds || docInfo.selectionBounds);
-  const selectionBounds = rawSelectionBounds ? clampBoundsToDocument(rawSelectionBounds, docInfo) : null;
-  const selectionCoversDocument = selectionBounds && isFullDocumentBounds(selectionBounds, docInfo);
-  const useSelection = Boolean(selectionBounds && !selectionCoversDocument && !forceFullDocument);
-  if (explicitSelection && !useSelection) {
-    throw new Error(selectionCoversDocument ? "当前选区已覆盖整张画布，请选择整图超分" : "选区超分需要有效的 Photoshop 选区");
-  }
-  const padding = useSelection ? getLocalUpscaleSelectionPadding(selectionBounds, docInfo) : 0;
-  return {
-    captureMode: useSelection ? "selection" : "full",
-    useSelection,
-    selectionBounds: useSelection ? selectionBounds : null,
-    captureBounds: useSelection ? expandBoundsWithinDocument(selectionBounds, padding, docInfo) : documentBounds,
-    padding,
-    selectionCoversDocument: Boolean(selectionCoversDocument)
-  };
-}
-
-export async function captureDocumentForLocalUpscale(options = {}) {
-  const deps = await ensureDeps();
-  const { photoshop, storage } = deps;
-  const app = photoshop.app;
-  const action = photoshop.action;
-  const core = photoshop.core;
-  const doc = app && app.activeDocument;
-  if (!doc) throw new Error("没有可用于本地超分的 Photoshop 文档");
-  if (!storage || !storage.localFileSystem || !action || !core) {
-    throw new Error("当前 Photoshop 版本未提供本地超分所需的文件导出能力");
-  }
-
-  const docInfo = getDocumentInfo(doc);
-  const expectedDocumentId = Number(options.expectedDocumentId) || 0;
-  if (expectedDocumentId > 0 && Number(docInfo.documentId) !== expectedDocumentId) {
-    throw new Error("Photoshop 当前文档已发生变化，请重新开始本地超分");
-  }
-
-  const targetSize = getDocumentPixelSize(doc);
-  const capturePlan = resolveLocalUpscaleCapturePlan({ ...options, document: docInfo });
-  const useSelection = capturePlan.useSelection;
-  const selectionBounds = capturePlan.selectionBounds;
-
-  const fileKey = createLocalUpscaleFileKey(options.taskId);
-  return core.executeAsModal(async () => {
-    let tempDoc = null;
-    let selectionSnapshotChannelName = "";
-    const originalLayer = doc && doc.activeLayers && doc.activeLayers[0];
-    const originalLayerId = Number(originalLayer && originalLayer.id) || 0;
-    try {
-      if (useSelection) {
-        await activateDocument(app, action, Number(doc.id));
-        selectionSnapshotChannelName = await createSelectionSnapshotChannel(action, Number(doc.id));
-      }
-      tempDoc = await doc.duplicate("PR 超分");
-      await activateDocument(app, action, Number(tempDoc.id));
-      try {
-        await tempDoc.flatten();
-      } catch (_) {}
-
-      const padding = capturePlan.padding;
-      const captureBounds = capturePlan.captureBounds;
-      if (useSelection && typeof tempDoc.crop === "function") {
-        await tempDoc.crop(captureBounds);
-      }
-
-      await normalizeLocalUpscaleTempDocumentBitDepth(action, tempDoc);
-      const sourceSize = getDocumentPixelSize(tempDoc);
-      const exported = await exportDocumentAsPngFile(storage, action, tempDoc, `PR-S-${fileKey}`);
-      const outputPath = createSiblingNativePath(
-        exported.nativePath,
-        `PR-U-${fileKey}.png`
-      );
-      if (!outputPath) {
-        await deleteFileQuietly(exported.file);
-        throw new Error("无法创建本地超分结果文件路径");
-      }
-      console.log("[PixelRunner/Photoshop] localUpscaleSource:success", {
-        documentId: docInfo.documentId,
-        width: sourceSize.width,
-        height: sourceSize.height,
-        captureMode: useSelection ? "selection" : "full",
-        captureBounds,
-        selectionBounds,
-        padding,
-        inputPath: exported.nativePath
-      });
-      return {
-        ok: true,
-        kind: "local-upscale-source",
-        document: docInfo,
-        documentId: docInfo.documentId,
-        targetWidth: targetSize.width,
-        targetHeight: targetSize.height,
-        targetBounds: captureBounds,
-        selectionBounds: useSelection ? selectionBounds : null,
-        captureBounds,
-        padding,
-        captureMode: useSelection ? "selection" : "full",
-        selectionSnapshotChannelName,
-        restoreActiveLayerId: originalLayerId,
-        sourceScale: 1,
-        inputPath: exported.nativePath,
-        outputPath,
-        width: sourceSize.width,
-        height: sourceSize.height,
-        mimeType: "image/png"
-      };
-    } catch (error) {
-      if (selectionSnapshotChannelName) {
-        try {
-          await activateDocument(app, action, Number(doc.id));
-          await deleteChannelByName(action, selectionSnapshotChannelName);
-        } catch (_) {}
-      }
-      throw error;
-    } finally {
-      await closeDocumentWithoutSaving(action, tempDoc);
-      try {
-        await activateDocument(app, action, Number(doc.id));
-        if (originalLayerId > 0) await selectLayerById(action, originalLayerId);
-      } catch (_) {}
-    }
-  }, { commandName: "PixelRunner Export Local Upscale Source" });
-}
-
 export async function runToolAction(payload = {}) {
   const context = await ensureActiveDocument();
   return runToolActionByName(payload, context);
@@ -2511,136 +2337,5 @@ export async function placeImageFromUrl(payload, runtime = {}) {
       shouldDeleteTempFile && (!localSourceFile || placementCompleted) ? deleteFileQuietly(tempFile) : Promise.resolve(),
       deleteFileQuietly(placementMaskFile)
     ]);
-  }
-}
-
-async function exportDocumentAsPngFile(storage, action, docRef, filePrefix = "pixelrunner-local-upscale") {
-  const tempFolder = await storage.localFileSystem.getTemporaryFolder();
-  const tempFile = await tempFolder.createFile(`${filePrefix}.png`, { overwrite: true });
-  try {
-    const sessionToken = await storage.localFileSystem.createSessionToken(tempFile);
-    await action.batchPlay([{
-      _obj: "save",
-      as: {
-        _obj: "PNGFormat",
-        method: { _enum: "PNGMethod", _value: "quick" }
-      },
-      in: { _path: sessionToken, _kind: "local" },
-      documentID: Number(docRef && docRef.id),
-      copy: true,
-      lowerCase: true,
-      saveStage: { _enum: "saveStageType", _value: "saveStageOS" },
-      _options: { dialogOptions: "dontDisplay" }
-    }], {});
-    const nativePath = String(tempFile.nativePath || "").trim();
-    if (!nativePath) throw new Error("Photoshop 未返回本地超分临时文件路径");
-    return { file: tempFile, nativePath };
-  } catch (error) {
-    await deleteFileQuietly(tempFile);
-    throw error;
-  }
-}
-
-async function normalizeLocalUpscaleTempDocumentBitDepth(action, docRef) {
-  const rawBitsPerChannel = docRef && docRef.bitsPerChannel;
-  const bitsPerChannel = rawBitsPerChannel && typeof rawBitsPerChannel === "object"
-    ? rawBitsPerChannel._value ?? rawBitsPerChannel.value ?? rawBitsPerChannel
-    : rawBitsPerChannel;
-  if (normalizeBitsPerChannel(bitsPerChannel) !== "SIXTEEN") return;
-
-  // The duplicated document is active here. Real-ESRGAN receives an 8-bit PNG,
-  // while the source Photoshop document remains at its original bit depth.
-  await action.batchPlay([{
-    _obj: "convertMode",
-    depth: 8,
-    merge: false,
-    _options: { dialogOptions: "dontDisplay" }
-  }], {});
-}
-
-export async function openImageFromUrl(payload = {}) {
-  const options = payload && typeof payload === "object" ? payload : {};
-  const url = String(options.url || "").trim();
-  const filePath = String(options.filePath || "").trim();
-  if (!url && !filePath) throw new Error("本地超分结果地址为空");
-
-  const { photoshop, storage } = await ensureDeps();
-  const app = photoshop.app;
-  const action = photoshop.action;
-  const core = photoshop.core;
-  if (!app || !action || !core || !storage || !storage.localFileSystem) {
-    throw new Error("当前 Photoshop 版本未提供本地超分结果导入能力");
-  }
-
-  const fs = storage.localFileSystem;
-  const tempFolder = await fs.getTemporaryFolder();
-  let tempFile = null;
-  let resultFileType = null;
-  let downloaded = null;
-
-  if (filePath) {
-    const filename = filePath.split(/[\\/]/).pop() || "";
-    const extensionMatch = filename.match(/\.([a-z0-9]+)$/i);
-    if (!filename || !extensionMatch) throw new Error("本地超分结果文件格式无效");
-    const directFile = await tempFolder.getEntry(filename);
-    const expectedPath = filePath.replace(/\\/g, "/").toLowerCase();
-    const actualPath = String(directFile && directFile.nativePath || "").replace(/\\/g, "/").toLowerCase();
-    if (!directFile || actualPath !== expectedPath) {
-      throw new Error("未找到本地超分结果文件");
-    }
-    tempFile = directFile;
-    resultFileType = { extension: extensionMatch[1].toLowerCase() };
-  } else {
-    downloaded = await fetchBinaryWithMetadata(url, {
-      timeoutMs: Math.max(30000, Number(options.downloadTimeoutMs) || 300000)
-    });
-    const buffer = downloaded.buffer;
-    resultFileType = detectImageFileType(buffer, {
-      mimeType: downloaded.mimeType,
-      responseUrl: downloaded.responseUrl || url,
-      sourceUrl: url
-    });
-    if (!resultFileType) {
-      throw new Error("本地超分服务返回的结果不是可识别的图像");
-    }
-    const fileKey = createLocalUpscaleFileKey(options.taskId);
-    tempFile = await tempFolder.createFile(
-      `pixelrunner-local-upscale-open-${fileKey}.${resultFileType.extension}`,
-      { overwrite: true }
-    );
-  }
-  try {
-    if (downloaded) await tempFile.write(downloaded.buffer, { format: storage.formats.binary });
-    await core.executeAsModal(async () => {
-      if (typeof app.open === "function") {
-        await app.open(tempFile);
-        return;
-      }
-      const sessionToken = await fs.createSessionToken(tempFile);
-      await action.batchPlay([{
-        _obj: "open",
-        null: { _path: sessionToken, _kind: "local" },
-        _options: { dialogOptions: "dontDisplay" }
-      }], {});
-    }, { commandName: "Open PixelRunner Local Upscale Result" });
-
-    const openedDocument = app.activeDocument;
-    const document = getDocumentInfo(openedDocument);
-    if (!document || !document.hasActiveDocument) throw new Error("Photoshop 未能打开本地超分结果");
-    console.log("[PixelRunner/Photoshop] localUpscaleResult:opened", {
-      documentId: document.documentId,
-      width: document.width,
-      height: document.height,
-      format: resultFileType.extension
-    });
-    return {
-      ok: true,
-      opened: true,
-      document,
-      resultFormat: resultFileType.extension
-    };
-  } catch (error) {
-    await deleteFileQuietly(tempFile);
-    throw error;
   }
 }

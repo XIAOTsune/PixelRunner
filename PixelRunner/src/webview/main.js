@@ -15,7 +15,6 @@ function initializePixelRunnerApp() {
   modules.ui.bindTabs();
   modules.ui.bindTactileFeedback();
   modules.ui.bindToolActions();
-  modules.localUpscale.bindActions();
   modules.blendMatch.bindBlendMatchActions();
   modules.spaceFx.bindSpaceFxActions();
   modules.postFx.bindActions();
@@ -47,7 +46,6 @@ function initializePixelRunnerApp() {
       modules.promptHistory.renderSettingsSummary();
       modules.workspace.renderWorkspace();
       modules.ui.setActiveView("tabWorkspace");
-      modules.localUpscale.initialize();
       if (modules.runtime.isPluginRuntime()) {
         modules.workspace.refreshPhotoshopDocumentStatus({ quiet: true });
       }

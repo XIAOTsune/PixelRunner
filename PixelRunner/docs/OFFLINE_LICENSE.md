@@ -25,7 +25,7 @@ issuedAt, permanent, keyId
 ```
 
 `productId` is `com.tsune.pixelrunner`; `permanent` is always `true`. Supported
-feature IDs are `glow`, `spaceFx`, `blendMatch`, and `localUpscale`.
+feature IDs are `glow`, `spaceFx`, and `blendMatch`.
 
 ## Developer Workflow
 
@@ -38,7 +38,7 @@ key only in page memory.
 For a developer's own offline phone or computer, a deliberately simplified
 self-contained page can be generated with one device-code field. It creates a
 license ID and signs the current `issuedAt` time automatically, always
-unlocking all four supported features:
+unlocking all supported features:
 
 ```powershell
 npm run build:personal-license-issuer -- `
@@ -73,7 +73,7 @@ node .\scripts\issue-license.mjs `
   --key-id pr-2026-01 `
   --license-id PR-2026-000001 `
   --device-code PR2-XXXX-XXXX-XXXX-XXXX-XXXX `
-  --features glow,spaceFx,blendMatch,localUpscale
+  --features glow,spaceFx,blendMatch
 ```
 
 The signing script accepts a PEM from either the explicit external file path or

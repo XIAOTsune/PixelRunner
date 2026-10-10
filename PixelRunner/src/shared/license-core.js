@@ -10,8 +10,7 @@ export const LICENSE_FEATURES = Object.freeze({
   glow: "辉光",
   spaceFx: "空间特效",
   postFx: "镜头与后期",
-  blendMatch: "对齐与校色",
-  localUpscale: "本地超分"
+  blendMatch: "对齐与校色"
 });
 
 // Lens and post-processing effects ship under the existing Glow entitlement.

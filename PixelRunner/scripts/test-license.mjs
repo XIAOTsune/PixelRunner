@@ -45,7 +45,7 @@ const issuedAt = "2026-07-28T00:00:00.000Z";
 
 function issueLicense({
   deviceCode,
-  features = ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"],
+  features = ["blendMatch", "glow", "postFx", "spaceFx"],
   productId = LICENSE_PRODUCT_ID,
   keyId = "test-2026",
   licenseId = "PR-TEST-0001"
@@ -75,7 +75,7 @@ assert.match(deviceCode, /^PR2-(?:[A-Z2-9]{4}-){4}[A-Z2-9]{4}$/);
 const validCode = issueLicense({ deviceCode });
 const validVerification = verifyActivationCode(validCode, { deviceCode, keyring: testKeyring });
 assert.equal(validVerification.active, true, "valid Ed25519 license verifies locally");
-assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"]);
+assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "postFx", "spaceFx"]);
 assert.equal(isFeatureUnlocked(validVerification, "glow"), true);
 assert.equal(isFeatureUnlocked(validVerification, "postFx"), true, "explicit postFx entitlement remains supported");
 
@@ -104,7 +104,7 @@ const invalidSchemaPayload = {
   productId: LICENSE_PRODUCT_ID,
   licenseId: "PR-TEST-BAD-SCHEMA",
   deviceCodeHash: deriveDeviceCodeHash(deviceCode),
-  features: ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"],
+  features: ["blendMatch", "glow", "postFx", "spaceFx"],
   issuedAt,
   permanent: true,
   keyId: "test-2026"
@@ -127,7 +127,6 @@ const glowOnlyLicense = issueLicense({ deviceCode, features: ["glow"], licenseId
 const glowOnlyVerification = verifyActivationCode(glowOnlyLicense, { deviceCode, keyring: testKeyring });
 assert.equal(glowOnlyVerification.active, true);
 assert.equal(isFeatureUnlocked(glowOnlyVerification, "postFx"), true, "legacy glow license unlocks shared lens and post FX");
-assert.equal(isFeatureUnlocked(glowOnlyVerification, "localUpscale"), false, "missing feature stays locked");
 
 const hostStorage = new MemoryStorage({ [INSTALLATION_ID_STORAGE_KEY]: firstInstallationId });
 const hostEnforcer = createHostLicenseEnforcer({ storage: hostStorage, keyring: testKeyring, randomValues: fixedRandomValues });
@@ -138,8 +137,7 @@ const protectedRequests = [
   { feature: "postFx", counter: "postFxPreview", request: { method: "photoshop.captureLicensedPostFxPreview", args: [{}] } },
   { feature: "postFx", counter: "postFxSource", request: { method: "photoshop.captureLicensedPostFxSource", args: [{}] } },
   { feature: "postFx", counter: "postFxPlacement", request: { method: "photoshop.placeLicensedPostFxResult", args: [{}] } },
-  { feature: "blendMatch", counter: "blendMatchAnalysis", request: { method: "photoshop.runToolAction", args: [{ action: "blendMatchPreviewSamples" }] } },
-  { feature: "localUpscale", counter: "localUpscaleRequest", request: { method: "localUpscale.startEngine", args: [] } }
+  { feature: "blendMatch", counter: "blendMatchAnalysis", request: { method: "photoshop.runToolAction", args: [{ action: "blendMatchPreviewSamples" }] } }
 ];
 assert.equal(
   getRequiredLicenseFeature({ method: "photoshop.placeResultWithGenerativeFillColorCorrection", args: [{}] }),
@@ -156,7 +154,7 @@ for (const request of protectedRequests.slice(3, 6)) {
   hostEnforcer.assertBridgeRequest(request.request);
 }
 hostStorage.setItem(ACTIVATION_STORAGE_KEY, "");
-const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, postFxPreview: 0, postFxSource: 0, postFxPlacement: 0, blendMatchAnalysis: 0, localUpscaleRequest: 0 };
+const executionCounters = { glow: 0, spaceFx: 0, spaceFxSource: 0, postFxPreview: 0, postFxSource: 0, postFxPlacement: 0, blendMatchAnalysis: 0 };
 function invokeProtectedTask(item) {
   hostEnforcer.assertBridgeRequest(item.request);
   executionCounters[item.counter] += 1;
@@ -169,7 +167,6 @@ for (const item of protectedRequests) {
   );
 }
 assert.equal(executionCounters.blendMatchAnalysis, 0, "unlicensed blend-match analysis does not run");
-assert.equal(executionCounters.localUpscaleRequest, 0, "unlicensed local-upscale request does not run");
 
 hostStorage.setItem(ACTIVATION_STORAGE_KEY, validCode);
 for (const item of protectedRequests) {
@@ -182,7 +179,6 @@ assert.equal(executionCounters.postFxPreview, 1, "authorized post FX preview ent
 assert.equal(executionCounters.postFxSource, 1, "authorized full-resolution post FX capture enters its Host path");
 assert.equal(executionCounters.postFxPlacement, 1, "authorized post FX placement enters its Host path");
 assert.equal(executionCounters.blendMatchAnalysis, 1, "authorized blend-match enters its original Host path");
-assert.equal(executionCounters.localUpscaleRequest, 1, "authorized local-upscale enters its original Host path");
 
 hostStorage.setItem(ACTIVATION_STORAGE_KEY, "");
 assert.equal(hostStorage.getItem(ACTIVATION_STORAGE_KEY), "", "removing local authorization clears the saved activation code");

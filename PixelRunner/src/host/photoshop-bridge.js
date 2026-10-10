@@ -54,16 +54,6 @@ export async function capturePhotoshopPostFxSource(args = []) {
   return capturePhotoshopDocumentPreview(args);
 }
 
-export async function capturePhotoshopDocumentForLocalUpscale(args = []) {
-  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
-  const photoshopService = getPhotoshopService();
-  if (typeof photoshopService.captureDocumentForLocalUpscale !== "function") {
-    throw new Error("Photoshop host service is unavailable");
-  }
-
-  return photoshopService.captureDocumentForLocalUpscale(payload);
-}
-
 export async function runPhotoshopToolAction(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const photoshopService = getPhotoshopService();
@@ -109,85 +99,6 @@ export async function cacheResultForPhotoshop(args = []) {
     filePath: "",
     cacheOnly: true
   });
-}
-
-export async function openLocalUpscaleResultInPhotoshop(args = []) {
-  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
-  const photoshopService = getPhotoshopService();
-  if (typeof photoshopService.openImageFromUrl !== "function") {
-    throw new Error("Photoshop host service is unavailable");
-  }
-
-  return photoshopService.openImageFromUrl(payload);
-}
-
-export function buildLocalUpscalePlacementPayload(payload = {}) {
-  const targetWidth = Math.max(1, Math.round(Number(payload.targetWidth) || 0));
-  const targetHeight = Math.max(1, Math.round(Number(payload.targetHeight) || 0));
-  const targetBounds = payload.targetBounds && typeof payload.targetBounds === "object"
-    ? payload.targetBounds
-    : { left: 0, top: 0, right: targetWidth, bottom: targetHeight };
-  const selectionSnapshotChannelName = String(payload.selectionSnapshotChannelName || "").trim();
-  const captureMode = String(payload.captureMode || "full").trim();
-  return {
-    filePath: String(payload.filePath || "").trim(),
-    url: String(payload.url || "").trim(),
-    taskId: payload.taskId,
-    targetDocumentId: Number(payload.targetDocumentId) || 0,
-    targetBounds,
-    fitMode: "stretch",
-    preserveCanvasBounds: true,
-    applyMask: Boolean(selectionSnapshotChannelName),
-    requirePlacementMask: Boolean(selectionSnapshotChannelName),
-    selectionSnapshotChannelName,
-    selectionMaskFeather: selectionSnapshotChannelName ? 24 : 0,
-    restoreActiveLayerId: Math.max(0, Number(payload.restoreActiveLayerId) || 0),
-    cleanupLocalSource: true,
-    layerName: captureMode === "selection" ? "超分 x4（选区）" : "超分 x4"
-  };
-}
-
-export async function placeLocalUpscaleResultIntoPhotoshop(args = [], runtime = {}) {
-  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
-  const filePath = String(payload.filePath || "").trim();
-  const resultUrl = String(payload.url || "").trim();
-  const targetDocumentId = Number(payload.targetDocumentId) || 0;
-  const targetWidth = Math.max(1, Math.round(Number(payload.targetWidth) || 0));
-  const targetHeight = Math.max(1, Math.round(Number(payload.targetHeight) || 0));
-  if ((!filePath && !resultUrl) || !targetDocumentId || !targetWidth || !targetHeight) {
-    throw new Error("本地超分回贴缺少结果文件或目标文档信息");
-  }
-
-  const photoshopService = getPhotoshopService();
-  if (typeof photoshopService.placeImageFromUrl !== "function") {
-    throw new Error("Photoshop host service is unavailable");
-  }
-
-  const selectionSnapshotChannelName = String(payload.selectionSnapshotChannelName || "").trim();
-  const placementPayload = buildLocalUpscalePlacementPayload(payload);
-  try {
-    try {
-      return await photoshopService.placeImageFromUrl(placementPayload, runtime);
-    } catch (error) {
-      const message = String(error && error.message || error || "");
-      if (!filePath || !resultUrl || !message.includes("未找到本地超分结果文件")) throw error;
-      return await photoshopService.placeImageFromUrl({
-        ...placementPayload,
-        filePath: "",
-        url: resultUrl
-      }, runtime);
-    }
-  } catch (error) {
-    if (selectionSnapshotChannelName && typeof photoshopService.deleteSelectionSnapshot === "function") {
-      try {
-        await photoshopService.deleteSelectionSnapshot({
-          targetDocumentId,
-          selectionSnapshotChannelName
-        });
-      } catch (_) {}
-    }
-    throw error;
-  }
 }
 
 export async function placeResultAndBlendIntoPhotoshop(args = [], runtime = {}) {
