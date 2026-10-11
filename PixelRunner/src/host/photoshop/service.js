@@ -2177,12 +2177,16 @@ export async function placeImageFromUrl(payload, runtime = {}) {
           : normalizedMode === "original" || normalizedMode === "pixel-perfect"
             ? "original"
             : "contain";
+    } else if (isFullBoundsTarget && normalizedMode === "stretch") {
+      // A full-document result must fill the document canvas even when the
+      // returned PNG has transparent margins or was rewritten with anchor
+      // pixels. Treating it as an "original" sized transparent result leaves
+      // small results at the placement origin instead of aligning the canvas.
+      placementMode = "stretch";
     } else if (isTransparentPngResult && pngInfo && pngInfo.boundsAnchored && pngAlphaUsesPartialCanvas) {
       placementMode = "original";
     } else if (isTransparentPngResult && pngInfo && pngInfo.alphaBounds) {
       placementMode = "transparent-png-canvas";
-    } else if (isTransparentPngResult && isFullBoundsTarget && normalizedMode === "stretch") {
-      placementMode = "original";
     }
     try {
       await placeSessionToken(action, sessionToken);
