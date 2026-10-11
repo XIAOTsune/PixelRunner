@@ -16,16 +16,16 @@ assert.equal(manifest.id, "com.tsune.pixelrunner");
 assert.equal(manifest.name, RELEASE_PRODUCT_NAME);
 assert.equal(manifest.entrypoints[0].label.default, RELEASE_PRODUCT_NAME);
 assert.match(manifest.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "UXP manifest version must be valid SemVer");
-assert.equal(manifest.version, "2.9.0");
+assert.equal(manifest.version, "2.9.1");
 assert.equal(packageJson.name, "pixelrunner-uxp");
 assert.equal(packageJson.version, manifest.version);
 assert.deepEqual(getReleasePackageNames(manifest.version), {
-  packageDirName: "像素起子V2.9.0",
-  packageZipName: "像素起子V2.9.0.zip"
+  packageDirName: "像素起子V2.9.1",
+  packageZipName: "像素起子V2.9.1.zip"
 });
 assert.deepEqual(getReleasePackageNames(manifest.version, { hardened: true }), {
-  packageDirName: "像素起子V2.9.0-加固版",
-  packageZipName: "像素起子V2.9.0-加固版.zip"
+  packageDirName: "像素起子V2.9.1-加固版",
+  packageZipName: "像素起子V2.9.1-加固版.zip"
 });
 for (const source of [indexHtml, appHtml, hostMain]) {
   assert.doesNotMatch(source, /像素起子（小T修图助手）/);

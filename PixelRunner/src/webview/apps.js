@@ -129,8 +129,7 @@
 
   function getPreferredParsedAppName(value, region = getCurrentRunningHubRegion()) {
     const name = String(value || "").trim();
-    if (modules.state.normalizeRunningHubRegion(region) !== modules.state.RUNNINGHUB_REGIONS.GLOBAL) return name;
-    return /[\u3400-\u9fff]/.test(name) ? name : "";
+    return name;
   }
 
   function getRegionApps() {
