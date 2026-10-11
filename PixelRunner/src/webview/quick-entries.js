@@ -105,6 +105,7 @@
     const normalized = normalizeQuickEntryList(entries);
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.QUICK_ENTRIES, JSON.stringify({ version: 1, entries: normalized }));
     modules.state.state.quickEntries = normalized;
+    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
     if (modules.apps && typeof modules.apps.renderAppPickerList === "function") modules.apps.renderAppPickerList();
     if (modules.workspace && typeof modules.workspace.renderWorkspace === "function") modules.workspace.renderWorkspace();
     return normalized;

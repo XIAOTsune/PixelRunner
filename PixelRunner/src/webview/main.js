@@ -31,14 +31,32 @@ function initializePixelRunnerApp() {
   modules.settings.initializeSettings()
     .then(() => modules.promptHistory.initialize())
     .then(() => modules.license.initialize())
-    .then(() =>
-      Promise.all([
-        modules.apps.refreshWorkspaceApps({ quiet: true }),
-        modules.quickEntries.initializeQuickEntries(),
-        modules.templates.initializeBuiltinBundle(),
-        modules.templates.refreshTemplates({ quiet: true })
-      ])
-    )
+    .then(async () => {
+      await modules.apps.refreshWorkspaceApps({ quiet: true });
+      await modules.quickEntries.initializeQuickEntries();
+      await modules.templates.refreshTemplates({ quiet: true });
+      const keys = modules.state.STORAGE_KEYS;
+      const activeId = await modules.runtime.storageGetItem(keys.ACTIVE_PROMPT_BUNDLE);
+      if (activeId) modules.state.state.activePromptBundleId = String(activeId);
+      const hasData = modules.state.state.apps.length > 0 || modules.state.state.templates.length > 0 || modules.state.state.templateCategories.length > 0 || modules.state.state.quickEntries.length > 0;
+      const marker = await modules.runtime.storageGetItem(keys.WORKSPACE_INIT);
+      const backup = modules.runtime.loadWorkspaceBackup ? await modules.runtime.loadWorkspaceBackup() : null;
+      if (!hasData && backup) {
+        await modules.runtime.storageSetItem(keys.APPS, JSON.stringify({ version: 3, appsByRegion: {
+          cn: backup.apps.filter((item) => String(item.region || "cn") === "cn"),
+          global: backup.apps.filter((item) => String(item.region || "cn") !== "cn")
+        }}));
+        await modules.runtime.storageSetItem(keys.PROMPT_TEMPLATES, JSON.stringify(backup.templates));
+        await modules.runtime.storageSetItem(keys.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(backup.templateCategories));
+        await modules.runtime.storageSetItem(keys.QUICK_ENTRIES, JSON.stringify({ version: 1, entries: backup.quickEntries }));
+        if (backup.activePromptBundleId) await modules.runtime.storageSetItem(keys.ACTIVE_PROMPT_BUNDLE, backup.activePromptBundleId);
+        await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+      } else if (!hasData && !marker) await modules.templates.initializeBuiltinBundle();
+      else if (!marker) await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+      await modules.apps.refreshWorkspaceApps({ quiet: true });
+      await modules.quickEntries.initializeQuickEntries();
+      await modules.templates.refreshTemplates({ quiet: true });
+    })
     .then(() => {
       modules.apps.renderSavedAppsList();
       modules.templates.renderSavedTemplatesList();

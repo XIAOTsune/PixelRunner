@@ -150,6 +150,49 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     }
   }
 
+  async function saveWorkspaceBackup(snapshot) {
+    const scrub = (value) => {
+      if (Array.isArray(value)) return value.map(scrub);
+      if (!value || typeof value !== "object") return value;
+      const out = {};
+      Object.keys(value).forEach((key) => {
+        if (/(api.?key|token|password|secret|authorization|access.?key)/i.test(key)) return;
+        out[key] = scrub(value[key]);
+      });
+      return out;
+    };
+    const payload = {
+      schema: "pixelrunner.workspace-backup",
+      version: 1,
+      timestamp: Date.now(),
+      apps: scrub(Array.isArray(snapshot && snapshot.apps) ? snapshot.apps : []),
+      templates: scrub(Array.isArray(snapshot && snapshot.templates) ? snapshot.templates : []),
+      templateCategories: scrub(Array.isArray(snapshot && snapshot.templateCategories) ? snapshot.templateCategories : []),
+      quickEntries: scrub(Array.isArray(snapshot && snapshot.quickEntries) ? snapshot.quickEntries : []),
+      activePromptBundleId: String(snapshot && snapshot.activePromptBundleId || "")
+    };
+    const text = JSON.stringify(payload);
+    JSON.parse(text);
+    return storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_BACKUP, text);
+  }
+
+  async function loadWorkspaceBackup() {
+    const raw = await storageGetItem(modules.state.STORAGE_KEYS.WORKSPACE_BACKUP);
+    const parsed = readJsonText(raw, null);
+    return parsed && parsed.schema === "pixelrunner.workspace-backup" && parsed.version === 1 ? parsed : null;
+  }
+
+  async function backupWorkspaceFromState() {
+    const state = modules.state && modules.state.state ? modules.state.state : {};
+    return saveWorkspaceBackup({
+      apps: state.apps,
+      templates: state.templates,
+      templateCategories: state.templateCategories,
+      quickEntries: state.quickEntries,
+      activePromptBundleId: state.activePromptBundleId
+    });
+  }
+
   function getUxpFileSystem() {
     return global && global.uxp && global.uxp.storage && global.uxp.storage.localFileSystem
       ? global.uxp.storage.localFileSystem
@@ -368,6 +411,9 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     callHost,
     storageGetItem,
     storageSetItem,
+    saveWorkspaceBackup,
+    loadWorkspaceBackup,
+    backupWorkspaceFromState,
     readJsonText,
     setSummaryStatus,
     saveTextFile,

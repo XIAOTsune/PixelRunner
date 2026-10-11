@@ -408,6 +408,7 @@
       JSON.stringify(buildRegionalAppStoragePayload(normalizedApps))
     );
     modules.state.state.apps = normalizedApps;
+    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
     await hydrateCurrentApp({ quiet: true, preserveEmpty: options.preserveEmpty });
     renderSavedAppsList();
     modules.workspace.renderWorkspace();

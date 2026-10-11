@@ -400,6 +400,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     const normalized = modules.state.normalizeTemplateCategoryList(categories, modules.state.state.templates);
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(normalized));
     modules.state.state.templateCategories = normalized;
+    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
     syncActiveCategoryIds();
     renderTemplateCategoryControls();
     renderSavedTemplatesList();
@@ -412,6 +413,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES, JSON.stringify(normalized));
     modules.state.state.templates = normalized;
     modules.state.state.templateCategories = modules.state.normalizeTemplateCategoryList(modules.state.state.templateCategories, normalized);
+    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(modules.state.state.templateCategories));
     syncActiveCategoryIds();
     renderTemplateCategoryControls();
@@ -894,20 +896,28 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   }
 
   async function initializeBuiltinBundle() {
-    const markerKey = "pixelrunner.builtinBundle.v1";
+    const markerKey = modules.state.STORAGE_KEYS.BUILTIN_BUNDLE_MARKER;
     const installed = await modules.runtime.storageGetItem(markerKey);
     if (installed === "true") return;
+    const keys = modules.state.STORAGE_KEYS;
+    const rawValues = await Promise.all([
+      modules.runtime.storageGetItem(keys.APPS),
+      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATES),
+      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATE_CATEGORIES),
+      modules.runtime.storageGetItem(keys.QUICK_ENTRIES),
+      modules.runtime.storageGetItem(keys.WORKSPACE_INIT),
+      modules.runtime.loadWorkspaceBackup ? modules.runtime.loadWorkspaceBackup() : null
+    ]);
+    const hasStoredWorkspace = rawValues.slice(0, 4).some((value) => value !== null && value !== undefined);
+    if (hasStoredWorkspace || rawValues[4] === "true" || rawValues[5]) {
+      await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+      return;
+    }
     try {
       const response = await fetch("assets/prompt-bundles/pixelrunner-builtin-v8.1.json");
       if (!response.ok) return;
       const text = await response.text();
-      const currentTemplates = modules.state.state.templates;
-      const currentApps = modules.state.state.apps;
-      modules.state.state.templates = [];
-      modules.state.state.apps = [];
       const summary = await importTransferPackageText(text, { skipStrategy: true, persistSelection: false });
-      modules.state.state.templates = modules.state.state.templates.length ? modules.state.state.templates : currentTemplates;
-      modules.state.state.apps = modules.state.state.apps.length ? modules.state.state.apps : currentApps;
       if (!summary || summary.cancelled) return;
       const bundles = await loadPromptBundles();
       const builtin = bundles.find((item) => String(item.id) === BUILTIN_BUNDLE_ID);
@@ -915,6 +925,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       await savePromptBundles(bundles);
       await persistActiveBundleId(BUILTIN_BUNDLE_ID, "像素起子资料包（内置基础版）");
       await modules.runtime.storageSetItem(markerKey, "true");
+      await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
     } catch (_) {
       // The bundled asset is optional in browser preview and older packaged builds.
     }
@@ -1101,6 +1112,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (!strategy) return { cancelled: true, kind: transfer.kind };
     modules.state.state.activePromptBundleName = transfer.name || modules.state.state.activePromptBundleName || "像素起子资料包";
     if (strategy === "replace" || options.forceReplace) {
+      if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
       await modules.apps.saveAppsToStorage([]);
       await saveTemplatesToStorage([]);
       await saveTemplateCategoriesToStorage([]);
