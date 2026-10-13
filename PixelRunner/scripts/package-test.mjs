@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateRawSync } from "node:zlib";
@@ -44,7 +44,6 @@ function getIncludedEntries(version, channel, hardened) {
     "app.css",
     "icons",
     "assets",
-    "local-ai",
     "pages",
     "video"
   ];
@@ -209,33 +208,6 @@ async function hardenReleasePackage(packageDir) {
   await writeFile(indexPath, indexText.replace(/\s+uxpAllowInspector="true"/g, ""), "utf8");
 }
 
-async function assertBundledLocalAiRuntime(packageDir) {
-  const localAiDir = path.join(packageDir, "local-ai");
-  const runtimeDir = path.join(localAiDir, "runtime");
-  const modelsDir = path.join(localAiDir, "engine", "models");
-  const runtimeManifest = JSON.parse(await readFile(path.join(localAiDir, "runtime.json"), "utf8"));
-  if (runtimeManifest.runtime !== "CPython" || runtimeManifest.distribution !== "embeddable") {
-    throw new Error("The packaged Local AI runtime manifest is invalid");
-  }
-  for (const name of ["python.exe", "pythonw.exe", "python312.dll", "python312.zip", "python312._pth", "LICENSE.txt"]) {
-    const runtimeFile = path.join(runtimeDir, name);
-    await access(runtimeFile);
-    if ((await stat(runtimeFile)).size <= 0) throw new Error(`The packaged Local AI runtime file is empty: ${name}`);
-  }
-  const expectedModels = ["realesrgan-x4plus.bin", "realesrgan-x4plus.param"];
-  const packagedModels = (await readdir(modelsDir))
-    .filter((name) => /\.(?:bin|param)$/i.test(name))
-    .sort();
-  if (JSON.stringify(packagedModels) !== JSON.stringify(expectedModels)) {
-    throw new Error(`The packaged Local AI models must contain x4plus only: ${packagedModels.join(", ")}`);
-  }
-  for (const name of expectedModels) {
-    if ((await stat(path.join(modelsDir, name))).size <= 0) {
-      throw new Error(`The packaged Local AI model file is empty: ${name}`);
-    }
-  }
-}
-
 const FORBIDDEN_ARCHIVE_PATH_SEGMENTS = new Set([
   ".git",
   "node_modules",
@@ -282,9 +254,6 @@ function assertReleaseArchiveSafety(files) {
     if (FORBIDDEN_ARCHIVE_FILE_NAMES.some((pattern) => pattern.test(baseName))) {
       throw new Error(`发布 ZIP 包含禁止的敏感文件：${normalizedName}`);
     }
-    if (path.extname(baseName).toLowerCase() === ".py" && normalizedName !== "local-ai/server.py") {
-      throw new Error(`发布 ZIP 仅允许受控的 Local AI Python 运行时入口：${normalizedName}`);
-    }
     if (!TEXT_ARCHIVE_EXTENSIONS.has(path.extname(baseName).toLowerCase())) continue;
     const text = file.bytes.toString("utf8");
     const matchedPattern = SENSITIVE_ARCHIVE_CONTENT.find((pattern) => pattern.test(text));
@@ -328,21 +297,6 @@ async function main() {
     await rm(path.join(packageDir, docName), { force: true });
     await rm(path.join(packageDir, "assets", "space-fx", docName), { force: true });
   }
-  await rm(path.join(packageDir, "local-ai", "__pycache__"), { recursive: true, force: true });
-  await rm(path.join(packageDir, "local-ai", "python-3.12.10-embed-amd64.zip"), { force: true });
-  for (const relativePath of [
-    "README.md",
-    "pixelrunner-local-ai.log",
-    "test_server.py",
-    "engine/README_windows.md",
-    "engine/input.jpg",
-    "engine/input2.jpg",
-    "engine/onepiece_demo.mp4"
-  ]) {
-    await rm(path.join(packageDir, "local-ai", relativePath), { force: true });
-  }
-  await assertBundledLocalAiRuntime(packageDir);
-
   if (channel === "release") {
     await createReleaseArchive(packageDir, packageZip);
     const releaseLabel = `${RELEASE_PRODUCT_NAME}${hardened ? " hardened" : ""} release`;

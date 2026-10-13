@@ -749,9 +749,9 @@
     <header class="hero">
       <section class="hero-main">
         <p class="eyebrow">像素起子本地帮助中心</p>
-        <h1>像素起子连接 RunningHub，从第一次配置到返图</h1>
+        <h1>像素起子引导与资产管理</h1>
         <p class="lead">
-          这份文档按 RunningHub 当前官网入口和像素起子的实际使用顺序整理：先到消费级 API 控制台复制 API Key，再从 AI 应用页找到合适应用，接着在 Photoshop 里捕获图片、运行任务、查看返图。后面也放了资料包备份、快捷入口和常见失败排查，适合新手上手，也适合出问题时快速查。
+          这份本地教程按像素起子当前插件功能整理：先选对 RunningHub 区域和 API 类型，再添加应用、捕获 Photoshop 图片、运行任务和查看返图。文档也覆盖第三方 API、辉光与后期、创成式填充、资料包备份、快捷入口和常见失败排查。
         </p>
         <div class="hero-actions">
           <a class="btn primary" href="#first-run">
@@ -786,7 +786,9 @@
         <div class="nav-links">
           <a href="#quick-answer">快速定位</a>
           <a href="#first-run">首次配置</a>
+          <a href="#billing">API 计费与并发</a>
           <a href="#daily-use">日常运行</a>
+          <a href="#toolbox">插件工具箱</a>
           <a href="#save-view">保存查看</a>
           <a href="#templates">提示词模板</a>
           <a href="#quick-entry">快捷入口</a>
@@ -823,6 +825,53 @@
               <strong>配置怎么备份？</strong>
               <span>设置页导出资料包，备份应用、模板、快捷入口。</span>
             </a>
+            <a class="quick-help" href="#billing">
+              <strong>为什么扣币或扣余额？</strong>
+              <span>消费级 API 按模型计费；企业级共享 API 只扣余额并支持更高并发。</span>
+            </a>
+            <a class="quick-help" href="#region-limit">
+              <strong>国内版和国际版能混用吗？</strong>
+              <span>不能。API 区域与应用区域必须一致。</span>
+            </a>
+          </div>
+        </section>
+
+        <section class="doc-card" id="billing">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Billing And Concurrency</p>
+              <h2>先看懂 API 计费和并发</h2>
+              <p class="muted">选择 API 前先确认账户余额和模型类型。插件里的最大并发设置不能突破服务商对当前 API 类型的限制。</p>
+            </div>
+            <span class="tag">必须阅读</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>API 类型</th><th>扣费方式</th><th>并发能力</th><th>使用提醒</th></tr></thead>
+              <tbody>
+                <tr><td>消费级 API + 开源模型</td><td>扣 RunningHub 币</td><td>1 个并发</td><td>账户没有余额时无法扣币；继续尝试调用可能触发风控。</td></tr>
+                <tr><td>消费级 API + 闭源模型</td><td>同时扣余额和币</td><td>1 个并发</td><td>余额和币都要充足，不能只看插件右上角的一项余额。</td></tr>
+                <tr><td>企业级共享 API</td><td>只扣余额</td><td>最多 100 个并发</td><td>适合批量任务；仍需遵守账户、应用和服务商的实际限额。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="notice danger"><strong>消费级 API 的风控提醒：</strong>账户余额为 0 时，消费级 API 无法完成扣币。不要连续重复提交；先充值并确认区域、API Key 和模型类型，再重试。</div>
+          <div class="notice"><strong>插件设置建议：</strong>消费级 API 将“最大并发任务数”设为 1；企业级共享 API 可按团队额度逐步调高，最多按服务商允许值设置到 100。</div>
+        </section>
+
+        <section class="doc-card" id="region-limit">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Region Matching</p>
+              <h2>国内版与国际版必须成套使用</h2>
+              <p class="muted">区域不是网页语言选项，而是 API Key、余额、应用和请求地址的匹配关系。</p>
+            </div>
+            <span class="tag">避免解析失败</span>
+          </div>
+          <div class="cards-grid">
+            <article class="callout"><h3>国内版 API</h3><p>选择插件中的“国内版”，使用 <code>runninghub.cn</code> 的 API Key 和国内版 AI 应用。国际版应用不能添加到当前国内版配置。</p></article>
+            <article class="callout"><h3>国际版 API</h3><p>选择插件中的“国际版”，使用 <code>runninghub.ai</code> 的 API Key 和国际版 AI 应用。国内版应用不能添加到当前国际版配置。</p></article>
+            <article class="callout"><h3>切换区域的正确顺序</h3><p>先切换服务区域，再保存对应 API 档案，最后添加同一区域的应用。已有资料包会按区域分开保存，导入后请检查当前区域。</p></article>
           </div>
         </section>
 
@@ -991,6 +1040,24 @@
           </div>
         </section>
 
+        <section class="doc-card" id="toolbox">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Built-in Tools</p>
+              <h2>插件里还有这些本地工具</h2>
+              <p class="muted">不需要 RunningHub 的功能会直接在 Photoshop 本地处理；需要云端模型的功能会在运行前明确要求 API 配置。</p>
+            </div>
+            <span class="tag">功能地图</span>
+          </div>
+          <div class="cards-grid">
+            <article class="callout"><h3>辉光、镜头与后期、空间特效</h3><p>在工具箱中预览并应用效果。辉光和后期支持预览后再写回；空间特效会生成独立图层，便于继续调整。</p></article>
+            <article class="callout"><h3>对齐与校色</h3><p>用于返图与原图的像素级对齐、色彩匹配和结果分析。处理前先确认源图层和返图尺寸一致。</p></article>
+            <article class="callout"><h3>创成式填充与 AI 优化</h3><p>创成式填充可选择 RunningHub 应用或第三方 API；AI 优化会使用当前应用的主提示词生成建议，运行前仍需检查实际字段。</p></article>
+            <article class="callout"><h3>第三方 API</h3><p>在设置的“第三方支持”中配置 GRS 或 Gemini / NewAPI 渠道、Key 和模型。模型列表来自当前渠道，刷新失败时保留已保存模型。</p></article>
+            <article class="callout"><h3>资料包资产</h3><p>资料包会保存应用、提示词分类、提示词预设和快捷入口，并按国内版、国际版分区。换电脑前先导出，换机后再导入。</p></article>
+          </div>
+        </section>
+
         <section class="doc-card" id="save-view">
           <div class="section-head">
             <div>
@@ -1032,9 +1099,9 @@
                 </tr>
                 <tr>
                   <td>提示词模板</td>
-                  <td>设置 / 提示词模板 / 保存模板，或工作台模板弹窗中新建预设</td>
-                  <td>工作台提示词字段的模板选择器、设置页模板列表</td>
-                  <td>建议按分类整理，标题写清用途，方便搜索。</td>
+                  <td>先打开一个包含提示词字段的应用，在工作台字段旁点击“预设”，再在弹窗中编辑或新建预设</td>
+                  <td>工作台提示词字段旁的“预设”弹窗</td>
+                  <td>预设按分类管理；设置页的资料包会一起备份预设和分类。</td>
                 </tr>
                 <tr>
                   <td>快捷入口</td>
@@ -1062,7 +1129,7 @@
             <div>
               <p class="eyebrow">Prompt Templates</p>
               <h2>提示词模板：少重复输入，多复用</h2>
-              <p class="muted">如果同一套风格、修图要求、负面词经常用，就把它保存成模板。以后从工作台直接选择，比每次复制粘贴稳很多。</p>
+              <p class="muted">预设属于具体提示词字段的复用资产。先打开支持提示词的应用，再从字段旁的“预设”入口新建或编辑内容，之后即可快速写入当前字段。</p>
             </div>
             <span class="tag">效率工具</span>
           </div>
@@ -1070,27 +1137,27 @@
           <div class="flow">
             <article class="flow-step">
               <div>
-                <h3>创建模板</h3>
-                <p>进入 <span class="kbd">设置</span>，展开 <strong>提示词模板</strong>。选择所属分类，填写模板标题和模板内容，点击 <strong>保存模板</strong>。</p>
+                <h3>打开支持预设的应用</h3>
+                <p>在工作台先选择一个包含提示词字段的应用，并等待表单加载完成。只有当前应用存在可识别的提示词字段时，字段旁才会出现 <strong>预设</strong> 入口。</p>
               </div>
             </article>
             <article class="flow-step">
               <div>
-                <h3>在工作台使用模板</h3>
-                <p>当当前应用存在提示词字段时，工作台会提供模板选择入口。选择一个或多个模板后，点击应用模板写入当前字段。</p>
+                <h3>在预设弹窗中创建或编辑</h3>
+                <p>点击提示词字段旁的 <strong>预设</strong>，打开预设弹窗。点击 <strong>+ 新建预设</strong>，填写预设名称、所属分类和提示词内容后保存；已有预设可通过操作菜单进入 <strong>编辑预设</strong> 修改。</p>
               </div>
             </article>
             <article class="flow-step">
               <div>
-                <h3>从当前字段保存为预设</h3>
-                <p>如果你在工作台临时写出了一段好用的提示词，可以在模板弹窗中新建预设，把当前字段内容保存下来。</p>
+                <h3>选择并写入当前字段</h3>
+                <p>在预设弹窗中选择一个预设即可替换写入当前字段；需要组合多段内容时，使用组合模式选择多个预设。保存后的预设可以在支持该入口的其他应用字段中继续调用。</p>
               </div>
             </article>
           </div>
 
           <div class="callout">
             <h3>命名建议</h3>
-            <p>模板标题建议写成“用途 + 风格 + 版本”，比如 <code>人像精修-自然皮肤-v2</code>、<code>电商图-白底增强</code>。后期模板多了以后，搜索会轻松很多。</p>
+            <p>预设名称建议写成“用途 + 风格 + 版本”，比如 <code>人像精修-自然皮肤-v2</code>、<code>电商图-白底增强</code>。分类用于筛选，名称用于搜索；修改预设时请确认当前打开的是目标应用和目标提示词字段。</p>
           </div>
         </section>
 
@@ -1227,6 +1294,14 @@
               <button class="btn primary" type="button" data-copy-text="790069193" data-copy-label="二群群号">
                 <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                 复制二群群号
+              </button>
+            </article>
+            <article class="contact-card">
+              <h3>三群</h3>
+              <p>群号：<code>1050195219</code></p>
+              <button class="btn primary" type="button" data-copy-text="1050195219" data-copy-label="三群群号">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2 2h9a2 2 0 0 1 2 2v1"></path></svg>
+                复制三群群号
               </button>
             </article>
           </div>

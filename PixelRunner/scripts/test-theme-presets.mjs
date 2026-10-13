@@ -11,6 +11,7 @@ await import("../src/webview/state.js");
 
 const { THEME_PRESET_NAMES, normalizeTheme } = window.PixelRunnerModules.state;
 assert.deepEqual([...THEME_PRESET_NAMES], expectedPresets, "theme normalization exposes every supported preset");
+assert.equal(normalizeTheme({}).preset, "focus", "new installations default to the focus preset");
 
 for (const preset of expectedPresets) {
   assert.equal(normalizeTheme({ preset }).preset, preset, `${preset} survives theme normalization`);
@@ -27,7 +28,7 @@ assert.deepEqual(
   },
   "custom backgrounds preserve a new base preset"
 );
-assert.equal(normalizeTheme({ preset: "unknown" }).preset, "classic", "unknown presets fall back safely");
+assert.equal(normalizeTheme({ preset: "unknown" }).preset, "focus", "unknown presets fall back safely");
 
 const [html, settingsSource, css] = await Promise.all([
   readFile(path.join(rootDir, "app.html"), "utf8"),

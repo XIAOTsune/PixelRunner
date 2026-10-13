@@ -1,7 +1,7 @@
 {
   "id": "com.tsune.pixelrunner",
   "name": "像素起子",
-  "version": "2.8.5",
+  "version": "2.9.1",
   "main": "index.html",
   "manifestVersion": 5,
   "entrypoints": [
@@ -131,7 +131,7 @@
     "localFileSystem": "fullAccess",
     "launchProcess": {
       "schemes": ["https", "file"],
-      "extensions": [".html", ".htm", ".cmd", ".vbs"]
+      "extensions": [".html", ".htm"]
     },
     "webview": {
       "allow": "yes",
@@ -167,27 +167,7 @@
         "https://upload.qiniup.com",
         "https://upload-z2.qiniup.com",
         "https://up.qiniup.com",
-        "https://up-z2.qiniup.com",
-        "http://localhost:17836",
-        "http://localhost:17837",
-        "http://localhost:17838",
-        "http://localhost:17839",
-        "http://localhost:17840",
-        "http://localhost:17841",
-        "http://localhost:17842",
-        "http://localhost:17843",
-        "http://localhost:17844",
-        "http://localhost:17845",
-        "http://127.0.0.1:17836",
-        "http://127.0.0.1:17837",
-        "http://127.0.0.1:17838",
-        "http://127.0.0.1:17839",
-        "http://127.0.0.1:17840",
-        "http://127.0.0.1:17841",
-        "http://127.0.0.1:17842",
-        "http://127.0.0.1:17843",
-        "http://127.0.0.1:17844",
-        "http://127.0.0.1:17845"
+        "https://up-z2.qiniup.com"
       ]
     },
     "network": {
@@ -221,27 +201,7 @@
         "https://upload.qiniup.com",
         "https://upload-z2.qiniup.com",
         "https://up.qiniup.com",
-        "https://up-z2.qiniup.com",
-        "http://localhost:17836",
-        "http://localhost:17837",
-        "http://localhost:17838",
-        "http://localhost:17839",
-        "http://localhost:17840",
-        "http://localhost:17841",
-        "http://localhost:17842",
-        "http://localhost:17843",
-        "http://localhost:17844",
-        "http://localhost:17845",
-        "http://127.0.0.1:17836",
-        "http://127.0.0.1:17837",
-        "http://127.0.0.1:17838",
-        "http://127.0.0.1:17839",
-        "http://127.0.0.1:17840",
-        "http://127.0.0.1:17841",
-        "http://127.0.0.1:17842",
-        "http://127.0.0.1:17843",
-        "http://127.0.0.1:17844",
-        "http://127.0.0.1:17845"
+        "https://up-z2.qiniup.com"
       ]
     }
   }

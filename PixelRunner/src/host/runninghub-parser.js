@@ -668,6 +668,7 @@ const CHINESE_APP_NAME_KEYS = new Set([
 ]);
 
 const CHINESE_LOCALE_KEYS = new Set(["cn", "zh", "zhcn", "zhhans", "chinese"]);
+const ENGLISH_LOCALE_KEYS = new Set(["en", "enus", "eng", "english", "enuk"]);
 
 function containsChineseText(value) {
   return /[\u3400-\u9fff]/.test(String(value || ""));
@@ -684,7 +685,8 @@ function collectAppNameCandidates(value, depth = 0, bucket = [], seen = new Set(
     const key = normalizeFieldToken(parentKey);
     const explicitChineseKey = CHINESE_APP_NAME_KEYS.has(key);
     const chineseLocaleKey = nameContext && CHINESE_LOCALE_KEYS.has(key);
-    if (isGenericAppNameKey(key) || explicitChineseKey || chineseLocaleKey) {
+    const englishLocaleKey = nameContext && ENGLISH_LOCALE_KEYS.has(key);
+    if (isGenericAppNameKey(key) || explicitChineseKey || chineseLocaleKey || englishLocaleKey) {
       const text = String(value).trim();
       const marker = `${key}:${text.toLowerCase()}`;
       if (text && !seen.has(marker)) {
@@ -694,11 +696,12 @@ function collectAppNameCandidates(value, depth = 0, bucket = [], seen = new Set(
           value: text,
           depth,
           hasChinese,
+          englishLocaleKey,
           explicitChineseKey,
           chineseLocaleKey,
           score:
             (APP_NAME_KEY_WEIGHTS[key] || 40) +
-            (explicitChineseKey || chineseLocaleKey ? 120 : hasChinese ? 48 : 0) +
+            (explicitChineseKey || chineseLocaleKey ? 120 : englishLocaleKey ? 110 : hasChinese ? 48 : 0) +
             Math.min(12, text.length) -
             depth
         });
@@ -767,7 +770,7 @@ function collectAppNameCandidates(value, depth = 0, bucket = [], seen = new Set(
   return bucket;
 }
 
-function resolveBestAppName(data) {
+function resolveBestAppName(data, region = "cn") {
   const candidates = collectAppNameCandidates(data, 0, [], new Set(), "");
   const sortCandidates = (items) => items.sort((a, b) => {
     if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
@@ -776,7 +779,11 @@ function resolveBestAppName(data) {
   const chineseCandidates = candidates.filter(
     (item) => item.hasChinese && (item.explicitChineseKey || item.chineseLocaleKey || Number(item.depth) <= 3)
   );
-  const preferred = sortCandidates(chineseCandidates)[0] || sortCandidates(candidates)[0] || null;
+  const global = String(region || "").trim().toLowerCase() === "global";
+  const englishCandidates = candidates.filter((item) => item.englishLocaleKey || !item.hasChinese);
+  const preferred = global
+    ? sortCandidates(englishCandidates)[0] || sortCandidates(candidates)[0] || null
+    : sortCandidates(chineseCandidates)[0] || sortCandidates(candidates)[0] || null;
   return preferred && preferred.value ? preferred.value : "未命名应用";
 }
 
@@ -822,7 +829,7 @@ function resolveBestPreviewImage(data, apiBaseUrl = DEFAULT_API_BASE_URL) {
   return candidates[0] && candidates[0].value ? candidates[0].value : "";
 }
 
-function mergeParsedAppMeta(base, meta) {
+function mergeParsedAppMeta(base, meta, region = "cn") {
   const next = base && typeof base === "object" ? { ...base } : {};
   const source = meta && typeof meta === "object" ? meta : {};
   if (!String(next.previewImage || "").trim()) {
@@ -832,8 +839,8 @@ function mergeParsedAppMeta(base, meta) {
     next.name = String(source.name || "").trim();
   } else if (
     String(source.name || "").trim() !== "未命名应用" &&
-    containsChineseText(source.name) &&
-    !containsChineseText(next.name)
+    ((String(region || "").trim().toLowerCase() !== "global" && containsChineseText(source.name) && !containsChineseText(next.name)) ||
+      (String(region || "").trim().toLowerCase() === "global" && !containsChineseText(source.name) && containsChineseText(next.name)))
   ) {
     next.name = String(source.name || "").trim();
   }
@@ -843,10 +850,10 @@ function mergeParsedAppMeta(base, meta) {
   return next;
 }
 
-function buildAppMetaFromResult(result, apiBaseUrl = DEFAULT_API_BASE_URL) {
+function buildAppMetaFromResult(result, apiBaseUrl = DEFAULT_API_BASE_URL, region = "cn") {
   if (!result || typeof result !== "object") return { name: "", description: "", previewImage: "" };
   return {
-    name: resolveBestAppName(result),
+    name: resolveBestAppName(result, region),
     description: String(result.description || result.desc || result.summary || "").trim(),
     previewImage: resolveBestPreviewImage(result, apiBaseUrl)
   };
@@ -884,10 +891,10 @@ function findCurlDemoText(data, depth = 0) {
   return "";
 }
 
-function extractAppInfoPayload(data, apiBaseUrl = DEFAULT_API_BASE_URL) {
+function extractAppInfoPayload(data, apiBaseUrl = DEFAULT_API_BASE_URL, region = "cn") {
   if (typeof data === "string") {
     const parsedString = parseJsonFromEscapedText(data);
-    if (parsedString && typeof parsedString === "object") return extractAppInfoPayload(parsedString, apiBaseUrl);
+    if (parsedString && typeof parsedString === "object") return extractAppInfoPayload(parsedString, apiBaseUrl, region);
   }
 
   if (!data || typeof data !== "object") {
@@ -960,7 +967,7 @@ function extractAppInfoPayload(data, apiBaseUrl = DEFAULT_API_BASE_URL) {
 
   return {
     payload: {
-      name: resolveBestAppName(data),
+      name: resolveBestAppName(data, region),
       description: String(data.description || data.desc || data.summary || "").trim(),
       previewImage: resolveBestPreviewImage(data, apiBaseUrl),
       inputs
@@ -976,10 +983,10 @@ function extractAppInfoPayload(data, apiBaseUrl = DEFAULT_API_BASE_URL) {
   };
 }
 
-function pickBestParsedPayload(candidates, apiBaseUrl = DEFAULT_API_BASE_URL) {
+function pickBestParsedPayload(candidates, apiBaseUrl = DEFAULT_API_BASE_URL, region = "cn") {
   let best = null;
   (candidates || []).forEach((source) => {
-    const parsed = extractAppInfoPayload(source, apiBaseUrl);
+    const parsed = extractAppInfoPayload(source, apiBaseUrl, region);
     const payload = parsed && parsed.payload ? parsed.payload : { name: "未命名应用", description: "", inputs: [] };
     const inputs = Array.isArray(payload.inputs) ? payload.inputs : [];
     const score = inputs.length;
@@ -1011,10 +1018,11 @@ function buildFallbackUrls(endpoint, normalizedId, apiBaseUrl = DEFAULT_API_BASE
 }
 
 async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT_API_BASE_URL) {
+  const region = /runninghub\.ai/i.test(apiBaseUrl) ? "global" : "cn";
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
-    "Accept-Language": "zh-CN,zh;q=0.9"
+    "Accept-Language": region === "global" ? "en-US,en;q=0.9" : "zh-CN,zh;q=0.9"
   };
   const queryVariants = [
     { webappId: normalizedId },
@@ -1040,7 +1048,9 @@ async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT
     const shouldUseName =
       nextName &&
       nextName !== "未命名应用" &&
-      (!currentName || currentName === "未命名应用" || (containsChineseText(nextName) && !containsChineseText(currentName)));
+      (!currentName || currentName === "未命名应用" ||
+        (region === "cn" && containsChineseText(nextName) && !containsChineseText(currentName)) ||
+        (region === "global" && !containsChineseText(nextName) && containsChineseText(currentName)));
     bestMeta = {
       name: shouldUseName ? nextName : currentName,
       description: String(bestMeta.description || meta.description || "").trim(),
@@ -1052,7 +1062,7 @@ async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT
     for (const query of queryVariants) {
       try {
         const { result } = await fetchJson(buildParseUrl(endpoint, query, apiBaseUrl), { method: "GET", headers });
-        const meta = buildAppMetaFromResult(result, apiBaseUrl);
+        const meta = buildAppMetaFromResult(result, apiBaseUrl, region);
         rememberMeta(meta);
         if (meta.previewImage) return meta;
       } catch (_) {}
@@ -1065,7 +1075,7 @@ async function fetchRunningHubAppMeta(apiKey, normalizedId, apiBaseUrl = DEFAULT
           headers,
           body: JSON.stringify(body)
         });
-        const meta = buildAppMetaFromResult(result, apiBaseUrl);
+        const meta = buildAppMetaFromResult(result, apiBaseUrl, region);
         rememberMeta(meta);
         if (meta.previewImage) return meta;
       } catch (_) {}
@@ -1150,7 +1160,7 @@ export async function parseRunningHubApp(args = []) {
 
   const buildReturnPayload = async (parsed) => {
     const meta = await appMetaPromise;
-    const merged = mergeParsedAppMeta(parsed, meta);
+    const merged = mergeParsedAppMeta(parsed, meta, region);
     return {
       ok: true,
       appId: normalizedId,
@@ -1165,7 +1175,7 @@ export async function parseRunningHubApp(args = []) {
 
   const tryHandleResult = (endpoint, result) => {
     const candidates = collectSourceCandidatesFromValue(result, 0, [], new Set());
-    const best = pickBestParsedPayload(candidates, baseUrl);
+    const best = pickBestParsedPayload(candidates, baseUrl, region);
     if (!best) return null;
 
     const nextPayload = {
@@ -1185,7 +1195,7 @@ export async function parseRunningHubApp(args = []) {
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
-    "Accept-Language": "zh-CN,zh;q=0.9"
+    "Accept-Language": region === "global" ? "en-US,en;q=0.9" : "zh-CN,zh;q=0.9"
   };
 
   const getVariants = [

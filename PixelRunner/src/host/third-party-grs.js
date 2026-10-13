@@ -722,18 +722,23 @@ export function buildThirdPartyGrsImageRequest(payload, imageUrls = []) {
   }
 
   if (isGrsGptImageModel(model)) {
+    const capabilities = getGrsImageModelCapabilities(model);
+    const body = {
+      model,
+      prompt,
+      urls: imageUrls,
+      aspectRatio,
+      webHook: "-1",
+      shutProgress: true
+    };
+    if (capabilities.supportsImageSize) {
+      body.imageSize = /^(\d+k)$/i.test(resolution) ? resolution.toUpperCase() : capabilities.defaultResolution;
+    }
     return {
       endpointPath: "/v1/draw/completions",
       resultEndpointPath: "/v1/draw/result",
       resultMethod: "POST",
-      body: {
-        model,
-        prompt,
-        urls: imageUrls,
-        aspectRatio,
-        webHook: "-1",
-        shutProgress: true
-      }
+      body
     };
   }
 
@@ -952,11 +957,128 @@ export async function cancelThirdPartyGrsTask(args = []) {
   return { ok: true, taskId };
 }
 
+const GRS_MODEL_LIST_PATHS = Object.freeze([
+  "/client/serverGrsai/getModelListV2",
+  "/client/serverGrsai/getModelList"
+]);
+
+function getGrsModelListRows(json) {
+  const candidates = [
+    json && json.data && Array.isArray(json.data.list) ? json.data.list : null,
+    json && Array.isArray(json.list) ? json.list : null,
+    json && Array.isArray(json.data) ? json.data : null
+  ];
+  return candidates.find((value) => Array.isArray(value)) || [];
+}
+
+function normalizeGrsModelListItem(value) {
+  if (!value || typeof value !== "object") return null;
+  if (value.closeModel === true || value.close_model === true) return null;
+  const id = normalizeGrsOutboundModel(value.name || value.model || value.id);
+  if (!id) return null;
+  const type = String(value.type || "").trim().toLowerCase();
+  const costType = Number(value.costType ?? value.cost_type);
+  const description = String(value.desc || value.description || "").trim();
+  const marker = `${id} ${description}`.toLowerCase();
+  const isVideo = type === "video" || /(?:video|veo|sora|kling|seedance|minimax|hailuo)/i.test(marker);
+  const isText = type === "text" || costType === 1;
+  const kind = type === "image"
+    ? "image"
+    : type === "text"
+      ? "chat"
+      : type === "video"
+        ? "video"
+        : isText
+          ? "chat"
+          : isVideo
+            ? "video"
+            : costType === 0
+              ? "image"
+              : "";
+  return {
+    id,
+    kind,
+    displayName: String(value.name || value.model || value.id || id).trim(),
+    description,
+    maintenance: String(value.maintenance || "").trim(),
+    raw: value
+  };
+}
+
+function classifyGrsModelList(rows) {
+  const details = [];
+  const seen = new Set();
+  rows.forEach((item) => {
+    const normalized = normalizeGrsModelListItem(item);
+    if (!normalized || !normalized.kind || seen.has(normalized.id)) return;
+    seen.add(normalized.id);
+    details.push(normalized);
+  });
+  const imageModels = details.filter((item) => item.kind === "image").map((item) => item.id);
+  const chatModels = details.filter((item) => item.kind === "chat").map((item) => item.id);
+  return {
+    models: [...imageModels, ...chatModels],
+    imageModels,
+    chatModels,
+    details
+  };
+}
+
 export async function listThirdPartyGrsModels(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
-  const kind = String(payload.kind || "image").trim();
-  const fallback = kind === "chat" ? DEFAULT_GRS_CHAT_MODELS : DEFAULT_GRS_IMAGE_MODELS;
-  return { models: [...fallback], source: "builtin" };
+  const kind = String(payload.kind || "image").trim().toLowerCase();
+  const fallbackImageModels = [...DEFAULT_GRS_IMAGE_MODELS];
+  const fallbackChatModels = [...DEFAULT_GRS_CHAT_MODELS];
+  const selectModels = (imageModels, chatModels) => kind === "chat"
+    ? [...chatModels]
+    : kind === "all" || kind === "both"
+      ? [...imageModels, ...chatModels]
+      : [...imageModels];
+  const config = payload.config && typeof payload.config === "object" ? payload.config : {};
+  const apiKey = String(payload.apiKey || config.apiKey || "").trim();
+  if (!apiKey) {
+    return {
+      ok: true,
+      models: selectModels(fallbackImageModels, fallbackChatModels),
+      imageModels: fallbackImageModels,
+      chatModels: fallbackChatModels,
+      source: "builtin"
+    };
+  }
+
+  const apiUrl = resolveGrsApiUrl(payload);
+  const timeoutMs = Math.max(5000, Number(payload.timeoutMs) || 30000);
+  let lastError = null;
+  for (const path of GRS_MODEL_LIST_PATHS) {
+    try {
+      const endpoint = `${getGrsHost(apiUrl)}${path}`;
+      const { json, rawText } = await fetchJson(
+        endpoint,
+        {
+          method: "POST",
+          headers: { ...authHeaders(apiKey), Accept: "application/json" },
+          body: "{}"
+        },
+        timeoutMs
+      );
+      const rows = getGrsModelListRows(json);
+      const classified = classifyGrsModelList(rows);
+      const selectedModels = selectModels(classified.imageModels, classified.chatModels);
+      if (!selectedModels.length) {
+        throw new Error(extractApiError(json, rawText) || "GRS 模型列表为空");
+      }
+      return {
+        ok: true,
+        ...classified,
+        models: selectedModels,
+        source: "grs-api",
+        endpoint
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("GRS 未返回可用模型列表");
 }
 
 function extractChatText(json, rawText = "") {

@@ -40,10 +40,15 @@ import {
     PROMPT_TEMPLATES: "rh_prompt_templates",
     PROMPT_TEMPLATE_CATEGORIES: "pixelrunner.promptTemplateCategories.v1",
     PROMPT_HISTORY: "pixelrunner.promptHistory.v1",
+    PROMPT_BUNDLES: "pixelrunner.promptBundles.v1",
+    ACTIVE_PROMPT_BUNDLE: "pixelrunner.activePromptBundle.v1",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
     CURRENT_APP_ID: "pixelrunner.current_app_id",
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
     QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
+    WORKSPACE_INIT: "pixelrunner.workspace.initialized.v1",
+    WORKSPACE_BACKUP: "pixelrunner.workspace.backup.v1",
+    BUILTIN_BUNDLE_MARKER: "pixelrunner.builtinBundle.v1",
     SOUND_ENABLED: "pixelrunner.sound_enabled",
     SOUND_VOLUME: "pixelrunner.sound_volume",
     SOUND_MUTED: "pixelrunner.sound_muted",
@@ -127,6 +132,7 @@ import {
       apiUrl: getGrsApiUrl(GRS_REGIONS.CN),
       apiKey: "",
       imageModels: [...GRS_IMAGE_MODEL_IDS],
+      chatModels: [...GRS_CHAT_MODEL_IDS],
       chatModel: "gpt-5.5",
       selectedModel: "gpt-image-2",
       aspectRatio: "auto",
@@ -140,8 +146,8 @@ import {
   const GENERATIVE_FILL_APP_ID = "__pixelrunner_generative_fill__";
 
   const DEFAULT_THEME = {
-    preset: "classic",
-    basePreset: "classic",
+    preset: "focus",
+    basePreset: "focus",
     customImage: "",
     customImageName: "",
     glass: false
@@ -168,6 +174,8 @@ import {
     quickEntries: [],
     templates: [],
     templateCategories: [],
+    activePromptBundleName: "像素起子资料包",
+    activePromptBundleId: "builtin",
     promptHistory: [],
     appPickerKeyword: "",
     appPickerView: "picker",
@@ -370,6 +378,7 @@ import {
       region: normalizeRunningHubRegion(source.region || source.runningHubRegion),
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+      ,favorite: source.favorite === true || source.isFavorite === true
     };
   }
 
@@ -424,6 +433,13 @@ import {
       .map(normalizeSharedGrsModelId)
       .filter((model, index, models) => Boolean(model) && models.indexOf(model) === index);
     const selectedModel = requestedModel || imageModels[0] || fallback.selectedModel;
+    const storedChatModels = Array.isArray(grsSource.chatModels)
+      ? grsSource.chatModels
+      : String(grsSource.chatModels || "").split(",");
+    const requestedChatModel = normalizeSharedGrsModelId(grsSource.chatModel || fallback.chatModel);
+    const chatModels = normalizeModelList([...fallback.chatModels, ...storedChatModels, requestedChatModel], fallback.chatModels)
+      .map(normalizeSharedGrsModelId)
+      .filter((model, index, models) => Boolean(model) && models.indexOf(model) === index);
     const capabilities = getGrsImageModelCapabilities(selectedModel);
     const requestedAspectRatio = String(grsSource.aspectRatio || fallback.aspectRatio).trim();
     const requestedResolution = String(grsSource.resolution || fallback.resolution).trim();
@@ -442,7 +458,8 @@ import {
         apiUrl: getGrsApiUrl(region),
         apiKey: String(grsSource.apiKey || "").trim(),
         imageModels,
-        chatModel: String(grsSource.chatModel || fallback.chatModel).trim() || fallback.chatModel,
+        chatModels,
+        chatModel: requestedChatModel || chatModels[0] || fallback.chatModel,
         selectedModel: selectedModel || fallback.selectedModel,
         aspectRatio: aspectRatio || capabilities.defaultAspectRatio,
         resolution: resolution || capabilities.defaultResolution,
@@ -708,7 +725,8 @@ import {
       content,
       categoryId,
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
-      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index
+      updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index,
+      favorite: source.favorite === true || source.isFavorite === true
     };
   }
 

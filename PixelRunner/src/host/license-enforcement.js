@@ -28,15 +28,7 @@ const METHOD_FEATURES = Object.freeze({
   "photoshop.captureLicensedPostFxPreview": "postFx",
   "photoshop.captureLicensedPostFxSource": "postFx",
   "photoshop.placeLicensedPostFxResult": "postFx",
-  "photoshop.placeResultWithBlendMatch": "blendMatch",
-  "localUpscale.getHealth": "localUpscale",
-  "localUpscale.startEngine": "localUpscale",
-  "localUpscale.submitJob": "localUpscale",
-  "localUpscale.getJob": "localUpscale",
-  "localUpscale.recordPlacement": "localUpscale",
-  "photoshop.captureLocalUpscaleSource": "localUpscale",
-  "photoshop.openLocalUpscaleResult": "localUpscale",
-  "photoshop.placeLocalUpscaleResult": "localUpscale"
+  "photoshop.placeResultWithBlendMatch": "blendMatch"
 });
 
 export function getRequiredLicenseFeature(message) {

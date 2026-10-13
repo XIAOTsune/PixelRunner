@@ -4,6 +4,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const PROMPT_WARN_CHARS = 4000;
   const TEMPLATE_FILE_PREFIX = "pixelrunner_bundle";
+  const BUILTIN_BUNDLE_ID = "builtin";
   const modalState = {
     resolver: null,
     action: null
@@ -262,7 +263,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       schema: "pixelrunner.bundle",
       version: 3,
       exportedAt: new Date().toISOString(),
-      name: "像素起子资料包",
+      name: String(modules.state.state.activePromptBundleName || "像素起子资料包"),
       apps,
       appsByRegion: {
         cn: apps.filter((app) => app.region === modules.state.RUNNINGHUB_REGIONS.CN),
@@ -322,6 +323,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       categoryId: template.categoryId,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt
+      ,favorite: template.favorite === true
     }));
   }
 
@@ -398,6 +400,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     const normalized = modules.state.normalizeTemplateCategoryList(categories, modules.state.state.templates);
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(normalized));
     modules.state.state.templateCategories = normalized;
+    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
     syncActiveCategoryIds();
     renderTemplateCategoryControls();
     renderSavedTemplatesList();
@@ -410,6 +413,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES, JSON.stringify(normalized));
     modules.state.state.templates = normalized;
     modules.state.state.templateCategories = modules.state.normalizeTemplateCategoryList(modules.state.state.templateCategories, normalized);
+    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(modules.state.state.templateCategories));
     syncActiveCategoryIds();
     renderTemplateCategoryControls();
@@ -451,6 +455,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     const now = Date.now();
     const nextItem = modules.state.normalizeTemplateRecord({
       ...formValue,
+      favorite: existingIndex >= 0 && templates[existingIndex].favorite === true,
       createdAt: existingIndex >= 0 ? templates[existingIndex].createdAt : now,
       updatedAt: now
     });
@@ -750,8 +755,13 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   async function openPickerTemplateMenu(templateId) {
     const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
     if (!target) return;
-    setPickerInlineMenu(isPickerInlineMenuOpen("template", templateId) ? "" : "template", templateId);
-    renderTemplatePickerList();
+    const anchor = Array.from(document.querySelectorAll("[data-action='open-picker-template-menu'][data-template-id]")).find((node) => node.getAttribute("data-template-id") === String(templateId));
+    if (!anchor) return;
+    if (pickerFloatingMenu && isPickerInlineMenuOpen("template", templateId)) closePickerFloatingMenu();
+    else {
+      setPickerInlineMenu("template", templateId);
+      showPickerFloatingMenu(String(templateId), anchor);
+    }
   }
 
   async function openPickerCategoryMenu(categoryId) {
@@ -766,14 +776,13 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   async function handlePickerInlineMenuAction(action, target) {
     const templateId = target && target.getAttribute("data-template-id");
     const categoryId = target && target.getAttribute("data-template-category-id");
+    closePickerFloatingMenu();
     setPickerInlineMenu("", "");
     if (action === "edit-template" && templateId) {
-      renderTemplatePickerList();
       await editTemplateFromPicker(templateId);
       return;
     }
     if (action === "delete-template" && templateId) {
-      renderTemplatePickerList();
       await deleteTemplateFromPicker(templateId);
       return;
     }
@@ -844,6 +853,195 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     };
   }
 
+  let pickerFloatingMenu = null;
+  let pickerMenuAnchor = null;
+
+  function closePickerFloatingMenu() {
+    if (pickerFloatingMenu) pickerFloatingMenu.remove();
+    pickerFloatingMenu = null;
+    if (pickerMenuAnchor) pickerMenuAnchor.classList.remove("has-open-menu");
+    pickerMenuAnchor = null;
+  }
+
+  function positionPickerFloatingMenu(menu, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    const margin = 8;
+    const menuRect = menu.getBoundingClientRect();
+    let left = Math.min(Math.max(margin, rect.right - menuRect.width), window.innerWidth - menuRect.width - margin);
+    let top = rect.bottom + margin;
+    if (top + menuRect.height > window.innerHeight - margin) top = rect.top - menuRect.height - margin;
+    top = Math.min(Math.max(margin, top), window.innerHeight - menuRect.height - margin);
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+  }
+
+  function showPickerFloatingMenu(templateId, anchor) {
+    closePickerFloatingMenu();
+    const menu = document.createElement("div");
+    menu.className = "template-floating-menu";
+    menu.setAttribute("role", "menu");
+    menu.innerHTML = `<button type="button" role="menuitem" data-template-inline-action="edit-template" data-template-id="${modules.runtime.escapeHtml(templateId)}">编辑预设</button><button type="button" role="menuitem" class="is-danger" data-template-inline-action="delete-template" data-template-id="${modules.runtime.escapeHtml(templateId)}">删除预设</button>`;
+    document.body.appendChild(menu);
+    pickerFloatingMenu = menu;
+    pickerMenuAnchor = anchor.closest("[data-template-id]") || anchor;
+    pickerMenuAnchor.classList.add("has-open-menu");
+    positionPickerFloatingMenu(menu, anchor);
+  }
+
+  function repositionPickerFloatingMenu() {
+    if (pickerFloatingMenu && pickerMenuAnchor) {
+      const button = pickerMenuAnchor.querySelector("[data-action='open-picker-template-menu']") || pickerMenuAnchor;
+      positionPickerFloatingMenu(pickerFloatingMenu, button);
+    }
+  }
+
+  async function initializeBuiltinBundle() {
+    const markerKey = modules.state.STORAGE_KEYS.BUILTIN_BUNDLE_MARKER;
+    const installed = await modules.runtime.storageGetItem(markerKey);
+    if (installed === "true") return;
+    const keys = modules.state.STORAGE_KEYS;
+    const rawValues = await Promise.all([
+      modules.runtime.storageGetItem(keys.APPS),
+      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATES),
+      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATE_CATEGORIES),
+      modules.runtime.storageGetItem(keys.QUICK_ENTRIES),
+      modules.runtime.storageGetItem(keys.WORKSPACE_INIT),
+      modules.runtime.loadWorkspaceBackup ? modules.runtime.loadWorkspaceBackup() : null
+    ]);
+    const hasStoredWorkspace = rawValues.slice(0, 4).some((value) => value !== null && value !== undefined);
+    if (hasStoredWorkspace || rawValues[4] === "true" || rawValues[5]) {
+      await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+      return;
+    }
+    try {
+      const response = await fetch("assets/prompt-bundles/pixelrunner-builtin-v8.1.json");
+      if (!response.ok) return;
+      const text = await response.text();
+      const summary = await importTransferPackageText(text, { skipStrategy: true, persistSelection: false });
+      if (!summary || summary.cancelled) return;
+      const bundles = await loadPromptBundles();
+      const builtin = bundles.find((item) => String(item.id) === BUILTIN_BUNDLE_ID);
+      if (builtin) { builtin.content = text; builtin.updatedAt = Date.now(); }
+      await savePromptBundles(bundles);
+      await persistActiveBundleId(BUILTIN_BUNDLE_ID, "像素起子资料包（内置基础版）");
+      await modules.runtime.storageSetItem(markerKey, "true");
+      await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+    } catch (_) {
+      // The bundled asset is optional in browser preview and older packaged builds.
+    }
+  }
+
+  async function chooseImportStrategy() {
+    const existing = modules.state.state.templates.length || modules.state.state.apps.length;
+    if (!existing) return "merge";
+    const result = await showTemplateFormDialog({
+      title: "导入资料包",
+      message: "请选择如何处理当前资料包。合并会保留两边内容，同名项目使用新资料包版本。",
+      bodyHtml: `<div class="template-action-menu"><button class="template-action-menu-item" type="button" data-template-form-menu-action="merge"><span>合并导入</span><small>保留现有内容并更新同名项目</small></button><button class="template-action-menu-item" type="button" data-template-form-menu-action="replace"><span>替换当前资料包</span><small>先清空现有应用、提示词和快捷入口</small></button><button class="template-action-menu-item" type="button" data-template-form-menu-action="new"><span>作为新资料包</span><small>保存为独立资料包，之后可切换</small></button></div>`,
+      submitLabel: "取消",
+      onSubmit: () => ""
+    });
+    return ["replace", "new", "merge"].includes(result) ? result : null;
+  }
+
+  async function loadPromptBundles() {
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES);
+    const stored = modules.runtime.readJsonText(raw, []);
+    const bundles = Array.isArray(stored) ? stored.filter((item) => item && item.id) : [];
+    if (!bundles.some((item) => String(item.id) === BUILTIN_BUNDLE_ID)) {
+      bundles.unshift({ id: BUILTIN_BUNDLE_ID, name: "像素起子资料包（内置基础版）", builtin: true, content: "", createdAt: 0, updatedAt: 0 });
+    }
+    return bundles;
+  }
+
+  async function savePromptBundles(bundles) {
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, JSON.stringify(bundles));
+  }
+
+  async function renderPromptBundleManager() {
+    const list = modules.runtime.getById("promptBundleList");
+    const status = modules.runtime.getById("activePromptBundleStatus");
+    if (!list) return;
+    const bundles = await loadPromptBundles();
+    const activeId = String(modules.state.state.activePromptBundleId || BUILTIN_BUNDLE_ID);
+    const active = bundles.find((item) => String(item.id) === activeId) || bundles[0];
+    if (active) {
+      modules.state.state.activePromptBundleId = String(active.id);
+      modules.state.state.activePromptBundleName = active.name || "未命名资料包";
+      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, String(active.id));
+    }
+    if (status) status.textContent = active ? active.name : "未选择资料包";
+    list.innerHTML = bundles.map((bundle) => {
+      const id = modules.runtime.escapeHtml(String(bundle.id));
+      const selected = active && String(active.id) === String(bundle.id);
+      return `<div class="prompt-bundle-item ${selected ? "is-active" : ""}" role="listitem"><div class="prompt-bundle-info"><strong>${modules.runtime.escapeHtml(bundle.name || "未命名资料包")}</strong><span>${bundle.builtin ? "内置资料包 · 不可删除" : "用户资料包"}</span></div><div class="inline-actions"><button class="mini-btn" type="button" data-action="select-prompt-bundle" data-bundle-id="${id}" ${selected ? "disabled" : ""}>${selected ? "当前使用" : "切换"}</button>${bundle.builtin ? "" : `<button class="mini-btn" type="button" data-action="rename-prompt-bundle" data-bundle-id="${id}">重命名</button><button class="mini-btn" type="button" data-action="delete-prompt-bundle" data-bundle-id="${id}">删除</button>`}</div></div>`;
+    }).join("");
+  }
+
+  async function persistActiveBundleId(id, name) {
+    modules.state.state.activePromptBundleId = String(id || BUILTIN_BUNDLE_ID);
+    modules.state.state.activePromptBundleName = String(name || "像素起子资料包");
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, modules.state.state.activePromptBundleId);
+    await renderPromptBundleManager();
+  }
+
+  async function switchPromptBundle(bundleId) {
+    const bundles = await loadPromptBundles();
+    const target = bundles.find((item) => String(item.id) === String(bundleId));
+    if (!target) return false;
+    if (target.content) await importTransferPackageText(target.content, { skipStrategy: true, persistSelection: false, forceReplace: true });
+    else if (String(target.id) === BUILTIN_BUNDLE_ID) {
+      await modules.runtime.storageSetItem("pixelrunner.builtinBundle.v1", "false");
+      await initializeBuiltinBundle();
+    }
+    await persistActiveBundleId(target.id, target.name);
+    return true;
+  }
+
+  async function deletePromptBundle(bundleId) {
+    if (String(bundleId) === BUILTIN_BUNDLE_ID) return false;
+    const bundles = await loadPromptBundles();
+    await savePromptBundles(bundles.filter((item) => String(item.id) !== String(bundleId)));
+    if (String(modules.state.state.activePromptBundleId) === String(bundleId)) await switchPromptBundle(BUILTIN_BUNDLE_ID);
+    await renderPromptBundleManager();
+    return true;
+  }
+
+  async function renamePromptBundle(bundleId) {
+    if (String(bundleId) === BUILTIN_BUNDLE_ID) return false;
+    const bundles = await loadPromptBundles();
+    const target = bundles.find((item) => String(item.id) === String(bundleId));
+    if (!target) return false;
+    const result = await showTemplateFormDialog({
+      title: "重命名资料包",
+      kicker: "资料包",
+      bodyHtml: buildNameFormBody({ label: "资料包名称", value: target.name || "", placeholder: "例如：人像修图工作流" }),
+      submitLabel: "保存名称",
+      onSubmit: async () => {
+        const input = document.querySelector("[data-template-form-field='name']");
+        const name = String(input && input.value || "").trim();
+        if (!name) throw new Error("请先填写资料包名称");
+        target.name = name;
+        target.updatedAt = Date.now();
+        await savePromptBundles(bundles);
+        if (String(modules.state.state.activePromptBundleId) === String(bundleId)) modules.state.state.activePromptBundleName = name;
+        return true;
+      }
+    });
+    if (result) await renderPromptBundleManager();
+    return Boolean(result);
+  }
+
+  async function persistBundleSnapshot(name, bundleText) {
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES);
+    const bundles = modules.runtime.readJsonText(raw, []);
+    const id = modules.runtime.createId("bundle");
+    bundles.push({ id, name, content: bundleText, createdAt: Date.now(), updatedAt: Date.now() });
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, JSON.stringify(bundles));
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, id);
+    return id;
+  }
+
   function getAppMergeKey(app) {
     const region = modules.state.normalizeRunningHubRegion(app && (app.region || app.runningHubRegion));
     const name = String((app && (app.name || app.title)) || "").trim().toLowerCase();
@@ -904,11 +1102,22 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     return templates;
   }
 
-  async function importTransferPackageText(rawText) {
+  async function importTransferPackageText(rawText, options = {}) {
     const text = String(rawText || "").trim();
     if (!text) throw new Error("请先粘贴模板 JSON");
 
     const transfer = parseTransferPackageText(text);
+    try { transfer.name = String((JSON.parse(text) || {}).name || "").trim(); } catch (_) { transfer.name = ""; }
+    const strategy = options.skipStrategy ? "merge" : await chooseImportStrategy();
+    if (!strategy) return { cancelled: true, kind: transfer.kind };
+    modules.state.state.activePromptBundleName = transfer.name || modules.state.state.activePromptBundleName || "像素起子资料包";
+    if (strategy === "replace" || options.forceReplace) {
+      if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
+      await modules.apps.saveAppsToStorage([]);
+      await saveTemplatesToStorage([]);
+      await saveTemplateCategoriesToStorage([]);
+      if (modules.quickEntries) await modules.quickEntries.saveQuickEntriesToStorage([]);
+    }
     const importedTemplates = normalizeTemplateListWithFallback(transfer.templates);
     if (transfer.kind !== "bundle" && importedTemplates.length === 0) throw new Error("没有解析到可导入的模板");
     if (transfer.kind === "bundle" && importedTemplates.length === 0 && transfer.apps.length === 0 && transfer.quickEntries.length === 0) {
@@ -938,6 +1147,12 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
 
     exportTemplatesToTextarea();
+    if (strategy === "new") {
+      const id = await persistBundleSnapshot(String(transfer.name || `资料包 ${new Date().toLocaleDateString("zh-CN")}`), text);
+      await persistActiveBundleId(id, transfer.name);
+    } else if (options.persistSelection !== false) {
+      await persistActiveBundleId(modules.state.state.activePromptBundleId || BUILTIN_BUNDLE_ID, transfer.name || modules.state.state.activePromptBundleName);
+    }
     return {
       appsAdded: mergedApps.added,
       appsReplaced: mergedApps.replaced,
@@ -949,6 +1164,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       appsTotal: modules.state.state.apps.length,
       quickEntriesTotal: modules.state.state.quickEntries.length,
       kind: transfer.kind
+      ,strategy
     };
   }
 
@@ -1089,7 +1305,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     listEl.innerHTML = templates
       .map((item) => {
         const isEditing = String(modules.state.state.editingTemplateId || "") === String(item.id);
-        return `<article class="list-item saved-template-item compact-card is-draggable ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符 · ${getCategoryName(item.categoryId)}`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
+        return `<article class="list-item saved-template-item compact-card is-draggable ${item.favorite ? "is-favorite" : ""} ${isEditing ? "is-editing" : ""}" draggable="true" data-template-id="${modules.runtime.escapeHtml(String(item.id))}"><div class="drag-handle" aria-hidden="true">≡</div><div class="saved-template-main compact-card-main"><div class="compact-card-topline"><strong>${modules.runtime.escapeHtml(item.title)}</strong><div class="inline-actions compact-card-actions"><button class="mini-btn template-favorite-btn" type="button" data-action="toggle-template-favorite" data-template-id="${modules.runtime.escapeHtml(String(item.id))}" title="${item.favorite ? "取消收藏" : "收藏提示词"}">${item.favorite ? "★" : "☆"}</button><button class="mini-btn" type="button" data-action="edit-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">修改</button><button class="mini-btn" type="button" data-action="delete-template" data-template-id="${modules.runtime.escapeHtml(String(item.id))}">删除</button></div></div><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字符 · ${getCategoryName(item.categoryId)}`)}</span><span>${modules.runtime.escapeHtml(getTemplatePreview(item.content))}</span></div></article>`;
       })
       .join("");
   }
@@ -1183,17 +1399,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       .map((item) => {
         const isSelected = picker.selectedIds.includes(String(item.id));
         const escapedId = modules.runtime.escapeHtml(String(item.id));
-        const isMenuOpen = isPickerInlineMenuOpen("template", item.id);
-        const menu = isMenuOpen
-          ? buildInlineActionMenu(
-              [
-                { id: "edit-template", label: "编辑预设" },
-                { id: "delete-template", label: "删除预设", tone: "danger" }
-              ],
-              `data-template-id="${escapedId}"`
-            )
-          : "";
-        return `<article class="picker-item template-preset-tile is-draggable ${isSelected ? "active" : ""} ${isMenuOpen ? "has-open-menu" : ""}" draggable="true" data-template-id="${escapedId}" title="${modules.runtime.escapeHtml(item.title)}"><button class="template-preset-select" type="button" data-template-id="${escapedId}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 20))}</span></span></button><button class="template-card-menu template-preset-menu" type="button" data-action="open-picker-template-menu" data-template-id="${escapedId}" title="预设操作" aria-label="预设操作">•••</button>${menu}</article>`;
+        return `<article class="picker-item template-preset-tile is-draggable ${item.favorite ? "is-favorite" : ""} ${isSelected ? "active" : ""}" draggable="true" data-template-id="${escapedId}" title="${modules.runtime.escapeHtml(item.title)}"><button class="template-preset-select" type="button" data-template-id="${escapedId}"><span class="picker-item-title">${modules.runtime.escapeHtml(item.title)}</span><span class="picker-item-meta"><span>${modules.runtime.escapeHtml(`${getTextLength(item.content)} 字`)}</span><span>${modules.runtime.escapeHtml(getTailPreview(item.content, 20))}</span></span></button><div class="template-preset-actions" aria-label="预设操作"><button class="template-preset-favorite" type="button" data-action="toggle-template-favorite" data-template-id="${escapedId}" title="${item.favorite ? "取消收藏" : "收藏提示词"}" aria-label="${item.favorite ? "取消收藏" : "收藏提示词"}">${item.favorite ? "★" : "☆"}</button><button class="template-card-menu template-preset-menu" type="button" data-action="open-picker-template-menu" data-template-id="${escapedId}" title="预设操作" aria-label="预设操作">•••</button></div></article>`;
       })
       .join("");
     listEl.innerHTML = `${createCard}${emptyCard}${templateCards}`;
@@ -1269,6 +1475,9 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     const addCategoryButton = runtime.getById("btnAddTemplateCategory");
     const renameCategoryButton = runtime.getById("btnRenameTemplateCategory");
     const deleteCategoryButton = runtime.getById("btnDeleteTemplateCategory");
+    window.addEventListener("resize", repositionPickerFloatingMenu);
+    window.addEventListener("scroll", repositionPickerFloatingMenu, true);
+    if (pickerList) pickerList.addEventListener("scroll", repositionPickerFloatingMenu, { passive: true });
     bindTemplateDragSorting(pickerList);
     bindTemplateDragSorting(runtime.getById("savedTemplatesList"));
 
@@ -1400,6 +1609,16 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     }
 
     document.addEventListener("click", async (event) => {
+      const bundleAction = event.target && event.target.closest("[data-action][data-bundle-id]");
+      if (bundleAction) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const action = bundleAction.getAttribute("data-action");
+        if (action === "select-prompt-bundle") await switchPromptBundle(bundleAction.getAttribute("data-bundle-id"));
+        if (action === "delete-prompt-bundle") await deletePromptBundle(bundleAction.getAttribute("data-bundle-id"));
+        if (action === "rename-prompt-bundle") await renamePromptBundle(bundleAction.getAttribute("data-bundle-id"));
+        return;
+      }
       const inlineMenuAction = event.target && event.target.closest("[data-template-inline-action]");
       if (inlineMenuAction) {
         event.preventDefault();
@@ -1412,6 +1631,26 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       if (actionTarget) {
         const action = actionTarget.getAttribute("data-action");
         const templateId = actionTarget.getAttribute("data-template-id");
+        if (action === "toggle-template-favorite") {
+          event.preventDefault();
+          const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+          if (target) {
+            target.favorite = !target.favorite;
+            await saveTemplatesToStorage(modules.state.state.templates);
+            renderTemplatePickerList();
+          }
+          return;
+        }
+        if (action === "select-prompt-bundle") {
+          event.preventDefault();
+          await switchPromptBundle(actionTarget.getAttribute("data-bundle-id"));
+          return;
+        }
+        if (action === "delete-prompt-bundle") {
+          event.preventDefault();
+          await deletePromptBundle(actionTarget.getAttribute("data-bundle-id"));
+          return;
+        }
         if (action === "open-picker-template-menu") {
           event.preventDefault();
           event.stopPropagation();
@@ -1429,7 +1668,8 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
         }
       }
 
-      if (event.target && !event.target.closest(".template-inline-menu, .template-card-menu")) {
+      if (event.target && !event.target.closest(".template-inline-menu, .template-floating-menu, .template-card-menu")) {
+        closePickerFloatingMenu();
         const menu = getPickerInlineMenu();
         if (menu.type || menu.id) {
           setPickerInlineMenu("", "");
@@ -1479,11 +1719,46 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       }
     });
 
+    const bundleList = runtime.getById("promptBundleList");
+    if (bundleList) {
+      bundleList.addEventListener("click", async (event) => {
+        const button = event.target && event.target.closest("button[data-action][data-bundle-id]");
+        if (!button || !bundleList.contains(button)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const action = button.getAttribute("data-action");
+        const bundleId = button.getAttribute("data-bundle-id");
+        if (action === "select-prompt-bundle") await switchPromptBundle(bundleId);
+        else if (action === "rename-prompt-bundle") await renamePromptBundle(bundleId);
+        else if (action === "delete-prompt-bundle") await deletePromptBundle(bundleId);
+      }, true);
+    }
+
     if (pickerCloseButton) pickerCloseButton.addEventListener("click", closeTemplatePicker);
 
     if (pickerList) {
+      pickerList.addEventListener("click", async (event) => {
+        const button = event.target && event.target.closest("button[data-action][data-template-id]");
+        if (!button || !pickerList.contains(button)) return;
+        const action = button.getAttribute("data-action");
+        if (action !== "toggle-template-favorite") return;
+        event.preventDefault();
+        event.stopPropagation();
+        const templateId = button.getAttribute("data-template-id");
+        const target = modules.state.state.templates.find((item) => String(item.id) === String(templateId));
+        if (!target) return;
+        target.favorite = !target.favorite;
+        await saveTemplatesToStorage(modules.state.state.templates);
+        renderTemplatePickerList();
+      }, true);
+      ["pointerdown", "dragstart"].forEach((eventName) => pickerList.addEventListener(eventName, (event) => {
+        if (eventName === "dragstart" && event.target && event.target.closest("[data-action], [data-template-inline-action]")) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }, true));
       pickerList.addEventListener("click", (event) => {
-        if (event.target && event.target.closest("[data-action]")) return;
+        if (event.target && event.target.closest("[data-action], [data-template-inline-action]")) return;
         const item = event.target && event.target.closest("[data-template-id]");
         if (!item) return;
         const templateId = item.getAttribute("data-template-id");
@@ -1546,6 +1821,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
 
     container.addEventListener("dragover", (event) => {
       const item = event.target && event.target.closest("[data-template-id][draggable='true']");
+      if (event.target && event.target.closest("[data-action], [data-template-inline-action]")) return;
       if (!draggedId || !item) return;
       event.preventDefault();
       item.classList.add("is-drag-over");
@@ -1582,6 +1858,11 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     fillTemplateEditor,
     updateTemplateLengthHint,
     refreshTemplates,
+    initializeBuiltinBundle,
+    renderPromptBundleManager,
+    switchPromptBundle,
+    deletePromptBundle,
+    renamePromptBundle,
     renderSavedTemplatesList,
     saveEditedTemplate,
     deleteTemplateById,

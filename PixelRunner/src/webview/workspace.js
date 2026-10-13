@@ -4419,6 +4419,13 @@
           return;
         }
 
+        if (action === "toggle-prompt-history-favorite") {
+          event.preventDefault();
+          event.stopPropagation();
+          void modules.promptHistory.toggleFavorite(actionTarget.getAttribute("data-history-id"));
+          return;
+        }
+
         if (action === "open-ai-optimize") {
           event.preventDefault();
           modules.aiOptimize.openModal(key);
