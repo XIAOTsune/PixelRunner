@@ -3,6 +3,7 @@ import nacl from "tweetnacl";
 export const LICENSE_SCHEMA_VERSION = 1;
 export const LICENSE_PRODUCT_ID = "com.tsune.pixelrunner";
 export const LICENSE_PREFIX = "PRL2";
+export const LICENSE_ENTITLEMENT_PRODUCT = "product-perpetual";
 export const INSTALLATION_ID_STORAGE_KEY = "pixelrunner.license.installationId.v1";
 export const ACTIVATION_STORAGE_KEY = "pixelrunner.license.activation.v1";
 
@@ -13,6 +14,12 @@ export const LICENSE_FEATURES = Object.freeze({
   blendMatch: "对齐与校色"
 });
 
+// Keep retired entitlements parseable so licenses issued before the local
+// upscaler was removed remain valid for the features they still include.
+// Retired features are intentionally omitted from LICENSE_FEATURES so new
+// issuers and the UI cannot grant or advertise them.
+const LEGACY_LICENSE_FEATURE_IDS = new Set(["localUpscale"]);
+
 // Lens and post-processing effects ship under the existing Glow entitlement.
 // Keep accepting postFx in newly issued payloads, but let older glow licenses
 // unlock the feature without requiring a new activation code.
@@ -20,8 +27,8 @@ const SHARED_FEATURE_ENTITLEMENTS = Object.freeze({
   postFx: "glow"
 });
 
-const FEATURE_IDS = new Set(Object.keys(LICENSE_FEATURES));
-const PAYLOAD_FIELDS = [
+const FEATURE_IDS = new Set([...Object.keys(LICENSE_FEATURES), ...LEGACY_LICENSE_FEATURE_IDS]);
+const LEGACY_PAYLOAD_FIELDS = [
   "schemaVersion",
   "productId",
   "licenseId",
@@ -31,6 +38,7 @@ const PAYLOAD_FIELDS = [
   "permanent",
   "keyId"
 ];
+const PRODUCT_PAYLOAD_FIELDS = [...LEGACY_PAYLOAD_FIELDS.slice(0, 5), "entitlement", ...LEGACY_PAYLOAD_FIELDS.slice(5)];
 const CROCKFORD_BASE32 = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function encodeUtf8(value) {
@@ -229,7 +237,9 @@ function isIsoTimestamp(value) {
 export function normalizeLicensePayload(payload, options = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const keys = Object.keys(payload);
-  if (keys.length !== PAYLOAD_FIELDS.length || PAYLOAD_FIELDS.some((key, index) => keys[index] !== key)) return null;
+  const hasProductEntitlement = keys.length === PRODUCT_PAYLOAD_FIELDS.length && PRODUCT_PAYLOAD_FIELDS.every((key, index) => keys[index] === key);
+  const isLegacyShape = keys.length === LEGACY_PAYLOAD_FIELDS.length && LEGACY_PAYLOAD_FIELDS.every((key, index) => keys[index] === key);
+  if (!hasProductEntitlement && !isLegacyShape) return null;
   const features = normalizeFeatures(payload.features);
   const productId = String(payload.productId || "").trim();
   const licenseId = String(payload.licenseId || "").trim();
@@ -245,13 +255,15 @@ export function normalizeLicensePayload(payload, options = {}) {
     payload.permanent !== true ||
     !keyId
   ) return null;
+  const entitlement = hasProductEntitlement ? String(payload.entitlement || "").trim() : "";
+  if (hasProductEntitlement && entitlement !== LICENSE_ENTITLEMENT_PRODUCT) return null;
   try {
     if (base64UrlDecode(deviceCodeHash).length !== 64) return null;
   } catch (_) {
     return null;
   }
   if (options.productId && productId !== options.productId) return { productMismatch: true, productId };
-  return {
+  const normalized = {
     schemaVersion: LICENSE_SCHEMA_VERSION,
     productId,
     licenseId,
@@ -261,6 +273,21 @@ export function normalizeLicensePayload(payload, options = {}) {
     permanent: true,
     keyId
   };
+  if (hasProductEntitlement) {
+    normalized.entitlement = LICENSE_ENTITLEMENT_PRODUCT;
+    return {
+      schemaVersion: normalized.schemaVersion,
+      productId: normalized.productId,
+      licenseId: normalized.licenseId,
+      deviceCodeHash: normalized.deviceCodeHash,
+      features: normalized.features,
+      entitlement: normalized.entitlement,
+      issuedAt: normalized.issuedAt,
+      permanent: normalized.permanent,
+      keyId: normalized.keyId
+    };
+  }
+  return normalized;
 }
 
 export function canonicalizeLicensePayload(payload) {
@@ -274,6 +301,7 @@ export function createLicensePayload({
   licenseId,
   deviceCodeHash,
   features,
+  entitlement = LICENSE_ENTITLEMENT_PRODUCT,
   issuedAt,
   keyId
 }) {
@@ -283,6 +311,7 @@ export function createLicensePayload({
     licenseId: String(licenseId || "").trim(),
     deviceCodeHash: String(deviceCodeHash || "").trim(),
     features: Array.isArray(features) ? features.map((feature) => String(feature || "").trim()).sort() : [],
+    ...(entitlement ? { entitlement: String(entitlement).trim() } : {}),
     issuedAt: String(issuedAt || "").trim(),
     permanent: true,
     keyId: String(keyId || "").trim()
@@ -360,7 +389,8 @@ export function isFeatureUnlocked(verification, feature) {
     verification.active &&
     verification.license &&
     Array.isArray(verification.license.features) &&
-    (verification.license.features.includes(featureId) ||
+    (verification.license.entitlement === LICENSE_ENTITLEMENT_PRODUCT ||
+      verification.license.features.includes(featureId) ||
       (sharedEntitlement && verification.license.features.includes(sharedEntitlement)))
   );
 }

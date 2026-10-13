@@ -46,6 +46,7 @@ const issuedAt = "2026-07-28T00:00:00.000Z";
 function issueLicense({
   deviceCode,
   features = ["blendMatch", "glow", "postFx", "spaceFx"],
+  entitlement,
   productId = LICENSE_PRODUCT_ID,
   keyId = "test-2026",
   licenseId = "PR-TEST-0001"
@@ -55,6 +56,7 @@ function issueLicense({
     licenseId,
     deviceCodeHash: deriveDeviceCodeHash(deviceCode),
     features,
+    entitlement,
     issuedAt,
     keyId
   });
@@ -78,6 +80,21 @@ assert.equal(validVerification.active, true, "valid Ed25519 license verifies loc
 assert.deepEqual(validVerification.license.features, ["blendMatch", "glow", "postFx", "spaceFx"]);
 assert.equal(isFeatureUnlocked(validVerification, "glow"), true);
 assert.equal(isFeatureUnlocked(validVerification, "postFx"), true, "explicit postFx entitlement remains supported");
+assert.equal(validVerification.license.entitlement, "product-perpetual");
+assert.equal(isFeatureUnlocked(validVerification, "futureFeature"), true, "product licenses unlock future features");
+
+const legacyUpscaleCode = issueLicense({
+  deviceCode,
+  features: ["blendMatch", "glow", "localUpscale", "postFx", "spaceFx"],
+  entitlement: null,
+  licenseId: "PR-TEST-LEGACY-UPSCALE"
+});
+const legacyUpscaleVerification = verifyActivationCode(legacyUpscaleCode, { deviceCode, keyring: testKeyring });
+assert.equal(legacyUpscaleVerification.active, true, "licenses issued with the retired local upscaler remain valid");
+assert.equal(legacyUpscaleVerification.license.features.includes("localUpscale"), true);
+assert.equal(legacyUpscaleVerification.license.entitlement, undefined);
+assert.equal(isFeatureUnlocked(legacyUpscaleVerification, "blendMatch"), true, "legacy license keeps current entitlements");
+assert.equal(isFeatureUnlocked(legacyUpscaleVerification, "futureFeature"), false, "legacy feature licenses remain scoped");
 
 const textEncoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextEncoder");
 const textDecoderDescriptor = Object.getOwnPropertyDescriptor(globalThis, "TextDecoder");

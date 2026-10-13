@@ -66,7 +66,10 @@ import { LICENSE_PUBLIC_KEYS } from "../shared/license-public-keys.js";
         .filter((feature) => isFeatureUnlocked(state.verification, feature))
         .map(getFeatureLabel)
         .join("、");
-      detailsText.textContent = `许可证编号：${license.licenseId}\n永久授权：是\n此设备：${state.deviceCode}\n已解锁功能：${features}`;
+      const entitlementText = license.entitlement === "product-perpetual"
+        ? "产品永久授权：是（包含当前及后续功能）"
+        : "永久授权：是";
+      detailsText.textContent = `许可证编号：${license.licenseId}\n${entitlementText}\n此设备：${state.deviceCode}\n已解锁功能：${features}`;
     }
     document.querySelectorAll("[data-license-feature]").forEach((button) => {
       const feature = String(button.getAttribute("data-license-feature") || "");
