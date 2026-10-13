@@ -17,15 +17,19 @@ The copy-and-paste activation code is:
 PRL2.<base64url canonical payload>.<base64url Ed25519 signature>
 ```
 
-The signed canonical payload contains these exact fields:
+The signed canonical payload contains these fields:
 
 ```text
 schemaVersion, productId, licenseId, deviceCodeHash, features,
-issuedAt, permanent, keyId
+entitlement, issuedAt, permanent, keyId
 ```
 
-`productId` is `com.tsune.pixelrunner`; `permanent` is always `true`. Supported
-feature IDs are `glow`, `spaceFx`, and `blendMatch`.
+`productId` is `com.tsune.pixelrunner`; `permanent` is always `true`. New
+licenses use `entitlement: product-perpetual`, which means the license remains
+valid for the product's current and future features on the bound device.
+`features` remains in the payload for compatibility with older feature-scoped
+licenses. Older payloads without `entitlement` continue to use their original
+feature list and remain valid for those features.
 
 ## Developer Workflow
 
