@@ -422,6 +422,48 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     return normalized;
   }
 
+  async function savePromptHistoryToDefaultCategory(historyItem) {
+    const source = historyItem && typeof historyItem === "object" ? historyItem : {};
+    const content = String(source.content || "");
+    if (!content.trim()) throw new Error("提示词内容为空，无法收藏为预设。");
+    const categoryId = getDefaultCategoryId();
+    const templates = Array.isArray(modules.state.state.templates) ? modules.state.state.templates.slice() : [];
+    const existingIndex = templates.findIndex((template) =>
+      String(template.categoryId || categoryId) === categoryId && String(template.content || "") === content
+    );
+    if (existingIndex >= 0) {
+      if (templates[existingIndex].favorite !== true) {
+        templates[existingIndex] = { ...templates[existingIndex], favorite: true, updatedAt: Date.now() };
+        await saveTemplatesToStorage(templates);
+      }
+      return templates[existingIndex];
+    }
+
+    const appName = String(source.appName || "未命名应用").trim() || "未命名应用";
+    const fieldLabel = String(source.fieldLabel || source.fieldKey || "提示词").trim() || "提示词";
+    const baseTitle = `${appName} · ${fieldLabel}`;
+    const existingTitles = new Set(templates
+      .filter((template) => String(template.categoryId || categoryId) === categoryId)
+      .map((template) => String(template.title || "").trim()));
+    let title = baseTitle;
+    let suffix = 2;
+    while (existingTitles.has(title)) title = `${baseTitle} (${suffix++})`;
+
+    const now = Date.now();
+    const template = modules.state.normalizeTemplateRecord({
+      id: modules.runtime.createId("tpl"),
+      title,
+      content,
+      categoryId,
+      createdAt: now,
+      updatedAt: now,
+      favorite: true
+    });
+    if (!template) throw new Error("提示词内容无法保存为预设。");
+    await saveTemplatesToStorage([template, ...templates]);
+    return template;
+  }
+
   async function refreshTemplates(options = {}) {
     const templates = await loadTemplatesFromStorage();
     modules.state.state.templates = templates;
@@ -1856,6 +1898,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     getTailPreview,
     buildTemplateLengthHint,
     fillTemplateEditor,
+    savePromptHistoryToDefaultCategory,
     updateTemplateLengthHint,
     refreshTemplates,
     initializeBuiltinBundle,

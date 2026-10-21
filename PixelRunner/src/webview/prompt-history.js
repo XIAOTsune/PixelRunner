@@ -21,8 +21,9 @@
       appName: String(source.appName || source.applicationName || "未命名应用").trim() || "未命名应用",
       fieldKey, fieldLabel, content,
       createdAt,
-      lastUsedAt: validTime(source.lastUsedAt) ? Number(source.lastUsedAt) : createdAt
-      ,favorite: source.favorite === true || source.isFavorite === true
+      lastUsedAt: validTime(source.lastUsedAt) ? Number(source.lastUsedAt) : createdAt,
+      favorite: source.favorite === true || source.isFavorite === true,
+      savedAsTemplate: source.savedAsTemplate === true || source.templateSaved === true
     };
   }
 
@@ -83,9 +84,12 @@
     const content = String(item.content || "").replace(/\s+/g, " ").trim();
     const preview = content.length > 180 ? `${content.slice(0, 180)}…` : content;
     const meta = `${item.appName || "未命名应用"} · ${item.fieldLabel || item.fieldKey || "提示词"} · ${formatAge(item.lastUsedAt)}`;
-    const favorite = `<button class="prompt-history-favorite ${item.favorite ? "is-favorite" : ""}" type="button" data-action="toggle-prompt-history-favorite" data-history-id="${runtime.escapeHtml(item.id)}" aria-label="${item.favorite ? "取消收藏" : "收藏提示词"}">${item.favorite ? "★" : "☆"}</button>`;
-    if (options.selectable === false) return `<div class="prompt-history-item"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span>${favorite}</div>`;
-    return `<div class="prompt-history-item"><button class="prompt-history-apply" type="button" data-action="apply-prompt-history" data-form-key="${runtime.escapeHtml(key)}" data-history-id="${runtime.escapeHtml(item.id)}"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></button>${favorite}</div>`;
+    const saved = item.savedAsTemplate === true;
+    const favorite = `<button class="prompt-history-favorite ${saved ? "is-favorite" : ""}" type="button" data-action="save-prompt-history-template" data-history-id="${runtime.escapeHtml(item.id)}" aria-label="${saved ? "已收藏到默认分类" : "收藏到默认分类"}" title="${saved ? "已收藏到默认分类" : "收藏到默认分类"}" ${saved ? "disabled" : ""}>${saved ? "★" : "☆"}</button>`;
+    const itemMain = options.selectable === false
+      ? `<details class="prompt-history-details"><summary><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></summary><pre class="prompt-history-full-content">${runtime.escapeHtml(item.content)}</pre></details>`
+      : `<button class="prompt-history-apply" type="button" data-action="apply-prompt-history" data-form-key="${runtime.escapeHtml(key)}" data-history-id="${runtime.escapeHtml(item.id)}"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></button>`;
+    return `<div class="prompt-history-item">${itemMain}${favorite}</div>`;
   }
 
   function renderTrigger(fieldKey) {
@@ -119,14 +123,40 @@
     button.setAttribute("aria-expanded", String(expanded));
   }
 
-  async function toggleFavorite(historyId) {
+  async function saveAsTemplate(historyId) {
     const item = (modules.state.state.promptHistory || []).find((entry) => String(entry.id) === String(historyId));
-    if (!item) return false;
-    item.favorite = !item.favorite;
+    if (!item || item.savedAsTemplate === true) return false;
+    if (!modules.templates || typeof modules.templates.savePromptHistoryToDefaultCategory !== "function") {
+      throw new Error("提示词预设功能尚未就绪，请稍后重试。");
+    }
+    await modules.templates.savePromptHistoryToDefaultCategory(item);
+    item.savedAsTemplate = true;
     modules.state.state.promptHistory = normalizeList(modules.state.state.promptHistory);
     refreshViews();
     await persist();
+    modules.ui.logToWorkspace(`已收藏提示词到默认分类：${item.fieldLabel || item.fieldKey || "提示词"}`, "success");
     return true;
+  }
+
+  function bindActions() {
+    if (!global.document || global.document.documentElement?.dataset.promptHistoryActionsBound === "true") return;
+    if (global.document.documentElement) global.document.documentElement.dataset.promptHistoryActionsBound = "true";
+    global.document.addEventListener("click", async (event) => {
+      const button = event.target && event.target.closest("button[data-action='save-prompt-history-template'][data-history-id]");
+      if (!button || button.disabled) return;
+      event.preventDefault();
+      event.stopPropagation();
+      button.disabled = true;
+      try {
+        await saveAsTemplate(button.getAttribute("data-history-id"));
+      } catch (error) {
+        button.disabled = false;
+        const message = error && error.message ? error.message : String(error || "收藏提示词失败");
+        modules.ui.logToWorkspace(`收藏提示词失败：${message}`, "error");
+        const status = modules.runtime.getById("promptHistorySettingsStatus");
+        if (status) modules.runtime.setSummaryStatus(status, `收藏失败：${message}`, "error");
+      }
+    });
   }
 
   function refreshViews() {
@@ -186,5 +216,5 @@
     if (list) { list.innerHTML = renderList(items); list.parentElement?.classList.add("is-expanded"); }
   }
 
-  modules.promptHistory = { initialize, getItems, getForField, getCandidates, renderTrigger, renderPanel, togglePanel, toggleFavorite, recordSuccessfulRun, applyHistoryItem, clearHistory, renderSettingsSummary };
+  modules.promptHistory = { initialize, getItems, getForField, getCandidates, renderTrigger, renderPanel, togglePanel, bindActions, saveAsTemplate, recordSuccessfulRun, applyHistoryItem, clearHistory, renderSettingsSummary };
 })(window);
