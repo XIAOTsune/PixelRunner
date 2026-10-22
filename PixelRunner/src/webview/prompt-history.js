@@ -23,7 +23,10 @@
       createdAt,
       lastUsedAt: validTime(source.lastUsedAt) ? Number(source.lastUsedAt) : createdAt,
       favorite: source.favorite === true || source.isFavorite === true,
-      savedAsTemplate: source.savedAsTemplate === true || source.templateSaved === true
+      savedAsTemplate: source.savedAsTemplate === true || source.templateSaved === true,
+      savedTemplateId: String(source.savedTemplateId || "").trim(),
+      savedTemplateOwned: source.savedTemplateOwned === true,
+      savedTemplatePreviousFavorite: source.savedTemplatePreviousFavorite === true
     };
   }
 
@@ -85,7 +88,7 @@
     const preview = content.length > 180 ? `${content.slice(0, 180)}…` : content;
     const meta = `${item.appName || "未命名应用"} · ${item.fieldLabel || item.fieldKey || "提示词"} · ${formatAge(item.lastUsedAt)}`;
     const saved = item.savedAsTemplate === true;
-    const favorite = `<button class="prompt-history-favorite ${saved ? "is-favorite" : ""}" type="button" data-action="save-prompt-history-template" data-history-id="${runtime.escapeHtml(item.id)}" aria-label="${saved ? "已收藏到默认分类" : "收藏到默认分类"}" title="${saved ? "已收藏到默认分类" : "收藏到默认分类"}" ${saved ? "disabled" : ""}>${saved ? "★" : "☆"}</button>`;
+    const favorite = `<button class="prompt-history-favorite ${saved ? "is-favorite" : ""}" type="button" data-action="save-prompt-history-template" data-history-id="${runtime.escapeHtml(item.id)}" aria-pressed="${saved ? "true" : "false"}" aria-label="${saved ? "取消收藏" : "收藏到默认分类"}" title="${saved ? "取消收藏" : "收藏到默认分类"}">${saved ? "★" : "☆"}</button>`;
     const itemMain = options.selectable === false
       ? `<details class="prompt-history-details"><summary><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></summary><pre class="prompt-history-full-content">${runtime.escapeHtml(item.content)}</pre></details>`
       : `<button class="prompt-history-apply" type="button" data-action="apply-prompt-history" data-form-key="${runtime.escapeHtml(key)}" data-history-id="${runtime.escapeHtml(item.id)}"><strong>${runtime.escapeHtml(preview)}</strong><span>${runtime.escapeHtml(meta)}</span></button>`;
@@ -123,18 +126,32 @@
     button.setAttribute("aria-expanded", String(expanded));
   }
 
-  async function saveAsTemplate(historyId) {
+  async function toggleSavedTemplate(historyId) {
     const item = (modules.state.state.promptHistory || []).find((entry) => String(entry.id) === String(historyId));
-    if (!item || item.savedAsTemplate === true) return false;
-    if (!modules.templates || typeof modules.templates.savePromptHistoryToDefaultCategory !== "function") {
+    if (!item) return false;
+    if (!modules.templates) {
       throw new Error("提示词预设功能尚未就绪，请稍后重试。");
     }
-    await modules.templates.savePromptHistoryToDefaultCategory(item);
-    item.savedAsTemplate = true;
+    if (item.savedAsTemplate === true) {
+      if (typeof modules.templates.removePromptHistoryTemplate !== "function") throw new Error("取消收藏功能尚未就绪，请稍后重试。");
+      await modules.templates.removePromptHistoryTemplate(item);
+      item.savedAsTemplate = false;
+      item.savedTemplateId = "";
+      item.savedTemplateOwned = false;
+      item.savedTemplatePreviousFavorite = false;
+      modules.ui.logToWorkspace(`已取消收藏提示词：${item.fieldLabel || item.fieldKey || "提示词"}`, "info");
+    } else {
+      if (typeof modules.templates.savePromptHistoryToDefaultCategory !== "function") throw new Error("提示词预设功能尚未就绪，请稍后重试。");
+      const result = await modules.templates.savePromptHistoryToDefaultCategory(item);
+      item.savedAsTemplate = true;
+      item.savedTemplateId = String(result && result.template && result.template.id || result && result.id || "");
+      item.savedTemplateOwned = result && result.owned === true;
+      item.savedTemplatePreviousFavorite = result && result.previousFavorite === true;
+      modules.ui.logToWorkspace(`已收藏提示词到默认分类：${item.fieldLabel || item.fieldKey || "提示词"}`, "success");
+    }
     modules.state.state.promptHistory = normalizeList(modules.state.state.promptHistory);
     refreshViews();
     await persist();
-    modules.ui.logToWorkspace(`已收藏提示词到默认分类：${item.fieldLabel || item.fieldKey || "提示词"}`, "success");
     return true;
   }
 
@@ -148,7 +165,7 @@
       event.stopPropagation();
       button.disabled = true;
       try {
-        await saveAsTemplate(button.getAttribute("data-history-id"));
+        await toggleSavedTemplate(button.getAttribute("data-history-id"));
       } catch (error) {
         button.disabled = false;
         const message = error && error.message ? error.message : String(error || "收藏提示词失败");
@@ -216,5 +233,5 @@
     if (list) { list.innerHTML = renderList(items); list.parentElement?.classList.add("is-expanded"); }
   }
 
-  modules.promptHistory = { initialize, getItems, getForField, getCandidates, renderTrigger, renderPanel, togglePanel, bindActions, saveAsTemplate, recordSuccessfulRun, applyHistoryItem, clearHistory, renderSettingsSummary };
+  modules.promptHistory = { initialize, getItems, getForField, getCandidates, renderTrigger, renderPanel, togglePanel, bindActions, toggleSavedTemplate, saveAsTemplate: toggleSavedTemplate, recordSuccessfulRun, applyHistoryItem, clearHistory, renderSettingsSummary };
 })(window);

@@ -726,7 +726,13 @@ import {
       categoryId,
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index,
-      favorite: source.favorite === true || source.isFavorite === true
+      favorite: source.favorite === true || source.isFavorite === true,
+      source: String(source.source || "").trim(),
+      sourceHistoryId: String(source.sourceHistoryId || "").trim(),
+      promptHistoryFavoriteBaseline: typeof source.promptHistoryFavoriteBaseline === "boolean" ? source.promptHistoryFavoriteBaseline : null,
+      promptHistoryFavoriteRefs: Array.isArray(source.promptHistoryFavoriteRefs)
+        ? [...new Set(source.promptHistoryFavoriteRefs.map((id) => String(id || "").trim()).filter(Boolean))]
+        : []
     };
   }
 

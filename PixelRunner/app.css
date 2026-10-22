@@ -5936,9 +5936,8 @@ button.prompt-history-item:focus-visible {
   outline-offset: 1px;
 }
 
-.prompt-history-favorite:disabled {
-  cursor: default;
-  opacity: 0.88;
+.prompt-history-favorite.is-favorite {
+  color: #f0c34f;
 }
 
 .prompt-history-apply:focus-visible {
@@ -6102,6 +6101,11 @@ button.prompt-history-item:focus-visible {
   overflow: hidden;
 }
 
+.image-capture-field-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .image-capture-stage-empty {
   color: var(--text-strong);
   text-align: center;
@@ -6200,6 +6204,7 @@ button.prompt-history-item:focus-visible {
   left: 12px;
   bottom: 12px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: 8px;
@@ -6212,16 +6217,10 @@ button.prompt-history-item:focus-visible {
 }
 
 .image-capture-primary-btn,
-.image-capture-clear-btn,
-.image-capture-paste-btn {
+.image-capture-clear-btn {
   min-height: 32px;
   padding: 0 12px;
   border-radius: 10px;
-}
-
-.image-capture-paste-btn {
-  background: rgba(var(--control-rgb), 0.62);
-  color: var(--text-strong);
 }
 
 .image-input-overview {
@@ -6756,8 +6755,7 @@ button.prompt-history-item:focus-visible {
   }
 
   .image-capture-primary-btn,
-  .image-capture-clear-btn,
-  .image-capture-paste-btn {
+  .image-capture-clear-btn {
     min-height: 28px;
     padding: 0 10px;
     font-size: 11px;

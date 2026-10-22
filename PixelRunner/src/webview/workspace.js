@@ -9,8 +9,6 @@
   const AUTO_PLACEMENT_RETRY_DELAYS_MS = Object.freeze([2000, 4000, 7000, 10000]);
   const RESULT_DOWNLOAD_MAX_TEMP_FAILURES = 4;
   const RESULT_DOWNLOAD_RETRY_DELAYS_MS = Object.freeze([5000, 15000, 30000]);
-  const CLIPBOARD_IMAGE_TARGET_BYTES = 9000000;
-  const CLIPBOARD_IMAGE_HARD_LIMIT_BYTES = 10000000;
   const RUNNINGHUB_TASK_DETAIL_URLS = {
     cn: "https://www.runninghub.cn/bill-task",
     global: "https://www.runninghub.ai/bill-task"
@@ -30,8 +28,6 @@
   let resultDownloadProcessing = false;
   let captureInProgress = false;
   let captureInFlightCount = 0;
-  let pendingImagePasteTarget = null;
-  let pendingImagePasteTimer = 0;
   const taskTrackingTimers = new Map();
   const taskTrackingFailureCounts = new Map();
   const pendingAutoPlacements = new Map();
@@ -370,18 +366,6 @@
     return payloadValue;
   }
 
-  function clearPendingImagePaste() {
-    pendingImagePasteTarget = null;
-    if (pendingImagePasteTimer) {
-      window.clearTimeout(pendingImagePasteTimer);
-      pendingImagePasteTimer = 0;
-    }
-  }
-
-  function getImageInputLabel(input) {
-    return String((input && (input.label || input.name || input.key)) || "").trim();
-  }
-
   function getImageInputMarker(input) {
     return `${(input && input.key) || ""} ${(input && input.label) || ""} ${(input && input.name) || ""} ${(input && input.fieldName) || ""}`
       .toLowerCase();
@@ -451,252 +435,6 @@
     return nextAsset;
   }
 
-  function readBlobAsDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("读取剪贴板图片失败，请重新复制后重试。"));
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  function loadImageFromDataUrl(dataUrl) {
-    return new Promise((resolve, reject) => {
-      if (typeof Image === "undefined") {
-        reject(new Error("当前运行环境无法解析剪贴板图片。"));
-        return;
-      }
-      const image = new Image();
-      image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error("剪贴板内容不是可识别的图片。"));
-      image.src = dataUrl;
-    });
-  }
-
-  function canvasBlob(canvas, quality) {
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("剪贴板图片压缩失败，请换一张图片重试。")), "image/jpeg", quality);
-    });
-  }
-
-  async function buildClipboardImageAsset(file) {
-    if (!file || !String(file.type || "").toLowerCase().startsWith("image/")) {
-      throw new Error("剪贴板中没有可用图片，请先复制图片。");
-    }
-    const sourceDataUrl = await readBlobAsDataUrl(file);
-    const image = await loadImageFromDataUrl(sourceDataUrl);
-    const originalWidth = Math.max(1, Number(image.naturalWidth || image.width) || 1);
-    const originalHeight = Math.max(1, Number(image.naturalHeight || image.height) || 1);
-    const settings = getImageCaptureSettings();
-    const scale = Math.min(1, settings.maxDimension / Math.max(originalWidth, originalHeight));
-    const width = Math.max(1, Math.round(originalWidth * scale));
-    const height = Math.max(1, Math.round(originalHeight * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("当前运行环境无法处理剪贴板图片。");
-    context.fillStyle = "#101720";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
-
-    const attempts = [];
-    let accepted = null;
-    const qualitySteps = [...new Set([settings.quality, 72, 62, 52, 42, 32, 22]
-      .map((value) => Math.max(20, Math.min(settings.quality, Number(value) || settings.quality))))];
-    let outputWidth = width;
-    let outputHeight = height;
-    for (let resizeAttempt = 0; resizeAttempt < 7 && !accepted; resizeAttempt += 1) {
-      canvas.width = outputWidth;
-      canvas.height = outputHeight;
-      context.fillStyle = "#101720";
-      context.fillRect(0, 0, outputWidth, outputHeight);
-      context.drawImage(image, 0, 0, outputWidth, outputHeight);
-      let fallback = null;
-      for (const qualityPercent of qualitySteps) {
-        const blob = await canvasBlob(canvas, qualityPercent / 100);
-        const attempt = { quality: qualityPercent, bytes: blob.size, width: outputWidth, height: outputHeight };
-        attempts.push(attempt);
-        fallback = { blob, ...attempt };
-        if (blob.size <= CLIPBOARD_IMAGE_TARGET_BYTES) {
-          accepted = fallback;
-          break;
-        }
-      }
-      if (accepted) break;
-      if (fallback && fallback.bytes <= CLIPBOARD_IMAGE_HARD_LIMIT_BYTES) {
-        accepted = fallback;
-        break;
-      }
-      if (Math.max(outputWidth, outputHeight) <= 256) break;
-      const resizeScale = Math.max(0.5, Math.min(0.85, Math.sqrt(CLIPBOARD_IMAGE_TARGET_BYTES / Math.max(1, fallback && fallback.bytes || 1)) * 0.92));
-      outputWidth = Math.max(1, Math.round(outputWidth * resizeScale));
-      outputHeight = Math.max(1, Math.round(outputHeight * resizeScale));
-    }
-    if (accepted) {
-      accepted.dataUrl = await readBlobAsDataUrl(accepted.blob);
-      accepted.base64 = accepted.dataUrl.includes(",") ? accepted.dataUrl.slice(accepted.dataUrl.indexOf(",") + 1) : "";
-    }
-    if (!accepted || accepted.bytes > CLIPBOARD_IMAGE_HARD_LIMIT_BYTES) {
-      throw new Error("剪贴板图片过大，压缩后仍超过上传限制。");
-    }
-    return {
-      assetId: createCaptureAssetId(),
-      capturedAt: Date.now(),
-      kind: "clipboard-image",
-      source: "clipboard",
-      width: accepted.width,
-      height: accepted.height,
-      originalWidth,
-      originalHeight,
-      mimeType: "image/jpeg",
-      dataUrl: accepted.dataUrl,
-      base64: accepted.base64,
-      uploadMimeType: "image/jpeg",
-      uploadDataUrl: accepted.dataUrl,
-      uploadBase64: accepted.base64,
-      uploadBytes: accepted.bytes,
-      uploadWidth: accepted.width,
-      uploadHeight: accepted.height,
-      uploadQuality: accepted.quality,
-      uploadTargetBytes: CLIPBOARD_IMAGE_TARGET_BYTES,
-      uploadHardLimitBytes: CLIPBOARD_IMAGE_HARD_LIMIT_BYTES,
-      compressionAttempts: attempts
-    };
-  }
-
-  function getClipboardImageFileFromEvent(event) {
-    const items = event && event.clipboardData && event.clipboardData.items;
-    if (items) {
-      for (const item of Array.from(items)) {
-        if (item && item.kind === "file" && String(item.type || "").toLowerCase().startsWith("image/")) {
-          const file = item.getAsFile && item.getAsFile();
-          if (file) return file;
-        }
-      }
-    }
-    const files = event && event.clipboardData && event.clipboardData.files;
-    if (files) {
-      for (const file of Array.from(files)) {
-        if (String(file && file.type || "").toLowerCase().startsWith("image/")) {
-          if (file) return file;
-        }
-      }
-    }
-    return null;
-  }
-
-  async function readClipboardImageFile() {
-    if (global.navigator && global.navigator.clipboard && typeof global.navigator.clipboard.read === "function") {
-      try {
-        const entries = await global.navigator.clipboard.read();
-        for (const entry of entries || []) {
-          const imageType = (entry.types || []).find((type) => String(type).toLowerCase().startsWith("image/"));
-          if (imageType) return entry.getType(imageType);
-        }
-      } catch (_) {
-        // The paste event fallback below is available when clipboard permissions are unavailable.
-      }
-    }
-    throw new Error("无法直接读取剪贴板图片，请聚焦图像框后按 Ctrl+V。");
-  }
-
-  function isCurrentImagePasteTarget(target) {
-    return Boolean(target && target.app === modules.state.state.currentApp &&
-      findImageInputs(modules.state.state.currentApp).some((input) => String(input.key || "") === String(target.key || "")));
-  }
-
-  async function pasteImageToInput(key, file = null, expectedApp = modules.state.state.currentApp) {
-    const target = { key, app: expectedApp };
-    if (!isCurrentImagePasteTarget(target)) {
-      throw new Error("应用或图像字段已切换，请重新选择图像字段后再粘贴。");
-    }
-    const imageFile = file || await readClipboardImageFile();
-    clearPendingImagePaste();
-    const builtAsset = await buildClipboardImageAsset(imageFile);
-    if (!isCurrentImagePasteTarget(target)) {
-      throw new Error("应用或图像字段已切换，图片未写入。");
-    }
-    const asset = pushCapturedAsset(builtAsset);
-    if (!asset) throw new Error("剪贴板图片写入失败。");
-    clearPendingImagePaste();
-    modules.state.state.formValues[key] = cloneCaptureAsset(asset);
-    renderWorkspace();
-    modules.ui.logToWorkspace(`已从剪贴板写入图像字段：${key} (${asset.width}x${asset.height})`, "success");
-    return asset;
-  }
-
-  async function handlePasteImageButtonClick(button, key) {
-    const currentApp = modules.state.state.currentApp;
-    if (!key || !findImageInputs(modules.state.state.currentApp).some((input) => String(input.key || "") === key)) return;
-    if (button) button.disabled = true;
-    pauseAutoPlacementRetry();
-    try {
-      const file = await readClipboardImageFile();
-      if (!isCurrentImagePasteTarget({ key, app: currentApp })) {
-        throw new Error("应用已切换，请重新选择图像字段后再粘贴。");
-      }
-      await pasteImageToInput(key, file, currentApp);
-    } catch (error) {
-      const message = String(error && error.message || error || "");
-      if (/无法直接读取剪贴板图片|clipboard|permission|denied|not allowed|read permission/i.test(message)) {
-        clearPendingImagePaste();
-        pendingImagePasteTarget = { key, app: currentApp };
-        pendingImagePasteTimer = window.setTimeout(() => {
-          clearPendingImagePaste();
-          modules.ui.logToWorkspace("剪贴板粘贴已取消，请再次点击“粘贴图片”重试。", "info");
-        }, 30000);
-        modules.ui.logToWorkspace("请在 30 秒内按 Ctrl+V（Mac 按 Command+V）粘贴图片。", "info");
-      } else {
-        modules.ui.logToWorkspace(`剪贴板图片粘贴失败：${message}`, "error");
-      }
-    } finally {
-      resumeAutoPlacementRetry();
-      if (button && button.isConnected) button.disabled = false;
-    }
-  }
-
-  function bindClipboardImagePaste() {
-    if (!document || document.documentElement.dataset.clipboardImagePasteBound === "true") return;
-    document.documentElement.dataset.clipboardImagePasteBound = "true";
-    document.addEventListener("focusin", (event) => {
-      const button = event.target && event.target.closest(".image-capture-paste-btn[data-form-key]");
-      if (!button) {
-        clearPendingImagePaste();
-        return;
-      }
-      const key = String(button.getAttribute("data-form-key") || "");
-      const app = modules.state.state.currentApp;
-      if (!key || !app || !findImageInputs(app).some((input) => String(input.key || "") === key)) {
-        clearPendingImagePaste();
-        return;
-      }
-      clearPendingImagePaste();
-      pendingImagePasteTarget = { key, app };
-      pendingImagePasteTimer = window.setTimeout(clearPendingImagePaste, 30000);
-    }, true);
-    document.addEventListener("pointerdown", (event) => {
-      if (event.target && event.target.closest(".image-capture-paste-btn[data-form-key]")) return;
-      clearPendingImagePaste();
-    }, true);
-    document.addEventListener("paste", (event) => {
-      if (!pendingImagePasteTarget) return;
-      const file = getClipboardImageFileFromEvent(event);
-      if (!file) return;
-      event.preventDefault();
-      const target = pendingImagePasteTarget;
-      clearPendingImagePaste();
-      if (!isCurrentImagePasteTarget(target)) {
-        modules.ui.logToWorkspace("应用或图像字段已切换，未写入剪贴板图片。", "warn");
-        return;
-      }
-      pauseAutoPlacementRetry();
-      void pasteImageToInput(target.key, file, target.app)
-        .catch((error) => modules.ui.logToWorkspace(`剪贴板图片粘贴失败：${error && error.message || error}`, "error"))
-        .finally(resumeAutoPlacementRetry);
-    }, true);
-  }
-
   function clearImageInputValue(key) {
     modules.state.state.formValues[key] = null;
     renderWorkspace();
@@ -753,10 +491,8 @@
     const previewSrc = getImageAssetPreviewSrc(asset);
     const captureLabel = hasAssignedAsset ? "重新捕获" : "捕获图像";
     const captureSource = hasAssignedAsset
-      ? asset.source === "clipboard"
-        ? "来源：系统剪贴板"
-        : (asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
-      : "点击捕获 Photoshop 图像，或复制图片后粘贴到此字段";
+      ? (asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
+      : "点击捕获 Photoshop 图像";
     const captureMeta = hasAssignedAsset
       ? [
           `${asset.originalWidth || asset.width || "-"}x${asset.originalHeight || asset.height || "-"}`,
@@ -768,7 +504,7 @@
 
     return `
       <div class="field dynamic-field image-field">
-        <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
+        <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}" tabindex="0" role="group" aria-label="${label}图像输入">
           <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}">
             <div class="image-capture-stage-corners">
               <span class="image-capture-corner-label">${label}${requiredMark}</span>
@@ -786,7 +522,6 @@
             }
             <div class="inline-actions image-capture-stage-actions">
               <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
-              <button class="mini-btn image-capture-paste-btn" type="button" data-action="paste-field-image" data-form-key="${runtime.escapeHtml(key)}" title="粘贴剪贴板图片；也可以聚焦图像框后按 Ctrl+V">粘贴图片</button>
             </div>
           </div>
           <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}${captureMeta ? ` · ${runtime.escapeHtml(captureMeta)}` : ""}</div>
@@ -4442,7 +4177,6 @@
   }
 
   function bindWorkspaceActions() {
-    bindClipboardImagePaste();
     const runButton = modules.runtime.getById("btnRun");
     const runPlusButton = modules.runtime.getById("btnRunPlus");
     const appPickerMeta = modules.runtime.getById("appPickerMeta");
@@ -4692,13 +4426,6 @@
           event.stopPropagation();
           clearImageInputValue(key);
           modules.ui.logToWorkspace(`已清除字段图像：${key}`, "info");
-          return;
-        }
-
-        if (action === "paste-field-image") {
-          event.preventDefault();
-          event.stopPropagation();
-          void handlePasteImageButtonClick(actionTarget, key);
           return;
         }
 
