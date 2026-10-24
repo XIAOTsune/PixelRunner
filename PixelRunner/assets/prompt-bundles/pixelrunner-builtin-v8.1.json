@@ -5,6 +5,639 @@
   "exportedAt": "2026-10-08T11:51:08.2100576Z",
   "apps": [
     {
+      "id": "app-1792677466949-1yw8po",
+      "appId": "2108933070804385794",
+      "region": "global",
+      "name": "源神极速版",
+      "description": "",
+      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-10/1988c247bbdcb3003e011e3702d79b78.jpg",
+      "inputs": [
+        {
+          "key": "470:image",
+          "name": "输入图片",
+          "label": "输入图片",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+          "nodeId": "470",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "502:image",
+          "name": "参考图",
+          "label": "参考图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+          "nodeId": "502",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "498:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "头发变成粉色",
+          "nodeId": "498",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677466949,
+      "updatedAt": 1792677466949
+    },
+    {
+      "id": "app-1792677488482-jwlbw7",
+      "appId": "2108926447292624897",
+      "region": "global",
+      "name": "源神4k自由版",
+      "description": "",
+      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/1482ea99b9616d906d9cafe63f266b01/2026-10-10/1c7914eb2f18681155577fe77beea350.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "470:image",
+          "name": "输入图",
+          "label": "输入图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+          "nodeId": "470",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "502:image",
+          "name": "参考图",
+          "label": "参考图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+          "nodeId": "502",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "498:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "换成泳装，胸部变大",
+          "nodeId": "498",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677488482,
+      "updatedAt": 1792677488482
+    },
+    {
+      "id": "app-1792677438895-a7e2hs",
+      "appId": "2111318790768586754",
+      "region": "global",
+      "name": "Qwen2.1厚涂plus",
+      "description": "",
+      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-17/eb1dbcc018956e69f244ec5e29ba396a.jpg",
+      "inputs": [
+        {
+          "key": "470:image",
+          "name": "输入图像（尽量只框头，尽量正方形）",
+          "label": "输入图像（尽量只框头，尽量正方形）",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "becd9c611c665191030449ff9e01d72bdbae54363838add5c0c256129340bf95.png",
+          "nodeId": "470",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "526:value",
+          "name": "细节（8-28）",
+          "label": "细节（8-28）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "20",
+          "nodeId": "526",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "498:text",
+          "name": "提示词（可按需调整）",
+          "label": "提示词（可按需调整）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "cosfaceglow，一张高频细节丰富的3D质感COS妆面人像, 脸部近景, 保持原图人物的五官比例、发色、发型、瞳色、妆容特征、服装配饰与动作姿态完全不变，将画面精修为写实3D厚涂CG质感：大幅增加强化头发与眉眼的极致毛流感，刻画出根根分明的高光毛流感发丝与簇状太阳花睫毛；在发丝、眼周与面颊增加亮晶晶的细碎珠光闪粉；在鼻尖、鼻梁、眼角卧蚕与双唇加上饱满的水光感扩散的高光点，脸颊增加极致哑光皮肤毛孔颗粒汗毛细节与珠光感，增强面部3D立体骨相明暗光影；清澈通透玻璃质感瞳孔, 明亮眼神光。尽量保持原图色调和明度一致。\n",
+          "nodeId": "498",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677438895,
+      "updatedAt": 1792677438895
+    },
+    {
+      "id": "app-1792677413992-tzupx8",
+      "appId": "2112922860376395777",
+      "region": "global",
+      "name": "全能图片2.1",
+      "description": "",
+      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-21/318557b3fea6be6930392fbd6a67c6ab.png",
+      "inputs": [
+        {
+          "key": "2:image",
+          "name": "图一",
+          "label": "图一",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
+          "nodeId": "2",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "16:image",
+          "name": "图二",
+          "label": "图二",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+          "nodeId": "16",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "13:image",
+          "name": "图三",
+          "label": "图三",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+          "nodeId": "13",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "17:aspectRatio",
+          "name": "比例",
+          "label": "比例",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2:3",
+          "options": [
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            },
+            {
+              "value": "1:4",
+              "label": "1:4"
+            },
+            {
+              "value": "4:1",
+              "label": "4:1"
+            },
+            {
+              "value": "1:8",
+              "label": "1:8"
+            },
+            {
+              "value": "8:1",
+              "label": "8:1"
+            }
+          ],
+          "nodeId": "17",
+          "fieldName": "aspectRatio",
+          "fieldType": "LIST",
+          "fieldData": "[[\"1:1\", \"16:9\", \"9:16\", \"4:3\", \"3:4\", \"3:2\", \"2:3\", \"5:4\", \"4:5\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"], {\"default\": \"1:1\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "17:resolution",
+          "name": "分辨率",
+          "label": "分辨率",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2k",
+          "options": [
+            {
+              "value": "1k",
+              "label": "1k"
+            },
+            {
+              "value": "2k",
+              "label": "2k"
+            },
+            {
+              "value": "4k",
+              "label": "4k"
+            }
+          ],
+          "nodeId": "17",
+          "fieldName": "resolution",
+          "fieldType": "LIST",
+          "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"1k\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "9:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "去除光斑",
+          "nodeId": "9",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677413992,
+      "updatedAt": 1792677413992
+    },
+    {
+      "id": "app-1792677277489-ylpbqd",
+      "appId": "2111318627667505153",
+      "region": "cn",
+      "name": "Qwen2.1厚涂plus",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-17/eb1dbcc018956e69f244ec5e29ba396a.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "470:image",
+          "name": "输入图像（尽量只框头，尽量正方形）",
+          "label": "输入图像（尽量只框头，尽量正方形）",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "becd9c611c665191030449ff9e01d72bdbae54363838add5c0c256129340bf95.png",
+          "nodeId": "470",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "526:value",
+          "name": "细节（8-28）",
+          "label": "细节（8-28）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "20",
+          "nodeId": "526",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "498:text",
+          "name": "提示词（可按需调整）",
+          "label": "提示词（可按需调整）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "cosfaceglow，一张高频细节丰富的3D质感COS妆面人像, 脸部近景, 保持原图人物的五官比例、发色、发型、瞳色、妆容特征、服装配饰与动作姿态完全不变，将画面精修为写实3D厚涂CG质感：大幅增加强化头发与眉眼的极致毛流感，刻画出根根分明的高光毛流感发丝与簇状太阳花睫毛；在发丝、眼周与面颊增加亮晶晶的细碎珠光闪粉；在鼻尖、鼻梁、眼角卧蚕与双唇加上饱满的水光感扩散的高光点，脸颊增加极致哑光皮肤毛孔颗粒汗毛细节与珠光感，增强面部3D立体骨相明暗光影；清澈通透玻璃质感瞳孔, 明亮眼神光。尽量保持原图色调和明度一致。\n",
+          "nodeId": "498",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677277490,
+      "updatedAt": 1792677277490
+    },
+    {
+      "id": "app-1792677243108-2hrcl2",
+      "appId": "2062183437301272578",
+      "region": "cn",
+      "name": "全能图片2.1",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-21/318557b3fea6be6930392fbd6a67c6ab.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "2:image",
+          "name": "图一",
+          "label": "图一",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
+          "nodeId": "2",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "16:image",
+          "name": "图二",
+          "label": "图二",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+          "nodeId": "16",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "13:image",
+          "name": "图三",
+          "label": "图三",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+          "nodeId": "13",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "17:aspectRatio",
+          "name": "比例",
+          "label": "比例",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2:3",
+          "options": [
+            {
+              "value": "1:1",
+              "label": "1:1"
+            },
+            {
+              "value": "16:9",
+              "label": "16:9"
+            },
+            {
+              "value": "9:16",
+              "label": "9:16"
+            },
+            {
+              "value": "4:3",
+              "label": "4:3"
+            },
+            {
+              "value": "3:4",
+              "label": "3:4"
+            },
+            {
+              "value": "3:2",
+              "label": "3:2"
+            },
+            {
+              "value": "2:3",
+              "label": "2:3"
+            },
+            {
+              "value": "5:4",
+              "label": "5:4"
+            },
+            {
+              "value": "4:5",
+              "label": "4:5"
+            },
+            {
+              "value": "21:9",
+              "label": "21:9"
+            },
+            {
+              "value": "1:4",
+              "label": "1:4"
+            },
+            {
+              "value": "4:1",
+              "label": "4:1"
+            },
+            {
+              "value": "1:8",
+              "label": "1:8"
+            },
+            {
+              "value": "8:1",
+              "label": "8:1"
+            }
+          ],
+          "nodeId": "17",
+          "fieldName": "aspectRatio",
+          "fieldType": "LIST",
+          "fieldData": "[[\"1:1\", \"16:9\", \"9:16\", \"4:3\", \"3:4\", \"3:2\", \"2:3\", \"5:4\", \"4:5\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"], {\"default\": \"1:1\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "17:resolution",
+          "name": "分辨率",
+          "label": "分辨率",
+          "type": "select",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "2k",
+          "options": [
+            {
+              "value": "1k",
+              "label": "1k"
+            },
+            {
+              "value": "2k",
+              "label": "2k"
+            },
+            {
+              "value": "4k",
+              "label": "4k"
+            }
+          ],
+          "nodeId": "17",
+          "fieldName": "resolution",
+          "fieldType": "LIST",
+          "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"1k\"}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "9:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "去除光斑",
+          "nodeId": "9",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677243108,
+      "updatedAt": 1792677243108
+    },
+    {
+      "id": "app-1792677259242-6u8lbk",
+      "appId": "2108932857229045762",
+      "region": "cn",
+      "name": "源神极速版",
+      "description": "",
+      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-10/1988c247bbdcb3003e011e3702d79b78.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "470:image",
+          "name": "输入图片",
+          "label": "输入图片",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+          "nodeId": "470",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "502:image",
+          "name": "参考图",
+          "label": "参考图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+          "nodeId": "502",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "498:text",
+          "name": "提示词",
+          "label": "提示词",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "头发变成粉色",
+          "nodeId": "498",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1792677259242,
+      "updatedAt": 1792677259242
+    },
+    {
       "id": "app-1791459219872-9tkkkp",
       "appId": "2046508092841529346",
       "region": "cn",
@@ -85,7 +718,7 @@
         }
       ],
       "createdAt": 1791459219872,
-      "updatedAt": 1791459219872
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1790000846209-q4mzlh",
@@ -142,7 +775,7 @@
         }
       ],
       "createdAt": 1790000846209,
-      "updatedAt": 1790000846209
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1789998590104-qays7a",
@@ -199,141 +832,7 @@
         }
       ],
       "createdAt": 1789998590105,
-      "updatedAt": 1789998590105
-    },
-    {
-      "id": "app-1789990614354-gfk79x",
-      "appId": "2101798739689168897",
-      "region": "cn",
-      "name": "qwen image 2.1图片编辑",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/1cfb17b182380c74a4aa66b7b29cac83/2026-09-20/c60064df2a46bfda62eea9e073c001e8.png?imageMogr2/format/jpg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "470:image",
-          "name": "上传图片",
-          "label": "上传图片",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "d3e9468396360f7b7dc8add74228e56b711efa13ea0b6d122180edef008df088.webp",
-          "nodeId": "470",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "498:text",
-          "name": "编辑内容",
-          "label": "编辑内容",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "变为一张短剧海报，吸引人的，短剧名《爱的诺言》",
-          "nodeId": "498",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "499:text",
-          "name": "负面提示词",
-          "label": "负面提示词",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "低画质，角色双胞胎，残缺肢体，文字乱码",
-          "nodeId": "499",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1789990614354,
-      "updatedAt": 1789990614354
-    },
-    {
-      "id": "app-1789820919729-n02eyw",
-      "appId": "2074321264344395778",
-      "region": "cn",
-      "name": "半梦叠影：Krea 2 的幻觉艺术",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/fcc4dc84180788dce3575c538ca856e2/2026-07-07/7a024e727a493ed8d2a85feb729e443d.gif?imageMogr2/format/webp/ignore-error/1",
-      "inputs": [
-        {
-          "key": "154:text",
-          "name": "文本描述",
-          "label": "文本描述",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "欧洲老人戴着帽子和欧洲街道上.",
-          "nodeId": "154",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "257:select",
-          "name": "风格切换",
-          "label": "风格切换",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "2",
-          "options": [
-            {
-              "value": "2",
-              "label": "黑白系"
-            },
-            {
-              "value": "1",
-              "label": "彩色系"
-            }
-          ],
-          "nodeId": "257",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"黑白系\",\"fastIndex\":2.0,\"descriptionEn\":\"Black and white系\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"彩色系\",\"fastIndex\":1.0,\"descriptionEn\":\"Color series\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "252:select",
-          "name": "版式切换",
-          "label": "版式切换",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1",
-          "options": [
-            {
-              "value": "2",
-              "label": "横版"
-            },
-            {
-              "value": "1",
-              "label": "竖版"
-            }
-          ],
-          "nodeId": "252",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"横版\",\"fastIndex\":2.0,\"descriptionEn\":\"Horizontal version\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"竖版\",\"fastIndex\":1.0,\"descriptionEn\":\"Vertical version\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1789820919729,
-      "updatedAt": 1789820919729
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1789743234758-nk42m2",
@@ -360,129 +859,7 @@
         }
       ],
       "createdAt": 1789743234758,
-      "updatedAt": 1789743234758
-    },
-    {
-      "id": "app-1789284858698-peo4nu",
-      "appId": "2097526345000644609",
-      "region": "cn",
-      "name": "DLSS5图像放大增强体验",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/655e700acd9b4215b4e257c0d6be6813/2026-09-09/0c80c9ca8bbf3cf2051ac0186836eade.jpg?imageMogr2/format/jpeg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "2:image",
-          "name": "输入原始图片",
-          "label": "输入原始图片",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "ae0037edde6921f6fb0aae63cf9fdf75c7be7f798b08a8eac60872274d68b16b.png",
-          "nodeId": "2",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "7:upscaling_mode",
-          "name": "选择增强模式",
-          "label": "选择增强模式",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1.724x (Balanced)",
-          "options": [
-            {
-              "value": "1x (DLAA / native)",
-              "label": "1x (DLAA / native)"
-            },
-            {
-              "value": "1.5x (Quality)",
-              "label": "1.5x (Quality)"
-            },
-            {
-              "value": "1.724x (Balanced)",
-              "label": "1.724x (Balanced)"
-            },
-            {
-              "value": "2x (Performance)",
-              "label": "2x (Performance)"
-            },
-            {
-              "value": "3x (Ultra Performance)",
-              "label": "3x (Ultra Performance)"
-            }
-          ],
-          "nodeId": "7",
-          "fieldName": "upscaling_mode",
-          "fieldType": "LIST",
-          "fieldData": "[[\"1x (DLAA / native)\", \"1.5x (Quality)\", \"1.724x (Balanced)\", \"2x (Performance)\", \"3x (Ultra Performance)\"], {\"default\": \"1x (DLAA / native)\", \"tooltip\": \"1x enhances at native size; other modes upscale with the DLSS carrier (feature 1) before the neural pass (feature 18). Fixed NVIDIA factors only.\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "7:style",
-          "name": "选择风格",
-          "label": "选择风格",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "default",
-          "options": [
-            {
-              "value": "default",
-              "label": "default"
-            },
-            {
-              "value": "natural",
-              "label": "natural"
-            },
-            {
-              "value": "cinematic",
-              "label": "cinematic"
-            }
-          ],
-          "nodeId": "7",
-          "fieldName": "style",
-          "fieldType": "LIST",
-          "fieldData": "[[\"default\", \"natural\", \"cinematic\"], {\"default\": \"default\", \"tooltip\": \"Neural rendering style. Natural stays closer to the source; cinematic pushes contrast.\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "7:motion",
-          "name": "选择动态",
-          "label": "选择动态",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "auto",
-          "options": [
-            {
-              "value": "auto",
-              "label": "auto"
-            },
-            {
-              "value": "optical_flow",
-              "label": "optical_flow"
-            },
-            {
-              "value": "none",
-              "label": "none"
-            }
-          ],
-          "nodeId": "7",
-          "fieldName": "motion",
-          "fieldType": "LIST",
-          "fieldData": "[[\"auto\", \"optical_flow\", \"none\"], {\"default\": \"auto\", \"tooltip\": \"Motion vectors for temporal accumulation. auto = optical flow when OpenCV is available, else zero motion; none = zero motion.\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1789284858699,
-      "updatedAt": 1789284858699
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1783843302114-j4owc0",
@@ -539,7 +916,7 @@
         }
       ],
       "createdAt": 1783843302114,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1783136675477-754lgg",
@@ -596,152 +973,7 @@
         }
       ],
       "createdAt": 1783136675477,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1781064320464-q0v7e4",
-      "appId": "1993329676842106882",
-      "region": "cn",
-      "name": "Qwen文生图-写实3D 时尚风格",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/8ec74153b07d45eb5c1df30f268c52ed/2025-11-26/9f03667d38193699766b2b8362408993.png?imageMogr2/format/jpg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "889:batch_size",
-          "name": "出图张数",
-          "label": "出图张数",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1",
-          "nodeId": "889",
-          "fieldName": "batch_size",
-          "fieldType": "INT",
-          "fieldData": "[\"INT\", {\"max\": 4096, \"min\": 1, \"default\": 1, \"tooltip\": \"The number of latent images in the batch.\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "887:select",
-          "name": "设置比例",
-          "label": "设置比例",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "6",
-          "options": [
-            {
-              "value": "7",
-              "label": "3:2"
-            },
-            {
-              "value": "6",
-              "label": "2:3"
-            },
-            {
-              "value": "5",
-              "label": "16:9"
-            },
-            {
-              "value": "4",
-              "label": "9:16"
-            },
-            {
-              "value": "3",
-              "label": "4:3"
-            },
-            {
-              "value": "2",
-              "label": "3:4"
-            },
-            {
-              "value": "1",
-              "label": "1:1"
-            }
-          ],
-          "nodeId": "887",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input7\",\"index\":7.0,\"description\":\"3:2\",\"fastIndex\":7.0,\"descriptionEn\":\"3:2\"},{\"name\":\"input6\",\"index\":6.0,\"description\":\"2:3\",\"fastIndex\":6.0,\"descriptionEn\":\"2:3\"},{\"name\":\"input5\",\"index\":5.0,\"description\":\"16:9\",\"fastIndex\":5.0,\"descriptionEn\":\"16:9\"},{\"name\":\"input4\",\"index\":4.0,\"description\":\"9:16\",\"fastIndex\":4.0,\"descriptionEn\":\"9:16\"},{\"name\":\"input3\",\"index\":3.0,\"description\":\"4:3\",\"fastIndex\":3.0,\"descriptionEn\":\"4:3\"},{\"name\":\"input2\",\"index\":2.0,\"description\":\"3:4\",\"fastIndex\":2.0,\"descriptionEn\":\"3:4\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"1:1\",\"fastIndex\":1.0,\"descriptionEn\":\"1:1\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "1017:select",
-          "name": "服装类型切换",
-          "label": "服装类型切换",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "2",
-          "options": [
-            {
-              "value": "4",
-              "label": "礼服男"
-            },
-            {
-              "value": "3",
-              "label": "常服男"
-            },
-            {
-              "value": "2",
-              "label": "礼服女"
-            },
-            {
-              "value": "1",
-              "label": "常服女"
-            }
-          ],
-          "nodeId": "1017",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input4\",\"index\":4.0,\"description\":\"礼服男\",\"fastIndex\":4.0,\"descriptionEn\":\"Dress man\"},{\"name\":\"input3\",\"index\":3.0,\"description\":\"常服男\",\"fastIndex\":3.0,\"descriptionEn\":\"Regular clothing for men\"},{\"name\":\"input2\",\"index\":2.0,\"description\":\"礼服女\",\"fastIndex\":2.0,\"descriptionEn\":\"Dress woman\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"常服女\",\"fastIndex\":1.0,\"descriptionEn\":\"Regular women\\u0027s服装\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "1005:select",
-          "name": "文本输入方式",
-          "label": "文本输入方式",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1",
-          "options": [
-            {
-              "value": "2",
-              "label": "手写文本"
-            },
-            {
-              "value": "1",
-              "label": "扩写文本"
-            }
-          ],
-          "nodeId": "1005",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"手写文本\",\"fastIndex\":2.0,\"descriptionEn\":\"Handwritten text\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"扩写文本\",\"fastIndex\":1.0,\"descriptionEn\":\"Expand text\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "956:text",
-          "name": "输入文本",
-          "label": "输入文本",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "一个时尚人物形象,角色立绘，冬季时装主题，极繁主义，极致表现力，大师级视角，浪漫感，细节完美，大师杰作。",
-          "nodeId": "956",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1781064320464,
-      "updatedAt": 1781064320464
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570072264-6u7i12",
@@ -783,7 +1015,7 @@
         }
       ],
       "createdAt": 1775570072265,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1780571587430-j014dt",
@@ -840,7 +1072,7 @@
         }
       ],
       "createdAt": 1780571587430,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570084191-268sv6",
@@ -882,94 +1114,7 @@
         }
       ],
       "createdAt": 1775570084191,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1776135003609-e3ts3f",
-      "appId": "2043884236624629761",
-      "region": "cn",
-      "name": "F2K-放大/编辑（锁一致性&颜色）",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-14/fa9fa46d9e8e440e0369548d09a74cc7.jpg?imageMogr2/format/jpeg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "51:image",
-          "name": "主图",
-          "label": "主图",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-          "nodeId": "51",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "50:image",
-          "name": "参考图",
-          "label": "参考图",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-          "nodeId": "50",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "44:Input",
-          "name": "是否开启色彩匹配（1开启，2关闭，编辑时请关闭）",
-          "label": "是否开启色彩匹配（1开启，2关闭，编辑时请关闭）",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1",
-          "nodeId": "44",
-          "fieldName": "Input",
-          "fieldType": "INT",
-          "fieldData": "[\"INT\", {\"max\": 2, \"min\": 1, \"default\": 1}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "27:value",
-          "name": "长边分辨率（可不修改，尽量匹配图像，过大易爆显存）",
-          "label": "长边分辨率（可不修改，尽量匹配图像，过大易爆显存）",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1600",
-          "nodeId": "27",
-          "fieldName": "value",
-          "fieldType": "INT",
-          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "21:text",
-          "name": "提示词（默认高清放大，可编辑）",
-          "label": "提示词（默认高清放大，可编辑）",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "Transform the image to realistic photograph. add realistic details to the corrupted image. restore high frequence details from the corrupted image. \n超高清，极致细节，高对比度，清晰的光影细节。 ",
-          "nodeId": "21",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"tooltip\": \"The text to be encoded.\", \"multiline\": true, \"dynamicPrompts\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1776135003609,
-      "updatedAt": 1781931510747
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570058822-j8bigy",
@@ -1056,139 +1201,7 @@
         }
       ],
       "createdAt": 1775570058822,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1780900947737-mbbxp3",
-      "appId": "2029514173234814978",
-      "region": "cn",
-      "name": "扣除一切",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-03-05/6117b68de49e1610ff8b606be16f454e.jpg?imageMogr2/format/jpeg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "12:image",
-          "name": "加载图片",
-          "label": "加载图片",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "2d5b69822dfd5257c283fb9d49d47784f0d82f26f1976f6c1f6930fae03b8024.jpeg",
-          "nodeId": "12",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "29:text",
-          "name": "输入要定向扣除的物体",
-          "label": "输入要定向扣除的物体",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "人物主体",
-          "nodeId": "29",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1780900947737,
-      "updatedAt": 1780900947737
-    },
-    {
-      "id": "app-1778595211851-uftnbr",
-      "appId": "1964753754237095937",
-      "region": "cn",
-      "name": "Qwen-edit 万物重打光",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/f0daa4c16c39ba8432b42e202e867c51/2025-09-09/d714162810fa96eb41b53e577c07424f.gif?imageMogr2/format/webp/ignore-error/1",
-      "inputs": [
-        {
-          "key": "19:image",
-          "name": "图片替换",
-          "label": "图片替换",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "51b8c742a34a6bde76d6c25cec59a711198e4ebc8918b5b18beb08f3c6f99a78.jpg",
-          "nodeId": "19",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "25:text",
-          "name": "提示词输入（修改最后两个字即可）",
-          "label": "提示词输入（修改最后两个字即可）",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "将主光源移动到角色的左侧",
-          "nodeId": "25",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "18:weight_dtype",
-          "name": "效果不好可以改",
-          "label": "效果不好可以改",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "fp8_e4m3fn",
-          "options": [
-            {
-              "value": "default",
-              "label": "效果最好但光影对比最强"
-            },
-            {
-              "value": "fp8_e4m3fn",
-              "label": "默认效果比较稳定"
-            },
-            {
-              "value": "fp8_e4m3fn_fast",
-              "label": "乱码不要用"
-            },
-            {
-              "value": "fp8_e5m2",
-              "label": "保留原有光影再加光"
-            }
-          ],
-          "nodeId": "18",
-          "fieldName": "weight_dtype",
-          "fieldType": "LIST",
-          "fieldData": "[{\"name\":\"default\",\"index\":\"default\",\"description\":\"效果最好但光影对比最强\",\"fastIndex\":1.0,\"descriptionEn\":\"The best effect but the strongest light and shadow contrast\"},{\"name\":\"fp8_e4m3fn\",\"index\":\"fp8_e4m3fn\",\"description\":\"默认效果比较稳定\",\"fastIndex\":2.0,\"descriptionEn\":\"Default effect is relatively stable\"},{\"name\":\"fp8_e4m3fn_fast\",\"index\":\"fp8_e4m3fn_fast\",\"description\":\"乱码不要用\",\"fastIndex\":3.0,\"descriptionEn\":\"Don\\u0027t use garbled text\"},{\"name\":\"fp8_e5m2\",\"index\":\"fp8_e5m2\",\"description\":\"保留原有光影再加光\",\"fastIndex\":4.0,\"descriptionEn\":\"Retain the original light and shadow and add light\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "15:strength_model",
-          "name": "LORA模型强度",
-          "label": "LORA模型强度",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1.0000000000000002",
-          "nodeId": "15",
-          "fieldName": "strength_model",
-          "fieldType": "FLOAT",
-          "fieldData": "[\"FLOAT\", {\"max\": 100, \"min\": -100, \"step\": 0.01, \"default\": 1}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1778595211851,
-      "updatedAt": 1780455234697
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1777556180228-wzgucm",
@@ -1245,7 +1258,7 @@
         }
       ],
       "createdAt": 1777556180229,
-      "updatedAt": 1780455234697
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570025123-rfk2fu",
@@ -1362,7 +1375,7 @@
         }
       ],
       "createdAt": 1775570025123,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775707933884-h1z80q",
@@ -1404,7 +1417,7 @@
         }
       ],
       "createdAt": 1775707933884,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570094437-8r4ajo",
@@ -1476,7 +1489,7 @@
         }
       ],
       "createdAt": 1775570094438,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570101864-lnu44j",
@@ -1533,7 +1546,7 @@
         }
       ],
       "createdAt": 1775570101864,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775570015520-wxjr8h",
@@ -1620,7 +1633,7 @@
         }
       ],
       "createdAt": 1775570015520,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1775832765499-z6rr3d",
@@ -1737,227 +1750,7 @@
         }
       ],
       "createdAt": 1775832765499,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1783352135811-xelz4x",
-      "appId": "2042209777182314497",
-      "region": "cn",
-      "name": "超清放大",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-09/33a4dbd578363073f50eb98edb324bc9.jpg?imageMogr2/format/jpg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "68:image",
-          "name": "输入图像（请适度调大画布）",
-          "label": "输入图像（请适度调大画布）",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "6cbc72b2b371d95623c248a0e17bb2fd2c5c8d15dca1b083df0eaa4d826f2319.jpeg",
-          "nodeId": "68",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "70:text",
-          "name": "放大倍数（2-8，默认4）",
-          "label": "放大倍数（2-8，默认4）",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "4",
-          "nodeId": "70",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1783352135812,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1786547019098-brri7l",
-      "appId": "2062183437301272578",
-      "region": "cn",
-      "name": "全能图片2.0",
-      "description": "",
-      "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-06-03/44288ec12c224118c9c195ffe28d85a2.jpg?imageMogr2/format/jpeg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "2:image",
-          "name": "主图",
-          "label": "主图",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-          "nodeId": "2",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "16:image",
-          "name": "参考图1",
-          "label": "参考图1",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-          "nodeId": "16",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "13:image",
-          "name": "参考图2",
-          "label": "参考图2",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-          "nodeId": "13",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "1:aspectRatio",
-          "name": "比例",
-          "label": "比例",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "auto",
-          "options": [
-            {
-              "value": "auto",
-              "label": "auto"
-            },
-            {
-              "value": "1:1",
-              "label": "1:1"
-            },
-            {
-              "value": "1:4",
-              "label": "1:4"
-            },
-            {
-              "value": "1:8",
-              "label": "1:8"
-            },
-            {
-              "value": "2:3",
-              "label": "2:3"
-            },
-            {
-              "value": "3:2",
-              "label": "3:2"
-            },
-            {
-              "value": "3:4",
-              "label": "3:4"
-            },
-            {
-              "value": "4:1",
-              "label": "4:1"
-            },
-            {
-              "value": "4:3",
-              "label": "4:3"
-            },
-            {
-              "value": "4:5",
-              "label": "4:5"
-            },
-            {
-              "value": "5:4",
-              "label": "5:4"
-            },
-            {
-              "value": "8:1",
-              "label": "8:1"
-            },
-            {
-              "value": "9:16",
-              "label": "9:16"
-            },
-            {
-              "value": "16:9",
-              "label": "16:9"
-            },
-            {
-              "value": "21:9",
-              "label": "21:9"
-            }
-          ],
-          "nodeId": "1",
-          "fieldName": "aspectRatio",
-          "fieldType": "LIST",
-          "fieldData": "[[\"auto\", \"1:1\", \"1:4\", \"1:8\", \"2:3\", \"3:2\", \"3:4\", \"4:1\", \"4:3\", \"4:5\", \"5:4\", \"8:1\", \"9:16\", \"16:9\", \"21:9\"], {\"default\": \"4:3\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "1:resolution",
-          "name": "分辨率",
-          "label": "分辨率",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "2k",
-          "options": [
-            {
-              "value": "1k",
-              "label": "1k"
-            },
-            {
-              "value": "2k",
-              "label": "2k"
-            },
-            {
-              "value": "4k",
-              "label": "4k"
-            }
-          ],
-          "nodeId": "1",
-          "fieldName": "resolution",
-          "fieldType": "LIST",
-          "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"2k\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "9:text",
-          "name": "提示词",
-          "label": "提示词",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "去除光斑",
-          "nodeId": "9",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1786547019098,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1780499860177-arvstt",
@@ -2123,7 +1916,7 @@
         }
       ],
       "createdAt": 1780499860177,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1780456626194-jinzbl",
@@ -2241,34 +2034,7 @@
         }
       ],
       "createdAt": 1780456626194,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1791184294638-qf6w5f",
-      "appId": "2093271383022518273",
-      "region": "global",
-      "name": "酸奶溶图",
-      "description": "",
-      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/ff774db412c52a1cfdd0166acfc0d48a/2026-08-28/c2735b4898f853f92382f0f7a9635bf9.png?imageMogr2/format/jpg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "77:image",
-          "name": "image",
-          "label": "image",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "0b2eccf63aab0e7a535812b71907165f88b1f8fb1c8a31e9da35be8fc97d8f00.png",
-          "nodeId": "77",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1791184294638,
-      "updatedAt": 1791184294638
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1791181443342-5lcfde",
@@ -2325,7 +2091,7 @@
         }
       ],
       "createdAt": 1791181443342,
-      "updatedAt": 1791181455345
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1791177724053-vijgn3",
@@ -2408,7 +2174,7 @@
         }
       ],
       "createdAt": 1791177724053,
-      "updatedAt": 1791177724053
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1790164648226-dofs0g",
@@ -2465,7 +2231,7 @@
         }
       ],
       "createdAt": 1790164648226,
-      "updatedAt": 1790164648226
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1790000059971-1av78n",
@@ -2522,7 +2288,7 @@
         }
       ],
       "createdAt": 1790000059971,
-      "updatedAt": 1790000059971
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784218638107-ffc2kf",
@@ -2564,7 +2330,7 @@
         }
       ],
       "createdAt": 1784218638107,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784177623637-u7dd7g",
@@ -2591,7 +2357,7 @@
         }
       ],
       "createdAt": 1784177623638,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784177599389-uw770q",
@@ -2648,7 +2414,7 @@
         }
       ],
       "createdAt": 1784177599389,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784355420456-oq2xnc",
@@ -2705,7 +2471,7 @@
         }
       ],
       "createdAt": 1784355420457,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784177543572-sgie43",
@@ -2747,7 +2513,7 @@
         }
       ],
       "createdAt": 1784177543572,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784177524248-0b4o24",
@@ -2804,7 +2570,7 @@
         }
       ],
       "createdAt": 1784177524248,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784177358797-mvygbl",
@@ -2970,185 +2736,7 @@
         }
       ],
       "createdAt": 1784177358797,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1784177337864-c4m2f0",
-      "appId": "2077612578054090753",
-      "region": "global",
-      "name": "全能图片2.0",
-      "description": "",
-      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-06-03/44288ec12c224118c9c195ffe28d85a2.jpg",
-      "inputs": [
-        {
-          "key": "2:image",
-          "name": "主图",
-          "label": "主图",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-          "nodeId": "2",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "16:image",
-          "name": "参考图1",
-          "label": "参考图1",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-          "nodeId": "16",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "13:image",
-          "name": "参考图2",
-          "label": "参考图2",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-          "nodeId": "13",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "1:aspectRatio",
-          "name": "比例",
-          "label": "比例",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "auto",
-          "options": [
-            {
-              "value": "auto",
-              "label": "auto"
-            },
-            {
-              "value": "1:1",
-              "label": "1:1"
-            },
-            {
-              "value": "1:4",
-              "label": "1:4"
-            },
-            {
-              "value": "1:8",
-              "label": "1:8"
-            },
-            {
-              "value": "2:3",
-              "label": "2:3"
-            },
-            {
-              "value": "3:2",
-              "label": "3:2"
-            },
-            {
-              "value": "3:4",
-              "label": "3:4"
-            },
-            {
-              "value": "4:1",
-              "label": "4:1"
-            },
-            {
-              "value": "4:3",
-              "label": "4:3"
-            },
-            {
-              "value": "4:5",
-              "label": "4:5"
-            },
-            {
-              "value": "5:4",
-              "label": "5:4"
-            },
-            {
-              "value": "8:1",
-              "label": "8:1"
-            },
-            {
-              "value": "9:16",
-              "label": "9:16"
-            },
-            {
-              "value": "16:9",
-              "label": "16:9"
-            },
-            {
-              "value": "21:9",
-              "label": "21:9"
-            }
-          ],
-          "nodeId": "1",
-          "fieldName": "aspectRatio",
-          "fieldType": "LIST",
-          "fieldData": "[[\"auto\", \"1:1\", \"1:4\", \"1:8\", \"2:3\", \"3:2\", \"3:4\", \"4:1\", \"4:3\", \"4:5\", \"5:4\", \"8:1\", \"9:16\", \"16:9\", \"21:9\"], {\"default\": \"4:3\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "1:resolution",
-          "name": "分辨率",
-          "label": "分辨率",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "2k",
-          "options": [
-            {
-              "value": "1k",
-              "label": "1k"
-            },
-            {
-              "value": "2k",
-              "label": "2k"
-            },
-            {
-              "value": "4k",
-              "label": "4k"
-            }
-          ],
-          "nodeId": "1",
-          "fieldName": "resolution",
-          "fieldType": "LIST",
-          "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"2k\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "9:text",
-          "name": "提示词",
-          "label": "提示词",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "去除光斑",
-          "nodeId": "9",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1784177337864,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784119080041-c15tey",
@@ -3190,7 +2778,7 @@
         }
       ],
       "createdAt": 1784119080041,
-      "updatedAt": 1784119080041
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784112231777-5hlisu",
@@ -3247,258 +2835,7 @@
         }
       ],
       "createdAt": 1784112231777,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1786791268858-e4p74y",
-      "appId": "2042574131031445506",
-      "region": "global",
-      "name": "惠绘_Klein热机脸_橙子（",
-      "description": "",
-      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-04-10/6a981b30704a472cb31ba0003c07b2e1.png?imageMogr2/format/jpg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "164:image",
-          "name": "1加载主图",
-          "label": "1加载主图",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "pasted/16b1fd40b98f5ec18124adb4ea7508227dc31cd93f4db79fdd9524a15c760d40.png",
-          "nodeId": "164",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "186:value",
-          "name": "#2.1热机脸lora（1.5~2）",
-          "label": "#2.1热机脸lora（1.5~2）",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1.5000000000000002",
-          "nodeId": "186",
-          "fieldName": "value",
-          "fieldType": "FLOAT",
-          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "608:value",
-          "name": "#2.2一致性lora（0~0.5）",
-          "label": "#2.2一致性lora（0~0.5）",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "0",
-          "nodeId": "608",
-          "fieldName": "value",
-          "fieldType": "FLOAT",
-          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "199:value",
-          "name": "#3.1提示词（默认起手）",
-          "label": "#3.1提示词（默认起手）",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "漂亮可爱的人脸",
-          "nodeId": "199",
-          "fieldName": "value",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "163:value",
-          "name": "#3.2瞳孔颜色（xx颜色的瞳孔）",
-          "label": "#3.2瞳孔颜色（xx颜色的瞳孔）",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "深色的墨绿黑色瞳孔",
-          "nodeId": "163",
-          "fieldName": "value",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "175:value",
-          "name": "4.1批次数量",
-          "label": "4.1批次数量",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1",
-          "nodeId": "175",
-          "fieldName": "value",
-          "fieldType": "INT",
-          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "616:value",
-          "name": "y.操作说明",
-          "label": "y.操作说明",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "✒使用步骤：\n①框选区域（人脸大致占四分之一面积）；\n②设置热机脸lora权重，默认0.8；\n③输入瞳孔颜色，例如【墨绿色瞳孔】；\n④运行；\n⭐默认起手：\n简单磨皮：漂亮可爱的人脸。\n极致美白热机脸：尖下巴，V型脸，小脸，鹅蛋脸，轮廓流畅，五官精致，面部留白少，中庭短，人偶感面部，白皙肌肤，哑光皮肤，大眼睛，明显卧蚕。",
-          "nodeId": "616",
-          "fieldName": "value",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"multiline\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1786791268858,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1784892348592-aumot2",
-      "appId": "2077343010397323266",
-      "region": "global",
-      "name": "Zimage灵动飘发",
-      "description": "",
-      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/1482ea99b9616d906d9cafe63f266b01/2026-07-15/6d1f3f0a252b3e8b5cc58adc67c5458f.jpg?imageMogr2/format/jpeg/ignore-error/1",
-      "inputs": [
-        {
-          "key": "4:image",
-          "name": "输入图像",
-          "label": "输入图像",
-          "type": "image",
-          "required": false,
-          "requiredExplicit": false,
-          "default": "f826b490f8a4aa9418c64d9a338b27cf04720195d8eb53b72e7d9b8b598491d0.png",
-          "nodeId": "4",
-          "fieldName": "image",
-          "fieldType": "IMAGE",
-          "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "10:text",
-          "name": "提示词（一般不需要改）",
-          "label": "提示词（一般不需要改）",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
-          "nodeId": "10",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "14:value",
-          "name": "重绘幅度",
-          "label": "重绘幅度",
-          "type": "number",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "0.5100000000000001",
-          "nodeId": "14",
-          "fieldName": "value",
-          "fieldType": "FLOAT",
-          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1784892348592,
-      "updatedAt": 1786867671551
-    },
-    {
-      "id": "app-1786507686998-bf7tjf",
-      "appId": "2074321264344395778",
-      "region": "global",
-      "name": "半梦叠影：Krea 2 的幻觉艺术",
-      "description": "",
-      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/fcc4dc84180788dce3575c538ca856e2/2026-07-07/7a024e727a493ed8d2a85feb729e443d.gif?imageMogr2/format/webp/ignore-error/1",
-      "inputs": [
-        {
-          "key": "154:text",
-          "name": "文本描述",
-          "label": "文本描述",
-          "type": "text",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "欧洲老人戴着帽子和欧洲街道上.",
-          "nodeId": "154",
-          "fieldName": "text",
-          "fieldType": "STRING",
-          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "257:select",
-          "name": "风格切换",
-          "label": "风格切换",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "2",
-          "options": [
-            {
-              "value": "2",
-              "label": "黑白系"
-            },
-            {
-              "value": "1",
-              "label": "彩色系"
-            }
-          ],
-          "nodeId": "257",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"黑白系\",\"fastIndex\":2.0,\"descriptionEn\":\"Black and white系\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"彩色系\",\"fastIndex\":1.0,\"descriptionEn\":\"Color series\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        },
-        {
-          "key": "252:select",
-          "name": "版式切换",
-          "label": "版式切换",
-          "type": "select",
-          "required": true,
-          "requiredExplicit": false,
-          "default": "1",
-          "options": [
-            {
-              "value": "2",
-              "label": "横版"
-            },
-            {
-              "value": "1",
-              "label": "竖版"
-            }
-          ],
-          "nodeId": "252",
-          "fieldName": "select",
-          "fieldType": "SWITCH",
-          "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"横版\",\"fastIndex\":2.0,\"descriptionEn\":\"Horizontal version\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"竖版\",\"fastIndex\":1.0,\"descriptionEn\":\"Vertical version\"}]",
-          "labelSource": "raw",
-          "labelConfidence": 1
-        }
-      ],
-      "createdAt": 1786507686998,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
     },
     {
       "id": "app-1784364033899-n1i132",
@@ -3615,11 +2952,473 @@
         }
       ],
       "createdAt": 1784364033899,
-      "updatedAt": 1786867671551
+      "updatedAt": 1792676959130
+    },
+    {
+      "id": "app-1786791268858-e4p74y",
+      "appId": "2042574131031445506",
+      "region": "global",
+      "name": "惠绘_Klein热机脸_橙子（",
+      "description": "",
+      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-04-10/6a981b30704a472cb31ba0003c07b2e1.png?imageMogr2/format/jpg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "164:image",
+          "name": "1加载主图",
+          "label": "1加载主图",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "pasted/16b1fd40b98f5ec18124adb4ea7508227dc31cd93f4db79fdd9524a15c760d40.png",
+          "nodeId": "164",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "186:value",
+          "name": "#2.1热机脸lora（1.5~2）",
+          "label": "#2.1热机脸lora（1.5~2）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1.5000000000000002",
+          "nodeId": "186",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "608:value",
+          "name": "#2.2一致性lora（0~0.5）",
+          "label": "#2.2一致性lora（0~0.5）",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0",
+          "nodeId": "608",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "199:value",
+          "name": "#3.1提示词（默认起手）",
+          "label": "#3.1提示词（默认起手）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "漂亮可爱的人脸",
+          "nodeId": "199",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "163:value",
+          "name": "#3.2瞳孔颜色（xx颜色的瞳孔）",
+          "label": "#3.2瞳孔颜色（xx颜色的瞳孔）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "深色的墨绿黑色瞳孔",
+          "nodeId": "163",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "175:value",
+          "name": "4.1批次数量",
+          "label": "4.1批次数量",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "1",
+          "nodeId": "175",
+          "fieldName": "value",
+          "fieldType": "INT",
+          "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "616:value",
+          "name": "y.操作说明",
+          "label": "y.操作说明",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "✒使用步骤：\n①框选区域（人脸大致占四分之一面积）；\n②设置热机脸lora权重，默认0.8；\n③输入瞳孔颜色，例如【墨绿色瞳孔】；\n④运行；\n⭐默认起手：\n简单磨皮：漂亮可爱的人脸。\n极致美白热机脸：尖下巴，V型脸，小脸，鹅蛋脸，轮廓流畅，五官精致，面部留白少，中庭短，人偶感面部，白皙肌肤，哑光皮肤，大眼睛，明显卧蚕。",
+          "nodeId": "616",
+          "fieldName": "value",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"multiline\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1786791268858,
+      "updatedAt": 1792676959130
+    },
+    {
+      "id": "app-1784892348592-aumot2",
+      "appId": "2077343010397323266",
+      "region": "global",
+      "name": "Zimage灵动飘发",
+      "description": "",
+      "previewImage": "https://rh-hk-images.xiaoyaoyou.com/1482ea99b9616d906d9cafe63f266b01/2026-07-15/6d1f3f0a252b3e8b5cc58adc67c5458f.jpg?imageMogr2/format/jpeg/ignore-error/1",
+      "inputs": [
+        {
+          "key": "4:image",
+          "name": "输入图像",
+          "label": "输入图像",
+          "type": "image",
+          "required": false,
+          "requiredExplicit": false,
+          "default": "f826b490f8a4aa9418c64d9a338b27cf04720195d8eb53b72e7d9b8b598491d0.png",
+          "nodeId": "4",
+          "fieldName": "image",
+          "fieldType": "IMAGE",
+          "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "10:text",
+          "name": "提示词（一般不需要改）",
+          "label": "提示词（一般不需要改）",
+          "type": "text",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
+          "nodeId": "10",
+          "fieldName": "text",
+          "fieldType": "STRING",
+          "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        },
+        {
+          "key": "14:value",
+          "name": "重绘幅度",
+          "label": "重绘幅度",
+          "type": "number",
+          "required": true,
+          "requiredExplicit": false,
+          "default": "0.5100000000000001",
+          "nodeId": "14",
+          "fieldName": "value",
+          "fieldType": "FLOAT",
+          "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+          "labelSource": "raw",
+          "labelConfidence": 1
+        }
+      ],
+      "createdAt": 1784892348592,
+      "updatedAt": 1792676959130
     }
   ],
   "appsByRegion": {
     "cn": [
+      {
+        "id": "app-1792677277489-ylpbqd",
+        "appId": "2111318627667505153",
+        "region": "cn",
+        "name": "Qwen2.1厚涂plus",
+        "description": "",
+        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-17/eb1dbcc018956e69f244ec5e29ba396a.jpg?imageMogr2/format/jpeg/ignore-error/1",
+        "inputs": [
+          {
+            "key": "470:image",
+            "name": "输入图像（尽量只框头，尽量正方形）",
+            "label": "输入图像（尽量只框头，尽量正方形）",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "becd9c611c665191030449ff9e01d72bdbae54363838add5c0c256129340bf95.png",
+            "nodeId": "470",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "526:value",
+            "name": "细节（8-28）",
+            "label": "细节（8-28）",
+            "type": "number",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "20",
+            "nodeId": "526",
+            "fieldName": "value",
+            "fieldType": "INT",
+            "fieldData": "[\"INT\", {\"default\": 0}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "498:text",
+            "name": "提示词（可按需调整）",
+            "label": "提示词（可按需调整）",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "cosfaceglow，一张高频细节丰富的3D质感COS妆面人像, 脸部近景, 保持原图人物的五官比例、发色、发型、瞳色、妆容特征、服装配饰与动作姿态完全不变，将画面精修为写实3D厚涂CG质感：大幅增加强化头发与眉眼的极致毛流感，刻画出根根分明的高光毛流感发丝与簇状太阳花睫毛；在发丝、眼周与面颊增加亮晶晶的细碎珠光闪粉；在鼻尖、鼻梁、眼角卧蚕与双唇加上饱满的水光感扩散的高光点，脸颊增加极致哑光皮肤毛孔颗粒汗毛细节与珠光感，增强面部3D立体骨相明暗光影；清澈通透玻璃质感瞳孔, 明亮眼神光。尽量保持原图色调和明度一致。\n",
+            "nodeId": "498",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1792677277490,
+        "updatedAt": 1792677277490
+      },
+      {
+        "id": "app-1792677243108-2hrcl2",
+        "appId": "2062183437301272578",
+        "region": "cn",
+        "name": "全能图片2.1",
+        "description": "",
+        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-21/318557b3fea6be6930392fbd6a67c6ab.png?imageMogr2/format/jpg/ignore-error/1",
+        "inputs": [
+          {
+            "key": "2:image",
+            "name": "图一",
+            "label": "图一",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
+            "nodeId": "2",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "16:image",
+            "name": "图二",
+            "label": "图二",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+            "nodeId": "16",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "13:image",
+            "name": "图三",
+            "label": "图三",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+            "nodeId": "13",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "17:aspectRatio",
+            "name": "比例",
+            "label": "比例",
+            "type": "select",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "2:3",
+            "options": [
+              {
+                "value": "1:1",
+                "label": "1:1"
+              },
+              {
+                "value": "16:9",
+                "label": "16:9"
+              },
+              {
+                "value": "9:16",
+                "label": "9:16"
+              },
+              {
+                "value": "4:3",
+                "label": "4:3"
+              },
+              {
+                "value": "3:4",
+                "label": "3:4"
+              },
+              {
+                "value": "3:2",
+                "label": "3:2"
+              },
+              {
+                "value": "2:3",
+                "label": "2:3"
+              },
+              {
+                "value": "5:4",
+                "label": "5:4"
+              },
+              {
+                "value": "4:5",
+                "label": "4:5"
+              },
+              {
+                "value": "21:9",
+                "label": "21:9"
+              },
+              {
+                "value": "1:4",
+                "label": "1:4"
+              },
+              {
+                "value": "4:1",
+                "label": "4:1"
+              },
+              {
+                "value": "1:8",
+                "label": "1:8"
+              },
+              {
+                "value": "8:1",
+                "label": "8:1"
+              }
+            ],
+            "nodeId": "17",
+            "fieldName": "aspectRatio",
+            "fieldType": "LIST",
+            "fieldData": "[[\"1:1\", \"16:9\", \"9:16\", \"4:3\", \"3:4\", \"3:2\", \"2:3\", \"5:4\", \"4:5\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"], {\"default\": \"1:1\"}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "17:resolution",
+            "name": "分辨率",
+            "label": "分辨率",
+            "type": "select",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "2k",
+            "options": [
+              {
+                "value": "1k",
+                "label": "1k"
+              },
+              {
+                "value": "2k",
+                "label": "2k"
+              },
+              {
+                "value": "4k",
+                "label": "4k"
+              }
+            ],
+            "nodeId": "17",
+            "fieldName": "resolution",
+            "fieldType": "LIST",
+            "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"1k\"}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "9:text",
+            "name": "提示词",
+            "label": "提示词",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "去除光斑",
+            "nodeId": "9",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1792677243108,
+        "updatedAt": 1792677243108
+      },
+      {
+        "id": "app-1792677259242-6u8lbk",
+        "appId": "2108932857229045762",
+        "region": "cn",
+        "name": "源神极速版",
+        "description": "",
+        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-10/1988c247bbdcb3003e011e3702d79b78.jpg?imageMogr2/format/jpeg/ignore-error/1",
+        "inputs": [
+          {
+            "key": "470:image",
+            "name": "输入图片",
+            "label": "输入图片",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+            "nodeId": "470",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "502:image",
+            "name": "参考图",
+            "label": "参考图",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+            "nodeId": "502",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "498:text",
+            "name": "提示词",
+            "label": "提示词",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "头发变成粉色",
+            "nodeId": "498",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1792677259242,
+        "updatedAt": 1792677259242
+      },
       {
         "id": "app-1791459219872-9tkkkp",
         "appId": "2046508092841529346",
@@ -3701,7 +3500,7 @@
           }
         ],
         "createdAt": 1791459219872,
-        "updatedAt": 1791459219872
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1790000846209-q4mzlh",
@@ -3758,7 +3557,7 @@
           }
         ],
         "createdAt": 1790000846209,
-        "updatedAt": 1790000846209
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1789998590104-qays7a",
@@ -3815,141 +3614,7 @@
           }
         ],
         "createdAt": 1789998590105,
-        "updatedAt": 1789998590105
-      },
-      {
-        "id": "app-1789990614354-gfk79x",
-        "appId": "2101798739689168897",
-        "region": "cn",
-        "name": "qwen image 2.1图片编辑",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/1cfb17b182380c74a4aa66b7b29cac83/2026-09-20/c60064df2a46bfda62eea9e073c001e8.png?imageMogr2/format/jpg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "470:image",
-            "name": "上传图片",
-            "label": "上传图片",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "d3e9468396360f7b7dc8add74228e56b711efa13ea0b6d122180edef008df088.webp",
-            "nodeId": "470",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "498:text",
-            "name": "编辑内容",
-            "label": "编辑内容",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "变为一张短剧海报，吸引人的，短剧名《爱的诺言》",
-            "nodeId": "498",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "499:text",
-            "name": "负面提示词",
-            "label": "负面提示词",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "低画质，角色双胞胎，残缺肢体，文字乱码",
-            "nodeId": "499",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1789990614354,
-        "updatedAt": 1789990614354
-      },
-      {
-        "id": "app-1789820919729-n02eyw",
-        "appId": "2074321264344395778",
-        "region": "cn",
-        "name": "半梦叠影：Krea 2 的幻觉艺术",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/fcc4dc84180788dce3575c538ca856e2/2026-07-07/7a024e727a493ed8d2a85feb729e443d.gif?imageMogr2/format/webp/ignore-error/1",
-        "inputs": [
-          {
-            "key": "154:text",
-            "name": "文本描述",
-            "label": "文本描述",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "欧洲老人戴着帽子和欧洲街道上.",
-            "nodeId": "154",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "257:select",
-            "name": "风格切换",
-            "label": "风格切换",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "2",
-            "options": [
-              {
-                "value": "2",
-                "label": "黑白系"
-              },
-              {
-                "value": "1",
-                "label": "彩色系"
-              }
-            ],
-            "nodeId": "257",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"黑白系\",\"fastIndex\":2.0,\"descriptionEn\":\"Black and white系\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"彩色系\",\"fastIndex\":1.0,\"descriptionEn\":\"Color series\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "252:select",
-            "name": "版式切换",
-            "label": "版式切换",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1",
-            "options": [
-              {
-                "value": "2",
-                "label": "横版"
-              },
-              {
-                "value": "1",
-                "label": "竖版"
-              }
-            ],
-            "nodeId": "252",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"横版\",\"fastIndex\":2.0,\"descriptionEn\":\"Horizontal version\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"竖版\",\"fastIndex\":1.0,\"descriptionEn\":\"Vertical version\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1789820919729,
-        "updatedAt": 1789820919729
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1789743234758-nk42m2",
@@ -3976,129 +3641,7 @@
           }
         ],
         "createdAt": 1789743234758,
-        "updatedAt": 1789743234758
-      },
-      {
-        "id": "app-1789284858698-peo4nu",
-        "appId": "2097526345000644609",
-        "region": "cn",
-        "name": "DLSS5图像放大增强体验",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/655e700acd9b4215b4e257c0d6be6813/2026-09-09/0c80c9ca8bbf3cf2051ac0186836eade.jpg?imageMogr2/format/jpeg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "2:image",
-            "name": "输入原始图片",
-            "label": "输入原始图片",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "ae0037edde6921f6fb0aae63cf9fdf75c7be7f798b08a8eac60872274d68b16b.png",
-            "nodeId": "2",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "7:upscaling_mode",
-            "name": "选择增强模式",
-            "label": "选择增强模式",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1.724x (Balanced)",
-            "options": [
-              {
-                "value": "1x (DLAA / native)",
-                "label": "1x (DLAA / native)"
-              },
-              {
-                "value": "1.5x (Quality)",
-                "label": "1.5x (Quality)"
-              },
-              {
-                "value": "1.724x (Balanced)",
-                "label": "1.724x (Balanced)"
-              },
-              {
-                "value": "2x (Performance)",
-                "label": "2x (Performance)"
-              },
-              {
-                "value": "3x (Ultra Performance)",
-                "label": "3x (Ultra Performance)"
-              }
-            ],
-            "nodeId": "7",
-            "fieldName": "upscaling_mode",
-            "fieldType": "LIST",
-            "fieldData": "[[\"1x (DLAA / native)\", \"1.5x (Quality)\", \"1.724x (Balanced)\", \"2x (Performance)\", \"3x (Ultra Performance)\"], {\"default\": \"1x (DLAA / native)\", \"tooltip\": \"1x enhances at native size; other modes upscale with the DLSS carrier (feature 1) before the neural pass (feature 18). Fixed NVIDIA factors only.\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "7:style",
-            "name": "选择风格",
-            "label": "选择风格",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "default",
-            "options": [
-              {
-                "value": "default",
-                "label": "default"
-              },
-              {
-                "value": "natural",
-                "label": "natural"
-              },
-              {
-                "value": "cinematic",
-                "label": "cinematic"
-              }
-            ],
-            "nodeId": "7",
-            "fieldName": "style",
-            "fieldType": "LIST",
-            "fieldData": "[[\"default\", \"natural\", \"cinematic\"], {\"default\": \"default\", \"tooltip\": \"Neural rendering style. Natural stays closer to the source; cinematic pushes contrast.\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "7:motion",
-            "name": "选择动态",
-            "label": "选择动态",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "auto",
-            "options": [
-              {
-                "value": "auto",
-                "label": "auto"
-              },
-              {
-                "value": "optical_flow",
-                "label": "optical_flow"
-              },
-              {
-                "value": "none",
-                "label": "none"
-              }
-            ],
-            "nodeId": "7",
-            "fieldName": "motion",
-            "fieldType": "LIST",
-            "fieldData": "[[\"auto\", \"optical_flow\", \"none\"], {\"default\": \"auto\", \"tooltip\": \"Motion vectors for temporal accumulation. auto = optical flow when OpenCV is available, else zero motion; none = zero motion.\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1789284858699,
-        "updatedAt": 1789284858699
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1783843302114-j4owc0",
@@ -4155,7 +3698,7 @@
           }
         ],
         "createdAt": 1783843302114,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1783136675477-754lgg",
@@ -4212,152 +3755,7 @@
           }
         ],
         "createdAt": 1783136675477,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1781064320464-q0v7e4",
-        "appId": "1993329676842106882",
-        "region": "cn",
-        "name": "Qwen文生图-写实3D 时尚风格",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/8ec74153b07d45eb5c1df30f268c52ed/2025-11-26/9f03667d38193699766b2b8362408993.png?imageMogr2/format/jpg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "889:batch_size",
-            "name": "出图张数",
-            "label": "出图张数",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1",
-            "nodeId": "889",
-            "fieldName": "batch_size",
-            "fieldType": "INT",
-            "fieldData": "[\"INT\", {\"max\": 4096, \"min\": 1, \"default\": 1, \"tooltip\": \"The number of latent images in the batch.\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "887:select",
-            "name": "设置比例",
-            "label": "设置比例",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "6",
-            "options": [
-              {
-                "value": "7",
-                "label": "3:2"
-              },
-              {
-                "value": "6",
-                "label": "2:3"
-              },
-              {
-                "value": "5",
-                "label": "16:9"
-              },
-              {
-                "value": "4",
-                "label": "9:16"
-              },
-              {
-                "value": "3",
-                "label": "4:3"
-              },
-              {
-                "value": "2",
-                "label": "3:4"
-              },
-              {
-                "value": "1",
-                "label": "1:1"
-              }
-            ],
-            "nodeId": "887",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input7\",\"index\":7.0,\"description\":\"3:2\",\"fastIndex\":7.0,\"descriptionEn\":\"3:2\"},{\"name\":\"input6\",\"index\":6.0,\"description\":\"2:3\",\"fastIndex\":6.0,\"descriptionEn\":\"2:3\"},{\"name\":\"input5\",\"index\":5.0,\"description\":\"16:9\",\"fastIndex\":5.0,\"descriptionEn\":\"16:9\"},{\"name\":\"input4\",\"index\":4.0,\"description\":\"9:16\",\"fastIndex\":4.0,\"descriptionEn\":\"9:16\"},{\"name\":\"input3\",\"index\":3.0,\"description\":\"4:3\",\"fastIndex\":3.0,\"descriptionEn\":\"4:3\"},{\"name\":\"input2\",\"index\":2.0,\"description\":\"3:4\",\"fastIndex\":2.0,\"descriptionEn\":\"3:4\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"1:1\",\"fastIndex\":1.0,\"descriptionEn\":\"1:1\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "1017:select",
-            "name": "服装类型切换",
-            "label": "服装类型切换",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "2",
-            "options": [
-              {
-                "value": "4",
-                "label": "礼服男"
-              },
-              {
-                "value": "3",
-                "label": "常服男"
-              },
-              {
-                "value": "2",
-                "label": "礼服女"
-              },
-              {
-                "value": "1",
-                "label": "常服女"
-              }
-            ],
-            "nodeId": "1017",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input4\",\"index\":4.0,\"description\":\"礼服男\",\"fastIndex\":4.0,\"descriptionEn\":\"Dress man\"},{\"name\":\"input3\",\"index\":3.0,\"description\":\"常服男\",\"fastIndex\":3.0,\"descriptionEn\":\"Regular clothing for men\"},{\"name\":\"input2\",\"index\":2.0,\"description\":\"礼服女\",\"fastIndex\":2.0,\"descriptionEn\":\"Dress woman\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"常服女\",\"fastIndex\":1.0,\"descriptionEn\":\"Regular women\\u0027s服装\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "1005:select",
-            "name": "文本输入方式",
-            "label": "文本输入方式",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1",
-            "options": [
-              {
-                "value": "2",
-                "label": "手写文本"
-              },
-              {
-                "value": "1",
-                "label": "扩写文本"
-              }
-            ],
-            "nodeId": "1005",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"手写文本\",\"fastIndex\":2.0,\"descriptionEn\":\"Handwritten text\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"扩写文本\",\"fastIndex\":1.0,\"descriptionEn\":\"Expand text\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "956:text",
-            "name": "输入文本",
-            "label": "输入文本",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "一个时尚人物形象,角色立绘，冬季时装主题，极繁主义，极致表现力，大师级视角，浪漫感，细节完美，大师杰作。",
-            "nodeId": "956",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1781064320464,
-        "updatedAt": 1781064320464
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570072264-6u7i12",
@@ -4399,7 +3797,7 @@
           }
         ],
         "createdAt": 1775570072265,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1780571587430-j014dt",
@@ -4456,7 +3854,7 @@
           }
         ],
         "createdAt": 1780571587430,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570084191-268sv6",
@@ -4498,94 +3896,7 @@
           }
         ],
         "createdAt": 1775570084191,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1776135003609-e3ts3f",
-        "appId": "2043884236624629761",
-        "region": "cn",
-        "name": "F2K-放大/编辑（锁一致性&颜色）",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-14/fa9fa46d9e8e440e0369548d09a74cc7.jpg?imageMogr2/format/jpeg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "51:image",
-            "name": "主图",
-            "label": "主图",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-            "nodeId": "51",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "50:image",
-            "name": "参考图",
-            "label": "参考图",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-            "nodeId": "50",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "44:Input",
-            "name": "是否开启色彩匹配（1开启，2关闭，编辑时请关闭）",
-            "label": "是否开启色彩匹配（1开启，2关闭，编辑时请关闭）",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1",
-            "nodeId": "44",
-            "fieldName": "Input",
-            "fieldType": "INT",
-            "fieldData": "[\"INT\", {\"max\": 2, \"min\": 1, \"default\": 1}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "27:value",
-            "name": "长边分辨率（可不修改，尽量匹配图像，过大易爆显存）",
-            "label": "长边分辨率（可不修改，尽量匹配图像，过大易爆显存）",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1600",
-            "nodeId": "27",
-            "fieldName": "value",
-            "fieldType": "INT",
-            "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "21:text",
-            "name": "提示词（默认高清放大，可编辑）",
-            "label": "提示词（默认高清放大，可编辑）",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "Transform the image to realistic photograph. add realistic details to the corrupted image. restore high frequence details from the corrupted image. \n超高清，极致细节，高对比度，清晰的光影细节。 ",
-            "nodeId": "21",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"tooltip\": \"The text to be encoded.\", \"multiline\": true, \"dynamicPrompts\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1776135003609,
-        "updatedAt": 1781931510747
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570058822-j8bigy",
@@ -4672,139 +3983,7 @@
           }
         ],
         "createdAt": 1775570058822,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1780900947737-mbbxp3",
-        "appId": "2029514173234814978",
-        "region": "cn",
-        "name": "扣除一切",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-03-05/6117b68de49e1610ff8b606be16f454e.jpg?imageMogr2/format/jpeg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "12:image",
-            "name": "加载图片",
-            "label": "加载图片",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "2d5b69822dfd5257c283fb9d49d47784f0d82f26f1976f6c1f6930fae03b8024.jpeg",
-            "nodeId": "12",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "29:text",
-            "name": "输入要定向扣除的物体",
-            "label": "输入要定向扣除的物体",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "人物主体",
-            "nodeId": "29",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1780900947737,
-        "updatedAt": 1780900947737
-      },
-      {
-        "id": "app-1778595211851-uftnbr",
-        "appId": "1964753754237095937",
-        "region": "cn",
-        "name": "Qwen-edit 万物重打光",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/f0daa4c16c39ba8432b42e202e867c51/2025-09-09/d714162810fa96eb41b53e577c07424f.gif?imageMogr2/format/webp/ignore-error/1",
-        "inputs": [
-          {
-            "key": "19:image",
-            "name": "图片替换",
-            "label": "图片替换",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "51b8c742a34a6bde76d6c25cec59a711198e4ebc8918b5b18beb08f3c6f99a78.jpg",
-            "nodeId": "19",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "25:text",
-            "name": "提示词输入（修改最后两个字即可）",
-            "label": "提示词输入（修改最后两个字即可）",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "将主光源移动到角色的左侧",
-            "nodeId": "25",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "18:weight_dtype",
-            "name": "效果不好可以改",
-            "label": "效果不好可以改",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "fp8_e4m3fn",
-            "options": [
-              {
-                "value": "default",
-                "label": "效果最好但光影对比最强"
-              },
-              {
-                "value": "fp8_e4m3fn",
-                "label": "默认效果比较稳定"
-              },
-              {
-                "value": "fp8_e4m3fn_fast",
-                "label": "乱码不要用"
-              },
-              {
-                "value": "fp8_e5m2",
-                "label": "保留原有光影再加光"
-              }
-            ],
-            "nodeId": "18",
-            "fieldName": "weight_dtype",
-            "fieldType": "LIST",
-            "fieldData": "[{\"name\":\"default\",\"index\":\"default\",\"description\":\"效果最好但光影对比最强\",\"fastIndex\":1.0,\"descriptionEn\":\"The best effect but the strongest light and shadow contrast\"},{\"name\":\"fp8_e4m3fn\",\"index\":\"fp8_e4m3fn\",\"description\":\"默认效果比较稳定\",\"fastIndex\":2.0,\"descriptionEn\":\"Default effect is relatively stable\"},{\"name\":\"fp8_e4m3fn_fast\",\"index\":\"fp8_e4m3fn_fast\",\"description\":\"乱码不要用\",\"fastIndex\":3.0,\"descriptionEn\":\"Don\\u0027t use garbled text\"},{\"name\":\"fp8_e5m2\",\"index\":\"fp8_e5m2\",\"description\":\"保留原有光影再加光\",\"fastIndex\":4.0,\"descriptionEn\":\"Retain the original light and shadow and add light\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "15:strength_model",
-            "name": "LORA模型强度",
-            "label": "LORA模型强度",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1.0000000000000002",
-            "nodeId": "15",
-            "fieldName": "strength_model",
-            "fieldType": "FLOAT",
-            "fieldData": "[\"FLOAT\", {\"max\": 100, \"min\": -100, \"step\": 0.01, \"default\": 1}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1778595211851,
-        "updatedAt": 1780455234697
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1777556180228-wzgucm",
@@ -4861,7 +4040,7 @@
           }
         ],
         "createdAt": 1777556180229,
-        "updatedAt": 1780455234697
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570025123-rfk2fu",
@@ -4978,7 +4157,7 @@
           }
         ],
         "createdAt": 1775570025123,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775707933884-h1z80q",
@@ -5020,7 +4199,7 @@
           }
         ],
         "createdAt": 1775707933884,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570094437-8r4ajo",
@@ -5092,7 +4271,7 @@
           }
         ],
         "createdAt": 1775570094438,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570101864-lnu44j",
@@ -5149,7 +4328,7 @@
           }
         ],
         "createdAt": 1775570101864,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775570015520-wxjr8h",
@@ -5236,7 +4415,7 @@
           }
         ],
         "createdAt": 1775570015520,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1775832765499-z6rr3d",
@@ -5353,227 +4532,7 @@
           }
         ],
         "createdAt": 1775832765499,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1783352135811-xelz4x",
-        "appId": "2042209777182314497",
-        "region": "cn",
-        "name": "超清放大",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-04-09/33a4dbd578363073f50eb98edb324bc9.jpg?imageMogr2/format/jpg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "68:image",
-            "name": "输入图像（请适度调大画布）",
-            "label": "输入图像（请适度调大画布）",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "6cbc72b2b371d95623c248a0e17bb2fd2c5c8d15dca1b083df0eaa4d826f2319.jpeg",
-            "nodeId": "68",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "70:text",
-            "name": "放大倍数（2-8，默认4）",
-            "label": "放大倍数（2-8，默认4）",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "4",
-            "nodeId": "70",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1783352135812,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1786547019098-brri7l",
-        "appId": "2062183437301272578",
-        "region": "cn",
-        "name": "全能图片2.0",
-        "description": "",
-        "previewImage": "https://rh-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-06-03/44288ec12c224118c9c195ffe28d85a2.jpg?imageMogr2/format/jpeg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "2:image",
-            "name": "主图",
-            "label": "主图",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-            "nodeId": "2",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "16:image",
-            "name": "参考图1",
-            "label": "参考图1",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-            "nodeId": "16",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "13:image",
-            "name": "参考图2",
-            "label": "参考图2",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-            "nodeId": "13",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "1:aspectRatio",
-            "name": "比例",
-            "label": "比例",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "auto",
-            "options": [
-              {
-                "value": "auto",
-                "label": "auto"
-              },
-              {
-                "value": "1:1",
-                "label": "1:1"
-              },
-              {
-                "value": "1:4",
-                "label": "1:4"
-              },
-              {
-                "value": "1:8",
-                "label": "1:8"
-              },
-              {
-                "value": "2:3",
-                "label": "2:3"
-              },
-              {
-                "value": "3:2",
-                "label": "3:2"
-              },
-              {
-                "value": "3:4",
-                "label": "3:4"
-              },
-              {
-                "value": "4:1",
-                "label": "4:1"
-              },
-              {
-                "value": "4:3",
-                "label": "4:3"
-              },
-              {
-                "value": "4:5",
-                "label": "4:5"
-              },
-              {
-                "value": "5:4",
-                "label": "5:4"
-              },
-              {
-                "value": "8:1",
-                "label": "8:1"
-              },
-              {
-                "value": "9:16",
-                "label": "9:16"
-              },
-              {
-                "value": "16:9",
-                "label": "16:9"
-              },
-              {
-                "value": "21:9",
-                "label": "21:9"
-              }
-            ],
-            "nodeId": "1",
-            "fieldName": "aspectRatio",
-            "fieldType": "LIST",
-            "fieldData": "[[\"auto\", \"1:1\", \"1:4\", \"1:8\", \"2:3\", \"3:2\", \"3:4\", \"4:1\", \"4:3\", \"4:5\", \"5:4\", \"8:1\", \"9:16\", \"16:9\", \"21:9\"], {\"default\": \"4:3\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "1:resolution",
-            "name": "分辨率",
-            "label": "分辨率",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "2k",
-            "options": [
-              {
-                "value": "1k",
-                "label": "1k"
-              },
-              {
-                "value": "2k",
-                "label": "2k"
-              },
-              {
-                "value": "4k",
-                "label": "4k"
-              }
-            ],
-            "nodeId": "1",
-            "fieldName": "resolution",
-            "fieldType": "LIST",
-            "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"2k\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "9:text",
-            "name": "提示词",
-            "label": "提示词",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "去除光斑",
-            "nodeId": "9",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1786547019098,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1780499860177-arvstt",
@@ -5739,7 +4698,7 @@
           }
         ],
         "createdAt": 1780499860177,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1780456626194-jinzbl",
@@ -5857,36 +4816,354 @@
           }
         ],
         "createdAt": 1780456626194,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       }
     ],
     "global": [
       {
-        "id": "app-1791184294638-qf6w5f",
-        "appId": "2093271383022518273",
+        "id": "app-1792677466949-1yw8po",
+        "appId": "2108933070804385794",
         "region": "global",
-        "name": "酸奶溶图",
+        "name": "源神极速版",
         "description": "",
-        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/ff774db412c52a1cfdd0166acfc0d48a/2026-08-28/c2735b4898f853f92382f0f7a9635bf9.png?imageMogr2/format/jpg/ignore-error/1",
+        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-10/1988c247bbdcb3003e011e3702d79b78.jpg",
         "inputs": [
           {
-            "key": "77:image",
-            "name": "image",
-            "label": "image",
+            "key": "470:image",
+            "name": "输入图片",
+            "label": "输入图片",
             "type": "image",
             "required": false,
             "requiredExplicit": false,
-            "default": "0b2eccf63aab0e7a535812b71907165f88b1f8fb1c8a31e9da35be8fc97d8f00.png",
-            "nodeId": "77",
+            "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+            "nodeId": "470",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "502:image",
+            "name": "参考图",
+            "label": "参考图",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+            "nodeId": "502",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "498:text",
+            "name": "提示词",
+            "label": "提示词",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "头发变成粉色",
+            "nodeId": "498",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1792677466949,
+        "updatedAt": 1792677466949
+      },
+      {
+        "id": "app-1792677488482-jwlbw7",
+        "appId": "2108926447292624897",
+        "region": "global",
+        "name": "源神4k自由版",
+        "description": "",
+        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/1482ea99b9616d906d9cafe63f266b01/2026-10-10/1c7914eb2f18681155577fe77beea350.jpg?imageMogr2/format/jpeg/ignore-error/1",
+        "inputs": [
+          {
+            "key": "470:image",
+            "name": "输入图",
+            "label": "输入图",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+            "nodeId": "470",
             "fieldName": "image",
             "fieldType": "IMAGE",
             "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
             "labelSource": "raw",
             "labelConfidence": 1
+          },
+          {
+            "key": "502:image",
+            "name": "参考图",
+            "label": "参考图",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "eff56ebf4c1ad4127fffa4fbc0edd2e3aa5a885826a3353c04d4ff3ee15ecdd3.png",
+            "nodeId": "502",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "498:text",
+            "name": "提示词",
+            "label": "提示词",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "换成泳装，胸部变大",
+            "nodeId": "498",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
           }
         ],
-        "createdAt": 1791184294638,
-        "updatedAt": 1791184294638
+        "createdAt": 1792677488482,
+        "updatedAt": 1792677488482
+      },
+      {
+        "id": "app-1792677438895-a7e2hs",
+        "appId": "2111318790768586754",
+        "region": "global",
+        "name": "Qwen2.1厚涂plus",
+        "description": "",
+        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-17/eb1dbcc018956e69f244ec5e29ba396a.jpg",
+        "inputs": [
+          {
+            "key": "470:image",
+            "name": "输入图像（尽量只框头，尽量正方形）",
+            "label": "输入图像（尽量只框头，尽量正方形）",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "becd9c611c665191030449ff9e01d72bdbae54363838add5c0c256129340bf95.png",
+            "nodeId": "470",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "526:value",
+            "name": "细节（8-28）",
+            "label": "细节（8-28）",
+            "type": "number",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "20",
+            "nodeId": "526",
+            "fieldName": "value",
+            "fieldType": "INT",
+            "fieldData": "[\"INT\", {\"default\": 0}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "498:text",
+            "name": "提示词（可按需调整）",
+            "label": "提示词（可按需调整）",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "cosfaceglow，一张高频细节丰富的3D质感COS妆面人像, 脸部近景, 保持原图人物的五官比例、发色、发型、瞳色、妆容特征、服装配饰与动作姿态完全不变，将画面精修为写实3D厚涂CG质感：大幅增加强化头发与眉眼的极致毛流感，刻画出根根分明的高光毛流感发丝与簇状太阳花睫毛；在发丝、眼周与面颊增加亮晶晶的细碎珠光闪粉；在鼻尖、鼻梁、眼角卧蚕与双唇加上饱满的水光感扩散的高光点，脸颊增加极致哑光皮肤毛孔颗粒汗毛细节与珠光感，增强面部3D立体骨相明暗光影；清澈通透玻璃质感瞳孔, 明亮眼神光。尽量保持原图色调和明度一致。\n",
+            "nodeId": "498",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1792677438895,
+        "updatedAt": 1792677438895
+      },
+      {
+        "id": "app-1792677413992-tzupx8",
+        "appId": "2112922860376395777",
+        "region": "global",
+        "name": "全能图片2.1",
+        "description": "",
+        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-10-21/318557b3fea6be6930392fbd6a67c6ab.png",
+        "inputs": [
+          {
+            "key": "2:image",
+            "name": "图一",
+            "label": "图一",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
+            "nodeId": "2",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "16:image",
+            "name": "图二",
+            "label": "图二",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+            "nodeId": "16",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "13:image",
+            "name": "图三",
+            "label": "图三",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
+            "nodeId": "13",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "17:aspectRatio",
+            "name": "比例",
+            "label": "比例",
+            "type": "select",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "2:3",
+            "options": [
+              {
+                "value": "1:1",
+                "label": "1:1"
+              },
+              {
+                "value": "16:9",
+                "label": "16:9"
+              },
+              {
+                "value": "9:16",
+                "label": "9:16"
+              },
+              {
+                "value": "4:3",
+                "label": "4:3"
+              },
+              {
+                "value": "3:4",
+                "label": "3:4"
+              },
+              {
+                "value": "3:2",
+                "label": "3:2"
+              },
+              {
+                "value": "2:3",
+                "label": "2:3"
+              },
+              {
+                "value": "5:4",
+                "label": "5:4"
+              },
+              {
+                "value": "4:5",
+                "label": "4:5"
+              },
+              {
+                "value": "21:9",
+                "label": "21:9"
+              },
+              {
+                "value": "1:4",
+                "label": "1:4"
+              },
+              {
+                "value": "4:1",
+                "label": "4:1"
+              },
+              {
+                "value": "1:8",
+                "label": "1:8"
+              },
+              {
+                "value": "8:1",
+                "label": "8:1"
+              }
+            ],
+            "nodeId": "17",
+            "fieldName": "aspectRatio",
+            "fieldType": "LIST",
+            "fieldData": "[[\"1:1\", \"16:9\", \"9:16\", \"4:3\", \"3:4\", \"3:2\", \"2:3\", \"5:4\", \"4:5\", \"21:9\", \"1:4\", \"4:1\", \"1:8\", \"8:1\"], {\"default\": \"1:1\"}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "17:resolution",
+            "name": "分辨率",
+            "label": "分辨率",
+            "type": "select",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "2k",
+            "options": [
+              {
+                "value": "1k",
+                "label": "1k"
+              },
+              {
+                "value": "2k",
+                "label": "2k"
+              },
+              {
+                "value": "4k",
+                "label": "4k"
+              }
+            ],
+            "nodeId": "17",
+            "fieldName": "resolution",
+            "fieldType": "LIST",
+            "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"1k\"}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "9:text",
+            "name": "提示词",
+            "label": "提示词",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "去除光斑",
+            "nodeId": "9",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1792677413992,
+        "updatedAt": 1792677413992
       },
       {
         "id": "app-1791181443342-5lcfde",
@@ -5943,7 +5220,7 @@
           }
         ],
         "createdAt": 1791181443342,
-        "updatedAt": 1791181455345
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1791177724053-vijgn3",
@@ -6026,7 +5303,7 @@
           }
         ],
         "createdAt": 1791177724053,
-        "updatedAt": 1791177724053
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1790164648226-dofs0g",
@@ -6083,7 +5360,7 @@
           }
         ],
         "createdAt": 1790164648226,
-        "updatedAt": 1790164648226
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1790000059971-1av78n",
@@ -6140,7 +5417,7 @@
           }
         ],
         "createdAt": 1790000059971,
-        "updatedAt": 1790000059971
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784218638107-ffc2kf",
@@ -6182,7 +5459,7 @@
           }
         ],
         "createdAt": 1784218638107,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784177623637-u7dd7g",
@@ -6209,7 +5486,7 @@
           }
         ],
         "createdAt": 1784177623638,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784177599389-uw770q",
@@ -6266,7 +5543,7 @@
           }
         ],
         "createdAt": 1784177599389,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784355420456-oq2xnc",
@@ -6323,7 +5600,7 @@
           }
         ],
         "createdAt": 1784355420457,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784177543572-sgie43",
@@ -6365,7 +5642,7 @@
           }
         ],
         "createdAt": 1784177543572,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784177524248-0b4o24",
@@ -6422,7 +5699,7 @@
           }
         ],
         "createdAt": 1784177524248,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784177358797-mvygbl",
@@ -6588,185 +5865,7 @@
           }
         ],
         "createdAt": 1784177358797,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1784177337864-c4m2f0",
-        "appId": "2077612578054090753",
-        "region": "global",
-        "name": "全能图片2.0",
-        "description": "",
-        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/852f3bd48f7afd045e451ed587b10512/2026-06-03/44288ec12c224118c9c195ffe28d85a2.jpg",
-        "inputs": [
-          {
-            "key": "2:image",
-            "name": "主图",
-            "label": "主图",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "d077b91d0595f6c0ba1c27d9fe7f1b4291181cf075f8a42d38233d42d9bf6cb9.png",
-            "nodeId": "2",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "16:image",
-            "name": "参考图1",
-            "label": "参考图1",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-            "nodeId": "16",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "13:image",
-            "name": "参考图2",
-            "label": "参考图2",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "faeea88574ed40fed12955d56d7e7fb671ca2c9b5da3af516211ca44677b8b9d.jpg",
-            "nodeId": "13",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"00.jpg\", \"01.jpg\", \"02.jpg\", \"03.jpg\", \"04.jpg\", \"05.jpg\", \"06.jpg\", \"07.jpg\", \"08.jpg\", \"09.jpg\", \"10.jpg\", \"11.jpg\", \"12.jpg\", \"13.jpg\", \"14.jpg\", \"15.jpg\", \"16.jpg\", \"17.jpg\", \"18.jpg\", \"19.jpg\", \"20.jpg\", \"21.jpg\", \"22.jpg\", \"23.jpg\", \"24.jpg\", \"25.jpg\", \"26.jpg\", \"27.jpg\", \"28.jpg\", \"29.jpg\", \"30.jpg\", \"31.jpg\", \"32.jpg\", \"33.jpg\", \"34.jpg\", \"35.jpg\", \"36.jpg\", \"37.jpg\", \"38.jpg\", \"39.jpg\", \"40.jpg\", \"41.jpg\", \"42.jpg\", \"43.jpg\", \"44.jpg\", \"45.jpg\", \"46.jpg\", \"47.jpg\", \"48.jpg\", \"49.jpg\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "1:aspectRatio",
-            "name": "比例",
-            "label": "比例",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "auto",
-            "options": [
-              {
-                "value": "auto",
-                "label": "auto"
-              },
-              {
-                "value": "1:1",
-                "label": "1:1"
-              },
-              {
-                "value": "1:4",
-                "label": "1:4"
-              },
-              {
-                "value": "1:8",
-                "label": "1:8"
-              },
-              {
-                "value": "2:3",
-                "label": "2:3"
-              },
-              {
-                "value": "3:2",
-                "label": "3:2"
-              },
-              {
-                "value": "3:4",
-                "label": "3:4"
-              },
-              {
-                "value": "4:1",
-                "label": "4:1"
-              },
-              {
-                "value": "4:3",
-                "label": "4:3"
-              },
-              {
-                "value": "4:5",
-                "label": "4:5"
-              },
-              {
-                "value": "5:4",
-                "label": "5:4"
-              },
-              {
-                "value": "8:1",
-                "label": "8:1"
-              },
-              {
-                "value": "9:16",
-                "label": "9:16"
-              },
-              {
-                "value": "16:9",
-                "label": "16:9"
-              },
-              {
-                "value": "21:9",
-                "label": "21:9"
-              }
-            ],
-            "nodeId": "1",
-            "fieldName": "aspectRatio",
-            "fieldType": "LIST",
-            "fieldData": "[[\"auto\", \"1:1\", \"1:4\", \"1:8\", \"2:3\", \"3:2\", \"3:4\", \"4:1\", \"4:3\", \"4:5\", \"5:4\", \"8:1\", \"9:16\", \"16:9\", \"21:9\"], {\"default\": \"4:3\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "1:resolution",
-            "name": "分辨率",
-            "label": "分辨率",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "2k",
-            "options": [
-              {
-                "value": "1k",
-                "label": "1k"
-              },
-              {
-                "value": "2k",
-                "label": "2k"
-              },
-              {
-                "value": "4k",
-                "label": "4k"
-              }
-            ],
-            "nodeId": "1",
-            "fieldName": "resolution",
-            "fieldType": "LIST",
-            "fieldData": "[[\"1k\", \"2k\", \"4k\"], {\"default\": \"2k\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "9:text",
-            "name": "提示词",
-            "label": "提示词",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "去除光斑",
-            "nodeId": "9",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1784177337864,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784119080041-c15tey",
@@ -6808,7 +5907,7 @@
           }
         ],
         "createdAt": 1784119080041,
-        "updatedAt": 1784119080041
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784112231777-5hlisu",
@@ -6865,258 +5964,7 @@
           }
         ],
         "createdAt": 1784112231777,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1786791268858-e4p74y",
-        "appId": "2042574131031445506",
-        "region": "global",
-        "name": "惠绘_Klein热机脸_橙子（",
-        "description": "",
-        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-04-10/6a981b30704a472cb31ba0003c07b2e1.png?imageMogr2/format/jpg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "164:image",
-            "name": "1加载主图",
-            "label": "1加载主图",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "pasted/16b1fd40b98f5ec18124adb4ea7508227dc31cd93f4db79fdd9524a15c760d40.png",
-            "nodeId": "164",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "186:value",
-            "name": "#2.1热机脸lora（1.5~2）",
-            "label": "#2.1热机脸lora（1.5~2）",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1.5000000000000002",
-            "nodeId": "186",
-            "fieldName": "value",
-            "fieldType": "FLOAT",
-            "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "608:value",
-            "name": "#2.2一致性lora（0~0.5）",
-            "label": "#2.2一致性lora（0~0.5）",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "0",
-            "nodeId": "608",
-            "fieldName": "value",
-            "fieldType": "FLOAT",
-            "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "199:value",
-            "name": "#3.1提示词（默认起手）",
-            "label": "#3.1提示词（默认起手）",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "漂亮可爱的人脸",
-            "nodeId": "199",
-            "fieldName": "value",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "163:value",
-            "name": "#3.2瞳孔颜色（xx颜色的瞳孔）",
-            "label": "#3.2瞳孔颜色（xx颜色的瞳孔）",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "深色的墨绿黑色瞳孔",
-            "nodeId": "163",
-            "fieldName": "value",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "175:value",
-            "name": "4.1批次数量",
-            "label": "4.1批次数量",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1",
-            "nodeId": "175",
-            "fieldName": "value",
-            "fieldType": "INT",
-            "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "616:value",
-            "name": "y.操作说明",
-            "label": "y.操作说明",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "✒使用步骤：\n①框选区域（人脸大致占四分之一面积）；\n②设置热机脸lora权重，默认0.8；\n③输入瞳孔颜色，例如【墨绿色瞳孔】；\n④运行；\n⭐默认起手：\n简单磨皮：漂亮可爱的人脸。\n极致美白热机脸：尖下巴，V型脸，小脸，鹅蛋脸，轮廓流畅，五官精致，面部留白少，中庭短，人偶感面部，白皙肌肤，哑光皮肤，大眼睛，明显卧蚕。",
-            "nodeId": "616",
-            "fieldName": "value",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"multiline\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1786791268858,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1784892348592-aumot2",
-        "appId": "2077343010397323266",
-        "region": "global",
-        "name": "Zimage灵动飘发",
-        "description": "",
-        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/1482ea99b9616d906d9cafe63f266b01/2026-07-15/6d1f3f0a252b3e8b5cc58adc67c5458f.jpg?imageMogr2/format/jpeg/ignore-error/1",
-        "inputs": [
-          {
-            "key": "4:image",
-            "name": "输入图像",
-            "label": "输入图像",
-            "type": "image",
-            "required": false,
-            "requiredExplicit": false,
-            "default": "f826b490f8a4aa9418c64d9a338b27cf04720195d8eb53b72e7d9b8b598491d0.png",
-            "nodeId": "4",
-            "fieldName": "image",
-            "fieldType": "IMAGE",
-            "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "10:text",
-            "name": "提示词（一般不需要改）",
-            "label": "提示词（一般不需要改）",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
-            "nodeId": "10",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "14:value",
-            "name": "重绘幅度",
-            "label": "重绘幅度",
-            "type": "number",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "0.5100000000000001",
-            "nodeId": "14",
-            "fieldName": "value",
-            "fieldType": "FLOAT",
-            "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1784892348592,
-        "updatedAt": 1786867671551
-      },
-      {
-        "id": "app-1786507686998-bf7tjf",
-        "appId": "2074321264344395778",
-        "region": "global",
-        "name": "半梦叠影：Krea 2 的幻觉艺术",
-        "description": "",
-        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/fcc4dc84180788dce3575c538ca856e2/2026-07-07/7a024e727a493ed8d2a85feb729e443d.gif?imageMogr2/format/webp/ignore-error/1",
-        "inputs": [
-          {
-            "key": "154:text",
-            "name": "文本描述",
-            "label": "文本描述",
-            "type": "text",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "欧洲老人戴着帽子和欧洲街道上.",
-            "nodeId": "154",
-            "fieldName": "text",
-            "fieldType": "STRING",
-            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "257:select",
-            "name": "风格切换",
-            "label": "风格切换",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "2",
-            "options": [
-              {
-                "value": "2",
-                "label": "黑白系"
-              },
-              {
-                "value": "1",
-                "label": "彩色系"
-              }
-            ],
-            "nodeId": "257",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"黑白系\",\"fastIndex\":2.0,\"descriptionEn\":\"Black and white系\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"彩色系\",\"fastIndex\":1.0,\"descriptionEn\":\"Color series\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          },
-          {
-            "key": "252:select",
-            "name": "版式切换",
-            "label": "版式切换",
-            "type": "select",
-            "required": true,
-            "requiredExplicit": false,
-            "default": "1",
-            "options": [
-              {
-                "value": "2",
-                "label": "横版"
-              },
-              {
-                "value": "1",
-                "label": "竖版"
-              }
-            ],
-            "nodeId": "252",
-            "fieldName": "select",
-            "fieldType": "SWITCH",
-            "fieldData": "[{\"name\":\"input2\",\"index\":2.0,\"description\":\"横版\",\"fastIndex\":2.0,\"descriptionEn\":\"Horizontal version\"},{\"name\":\"input1\",\"index\":1.0,\"description\":\"竖版\",\"fastIndex\":1.0,\"descriptionEn\":\"Vertical version\"}]",
-            "labelSource": "raw",
-            "labelConfidence": 1
-          }
-        ],
-        "createdAt": 1786507686998,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
       },
       {
         "id": "app-1784364033899-n1i132",
@@ -7233,7 +6081,181 @@
           }
         ],
         "createdAt": 1784364033899,
-        "updatedAt": 1786867671551
+        "updatedAt": 1792676959130
+      },
+      {
+        "id": "app-1786791268858-e4p74y",
+        "appId": "2042574131031445506",
+        "region": "global",
+        "name": "惠绘_Klein热机脸_橙子（",
+        "description": "",
+        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/9cca900009b5f1aca7e8813109ec92cc/2026-04-10/6a981b30704a472cb31ba0003c07b2e1.png?imageMogr2/format/jpg/ignore-error/1",
+        "inputs": [
+          {
+            "key": "164:image",
+            "name": "1加载主图",
+            "label": "1加载主图",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "pasted/16b1fd40b98f5ec18124adb4ea7508227dc31cd93f4db79fdd9524a15c760d40.png",
+            "nodeId": "164",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"example.png\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "186:value",
+            "name": "#2.1热机脸lora（1.5~2）",
+            "label": "#2.1热机脸lora（1.5~2）",
+            "type": "number",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "1.5000000000000002",
+            "nodeId": "186",
+            "fieldName": "value",
+            "fieldType": "FLOAT",
+            "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "608:value",
+            "name": "#2.2一致性lora（0~0.5）",
+            "label": "#2.2一致性lora（0~0.5）",
+            "type": "number",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "0",
+            "nodeId": "608",
+            "fieldName": "value",
+            "fieldType": "FLOAT",
+            "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "199:value",
+            "name": "#3.1提示词（默认起手）",
+            "label": "#3.1提示词（默认起手）",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "漂亮可爱的人脸",
+            "nodeId": "199",
+            "fieldName": "value",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "163:value",
+            "name": "#3.2瞳孔颜色（xx颜色的瞳孔）",
+            "label": "#3.2瞳孔颜色（xx颜色的瞳孔）",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "深色的墨绿黑色瞳孔",
+            "nodeId": "163",
+            "fieldName": "value",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "175:value",
+            "name": "4.1批次数量",
+            "label": "4.1批次数量",
+            "type": "number",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "1",
+            "nodeId": "175",
+            "fieldName": "value",
+            "fieldType": "INT",
+            "fieldData": "[\"INT\", {\"max\": 999999, \"min\": -999999, \"default\": 0}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "616:value",
+            "name": "y.操作说明",
+            "label": "y.操作说明",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "✒使用步骤：\n①框选区域（人脸大致占四分之一面积）；\n②设置热机脸lora权重，默认0.8；\n③输入瞳孔颜色，例如【墨绿色瞳孔】；\n④运行；\n⭐默认起手：\n简单磨皮：漂亮可爱的人脸。\n极致美白热机脸：尖下巴，V型脸，小脸，鹅蛋脸，轮廓流畅，五官精致，面部留白少，中庭短，人偶感面部，白皙肌肤，哑光皮肤，大眼睛，明显卧蚕。",
+            "nodeId": "616",
+            "fieldName": "value",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"multiline\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1786791268858,
+        "updatedAt": 1792676959130
+      },
+      {
+        "id": "app-1784892348592-aumot2",
+        "appId": "2077343010397323266",
+        "region": "global",
+        "name": "Zimage灵动飘发",
+        "description": "",
+        "previewImage": "https://rh-hk-images.xiaoyaoyou.com/1482ea99b9616d906d9cafe63f266b01/2026-07-15/6d1f3f0a252b3e8b5cc58adc67c5458f.jpg?imageMogr2/format/jpeg/ignore-error/1",
+        "inputs": [
+          {
+            "key": "4:image",
+            "name": "输入图像",
+            "label": "输入图像",
+            "type": "image",
+            "required": false,
+            "requiredExplicit": false,
+            "default": "f826b490f8a4aa9418c64d9a338b27cf04720195d8eb53b72e7d9b8b598491d0.png",
+            "nodeId": "4",
+            "fieldName": "image",
+            "fieldType": "IMAGE",
+            "fieldData": "[[\"example.png\", \"None\", \"keep_this_dic\"], {\"image_upload\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "10:text",
+            "name": "提示词（一般不需要改）",
+            "label": "提示词（一般不需要改）",
+            "type": "text",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "灵动飘发，极致的发丝细节，高频纹理，电影感灯光，大师之作，8K分辨率，游戏CG海报风格。",
+            "nodeId": "10",
+            "fieldName": "text",
+            "fieldType": "STRING",
+            "fieldData": "[\"STRING\", {\"default\": \"\", \"multiline\": true, \"dynamicPrompts\": true}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          },
+          {
+            "key": "14:value",
+            "name": "重绘幅度",
+            "label": "重绘幅度",
+            "type": "number",
+            "required": true,
+            "requiredExplicit": false,
+            "default": "0.5100000000000001",
+            "nodeId": "14",
+            "fieldName": "value",
+            "fieldType": "FLOAT",
+            "fieldData": "[\"FLOAT\", {\"max\": 18446744073709551615, \"min\": -1.8446744073709552e19, \"step\": 0.01, \"default\": 0}]",
+            "labelSource": "raw",
+            "labelConfidence": 1
+          }
+        ],
+        "createdAt": 1784892348592,
+        "updatedAt": 1792676959130
       }
     ]
   },
