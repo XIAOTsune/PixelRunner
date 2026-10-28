@@ -6,6 +6,7 @@ import {
   STANDARD_PIXEL_COLOR_SPACE
 } from "./document.js";
 import { ensureDeps } from "./deps.js";
+import { capturePixelsFromTemporaryRgbCopy, getSrgb8Pixels, normalizeFloatComponentToByte } from "./pixel-capture.js";
 import { computeSharedContentReference, estimateTranslationReference } from "../../shared/blend-match-reference.js";
 import {
   applyBlendMatchColorToRgba,
@@ -107,12 +108,12 @@ function getLayerId(layer) {
 
 function isUnsupportedBitsPerChannel(docInfo) {
   const bits = String(docInfo && (docInfo.bitsPerChannel || docInfo.bitsPerChannelLabel) || "").trim().toUpperCase();
-  return bits === "THIRTYTWO" || bits === "32 位" || bits === "32BIT" || bits === "32-BIT" || bits === "32" || bits === "ONE" || bits === "1 位" || bits === "1";
+  return bits === "ONE" || bits === "1 位" || bits === "1";
 }
 
 function buildUnsupportedBitsError(docInfo) {
   const bitsLabel = String(docInfo && docInfo.bitsPerChannelLabel) || "当前位深";
-  return new Error(`对齐与校色支持 8 位和 16 位 RGB 文档，当前文档为 ${bitsLabel}，请切换到 8 位或 16 位后再使用。`);
+  return new Error(`对齐与校色无法处理 ${bitsLabel} 文档；请在 Photoshop 中转换为 8、16 或 32 位后重试。`);
 }
 
 export function getBlendMatchConfig(payload = {}) {
@@ -683,17 +684,7 @@ function extractEncodedBase64(encoded) {
 }
 
 async function getPixelsWithFallback(imaging, options) {
-  const requestOptions = { ...options };
-  if (!requestOptions.colorSpace) requestOptions.colorSpace = STANDARD_PIXEL_COLOR_SPACE;
-  if (!requestOptions.colorProfile) requestOptions.colorProfile = STANDARD_PIXEL_COLOR_PROFILE;
-  try {
-    return await imaging.getPixels(requestOptions);
-  } catch (_) {
-    if (!Object.prototype.hasOwnProperty.call(requestOptions, "componentSize")) throw _;
-    const fallbackOptions = { ...requestOptions };
-    delete fallbackOptions.componentSize;
-    return imaging.getPixels(fallbackOptions);
-  }
+  return getSrgb8Pixels(imaging, options, (requested) => capturePixelsFromTemporaryRgbCopy(imaging, requested));
 }
 
 async function getImageDataBytes(imageData) {
@@ -761,10 +752,7 @@ function getImageDataValueReader(imageData, data) {
     source = componentSize > 8 ? new Uint16Array(data) : new Uint8Array(data);
   }
   if (source instanceof Float32Array || source instanceof Float64Array) {
-    return (index) => {
-      const value = Number(source[index]) || 0;
-      return Math.max(0, Math.min(255, Math.round((value <= 1 ? value * 255 : value))));
-    };
+    return (index) => normalizeFloatComponentToByte(source[index]);
   }
   if (componentSize > 8 || source instanceof Uint16Array || source instanceof Int16Array) {
     return (index) => {

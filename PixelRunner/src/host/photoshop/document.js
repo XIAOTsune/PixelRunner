@@ -71,6 +71,23 @@ export function getDocumentInfo(doc) {
     };
   }
 
+  const metadataErrors = [];
+  const read = (name) => {
+    try {
+      return doc[name];
+    } catch (error) {
+      metadataErrors.push(`${name}: ${String(error && error.message || error)}`);
+      return null;
+    }
+  };
+  const mode = read("mode");
+  const bitsPerChannel = read("bitsPerChannel");
+  const colorProfileName = read("colorProfileName");
+  const colorProfileType = read("colorProfileType");
+  if (metadataErrors.length) {
+    console.warn("[PixelRunner/Photoshop] document metadata unavailable", JSON.stringify({ documentId: Number(doc.id) || 0, errors: metadataErrors }));
+  }
+
   return {
     ok: true,
     hasActiveDocument: true,
@@ -79,11 +96,12 @@ export function getDocumentInfo(doc) {
     width: toNumberValue(doc.width),
     height: toNumberValue(doc.height),
     resolution: toNumberValue(doc.resolution),
-    bitsPerChannel: normalizeBitsPerChannel(doc.bitsPerChannel),
-    bitsPerChannelLabel: getBitsPerChannelLabel(doc.bitsPerChannel),
-    mode: normalizeDocumentMode(doc.mode),
-    colorProfileName: normalizeTextValue(doc.colorProfileName),
-    colorProfileType: normalizeTextValue(doc.colorProfileType),
+    bitsPerChannel: normalizeBitsPerChannel(bitsPerChannel),
+    bitsPerChannelLabel: getBitsPerChannelLabel(bitsPerChannel),
+    mode: normalizeDocumentMode(mode),
+    colorProfileName: normalizeTextValue(colorProfileName),
+    colorProfileType: normalizeTextValue(colorProfileType),
+    metadataErrors,
     selectionBounds: getSelectionBounds(doc)
   };
 }

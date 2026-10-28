@@ -11,11 +11,10 @@ import {
   ensureActiveDocument,
   findOpenDocumentById,
   getDocumentInfo,
-  normalizeBounds,
-  STANDARD_PIXEL_COLOR_PROFILE,
-  STANDARD_PIXEL_COLOR_SPACE
+  normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
+import { capturePixelsFromTemporaryRgbCopy, getPixelDataInfo, getSrgb8Pixels, selectConsistentPngColorChunks } from "./pixel-capture.js";
 
 const DEFAULT_UPLOAD_TARGET_BYTES = 9_000_000;
 const DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 10_000_000;
@@ -187,7 +186,7 @@ function buildPngRgbaBuffer(width, height, compressedScanlines, colorChunks = []
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
-  const metadataChunks = (Array.isArray(colorChunks) ? colorChunks : [])
+  const metadataChunks = selectConsistentPngColorChunks(colorChunks)
     .filter((chunk) => chunk && PNG_COLOR_METADATA_CHUNKS.has(String(chunk.type || "")))
     .map((chunk) => buildPngChunk(chunk.type, chunk.data));
   return concatUint8Arrays([
@@ -594,17 +593,7 @@ function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, maxPixels
 }
 
 async function getPixelsWithFallback(imaging, options) {
-  const requestOptions = { ...options };
-  if (!requestOptions.colorSpace) requestOptions.colorSpace = STANDARD_PIXEL_COLOR_SPACE;
-  if (!requestOptions.colorProfile) requestOptions.colorProfile = STANDARD_PIXEL_COLOR_PROFILE;
-  try {
-    return await imaging.getPixels(requestOptions);
-  } catch (error) {
-    if (!Object.prototype.hasOwnProperty.call(requestOptions, "componentSize")) throw error;
-    const fallbackOptions = { ...requestOptions };
-    delete fallbackOptions.componentSize;
-    return imaging.getPixels(fallbackOptions);
-  }
+  return getSrgb8Pixels(imaging, options, (requested) => capturePixelsFromTemporaryRgbCopy(imaging, requested));
 }
 async function getSelectionPixels(imaging, options) {
   if (!imaging || typeof imaging.getSelection !== "function") {
@@ -1039,7 +1028,11 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
           bytes,
           width: Math.max(1, Number(targetSize && targetSize.width) || 1),
           height: Math.max(1, Number(targetSize && targetSize.height) || 1)
-        }]
+        }],
+        ...(() => {
+          const info = getPixelDataInfo(contextPixels.imageData);
+          return { pixelColorSpace: info.colorSpace, pixelColorProfile: info.colorProfile, pixelComponentSize: info.componentSize };
+        })()
       }
     };
   } finally {
@@ -1373,7 +1366,11 @@ async function buildImagingUploadAsset(imaging, documentId, sourceBounds, target
       quality: accepted.quality,
       targetBytes,
       hardLimitBytes,
-      attempts
+      attempts,
+      ...(() => {
+        const info = getPixelDataInfo(pixels.imageData);
+        return { pixelColorSpace: info.colorSpace, pixelColorProfile: info.colorProfile, pixelComponentSize: info.componentSize };
+      })()
     };
   } finally {
     try {
@@ -1733,8 +1730,9 @@ async function captureDocumentPreviewInternal(options = {}) {
           kind: "captured-document-image",
           source: "photoshop-document",
           document: docInfo,
-          pixelColorSpace: STANDARD_PIXEL_COLOR_SPACE,
-          pixelColorProfile: STANDARD_PIXEL_COLOR_PROFILE,
+          pixelColorSpace: uploadAsset.pixelColorSpace,
+          pixelColorProfile: uploadAsset.pixelColorProfile,
+          pixelComponentSize: uploadAsset.pixelComponentSize,
           documentId: docInfo.documentId,
           selectionBounds,
           contextBounds,
@@ -1796,9 +1794,7 @@ async function captureDocumentPreviewInternal(options = {}) {
             hardLimitBytes: 0,
             attempts: []
           }
-        : options.useImagingUpload === true
-          ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
-          : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
+        : await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options);
       let selectionMaskDataUrl = "";
       let selectionMaskShape = "none";
       let selectionMaskError = "";
@@ -1873,8 +1869,15 @@ async function captureDocumentPreviewInternal(options = {}) {
         kind: "captured-document-image",
         source: "photoshop-document",
         document: docInfo,
-        pixelColorSpace: STANDARD_PIXEL_COLOR_SPACE,
-        pixelColorProfile: STANDARD_PIXEL_COLOR_PROFILE,
+        pixelColorSpace: options.useImagingUpload === true && !skipUploadAsset
+          ? uploadAsset.pixelColorSpace
+          : getPixelDataInfo(pixels.imageData).colorSpace,
+        pixelColorProfile: options.useImagingUpload === true && !skipUploadAsset
+          ? uploadAsset.pixelColorProfile
+          : getPixelDataInfo(pixels.imageData).colorProfile,
+        pixelComponentSize: options.useImagingUpload === true && !skipUploadAsset
+          ? uploadAsset.pixelComponentSize
+          : getPixelDataInfo(pixels.imageData).componentSize,
         documentId: docInfo.documentId,
         selectionBounds,
         contextBounds,
