@@ -11,7 +11,9 @@ import {
   ensureActiveDocument,
   findOpenDocumentById,
   getDocumentInfo,
-  normalizeBounds
+  normalizeBounds,
+  STANDARD_PIXEL_COLOR_PROFILE,
+  STANDARD_PIXEL_COLOR_SPACE
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
 
@@ -175,7 +177,7 @@ function buildPngChunk(type, data = new Uint8Array()) {
   return concatUint8Arrays([uint32Bytes(data.length), typeBytes, data, uint32Bytes(crc32(crcInput))]);
 }
 
-function buildPngRgbaBuffer(width, height, compressedScanlines) {
+function buildPngRgbaBuffer(width, height, compressedScanlines, colorChunks = []) {
   const ihdr = new Uint8Array(13);
   const view = new DataView(ihdr.buffer);
   view.setUint32(0, width >>> 0);
@@ -185,13 +187,19 @@ function buildPngRgbaBuffer(width, height, compressedScanlines) {
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
+  const metadataChunks = (Array.isArray(colorChunks) ? colorChunks : [])
+    .filter((chunk) => chunk && PNG_COLOR_METADATA_CHUNKS.has(String(chunk.type || "")))
+    .map((chunk) => buildPngChunk(chunk.type, chunk.data));
   return concatUint8Arrays([
     Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     buildPngChunk("IHDR", ihdr),
+    ...metadataChunks,
     buildPngChunk("IDAT", compressedScanlines),
     buildPngChunk("IEND")
   ]).buffer;
 }
+
+const PNG_COLOR_METADATA_CHUNKS = new Set(["cHRM", "gAMA", "iCCP", "sBIT", "sRGB", "cICP", "mDCv", "cLLi"]);
 
 async function buildBoundsAnchoredPng(buffer, pngMeta) {
   if (
@@ -234,7 +242,7 @@ async function buildBoundsAnchoredPng(buffer, pngMeta) {
   }
   const compressed = await deflatePngData(scanlines);
   if (!compressed) return null;
-  return buildPngRgbaBuffer(pngMeta.width, pngMeta.height, compressed);
+  return buildPngRgbaBuffer(pngMeta.width, pngMeta.height, compressed, pngMeta.colorChunks);
 }
 
 function getPngAlphaAt(rawPixels, x, y, info) {
@@ -310,6 +318,7 @@ async function parsePngInfo(buffer) {
   const interlaceMethod = bytes[28];
   let hasTransparency = colorType === 4 || colorType === 6;
   const idatParts = [];
+  const colorChunks = [];
   let transparencyTable = null;
   let transparentGray = null;
   let transparentRgb = null;
@@ -321,6 +330,8 @@ async function parsePngInfo(buffer) {
     const type = String.fromCharCode(bytes[typeOffset], bytes[typeOffset + 1], bytes[typeOffset + 2], bytes[typeOffset + 3]);
     if (type === "IDAT") {
       idatParts.push(bytes.slice(dataOffset, dataOffset + length));
+    } else if (PNG_COLOR_METADATA_CHUNKS.has(type)) {
+      colorChunks.push({ type, data: bytes.slice(dataOffset, dataOffset + length) });
     } else if (type === "tRNS") {
       hasTransparency = true;
       if (colorType === 3) {
@@ -356,6 +367,7 @@ async function parsePngInfo(buffer) {
       colorType,
       interlaceMethod,
       idatParts,
+      colorChunks,
       transparencyTable,
       transparentGray,
       transparentRgb
@@ -582,11 +594,14 @@ function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, maxPixels
 }
 
 async function getPixelsWithFallback(imaging, options) {
+  const requestOptions = { ...options };
+  if (!requestOptions.colorSpace) requestOptions.colorSpace = STANDARD_PIXEL_COLOR_SPACE;
+  if (!requestOptions.colorProfile) requestOptions.colorProfile = STANDARD_PIXEL_COLOR_PROFILE;
   try {
-    return await imaging.getPixels(options);
+    return await imaging.getPixels(requestOptions);
   } catch (error) {
-    if (!Object.prototype.hasOwnProperty.call(options, "componentSize")) throw error;
-    const fallbackOptions = { ...options };
+    if (!Object.prototype.hasOwnProperty.call(requestOptions, "componentSize")) throw error;
+    const fallbackOptions = { ...requestOptions };
     delete fallbackOptions.componentSize;
     return imaging.getPixels(fallbackOptions);
   }
@@ -971,7 +986,7 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
     targetSize
   });
   try {
-    contextPixels = await imaging.getPixels({
+    contextPixels = await getPixelsWithFallback(imaging, {
       documentID: Number(documentId),
       sourceBounds,
       targetSize,
@@ -1052,7 +1067,8 @@ function jpegDescriptor(quality) {
   return {
     _obj: "JPEG",
     extendedQuality: Math.max(1, Math.min(12, Math.floor(Number(quality) || 8))),
-    matteColor: { _enum: "matteColor", _value: "none" }
+    matteColor: { _enum: "matteColor", _value: "none" },
+    embedColorProfile: true
   };
 }
 
@@ -1717,6 +1733,8 @@ async function captureDocumentPreviewInternal(options = {}) {
           kind: "captured-document-image",
           source: "photoshop-document",
           document: docInfo,
+          pixelColorSpace: STANDARD_PIXEL_COLOR_SPACE,
+          pixelColorProfile: STANDARD_PIXEL_COLOR_PROFILE,
           documentId: docInfo.documentId,
           selectionBounds,
           contextBounds,
@@ -1855,6 +1873,8 @@ async function captureDocumentPreviewInternal(options = {}) {
         kind: "captured-document-image",
         source: "photoshop-document",
         document: docInfo,
+        pixelColorSpace: STANDARD_PIXEL_COLOR_SPACE,
+        pixelColorProfile: STANDARD_PIXEL_COLOR_PROFILE,
         documentId: docInfo.documentId,
         selectionBounds,
         contextBounds,

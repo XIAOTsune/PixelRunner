@@ -1,4 +1,10 @@
-import { activateDocument, getDocumentInfo, normalizeBounds } from "./document.js";
+import {
+  activateDocument,
+  getDocumentInfo,
+  normalizeBounds,
+  STANDARD_PIXEL_COLOR_PROFILE,
+  STANDARD_PIXEL_COLOR_SPACE
+} from "./document.js";
 import { ensureDeps } from "./deps.js";
 import { computeSharedContentReference, estimateTranslationReference } from "../../shared/blend-match-reference.js";
 import {
@@ -178,12 +184,18 @@ function buildBoundsCacheKey(bounds) {
   ].join(",");
 }
 
-function buildBlendMatchPreviewCacheKey(documentId, layerId, bounds, config) {
+function buildBlendMatchPreviewCacheKey(documentId, layerId, bounds, config, docInfo = null) {
   return [
     Number(documentId) || 0,
     Number(layerId) || 0,
     buildBoundsCacheKey(bounds),
-    getBlendMatchAnalysisConfigKey(config)
+    getBlendMatchAnalysisConfigKey(config),
+    String(docInfo && docInfo.mode || ""),
+    String(docInfo && docInfo.bitsPerChannel || ""),
+    String(docInfo && docInfo.colorProfileType || ""),
+    String(docInfo && docInfo.colorProfileName || ""),
+    STANDARD_PIXEL_COLOR_SPACE,
+    STANDARD_PIXEL_COLOR_PROFILE
   ].join("::");
 }
 
@@ -201,6 +213,8 @@ function cloneSampleForPreviewCache(sample, includeEncoded = false) {
     data: sample.data instanceof Uint8Array ? new Uint8Array(sample.data) : sample.data,
     sourceComponents: sample.sourceComponents,
     sourcePixelFormat: sample.sourcePixelFormat,
+    sourceColorSpace: sample.sourceColorSpace || STANDARD_PIXEL_COLOR_SPACE,
+    sourceColorProfile: sample.sourceColorProfile || STANDARD_PIXEL_COLOR_PROFILE,
     stats: sample.stats,
     base64: includeEncoded ? sample.base64 : "",
     mimeType: includeEncoded ? sample.mimeType : "",
@@ -517,6 +531,7 @@ async function encodeRgbaPng(width, height, rgba) {
   return concatUint8Arrays([
     Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     buildPngChunk("IHDR", ihdr),
+    buildPngChunk("sRGB", Uint8Array.from([0])),
     buildPngChunk("IDAT", compressed),
     buildPngChunk("IEND")
   ]).buffer;
@@ -668,10 +683,14 @@ function extractEncodedBase64(encoded) {
 }
 
 async function getPixelsWithFallback(imaging, options) {
+  const requestOptions = { ...options };
+  if (!requestOptions.colorSpace) requestOptions.colorSpace = STANDARD_PIXEL_COLOR_SPACE;
+  if (!requestOptions.colorProfile) requestOptions.colorProfile = STANDARD_PIXEL_COLOR_PROFILE;
   try {
-    return await imaging.getPixels(options);
+    return await imaging.getPixels(requestOptions);
   } catch (_) {
-    const fallbackOptions = { ...options };
+    if (!Object.prototype.hasOwnProperty.call(requestOptions, "componentSize")) throw _;
+    const fallbackOptions = { ...requestOptions };
     delete fallbackOptions.componentSize;
     return imaging.getPixels(fallbackOptions);
   }
@@ -761,7 +780,14 @@ function normalizeImageDataToRgba(imageData, data, width, height) {
   const safeHeight = Math.max(1, Number(height) || Number(imageData && imageData.height) || 1);
   const pixelCount = safeWidth * safeHeight;
   const components = getImageDataComponents(imageData, data, pixelCount);
+  const colorSpace = String((imageData && imageData.colorSpace) || "").trim().toUpperCase();
+  if (colorSpace && colorSpace !== "RGB" && colorSpace !== "GRAYSCALE") {
+    throw new Error(`Photoshop 返回了 ${colorSpace} 像素；无法将其安全解释为 RGB。`);
+  }
   const pixelFormat = String((imageData && imageData.pixelFormat) || (components === 4 ? "RGBA" : components === 3 ? "RGB" : components === 2 ? "GrayscaleAlpha" : "Grayscale"));
+  if (/^LAB/.test(pixelFormat.toUpperCase())) {
+    throw new Error("Photoshop 返回了 Lab 通道数据；无法将其安全解释为 RGB。请确认 Imaging API 已执行 RGB 转换。");
+  }
   const out = new Uint8Array(pixelCount * 4);
   if (!data || getImageDataLength(data) < pixelCount * components) return out;
   const readValue = getImageDataValueReader(imageData, data);
@@ -882,6 +908,8 @@ async function captureCompositeSample(imaging, doc, bounds, maxEdge = 512, encod
       data: copy,
       sourceComponents: Number(pixels && pixels.imageData && pixels.imageData.components) || Math.floor(data.length / Math.max(1, targetSize.width * targetSize.height)) || 0,
       sourcePixelFormat: String((pixels && pixels.imageData && pixels.imageData.pixelFormat) || ""),
+      sourceColorSpace: String((pixels && pixels.imageData && pixels.imageData.colorSpace) || STANDARD_PIXEL_COLOR_SPACE),
+      sourceColorProfile: String((pixels && pixels.imageData && pixels.imageData.colorProfile) || STANDARD_PIXEL_COLOR_PROFILE),
       stats,
       base64,
       mimeType,
@@ -1645,6 +1673,8 @@ async function captureCompositeRawSample(imaging, doc, bounds, maxEdge = 512) {
       data: copy,
       sourceComponents: Number(pixels && pixels.imageData && pixels.imageData.components) || Math.floor(data.length / Math.max(1, targetSize.width * targetSize.height)) || 0,
       sourcePixelFormat: String((pixels && pixels.imageData && pixels.imageData.pixelFormat) || ""),
+      sourceColorSpace: String((pixels && pixels.imageData && pixels.imageData.colorSpace) || STANDARD_PIXEL_COLOR_SPACE),
+      sourceColorProfile: String((pixels && pixels.imageData && pixels.imageData.colorProfile) || STANDARD_PIXEL_COLOR_PROFILE),
       stats: null,
       base64: "",
       mimeType: "",
@@ -2194,6 +2224,8 @@ function serializeSampleForWebview(sample) {
     scaleY: sample.scaleY,
     sourceComponents: sample.sourceComponents,
     sourcePixelFormat: sample.sourcePixelFormat,
+    sourceColorSpace: sample.sourceColorSpace || STANDARD_PIXEL_COLOR_SPACE,
+    sourceColorProfile: sample.sourceColorProfile || STANDARD_PIXEL_COLOR_PROFILE,
     stats: sample.stats,
     base64: arrayBufferToBase64(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)),
     encodingMs: Number((getNowMs() - encodedAt).toFixed(1)),
@@ -6249,7 +6281,7 @@ export async function blendMatchActiveLayer(payload = {}, context) {
 
     const sourceLayerName = getLayerName(sourceLayer);
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
-    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
+    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config, docInfo);
     const fullDocumentTarget = isFullDocumentBounds(sourceBounds, docInfo);
     const resultLayerName = `像素起子 ${operationLabel} - ${sourceLayerName}`.slice(0, 240);
     logs.push(`[${operationLabel}] 开始分析图层：${sourceLayerName}。`);
@@ -6565,7 +6597,7 @@ export async function previewBlendMatchActiveLayer(payload = {}, context) {
     const sourceLayerName = getLayerName(sourceLayer);
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
     const previewMaxEdge = config.previewMaxEdge;
-    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
+    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config, docInfo);
     let sourceWasVisible = true;
     try {
       sourceWasVisible = sourceLayer.visible !== false;
@@ -6732,7 +6764,7 @@ export async function previewBlendMatchSamplesActiveLayer(payload = {}, context)
   const sourceSample = modalResult.sourceSample;
   const referenceSample = modalResult.referenceSample;
   const modalDocumentId = Number(modalResult.document && (modalResult.document.documentId || modalResult.document.id)) || Number(document && document.id) || 0;
-  const previewCacheKey = buildBlendMatchPreviewCacheKey(modalDocumentId, modalResult.layerId, modalResult.bounds, config);
+  const previewCacheKey = buildBlendMatchPreviewCacheKey(modalDocumentId, modalResult.layerId, modalResult.bounds, config, modalResult.document);
   const statsStartedAt = getNowMs();
   sourceSample.stats = buildStatsFromRgbaSafe(sourceSample.data);
   referenceSample.stats = buildStatsFromRgbaSafe(referenceSample.data);
@@ -6916,7 +6948,7 @@ export async function hydrateBlendMatchPreviewPlan(payload = {}, context) {
     if (!(sourceLayerId > 0)) throw new Error("请先选中一张 AI 返图图层。");
     const sourceLayerName = getLayerName(sourceLayer);
     const sourceBounds = clampBoundsToDocument(parseLayerBounds(sourceLayer && sourceLayer.bounds), docInfo);
-    const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config);
+     const previewCacheKey = buildBlendMatchPreviewCacheKey(document.id, sourceLayerId, sourceBounds, config, docInfo);
     return {
       document: getDocumentInfo(app.activeDocument),
       documentId: Number(document.id) || 0,
