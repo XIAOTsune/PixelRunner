@@ -1,3 +1,5 @@
+import { encodeLocalImageAsJpeg } from "./local-image.js";
+
 (function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const RUN_BUTTON_COOLDOWN_MS = 600;
@@ -477,52 +479,34 @@
     });
   }
 
-  function canvasToJpegDataUrl(canvas, quality) {
-    return canvas.toDataURL("image/jpeg", quality);
-  }
-
   async function buildLocalImageAsset(file) {
     const sourceDataUrl = String(file && file.dataUrl || "") || await readImageFileAsDataUrl(file);
     const image = await loadImageElement(sourceDataUrl);
     const settings = getImageCaptureSettings();
-    const scale = Math.min(1, settings.maxDimension / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
-    const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
-    const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("无法创建本地图片处理画布，请重启插件后重试。");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, width, height);
-    context.drawImage(image, 0, 0, width, height);
+    const encoded = encodeLocalImageAsJpeg(image, settings);
     const mimeType = "image/jpeg";
-    const quality = settings.quality / 100;
-    const dataUrl = canvasToJpegDataUrl(canvas, quality);
-    const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : "";
-    const bytes = Math.max(0, Math.floor(base64.length * 3 / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0));
     return {
       assetId: modules.runtime.createId("local-image"),
       capturedAt: Date.now(),
       capturedFromSelection: false,
       kind: "local-image-file",
       source: "local-file",
-      width,
-      height,
-      originalWidth: image.naturalWidth || image.width,
-      originalHeight: image.naturalHeight || image.height,
-      quality: settings.quality,
+      width: encoded.width,
+      height: encoded.height,
+      originalWidth: encoded.originalWidth,
+      originalHeight: encoded.originalHeight,
+      quality: encoded.quality,
       maxDimension: settings.maxDimension,
       mimeType,
-      dataUrl,
-      base64,
+      dataUrl: encoded.dataUrl,
+      base64: encoded.base64,
       uploadMimeType: mimeType,
-      uploadDataUrl: dataUrl,
-      uploadBase64: base64,
-      uploadBytes: bytes,
-      uploadWidth: width,
-      uploadHeight: height,
-      uploadQuality: settings.quality
+      uploadDataUrl: encoded.dataUrl,
+      uploadBase64: encoded.base64,
+      uploadBytes: encoded.bytes,
+      uploadWidth: encoded.width,
+      uploadHeight: encoded.height,
+      uploadQuality: encoded.quality
     };
   }
 
@@ -610,7 +594,7 @@
               <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
             </div>
             <button class="mini-btn image-capture-local-btn" type="button" data-action="select-local-image" data-form-key="${runtime.escapeHtml(key)}">本地</button>
-            <input class="local-image-file-input" type="file" accept="image/*" data-local-image-key="${runtime.escapeHtml(key)}" hidden />
+            <input class="local-image-file-input" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" data-local-image-key="${runtime.escapeHtml(key)}" hidden />
           </div>
           <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}${captureMeta ? ` · ${runtime.escapeHtml(captureMeta)}` : ""}</div>
         </div>
