@@ -1,3 +1,5 @@
+import { buildMidjourneyPrompt, parseMidjourneyImageUrls } from "../shared/midjourney-config.js";
+
 (function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const RUN_BUTTON_COOLDOWN_MS = 600;
@@ -130,6 +132,8 @@
 
     const text = String(rawValue ?? "").trim();
     if (!text) return "";
+    // MJ validates integer ranges at submission; do not silently round user input.
+    if (String(input.key || "").startsWith("mj")) return text;
     if (isNumericInputInterimValue(text)) return text;
     const numericValue = Number(text);
     if (!Number.isFinite(numericValue)) return text;
@@ -1680,6 +1684,19 @@
     const value = state.formValues[key];
     const escapedKey = runtime.escapeHtml(key);
 
+    if (input.type === "image-url") {
+      const raw = String(value || "");
+      let urls = [];
+      try { urls = parseMidjourneyImageUrls(raw); } catch (_) { /* Preserve invalid text for validation. */ }
+      const rows = raw.split(/\r?\n/);
+      const multiple = input.multiple === true;
+      const fieldId = `dynamic-field-${key.replace(/[^a-zA-Z0-9_-]/g, "-") || "input"}`;
+      const urlRows = multiple
+        ? rows.map((url, index) => `<div class="mj-reference-url-row"><input class="field-input" type="url" data-mj-reference-input="${escapedKey}" value="${runtime.escapeHtml(url)}" placeholder="https://example.com/reference.png" aria-label="${label} ${index + 1}" /><button class="mini-btn" type="button" data-action="remove-mj-reference" data-form-key="${escapedKey}" data-reference-index="${index}" aria-label="移除参考图 ${index + 1}">移除</button></div>`).join("")
+        : `<input class="field-input" id="${runtime.escapeHtml(fieldId)}" type="url" aria-label="${label}" data-form-key="${escapedKey}" value="${runtime.escapeHtml(raw)}" placeholder="https://example.com/main-image.png" />`;
+      return `<div class="field dynamic-field mj-image-url-field"><span class="field-label">${label}${requiredMark}</span>${urlRows}${multiple ? `<button class="mini-btn mj-add-reference-btn" type="button" data-action="add-mj-reference" data-form-key="${escapedKey}">＋ 添加参考图</button>` : ""}<div class="mj-image-url-previews" data-mj-previews="${escapedKey}">${renderMidjourneyThumbnails(urls, label)}</div>${renderFieldHint(input)}</div>`;
+    }
+
     if (isImageInput(input)) return renderImageField(input);
 
     if (input.type === "textarea" || input.type === "multiline" || isPromptField(input)) {
@@ -1722,11 +1739,11 @@
       const numberKind = getNumericInputKind(input, value) || "int";
       const step = getNumericInputStep(input, value);
       const formattedValue = formatNumericInputValue(input, value);
-      return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="number" data-form-key="${escapedKey}" data-number-kind="${runtime.escapeHtml(numberKind)}" step="${runtime.escapeHtml(String(step))}" value="${runtime.escapeHtml(formattedValue)}" /></label>`;
+      return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="number" data-form-key="${escapedKey}" data-number-kind="${runtime.escapeHtml(numberKind)}" step="${runtime.escapeHtml(String(step))}" ${input.min != null ? `min="${runtime.escapeHtml(String(input.min))}"` : ""} ${input.max != null ? `max="${runtime.escapeHtml(String(input.max))}"` : ""} value="${runtime.escapeHtml(formattedValue)}" placeholder="${key.startsWith("mj") ? "默认" : ""}" />${renderFieldHint(input)}</label>`;
     }
 
     if (input.type === "boolean" || input.type === "switch" || input.type === "checkbox") {
-      return `<label class="field toggle-field"><span class="field-label">${label}${requiredMark}</span><label class="checkbox-line"><input type="checkbox" data-form-key="${escapedKey}" ${value ? "checked" : ""} /><span>启用</span></label></label>`;
+      return `<label class="field toggle-field"><span class="field-label">${label}${requiredMark}</span><span class="checkbox-line"><input type="checkbox" data-form-key="${escapedKey}" ${value ? "checked" : ""} /><span>启用</span></span>${renderFieldHint(input)}</label>`;
     }
 
     if (input.type === "select" || input.type === "enum") {
@@ -1737,7 +1754,7 @@
       const optionValues = options.map((option) => String((typeof option === "object" ? option.value : option) ?? ""));
       const isCustomSelected = Boolean(input.allowCustom && currentValue && !optionValues.includes(currentValue));
       const selectedValue = isCustomSelected ? "__custom__" : currentValue;
-      return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><select class="field-input" data-form-key="${escapedKey}"><option value="">请选择</option>${options
+      return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><select class="field-input" data-form-key="${escapedKey}">${optionValues.includes("") ? "" : '<option value="">请选择</option>'}${options
         .map((option) => {
           const optValue = typeof option === "object" ? option.value : option;
           const optLabel = typeof option === "object" ? option.label : option;
@@ -1750,7 +1767,30 @@
       }${renderFieldHint(input)}</label>`;
     }
 
-    return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" /></label>`;
+    return `<label class="field dynamic-field"><span class="field-label">${label}${requiredMark}</span><input class="field-input" type="text" data-form-key="${escapedKey}" value="${runtime.escapeHtml(String(value ?? ""))}" placeholder="${runtime.escapeHtml(input.placeholder || "")}" />${renderFieldHint(input)}</label>`;
+  }
+
+  function renderMidjourneyThumbnails(urls, label = "参考图") {
+    return urls.map((url, index) => `<img src="${modules.runtime.escapeHtml(url)}" alt="${modules.runtime.escapeHtml(label)} ${index + 1}（预览不可用时请检查直链）" loading="lazy" referrerpolicy="no-referrer" />`).join("");
+  }
+
+  function isMidjourneyWorkspace(app = modules.state.state.currentApp) {
+    return modules.state.isThirdPartyApp(app) && (app.inputs || []).some((input) => input.key === "mjMainImage");
+  }
+
+  function updateMidjourneyPreview() {
+    if (!isMidjourneyWorkspace()) return;
+    const container = modules.runtime.getById("dynamicInputContainer");
+    const preview = container && container.querySelector("[data-mj-prompt-preview]");
+    if (preview) {
+      try { preview.textContent = buildMidjourneyPrompt(modules.state.state.formValues); preview.classList.remove("is-error"); }
+      catch (error) { preview.textContent = error.message; preview.classList.add("is-error"); }
+    }
+  }
+
+  function renderMidjourneyForm(inputs) {
+    const group = (name) => inputs.filter((input) => input.group === name).map(renderField).join("");
+    return `<div class="dynamic-form mj-form">${inputs.filter((input) => !input.group).map(renderField).join("")}<section class="mj-section" aria-label="基本设置"><h4>基本设置 · V8.2</h4><div class="mj-parameter-grid">${group("basic")}</div></section><section class="mj-section" aria-label="主图与参考图"><h4>主图与参考图 <span>可选</span></h4><p class="field-hint">momo 当前仅接收图片直链，未开放本地上传或 PS 捕获上传。图片需无需登录即可访问。参考是创作引导，不是原图精确编辑。</p>${group("references")}</section><details class="mj-section"><summary>高级参数 <span>留空沿用提示词 / 模型默认</span></summary><div class="mj-parameter-grid">${group("advanced")}</div></details><details class="mj-section"><summary>实际提交的提示词</summary><pre class="mj-prompt-preview" data-mj-prompt-preview></pre><p class="field-hint">队列模式单独通过 mode 提交；表单与手写参数冲突时会提示，请保留一处。</p></details></div>`;
   }
 
   function getQuickEntryDisplayTitle(entry, index, entries) {
@@ -1844,7 +1884,10 @@
       } else if (!Array.isArray(state.currentApp.inputs) || state.currentApp.inputs.length === 0) {
         dynamicInputContainer.innerHTML = `<div class="empty-panel"><h4>${runtime.escapeHtml(modules.state.getAppDisplayName(state.currentApp))}</h4><p>当前应用还没有输入结构。你可以先去设置页编辑应用，手动补齐输入 JSON。</p></div>`;
       } else {
-        dynamicInputContainer.innerHTML = `<div class="dynamic-form">${state.currentApp.inputs.map(renderField).join("")}</div>`;
+        const opened = Array.from(dynamicInputContainer.querySelectorAll(".mj-section[open]")).map((item) => item.querySelector("summary").textContent);
+        dynamicInputContainer.innerHTML = isMidjourneyWorkspace() ? renderMidjourneyForm(state.currentApp.inputs) : `<div class="dynamic-form">${state.currentApp.inputs.map(renderField).join("")}</div>`;
+        dynamicInputContainer.querySelectorAll("details.mj-section").forEach((item) => { item.open = opened.includes(item.querySelector("summary").textContent); });
+        updateMidjourneyPreview();
       }
     }
 
@@ -1899,6 +1942,10 @@
     const state = modules.state.state;
     const container = modules.runtime.getById("dynamicInputContainer");
     if (!container) return;
+    if (isMidjourneyWorkspace()) {
+      const referenceRows = container.querySelectorAll('[data-mj-reference-input="mjReferenceImages"]');
+      if (referenceRows.length) state.formValues.mjReferenceImages = Array.from(referenceRows).map((item) => item.value).join("\n");
+    }
     container.querySelectorAll("[data-form-key]").forEach((element) => {
       const key = element.getAttribute("data-form-key");
       if (!key) return;
@@ -1944,6 +1991,7 @@
       };
       return true;
     }
+    if (isMidjourneyWorkspace()) return true;
     const inputs = Array.isArray(state.currentApp.inputs) ? state.currentApp.inputs : [];
     const ratioInput = inputs.find((input) => String(input.key || "") === "aspectRatio");
     const resolutionInput = inputs.find((input) => String(input.key || "") === "resolution");
@@ -1984,7 +2032,8 @@
       mode: String(state.formValues.mode || "").trim(),
       aspectRatio: String(state.formValues.aspectRatio || state.formValues.aspectRatioCustom || "").trim(),
       aspectRatioCustom: String(state.formValues.aspectRatioCustom || "").trim(),
-      resolution: String(state.formValues.resolution || "").trim()
+      resolution: String(state.formValues.resolution || "").trim(),
+      ...Object.fromEntries(Object.entries(state.formValues).filter(([key]) => /^mj/.test(key)))
     };
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.THIRD_PARTY_LAST_SELECTION, JSON.stringify(snapshot));
     const normalizedCurrent = modules.state.normalizeThirdPartySettings(state.thirdPartySettings);
@@ -2063,6 +2112,7 @@
     const apiUrl = isGemini ? descriptor.apiUrl : modules.state.getGrsApiUrl(region);
     const app = options.app || state.currentApp || modules.state.getThirdPartyApp();
     const inputValues = options.inputs && typeof options.inputs === "object" ? options.inputs : state.formValues;
+    if (isMidjourneyWorkspace(app)) buildMidjourneyPrompt(inputValues);
     const payload = {
       provider: descriptor.id,
       providerLabel: descriptor.label,
@@ -4319,6 +4369,16 @@
     if (dynamicInputContainer) {
       dynamicInputContainer.addEventListener("input", (event) => {
         const element = event.target;
+        if (element && element.matches("[data-mj-reference-input]")) {
+          const key = element.getAttribute("data-mj-reference-input");
+          modules.state.state.formValues[key] = Array.from(dynamicInputContainer.querySelectorAll(`[data-mj-reference-input="${key}"]`)).map((item) => item.value).join("\n");
+          let urls = [];
+          try { urls = parseMidjourneyImageUrls(modules.state.state.formValues[key]); } catch (_) { /* Keep input responsive; validate before submission. */ }
+          const preview = dynamicInputContainer.querySelector(`[data-mj-previews="${key}"]`);
+          if (preview) preview.innerHTML = renderMidjourneyThumbnails(urls, "参考图");
+          updateMidjourneyPreview();
+          return;
+        }
         if (!element || !element.matches("[data-form-key]")) return;
         const key = element.getAttribute("data-form-key");
         if (!key) return;
@@ -4327,11 +4387,14 @@
           if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
             modules.aiOptimize.handleWorkspacePromptChange(key, modules.state.state.formValues[key]);
           }
+          updateMidjourneyPreview();
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
         if (!inputMeta) {
           modules.state.state.formValues[key] = element.value;
+          if (key === "mjAspectRatioCustom") modules.state.state.formValues.mjAspectRatio = element.value;
+          updateMidjourneyPreview();
           return;
         }
         if (isImageInput(inputMeta)) return;
@@ -4345,10 +4408,18 @@
         if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
           modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
         }
+        updateMidjourneyPreview();
       });
 
       dynamicInputContainer.addEventListener("change", (event) => {
         const element = event.target;
+        if (element && element.matches("[data-mj-reference-input]")) {
+          const key = element.getAttribute("data-mj-reference-input");
+          const values = Array.from(dynamicInputContainer.querySelectorAll(`[data-mj-reference-input="${key}"]`)).map((item) => item.value.trim()).filter(Boolean);
+          modules.state.state.formValues[key] = values.join("\n");
+          renderWorkspace();
+          return;
+        }
         if (!element || !element.matches("[data-form-key]")) return;
         const key = element.getAttribute("data-form-key");
         if (!key) return;
@@ -4357,20 +4428,32 @@
           if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
             modules.aiOptimize.handleWorkspacePromptChange(key, modules.state.state.formValues[key]);
           }
+          updateMidjourneyPreview();
           return;
         }
         const inputMeta = (modules.state.state.currentApp?.inputs || []).find((item) => String(item.key || "") === key);
         if (!inputMeta) {
           modules.state.state.formValues[key] = element.value;
+          if (key === "mjAspectRatioCustom") modules.state.state.formValues.mjAspectRatio = element.value;
+          updateMidjourneyPreview();
           return;
         }
         if (isImageInput(inputMeta)) return;
         const nextValue = getNormalizedFieldValue(inputMeta, element.value);
         if (inputMeta.allowCustom && String(nextValue) === "__custom__") {
           const customKey = String(inputMeta.customKey || `${key}Custom`);
-          modules.state.state.formValues[key] = String(modules.state.state.formValues[customKey] || "").trim();
+          const customInput = dynamicInputContainer.querySelector(`[data-form-key="${customKey}"]`);
+          modules.state.state.formValues[customKey] = customInput ? customInput.value : String(modules.state.state.formValues[customKey] || "");
+          modules.state.state.formValues[key] = String(modules.state.state.formValues[customKey]).trim();
         } else {
           modules.state.state.formValues[key] = nextValue;
+        }
+        updateMidjourneyPreview();
+        if (inputMeta.allowCustom) {
+          renderWorkspace();
+          const customInput = dynamicInputContainer.querySelector(`[data-form-key="${inputMeta.customKey || `${key}Custom`}"]`);
+          if (customInput) { customInput.focus(); customInput.select(); }
+          return;
         }
         if (modules.aiOptimize && typeof modules.aiOptimize.handleWorkspacePromptChange === "function") {
           modules.aiOptimize.handleWorkspacePromptChange(key, nextValue);
@@ -4388,6 +4471,22 @@
       });
 
       dynamicInputContainer.addEventListener("click", (event) => {
+        const referenceAction = event.target && event.target.closest("[data-action][data-form-key]");
+        if (referenceAction && ["add-mj-reference", "remove-mj-reference"].includes(referenceAction.getAttribute("data-action"))) {
+          event.preventDefault();
+          const key = referenceAction.getAttribute("data-form-key");
+          const fields = Array.from(dynamicInputContainer.querySelectorAll(`[data-mj-reference-input="${key}"]`));
+          let values = fields.map((item) => item.value.trim());
+          if (referenceAction.getAttribute("data-action") === "remove-mj-reference") {
+            const index = Number(referenceAction.getAttribute("data-reference-index"));
+            if (index >= 0 && index < values.length) values.splice(index, 1);
+          } else {
+            values.push("");
+          }
+          modules.state.state.formValues[key] = values.join("\n");
+          renderWorkspace();
+          return;
+        }
         const actionTarget = event.target && event.target.closest("[data-action][data-form-key]");
         if (!actionTarget) return;
         const action = actionTarget.getAttribute("data-action");

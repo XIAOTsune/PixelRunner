@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { buildMidjourneyPrompt, getMidjourneyInputs } from "../src/shared/midjourney-config.js";
 
 import {
   GEMINI_MODEL_CATALOG_VERSION,
@@ -566,8 +567,23 @@ stateModule.state.thirdPartySettings = stateModule.normalizeThirdPartySettings({
   gemini: { channelId: "momo", channels: { momo: { selectedModel: MOMO_MIDJOURNEY_MODEL_ID } } }
 });
 const midjourneyApp = stateModule.getThirdPartyApp();
-assert.deepEqual(midjourneyApp.inputs.map((input) => input.key), ["prompt", "model", "mode"]);
+assert.deepEqual(midjourneyApp.inputs.slice(0, 3).map((input) => input.key), ["prompt", "model", "mode"]);
+assert.deepEqual(midjourneyApp.inputs.filter((input) => input.type === "image-url").map((input) => input.key), ["mjMainImage", "mjReferenceImages"]);
+assert.equal(midjourneyApp.inputs.length, 18);
+assert.ok(!midjourneyApp.inputs.some((input) => ["mjVersion", "mjQuality", "mjStop", "mjCharacterWeight"].includes(input.key)));
 assert.equal(midjourneyApp.inputs.find((input) => input.key === "mode").default, "relax");
+
+const mjInputs = Object.fromEntries(getMidjourneyInputs().map((input) => [input.key, input.default ?? (input.type === "checkbox" ? false : "")]));
+assert.equal(buildMidjourneyPrompt({ prompt: "a palace", ...mjInputs, mjAspectRatio: "16:9", mjHd: true }), "a palace --ar 16:9 --hd --v 8.2");
+assert.equal(buildMidjourneyPrompt({ prompt: "a palace", ...mjInputs, mjMainImage: "https://images.example/main.png", mjReferenceImages: "https://images.example/ref.png", mjAspectRatio: "__custom__", mjAspectRatioCustom: "5:4" }), "https://images.example/main.png https://images.example/ref.png a palace --ar 5:4 --v 8.2");
+assert.equal(buildMidjourneyPrompt({ prompt: "a palace", ...mjInputs, mjReferenceImages: "https://images.example/style.png", mjReferenceRole: "style", mjStyleWeight: "100" }), "a palace --sw 100 --v 8.2 --sref https://images.example/style.png");
+assert.equal(buildMidjourneyPrompt({ prompt: "a palace --v 8.2", ...mjInputs }), "a palace --v 8.2");
+assert.throws(() => buildMidjourneyPrompt({ prompt: "a palace --ar 1:1", ...mjInputs, mjAspectRatio: "16:9" }), /重复|已包含/);
+assert.throws(() => buildMidjourneyPrompt({ prompt: "a palace --v 7", ...mjInputs }), /仅支持 V8.2/);
+assert.throws(() => buildMidjourneyPrompt({ prompt: "a palace --quality 2", ...mjInputs }), /不支持 --quality/);
+assert.throws(() => buildMidjourneyPrompt({ prompt: "a portrait --cref https://images.example/person.png", ...mjInputs }), /不支持旧版角色参考/);
+assert.throws(() => buildMidjourneyPrompt({ prompt: "a palace", ...mjInputs, mjMainImage: "C:\\photo.png" }), /http\(s\)|本地路径/);
+assert.throws(() => buildMidjourneyPrompt({ prompt: "a palace --fast", ...mjInputs }), /队列模式/);
 
 // Momo with custom apiUrl in descriptor
 const momoCustomState = stateModule.normalizeThirdPartySettings({

@@ -1,3 +1,4 @@
+import { getMidjourneyInputs } from "../shared/midjourney-config.js";
 import {
   GRS_CHAT_MODEL_IDS,
   GRS_IMAGE_MODEL_IDS,
@@ -565,11 +566,11 @@ import {
     const config = descriptor.config;
     const selectedModel = String(options.model || config.selectedModel || config.imageModels[0] || "").trim();
     const capabilities = getThirdPartyModelCapabilities(selectedModel, descriptor.id);
-    const isMidjourney = descriptor.id === "gemini" && capabilities.midjourney;
+    const isMidjourney = descriptor.id === "gemini" && descriptor.channelId === "momo" && capabilities.midjourney;
     const inputs = [
       { key: "prompt", label: "提示词", name: "提示词", type: "textarea", required: true,
         hint: isMidjourney
-          ? "Midjourney 需要梯子或代理才能访问。参考图 URL 放在开头，版本、画幅、风格、--hd 等参数直接写在末尾。"
+          ? "当前固定使用 Midjourney V8.2；描述画面后，可设置画幅、主图和参考图。也可手写 MJ 参数，同一参数请勿重复设置。"
           : "" },
       {
         key: "model",
@@ -603,6 +604,7 @@ import {
         hint: "mode 是请求字段，不要写成 --fast 或 --relax；默认 Relax。"
       });
     }
+    if (isMidjourney) inputs.push(...getMidjourneyInputs());
     if (!isMidjourney) {
       inputs.push({
         key: "aspectRatio",
@@ -834,7 +836,7 @@ import {
       const key = String(input.key || "").trim();
       if (!key) return;
 
-      if (input.type === "image" || input.type === "file") {
+      if (input.type === "image" || input.type === "file" || input.type === "image-url") {
         values[key] = null;
         return;
       }
