@@ -1,4 +1,3 @@
-import { buildMidjourneyPrompt } from "../shared/midjourney-config.js";
 import {
   buildGeminiGenerateRequest,
   buildGeminiModelsRequest,
@@ -318,7 +317,7 @@ async function submitMomoMidjourneyTask(payload, config, inputs, apiKey) {
   const request = buildMomoMidjourneyImagineRequest({
     apiUrl: config.apiUrl,
     apiKey,
-    prompt: buildMidjourneyPrompt(inputs),
+    prompt: inputs.prompt,
     mode: inputs.mode,
     state: inputs.state || payload.requestId
   });

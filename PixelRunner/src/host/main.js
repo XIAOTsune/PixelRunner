@@ -27,7 +27,7 @@ import {
   submitThirdPartyGeminiTask
 } from "./third-party-gemini.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
-import { openTextFile, saveTextFile } from "./files.js";
+import { openImageFile, openTextFile, saveTextFile } from "./files.js";
 import {
   openExternalUrl,
   openLocalPath,
@@ -275,6 +275,9 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "file.openText":
         result = await openTextFile(message.args);
+        break;
+      case "file.openImage":
+        result = await openImageFile();
         break;
       case "runninghub.submitTask":
         result = await submitRunningHubTask(message.args);

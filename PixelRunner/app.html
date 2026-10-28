@@ -462,6 +462,14 @@
                 <span class="field-hint settings-field-hint">适合 API 不支持多个任务同时上传的情况。开启后新任务会先进入本地队列，当前云端任务完成或结束后再自动提交；关闭后等待中的本地任务会按当前最大并发数立即放行。</span>
               </div>
               <div class="field toggle-field settings-toggle-field">
+                <span class="field-label">复用应用参数</span>
+                <label class="checkbox-line">
+                  <input id="settingsReuseAppFormValuesInput" type="checkbox" />
+                  <span>切换回应用时恢复上次使用的提示词和参数</span>
+                </label>
+                <span class="field-hint settings-field-hint">开启后按应用分别保存文本、选项和数值；关闭时切换应用会使用应用默认值。</span>
+              </div>
+              <div class="field toggle-field settings-toggle-field">
                 <span class="field-label">比例偏移修正</span>
                 <label class="checkbox-line">
                   <input id="settingsRatioOffsetCorrectionInput" type="checkbox" />

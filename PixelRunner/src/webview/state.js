@@ -1,4 +1,3 @@
-import { getMidjourneyInputs } from "../shared/midjourney-config.js";
 import {
   GRS_CHAT_MODEL_IDS,
   GRS_IMAGE_MODEL_IDS,
@@ -45,6 +44,7 @@ import {
     ACTIVE_PROMPT_BUNDLE: "pixelrunner.activePromptBundle.v1",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
     CURRENT_APP_ID: "pixelrunner.current_app_id",
+    APP_FORM_VALUES: "pixelrunner.appFormValues.v1",
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
     QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
     WORKSPACE_INIT: "pixelrunner.workspace.initialized.v1",
@@ -106,6 +106,7 @@ import {
     timeout: 180,
     maxConcurrentTasks: 3,
     localQueueEnabled: false,
+    reuseAppFormValues: false,
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
     aiOptimizeAppIds: {
       cn: DEFAULT_AI_OPTIMIZE_APP_ID,
@@ -350,6 +351,7 @@ import {
       timeout,
       maxConcurrentTasks,
       localQueueEnabled: source.localQueueEnabled === true,
+      reuseAppFormValues: source.reuseAppFormValues === true,
       aiOptimizeAppId: aiOptimizeAppIds[runningHubRegion],
       aiOptimizeAppIds,
       generativeFillAppId: generativeFillAppIds[runningHubRegion],
@@ -566,11 +568,11 @@ import {
     const config = descriptor.config;
     const selectedModel = String(options.model || config.selectedModel || config.imageModels[0] || "").trim();
     const capabilities = getThirdPartyModelCapabilities(selectedModel, descriptor.id);
-    const isMidjourney = descriptor.id === "gemini" && descriptor.channelId === "momo" && capabilities.midjourney;
+    const isMidjourney = descriptor.id === "gemini" && capabilities.midjourney;
     const inputs = [
       { key: "prompt", label: "提示词", name: "提示词", type: "textarea", required: true,
         hint: isMidjourney
-          ? "当前固定使用 Midjourney V8.2；描述画面后，可设置画幅、主图和参考图。也可手写 MJ 参数，同一参数请勿重复设置。"
+          ? "Midjourney 需要梯子或代理才能访问。参考图 URL 放在开头，版本、画幅、风格、--hd 等参数直接写在末尾。"
           : "" },
       {
         key: "model",
@@ -604,7 +606,6 @@ import {
         hint: "mode 是请求字段，不要写成 --fast 或 --relax；默认 Relax。"
       });
     }
-    if (isMidjourney) inputs.push(...getMidjourneyInputs());
     if (!isMidjourney) {
       inputs.push({
         key: "aspectRatio",
@@ -836,7 +837,7 @@ import {
       const key = String(input.key || "").trim();
       if (!key) return;
 
-      if (input.type === "image" || input.type === "file" || input.type === "image-url") {
+      if (input.type === "image" || input.type === "file") {
         values[key] = null;
         return;
       }

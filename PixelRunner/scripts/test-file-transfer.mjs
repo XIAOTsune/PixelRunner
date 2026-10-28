@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  openImageFileWithStorage,
   openTextFileWithStorage,
   saveTextFileWithStorage
 } from "../src/host/files.js";
@@ -111,6 +112,42 @@ await assertBundleExportWithoutTextarea();
   assert.equal(result.outcome, "loaded");
   assert.equal(result.text, largeBundleText);
   assert.ok(result.byteLength > 100000);
+}
+
+{
+  let pickerOptions = null;
+  const imageBytes = Uint8Array.from([137, 80, 78, 71]);
+  const storage = {
+    formats: { binary: "binary" },
+    localFileSystem: {
+      async getFileForOpening(options) {
+        pickerOptions = options;
+        return {
+          name: "reference.png",
+          async read(options) {
+            assert.deepEqual(options, { format: "binary" });
+            return imageBytes.buffer;
+          }
+        };
+      }
+    }
+  };
+  const result = await openImageFileWithStorage(storage);
+  assert.equal(pickerOptions.allowMultiple, false);
+  assert.ok(pickerOptions.types.includes("png"));
+  assert.equal(result.outcome, "loaded");
+  assert.equal(result.name, "reference.png");
+  assert.equal(result.mimeType, "image/png");
+  assert.equal(result.dataUrl, `data:image/png;base64,${Buffer.from(imageBytes).toString("base64")}`);
+}
+
+{
+  const result = await openImageFileWithStorage({
+    formats: { binary: "binary" },
+    localFileSystem: { async getFileForOpening() { return null; } }
+  });
+  assert.equal(result.outcome, "cancelled");
+  assert.equal(result.dataUrl, "");
 }
 
 console.log("File transfer tests passed.");

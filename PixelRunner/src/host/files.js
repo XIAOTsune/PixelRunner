@@ -36,6 +36,30 @@ function getUtf8Options(storage) {
   return { format: utf8 };
 }
 
+function arrayBufferToBase64(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function getImageMimeType(filename) {
+  const extension = String(filename || "").split(".").pop().toLowerCase();
+  return ({
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    tif: "image/tiff",
+    tiff: "image/tiff"
+  })[extension] || "application/octet-stream";
+}
+
 export async function saveTextFileWithStorage(request, storage) {
   const source = request && typeof request === "object" ? request : {};
   const filename = String(source.filename || "export.txt").trim() || "export.txt";
@@ -96,10 +120,42 @@ export async function openTextFileWithStorage(request, storage) {
   };
 }
 
+export async function openImageFileWithStorage(storage) {
+  const fileSystem = storage && storage.localFileSystem;
+  if (!fileSystem || typeof fileSystem.getFileForOpening !== "function") {
+    throw new Error("UXP 打开图片接口不可用");
+  }
+
+  const picked = await fileSystem.getFileForOpening({
+    allowMultiple: false,
+    types: ["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff"]
+  });
+  const entry = Array.isArray(picked) ? picked[0] : picked;
+  if (!entry) return { outcome: "cancelled", name: "", dataUrl: "" };
+  if (typeof entry.read !== "function") throw new Error("UXP 图片读取接口不可用");
+
+  const binary = storage && storage.formats && storage.formats.binary;
+  if (!binary) throw new Error("当前 UXP 版本未提供二进制文件读取格式");
+  const name = String(entry.name || "image");
+  const mimeType = getImageMimeType(name);
+  if (!mimeType.startsWith("image/")) throw new Error("请选择 JPG、PNG、WebP、GIF、BMP 或 TIFF 图片");
+  const bytes = await entry.read({ format: binary });
+  return {
+    outcome: "loaded",
+    name,
+    mimeType,
+    dataUrl: `data:${mimeType};base64,${arrayBufferToBase64(bytes)}`
+  };
+}
+
 export function saveTextFile(args = []) {
   return saveTextFileWithStorage(normalizeRequest(args), getUxpStorage());
 }
 
 export function openTextFile(args = []) {
   return openTextFileWithStorage(normalizeRequest(args), getUxpStorage());
+}
+
+export function openImageFile() {
+  return openImageFileWithStorage(getUxpStorage());
 }
