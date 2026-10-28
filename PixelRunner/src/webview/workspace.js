@@ -1,4 +1,5 @@
 import { encodeLocalImageAsJpeg } from "./local-image.js";
+import { formatImageAssetMeta } from "./image-asset-meta.js";
 
 (function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
@@ -316,6 +317,7 @@ import { encodeLocalImageAsJpeg } from "./local-image.js";
       uploadWidth: Number(asset.uploadWidth) || null,
       uploadHeight: Number(asset.uploadHeight) || null,
       uploadQuality: Number(asset.uploadQuality) || null,
+      uploadQualityMax: Number(asset.uploadQualityMax) || null,
       uploadTargetBytes: Number(asset.uploadTargetBytes) || null,
       uploadHardLimitBytes: Number(asset.uploadHardLimitBytes) || null,
       compressionAttempts: Array.isArray(asset.compressionAttempts)
@@ -506,7 +508,11 @@ import { encodeLocalImageAsJpeg } from "./local-image.js";
       uploadBytes: encoded.bytes,
       uploadWidth: encoded.width,
       uploadHeight: encoded.height,
-      uploadQuality: encoded.quality
+      uploadQuality: encoded.quality,
+      uploadQualityMax: encoded.qualityMax,
+      uploadTargetBytes: encoded.targetBytes,
+      uploadHardLimitBytes: encoded.hardLimitBytes,
+      compressionAttempts: encoded.attempts
     };
   }
 
@@ -564,11 +570,7 @@ import { encodeLocalImageAsJpeg } from "./local-image.js";
       ? (asset.source === "local-file" ? "来源：本地文件" : asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
       : "点击捕获 Photoshop 图像";
     const captureMeta = hasAssignedAsset
-      ? [
-          `${asset.originalWidth || asset.width || "-"}x${asset.originalHeight || asset.height || "-"}`,
-          asset.uploadBytes ? `${(asset.uploadBytes / (1024 * 1024)).toFixed(2)}MB` : "",
-          asset.uploadQuality ? `Q${asset.uploadQuality}` : ""
-        ].filter(Boolean).join(" · ")
+      ? formatImageAssetMeta(asset)
       : "";
     const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
 
@@ -594,7 +596,7 @@ import { encodeLocalImageAsJpeg } from "./local-image.js";
               <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
             </div>
             <button class="mini-btn image-capture-local-btn" type="button" data-action="select-local-image" data-form-key="${runtime.escapeHtml(key)}">本地</button>
-            <input class="local-image-file-input" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" data-local-image-key="${runtime.escapeHtml(key)}" hidden />
+            <input class="local-image-file-input" type="file" accept="image/*" data-local-image-key="${runtime.escapeHtml(key)}" hidden />
           </div>
           <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}${captureMeta ? ` · ${runtime.escapeHtml(captureMeta)}` : ""}</div>
         </div>

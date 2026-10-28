@@ -75,6 +75,50 @@ export async function getSrgb8Pixels(imaging, options = {}, compatibilityFallbac
   throw error;
 }
 
+// Only call this on a disposable document copy, never the user document.
+export async function convertTemporaryDocumentToSrgb8(tempDoc, action) {
+  const mode = normalizeDocumentMode(tempDoc.mode);
+  const toRgb = async () => action.batchPlay([{
+    _obj: "convertMode",
+    _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
+    _to: { _class: "RGBColor" },
+    merge: true,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+  if (mode !== "RGB") {
+    if (["BITMAP", "DUOTONE", "MULTICHANNEL"].includes(mode)) {
+      await action.batchPlay([{
+        _obj: "convertMode",
+        _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
+        _to: { _class: "grayscaleMode" },
+        merge: true,
+        _options: { dialogOptions: "dontDisplay" }
+      }], {});
+    }
+    await toRgb();
+  }
+  const bits = String(tempDoc.bitsPerChannel && (tempDoc.bitsPerChannel._value ?? tempDoc.bitsPerChannel.value ?? tempDoc.bitsPerChannel) || "").toUpperCase();
+  if (!bits.includes("8") && !bits.includes("EIGHT")) {
+    await action.batchPlay([{
+      _obj: "convertMode",
+      _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
+      depth: 8,
+      merge: true,
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+  }
+  await action.batchPlay([{
+    _obj: "convertToProfile",
+    _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
+    profile: STANDARD_PIXEL_COLOR_PROFILE,
+    intent: { _enum: "intent", _value: "relativeColorimetric" },
+    blackPointCompensation: true,
+    dither: true,
+    flatten: true,
+    _options: { dialogOptions: "dontDisplay" }
+  }], {});
+}
+
 export async function capturePixelsFromTemporaryRgbCopy(imaging, options) {
   const deps = await ensureDeps();
   const { app, action } = deps.photoshop;
@@ -86,46 +130,7 @@ export async function capturePixelsFromTemporaryRgbCopy(imaging, options) {
   try {
     tempDoc = await sourceDoc.duplicate(`PixelRunner Color Capture ${Date.now()}`);
     try { if (typeof tempDoc.flatten === "function") await tempDoc.flatten(); } catch (_) {}
-    const mode = normalizeDocumentMode(tempDoc.mode);
-    const toRgb = async () => action.batchPlay([{
-      _obj: "convertMode",
-      _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
-      _to: { _class: "RGBColor" },
-      merge: true,
-      _options: { dialogOptions: "dontDisplay" }
-    }], {});
-    if (mode !== "RGB") {
-      if (["BITMAP", "DUOTONE", "MULTICHANNEL"].includes(mode)) {
-        await action.batchPlay([{
-          _obj: "convertMode",
-          _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
-          _to: { _class: "grayscaleMode" },
-          merge: true,
-          _options: { dialogOptions: "dontDisplay" }
-        }], {});
-      }
-      await toRgb();
-    }
-    const bits = String(tempDoc.bitsPerChannel && (tempDoc.bitsPerChannel._value ?? tempDoc.bitsPerChannel.value ?? tempDoc.bitsPerChannel) || "").toUpperCase();
-    if (!bits.includes("8") && !bits.includes("EIGHT")) {
-      await action.batchPlay([{
-        _obj: "convertMode",
-        _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
-        depth: 8,
-        merge: true,
-        _options: { dialogOptions: "dontDisplay" }
-      }], {});
-    }
-    await action.batchPlay([{
-      _obj: "convertToProfile",
-      _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
-      profile: STANDARD_PIXEL_COLOR_PROFILE,
-      intent: { _enum: "intent", _value: "relativeColorimetric" },
-      blackPointCompensation: true,
-      dither: true,
-      flatten: true,
-      _options: { dialogOptions: "dontDisplay" }
-    }], {});
+    await convertTemporaryDocumentToSrgb8(tempDoc, action);
     return await imaging.getPixels({ ...options, documentID: Number(tempDoc.id) });
   } catch (error) {
     throw new Error(`临时副本 RGB/8 位兼容转换失败（原模式 ${normalizeDocumentMode(sourceDoc.mode) || "未知"}）：${String(error && error.message || error)}`);

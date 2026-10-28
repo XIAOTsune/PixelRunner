@@ -987,9 +987,7 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
     }
     const encodedContext = await imaging.encodeImageData({
       imageData: contextPixels.imageData,
-      base64: true,
-      format: "jpeg",
-      quality
+      base64: true
     });
     const contextBase64 = extractEncodedBase64(encodedContext);
     if (!contextBase64) throw new Error("Photoshop 返回了空的上下文图像");
@@ -1020,11 +1018,11 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
         bytes,
         width: Math.max(1, Number(targetSize && targetSize.width) || 1),
         height: Math.max(1, Number(targetSize && targetSize.height) || 1),
-        quality,
+        quality: null,
         targetBytes: DEFAULT_UPLOAD_TARGET_BYTES,
         hardLimitBytes,
         attempts: [{
-          quality,
+          quality: null,
           bytes,
           width: Math.max(1, Number(targetSize && targetSize.width) || 1),
           height: Math.max(1, Number(targetSize && targetSize.height) || 1)
@@ -1204,7 +1202,6 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     try {
       await tempDoc.flatten();
     } catch (_) {}
-
     const isSelectionCapture =
       selectionBounds &&
       (cropBounds.left > 0 ||
@@ -1279,6 +1276,7 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     width: uploadResult.width,
     height: uploadResult.height,
     quality: uploadResult.quality,
+    qualityMax: 12,
     targetBytes: uploadResult.targetBytes,
     hardLimitBytes: uploadResult.hardLimitBytes,
     attempts: uploadResult.attempts || []
@@ -1305,9 +1303,6 @@ function estimateBase64Bytes(base64) {
 async function buildImagingUploadAsset(imaging, documentId, sourceBounds, targetSize, compressionOptions = {}) {
   const targetBytes = Math.max(1, Math.floor(Number(compressionOptions.targetBytes) || DEFAULT_UPLOAD_TARGET_BYTES));
   const hardLimitBytes = Math.max(targetBytes, Math.floor(Number(compressionOptions.hardLimitBytes) || DEFAULT_UPLOAD_HARD_LIMIT_BYTES));
-  const qualitySteps = Array.isArray(compressionOptions.qualitySteps) && compressionOptions.qualitySteps.length
-    ? compressionOptions.qualitySteps
-    : DEFAULT_UPLOAD_QUALITY_STEPS;
   let pixels = null;
   try {
     const pixelOptions = {
@@ -1320,35 +1315,20 @@ async function buildImagingUploadAsset(imaging, documentId, sourceBounds, target
     pixels = await getPixelsWithFallback(imaging, pixelOptions);
     if (!pixels || !pixels.imageData) throw new Error("Photoshop 未返回上下文像素数据");
 
-    const attempts = [];
-    let accepted = null;
-    let lastAttempt = null;
-    for (const rawQuality of qualitySteps) {
-      const quality = Math.max(1, Math.min(12, Math.floor(Number(rawQuality) || 8)));
-      const encoded = await imaging.encodeImageData({
-        imageData: pixels.imageData,
-        base64: true,
-        format: "jpeg",
-        quality
-      });
-      const base64 = extractEncodedBase64(encoded);
-      if (!base64) throw new Error("Photoshop 返回了空的上下文图像");
-      const attempt = {
-        quality,
-        bytes: estimateBase64Bytes(base64),
-        width: Math.max(1, Number(targetSize && targetSize.width) || 1),
-        height: Math.max(1, Number(targetSize && targetSize.height) || 1)
-      };
-      attempts.push(attempt);
-      lastAttempt = { ...attempt, base64 };
-      if (attempt.bytes <= targetBytes) {
-        accepted = lastAttempt;
-        break;
-      }
-    }
-
-    if (!accepted && lastAttempt && lastAttempt.bytes <= hardLimitBytes) accepted = lastAttempt;
-    if (!accepted) {
+    // encodeImageData is a preview encoder. Its documented options do not
+    // include quality; never claim that a Photoshop JPEG save level was used.
+    const encoded = await imaging.encodeImageData({ imageData: pixels.imageData, base64: true });
+    const base64 = extractEncodedBase64(encoded);
+    if (!base64) throw new Error("Photoshop 返回了空的上下文图像");
+    const accepted = {
+      base64,
+      quality: null,
+      bytes: estimateBase64Bytes(base64),
+      width: Math.max(1, Number(pixels.imageData.width) || 1),
+      height: Math.max(1, Number(pixels.imageData.height) || 1)
+    };
+    const attempts = [{ quality: null, bytes: accepted.bytes, width: accepted.width, height: accepted.height }];
+    if (accepted.bytes > hardLimitBytes) {
       const error = new Error("上下文图像压缩后仍超过上传限制");
       error.attempts = attempts;
       error.targetBytes = targetBytes;
@@ -1794,7 +1774,9 @@ async function captureDocumentPreviewInternal(options = {}) {
             hardLimitBytes: 0,
             attempts: []
           }
-        : await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options);
+        : options.useImagingUpload === true
+          ? await buildImagingUploadAsset(imaging, doc.id, captureBounds, targetSize, options)
+          : await buildCompressedUploadAsset(doc, docInfo, captureBounds, options, deps);
       let selectionMaskDataUrl = "";
       let selectionMaskShape = "none";
       let selectionMaskError = "";
@@ -1830,13 +1812,13 @@ async function captureDocumentPreviewInternal(options = {}) {
         let base64 = "";
         let previewWidth = targetSize.width;
         let previewHeight = targetSize.height;
-        let previewQuality = quality;
+        let previewQuality = null;
         const captureFormat = String(options.captureFormat || "jpeg").toLowerCase() === "png" ? "png" : "jpeg";
         if (options.useImagingUpload === true && !skipUploadAsset) {
           base64 = String(uploadAsset.base64 || "");
           previewWidth = Math.max(1, Number(uploadAsset.width) || targetSize.width);
           previewHeight = Math.max(1, Number(uploadAsset.height) || targetSize.height);
-          previewQuality = Number(uploadAsset.quality) || quality;
+          previewQuality = uploadAsset.quality;
         } else {
           pixels = await getPixelsWithFallback(imaging, {
             documentID: Number(doc.id),
@@ -1856,7 +1838,6 @@ async function captureDocumentPreviewInternal(options = {}) {
             base64: true,
             format: captureFormat
           };
-          if (captureFormat === "jpeg") encodeOptions.quality = quality;
           const encoded = await imaging.encodeImageData(encodeOptions);
           base64 = extractEncodedBase64(encoded);
           if (captureFormat === "png") previewQuality = 0;
@@ -1903,6 +1884,7 @@ async function captureDocumentPreviewInternal(options = {}) {
         uploadWidth: uploadAsset.width,
         uploadHeight: uploadAsset.height,
         uploadQuality: uploadAsset.quality,
+        uploadQualityMax: uploadAsset.qualityMax,
         uploadTargetBytes: uploadAsset.targetBytes,
         uploadHardLimitBytes: uploadAsset.hardLimitBytes,
         compressionAttempts: uploadAsset.attempts

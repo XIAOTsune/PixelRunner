@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { normalizeDocumentMode } from "../src/host/photoshop/document.js";
 import {
   buildPixelCaptureOptions,
+  convertTemporaryDocumentToSrgb8,
   getSrgb8Pixels,
   normalizeFloatComponentToByte,
   selectConsistentPngColorChunks
@@ -66,5 +67,15 @@ assert.equal(normalizeDocumentMode("Bitmap"), "BITMAP");
 assert.equal(normalizeDocumentMode("Indexed Color"), "INDEXEDCOLOR");
 assert.equal(normalizeDocumentMode("Duotone"), "DUOTONE");
 assert.equal(normalizeDocumentMode("Multichannel"), "MULTICHANNEL");
+
+const conversionActions = [];
+await convertTemporaryDocumentToSrgb8({ id: 25, mode: "CMYKColor", bitsPerChannel: 16 }, {
+  async batchPlay(descriptors) { conversionActions.push(descriptors[0]); return []; }
+});
+assert.deepEqual(conversionActions.map((action) => action._obj), ["convertMode", "convertMode", "convertToProfile"]);
+assert.deepEqual(conversionActions[0]._to, { _class: "RGBColor" });
+assert.equal(conversionActions[1].depth, 8);
+assert.equal(conversionActions[2].profile, "sRGB IEC61966-2.1");
+assert.equal(conversionActions[2].intent._value, "relativeColorimetric");
 
 console.log("Pixel capture color conversion tests passed.");

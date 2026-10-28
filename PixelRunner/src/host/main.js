@@ -358,7 +358,7 @@ async function handleBridgeRequest(message, responseTarget) {
           ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
           fullResolution: false,
           skipUploadAsset: false,
-          useImagingUpload: true
+          useImagingUpload: false
         }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
