@@ -1,5 +1,22 @@
 import { ensureDeps } from "./deps.js";
 
+// All pixels crossing the Photoshop/WebView/remote-image boundary use this
+// explicit interchange space.  Relying on the document's working space here
+// makes wide-gamut documents look different once the bytes are decoded by a
+// browser canvas or a remote service.
+export const STANDARD_PIXEL_COLOR_SPACE = "RGB";
+export const STANDARD_PIXEL_COLOR_PROFILE = "sRGB IEC61966-2.1";
+
+function unwrapPhotoshopValue(value) {
+  if (!value || typeof value !== "object") return value;
+  return value._value ?? value.value ?? value.name ?? value;
+}
+
+function normalizeTextValue(value) {
+  const unwrapped = unwrapPhotoshopValue(value);
+  return String(unwrapped == null ? "" : unwrapped).trim();
+}
+
 export function toNumberValue(value) {
   if (value == null) return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -13,7 +30,7 @@ export function toNumberValue(value) {
 }
 
 export function normalizeBitsPerChannel(value) {
-  const text = String(value == null ? "" : value).trim();
+  const text = normalizeTextValue(value);
   if (!text) return "";
   const normalized = text.toUpperCase();
   if (normalized === "8" || normalized === "EIGHT") return "EIGHT";
@@ -29,7 +46,21 @@ export function getBitsPerChannelLabel(value) {
   if (normalized === "SIXTEEN") return "16 位";
   if (normalized === "THIRTYTWO") return "32 位";
   if (normalized === "ONE") return "1 位";
-  return String(value == null ? "" : value).trim();
+  return normalizeTextValue(value);
+}
+
+export function normalizeDocumentMode(value) {
+  const normalized = normalizeTextValue(value).toUpperCase().replace(/[\s_-]+/g, "");
+  if (!normalized) return "";
+  if (normalized === "RGB" || normalized.includes("RGBCOLOR")) return "RGB";
+  if (normalized === "CMYK" || normalized.includes("CMYKCOLOR")) return "CMYK";
+  if (normalized === "LAB" || normalized.includes("LABCOLOR")) return "LAB";
+  if (normalized === "GRAYSCALE" || normalized.includes("GRAYSCALE")) return "GRAYSCALE";
+  if (normalized === "BITMAP" || normalized.includes("BITMAP")) return "BITMAP";
+  if (normalized === "INDEXEDCOLOR" || normalized.includes("INDEXED")) return "INDEXEDCOLOR";
+  if (normalized === "MULTICHANNEL" || normalized.includes("MULTICHANNEL")) return "MULTICHANNEL";
+  if (normalized === "DUOTONE" || normalized.includes("DUOTONE")) return "DUOTONE";
+  return normalized;
 }
 
 export function getDocumentInfo(doc) {
@@ -40,6 +71,23 @@ export function getDocumentInfo(doc) {
     };
   }
 
+  const metadataErrors = [];
+  const read = (name) => {
+    try {
+      return doc[name];
+    } catch (error) {
+      metadataErrors.push(`${name}: ${String(error && error.message || error)}`);
+      return null;
+    }
+  };
+  const mode = read("mode");
+  const bitsPerChannel = read("bitsPerChannel");
+  const colorProfileName = read("colorProfileName");
+  const colorProfileType = read("colorProfileType");
+  if (metadataErrors.length) {
+    console.warn("[PixelRunner/Photoshop] document metadata unavailable", JSON.stringify({ documentId: Number(doc.id) || 0, errors: metadataErrors }));
+  }
+
   return {
     ok: true,
     hasActiveDocument: true,
@@ -48,8 +96,12 @@ export function getDocumentInfo(doc) {
     width: toNumberValue(doc.width),
     height: toNumberValue(doc.height),
     resolution: toNumberValue(doc.resolution),
-    bitsPerChannel: normalizeBitsPerChannel(doc.bitsPerChannel),
-    bitsPerChannelLabel: getBitsPerChannelLabel(doc.bitsPerChannel),
+    bitsPerChannel: normalizeBitsPerChannel(bitsPerChannel),
+    bitsPerChannelLabel: getBitsPerChannelLabel(bitsPerChannel),
+    mode: normalizeDocumentMode(mode),
+    colorProfileName: normalizeTextValue(colorProfileName),
+    colorProfileType: normalizeTextValue(colorProfileType),
+    metadataErrors,
     selectionBounds: getSelectionBounds(doc)
   };
 }

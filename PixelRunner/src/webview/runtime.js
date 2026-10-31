@@ -395,6 +395,13 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     return { outcome: "unsupported", name: "", text: "" };
   }
 
+  async function openImageFile() {
+    if (!isPluginRuntime()) {
+      throw new Error("浏览器预览模式下请使用图片框中的本地按钮选择图片");
+    }
+    return callHost("file.openImage", [], { timeoutMs: 600000 });
+  }
+
   function setSummaryStatus(element, message, type = "info") {
     if (!element) return;
     element.textContent = String(message || "");
@@ -417,6 +424,7 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     readJsonText,
     setSummaryStatus,
     saveTextFile,
-    openTextFile
+    openTextFile,
+    openImageFile
   };
 })(window);

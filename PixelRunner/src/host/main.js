@@ -27,7 +27,7 @@ import {
   submitThirdPartyGeminiTask
 } from "./third-party-gemini.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
-import { openTextFile, saveTextFile } from "./files.js";
+import { openImageFile, openTextFile, saveTextFile } from "./files.js";
 import {
   openExternalUrl,
   openLocalPath,
@@ -276,6 +276,9 @@ async function handleBridgeRequest(message, responseTarget) {
       case "file.openText":
         result = await openTextFile(message.args);
         break;
+      case "file.openImage":
+        result = await openImageFile();
+        break;
       case "runninghub.submitTask":
         result = await submitRunningHubTask(message.args);
         break;
@@ -354,7 +357,8 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
           ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
           fullResolution: false,
-          skipUploadAsset: false
+          skipUploadAsset: false,
+          useImagingUpload: false
         }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
@@ -364,7 +368,8 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
           ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
           fullResolution: false,
-          skipUploadAsset: false
+          skipUploadAsset: false,
+          useImagingUpload: true
         }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });
@@ -373,7 +378,8 @@ async function handleBridgeRequest(message, responseTarget) {
         result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopPostFxPreview([{
           ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
           fullResolution: false,
-          skipUploadAsset: false
+          skipUploadAsset: false,
+          useImagingUpload: true
         }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });

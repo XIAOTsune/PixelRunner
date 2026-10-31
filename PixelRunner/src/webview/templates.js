@@ -422,6 +422,107 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     return normalized;
   }
 
+  async function savePromptHistoryToDefaultCategory(historyItem) {
+    const source = historyItem && typeof historyItem === "object" ? historyItem : {};
+    const content = String(source.content || "");
+    if (!content.trim()) throw new Error("提示词内容为空，无法收藏为预设。");
+    const categoryId = getDefaultCategoryId();
+    const templates = Array.isArray(modules.state.state.templates) ? modules.state.state.templates.slice() : [];
+    const existingIndex = templates.findIndex((template) =>
+      String(template.categoryId || categoryId) === categoryId && String(template.content || "") === content
+    );
+    if (existingIndex >= 0) {
+      const existing = templates[existingIndex];
+      const previousFavorite = typeof existing.promptHistoryFavoriteBaseline === "boolean"
+        ? existing.promptHistoryFavoriteBaseline
+        : existing.favorite === true;
+      const historyRefs = Array.isArray(existing.promptHistoryFavoriteRefs) ? existing.promptHistoryFavoriteRefs.map(String) : [];
+      const historyId = String(source.id || "").trim();
+      if (historyId && !historyRefs.includes(historyId)) historyRefs.push(historyId);
+      templates[existingIndex] = {
+        ...existing,
+        favorite: true,
+        promptHistoryFavoriteBaseline: previousFavorite,
+        promptHistoryFavoriteRefs: historyRefs,
+        updatedAt: Date.now()
+      };
+      await saveTemplatesToStorage(templates);
+      const savedTemplate = modules.state.state.templates.find((template) => String(template.id) === String(existing.id)) || templates[existingIndex];
+      return { template: savedTemplate, owned: false, previousFavorite };
+    }
+
+    const appName = String(source.appName || "未命名应用").trim() || "未命名应用";
+    const fieldLabel = String(source.fieldLabel || source.fieldKey || "提示词").trim() || "提示词";
+    const baseTitle = `${appName} · ${fieldLabel}`;
+    const existingTitles = new Set(templates
+      .filter((template) => String(template.categoryId || categoryId) === categoryId)
+      .map((template) => String(template.title || "").trim()));
+    let title = baseTitle;
+    let suffix = 2;
+    while (existingTitles.has(title)) title = `${baseTitle} (${suffix++})`;
+
+    const now = Date.now();
+    const template = modules.state.normalizeTemplateRecord({
+      id: modules.runtime.createId("tpl"),
+      title,
+      content,
+      categoryId,
+      createdAt: now,
+      updatedAt: now,
+      favorite: true,
+      source: "prompt-history",
+      sourceHistoryId: String(source.id || ""),
+      promptHistoryFavoriteBaseline: false,
+      promptHistoryFavoriteRefs: String(source.id || "").trim() ? [String(source.id).trim()] : []
+    });
+    if (!template) throw new Error("提示词内容无法保存为预设。");
+    await saveTemplatesToStorage([template, ...templates]);
+    const savedTemplate = modules.state.state.templates.find((item) => String(item.id) === String(template.id)) || template;
+    return { template: savedTemplate, owned: true, previousFavorite: false };
+  }
+
+  async function removePromptHistoryTemplate(historyItem) {
+    const source = historyItem && typeof historyItem === "object" ? historyItem : {};
+    const categoryId = getDefaultCategoryId();
+    const templates = Array.isArray(modules.state.state.templates) ? modules.state.state.templates.slice() : [];
+    const target = templates.find((template) => String(template.id) === String(source.savedTemplateId || "")) || templates.find((template) =>
+      String(template.categoryId || categoryId) === categoryId && String(template.content || "") === String(source.content || "")
+    );
+    if (!target) return false;
+
+    const historyRefs = Array.isArray(target.promptHistoryFavoriteRefs)
+      ? target.promptHistoryFavoriteRefs.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    const otherHistoryIds = new Set(historyRefs.filter((id) => id !== String(source.id || "")));
+    (modules.state.state.promptHistory || []).forEach((item) => {
+      if (!item || item.savedAsTemplate !== true || String(item.id || "") === String(source.id || "")) return;
+      if (!item.savedTemplateId || String(item.savedTemplateId) === String(target.id)) otherHistoryIds.add(String(item.id || ""));
+    });
+    if (otherHistoryIds.size > 0) {
+      await saveTemplatesToStorage(templates.map((template) => String(template.id) === String(target.id)
+        ? { ...template, favorite: true, promptHistoryFavoriteRefs: [...otherHistoryIds], updatedAt: Date.now() }
+        : template));
+      return true;
+    }
+
+    if (target.source === "prompt-history") {
+      await saveTemplatesToStorage(templates.filter((template) => String(template.id) !== String(target.id)));
+      return true;
+    }
+
+    if (String(target.categoryId || categoryId) !== categoryId) return false;
+    const favoriteBaseline = typeof target.promptHistoryFavoriteBaseline === "boolean"
+      ? target.promptHistoryFavoriteBaseline
+      : source.savedTemplatePreviousFavorite === true;
+    if (target.favorite !== favoriteBaseline || historyRefs.length > 0) {
+      await saveTemplatesToStorage(templates.map((template) => String(template.id) === String(target.id)
+        ? { ...template, favorite: favoriteBaseline, promptHistoryFavoriteBaseline: null, promptHistoryFavoriteRefs: [], updatedAt: Date.now() }
+        : template));
+      return true;
+    }
+    return false;
+  }
+
   async function refreshTemplates(options = {}) {
     const templates = await loadTemplatesFromStorage();
     modules.state.state.templates = templates;
@@ -1856,6 +1957,8 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     getTailPreview,
     buildTemplateLengthHint,
     fillTemplateEditor,
+    savePromptHistoryToDefaultCategory,
+    removePromptHistoryTemplate,
     updateTemplateLengthHint,
     refreshTemplates,
     initializeBuiltinBundle,

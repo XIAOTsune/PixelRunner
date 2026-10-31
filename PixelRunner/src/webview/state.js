@@ -44,6 +44,7 @@ import {
     ACTIVE_PROMPT_BUNDLE: "pixelrunner.activePromptBundle.v1",
     LEGACY_APPS: ["rh_ai_apps", "rh_ai_apps_v1", "ai_apps", "runninghub_ai_apps"],
     CURRENT_APP_ID: "pixelrunner.current_app_id",
+    APP_FORM_VALUES: "pixelrunner.appFormValues.v1",
     WORKSPACE_MODE: "pixelrunner.workspaceMode",
     QUICK_ENTRIES: "pixelrunner.quickEntries.v1",
     WORKSPACE_INIT: "pixelrunner.workspace.initialized.v1",
@@ -105,6 +106,7 @@ import {
     timeout: 180,
     maxConcurrentTasks: 3,
     localQueueEnabled: false,
+    reuseAppFormValues: false,
     aiOptimizeAppId: DEFAULT_AI_OPTIMIZE_APP_ID,
     aiOptimizeAppIds: {
       cn: DEFAULT_AI_OPTIMIZE_APP_ID,
@@ -349,6 +351,7 @@ import {
       timeout,
       maxConcurrentTasks,
       localQueueEnabled: source.localQueueEnabled === true,
+      reuseAppFormValues: source.reuseAppFormValues === true,
       aiOptimizeAppId: aiOptimizeAppIds[runningHubRegion],
       aiOptimizeAppIds,
       generativeFillAppId: generativeFillAppIds[runningHubRegion],
@@ -726,7 +729,13 @@ import {
       categoryId,
       createdAt: Number(source.createdAt) > 0 ? Number(source.createdAt) : now + index,
       updatedAt: Number(source.updatedAt) > 0 ? Number(source.updatedAt) : now + index,
-      favorite: source.favorite === true || source.isFavorite === true
+      favorite: source.favorite === true || source.isFavorite === true,
+      source: String(source.source || "").trim(),
+      sourceHistoryId: String(source.sourceHistoryId || "").trim(),
+      promptHistoryFavoriteBaseline: typeof source.promptHistoryFavoriteBaseline === "boolean" ? source.promptHistoryFavoriteBaseline : null,
+      promptHistoryFavoriteRefs: Array.isArray(source.promptHistoryFavoriteRefs)
+        ? [...new Set(source.promptHistoryFavoriteRefs.map((id) => String(id || "").trim()).filter(Boolean))]
+        : []
     };
   }
 

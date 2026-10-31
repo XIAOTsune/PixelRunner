@@ -147,6 +147,9 @@
     if (modules.runtime.getById("settingsLocalQueueEnabledInput")) {
       modules.runtime.getById("settingsLocalQueueEnabledInput").checked = settings.localQueueEnabled === true;
     }
+    if (modules.runtime.getById("settingsReuseAppFormValuesInput")) {
+      modules.runtime.getById("settingsReuseAppFormValuesInput").checked = settings.reuseAppFormValues === true;
+    }
     if (modules.runtime.getById("settingsRatioOffsetCorrectionInput")) {
       modules.runtime.getById("settingsRatioOffsetCorrectionInput").checked = settings.ratioOffsetCorrectionEnabled === true;
     }
@@ -1135,6 +1138,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
+      reuseAppFormValues: modules.runtime.getById("settingsReuseAppFormValuesInput")?.checked === true,
       ratioOffsetCorrectionEnabled: modules.runtime.getById("settingsRatioOffsetCorrectionInput")?.checked === true,
       aiOptimizeAppId,
       aiOptimizeAppIds: {
@@ -1167,6 +1171,7 @@
       timeout: modules.runtime.getById("settingsTimeoutInput")?.value,
       maxConcurrentTasks: modules.runtime.getById("settingsMaxConcurrentTasksInput")?.value,
       localQueueEnabled: modules.runtime.getById("settingsLocalQueueEnabledInput")?.checked === true,
+      reuseAppFormValues: modules.runtime.getById("settingsReuseAppFormValuesInput")?.checked === true,
       ratioOffsetCorrectionEnabled: modules.runtime.getById("settingsRatioOffsetCorrectionInput")?.checked === true,
       aiOptimizeAppId,
       aiOptimizeAppIds: {
@@ -1496,6 +1501,7 @@
       "settingsTimeoutInput",
       "settingsMaxConcurrentTasksInput",
       "settingsLocalQueueEnabledInput",
+      "settingsReuseAppFormValuesInput",
       "settingsRatioOffsetCorrectionInput",
       "settingsAiOptimizeAppIdInput",
       "settingsGenerativeFillAppIdInput",
@@ -1508,6 +1514,7 @@
     ];
     const immediateAdvancedFieldIds = new Set([
       "settingsLocalQueueEnabledInput",
+      "settingsReuseAppFormValuesInput",
       "settingsRatioOffsetCorrectionInput",
       "settingsGenerativeFillColorCorrectionInput",
       "settingsAppPickerLayoutInput",

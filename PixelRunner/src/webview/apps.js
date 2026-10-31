@@ -89,6 +89,40 @@
     await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.CURRENT_APP_ID, String(appId || ""));
   }
 
+  function getReusableFormValues(app, values) {
+    const source = values && typeof values === "object" ? values : {};
+    const reusableKeys = new Set();
+    (Array.isArray(app && app.inputs) ? app.inputs : []).forEach((input) => {
+      const key = String(input && input.key || "").trim();
+      if (!key || ["image", "file", "image-url"].includes(String(input.type || "").toLowerCase())) return;
+      reusableKeys.add(key);
+      if (input.allowCustom) reusableKeys.add(String(input.customKey || `${key}Custom`));
+    });
+    return Object.fromEntries(Array.from(reusableKeys).filter((key) => Object.prototype.hasOwnProperty.call(source, key)).map((key) => [key, source[key]]));
+  }
+
+  async function saveCurrentAppFormValues() {
+    const state = modules.state.state;
+    if (!state.settings.reuseAppFormValues || !state.currentApp) return;
+    if (modules.workspace && typeof modules.workspace.collectFormValuesFromDom === "function") {
+      modules.workspace.collectFormValuesFromDom();
+    }
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.APP_FORM_VALUES);
+    const parsed = modules.runtime.readJsonText(raw, {});
+    const saved = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    saved[String(state.currentApp.id)] = getReusableFormValues(state.currentApp, state.formValues);
+    const appIds = Object.keys(saved);
+    appIds.slice(0, Math.max(0, appIds.length - 100)).forEach((id) => delete saved[id]);
+    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.APP_FORM_VALUES, JSON.stringify(saved));
+  }
+
+  async function getSavedAppFormValues(app) {
+    if (!modules.state.state.settings.reuseAppFormValues || !app) return {};
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.APP_FORM_VALUES);
+    const saved = modules.runtime.readJsonText(raw, {});
+    return getReusableFormValues(app, saved && typeof saved === "object" ? saved[String(app.id)] : null);
+  }
+
   function getThirdPartyPickerButton() {
     const state = modules.state.state;
     const isActive = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
@@ -587,9 +621,13 @@
     const nextApp = state.apps.find((item) => String(item.id) === String(appId));
     if (!nextApp || modules.state.normalizeRunningHubRegion(nextApp.region) !== getCurrentRunningHubRegion()) return false;
 
+    await saveCurrentAppFormValues();
     const previousWasThirdParty = modules.state.isThirdPartyApp(state.currentApp);
     state.currentApp = nextApp;
-    state.formValues = modules.state.buildDefaultFormValues(nextApp);
+    state.formValues = {
+      ...modules.state.buildDefaultFormValues(nextApp),
+      ...await getSavedAppFormValues(nextApp)
+    };
     await persistCurrentAppId(nextApp.id || "");
     if (!options.preserveWorkspaceMode && modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
       await modules.quickEntries.setWorkspaceMode("app", { skipRender: true });

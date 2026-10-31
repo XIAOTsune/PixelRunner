@@ -1,3 +1,6 @@
+import { encodeLocalImageAsJpeg } from "./local-image.js";
+import { formatImageAssetMeta } from "./image-asset-meta.js";
+
 (function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const RUN_BUTTON_COOLDOWN_MS = 600;
@@ -314,6 +317,7 @@
       uploadWidth: Number(asset.uploadWidth) || null,
       uploadHeight: Number(asset.uploadHeight) || null,
       uploadQuality: Number(asset.uploadQuality) || null,
+      uploadQualityMax: Number(asset.uploadQualityMax) || null,
       uploadTargetBytes: Number(asset.uploadTargetBytes) || null,
       uploadHardLimitBytes: Number(asset.uploadHardLimitBytes) || null,
       compressionAttempts: Array.isArray(asset.compressionAttempts)
@@ -364,10 +368,6 @@
       quality: Number(asset.uploadQuality) || null
     };
     return payloadValue;
-  }
-
-  function getImageInputLabel(input) {
-    return String((input && (input.label || input.name || input.key)) || "").trim();
   }
 
   function getImageInputMarker(input) {
@@ -463,6 +463,78 @@
     return asset;
   }
 
+  function readImageFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("读取本地图片失败，请重新选择图片。"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function loadImageElement(source) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("无法解析所选图片，请选择常见图片格式。"));
+      image.src = source;
+    });
+  }
+
+  async function buildLocalImageAsset(file) {
+    const sourceDataUrl = String(file && file.dataUrl || "") || await readImageFileAsDataUrl(file);
+    const image = await loadImageElement(sourceDataUrl);
+    const settings = getImageCaptureSettings();
+    const encoded = encodeLocalImageAsJpeg(image, settings);
+    const mimeType = "image/jpeg";
+    return {
+      assetId: modules.runtime.createId("local-image"),
+      capturedAt: Date.now(),
+      capturedFromSelection: false,
+      kind: "local-image-file",
+      source: "local-file",
+      width: encoded.width,
+      height: encoded.height,
+      originalWidth: encoded.originalWidth,
+      originalHeight: encoded.originalHeight,
+      quality: encoded.quality,
+      maxDimension: settings.maxDimension,
+      mimeType,
+      dataUrl: encoded.dataUrl,
+      base64: encoded.base64,
+      uploadMimeType: mimeType,
+      uploadDataUrl: encoded.dataUrl,
+      uploadBase64: encoded.base64,
+      uploadBytes: encoded.bytes,
+      uploadWidth: encoded.width,
+      uploadHeight: encoded.height,
+      uploadQuality: encoded.quality,
+      uploadQualityMax: encoded.qualityMax,
+      uploadTargetBytes: encoded.targetBytes,
+      uploadHardLimitBytes: encoded.hardLimitBytes,
+      compressionAttempts: encoded.attempts
+    };
+  }
+
+  async function applyLocalImageFile(key, file) {
+    if (!key || !file) return;
+    try {
+      const asset = await buildLocalImageAsset(file);
+      modules.state.state.formValues[key] = cloneCaptureAsset(asset);
+      renderWorkspace();
+      modules.ui.logToWorkspace(`已从本地载入图像：${file.name || key} (${asset.originalWidth}x${asset.originalHeight})`, "success");
+    } catch (error) {
+      modules.ui.logToWorkspace(`本地图片读取失败：${error.message}`, "error");
+    }
+  }
+
+  async function handleLocalImageFile(input) {
+    await applyLocalImageFile(
+      input && input.getAttribute("data-local-image-key"),
+      input && input.files && input.files[0]
+    );
+  }
+
   function renderImageInputArea() {
     const runtime = modules.runtime;
     const state = modules.state.state;
@@ -495,20 +567,16 @@
     const previewSrc = getImageAssetPreviewSrc(asset);
     const captureLabel = hasAssignedAsset ? "重新捕获" : "捕获图像";
     const captureSource = hasAssignedAsset
-      ? (asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
-      : "点击此区域直接捕获图像";
+      ? (asset.source === "local-file" ? "来源：本地文件" : asset.capturedFromSelection ? "来源：Photoshop 当前选区" : "来源：Photoshop 当前文档")
+      : "点击捕获 Photoshop 图像";
     const captureMeta = hasAssignedAsset
-      ? [
-          `${asset.originalWidth || asset.width || "-"}x${asset.originalHeight || asset.height || "-"}`,
-          asset.uploadBytes ? `${(asset.uploadBytes / (1024 * 1024)).toFixed(2)}MB` : "",
-          asset.uploadQuality ? `Q${asset.uploadQuality}` : ""
-        ].filter(Boolean).join(" · ")
+      ? formatImageAssetMeta(asset)
       : "";
     const requiredMark = input.required ? '<span class="field-required">*</span>' : "";
 
     return `
       <div class="field dynamic-field image-field">
-        <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">
+        <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}" tabindex="0" role="group" aria-label="${label}图像输入">
           <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}">
             <div class="image-capture-stage-corners">
               <span class="image-capture-corner-label">${label}${requiredMark}</span>
@@ -527,6 +595,8 @@
             <div class="inline-actions image-capture-stage-actions">
               <button class="mini-btn image-capture-primary-btn" type="button" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}">${captureLabel}</button>
             </div>
+            <button class="mini-btn image-capture-local-btn" type="button" data-action="select-local-image" data-form-key="${runtime.escapeHtml(key)}">本地</button>
+            <input class="local-image-file-input" type="file" accept="image/*" data-local-image-key="${runtime.escapeHtml(key)}" hidden />
           </div>
           <div class="image-capture-stage-note">${runtime.escapeHtml(captureSource)}${captureMeta ? ` · ${runtime.escapeHtml(captureMeta)}` : ""}</div>
         </div>
@@ -4353,6 +4423,10 @@
 
       dynamicInputContainer.addEventListener("change", (event) => {
         const element = event.target;
+        if (element && element.matches("[data-local-image-key]")) {
+          void handleLocalImageFile(element);
+          return;
+        }
         if (!element || !element.matches("[data-form-key]")) return;
         const key = element.getAttribute("data-form-key");
         if (!key) return;
@@ -4419,13 +4493,6 @@
           return;
         }
 
-        if (action === "toggle-prompt-history-favorite") {
-          event.preventDefault();
-          event.stopPropagation();
-          void modules.promptHistory.toggleFavorite(actionTarget.getAttribute("data-history-id"));
-          return;
-        }
-
         if (action === "open-ai-optimize") {
           event.preventDefault();
           modules.aiOptimize.openModal(key);
@@ -4443,6 +4510,29 @@
         if (action === "capture-field-image") {
           event.preventDefault();
           handleCaptureFieldClick(actionTarget);
+          return;
+        }
+
+        if (action === "select-local-image") {
+          event.preventDefault();
+          event.stopPropagation();
+          if (modules.runtime.isPluginRuntime()) {
+            void modules.runtime.openImageFile()
+              .then((result) => {
+                if (result && result.outcome === "loaded") {
+                  return applyLocalImageFile(key, { name: result.name, dataUrl: result.dataUrl });
+                }
+                return null;
+              })
+              .catch((error) => modules.ui.logToWorkspace(`无法打开本地图片：${error.message}`, "error"));
+            return;
+          }
+          const fileInput = Array.from(dynamicInputContainer.querySelectorAll("[data-local-image-key]"))
+            .find((item) => item.getAttribute("data-local-image-key") === key);
+          if (fileInput) {
+            fileInput.value = "";
+            fileInput.click();
+          }
         }
       });
 

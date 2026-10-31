@@ -24,6 +24,7 @@ function initializePixelRunnerApp() {
   modules.aiOptimize.bindModalEvents();
   modules.ui.bindPlaceholderActions();
   modules.templates.bindTemplateActions();
+  modules.promptHistory.bindActions();
   modules.settings.bindSettingsActions();
   modules.license.bindActions();
   modules.sound.initialize();
@@ -70,7 +71,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.9.1"
+        version: "2.9.2"
       });
     })
     .catch((error) => {

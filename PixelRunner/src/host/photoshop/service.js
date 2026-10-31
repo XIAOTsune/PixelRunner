@@ -14,6 +14,7 @@ import {
   normalizeBounds
 } from "./document.js";
 import { runToolActionByName } from "./tool-actions.js";
+import { capturePixelsFromTemporaryRgbCopy, getPixelDataInfo, getSrgb8Pixels, selectConsistentPngColorChunks } from "./pixel-capture.js";
 
 const DEFAULT_UPLOAD_TARGET_BYTES = 9_000_000;
 const DEFAULT_UPLOAD_HARD_LIMIT_BYTES = 10_000_000;
@@ -175,7 +176,7 @@ function buildPngChunk(type, data = new Uint8Array()) {
   return concatUint8Arrays([uint32Bytes(data.length), typeBytes, data, uint32Bytes(crc32(crcInput))]);
 }
 
-function buildPngRgbaBuffer(width, height, compressedScanlines) {
+function buildPngRgbaBuffer(width, height, compressedScanlines, colorChunks = []) {
   const ihdr = new Uint8Array(13);
   const view = new DataView(ihdr.buffer);
   view.setUint32(0, width >>> 0);
@@ -185,13 +186,19 @@ function buildPngRgbaBuffer(width, height, compressedScanlines) {
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
+  const metadataChunks = selectConsistentPngColorChunks(colorChunks)
+    .filter((chunk) => chunk && PNG_COLOR_METADATA_CHUNKS.has(String(chunk.type || "")))
+    .map((chunk) => buildPngChunk(chunk.type, chunk.data));
   return concatUint8Arrays([
     Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     buildPngChunk("IHDR", ihdr),
+    ...metadataChunks,
     buildPngChunk("IDAT", compressedScanlines),
     buildPngChunk("IEND")
   ]).buffer;
 }
+
+const PNG_COLOR_METADATA_CHUNKS = new Set(["cHRM", "gAMA", "iCCP", "sBIT", "sRGB", "cICP", "mDCv", "cLLi"]);
 
 async function buildBoundsAnchoredPng(buffer, pngMeta) {
   if (
@@ -234,7 +241,7 @@ async function buildBoundsAnchoredPng(buffer, pngMeta) {
   }
   const compressed = await deflatePngData(scanlines);
   if (!compressed) return null;
-  return buildPngRgbaBuffer(pngMeta.width, pngMeta.height, compressed);
+  return buildPngRgbaBuffer(pngMeta.width, pngMeta.height, compressed, pngMeta.colorChunks);
 }
 
 function getPngAlphaAt(rawPixels, x, y, info) {
@@ -310,6 +317,7 @@ async function parsePngInfo(buffer) {
   const interlaceMethod = bytes[28];
   let hasTransparency = colorType === 4 || colorType === 6;
   const idatParts = [];
+  const colorChunks = [];
   let transparencyTable = null;
   let transparentGray = null;
   let transparentRgb = null;
@@ -321,6 +329,8 @@ async function parsePngInfo(buffer) {
     const type = String.fromCharCode(bytes[typeOffset], bytes[typeOffset + 1], bytes[typeOffset + 2], bytes[typeOffset + 3]);
     if (type === "IDAT") {
       idatParts.push(bytes.slice(dataOffset, dataOffset + length));
+    } else if (PNG_COLOR_METADATA_CHUNKS.has(type)) {
+      colorChunks.push({ type, data: bytes.slice(dataOffset, dataOffset + length) });
     } else if (type === "tRNS") {
       hasTransparency = true;
       if (colorType === 3) {
@@ -356,6 +366,7 @@ async function parsePngInfo(buffer) {
       colorType,
       interlaceMethod,
       idatParts,
+      colorChunks,
       transparencyTable,
       transparentGray,
       transparentRgb
@@ -582,14 +593,7 @@ function getPreviewTargetSize(sourceWidth, sourceHeight, maxDimension, maxPixels
 }
 
 async function getPixelsWithFallback(imaging, options) {
-  try {
-    return await imaging.getPixels(options);
-  } catch (error) {
-    if (!Object.prototype.hasOwnProperty.call(options, "componentSize")) throw error;
-    const fallbackOptions = { ...options };
-    delete fallbackOptions.componentSize;
-    return imaging.getPixels(fallbackOptions);
-  }
+  return getSrgb8Pixels(imaging, options, (requested) => capturePixelsFromTemporaryRgbCopy(imaging, requested));
 }
 async function getSelectionPixels(imaging, options) {
   if (!imaging || typeof imaging.getSelection !== "function") {
@@ -971,7 +975,7 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
     targetSize
   });
   try {
-    contextPixels = await imaging.getPixels({
+    contextPixels = await getPixelsWithFallback(imaging, {
       documentID: Number(documentId),
       sourceBounds,
       targetSize,
@@ -983,9 +987,7 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
     }
     const encodedContext = await imaging.encodeImageData({
       imageData: contextPixels.imageData,
-      base64: true,
-      format: "jpeg",
-      quality
+      base64: true
     });
     const contextBase64 = extractEncodedBase64(encodedContext);
     if (!contextBase64) throw new Error("Photoshop 返回了空的上下文图像");
@@ -1016,15 +1018,19 @@ async function captureGenerativeFillAssets(deps, doc, selectionBounds, sourceBou
         bytes,
         width: Math.max(1, Number(targetSize && targetSize.width) || 1),
         height: Math.max(1, Number(targetSize && targetSize.height) || 1),
-        quality,
+        quality: null,
         targetBytes: DEFAULT_UPLOAD_TARGET_BYTES,
         hardLimitBytes,
         attempts: [{
-          quality,
+          quality: null,
           bytes,
           width: Math.max(1, Number(targetSize && targetSize.width) || 1),
           height: Math.max(1, Number(targetSize && targetSize.height) || 1)
-        }]
+        }],
+        ...(() => {
+          const info = getPixelDataInfo(contextPixels.imageData);
+          return { pixelColorSpace: info.colorSpace, pixelColorProfile: info.colorProfile, pixelComponentSize: info.componentSize };
+        })()
       }
     };
   } finally {
@@ -1052,7 +1058,8 @@ function jpegDescriptor(quality) {
   return {
     _obj: "JPEG",
     extendedQuality: Math.max(1, Math.min(12, Math.floor(Number(quality) || 8))),
-    matteColor: { _enum: "matteColor", _value: "none" }
+    matteColor: { _enum: "matteColor", _value: "none" },
+    embedColorProfile: true
   };
 }
 
@@ -1195,7 +1202,6 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     try {
       await tempDoc.flatten();
     } catch (_) {}
-
     const isSelectionCapture =
       selectionBounds &&
       (cropBounds.left > 0 ||
@@ -1270,6 +1276,7 @@ async function buildCompressedUploadAsset(doc, docInfo, selectionBounds, compres
     width: uploadResult.width,
     height: uploadResult.height,
     quality: uploadResult.quality,
+    qualityMax: 12,
     targetBytes: uploadResult.targetBytes,
     hardLimitBytes: uploadResult.hardLimitBytes,
     attempts: uploadResult.attempts || []
@@ -1296,9 +1303,6 @@ function estimateBase64Bytes(base64) {
 async function buildImagingUploadAsset(imaging, documentId, sourceBounds, targetSize, compressionOptions = {}) {
   const targetBytes = Math.max(1, Math.floor(Number(compressionOptions.targetBytes) || DEFAULT_UPLOAD_TARGET_BYTES));
   const hardLimitBytes = Math.max(targetBytes, Math.floor(Number(compressionOptions.hardLimitBytes) || DEFAULT_UPLOAD_HARD_LIMIT_BYTES));
-  const qualitySteps = Array.isArray(compressionOptions.qualitySteps) && compressionOptions.qualitySteps.length
-    ? compressionOptions.qualitySteps
-    : DEFAULT_UPLOAD_QUALITY_STEPS;
   let pixels = null;
   try {
     const pixelOptions = {
@@ -1311,35 +1315,20 @@ async function buildImagingUploadAsset(imaging, documentId, sourceBounds, target
     pixels = await getPixelsWithFallback(imaging, pixelOptions);
     if (!pixels || !pixels.imageData) throw new Error("Photoshop 未返回上下文像素数据");
 
-    const attempts = [];
-    let accepted = null;
-    let lastAttempt = null;
-    for (const rawQuality of qualitySteps) {
-      const quality = Math.max(1, Math.min(12, Math.floor(Number(rawQuality) || 8)));
-      const encoded = await imaging.encodeImageData({
-        imageData: pixels.imageData,
-        base64: true,
-        format: "jpeg",
-        quality
-      });
-      const base64 = extractEncodedBase64(encoded);
-      if (!base64) throw new Error("Photoshop 返回了空的上下文图像");
-      const attempt = {
-        quality,
-        bytes: estimateBase64Bytes(base64),
-        width: Math.max(1, Number(targetSize && targetSize.width) || 1),
-        height: Math.max(1, Number(targetSize && targetSize.height) || 1)
-      };
-      attempts.push(attempt);
-      lastAttempt = { ...attempt, base64 };
-      if (attempt.bytes <= targetBytes) {
-        accepted = lastAttempt;
-        break;
-      }
-    }
-
-    if (!accepted && lastAttempt && lastAttempt.bytes <= hardLimitBytes) accepted = lastAttempt;
-    if (!accepted) {
+    // encodeImageData is a preview encoder. Its documented options do not
+    // include quality; never claim that a Photoshop JPEG save level was used.
+    const encoded = await imaging.encodeImageData({ imageData: pixels.imageData, base64: true });
+    const base64 = extractEncodedBase64(encoded);
+    if (!base64) throw new Error("Photoshop 返回了空的上下文图像");
+    const accepted = {
+      base64,
+      quality: null,
+      bytes: estimateBase64Bytes(base64),
+      width: Math.max(1, Number(pixels.imageData.width) || 1),
+      height: Math.max(1, Number(pixels.imageData.height) || 1)
+    };
+    const attempts = [{ quality: null, bytes: accepted.bytes, width: accepted.width, height: accepted.height }];
+    if (accepted.bytes > hardLimitBytes) {
       const error = new Error("上下文图像压缩后仍超过上传限制");
       error.attempts = attempts;
       error.targetBytes = targetBytes;
@@ -1357,7 +1346,11 @@ async function buildImagingUploadAsset(imaging, documentId, sourceBounds, target
       quality: accepted.quality,
       targetBytes,
       hardLimitBytes,
-      attempts
+      attempts,
+      ...(() => {
+        const info = getPixelDataInfo(pixels.imageData);
+        return { pixelColorSpace: info.colorSpace, pixelColorProfile: info.colorProfile, pixelComponentSize: info.componentSize };
+      })()
     };
   } finally {
     try {
@@ -1717,6 +1710,9 @@ async function captureDocumentPreviewInternal(options = {}) {
           kind: "captured-document-image",
           source: "photoshop-document",
           document: docInfo,
+          pixelColorSpace: uploadAsset.pixelColorSpace,
+          pixelColorProfile: uploadAsset.pixelColorProfile,
+          pixelComponentSize: uploadAsset.pixelComponentSize,
           documentId: docInfo.documentId,
           selectionBounds,
           contextBounds,
@@ -1816,13 +1812,13 @@ async function captureDocumentPreviewInternal(options = {}) {
         let base64 = "";
         let previewWidth = targetSize.width;
         let previewHeight = targetSize.height;
-        let previewQuality = quality;
+        let previewQuality = null;
         const captureFormat = String(options.captureFormat || "jpeg").toLowerCase() === "png" ? "png" : "jpeg";
         if (options.useImagingUpload === true && !skipUploadAsset) {
           base64 = String(uploadAsset.base64 || "");
           previewWidth = Math.max(1, Number(uploadAsset.width) || targetSize.width);
           previewHeight = Math.max(1, Number(uploadAsset.height) || targetSize.height);
-          previewQuality = Number(uploadAsset.quality) || quality;
+          previewQuality = uploadAsset.quality;
         } else {
           pixels = await getPixelsWithFallback(imaging, {
             documentID: Number(doc.id),
@@ -1842,7 +1838,6 @@ async function captureDocumentPreviewInternal(options = {}) {
             base64: true,
             format: captureFormat
           };
-          if (captureFormat === "jpeg") encodeOptions.quality = quality;
           const encoded = await imaging.encodeImageData(encodeOptions);
           base64 = extractEncodedBase64(encoded);
           if (captureFormat === "png") previewQuality = 0;
@@ -1855,6 +1850,15 @@ async function captureDocumentPreviewInternal(options = {}) {
         kind: "captured-document-image",
         source: "photoshop-document",
         document: docInfo,
+        pixelColorSpace: options.useImagingUpload === true && !skipUploadAsset
+          ? uploadAsset.pixelColorSpace
+          : getPixelDataInfo(pixels.imageData).colorSpace,
+        pixelColorProfile: options.useImagingUpload === true && !skipUploadAsset
+          ? uploadAsset.pixelColorProfile
+          : getPixelDataInfo(pixels.imageData).colorProfile,
+        pixelComponentSize: options.useImagingUpload === true && !skipUploadAsset
+          ? uploadAsset.pixelComponentSize
+          : getPixelDataInfo(pixels.imageData).componentSize,
         documentId: docInfo.documentId,
         selectionBounds,
         contextBounds,
@@ -1880,6 +1884,7 @@ async function captureDocumentPreviewInternal(options = {}) {
         uploadWidth: uploadAsset.width,
         uploadHeight: uploadAsset.height,
         uploadQuality: uploadAsset.quality,
+        uploadQualityMax: uploadAsset.qualityMax,
         uploadTargetBytes: uploadAsset.targetBytes,
         uploadHardLimitBytes: uploadAsset.hardLimitBytes,
         compressionAttempts: uploadAsset.attempts
