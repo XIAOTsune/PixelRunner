@@ -1471,8 +1471,8 @@ async function refineActiveSelection(doc, action, expansion, feather) {
   }
 }
 
-async function placeSessionToken(action, sessionToken) {
-  await action.batchPlay([{
+export function buildPlaceSessionDescriptor(sessionToken) {
+  return {
     _obj: "placeEvent",
     null: { _path: sessionToken, _kind: "local" },
     freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
@@ -1480,8 +1480,13 @@ async function placeSessionToken(action, sessionToken) {
       _obj: "offset",
       horizontal: { _unit: "pixelsUnit", _value: 0 },
       vertical: { _unit: "pixelsUnit", _value: 0 }
-    }
-  }], {});
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  };
+}
+
+async function placeSessionToken(action, sessionToken) {
+  await action.batchPlay([buildPlaceSessionDescriptor(sessionToken)], {});
 }
 
 async function setActiveLayerStyle(action, options = {}) {

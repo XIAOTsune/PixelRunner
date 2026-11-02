@@ -7,6 +7,7 @@ import {
   normalizeFloatComponentToByte,
   selectConsistentPngColorChunks
 } from "../src/host/photoshop/pixel-capture.js";
+import { buildPlaceSessionDescriptor } from "../src/host/photoshop/service.js";
 
 assert.deepEqual(buildPixelCaptureOptions({ documentID: 12, componentSize: 16 }), {
   documentID: 12,
@@ -77,5 +78,46 @@ assert.deepEqual(conversionActions[0]._to, { _class: "RGBColor" });
 assert.equal(conversionActions[1].depth, 8);
 assert.equal(conversionActions[2].profile, "sRGB IEC61966-2.1");
 assert.equal(conversionActions[2].intent._value, "relativeColorimetric");
+assert.ok(conversionActions.every((action) => action._options && action._options.dialogOptions === "dontDisplay"));
+
+const alreadyStandardActions = [];
+await convertTemporaryDocumentToSrgb8({
+  id: 26,
+  mode: "RGBColor",
+  bitsPerChannel: 8,
+  colorProfileName: "sRGB IEC61966-2.1"
+}, {
+  async batchPlay(descriptors) { alreadyStandardActions.push(descriptors[0]); return []; }
+});
+assert.deepEqual(alreadyStandardActions, [], "standard RGB/sRGB/8-bit copies should not run conversion actions");
+
+const nonStandardProfileActions = [];
+await convertTemporaryDocumentToSrgb8({
+  id: 27,
+  mode: "RGBColor",
+  bitsPerChannel: 8,
+  colorProfileName: "Display P3"
+}, {
+  async batchPlay(descriptors) { nonStandardProfileActions.push(descriptors[0]); return []; }
+});
+assert.deepEqual(nonStandardProfileActions.map((action) => action._obj), ["convertToProfile"]);
+assert.equal(nonStandardProfileActions[0]._options.dialogOptions, "dontDisplay");
+
+const highBitActions = [];
+await convertTemporaryDocumentToSrgb8({
+  id: 28,
+  mode: "RGBColor",
+  bitsPerChannel: 16,
+  colorProfileName: "sRGB IEC61966-2.1"
+}, {
+  async batchPlay(descriptors) { highBitActions.push(descriptors[0]); return []; }
+});
+assert.deepEqual(highBitActions.map((action) => action._obj), ["convertMode"]);
+assert.equal(highBitActions[0].depth, 8);
+
+const placeDescriptor = buildPlaceSessionDescriptor("token-123");
+assert.equal(placeDescriptor._obj, "placeEvent");
+assert.deepEqual(placeDescriptor.null, { _path: "token-123", _kind: "local" });
+assert.equal(placeDescriptor._options.dialogOptions, "dontDisplay");
 
 console.log("Pixel capture color conversion tests passed.");

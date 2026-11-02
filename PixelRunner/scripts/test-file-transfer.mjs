@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import {
+  chooseImageTileExportFolderWithStorage,
   openImageFileWithStorage,
   openTextFileWithStorage,
-  saveTextFileWithStorage
+  releaseImageTileExportFolder,
+  saveTextFileWithStorage,
+  writeImageTileWithStorage
 } from "../src/host/files.js";
 
 async function assertBundleExportWithoutTextarea() {
@@ -148,6 +151,58 @@ await assertBundleExportWithoutTextarea();
   });
   assert.equal(result.outcome, "cancelled");
   assert.equal(result.dataUrl, "");
+}
+
+{
+  const files = new Map();
+  const folder = {
+    name: "social-posts",
+    async getEntries() { return [{ name: "cover-001.jpg" }]; },
+    async createFile(filename, options) {
+      assert.equal(options.overwrite, false);
+      if (files.has(filename)) throw new Error("already exists");
+      return {
+        name: filename,
+        nativePath: `C:\\social-posts\\${filename}`,
+        async write(buffer, writeOptions) {
+          assert.deepEqual(writeOptions, { format: "binary" });
+          files.set(filename, new Uint8Array(buffer));
+        },
+        async read(readOptions) {
+          assert.deepEqual(readOptions, { format: "binary" });
+          return files.get(filename).buffer;
+        }
+      };
+    }
+  };
+  const storage = {
+    formats: { binary: "binary" },
+    localFileSystem: { async getFolder() { return folder; } }
+  };
+  const selected = await chooseImageTileExportFolderWithStorage({ filenames: ["cover-001.jpg", "cover-002.jpg"] }, storage);
+  assert.equal(selected.outcome, "selected");
+  assert.equal(selected.folderName, "social-posts");
+  assert.deepEqual(selected.filenames, ["cover-2-001.jpg", "cover-2-002.jpg"]);
+  const written = await writeImageTileWithStorage({
+    folderToken: selected.folderToken,
+    filename: selected.filenames[0],
+    base64: Buffer.from([1, 2, 3, 4]).toString("base64")
+  }, storage);
+  assert.equal(written.outcome, "saved");
+  assert.equal(written.byteLength, 4);
+  assert.deepEqual(Array.from(files.get(selected.filenames[0])), [1, 2, 3, 4]);
+  assert.equal(releaseImageTileExportFolder({ folderToken: selected.folderToken }).released, true);
+  await assert.rejects(
+    writeImageTileWithStorage({ folderToken: selected.folderToken, filename: selected.filenames[1], base64: "AQ==" }, storage),
+    /会话已失效/
+  );
+}
+
+{
+  const result = await chooseImageTileExportFolderWithStorage({ filenames: ["cancel-001.png"] }, {
+    localFileSystem: { async getFolder() { return null; } }
+  });
+  assert.equal(result.outcome, "cancelled");
 }
 
 console.log("File transfer tests passed.");

@@ -60,6 +60,91 @@ function getImageMimeType(filename) {
   })[extension] || "application/octet-stream";
 }
 
+function base64ToArrayBuffer(base64) {
+  const binary = atob(String(base64 || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes.buffer;
+}
+
+const imageTileExportFolders = new Map();
+
+function assertSafeTileFilename(filename) {
+  if (!filename || filename === "." || filename === ".." || /[\\/:*?"<>|\u0000-\u001f]/.test(filename)) {
+    throw new Error("切片文件名包含无效字符");
+  }
+}
+
+function addBatchSuffix(filename, suffix) {
+  const match = String(filename || "").match(/^(.*?)(-\d+)(\.[^.]+)$/);
+  return match ? `${match[1]}-${suffix}${match[2]}${match[3]}` : `${filename}-${suffix}`;
+}
+
+export async function chooseImageTileExportFolderWithStorage(request, storage) {
+  const source = request && typeof request === "object" ? request : {};
+  const filenames = Array.isArray(source.filenames) ? source.filenames.map((name) => String(name || "").trim()).filter(Boolean) : [];
+  if (!filenames.length) throw new Error("没有可导出的切片文件名");
+  filenames.forEach(assertSafeTileFilename);
+  if (new Set(filenames.map((filename) => filename.toLowerCase())).size !== filenames.length) throw new Error("切片文件名重复");
+  const fileSystem = storage && storage.localFileSystem;
+  if (!fileSystem || typeof fileSystem.getFolder !== "function") throw new Error("UXP 导出文件夹接口不可用");
+  const folder = await fileSystem.getFolder();
+  if (!folder) return { outcome: "cancelled", folderToken: "", folderName: "", filenames: [] };
+  const existingEntries = typeof folder.getEntries === "function" ? await folder.getEntries() : [];
+  const existingNames = new Set((Array.isArray(existingEntries) ? existingEntries : []).map((entry) => String(entry && entry.name || "").toLowerCase()));
+  let resolvedFilenames = filenames;
+  let suffix = 1;
+  while (resolvedFilenames.some((filename) => existingNames.has(filename.toLowerCase()))) {
+    suffix += 1;
+    if (suffix > 9999) throw new Error("所选文件夹中的切片名称冲突过多");
+    resolvedFilenames = filenames.map((filename) => addBatchSuffix(filename, suffix));
+  }
+  const folderToken = `tile-export-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  imageTileExportFolders.set(folderToken, { folder, filenames: new Set(resolvedFilenames) });
+  return {
+    outcome: "selected",
+    folderToken,
+    folderName: String(folder.name || folder.nativePath || "导出文件夹"),
+    filenames: resolvedFilenames
+  };
+}
+
+export async function writeImageTileWithStorage(request, storage) {
+  const source = request && typeof request === "object" ? request : {};
+  const folderToken = String(source.folderToken || "");
+  const session = imageTileExportFolders.get(folderToken);
+  if (!session) throw new Error("导出文件夹会话已失效，请重新选择文件夹");
+  const filename = String(source.filename || "").trim();
+  const base64 = String(source.base64 || "").trim();
+  if (!filename || !base64 || !session.filenames.has(filename)) throw new Error("切片文件内容或目标名称无效");
+  assertSafeTileFilename(filename);
+  const binary = storage && storage.formats && storage.formats.binary;
+  if (!binary) throw new Error("当前 UXP 版本未提供二进制文件格式");
+  const entry = await session.folder.createFile(filename, { overwrite: false });
+  const buffer = base64ToArrayBuffer(base64);
+  try {
+    await entry.write(buffer, { format: binary });
+    const persisted = typeof entry.read === "function" ? await entry.read({ format: binary }) : null;
+    const persistedLength = persisted instanceof ArrayBuffer
+      ? persisted.byteLength
+      : ArrayBuffer.isView(persisted)
+        ? persisted.byteLength
+        : -1;
+    if (persistedLength >= 0 && persistedLength !== buffer.byteLength) {
+      throw new Error(`切片写入校验失败：${filename}`);
+    }
+  } catch (error) {
+    try { if (entry && typeof entry.delete === "function") await entry.delete(); } catch (_) {}
+    throw error;
+  }
+  return { outcome: "saved", filename, savedPath: String(entry.nativePath || entry.name || filename), byteLength: buffer.byteLength };
+}
+
+export function releaseImageTileExportFolder(request) {
+  const source = request && typeof request === "object" ? request : {};
+  return { released: imageTileExportFolders.delete(String(source.folderToken || "")) };
+}
+
 export async function saveTextFileWithStorage(request, storage) {
   const source = request && typeof request === "object" ? request : {};
   const filename = String(source.filename || "export.txt").trim() || "export.txt";
@@ -158,4 +243,12 @@ export function openTextFile(args = []) {
 
 export function openImageFile() {
   return openImageFileWithStorage(getUxpStorage());
+}
+
+export function chooseImageTileExportFolder(args = []) {
+  return chooseImageTileExportFolderWithStorage(normalizeRequest(args), getUxpStorage());
+}
+
+export function writeImageTile(args = []) {
+  return writeImageTileWithStorage(normalizeRequest(args), getUxpStorage());
 }

@@ -78,6 +78,7 @@ export async function getSrgb8Pixels(imaging, options = {}, compatibilityFallbac
 // Only call this on a disposable document copy, never the user document.
 export async function convertTemporaryDocumentToSrgb8(tempDoc, action) {
   const mode = normalizeDocumentMode(tempDoc.mode);
+  const profile = String(tempDoc.colorProfileName && (tempDoc.colorProfileName._value ?? tempDoc.colorProfileName.value ?? tempDoc.colorProfileName.name ?? tempDoc.colorProfileName) || "").trim();
   const toRgb = async () => action.batchPlay([{
     _obj: "convertMode",
     _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
@@ -107,16 +108,19 @@ export async function convertTemporaryDocumentToSrgb8(tempDoc, action) {
       _options: { dialogOptions: "dontDisplay" }
     }], {});
   }
-  await action.batchPlay([{
-    _obj: "convertToProfile",
-    _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
-    profile: STANDARD_PIXEL_COLOR_PROFILE,
-    intent: { _enum: "intent", _value: "relativeColorimetric" },
-    blackPointCompensation: true,
-    dither: true,
-    flatten: true,
-    _options: { dialogOptions: "dontDisplay" }
-  }], {});
+  const needsProfileConversion = mode !== "RGB" || profile.toLowerCase() !== STANDARD_PIXEL_COLOR_PROFILE.toLowerCase();
+  if (needsProfileConversion) {
+    await action.batchPlay([{
+      _obj: "convertToProfile",
+      _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
+      profile: STANDARD_PIXEL_COLOR_PROFILE,
+      intent: { _enum: "intent", _value: "relativeColorimetric" },
+      blackPointCompensation: true,
+      dither: true,
+      flatten: true,
+      _options: { dialogOptions: "dontDisplay" }
+    }], {});
+  }
 }
 
 export async function capturePixelsFromTemporaryRgbCopy(imaging, options) {

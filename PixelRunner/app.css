@@ -6101,6 +6101,12 @@ button.prompt-history-item:focus-visible {
   overflow: hidden;
 }
 
+.image-capture-stage.is-drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, rgba(var(--surface-rgb), var(--surface-soft-alpha)));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .image-capture-field-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
@@ -6117,6 +6123,181 @@ button.prompt-history-item:focus-visible {
   gap: 10px;
   align-items: center;
   justify-content: center;
+}
+
+.image-splitter-tool-card .card-head {
+  gap: 8px;
+}
+
+.image-splitter-tool-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.image-splitter-tool-card .primary-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 30px;
+  padding-inline: 12px;
+}
+
+.overlay-card.image-split-modal-card {
+  width: min(96vw, 760px);
+  gap: 9px;
+}
+
+.image-split-source-row,
+.image-split-export-row,
+.image-split-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.image-split-source-control {
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.image-split-source-control .mini-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--control-edge));
+  background: color-mix(in srgb, var(--accent) 14%, rgba(var(--surface-soft-rgb), 0.3));
+}
+
+.image-split-source-control button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.image-split-source-status,
+.image-split-folder-status,
+.image-split-layout-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+}
+
+.image-split-preview-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  max-height: 38vh;
+  overflow: hidden;
+  border: 1px solid var(--control-edge);
+  border-radius: 6px;
+  background-color: rgba(15, 20, 25, 0.6);
+  background-image: linear-gradient(45deg, rgba(255,255,255,0.07) 25%, transparent 25%), linear-gradient(-45deg, rgba(255,255,255,0.07) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.07) 75%), linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.07) 75%);
+  background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+  background-size: 14px 14px;
+}
+
+.image-split-preview-frame canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 38vh;
+  object-fit: contain;
+}
+
+.image-split-preview-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.image-split-settings {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.image-split-settings .field {
+  min-width: 0;
+  gap: 4px;
+}
+
+.image-split-settings .field-label,
+.image-split-folder-info .field-label {
+  font-size: 10px;
+}
+
+.image-split-settings .field-input {
+  min-width: 0;
+  min-height: 32px;
+  padding-inline: 8px;
+}
+
+.image-split-folder-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.image-split-export-row > .secondary-btn,
+.image-split-footer > .primary-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 32px;
+  padding-inline: 12px;
+}
+
+.image-split-footer {
+  padding-top: 2px;
+}
+
+.image-split-layout-meta {
+  flex: 1 1 auto;
+}
+
+.image-split-footer .primary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 560px) {
+  .image-split-source-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .image-split-source-control {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .image-split-source-control .mini-btn {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .image-split-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .image-split-export-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .image-split-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .image-capture-stage-filled {

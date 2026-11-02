@@ -15,6 +15,7 @@ function initializePixelRunnerApp() {
   modules.ui.bindTabs();
   modules.ui.bindTactileFeedback();
   modules.ui.bindToolActions();
+  modules.imageSplitter.bindActions();
   modules.blendMatch.bindBlendMatchActions();
   modules.spaceFx.bindSpaceFxActions();
   modules.postFx.bindActions();
@@ -71,7 +72,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.9.2"
+        version: "2.9.3"
       });
     })
     .catch((error) => {

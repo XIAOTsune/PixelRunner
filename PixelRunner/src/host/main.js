@@ -27,7 +27,14 @@ import {
   submitThirdPartyGeminiTask
 } from "./third-party-gemini.js";
 import { fetchRunningHubAppPreview, parseRunningHubApp } from "./runninghub-parser.js";
-import { openImageFile, openTextFile, saveTextFile } from "./files.js";
+import {
+  chooseImageTileExportFolder,
+  openImageFile,
+  openTextFile,
+  releaseImageTileExportFolder,
+  saveTextFile,
+  writeImageTile
+} from "./files.js";
 import {
   openExternalUrl,
   openLocalPath,
@@ -279,6 +286,15 @@ async function handleBridgeRequest(message, responseTarget) {
       case "file.openImage":
         result = await openImageFile();
         break;
+      case "file.chooseImageTileExportFolder":
+        result = await chooseImageTileExportFolder(message.args);
+        break;
+      case "file.writeImageTile":
+        result = await writeImageTile(message.args);
+        break;
+      case "file.releaseImageTileExportFolder":
+        result = releaseImageTileExportFolder(message.args && message.args[0]);
+        break;
       case "runninghub.submitTask":
         result = await submitRunningHubTask(message.args);
         break;
@@ -359,6 +375,18 @@ async function handleBridgeRequest(message, responseTarget) {
           fullResolution: false,
           skipUploadAsset: false,
           useImagingUpload: false
+        }]), {
+          priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
+        });
+        break;
+      case "photoshop.captureImageSplitSource":
+        result = await enqueuePhotoshopBridgeOperation(message, () => capturePhotoshopDocumentPreview([{
+          ...(message.args && message.args[0] && typeof message.args[0] === "object" ? message.args[0] : {}),
+          fullResolution: true,
+          skipUploadAsset: true,
+          useImagingUpload: false,
+          captureFormat: "png",
+          ignoreSelection: true
         }]), {
           priority: PHOTOSHOP_BRIDGE_PRIORITY.CAPTURE
         });

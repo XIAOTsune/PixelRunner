@@ -48,7 +48,7 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持与教程</button>
-              <span class="version-text">v2.9.2</span>
+              <span class="version-text">v2.9.3</span>
             </div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
@@ -116,7 +116,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.9.2 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.9.3 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -131,7 +131,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持与教程</button>
-            <span class="version-text">v2.9.2</span>
+            <span class="version-text">v2.9.3</span>
           </div>
         </div>
 
@@ -197,6 +197,17 @@
             <input id="blendMatchAutoToggle" type="checkbox" />
             <span>AI 返图后立即对齐与校色</span>
           </label>
+        </section>
+
+        <section class="surface-card image-splitter-tool-card">
+          <div class="card-head">
+            <div class="image-splitter-tool-heading">
+              <h3 class="card-title">社交平台切图</h3>
+              <span class="status-chip">免费工具</span>
+            </div>
+            <button id="btnOpenImageSplitter" class="primary-btn" type="button">打开切图</button>
+          </div>
+          <div class="summary-strip">本地图片或当前 Photoshop 文档 · JPG / PNG</div>
         </section>
 
         <div class="tool-group-grid">
@@ -308,7 +319,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持与教程</button>
-          <span class="version-text">v2.9.2</span>
+          <span class="version-text">v2.9.3</span>
           </div>
         </div>
 
@@ -1517,6 +1528,81 @@
         <button id="btnBlendMatchCancel" class="secondary-btn" type="button">取消</button>
         <button id="btnBlendMatchApply" class="primary-btn" type="button">分析并融合</button>
       </div>
+    </section>
+  </div>
+
+  <div id="imageSplitModal" class="overlay-modal">
+    <div id="imageSplitBackdrop" class="overlay-backdrop"></div>
+    <section class="overlay-card image-split-modal-card" aria-labelledby="imageSplitTitle">
+      <div class="card-head">
+        <div>
+          <p class="card-kicker">工具箱</p>
+          <h3 id="imageSplitTitle" class="card-title">社交平台切图</h3>
+        </div>
+        <button id="imageSplitModalClose" class="mini-btn" type="button">关闭</button>
+      </div>
+
+      <div class="image-split-source-row">
+        <div class="image-split-source-control" role="group" aria-label="切图来源">
+          <button class="mini-btn active" type="button" data-image-split-source="local">本地图片</button>
+          <button class="mini-btn" type="button" data-image-split-source="document">当前 Photoshop 文档</button>
+        </div>
+        <button id="btnImageSplitLoadSource" class="secondary-btn" type="button">选择本地图片</button>
+        <input id="imageSplitFileInput" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+      </div>
+      <div id="imageSplitSourceStatus" class="image-split-source-status">尚未载入图片</div>
+
+      <div class="image-split-preview-frame">
+        <canvas id="imageSplitPreviewCanvas" aria-label="切图布局预览" class="is-hidden"></canvas>
+        <div id="imageSplitPreviewEmpty" class="image-split-preview-empty">尚未载入图片</div>
+      </div>
+
+      <div class="image-split-settings">
+        <label class="field">
+          <span class="field-label">布局（列 × 行）</span>
+          <select id="imageSplitPresetInput" class="field-input">
+            <option value="2x2" selected>2 × 2</option>
+            <option value="1x2">1 × 2</option>
+            <option value="1x3">1 × 3</option>
+            <option value="2x1">2 × 1</option>
+            <option value="3x1">3 × 1</option>
+            <option value="3x3">3 × 3</option>
+            <option value="custom">自定义</option>
+          </select>
+        </label>
+        <label id="imageSplitColumnsField" class="field is-hidden">
+          <span class="field-label">列数</span>
+          <input id="imageSplitColumnsInput" class="field-input" type="number" min="1" max="20" step="1" value="2" />
+        </label>
+        <label id="imageSplitRowsField" class="field is-hidden">
+          <span class="field-label">行数</span>
+          <input id="imageSplitRowsInput" class="field-input" type="number" min="1" max="20" step="1" value="2" />
+        </label>
+        <label class="field">
+          <span class="field-label">文件名</span>
+          <input id="imageSplitBaseNameInput" class="field-input" type="text" maxlength="100" value="image" />
+        </label>
+        <label class="field">
+          <span class="field-label">格式</span>
+          <select id="imageSplitFormatInput" class="field-input">
+            <option value="jpg" selected>JPG（透明区域白色）</option>
+            <option value="png">PNG</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="image-split-export-row">
+        <div class="image-split-folder-info">
+          <span class="field-label">导出位置</span>
+          <span id="imageSplitFolderStatus" class="image-split-folder-status">尚未选择导出文件夹</span>
+        </div>
+        <button id="btnImageSplitChooseFolder" class="secondary-btn" type="button">选择导出文件夹</button>
+      </div>
+      <div class="image-split-footer">
+        <span id="imageSplitLayoutMeta" class="image-split-layout-meta">等待载入图片</span>
+        <button id="btnImageSplitExport" class="primary-btn" type="button" disabled>导出切片</button>
+      </div>
+      <div id="imageSplitExportStatus" class="summary-strip" role="status" aria-live="polite">等待载入图片</div>
     </section>
   </div>
 

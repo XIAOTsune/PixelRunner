@@ -222,6 +222,8 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     return Boolean(global && global.uxpHost && typeof global.uxpHost.postMessage === "function");
   }
 
+  const browserTileExportFolders = new Map();
+
   async function saveTextFile(defaultName, text, options = {}) {
     const filename = String(defaultName || "export.txt").trim() || "export.txt";
     const content = String(text == null ? "" : text);
@@ -402,6 +404,57 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     return callHost("file.openImage", [], { timeoutMs: 600000 });
   }
 
+  async function chooseImageTileExportFolder(filenames) {
+    const desiredNames = Array.isArray(filenames) ? filenames.map((name) => String(name || "")) : [];
+    if (hasHostMessageBridge()) {
+      return callHost("file.chooseImageTileExportFolder", [{ filenames: desiredNames }], { timeoutMs: 600000 });
+    }
+    if (typeof global.showDirectoryPicker !== "function") throw new Error("当前环境不支持选择导出文件夹");
+    const folder = await global.showDirectoryPicker();
+    const resolvedNames = [];
+    let suffix = 1;
+    while (suffix < 10000) {
+      const names = suffix === 1 ? desiredNames : desiredNames.map((filename) => filename.replace(/^(.*?)(-\d+)(\.[^.]+)$/, `$1-${suffix}$2$3`));
+      let hasConflict = false;
+      for (const filename of names) {
+        try {
+          await folder.getFileHandle(filename, { create: false });
+          hasConflict = true;
+          break;
+        } catch (_) {}
+      }
+      if (!hasConflict) {
+        resolvedNames.push(...names);
+        const folderToken = `browser-folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        browserTileExportFolders.set(folderToken, folder);
+        return { outcome: "selected", folderToken, folderName: String(folder.name || "导出文件夹"), filenames: resolvedNames };
+      }
+      suffix += 1;
+    }
+    throw new Error("所选文件夹中的切片名称冲突过多");
+  }
+
+  async function writeImageTile(folderToken, filename, base64) {
+    if (hasHostMessageBridge()) {
+      return callHost("file.writeImageTile", [{ folderToken, filename, base64 }], { timeoutMs: 600000 });
+    }
+    const folder = browserTileExportFolders.get(String(folderToken));
+    if (!folder) throw new Error("导出文件夹会话已失效，请重新选择文件夹");
+    const handle = await folder.getFileHandle(String(filename), { create: true });
+    const writable = await handle.createWritable();
+    const binary = Uint8Array.from(atob(String(base64 || "")), (character) => character.charCodeAt(0));
+    await writable.write(binary);
+    await writable.close();
+    return { outcome: "saved", filename: String(filename), byteLength: binary.byteLength };
+  }
+
+  async function releaseImageTileExportFolder(folderToken) {
+    if (hasHostMessageBridge()) {
+      try { return await callHost("file.releaseImageTileExportFolder", [{ folderToken }]); } catch (_) { return { released: false }; }
+    }
+    return { released: browserTileExportFolders.delete(String(folderToken)) };
+  }
+
   function setSummaryStatus(element, message, type = "info") {
     if (!element) return;
     element.textContent = String(message || "");
@@ -425,6 +478,9 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     setSummaryStatus,
     saveTextFile,
     openTextFile,
-    openImageFile
+    openImageFile,
+    chooseImageTileExportFolder,
+    writeImageTile,
+    releaseImageTileExportFolder
   };
 })(window);

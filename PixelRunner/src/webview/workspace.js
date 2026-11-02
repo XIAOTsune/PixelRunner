@@ -577,7 +577,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     return `
       <div class="field dynamic-field image-field">
         <div class="image-binding-card image-capture-field-card" data-action="capture-field-image" data-form-key="${runtime.escapeHtml(key)}" tabindex="0" role="group" aria-label="${label}图像输入">
-          <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}">
+          <div class="image-capture-stage ${hasAssignedAsset ? "image-capture-stage-filled" : "image-capture-stage-empty"}" data-image-drop-zone="true" data-form-key="${runtime.escapeHtml(key)}">
             <div class="image-capture-stage-corners">
               <span class="image-capture-corner-label">${label}${requiredMark}</span>
               <button class="mini-btn image-capture-clear-btn" type="button" data-action="clear-captured-image" data-form-key="${runtime.escapeHtml(key)}" ${hasAssignedAsset ? "" : "disabled"}>清空</button>
@@ -4391,6 +4391,42 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     }
 
     if (dynamicInputContainer) {
+      let activeImageDropZone = null;
+      dynamicInputContainer.addEventListener("dragover", (event) => {
+        const zone = event.target && event.target.closest("[data-image-drop-zone='true']");
+        if (!zone || !event.dataTransfer || !Array.from(event.dataTransfer.types || []).includes("Files")) return;
+        event.preventDefault();
+        if (activeImageDropZone && activeImageDropZone !== zone) activeImageDropZone.classList.remove("is-drag-over");
+        activeImageDropZone = zone;
+        zone.classList.add("is-drag-over");
+        event.dataTransfer.dropEffect = "copy";
+      });
+
+      dynamicInputContainer.addEventListener("dragleave", (event) => {
+        const zone = event.target && event.target.closest("[data-image-drop-zone='true']");
+        if (!zone || (event.relatedTarget && zone.contains(event.relatedTarget))) return;
+        zone.classList.remove("is-drag-over");
+        if (activeImageDropZone === zone) activeImageDropZone = null;
+      });
+
+      dynamicInputContainer.addEventListener("drop", (event) => {
+        const zone = event.target && event.target.closest("[data-image-drop-zone='true']");
+        const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+        if (!zone || !file) return;
+        event.preventDefault();
+        event.stopPropagation();
+        activeImageDropZone = null;
+        zone.classList.remove("is-drag-over");
+        const type = String(file.type || "").toLowerCase();
+        const extension = String(file.name || "").split(".").pop().toLowerCase();
+        const imageExtensions = new Set(["jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff"]);
+        if (!type.startsWith("image/") && !imageExtensions.has(extension)) {
+          modules.ui.logToWorkspace("请拖入图片文件（JPG、PNG、WebP、GIF、BMP 或 TIFF）。", "warn");
+          return;
+        }
+        void applyLocalImageFile(zone.getAttribute("data-form-key"), file);
+      });
+
       dynamicInputContainer.addEventListener("input", (event) => {
         const element = event.target;
         if (!element || !element.matches("[data-form-key]")) return;

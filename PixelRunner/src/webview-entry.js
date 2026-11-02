@@ -2,6 +2,7 @@ import "./webview/runtime.js";
 import "./webview/state.js";
 import "./webview/license.js";
 import "./webview/ui.js";
+import "./webview/image-splitter.js";
 import "./webview/sound.js";
 import "./webview/quick-entries.js";
 import "./webview/apps.js";
