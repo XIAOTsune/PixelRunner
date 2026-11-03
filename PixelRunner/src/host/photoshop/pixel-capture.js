@@ -10,6 +10,14 @@ export function buildPixelCaptureOptions(options = {}) {
   };
 }
 
+function isStandardSrgbProfile(profile) {
+  const normalized = String(profile || "")
+    .trim()
+    .replace(/^(?:working\s+rgb|工作中的\s*rgb)\s*[-\u2013\u2014:：]\s*/i, "")
+    .trim();
+  return normalized.toLowerCase() === STANDARD_PIXEL_COLOR_PROFILE.toLowerCase();
+}
+
 export function getPixelDataInfo(imageData) {
   const data = imageData && imageData.data;
   const typedSize = data instanceof Float32Array || data instanceof Float64Array ? 32
@@ -43,7 +51,7 @@ export async function getSrgb8Pixels(imaging, options = {}, compatibilityFallbac
       errors.push(new Error(`Photoshop 返回 ${facts.colorSpace || "未知颜色空间"} 数据，编码器要求 RGB`));
       continue;
     }
-    if (!facts.colorProfile || facts.colorProfile.toLowerCase() !== STANDARD_PIXEL_COLOR_PROFILE.toLowerCase()) {
+    if (!isStandardSrgbProfile(facts.colorProfile)) {
       try { result.imageData && result.imageData.dispose && result.imageData.dispose(); } catch (_) {}
       errors.push(new Error(`Photoshop 返回配置文件「${facts.colorProfile || "未指定（使用文档配置文件）"}」，预期 ${STANDARD_PIXEL_COLOR_PROFILE}`));
       continue;
@@ -60,7 +68,7 @@ export async function getSrgb8Pixels(imaging, options = {}, compatibilityFallbac
       const result = await compatibilityFallback(requested);
       const facts = getPixelDataInfo(result && result.imageData);
       console.info("[PixelRunner/Photoshop] temporary-copy getPixels color result", JSON.stringify({ requested, returned: facts }));
-      if (facts.colorSpace.toUpperCase() === "RGB" && facts.colorProfile.toLowerCase() === STANDARD_PIXEL_COLOR_PROFILE.toLowerCase() && facts.componentSize === 8) {
+      if (facts.colorSpace.toUpperCase() === "RGB" && isStandardSrgbProfile(facts.colorProfile) && facts.componentSize === 8) {
         return result;
       }
       try { result && result.imageData && result.imageData.dispose && result.imageData.dispose(); } catch (_) {}
@@ -76,9 +84,8 @@ export async function getSrgb8Pixels(imaging, options = {}, compatibilityFallbac
 }
 
 // Only call this on a disposable document copy, never the user document.
-export async function convertTemporaryDocumentToSrgb8(tempDoc, action) {
+export async function prepareTemporaryRgb8Document(tempDoc, action) {
   const mode = normalizeDocumentMode(tempDoc.mode);
-  const profile = String(tempDoc.colorProfileName && (tempDoc.colorProfileName._value ?? tempDoc.colorProfileName.value ?? tempDoc.colorProfileName.name ?? tempDoc.colorProfileName) || "").trim();
   const toRgb = async () => action.batchPlay([{
     _obj: "convertMode",
     _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
@@ -108,19 +115,8 @@ export async function convertTemporaryDocumentToSrgb8(tempDoc, action) {
       _options: { dialogOptions: "dontDisplay" }
     }], {});
   }
-  const needsProfileConversion = mode !== "RGB" || profile.toLowerCase() !== STANDARD_PIXEL_COLOR_PROFILE.toLowerCase();
-  if (needsProfileConversion) {
-    await action.batchPlay([{
-      _obj: "convertToProfile",
-      _target: [{ _ref: "document", _id: Number(tempDoc.id) }],
-      profile: STANDARD_PIXEL_COLOR_PROFILE,
-      intent: { _enum: "intent", _value: "relativeColorimetric" },
-      blackPointCompensation: true,
-      dither: true,
-      flatten: true,
-      _options: { dialogOptions: "dontDisplay" }
-    }], {});
-  }
+  // getPixels applies the requested sRGB profile during capture. Keeping the
+  // duplicate's profile untouched avoids triggering profile-policy dialogs.
 }
 
 export async function capturePixelsFromTemporaryRgbCopy(imaging, options) {
@@ -134,7 +130,7 @@ export async function capturePixelsFromTemporaryRgbCopy(imaging, options) {
   try {
     tempDoc = await sourceDoc.duplicate(`PixelRunner Color Capture ${Date.now()}`);
     try { if (typeof tempDoc.flatten === "function") await tempDoc.flatten(); } catch (_) {}
-    await convertTemporaryDocumentToSrgb8(tempDoc, action);
+    await prepareTemporaryRgb8Document(tempDoc, action);
     return await imaging.getPixels({ ...options, documentID: Number(tempDoc.id) });
   } catch (error) {
     throw new Error(`临时副本 RGB/8 位兼容转换失败（原模式 ${normalizeDocumentMode(sourceDoc.mode) || "未知"}）：${String(error && error.message || error)}`);

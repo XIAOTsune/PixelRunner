@@ -4824,6 +4824,18 @@ button {
   opacity: 0.72;
 }
 
+.third-party-site-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.third-party-site-links .mini-btn {
+  min-width: 0;
+  padding-inline: 4px;
+  font-size: 10px;
+}
+
 .third-party-provider-fields {
   display: flex;
   flex-direction: column;

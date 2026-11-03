@@ -2,7 +2,7 @@
   "name": "pixelrunner-uxp",
   "version": "2.9.3",
   "description": "A Photoshop UXP plugin that connects RunningHub image workflows with a practical retouching workspace.",
-  "license": "Apache-2.0",
+  "license": "GPL-3.0-only",
   "author": "XIAOTsune",
   "homepage": "https://github.com/XIAOTsune/PixelRunner#readme",
   "repository": {

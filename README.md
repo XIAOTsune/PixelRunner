@@ -4,7 +4,7 @@
   <img src="PixelRunner/icons/icon.png" width="128" height="128" alt="像素起子图标" />
 </p>
 
-<h2 align="center">把 RunningHub AI 工作流，直接带进 Photoshop</h2>
+<h2 align="center">把 AI 图像工作流，直接带进 Photoshop</h2>
 
 <p align="center">
   在熟悉的 Photoshop 面板里完成选区捕获、AI 任务提交、进度追踪与结果回贴。
@@ -12,8 +12,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="Version" src="https://img.shields.io/badge/version-2.8.4-2f855a?style=for-the-badge"></a>
-  <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2563eb?style=for-the-badge"></a>
+  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="Version" src="https://img.shields.io/badge/version-2.9.3-2f855a?style=for-the-badge"></a>
+  <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--only-2563eb?style=for-the-badge"></a>
   <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff?style=for-the-badge">
   <img alt="UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6?style=for-the-badge">
 </p>
@@ -22,6 +22,7 @@
   <a href="#它能做什么">功能亮点</a> ·
   <a href="#一条顺手的-ai-修图链路">工作流</a> ·
   <a href="#快速开始">快速开始</a> ·
+  <a href="#第三方-ai-图像接口">第三方 AI</a> ·
   <a href="#项目结构">项目结构</a> ·
   <a href="#runninghub-合作">RunningHub 合作</a>
 </p>
@@ -32,7 +33,7 @@
 
 AI 修图真正耗时的部分，常常不是生成本身，而是反复导出、上传、等待、下载、对齐，再回到 Photoshop 继续工作。
 
-像素起子把这条链路收进一个 UXP 面板：当前文档或选区可以直接成为输入，RunningHub 负责执行图像工作流，结果完成后自动回到 Photoshop。你可以把它理解成一把连接 **Photoshop × RunningHub × 日常修图工具** 的工作台。
+像素起子把这条链路收进一个 UXP 面板：当前文档或选区可以直接成为输入，通过 RunningHub 工作流或兼容的第三方图像 API 生成结果，再自动回到 Photoshop。它是一张连接 **Photoshop × AI 图像服务 × 日常修图工具** 的工作台。
 
 | 传统流程 | 像素起子工作流 |
 | --- | --- |
@@ -40,7 +41,7 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
 | 手动复制应用参数和提示词 | 保存应用、模板和快捷入口 |
 | 反复刷新页面查看进度 | 在任务卡片中查看状态、日志和失败原因 |
 | 下载结果，再拖回并重新对齐 | 任务完成后自动贴回 Photoshop |
-| AI 工具和修图动作分散 | AI 工作台、观察层、锐化、辉光预览集中在同一面板 |
+| AI 工具和修图动作分散 | 多服务商 AI、自动对齐校色、观察层与后期工具集中在同一面板 |
 
 ## 它能做什么
 
@@ -53,6 +54,15 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
 - 捕获 Photoshop 当前选区或整个文档
 - 提交任务、显示运行状态、取消任务、追踪超时
 - 支持多任务并发，完成后自动把结果贴回 Photoshop
+
+### 第三方 AI 图像接口
+
+除 RunningHub 工作流外，也可以直接配置兼容 Gemini API 的图像服务：
+
+- 支持 GRS，以及 Gemini、Aji、Momo 等渠道；各渠道的 API Key 和模型设置分别保存
+- 查询可用模型、检查服务连接，并设置默认画幅和分辨率
+- 通过工作台提交生图任务、查看状态，并将结果自动回贴 Photoshop
+- 在设置中提供 GRS、Aji 和 Momo 官网快捷入口
 
 ### 把常用流程保存下来
 
@@ -74,6 +84,10 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
 | 中性灰图层 | 辅助 Dodge & Burn |
 | 盖印、模糊、锐化 | 快速进入常见后期处理 |
 | 内容识别填充、选择并遮住 | 调用 Photoshop 原生能力 |
+| 对齐与校色 | 将返图自动对齐到原位置，并进行明度与色彩融合 |
+| 创成式填充 | 保留原选区蒙版，将生成结果限制在目标区域 |
+| 社交平台切图 | 按常见社交平台比例拆分和导出图片 |
+| 空间特效、镜头与后期 | 预览并应用位移、胶片等全图效果 |
 | 辉光预览 | 调节强度、半径、阈值和饱和度后再写回图层 |
 
 ## 一条顺手的 AI 修图链路
@@ -83,9 +97,9 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
       ↓
 加载像素起子
       ↓
-保存 RunningHub API Key
+配置 RunningHub 或第三方 API
       ↓
-添加或解析一个 AI 应用
+选择工作流或生图模型
       ↓
 框选区域 / 使用当前文档
       ↓
@@ -104,7 +118,8 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
 | 摄影后期 | 在 Photoshop 内完成捕获、返图、观察和基础后期 |
 | AI 绘图用户 | 保存应用、参数和 prompt，减少重复输入 |
 | RunningHub 用户 | 将网页工作流变成可复用的 Photoshop 面板 |
-| 插件开发者 | 参考 UXP Host + WebView + RunningHub 桥接架构 |
+| 第三方 API 用户 | 在 Photoshop 中配置 GRS、Gemini、Aji 或 Momo 图像服务 |
+| 插件开发者 | 参考 UXP Host + WebView + 多服务商图像 API 桥接架构 |
 
 ## 快速开始
 
@@ -114,7 +129,7 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
 - Adobe UXP Developer Tool
 - Node.js 18 或更高版本
 - npm
-- RunningHub API Key
+- RunningHub API Key 或兼容服务商的 API Key（按所用服务配置）
 
 ### 获取并构建
 
@@ -131,7 +146,7 @@ npm run build
 2. 点击 `Add Plugin`，选择 `PixelRunner/manifest.json`。
 3. 点击 `Load` 或 `Watch`。
 4. 在 Photoshop 中打开 `Plugins -> Development -> 像素起子`。
-5. 在插件设置中保存 RunningHub API Key，添加一个应用 ID 或应用链接。
+5. 在插件设置中配置 RunningHub 或第三方 API，再添加一个应用 ID、应用链接或选择图像模型。
 
 更完整的 RunningHub 配置、区域选择、余额和故障排查说明，见 [RunningHub 使用文档](PixelRunner/pages/runninghub-guide.html)。
 
@@ -152,7 +167,7 @@ npm run build
     ├── scripts/                      # 构建、测试与打包脚本
     ├── local-ai/                     # 本地 AI 放大能力与运行时
     └── src/
-        ├── host/                     # Photoshop、UXP、RunningHub 桥接
+        ├── host/                     # Photoshop、UXP、RunningHub 与第三方 API 桥接
         ├── webview/                  # UI、状态、任务、模板与效果
         ├── host-entry.js
         └── webview-entry.js
@@ -175,7 +190,7 @@ npm run package:release       # 生成正式发布包
 开发约定：
 
 - 源码入口是 `src/host-entry.js` 和 `src/webview-entry.js`。
-- Photoshop、UXP、RunningHub 相关桥接代码位于 `src/host/`。
+- Photoshop、UXP、RunningHub 与第三方 API 桥接代码位于 `src/host/`。
 - UI、任务、模板、快捷入口和效果模块位于 `src/webview/`。
 - 不直接编辑 `dist/*.bundle.js`。
 - `node_modules/`、`dist/`、`release/` 和本地打包文件不提交到仓库。
@@ -218,7 +233,7 @@ RunningHub 为本项目提供 AI 能力支持：
 
 ## 隐私与安全
 
-RunningHub API Key 保存在本机 UXP 存储中，用于提交任务和查询状态。请不要将 API Key、Token、Cookie、私人调试日志或本地绝对路径提交到仓库。
+RunningHub 与第三方服务的 API Key 保存在本机 UXP 存储中，用于提交任务和查询状态。请不要将 API Key、Token、Cookie、私人调试日志或本地绝对路径提交到仓库。
 
 ## 常见问题
 
@@ -228,7 +243,7 @@ RunningHub API Key 保存在本机 UXP 存储中，用于提交任务和查询�
 
 ### 必须有 RunningHub 账号吗？
 
-使用 AI 工作流提交、任务查询和结果回贴需要 RunningHub API Key。工具箱中的部分 Photoshop 辅助能力不依赖 RunningHub。
+使用 RunningHub 工作流需要 RunningHub API Key；使用第三方图像服务则需要对应服务的 API Key。工具箱中的 Photoshop 辅助能力不依赖这些在线服务。
 
 ### 为什么仓库里没有 dist？
 
@@ -238,11 +253,11 @@ RunningHub API Key 保存在本机 UXP 存储中，用于提交任务和查询�
 
 - 更清晰的新手引导与任务诊断
 - 更完善的提示词历史和工作流分享
-- 更强的辉光预览与 GPU 加速体验
-- 更稳定的本地 AI 能力和跨服务商配置
+- 持续完善对齐校色、后期效果与图层辅助工具
+- 扩展第三方服务商的模型兼容和任务诊断
 
 ## 许可证
 
-像素起子使用 [Apache License 2.0](LICENSE) 开源。
+像素起子使用 [GNU General Public License v3.0](LICENSE) 开源（SPDX 标识：`GPL-3.0-only`）。
 
 Copyright 2026 XIAOTsune

@@ -2,9 +2,45 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   let accountRefreshPromise = null;
   let accountRefreshGeneration = 0;
+  const THIRD_PARTY_OFFICIAL_SITES = {
+    grs: { label: "GRS 官网", url: "https://grsai.ai/zh" },
+    aji: { label: "Aji 官网", url: "https://ai.ajiai.top/" },
+    momo: { label: "Momo 官网", url: "https://api.momoapi.icu/" }
+  };
 
   function renderSettingsStatus(message, type = "info") {
     modules.runtime.setSummaryStatus(modules.runtime.getById("settingsStatusSummary"), message, type);
+  }
+
+  async function openThirdPartyOfficialSite(siteId) {
+    const site = THIRD_PARTY_OFFICIAL_SITES[String(siteId || "")];
+    if (!site) return;
+
+    const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
+    if (!modules.runtime.isPluginRuntime()) {
+      try {
+        global.open(site.url, "_blank", "noopener");
+        modules.runtime.setSummaryStatus(statusEl, `已尝试打开 ${site.label}。`, "success");
+      } catch (error) {
+        modules.runtime.setSummaryStatus(statusEl, `打开 ${site.label} 失败：${error.message}`, "error");
+      }
+      return;
+    }
+
+    try {
+      const result = await modules.runtime.callHost(
+        "shell.openExternal",
+        [site.url, `将使用系统默认浏览器打开 ${site.label}。`],
+        { timeoutMs: 15000 }
+      );
+      modules.runtime.setSummaryStatus(
+        statusEl,
+        result && result.ok ? `已打开 ${site.label}。` : `打开 ${site.label} 失败，请检查系统默认浏览器设置。`,
+        result && result.ok ? "success" : "error"
+      );
+    } catch (error) {
+      modules.runtime.setSummaryStatus(statusEl, `打开 ${site.label} 失败：${error.message}`, "error");
+    }
   }
 
   function renderSettingsDiagnostics(message, options = {}) {
@@ -1466,6 +1502,7 @@
     const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
     const grsRegionButtons = Array.from(document.querySelectorAll("[data-grs-region]"));
     const thirdPartyProviderButtons = Array.from(document.querySelectorAll("[data-third-party-provider]"));
+    const thirdPartySiteButtons = Array.from(document.querySelectorAll("[data-third-party-site]"));
     const geminiChannelButtons = Array.from(document.querySelectorAll("[data-gemini-channel]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const resetGenerativeFillButton = runtime.getById("btnResetGenerativeFillAppId");
@@ -1685,6 +1722,11 @@
         fillThirdPartySettingsForm(modules.state.state.thirdPartySettings);
         refreshThirdPartyWorkspacePreview();
         renderSettingsStatus("检测到未保存的供应商切换。", "pending");
+      });
+    });
+    thirdPartySiteButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        void openThirdPartyOfficialSite(button.getAttribute("data-third-party-site"));
       });
     });
 geminiChannelButtons.forEach((button) => {
