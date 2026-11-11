@@ -32,7 +32,10 @@ export function createBridgeResponse(message, result, error) {
     result: error ? null : result,
     error: error
       ? {
-          message: String(error && error.message ? error.message : error || "Unknown bridge error")
+          message: String(error && error.message ? error.message : error || "Unknown bridge error"),
+          errorCode: error && error.errorCode != null ? error.errorCode : null,
+          errorMessage: error && error.errorMessage != null ? String(error.errorMessage) : "",
+          raw: error && error.raw != null ? error.raw : null
         }
       : null
   };

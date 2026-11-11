@@ -669,8 +669,8 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     const summaryEl = modules.runtime.getById("accountSummary");
     const balanceLabel = modules.runtime.getById("accountBalanceLabel");
     const balanceValue = modules.runtime.getById("accountBalanceValue");
-    const secondaryLabel = modules.runtime.getById("accountCoinsLabel");
-    const secondaryValue = modules.runtime.getById("accountCoinsValue");
+    const secondaryLabel = modules.runtime.getById("accountPointsLabel");
+    const secondaryValue = modules.runtime.getById("accountPointsValue");
     if (!summaryEl || !balanceLabel || !balanceValue || !secondaryLabel || !secondaryValue) return;
 
     const showThirdParty = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
@@ -678,13 +678,12 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       const account = state.accountSummary || {};
       const isGlobal = modules.state.normalizeRunningHubRegion(account.region || state.settings.runningHubRegion) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
       balanceLabel.textContent = "余额";
-      secondaryLabel.textContent = "RH 币";
+      secondaryLabel.textContent = "积分";
       const hasBalance = account.balance != null && Number.isFinite(Number(account.balance));
-      const hasCoins = account.coins != null && Number.isFinite(Number(account.coins));
       balanceValue.textContent = hasBalance ? `${isGlobal ? "$" : ""}${Number(account.balance)}` : "--";
-      secondaryValue.textContent = hasCoins ? String(Number(account.coins)) : "--";
-      summaryEl.classList.toggle("is-empty", !hasBalance && !hasCoins);
-      summaryEl.title = "RunningHub 账户余额";
+      secondaryValue.textContent = account.points != null && Number.isFinite(Number(account.points)) ? String(Number(account.points)) : "--";
+      summaryEl.classList.toggle("is-empty", !hasBalance && account.points == null);
+      summaryEl.title = "RunningHub 账户余额与积分";
       return;
     }
 
@@ -913,6 +912,15 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     const taskProvider = String(task && task.provider || "").trim();
     const providerLabel = taskProvider === "gemini" ? "Gemini" : isThirdPartyTaskRecord(task) ? "GRS" : "RunningHub";
     const raw = compactTaskMessage(message, 500);
+    const errorCode = task && task.errorCode != null ? task.errorCode : null;
+    const errorHint = !isThirdPartyTaskRecord(task) && modules.runningHubErrors
+      ? modules.runningHubErrors.getRunningHubErrorHint(errorCode)
+      : "";
+    if (errorHint) {
+      const codeText = String(errorCode).trim();
+      const platformMessage = compactTaskMessage(task.platformErrorMessage || task.errorMessage || raw, 260);
+      return `${errorHint}${codeText ? `（错误码 ${codeText}）` : ""}${buildTaskRawSuffix(platformMessage, errorHint)}`;
+    }
     const httpStatus = getTaskMessageHttpStatus(raw);
     const taskStatusErrorCode = getTaskStatusErrorCode(raw);
     if (taskStatusErrorCode) {
@@ -1146,11 +1154,13 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     if (isThirdPartyTaskRecord(task)) return "";
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
     const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
+    const pointsCharge = normalizeTaskChargeValue(task.pointsCharge);
     const parts = [];
     const isGlobalRunningHub = !isThirdPartyTaskRecord(task) &&
       modules.state.normalizeRunningHubRegion(task.region) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
     if (balanceCharge !== null) parts.push(isGlobalRunningHub ? `-$${balanceCharge.toFixed(3)}` : `-${balanceCharge.toFixed(3)}R`);
     if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
+    if (pointsCharge !== null) parts.push(`-${String(pointsCharge.toFixed(3)).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1")} 积分`);
     return parts.join(" · ");
   }
 
@@ -1168,8 +1178,11 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
   }
 
   function getTaskCostLabel(task) {
-    if (!isThirdPartyTaskRecord(task)) return formatTaskChargeDisplay(task);
     const chargeDisplay = formatTaskChargeDisplay(task);
+    if (!isThirdPartyTaskRecord(task)) {
+      if (chargeDisplay) return `扣费 ${chargeDisplay}`;
+      return isTaskTerminalStatus(task && task.status) ? "扣费 待确认" : "";
+    }
     if (chargeDisplay) return `扣费 ${chargeDisplay}`;
     if (isTaskTerminalStatus(task && task.status)) return "扣费 待确认";
     return "费用 待结算";
@@ -1179,7 +1192,8 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     if (!task || typeof task !== "object") return false;
     if (String(task.chargeDisplay || "").trim()) return true;
     if (normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge) !== null) return true;
-    return normalizeTaskChargeValue(task.coinsCharge) !== null;
+    if (normalizeTaskChargeValue(task.coinsCharge) !== null) return true;
+    return normalizeTaskChargeValue(task.pointsCharge) !== null;
   }
 
   function getTaskActivityStartedAt(task) {
@@ -1201,28 +1215,6 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     const leftEnd = getTaskActivityFinishedAt(leftTask, fallbackEnd);
     const rightEnd = getTaskActivityFinishedAt(rightTask, fallbackEnd);
     return leftStart <= rightEnd && rightStart <= leftEnd;
-  }
-
-  function hasOverlappingRunningHubTask(task) {
-    if (!task || typeof task !== "object" || isThirdPartyTaskRecord(task)) return false;
-    const taskId = String(task.taskId || "").trim();
-    const now = Date.now();
-    return getRunningTasks().some((item) => {
-      if (!item || typeof item !== "object" || isThirdPartyTaskRecord(item)) return false;
-      if (String(item.taskId || "").trim() === taskId) return false;
-      return doTaskActivityWindowsOverlap(task, item, now);
-    });
-  }
-
-  function getCurrentAccountSnapshot() {
-    const accountSummary = modules.state.state.accountSummary || {};
-    return {
-      balance: Number.isFinite(Number(accountSummary.balance)) ? Number(accountSummary.balance) : null,
-      coins: Number.isFinite(Number(accountSummary.coins)) ? Number(accountSummary.coins) : null,
-      region: modules.state.normalizeRunningHubRegion(accountSummary.region || modules.state.state.settings.runningHubRegion),
-      currency: String(accountSummary.currency || "").trim(),
-      updatedAt: Number(accountSummary.updatedAt) || 0
-    };
   }
 
   function getThirdPartyAccountSnapshot(payload) {
@@ -1285,85 +1277,14 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     return patch;
   }
 
-  function buildTaskChargePatchFromAccounts(beforeAccount, afterAccount) {
-    const beforeBalance = Number(beforeAccount && beforeAccount.balance);
-    const afterBalance = Number(afterAccount && afterAccount.balance);
-    const beforeCoins = Number(beforeAccount && beforeAccount.coins);
-    const afterCoins = Number(afterAccount && afterAccount.coins);
-    const balanceCharge =
-      Number.isFinite(beforeBalance) && Number.isFinite(afterBalance) && beforeBalance > afterBalance
-        ? Number((beforeBalance - afterBalance).toFixed(3))
-        : null;
-    const coinsCharge =
-      Number.isFinite(beforeCoins) && Number.isFinite(afterCoins) && beforeCoins > afterCoins
-        ? Number((beforeCoins - afterCoins).toFixed(3))
-        : null;
-
-    if (balanceCharge === null && coinsCharge === null) return null;
-    return {
-      charge: balanceCharge,
-      balanceCharge,
-      coinsCharge,
-      chargeDisplay: formatTaskChargeDisplay({
-        balanceCharge,
-        coinsCharge,
-        region: (afterAccount && afterAccount.region) || (beforeAccount && beforeAccount.region)
-      })
-    };
-  }
-
-  function mergeTaskChargePatch(task, chargePatch) {
-    if (!chargePatch || typeof chargePatch !== "object") return null;
-    const currentBalanceCharge = normalizeTaskChargeValue(task && (task.balanceCharge != null ? task.balanceCharge : task.charge));
-    const currentCoinsCharge = normalizeTaskChargeValue(task && task.coinsCharge);
-    const nextBalanceCharge = normalizeTaskChargeValue(chargePatch.balanceCharge != null ? chargePatch.balanceCharge : chargePatch.charge);
-    const nextCoinsCharge = normalizeTaskChargeValue(chargePatch.coinsCharge);
-    const balanceCharge =
-      currentBalanceCharge !== null
-        ? currentBalanceCharge
-        : nextBalanceCharge;
-    const coinsCharge =
-      currentCoinsCharge !== null
-        ? currentCoinsCharge
-        : nextCoinsCharge;
-
-    if (balanceCharge === null && coinsCharge === null) return null;
-    return {
-      charge: balanceCharge,
-      balanceCharge,
-      coinsCharge,
-      chargeDisplay: formatTaskChargeDisplay({
-        balanceCharge,
-        coinsCharge,
-        provider: task && task.provider,
-        appName: task && task.appName,
-        region: task && task.region
-      })
-    };
-  }
-
   async function refreshAccountAndPatchTaskCharge(taskId) {
     const normalizedTaskId = String(taskId || "").trim();
     if (!normalizedTaskId || !modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return null;
     accountSettlementChain = accountSettlementChain
       .catch(() => null)
       .then(async () => {
-        const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
-        const canPatchFromAccount = Boolean(task && !hasTaskChargeValue(task) && !hasOverlappingRunningHubTask(task));
-        const beforeAccount =
-          canPatchFromAccount && task.accountSnapshot && typeof task.accountSnapshot === "object"
-            ? task.accountSnapshot
-            : getCurrentAccountSnapshot();
         const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
-        if (!canPatchFromAccount) return null;
-        const chargePatch = mergeTaskChargePatch(task, buildTaskChargePatchFromAccounts(beforeAccount, account || getCurrentAccountSnapshot()));
-        if (chargePatch && task) {
-          upsertRunningTask({
-            taskId: normalizedTaskId,
-            ...chargePatch
-          });
-        }
-        return chargePatch;
+        return account || null;
       });
     return accountSettlementChain;
   }
@@ -1564,6 +1485,25 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     }
   }
 
+  function getTaskPlatformErrorDetails(task) {
+    if (!task || typeof task !== "object") return "";
+    const errorCode = task.errorCode == null ? "" : String(task.errorCode).trim();
+    const errorMessage = String(task.platformErrorMessage || "").trim();
+    let rawResponse = "";
+    if (task.platformErrorRaw != null) {
+      try {
+        rawResponse = typeof task.platformErrorRaw === "string"
+          ? task.platformErrorRaw
+          : JSON.stringify(task.platformErrorRaw, null, 2);
+      } catch (_) {
+        rawResponse = String(task.platformErrorRaw);
+      }
+      rawResponse = rawResponse.slice(0, 4000);
+    }
+    if (!errorCode && !errorMessage && !rawResponse) return "";
+    return `<details class="running-task-platform-error"><summary>平台返回详情${errorCode ? ` · ${modules.runtime.escapeHtml(errorCode)}` : ""}</summary>${errorMessage ? `<div>平台消息：${modules.runtime.escapeHtml(errorMessage)}</div>` : ""}${rawResponse ? `<pre>${modules.runtime.escapeHtml(rawResponse)}</pre>` : ""}</details>`;
+  }
+
   function renderRunningTaskList(tasks) {
     if (!Array.isArray(tasks) || tasks.length === 0) return "";
     return sortRunningTasks(tasks)
@@ -1578,6 +1518,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         const isActive = !isTaskTerminalStatus(task.status) && statusStage !== "timeout";
         const durationLabel = `${getTaskDurationLabel(task)} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
+        const platformErrorDetails = getTaskPlatformErrorDetails(task);
         const chargeDisplay = getTaskCostLabel(task);
         const failureLabel = getTaskFailureLabel(task);
         const detailPrefix =
@@ -1620,7 +1561,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
                 </div>
               </div>
               <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · ${modules.runtime.escapeHtml(durationLabel)}${chargeDisplay ? ` · ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
-              <div class="running-task-detail">${modules.runtime.escapeHtml(detailPrefix)}${detail}</div>
+              <div class="running-task-detail">${modules.runtime.escapeHtml(detailPrefix)}${detail}${platformErrorDetails}</div>
             </div>
           </div>
         `;
@@ -2229,9 +2170,13 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       status: hasOwn("status") ? String(patch.status || "running").trim() || "running" : undefined,
       detail: String(patch.detail || "").trim(),
       errorMessage: String(patch.errorMessage || "").trim(),
+      platformErrorMessage: hasOwn("platformErrorMessage") ? String(patch.platformErrorMessage || "").trim() : undefined,
+      errorCode: hasOwn("errorCode") ? (patch.errorCode == null || patch.errorCode === "" ? null : patch.errorCode) : undefined,
+      platformErrorRaw: hasOwn("platformErrorRaw") ? (patch.platformErrorRaw == null ? null : patch.platformErrorRaw) : undefined,
       charge: hasOwn("charge") ? normalizeTaskChargeValue(patch.charge) : undefined,
       balanceCharge: hasOwn("balanceCharge") ? normalizeTaskChargeValue(patch.balanceCharge) : undefined,
       coinsCharge: hasOwn("coinsCharge") ? normalizeTaskChargeValue(patch.coinsCharge) : undefined,
+      pointsCharge: hasOwn("pointsCharge") ? normalizeTaskChargeValue(patch.pointsCharge) : undefined,
       chargeDisplay: hasOwn("chargeDisplay") ? String(patch.chargeDisplay || "").trim() : undefined,
       accountSnapshot: hasOwn("accountSnapshot")
         ? (patch.accountSnapshot && typeof patch.accountSnapshot === "object" ? { ...patch.accountSnapshot } : null)
@@ -2289,7 +2234,12 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
+        pointsCharge: nextTask.pointsCharge !== undefined ? nextTask.pointsCharge : current.pointsCharge,
         chargeDisplay: nextTask.chargeDisplay !== undefined ? nextTask.chargeDisplay : current.chargeDisplay,
+        errorCode: nextTask.errorCode !== undefined ? nextTask.errorCode : current.errorCode,
+        errorMessage: nextTask.errorMessage || current.errorMessage || "",
+        platformErrorMessage: nextTask.platformErrorMessage || current.platformErrorMessage || "",
+        platformErrorRaw: nextTask.platformErrorRaw !== undefined ? nextTask.platformErrorRaw : current.platformErrorRaw,
         accountSnapshot: nextTask.accountSnapshot !== undefined ? nextTask.accountSnapshot : current.accountSnapshot,
         outputUrl: nextTask.outputUrl !== undefined ? nextTask.outputUrl : current.outputUrl || "",
         dataUrl: nextTask.dataUrl !== undefined ? nextTask.dataUrl : current.dataUrl || "",
@@ -2449,6 +2399,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       charge: statusResult && statusResult.charge,
       balanceCharge: statusResult && statusResult.balanceCharge,
       coinsCharge: statusResult && statusResult.coinsCharge,
+      pointsCharge: statusResult && statusResult.pointsCharge,
       chargeDisplay: statusResult && statusResult.chargeDisplay,
       outputUrl,
       dataUrl,
@@ -2547,7 +2498,12 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
           const rawFailMessage = String(
             (statusResult && statusResult.message) || `后台追踪已停止：${providerLabel} 未返回可继续追踪的有效状态。`
           ).trim();
-          const failMessage = normalizeTaskFailureMessage(rawFailMessage, { provider: payload.provider || "", appName: payload.appName });
+          const failMessage = normalizeTaskFailureMessage(rawFailMessage, {
+            provider: payload.provider || "",
+            appName: payload.appName,
+            errorCode: statusResult && statusResult.errorCode,
+            platformErrorMessage: statusResult && statusResult.errorMessage
+          });
           upsertRunningTask({
             taskId: remoteTaskId,
             remoteTaskId,
@@ -2555,6 +2511,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
             status: "failed",
             detail: `后台追踪已停止：${failMessage}`,
             errorMessage: failMessage,
+            errorCode: statusResult && statusResult.errorCode,
+            platformErrorMessage: statusResult && statusResult.errorMessage,
+            platformErrorRaw: statusResult && statusResult.raw,
             failureLabel: getTaskFailureLabel({
               status: "failed",
               errorMessage: failMessage,
@@ -2573,7 +2532,12 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
           const rawFailMessage = String(
             (statusResult && statusResult.message) || `${providerLabel} 返回失败状态 ${remoteStatus || "FAILED"}`
           ).trim();
-          const failMessage = normalizeTaskFailureMessage(rawFailMessage, { provider: payload.provider || "", appName: payload.appName });
+          const failMessage = normalizeTaskFailureMessage(rawFailMessage, {
+            provider: payload.provider || "",
+            appName: payload.appName,
+            errorCode: statusResult.errorCode,
+            platformErrorMessage: statusResult.errorMessage
+          });
           upsertRunningTask({
             taskId: remoteTaskId,
             remoteTaskId,
@@ -2581,9 +2545,13 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
             status: "failed",
             detail: `后台追踪确认云端任务失败：${failMessage}`,
             errorMessage: failMessage,
+            errorCode: statusResult.errorCode,
+            platformErrorMessage: statusResult.errorMessage,
+            platformErrorRaw: statusResult.raw,
             charge: statusResult && statusResult.charge,
             balanceCharge: statusResult && statusResult.balanceCharge,
             coinsCharge: statusResult && statusResult.coinsCharge,
+            pointsCharge: statusResult && statusResult.pointsCharge,
             chargeDisplay: statusResult && statusResult.chargeDisplay,
             failureLabel: getTaskFailureLabel({
               status: "failed",
@@ -3913,24 +3881,21 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     let activeRemoteTaskId = "";
     let submissionAccountSnapshot = isThirdPartyTask
       ? getThirdPartyAccountSnapshot(payload)
-      : getCurrentAccountSnapshot();
+      : null;
     const payloadMatchesCurrentRunningHubAccount =
       modules.state.normalizeRunningHubRegion(payload && payload.region) ===
         modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion) &&
       String((payload && payload.apiKey) || "") === String(modules.state.state.settings.apiKey || "");
-    if (!isThirdPartyTask && !payloadMatchesCurrentRunningHubAccount) {
-      submissionAccountSnapshot = { balance: null, coins: null, updatedAt: 0 };
-    } else if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
+    if (!isThirdPartyTask && payloadMatchesCurrentRunningHubAccount && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
       try {
-        const account = await modules.settings.refreshAccountSummary({
+        await modules.settings.refreshAccountSummary({
           apiKey: payload.apiKey,
           region: payload.region,
           quiet: true,
           force: true
         });
-        submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
       } catch (_) {
-        submissionAccountSnapshot = getCurrentAccountSnapshot();
+        // Account refresh only updates the account card; RunningHub task charges come from task settlement data.
       }
     }
     upsertRunningTask({
@@ -4027,7 +3992,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         const finishedAt = Date.now();
         const failedMessage = normalizeTaskFailureMessage(String(pollResult.message || "任务执行失败").trim(), {
           provider: payload.provider || "",
-          appName: payload.appName
+          appName: payload.appName,
+          errorCode: pollResult.errorCode,
+          platformErrorMessage: pollResult.errorMessage
         });
         const failureLabel = getTaskFailureLabel({
           status: pollResult.status || "failed",
@@ -4041,9 +4008,13 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
           status: "failed",
           detail: failedMessage,
           errorMessage: failedMessage,
+          errorCode: pollResult.errorCode,
+          platformErrorMessage: pollResult.errorMessage,
+          platformErrorRaw: pollResult.result,
           charge: pollResult.charge,
           balanceCharge: pollResult.balanceCharge,
           coinsCharge: pollResult.coinsCharge,
+          pointsCharge: pollResult.pointsCharge,
           chargeDisplay: pollResult.chargeDisplay,
           failureLabel,
           sourceDocument,
@@ -4085,6 +4056,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         charge: pollResult && pollResult.charge,
         balanceCharge: pollResult && pollResult.balanceCharge,
         coinsCharge: pollResult && pollResult.coinsCharge,
+        pointsCharge: pollResult && pollResult.pointsCharge,
         chargeDisplay: pollResult && pollResult.chargeDisplay,
         outputUrl: String(pollResult.outputUrl || "").trim(),
         dataUrl: String(pollResult.dataUrl || "").trim(),
@@ -4165,7 +4137,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       const rawMessage = String(message).trim();
       const normalizedMessage = normalizeTaskFailureMessage(rawMessage, {
         provider: payload.provider || "",
-        appName: payload.appName
+        appName: payload.appName,
+        errorCode: error && error.errorCode,
+        platformErrorMessage: error && error.errorMessage
       });
       const cancelled = /cancel/i.test(rawMessage);
       if (activeRemoteTaskId && !cancelled && isTransientTaskErrorMessage(rawMessage)) {
@@ -4199,6 +4173,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         status: cancelled ? "cancelled" : "failed",
         detail: cancelled ? "任务已取消。" : normalizedMessage,
         errorMessage: cancelled ? "" : normalizedMessage,
+          errorCode: cancelled ? null : error && error.errorCode,
+          platformErrorMessage: cancelled ? "" : error && error.errorMessage,
+          platformErrorRaw: cancelled ? null : error && error.raw,
         failureLabel,
         sourceDocument,
         finishedAt: Date.now()
@@ -4843,6 +4820,8 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     resumeAutoPlacementRetry,
     getTaskDurationLabel,
     getTaskCostLabel,
+    normalizeTaskFailureMessage,
+    getTaskPlatformErrorDetails,
     isAutoPlacementBlockedError,
     isAutoPlacementRetryableError,
     isAutoPlacementTargetDocumentError,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   extractTaskBalanceCharge,
   extractTaskCoinsCharge,
+  extractTaskPointsCharge,
   extractOutputUrl,
   extractReadyOutputUrl,
   fetchRunningHubTaskStatus,
@@ -13,6 +14,20 @@ function assertCharge(payload, expectedBalance, expectedCoins) {
   assert.equal(extractTaskBalanceCharge(payload), expectedBalance);
   assert.equal(extractTaskCoinsCharge(payload), expectedCoins);
 }
+
+assert.equal(extractTaskPointsCharge({
+  usage: { settleMode: "POINT", chargedPoint: "1.28" },
+  taskUsageList: [{ taskId: "subtask-a", usage: { settleMode: "POINT", chargedPoint: "0.50" } }],
+  results: [{ usage: { settleMode: "POINT", chargedPoint: "1.28" } }]
+}), 1.28, "the aggregate V2 settlement takes precedence over nested usage values");
+assert.equal(formatTaskChargeDisplay(null, null, "cn", 1.28), "-1.28 积分");
+assert.equal(extractTaskPointsCharge({
+  results: [
+    { taskUsageList: [{ taskId: "subtask-a", usage: { settleMode: "POINT", chargedPoint: "0.50" } }] },
+    { taskUsageList: [{ taskId: "subtask-a", usage: { settleMode: "POINT", chargedPoint: "0.50" } }] }
+  ]
+}), 0.5, "repeated result arrays do not duplicate taskUsageList charges");
+assert.equal(extractTaskPointsCharge({ usage: { settleMode: "COIN", chargedPoint: "8" } }), null);
 
 const duplicatedNestedOutputs = {
   taskId: "global-normal-task",
@@ -84,6 +99,8 @@ assertCharge(duplicatedPlusOutputs, 0.25, 16);
 const originalFetch = globalThis.fetch;
 const submittedRequests = [];
 let globalTaskSnapshot = null;
+let submitErrorResponse = null;
+let accountSnapshot = { data: { accountStatus: { remainMoney: 2, remainCoins: 99, remainPoint: 17.5, currency: "USD" } } };
 globalThis.fetch = async (url, options = {}) => {
   if (String(url).includes("/media/upload/binary") || String(url).includes("/uc/openapi/upload")) {
     return {
@@ -101,6 +118,20 @@ globalThis.fetch = async (url, options = {}) => {
       async text() {
         return JSON.stringify(globalTaskSnapshot);
       }
+    };
+  }
+  if (String(url).endsWith("/uc/openapi/accountStatus")) {
+    return {
+      ok: true,
+      status: 200,
+      async text() { return JSON.stringify(accountSnapshot); }
+    };
+  }
+  if (String(url).endsWith("/task/openapi/ai-app/run") && submitErrorResponse) {
+    return {
+      ok: true,
+      status: 200,
+      async text() { return JSON.stringify(submitErrorResponse); }
     };
   }
   submittedRequests.push({ url: String(url), body: JSON.parse(String(options.body || "{}")) });
@@ -130,6 +161,26 @@ try {
   assert.equal(submittedRequests[0].url, "https://www.runninghub.ai/task/openapi/ai-app/run");
   assert.equal(Object.hasOwn(submittedRequests[0].body, "instanceType"), false);
   assert.equal(submittedRequests[1].body.instanceType, "plus");
+
+  submitErrorResponse = { code: 416, errorCode: 416, message: "TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET" };
+  await assert.rejects(
+    () => submitRunningHubTask([basePayload]),
+    (error) => error.errorCode === 416 && error.errorMessage === "TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET" && error.raw.code === 416
+  );
+  submitErrorResponse = null;
+
+  const account = await (await import("../src/host/runninghub.js")).fetchRunningHubAccountStatus([{
+    apiKey: "global-test-key",
+    region: "global"
+  }]);
+  assert.equal(account.points, 17.5);
+  assert.equal(Object.hasOwn(account, "coins"), false);
+  accountSnapshot = { data: { accountStatus: { remainMoney: 2, remainCoins: 99, currency: "USD" } } };
+  const accountWithoutPoints = await (await import("../src/host/runninghub.js")).fetchRunningHubAccountStatus([{
+    apiKey: "global-test-key",
+    region: "global"
+  }]);
+  assert.equal(accountWithoutPoints.points, null, "remainCoins is never exposed as account points");
 
   await submitRunningHubTask([{
     ...basePayload,
@@ -178,6 +229,29 @@ try {
   assert.equal(finishedStatus.status, "SUCCESS");
   assert.equal(finishedStatus.outputUrl, "https://rh-hk-images.example.com/final?id=1");
   assert.equal(finishedStatus.stillRunning, false);
+
+  globalTaskSnapshot = {
+    data: {
+      taskId: "point-task",
+      status: "SUCCESS",
+      usage: { settleMode: "POINT", chargedPoint: "1.28" },
+      taskUsageList: [{ taskId: "subtask-a", usage: { settleMode: "POINT", chargedPoint: "0.50" } }],
+      results: [{ url: "https://example.com/point.png", outputType: "png", consumeCoins: "9", consumeMoney: "0.8" }]
+    }
+  };
+  const pointStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "point-task" }]);
+  assert.equal(pointStatus.pointsCharge, 1.28);
+  assert.equal(pointStatus.chargeDisplay, "-1.28 积分");
+  assert.equal(pointStatus.coinsCharge, null, "point settlement does not mix in legacy coin charges");
+  assert.equal(pointStatus.balanceCharge, null, "point settlement does not mix in legacy money charges");
+
+  globalTaskSnapshot = { data: { taskId: "queued-task", status: "RUNNING", errorCode: 813, message: "APIKEY_TASK_IS_QUEUED" } };
+  const queuedStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "queued-task" }]);
+  assert.equal(queuedStatus.failed, false);
+  assert.equal(queuedStatus.stillRunning, true);
+  assert.equal(queuedStatus.status, "QUEUED");
+  assert.match(queuedStatus.message, /仍在排队/);
+  assert.equal(queuedStatus.errorCode, 813);
 } finally {
   globalThis.fetch = originalFetch;
 }

@@ -18,6 +18,7 @@ import "./webview/post-fx.js";
 import "./webview/post-fx/webgl-renderer.js";
 import "./webview/blend-match.js";
 import "./webview/ratio-offset-correction.js";
+import "./webview/runninghub-errors.js";
 import "./webview/workspace.js";
 import "./webview/generative-fill.js";
 import "./webview/ai-optimize.js";

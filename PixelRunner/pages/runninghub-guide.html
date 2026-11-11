@@ -773,7 +773,7 @@
         <h2>先确认这 4 件事</h2>
         <ul class="status-list">
           <li><span class="dot"></span><span><strong>RunningHub 账号</strong><br />需要能登录官网，并能进入消费级 API 控制台复制 API Key。</span></li>
-          <li><span class="dot"></span><span><strong>钱包有可用余额</strong><br />国内版以 RH 币 / R 计费，国际版以美元计费，网站任务和 API 调用共享并发限制。</span></li>
+          <li><span class="dot"></span><span><strong>账户有可用额度</strong><br />插件显示账户余额和 RunningHub 返回的积分；任务结束后以任务卡片的实际结算信息为准。</span></li>
           <li><span class="dot"></span><span><strong>Photoshop 已打开文档</strong><br />需要捕获当前文档或选区时，必须先打开图像。</span></li>
           <li><span class="dot"></span><span><strong>准备一个 AI 应用</strong><br />从 RunningHub 的 AI 应用页下翻到广场，或直接搜索需要的应用。</span></li>
         </ul>
@@ -826,8 +826,8 @@
               <span>设置页导出资料包，备份应用、模板、快捷入口。</span>
             </a>
             <a class="quick-help" href="#billing">
-              <strong>为什么扣币或扣余额？</strong>
-              <span>消费级 API 按模型计费；企业级共享 API 只扣余额并支持更高并发。</span>
+              <strong>任务费用和积分怎么看？</strong>
+              <span>账户卡片显示积分，任务卡片显示平台返回的实际结算信息。</span>
             </a>
             <a class="quick-help" href="#region-limit">
               <strong>国内版和国际版能混用吗？</strong>
@@ -841,22 +841,22 @@
             <div>
               <p class="eyebrow">Billing And Concurrency</p>
               <h2>先看懂 API 计费和并发</h2>
-              <p class="muted">选择 API 前先确认账户余额和模型类型。插件里的最大并发设置不能突破服务商对当前 API 类型的限制。</p>
+              <p class="muted">RunningHub 账户接口和任务结算接口提供不同字段；插件按接口原始字段展示，不用 RH 币推算积分费用。</p>
             </div>
             <span class="tag">必须阅读</span>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>API 类型</th><th>扣费方式</th><th>并发能力</th><th>使用提醒</th></tr></thead>
+              <thead><tr><th>信息</th><th>插件显示</th><th>来源</th><th>使用提醒</th></tr></thead>
               <tbody>
-                <tr><td>消费级 API + 开源模型</td><td>扣 RunningHub 币</td><td>1 个并发</td><td>账户没有余额时无法扣币；继续尝试调用可能触发风控。</td></tr>
-                <tr><td>消费级 API + 闭源模型</td><td>同时扣余额和币</td><td>1 个并发</td><td>余额和币都要充足，不能只看插件右上角的一项余额。</td></tr>
-                <tr><td>企业级共享 API</td><td>只扣余额</td><td>最多 100 个并发</td><td>适合批量任务；仍需遵守账户、应用和服务商的实际限额。</td></tr>
+                <tr><td>账户积分</td><td>积分</td><td>账户接口的 <code>remainPoint</code></td><td>字段缺失时插件显示“--”，不会用 <code>remainCoins</code> 代替。</td></tr>
+                <tr><td>任务结算</td><td>实际扣除积分</td><td>V2 任务结果的 <code>usage.chargedPoint</code></td><td>任务卡片显示平台返回的扣费；结算字段缺失时显示“扣费待确认”。</td></tr>
+                <tr><td>余额与并发</td><td>账户余额、任务状态</td><td>当前区域 RunningHub 控制台和任务卡片</td><td>并发和排队限制以账号、应用及服务区域当前实际规则为准。</td></tr>
               </tbody>
             </table>
           </div>
-          <div class="notice danger"><strong>消费级 API 的风控提醒：</strong>账户余额为 0 时，消费级 API 无法完成扣币。不要连续重复提交；先充值并确认区域、API Key 和模型类型，再重试。</div>
-          <div class="notice"><strong>插件设置建议：</strong>消费级 API 将“最大并发任务数”设为 1；企业级共享 API 可按团队额度逐步调高，最多按服务商允许值设置到 100。</div>
+          <div class="notice danger"><strong>积分口径：</strong>公开账户字段说明没有明确区分免费积分、付费积分或 API 专用积分。插件只显示“积分”，具体可用范围请到对应区域控制台核对。</div>
+          <div class="notice"><strong>队列提醒：</strong>任务卡片显示运行中或排队时，继续跟踪现有任务，不要重复提交相同任务。</div>
         </section>
 
         <section class="doc-card" id="region-limit">
@@ -892,7 +892,7 @@
                 <p>国内版使用 <code>runninghub.cn</code>，国际版使用 <code>runninghub.ai</code>。先确认准备使用的站点，再打开该站点的 <strong>消费级-会员 API 控制台</strong>，登录并复制对应 API Key。</p>
                 <ul class="plain-list">
                   <li>目前官网右上角头像菜单里没有 API 控制台入口，建议直接使用上面的控制台网址。</li>
-                  <li>消费级 API 调用会消耗对应区域账号的余额；国内版显示 RH 币 / R，国际版显示美元 `$`。</li>
+                  <li>国内版与国际版的 API Key、账户字段和任务记录均分区处理；工作台的积分来自账户响应字段 <code>remainPoint</code>。</li>
                   <li>如果 API Key 失效，回官网 API 控制台重新复制或重置新的 Key。</li>
                   <li>API Key 属于敏感信息，不建议发到公开群聊或截图里。</li>
                   <li>国内版与国际版的 Key、余额和应用 ID 分开使用，不要跨区域混用。</li>
@@ -921,7 +921,7 @@
             <article class="flow-step">
               <div>
                 <h3>充值或确认钱包余额</h3>
-                <p>像素起子调用的是 RunningHub 云端任务。国内版消耗 RH 币 / R，国际版消耗美元余额，且官网运行任务和 API 调用任务共享同一套并发限制。建议第一次运行前先在官网确认对应区域的余额。</p>
+                <p>像素起子调用的是 RunningHub 云端任务。第一次运行前先在对应区域控制台确认账户状态；任务完成后，以卡片显示的平台实际结算积分为准。账户卡片中的“余额”仍按账户接口返回值显示。</p>
                 <div class="notice">
                   <strong>经验判断：</strong>如果一点击运行就很快失败，优先查余额、会员/API 权益和 API Key；如果等了很久才失败，再看应用拥挤、并发限制、网络或内容审核。
                 </div>
@@ -934,7 +934,7 @@
                 <p>回到像素起子，打开 <span class="kbd">设置</span>。先在 <strong>RunningHub 服务区域</strong> 选择“国内版”或“国际版”，再填写该区域的 <strong>RunningHub API Key</strong> 和 <strong>API 档案名称</strong>，然后点击 <strong>保存设置</strong>。</p>
                 <ul class="plain-list">
                   <li>API 档案按区域分别显示；有多个账号时，可以用“新增”创建多个档案，例如“主账号”“客户项目 A”。</li>
-                  <li>保存后，工作台右上角会尝试显示余额；国际版余额使用美元符号 `$`。</li>
+                  <li>保存后，工作台会尝试显示账户余额和积分；积分读取自 <code>remainPoint</code>，缺失时显示“--”。</li>
                   <li>看不到余额时，先确认 Key 是否正确，再确认网络是否能访问 RunningHub。</li>
                 </ul>
                 <div class="notice success">
@@ -1204,7 +1204,7 @@
           <div class="problem-grid">
             <article class="issue-card" data-level="error">
               <h3>余额不足</h3>
-              <p>工作台右上余额为空或过低时，先去当前 RunningHub 区域官网确认余额和消费级 API 权益。国内版查 RH 币 / R，国际版查美元余额。</p>
+              <p>工作台的“积分”读取自账户接口 <code>remainPoint</code>；为空时请到当前区域控制台核对账户状态，不要用 RH 币余额推算。任务实际扣费以任务卡片结算字段为准。</p>
             </article>
             <article class="issue-card" data-level="error">
               <h3>API Key 未保存或失效</h3>
@@ -1226,6 +1226,22 @@
               <h3>Photoshop 正忙导致返图延迟</h3>
               <p>如果任务已完成但没有马上贴回，可能是 Photoshop 正在液化、保存或其他模态操作。插件会尝试稍后自动重试。</p>
             </article>
+          </div>
+
+          <div class="table-wrap" style="margin-top: 14px;">
+            <table>
+              <thead><tr><th>错误码</th><th>任务卡片提示</th><th>建议处理</th></tr></thead>
+              <tbody>
+                <tr><td><code>416</code> / <code>812</code></td><td>账户余额或积分不足</td><td>到对应区域控制台核对账户额度；企业账户联系管理员。</td></tr>
+                <tr><td><code>801</code> / <code>802</code> / <code>811</code></td><td>API Key 类型或鉴权不匹配</td><td>确认账号等级、Key 类型和 API 区域后重新保存。</td></tr>
+                <tr><td><code>415</code> / <code>421</code></td><td>云端资源或并发队列已满</td><td>等待后再运行，不要连续重复提交。</td></tr>
+                <tr><td><code>804</code> / <code>813</code></td><td>任务仍在运行或排队</td><td>继续跟踪现有任务，不要重新提交。</td></tr>
+                <tr><td><code>301</code> / <code>433</code> / <code>803</code></td><td>输入参数或节点信息不匹配</td><td>重新解析应用并检查必填字段和节点参数。</td></tr>
+                <tr><td><code>808</code> / <code>809</code></td><td>图片上传失败或文件过大</td><td>检查网络，或压缩图片后重试。</td></tr>
+                <tr><td><code>435</code> / <code>436</code></td><td>Plus/Ultra 实例权限不足或权益失效</td><td>改用默认模式，或检查 RunningHub 账号权益。</td></tr>
+                <tr><td>其他错误</td><td>显示通用诊断和平台错误码</td><td>展开任务卡片的“平台返回详情”，保留任务 ID 和原始响应排查。</td></tr>
+              </tbody>
+            </table>
           </div>
 
           <div class="flow" style="margin-top: 14px;">

@@ -9,8 +9,8 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 文件上传、任务提交、结果查询、任务取消和账户查询，不能只替换提交接口。
 
 国内版与国际版应视为两套独立配置。API Key、账户余额以及 AI 应用/工作流 ID 都应与区域一起保存；
-用户切换区域时，插件应切换到该区域的 API 档案和应用列表。
-国内版余额扣费使用 `R`，国际版余额扣费使用美元符号 `$`。
+用户切换区域时，插件应切换到该区域的 API 档案和应用列表。账户卡片保留余额项，并把账户接口的
+`remainPoint` 单独显示为“积分”；不要使用 `remainCoins` 代替积分。
 
 ## 接口映射
 
@@ -19,13 +19,22 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 | AI 应用提交 | `POST /task/openapi/ai-app/run` | `apiKey`, `webappId`, `nodeInfoList`, 可选 `instanceType` |
 | 工作流提交（兼容） | `POST /task/openapi/create` | `apiKey`, `workflowId`, `nodeParams` |
 | V2 文件上传 | `POST /openapi/v2/media/upload/binary` | Bearer 鉴权，multipart 字段 `file` |
-| V2 查询任务结果 | `POST /openapi/v2/query` | Bearer 鉴权，`taskId`；返回 `status`、`results[].url`、`results[].outputType` |
+| V2 查询任务结果 | `POST /openapi/v2/query` | Bearer 鉴权，`taskId`；返回 `status`、`results[].url`、`results[].outputType`、`usage.settleMode`、`usage.chargedPoint` |
 | V1 查询输出（兼容） | `POST /task/openapi/outputs` | `apiKey`, `taskId`；仅在 V2 不可用或已完成但无结果时回退 |
 | 取消任务 | `POST /task/openapi/cancel` | `apiKey`, `taskId` |
 | 查询账户 | `POST /uc/openapi/accountStatus` | 请求体字段为小写 `apikey` |
 
-以上接口均使用 `Authorization: Bearer <API Key>`。账户接口主要返回 `remainMoney`、`remainCoins`、
-`currentTaskCounts`、`currency` 和 `apiType`。
+以上接口均使用 `Authorization: Bearer <API Key>`。账户接口返回 `remainMoney`、`remainCoins`、
+`remainPoint`、`currentTaskCounts`、`currency` 和 `apiType`。插件把 `remainPoint` 作为独立 `points`
+字段返回；缺失时保持空值，不回退到 `remainCoins`。
+
+V2 任务成功结果中的 `usage.settleMode: "POINT"` 与 `usage.chargedPoint` 是积分结算首选字段；聚合
+`usage.chargedPoint` 缺失时，可汇总去重后的 `taskUsageList[].usage.chargedPoint`。V1 兼容结果中的
+`consumeCoins` / `consumeMoney` 仍按旧单位显示。不要通过账户余额差推算 RunningHub 的任务费用。
+账户文档没有明确 `remainPoint` 是否仅包含 API 可用付费积分，UI 不应擅自标成“可用积分”。
+
+任务状态和提交响应可能包含数字错误码或平台字符串码。任务卡片保留错误码、原始消息和响应；
+`804` / `APIKEY_TASK_IS_RUNNING` 与 `813` / `APIKEY_TASK_IS_QUEUED` 表示继续跟踪现有任务，不是失败重试信号。
 
 ## 插件约束
 

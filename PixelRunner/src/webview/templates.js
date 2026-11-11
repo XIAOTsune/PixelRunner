@@ -9,6 +9,15 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     resolver: null,
     action: null
   };
+  let suppressActiveBundleSnapshot = 0;
+
+  function getPluginStorageOptions() {
+    return { requireHost: modules.runtime.isPluginRuntime() };
+  }
+
+  async function writeWorkspaceStorage(key, value) {
+    return modules.runtime.storageSetItem(key, value, getPluginStorageOptions());
+  }
 
   function getTemplateEditorDraft() {
     const runtime = modules.runtime;
@@ -387,20 +396,31 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   }
 
   async function loadTemplatesFromStorage() {
-    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES);
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES, getPluginStorageOptions());
     return normalizeTemplateListWithFallback(modules.runtime.readJsonText(raw, []));
   }
 
   async function loadTemplateCategoriesFromStorage(templates = []) {
-    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES);
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, getPluginStorageOptions());
     return modules.state.normalizeTemplateCategoryList(modules.runtime.readJsonText(raw, []), templates);
   }
 
   async function saveTemplateCategoriesToStorage(categories) {
     const normalized = modules.state.normalizeTemplateCategoryList(categories, modules.state.state.templates);
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(normalized));
+    const previous = modules.state.state.templateCategories;
     modules.state.state.templateCategories = normalized;
-    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
+    let bundleSnapshotPersisted = false;
+    try {
+      bundleSnapshotPersisted = await persistActiveBundleSnapshot();
+      await writeWorkspaceStorage(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(normalized));
+      if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
+    } catch (error) {
+      if (!bundleSnapshotPersisted) modules.state.state.templateCategories = previous;
+      const message = `分类保存失败：${error && error.message || error}`;
+      modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), message, "error");
+      modules.ui.logToWorkspace(message, "error");
+      throw error;
+    }
     syncActiveCategoryIds();
     renderTemplateCategoryControls();
     renderSavedTemplatesList();
@@ -410,11 +430,27 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
 
   async function saveTemplatesToStorage(templates) {
     const normalized = normalizeTemplateListWithFallback(templates);
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES, JSON.stringify(normalized));
+    const categories = modules.state.normalizeTemplateCategoryList(modules.state.state.templateCategories, normalized);
+    const previousTemplates = modules.state.state.templates;
+    const previousCategories = modules.state.state.templateCategories;
     modules.state.state.templates = normalized;
-    modules.state.state.templateCategories = modules.state.normalizeTemplateCategoryList(modules.state.state.templateCategories, normalized);
-    if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(modules.state.state.templateCategories));
+    modules.state.state.templateCategories = categories;
+    let bundleSnapshotPersisted = false;
+    try {
+      bundleSnapshotPersisted = await persistActiveBundleSnapshot();
+      await writeWorkspaceStorage(modules.state.STORAGE_KEYS.PROMPT_TEMPLATES, JSON.stringify(normalized));
+      await writeWorkspaceStorage(modules.state.STORAGE_KEYS.PROMPT_TEMPLATE_CATEGORIES, JSON.stringify(categories));
+      if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
+    } catch (error) {
+      if (!bundleSnapshotPersisted) {
+        modules.state.state.templates = previousTemplates;
+        modules.state.state.templateCategories = previousCategories;
+      }
+      const message = `预设保存失败：${error && error.message || error}`;
+      modules.runtime.setSummaryStatus(modules.runtime.getById("templateStatusSummary"), message, "error");
+      modules.ui.logToWorkspace(message, "error");
+      throw error;
+    }
     syncActiveCategoryIds();
     renderTemplateCategoryControls();
     renderSavedTemplatesList();
@@ -721,7 +757,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (!confirmed) return false;
     modules.state.state.templateManagerCategoryId = defaultId;
     modules.state.state.templatePicker.categoryId = defaultId;
-    await saveTemplateCategoriesToStorage((modules.state.state.templateCategories || []).filter((item) => String(item.id) !== activeId));
+    modules.state.state.templateCategories = (modules.state.state.templateCategories || []).filter((item) => String(item.id) !== activeId);
     await saveTemplatesToStorage((modules.state.state.templates || []).map((template) =>
       String(template.categoryId || defaultId) === activeId ? { ...template, categoryId: defaultId, updatedAt: Date.now() } : template
     ));
@@ -998,20 +1034,20 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
 
   async function initializeBuiltinBundle() {
     const markerKey = modules.state.STORAGE_KEYS.BUILTIN_BUNDLE_MARKER;
-    const installed = await modules.runtime.storageGetItem(markerKey);
+    const installed = await modules.runtime.storageGetItem(markerKey, getPluginStorageOptions());
     if (installed === "true") return;
     const keys = modules.state.STORAGE_KEYS;
     const rawValues = await Promise.all([
-      modules.runtime.storageGetItem(keys.APPS),
-      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATES),
-      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATE_CATEGORIES),
-      modules.runtime.storageGetItem(keys.QUICK_ENTRIES),
-      modules.runtime.storageGetItem(keys.WORKSPACE_INIT),
+      modules.runtime.storageGetItem(keys.APPS, getPluginStorageOptions()),
+      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATES, getPluginStorageOptions()),
+      modules.runtime.storageGetItem(keys.PROMPT_TEMPLATE_CATEGORIES, getPluginStorageOptions()),
+      modules.runtime.storageGetItem(keys.QUICK_ENTRIES, getPluginStorageOptions()),
+      modules.runtime.storageGetItem(keys.WORKSPACE_INIT, getPluginStorageOptions()),
       modules.runtime.loadWorkspaceBackup ? modules.runtime.loadWorkspaceBackup() : null
     ]);
     const hasStoredWorkspace = rawValues.slice(0, 4).some((value) => value !== null && value !== undefined);
     if (hasStoredWorkspace || rawValues[4] === "true" || rawValues[5]) {
-      await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+      await writeWorkspaceStorage(keys.WORKSPACE_INIT, "true");
       return;
     }
     try {
@@ -1022,11 +1058,14 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
       if (!summary || summary.cancelled) return;
       const bundles = await loadPromptBundles();
       const builtin = bundles.find((item) => String(item.id) === BUILTIN_BUNDLE_ID);
-      if (builtin) { builtin.content = text; builtin.updatedAt = Date.now(); }
+      if (builtin) {
+        builtin.content = JSON.stringify(buildTemplateBundle(modules.state.state.templates));
+        builtin.updatedAt = Date.now();
+      }
       await savePromptBundles(bundles);
       await persistActiveBundleId(BUILTIN_BUNDLE_ID, "像素起子资料包（内置基础版）");
-      await modules.runtime.storageSetItem(markerKey, "true");
-      await modules.runtime.storageSetItem(keys.WORKSPACE_INIT, "true");
+      await writeWorkspaceStorage(markerKey, "true");
+      await writeWorkspaceStorage(keys.WORKSPACE_INIT, "true");
     } catch (_) {
       // The bundled asset is optional in browser preview and older packaged builds.
     }
@@ -1046,7 +1085,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   }
 
   async function loadPromptBundles() {
-    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES);
+    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, getPluginStorageOptions());
     const stored = modules.runtime.readJsonText(raw, []);
     const bundles = Array.isArray(stored) ? stored.filter((item) => item && item.id) : [];
     if (!bundles.some((item) => String(item.id) === BUILTIN_BUNDLE_ID)) {
@@ -1056,7 +1095,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   }
 
   async function savePromptBundles(bundles) {
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, JSON.stringify(bundles));
+    await writeWorkspaceStorage(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, JSON.stringify(bundles));
   }
 
   async function renderPromptBundleManager() {
@@ -1069,7 +1108,7 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     if (active) {
       modules.state.state.activePromptBundleId = String(active.id);
       modules.state.state.activePromptBundleName = active.name || "未命名资料包";
-      await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, String(active.id));
+      await writeWorkspaceStorage(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, String(active.id));
     }
     if (status) status.textContent = active ? active.name : "未选择资料包";
     list.innerHTML = bundles.map((bundle) => {
@@ -1080,22 +1119,52 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
   }
 
   async function persistActiveBundleId(id, name) {
-    modules.state.state.activePromptBundleId = String(id || BUILTIN_BUNDLE_ID);
-    modules.state.state.activePromptBundleName = String(name || "像素起子资料包");
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, modules.state.state.activePromptBundleId);
+    const activeId = String(id || BUILTIN_BUNDLE_ID);
+    const activeName = String(name || "像素起子资料包");
+    await writeWorkspaceStorage(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, activeId);
+    modules.state.state.activePromptBundleId = activeId;
+    modules.state.state.activePromptBundleName = activeName;
     await renderPromptBundleManager();
+  }
+
+  async function persistActiveBundleSnapshot() {
+    if (suppressActiveBundleSnapshot > 0) return false;
+    const activeId = String(modules.state.state.activePromptBundleId || BUILTIN_BUNDLE_ID);
+    const bundles = await loadPromptBundles();
+    const target = bundles.find((item) => String(item.id) === activeId);
+    if (!target) throw new Error(`当前资料包不存在，无法保存快照：${activeId}`);
+    target.content = JSON.stringify(buildTemplateBundle(modules.state.state.templates));
+    target.updatedAt = Date.now();
+    await savePromptBundles(bundles);
+    return true;
   }
 
   async function switchPromptBundle(bundleId) {
     const bundles = await loadPromptBundles();
     const target = bundles.find((item) => String(item.id) === String(bundleId));
     if (!target) return false;
-    if (target.content) await importTransferPackageText(target.content, { skipStrategy: true, persistSelection: false, forceReplace: true });
-    else if (String(target.id) === BUILTIN_BUNDLE_ID) {
-      await modules.runtime.storageSetItem("pixelrunner.builtinBundle.v1", "false");
-      await initializeBuiltinBundle();
+    const currentId = String(modules.state.state.activePromptBundleId || BUILTIN_BUNDLE_ID);
+    if (String(target.id) === currentId) return true;
+
+    await persistActiveBundleSnapshot();
+    suppressActiveBundleSnapshot += 1;
+    try {
+      if (target.content) {
+        await importTransferPackageText(target.content, {
+          skipStrategy: true,
+          persistSelection: false,
+          forceReplace: true,
+          skipActiveSnapshot: true
+        });
+      } else if (String(target.id) === BUILTIN_BUNDLE_ID) {
+        await writeWorkspaceStorage("pixelrunner.builtinBundle.v1", "false");
+        await initializeBuiltinBundle();
+      }
+    } finally {
+      suppressActiveBundleSnapshot -= 1;
     }
     await persistActiveBundleId(target.id, target.name);
+    await persistActiveBundleSnapshot();
     return true;
   }
 
@@ -1133,13 +1202,18 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     return Boolean(result);
   }
 
-  async function persistBundleSnapshot(name, bundleText) {
-    const raw = await modules.runtime.storageGetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES);
-    const bundles = modules.runtime.readJsonText(raw, []);
+  async function persistBundleSnapshot(name) {
+    const bundles = await loadPromptBundles();
     const id = modules.runtime.createId("bundle");
-    bundles.push({ id, name, content: bundleText, createdAt: Date.now(), updatedAt: Date.now() });
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.PROMPT_BUNDLES, JSON.stringify(bundles));
-    await modules.runtime.storageSetItem(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, id);
+    bundles.push({
+      id,
+      name,
+      content: JSON.stringify(buildTemplateBundle(modules.state.state.templates)),
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+    await savePromptBundles(bundles);
+    await writeWorkspaceStorage(modules.state.STORAGE_KEYS.ACTIVE_PROMPT_BUNDLE, id);
     return id;
   }
 
@@ -1211,49 +1285,62 @@ import { parseTransferPackageText as parseCompatibleTransferPackageText } from "
     try { transfer.name = String((JSON.parse(text) || {}).name || "").trim(); } catch (_) { transfer.name = ""; }
     const strategy = options.skipStrategy ? "merge" : await chooseImportStrategy();
     if (!strategy) return { cancelled: true, kind: transfer.kind };
-    modules.state.state.activePromptBundleName = transfer.name || modules.state.state.activePromptBundleName || "像素起子资料包";
-    if (strategy === "replace" || options.forceReplace) {
-      if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
-      await modules.apps.saveAppsToStorage([]);
-      await saveTemplatesToStorage([]);
-      await saveTemplateCategoriesToStorage([]);
-      if (modules.quickEntries) await modules.quickEntries.saveQuickEntriesToStorage([]);
-    }
     const importedTemplates = normalizeTemplateListWithFallback(transfer.templates);
     if (transfer.kind !== "bundle" && importedTemplates.length === 0) throw new Error("没有解析到可导入的模板");
     if (transfer.kind === "bundle" && importedTemplates.length === 0 && transfer.apps.length === 0 && transfer.quickEntries.length === 0) {
       throw new Error("没有解析到可导入的资料包内容");
     }
 
-    const mergedApps = transfer.kind === "bundle" ? mergeImportedApps(transfer.apps) : { apps: modules.state.state.apps, added: 0 };
-    const mergedCategories = modules.state.normalizeTemplateCategoryList(
-      [...(modules.state.state.templateCategories || []), ...(transfer.templateCategories || [])],
-      [...(modules.state.state.templates || []), ...importedTemplates]
-    );
-    modules.state.state.templateCategories = mergedCategories;
-    const mergedTemplates = mergeImportedTemplates(importedTemplates);
-    const mergedQuickEntries =
-      transfer.kind === "bundle" && modules.quickEntries
-        ? modules.quickEntries.mergeImportedQuickEntries(transfer.quickEntries)
-        : { entries: modules.state.state.quickEntries, added: 0, replaced: 0 };
-
-    if (transfer.kind === "bundle") {
-      await modules.apps.saveAppsToStorage(mergedApps.apps);
-      if (modules.apps && typeof modules.apps.hydrateMissingAppPreviews === "function") {
-        void modules.apps.hydrateMissingAppPreviews({ quiet: true });
+    if (!options.skipActiveSnapshot) await persistActiveBundleSnapshot();
+    let mergedApps;
+    let mergedTemplates;
+    let mergedQuickEntries;
+    let mergedCategories;
+    suppressActiveBundleSnapshot += 1;
+    try {
+      modules.state.state.activePromptBundleName = transfer.name || modules.state.state.activePromptBundleName || "像素起子资料包";
+      if (strategy === "replace" || strategy === "new" || options.forceReplace) {
+        if (modules.runtime.backupWorkspaceFromState) await modules.runtime.backupWorkspaceFromState();
+        await modules.apps.saveAppsToStorage([]);
+        await saveTemplatesToStorage([]);
+        await saveTemplateCategoriesToStorage([]);
+        if (modules.quickEntries) await modules.quickEntries.saveQuickEntriesToStorage([]);
       }
+
+      mergedApps = transfer.kind === "bundle" ? mergeImportedApps(transfer.apps) : { apps: modules.state.state.apps, added: 0, replaced: 0 };
+      mergedCategories = modules.state.normalizeTemplateCategoryList(
+        [...(modules.state.state.templateCategories || []), ...(transfer.templateCategories || [])],
+        [...(modules.state.state.templates || []), ...importedTemplates]
+      );
+      modules.state.state.templateCategories = mergedCategories;
+      mergedTemplates = mergeImportedTemplates(importedTemplates);
+      mergedQuickEntries =
+        transfer.kind === "bundle" && modules.quickEntries
+          ? modules.quickEntries.mergeImportedQuickEntries(transfer.quickEntries)
+          : { entries: modules.state.state.quickEntries, added: 0, replaced: 0 };
+
+      if (transfer.kind === "bundle") {
+        await modules.apps.saveAppsToStorage(mergedApps.apps);
+        if (modules.apps && typeof modules.apps.hydrateMissingAppPreviews === "function") {
+          void modules.apps.hydrateMissingAppPreviews({ quiet: true });
+        }
+      }
+      await saveTemplateCategoriesToStorage(mergedCategories);
+      await saveTemplatesToStorage(mergedTemplates.templates);
+      if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
+    } finally {
+      suppressActiveBundleSnapshot -= 1;
     }
-    await saveTemplateCategoriesToStorage(mergedCategories);
-    await saveTemplatesToStorage(mergedTemplates.templates);
-    if (transfer.kind === "bundle") await modules.quickEntries.saveQuickEntriesToStorage(mergedQuickEntries.entries);
 
     exportTemplatesToTextarea();
     if (strategy === "new") {
-      const id = await persistBundleSnapshot(String(transfer.name || `资料包 ${new Date().toLocaleDateString("zh-CN")}`), text);
-      await persistActiveBundleId(id, transfer.name);
+      const name = String(transfer.name || `资料包 ${new Date().toLocaleDateString("zh-CN")}`);
+      const id = await persistBundleSnapshot(name);
+      await persistActiveBundleId(id, name);
     } else if (options.persistSelection !== false) {
       await persistActiveBundleId(modules.state.state.activePromptBundleId || BUILTIN_BUNDLE_ID, transfer.name || modules.state.state.activePromptBundleName);
     }
+    if (!options.skipActiveSnapshot) await persistActiveBundleSnapshot();
     return {
       appsAdded: mergedApps.added,
       appsReplaced: mergedApps.replaced,

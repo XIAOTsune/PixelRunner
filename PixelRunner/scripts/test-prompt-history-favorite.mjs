@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 let idSequence = 0;
 
 const persisted = new Map();
+persisted.set("prompt-bundles", JSON.stringify([
+  { id: "builtin", name: "内置资料包", builtin: true, content: "" }
+]));
 const savedTemplate = { id: "template-1" };
 const templateCalls = [];
 const historyRecord = {
@@ -20,12 +23,25 @@ const list = { innerHTML: "", parentElement: { classList: { add() {} } } };
 
 const modules = {
   state: {
-    STORAGE_KEYS: { PROMPT_HISTORY: "prompt-history", PROMPT_TEMPLATES: "prompt-templates", PROMPT_TEMPLATE_CATEGORIES: "prompt-template-categories" },
+    STORAGE_KEYS: {
+      PROMPT_HISTORY: "prompt-history",
+      PROMPT_TEMPLATES: "prompt-templates",
+      PROMPT_TEMPLATE_CATEGORIES: "prompt-template-categories",
+      PROMPT_BUNDLES: "prompt-bundles",
+      ACTIVE_PROMPT_BUNDLE: "active-prompt-bundle"
+    },
     DEFAULT_TEMPLATE_CATEGORY_ID: "default",
     DEFAULT_TEMPLATE_CATEGORY_NAME: "默认分类",
+    RUNNINGHUB_REGIONS: { CN: "cn", GLOBAL: "global" },
+    normalizeAppList(apps) { return Array.isArray(apps) ? apps : []; },
+    normalizeRunningHubRegion(region) { return region === "global" ? "global" : "cn"; },
     state: {
       promptHistory: [],
       currentApp: null,
+      apps: [],
+      quickEntries: [],
+      activePromptBundleId: "builtin",
+      activePromptBundleName: "内置资料包",
       templates: [],
       templateCategories: [{ id: "default", name: "默认分类" }],
       templateManagerCategoryId: "default",
@@ -48,7 +64,11 @@ const modules = {
   },
   runtime: {
     createId(prefix) { return `${prefix}-generated-${++idSequence}`; },
-    async storageGetItem(key) { return persisted.has(key) ? persisted.get(key) : JSON.stringify([historyRecord]); },
+    isPluginRuntime() { return false; },
+    async storageGetItem(key) {
+      if (persisted.has(key)) return persisted.get(key);
+      return key === "prompt-history" ? JSON.stringify([historyRecord]) : null;
+    },
     async storageSetItem(key, value) { persisted.set(key, value); },
     async backupWorkspaceFromState() {},
     readJsonText(value, fallback) { try { return JSON.parse(value); } catch { return fallback; } },
@@ -56,7 +76,7 @@ const modules = {
     getById(id) {
       return ({ promptHistorySettingsSummary: badge, promptHistorySettingsStatus: status, promptHistorySettingsList: list })[id] || null;
     },
-    setSummaryStatus(element, message) { element.textContent = message; }
+    setSummaryStatus(element, message) { if (element) element.textContent = message; }
   },
   templates: {
     async savePromptHistoryToDefaultCategory(item) {

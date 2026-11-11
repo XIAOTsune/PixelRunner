@@ -74,7 +74,11 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
       clearTimeout(pending.timer);
 
       if (payload.error) {
-        pending.reject(new Error(String(payload.error.message || "宿主通信请求失败")));
+        const error = new Error(String(payload.error.message || "宿主通信请求失败"));
+        error.errorCode = payload.error.errorCode == null ? null : payload.error.errorCode;
+        error.errorMessage = String(payload.error.errorMessage || "");
+        error.raw = payload.error.raw == null ? null : payload.error.raw;
+        pending.reject(error);
         return;
       }
 
@@ -173,11 +177,11 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
     };
     const text = JSON.stringify(payload);
     JSON.parse(text);
-    return storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_BACKUP, text);
+    return storageSetItem(modules.state.STORAGE_KEYS.WORKSPACE_BACKUP, text, { requireHost: isPluginRuntime() });
   }
 
   async function loadWorkspaceBackup() {
-    const raw = await storageGetItem(modules.state.STORAGE_KEYS.WORKSPACE_BACKUP);
+    const raw = await storageGetItem(modules.state.STORAGE_KEYS.WORKSPACE_BACKUP, { requireHost: isPluginRuntime() });
     const parsed = readJsonText(raw, null);
     return parsed && parsed.schema === "pixelrunner.workspace-backup" && parsed.version === 1 ? parsed : null;
   }

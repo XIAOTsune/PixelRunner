@@ -1970,6 +1970,25 @@ button {
   line-height: 1.45;
 }
 
+.running-task-platform-error {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.running-task-platform-error summary {
+  cursor: pointer;
+  color: var(--text-soft);
+}
+
+.running-task-platform-error pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .running-task-status-chip {
   flex: 0 0 auto;
   transition:

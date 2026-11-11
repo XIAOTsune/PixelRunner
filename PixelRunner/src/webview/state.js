@@ -197,7 +197,7 @@ import {
     settingsLoaded: false,
     accountSummary: {
       balance: null,
-      coins: null,
+      points: null,
       region: RUNNINGHUB_REGIONS.CN,
       currency: "R",
       updatedAt: 0

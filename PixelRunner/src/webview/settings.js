@@ -65,9 +65,9 @@
 
   function updateAccountSummary(account) {
     const balanceEl = modules.runtime.getById("accountBalanceValue");
-    const coinsEl = modules.runtime.getById("accountCoinsValue");
+    const pointsEl = modules.runtime.getById("accountPointsValue");
     const summaryEl = modules.runtime.getById("accountSummary");
-    if (!balanceEl || !coinsEl || !summaryEl) return;
+    if (!balanceEl || !pointsEl || !summaryEl) return;
 
     const hasAccount = account && account.ok;
     const region = modules.state.normalizeRunningHubRegion(
@@ -79,11 +79,11 @@
         ? `$${account.balance}`
         : String(account.balance)
       : "--";
-    coinsEl.textContent = hasAccount && account.coins != null ? String(account.coins) : "--";
+    pointsEl.textContent = hasAccount && account.points != null ? String(account.points) : "--";
     summaryEl.classList.toggle("is-empty", !hasAccount);
     modules.state.state.accountSummary = {
       balance: hasAccount && account.balance != null ? Number(account.balance) : null,
-      coins: hasAccount && account.coins != null ? Number(account.coins) : null,
+      points: hasAccount && account.points != null ? Number(account.points) : null,
       region,
       currency,
       updatedAt: Date.now()

@@ -1,5 +1,6 @@
 import { parseRunningHubApp } from "./runninghub-parser.js";
 import { getRunningHubRegionConfig, resolveRunningHubRegion } from "./runninghub-region.js";
+import { getRunningHubErrorHint, isRunningHubPendingErrorCode } from "../shared/runninghub-error-hints.js";
 
 const runninghubTaskControllers = new Map();
 const SAFE_EMPTY_IMAGE_PLACEHOLDER = {
@@ -500,13 +501,20 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
     }
 
     if (!response.ok) {
-      const message = normalizeCloudFailureMessage(
+      const errorCode = extractTaskErrorCode(result);
+      const errorMessage =
         extractBestFailureMessageText(result) ||
-          (result && (result.message || result.msg || result.error)) ||
-          `Request failed (HTTP ${response.status})`,
-        { provider: "RunningHub", httpStatus: response.status }
+        (result && (result.message || result.msg || result.error)) ||
+        `Request failed (HTTP ${response.status})`;
+      const message = normalizeCloudFailureMessage(
+        errorMessage,
+        { provider: "RunningHub", httpStatus: response.status, errorCode }
       );
-      throw new Error(String(message));
+      const error = new Error(String(message));
+      error.errorCode = errorCode;
+      error.errorMessage = String(errorMessage || "");
+      error.raw = result;
+      throw error;
     }
 
     return result;
@@ -697,6 +705,88 @@ export function extractTaskCoinsCharge(payload) {
   ]);
 }
 
+function isPointSettlement(usage) {
+  const mode = String(usage && usage.settleMode || "").trim().toUpperCase();
+  return !mode || mode === "POINT";
+}
+
+function findAggregatePointUsage(payload, depth = 0, seen = new Set()) {
+  if (!payload || typeof payload !== "object" || depth > 6 || seen.has(payload)) return null;
+  seen.add(payload);
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const found = findAggregatePointUsage(item, depth + 1, seen);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (payload.usage && typeof payload.usage === "object" && !Array.isArray(payload.usage) &&
+      Object.prototype.hasOwnProperty.call(payload.usage, "chargedPoint") && isPointSettlement(payload.usage)) {
+    return payload.usage;
+  }
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "taskUsageList") continue;
+    const found = findAggregatePointUsage(value, depth + 1, seen);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findTaskUsageLists(payload, output = [], seen = new Set(), depth = 0) {
+  if (!payload || typeof payload !== "object" || depth > 6 || seen.has(payload)) return output;
+  seen.add(payload);
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => findTaskUsageLists(item, output, seen, depth + 1));
+    return output;
+  }
+  if (Array.isArray(payload.taskUsageList)) output.push(payload.taskUsageList);
+  Object.entries(payload).forEach(([key, value]) => {
+    if (key !== "taskUsageList") findTaskUsageLists(value, output, seen, depth + 1);
+  });
+  return output;
+}
+
+export function extractTaskPointsCharge(payload) {
+  const aggregateUsage = findAggregatePointUsage(payload);
+  if (aggregateUsage) {
+    const aggregate = parseChargeValue(aggregateUsage.chargedPoint);
+    if (aggregate !== null) return aggregate;
+  }
+
+  const lists = findTaskUsageLists(payload);
+  if (lists.length === 0) return null;
+  const seenLists = new Set();
+  const seenTaskIds = new Set();
+  let total = 0;
+  let found = false;
+  lists.forEach((list) => {
+    const signature = JSON.stringify(list);
+    if (seenLists.has(signature)) return;
+    seenLists.add(signature);
+    list.forEach((entry, index) => {
+      const usage = entry && entry.usage && typeof entry.usage === "object" ? entry.usage : entry;
+      if (!usage || typeof usage !== "object" || !isPointSettlement(usage)) return;
+      const value = parseChargeValue(usage.chargedPoint);
+      if (value === null) return;
+      const taskId = String(entry.taskId || entry.id || "").trim();
+      const key = taskId ? `${taskId}:${value}` : `${signature}:${index}`;
+      if (seenTaskIds.has(key)) return;
+      seenTaskIds.add(key);
+      total += Math.abs(value);
+      found = true;
+    });
+  });
+  return found ? Number(total.toFixed(3)) : null;
+}
+
+function hasPointSettlement(payload, depth = 0, seen = new Set()) {
+  if (!payload || typeof payload !== "object" || depth > 6 || seen.has(payload)) return false;
+  seen.add(payload);
+  if (Array.isArray(payload)) return payload.some((item) => hasPointSettlement(item, depth + 1, seen));
+  if (payload.usage && typeof payload.usage === "object" && isPointSettlement(payload.usage)) return true;
+  return Object.values(payload).some((value) => hasPointSettlement(value, depth + 1, seen));
+}
+
 function formatBalanceChargeDisplay(charge, region = "cn") {
   const parsed = parseChargeValue(charge);
   if (parsed === null) return "";
@@ -710,12 +800,21 @@ function formatCoinsChargeDisplay(charge) {
   return Number.isInteger(parsed) ? `-${parsed}RH` : `-${parsed.toFixed(3)}RH`;
 }
 
-export function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn") {
+function formatPointsChargeDisplay(charge) {
+  const parsed = parseChargeValue(charge);
+  if (parsed === null) return "";
+  const amount = parsed.toFixed(3).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1");
+  return `-${amount} 积分`;
+}
+
+export function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn", pointsCharge = null) {
   const parts = [];
   const balanceText = formatBalanceChargeDisplay(balanceCharge, region);
   const coinsText = formatCoinsChargeDisplay(coinsCharge);
+  const pointsText = formatPointsChargeDisplay(pointsCharge);
   if (balanceText) parts.push(balanceText);
   if (coinsText) parts.push(coinsText);
+  if (pointsText) parts.push(pointsText);
   return parts.join(" · ");
 }
 
@@ -1147,8 +1246,15 @@ function normalizeCloudFailureMessage(message, options = {}) {
   const raw = compactFailureText(message || options.fallback || "", 500);
   const status = String(options.status || "").trim();
   const httpStatus = Number(options.httpStatus) || getHttpStatusFromFailureMessage(raw);
+  const errorCode = options.errorCode == null ? extractTaskErrorCode(options.raw) : options.errorCode;
   const source = raw || (status ? `任务状态：${status}` : "");
 
+  const codeHint = getRunningHubErrorHint(errorCode);
+  if (codeHint) {
+    const codeText = String(errorCode).trim();
+    const rawSuffix = buildFailureRawSuffix(raw, codeHint);
+    return `${codeHint}${codeText ? `（错误码 ${codeText}）` : ""}${rawSuffix}`;
+  }
   const taskStatusErrorCode = getTaskStatusErrorCode(source);
   if (taskStatusErrorCode) {
     return `${provider} 返回任务状态异常，请点击“详情”进入任务页面，在“任务响应信息”中查看具体失败原因。（状态：${taskStatusErrorCode}）`;
@@ -1258,6 +1364,46 @@ function getApiCode(payload) {
   if (raw === undefined || raw === null || raw === "") return null;
   const code = Number(raw);
   return Number.isFinite(code) ? code : null;
+}
+
+function extractTaskErrorCode(payload) {
+  const explicit = [];
+  const generic = [];
+  const seen = new Set();
+  const visit = (value, depth = 0) => {
+    if (!value || typeof value !== "object" || depth > 6 || seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    Object.entries(value).forEach(([key, item]) => {
+      const normalized = key.replace(/[_-]/g, "").toLowerCase();
+      if (["errorcode", "errcode"].includes(normalized)) explicit.push(item);
+      else if (["code", "statuscode"].includes(normalized)) generic.push(item);
+      if (item && typeof item === "object") visit(item, depth + 1);
+    });
+  };
+  visit(payload);
+  const candidates = [...explicit, ...generic];
+  for (const candidate of candidates) {
+    if (candidate == null || candidate === "") continue;
+    if (typeof candidate === "number") return candidate === 0 || candidate === 200 ? null : candidate;
+    const text = String(candidate).trim();
+    if (!text || text === "0" || text === "200") continue;
+    return /^\d+$/.test(text) ? Number(text) : text;
+  }
+  return null;
+}
+
+function createRunningHubApiError(message, errorCode, raw, httpStatus = 0) {
+  const errorMessage = String(message || "").trim();
+  const normalizedMessage = normalizeCloudFailureMessage(errorMessage, { provider: "RunningHub", errorCode, httpStatus });
+  const error = new Error(normalizedMessage);
+  error.errorCode = errorCode == null ? null : errorCode;
+  error.errorMessage = errorMessage;
+  error.raw = raw == null ? null : raw;
+  return error;
 }
 
 function extractMessageText(value, depth = 0, seen = new Set()) {
@@ -1508,11 +1654,14 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const payloadData = (result && (result.data || result.result)) || result;
   const status = extractTaskStatus(payloadData);
   const outputUrl = extractReadyOutputUrl(payloadData);
-  const balanceCharge = extractTaskBalanceCharge(payloadData || result);
-  const coinsCharge = extractTaskCoinsCharge(payloadData || result);
+  const pointSettlement = hasPointSettlement(payloadData || result);
+  const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(payloadData || result);
+  const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(payloadData || result);
+  const pointsCharge = extractTaskPointsCharge(payloadData || result);
+  const errorCode = extractTaskErrorCode(result);
+  const errorMessage = String(extractBestFailureMessageText(result) || extractMessageText(result) || "").trim();
   const rawMessage = String(
-    extractBestFailureMessageText(result) ||
-      extractMessageText(result) ||
+    errorMessage ||
     fallbackMessage ||
     (snapshot && !snapshot.ok ? `Request failed (HTTP ${snapshot.status})` : "")
   ).trim();
@@ -1520,12 +1669,14 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const dataCode = getApiCode(payloadData);
   const hasFailureStatus = isFailedStatus(status);
   const hasSuccessStatus = isSucceededStatus(status);
+  const errorHint = getRunningHubErrorHint(errorCode);
+  const pendingErrorCode = isRunningHubPendingErrorCode(errorCode);
   const transientError =
     Boolean(snapshot && snapshot.transientError) ||
     Boolean(snapshot && !snapshot.ok && isTransientHttpStatus(snapshot.status)) ||
     isTransientNetworkErrorMessage(rawMessage);
   const failed = Boolean(
-    hasFailureStatus ||
+    (!pendingErrorCode && hasFailureStatus) ||
       (!transientError && isFailureMessage(rawMessage)) ||
       (snapshot && !snapshot.ok && !transientError) ||
       ((rootCode !== null || dataCode !== null) &&
@@ -1534,27 +1685,36 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
         !transientError &&
         isFailureMessage(rawMessage || fallbackMessage))
   );
-  const message = failed
+  const resolvedFailed = pendingErrorCode ? false : failed;
+  const message = resolvedFailed || errorHint
     ? normalizeCloudFailureMessage(rawMessage || fallbackMessage || status, {
         provider: "RunningHub",
         status,
-        httpStatus: snapshot && snapshot.status
+        httpStatus: snapshot && snapshot.status,
+        errorCode,
+        raw: result
       })
     : rawMessage;
-  const stillRunning = !failed && (isPendingStatus(status) || isPendingMessage(rawMessage) || Boolean(snapshot && snapshot.transientError));
+  const stillRunning = pendingErrorCode || (!resolvedFailed && (isPendingStatus(status) || isPendingMessage(rawMessage) || Boolean(snapshot && snapshot.transientError)));
+  const queuedErrorCode = String(errorCode == null ? "" : errorCode).toUpperCase() === "813" ||
+    String(errorCode == null ? "" : errorCode).toUpperCase() === "APIKEY_TASK_IS_QUEUED";
+  const resolvedStatus = pendingErrorCode ? (queuedErrorCode ? "QUEUED" : "RUNNING") : status;
 
   return {
     ok: Boolean(snapshot && snapshot.ok),
     taskId,
-    status,
+    status: resolvedStatus,
     outputUrl,
     charge: balanceCharge,
     balanceCharge,
     coinsCharge,
-    chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, options.region),
+    pointsCharge,
+    chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, options.region, pointsCharge),
     message,
+    errorCode,
+    errorMessage: errorMessage || rawMessage,
     stillRunning,
-    failed,
+    failed: resolvedFailed,
     transientError,
     raw: result || null
   };
@@ -1609,11 +1769,11 @@ export async function submitRunningHubTask(args = []) {
       const taskId = parseTaskId(result);
 
       if (!taskId) {
-        throw new Error(
-          normalizeCloudFailureMessage(
-            extractBestFailureMessageText(result) || (result && (result.message || result.msg)) || "Task created but taskId missing",
-            { provider: "RunningHub" }
-          )
+        const errorMessage = extractBestFailureMessageText(result) || (result && (result.message || result.msg)) || "Task created but taskId missing";
+        throw createRunningHubApiError(
+          errorMessage,
+          extractTaskErrorCode(result),
+          result
         );
       }
 
@@ -1678,7 +1838,7 @@ export async function fetchRunningHubAccountStatus(args = []) {
   const region = resolveRunningHubRegion(payload);
   const { baseUrl } = getRunningHubRegionConfig(region);
   if (!apiKey) {
-    return { ok: false, balance: null, coins: null };
+    return { ok: false, balance: null, points: null };
   }
 
   const result = await fetchJsonWithTimeout(`${baseUrl}/uc/openapi/accountStatus`, {
@@ -1696,7 +1856,7 @@ export async function fetchRunningHubAccountStatus(args = []) {
     ok: true,
     region,
     balance: account.remainMoney ?? account.balance ?? account.amount ?? account.walletBalance ?? account.money ?? null,
-    coins: account.remainCoins ?? account.coins ?? account.rhCoins ?? account.integral ?? null,
+    points: account.remainPoint ?? null,
     currency: String(account.currency || (region === "global" ? "USD" : "R")).trim(),
     result
   };
@@ -1749,14 +1909,16 @@ export async function pollRunningHubTask(args = []) {
             await sleep(pollIntervalMs);
             continue;
           }
-          throw new Error(String(normalizeCloudFailureMessage(rawMessage, { provider: "RunningHub", httpStatus: snapshot.status })));
+          throw createRunningHubApiError(rawMessage, extractTaskErrorCode(result), result, snapshot.status);
         }
 
         const payloadData = (result && (result.data || result.result)) || result;
         const outputUrl = extractReadyOutputUrl(payloadData);
         if (outputUrl) {
-          const balanceCharge = extractTaskBalanceCharge(payloadData || result);
-          const coinsCharge = extractTaskCoinsCharge(payloadData || result);
+          const pointSettlement = hasPointSettlement(payloadData || result);
+          const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(payloadData || result);
+          const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(payloadData || result);
+          const pointsCharge = extractTaskPointsCharge(payloadData || result);
           return {
             ok: true,
             taskId,
@@ -1765,7 +1927,8 @@ export async function pollRunningHubTask(args = []) {
             charge: balanceCharge,
             balanceCharge,
             coinsCharge,
-            chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, region),
+            pointsCharge,
+            chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, region, pointsCharge),
             result
           };
         }
@@ -1790,8 +1953,11 @@ export async function pollRunningHubTask(args = []) {
             charge: failedStatus.charge,
             balanceCharge: failedStatus.balanceCharge,
             coinsCharge: failedStatus.coinsCharge,
+            pointsCharge: failedStatus.pointsCharge,
             chargeDisplay: failedStatus.chargeDisplay,
             message: failedStatus.message || normalizeCloudFailureMessage(`Task failed (${status})`, { provider: "RunningHub", status }),
+            errorCode: failedStatus.errorCode,
+            errorMessage: failedStatus.errorMessage,
             result
           };
         }
@@ -1847,6 +2013,7 @@ export async function pollRunningHubTask(args = []) {
         charge: timeoutStatus.charge,
         balanceCharge: timeoutStatus.balanceCharge,
         coinsCharge: timeoutStatus.coinsCharge,
+        pointsCharge: timeoutStatus.pointsCharge,
         chargeDisplay: timeoutStatus.chargeDisplay,
         message:
           timeoutStatus.message ||
@@ -1854,6 +2021,8 @@ export async function pollRunningHubTask(args = []) {
             provider: "RunningHub",
             status: timeoutStatus.status || "FAILED"
           }),
+        errorCode: timeoutStatus.errorCode,
+        errorMessage: timeoutStatus.errorMessage,
         result: timeoutSnapshot.result || null
       };
     }
@@ -1870,6 +2039,8 @@ export async function pollRunningHubTask(args = []) {
         (timeoutStatus.stillRunning
           ? "本地等待超时，但 RunningHub 仍显示任务运行中，插件会继续后台追踪。"
           : "本地等待超时，RunningHub 尚未返回最终结果。"),
+      errorCode: timeoutStatus.errorCode,
+      errorMessage: timeoutStatus.errorMessage,
       result: timeoutSnapshot.result || null
     };
   } finally {
