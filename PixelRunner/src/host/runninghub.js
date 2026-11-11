@@ -746,6 +746,24 @@ function findTaskUsageLists(payload, output = [], seen = new Set(), depth = 0) {
   return output;
 }
 
+function collectDirectPointCharges(payload, values = [], seen = new Set(), depth = 0) {
+  if (!payload || typeof payload !== "object" || depth > 6 || seen.has(payload)) return values;
+  seen.add(payload);
+  if (Array.isArray(payload)) {
+    payload.forEach((item) => collectDirectPointCharges(item, values, seen, depth + 1));
+    return values;
+  }
+  const settleMode = String(payload.settleMode || "").trim().toUpperCase();
+  if (settleMode === "POINT" && Object.prototype.hasOwnProperty.call(payload, "chargedPoint")) {
+    const charge = parseChargeValue(payload.chargedPoint);
+    if (charge !== null) values.push(Math.abs(charge));
+  }
+  Object.entries(payload).forEach(([key, value]) => {
+    if (key !== "usage" && key !== "taskUsageList") collectDirectPointCharges(value, values, seen, depth + 1);
+  });
+  return values;
+}
+
 export function extractTaskPointsCharge(payload) {
   const aggregateUsage = findAggregatePointUsage(payload);
   if (aggregateUsage) {
@@ -754,7 +772,6 @@ export function extractTaskPointsCharge(payload) {
   }
 
   const lists = findTaskUsageLists(payload);
-  if (lists.length === 0) return null;
   const seenLists = new Set();
   const seenTaskIds = new Set();
   let total = 0;
@@ -776,13 +793,20 @@ export function extractTaskPointsCharge(payload) {
       found = true;
     });
   });
-  return found ? Number(total.toFixed(3)) : null;
+  if (found) return Number(total.toFixed(3));
+
+  // The V1 outputs endpoint places the task settlement directly on each output;
+  // repeated output rows represent the same task charge, so use one value only.
+  const directCharges = collectDirectPointCharges(payload);
+  return directCharges.length > 0 ? Number(Math.max(...directCharges).toFixed(3)) : null;
 }
 
 function hasPointSettlement(payload, depth = 0, seen = new Set()) {
   if (!payload || typeof payload !== "object" || depth > 6 || seen.has(payload)) return false;
   seen.add(payload);
   if (Array.isArray(payload)) return payload.some((item) => hasPointSettlement(item, depth + 1, seen));
+  if (String(payload.settleMode || "").trim().toUpperCase() === "POINT" &&
+      Object.prototype.hasOwnProperty.call(payload, "chargedPoint")) return true;
   if (payload.usage && typeof payload.usage === "object" && isPointSettlement(payload.usage)) return true;
   return Object.values(payload).some((value) => hasPointSettlement(value, depth + 1, seen));
 }

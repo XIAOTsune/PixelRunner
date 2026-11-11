@@ -7,6 +7,7 @@ import {
   extractReadyOutputUrl,
   fetchRunningHubTaskStatus,
   formatTaskChargeDisplay,
+  pollRunningHubTask,
   submitRunningHubTask
 } from "../src/host/runninghub.js";
 
@@ -28,6 +29,11 @@ assert.equal(extractTaskPointsCharge({
   ]
 }), 0.5, "repeated result arrays do not duplicate taskUsageList charges");
 assert.equal(extractTaskPointsCharge({ usage: { settleMode: "COIN", chargedPoint: "8" } }), null);
+assert.equal(extractTaskPointsCharge({ data: [
+  { fileUrl: "https://example.com/a.png", settleMode: "POINT", chargedPoint: "1.28" },
+  { fileUrl: "https://example.com/b.png", settleMode: "POINT", chargedPoint: "1.28" }
+]}), 1.28, "V1 output rows expose the task settlement directly and may repeat it");
+assert.equal(extractTaskPointsCharge({ data: [{ settleMode: "COIN", chargedPoint: "8" }] }), null);
 
 const duplicatedNestedOutputs = {
   taskId: "global-normal-task",
@@ -99,6 +105,7 @@ assertCharge(duplicatedPlusOutputs, 0.25, 16);
 const originalFetch = globalThis.fetch;
 const submittedRequests = [];
 let globalTaskSnapshot = null;
+let legacyTaskSnapshot = null;
 let submitErrorResponse = null;
 let accountSnapshot = { data: { accountStatus: { remainMoney: 2, remainCoins: 99, remainPoint: 17.5, currency: "USD" } } };
 globalThis.fetch = async (url, options = {}) => {
@@ -118,6 +125,13 @@ globalThis.fetch = async (url, options = {}) => {
       async text() {
         return JSON.stringify(globalTaskSnapshot);
       }
+    };
+  }
+  if (String(url).endsWith("/task/openapi/outputs")) {
+    return {
+      ok: true,
+      status: 200,
+      async text() { return JSON.stringify(legacyTaskSnapshot); }
     };
   }
   if (String(url).endsWith("/uc/openapi/accountStatus")) {
@@ -244,6 +258,27 @@ try {
   assert.equal(pointStatus.chargeDisplay, "-1.28 积分");
   assert.equal(pointStatus.coinsCharge, null, "point settlement does not mix in legacy coin charges");
   assert.equal(pointStatus.balanceCharge, null, "point settlement does not mix in legacy money charges");
+
+  globalTaskSnapshot = { taskId: "v1-point-task", status: "SUCCESS", results: null };
+  legacyTaskSnapshot = {
+    code: 0,
+    msg: "success",
+    data: [
+      { fileUrl: "https://example.com/v1-a.png", fileType: "png", taskCostTime: "83", nodeId: "12", settleMode: "POINT", chargedPoint: "1.28" },
+      { fileUrl: "https://example.com/v1-b.png", fileType: "png", taskCostTime: "83", nodeId: "13", settleMode: "POINT", chargedPoint: "1.28" }
+    ]
+  };
+  const v1FallbackStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "v1-point-task" }]);
+  assert.equal(v1FallbackStatus.pointsCharge, 1.28);
+  assert.equal(v1FallbackStatus.chargeDisplay, "-1.28 积分");
+  const v1FallbackPoll = await pollRunningHubTask([{
+    apiKey: "global-test-key",
+    region: "global",
+    taskId: "v1-point-task",
+    settings: { timeout: 10, pollInterval: 1 }
+  }]);
+  assert.equal(v1FallbackPoll.pointsCharge, 1.28);
+  assert.equal(v1FallbackPoll.chargeDisplay, "-1.28 积分");
 
   globalTaskSnapshot = { data: { taskId: "queued-task", status: "RUNNING", errorCode: 813, message: "APIKEY_TASK_IS_QUEUED" } };
   const queuedStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "queued-task" }]);
