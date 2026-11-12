@@ -1,4 +1,5 @@
 import { createBridgeResponse, getById, registerListener, setHostStatus } from "./bridge.js";
+import { readRunningHubProgress } from "./runninghub-progress.js";
 import {
   cancelRunningHubTask,
   fetchRunningHubTaskStatus,
@@ -298,6 +299,12 @@ async function handleBridgeRequest(message, responseTarget) {
       case "runninghub.submitTask":
         result = await submitRunningHubTask(message.args);
         break;
+      case "runninghub.readProgress":
+        result = readRunningHubProgress(message.args);
+        break;
+      case "runninghub.progressCapabilities":
+        result = { runtime: "uxp-host", webSocketSupported: typeof globalThis.WebSocket === "function", transport: "host-only", finalStateAuthority: "REST" };
+        break;
       case "runninghub.pollTask":
         result = await pollRunningHubTask(message.args);
         break;
@@ -491,11 +498,12 @@ async function handleBridgeRequest(message, responseTarget) {
     );
     postBridgeResponse(responseTarget, createBridgeResponse(message, result, null));
   } catch (error) {
+    const response = createBridgeResponse(message, null, error);
     console.error(
       `[PixelRunner/Host] bridge error ${message.method} ${message.id || ""} durationMs=${Date.now() - requestStartedAt}`,
-      error
+      String(message.method).startsWith("runninghub.") ? response.error : error
     );
-    postBridgeResponse(responseTarget, createBridgeResponse(message, null, error));
+    postBridgeResponse(responseTarget, response);
   }
 }
 

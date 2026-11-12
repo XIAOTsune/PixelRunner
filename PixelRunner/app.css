@@ -1935,6 +1935,48 @@ button {
   min-width: 0;
 }
 
+.running-task-item.is-runninghub::after {
+  display: none;
+}
+
+.running-task-progress-label {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.running-task-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(159, 220, 255, 0.14);
+}
+
+.running-task-progress > span {
+  display: block;
+  height: 100%;
+  background: rgba(159, 220, 255, 0.85);
+  border-radius: inherit;
+}
+
+.running-task-progress.is-indeterminate > span {
+  width: 100%;
+  animation: runninghub-progress-breathe 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes runninghub-progress-breathe {
+  from { opacity: 0.28; }
+  to { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .running-task-progress.is-indeterminate > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.55;
+  }
+}
+
 .running-task-topline {
   display: flex;
   align-items: center;

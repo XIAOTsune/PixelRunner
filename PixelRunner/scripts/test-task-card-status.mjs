@@ -51,16 +51,26 @@ assert.equal(
   "扣费 -0.200R"
 );
 assert.equal(
-  workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", pointsCharge: 1.28 }),
+  workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", pointsCharge: 1.28, chargeDisplay: "-8RH" }),
   "扣费 -1.28 积分"
 );
+assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", coinsCharge: 8 }), "扣费 待确认");
+const runningHubTaskMarkup = workspace.renderRunningTaskList([{
+  taskId: "runninghub-points-task",
+  provider: "runninghub",
+  status: "succeeded",
+  pointsCharge: 1.28,
+  taskCostTime: 83
+}]);
+assert.match(runningHubTaskMarkup, /-1\.28 积分/);
+assert.doesNotMatch(runningHubTaskMarkup, /总耗时|平台生成耗时|00:/);
 assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded" }), "扣费 待确认");
 assert.match(
   workspace.normalizeTaskFailureMessage("TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET", {
     errorCode: 416,
     platformErrorMessage: "wallet balance is insufficient"
   }),
-  /余额或积分不足.*错误码 416.*wallet balance is insufficient/
+  /余额或积分不足.*错误码 416/
 );
 const platformErrorDetails = workspace.getTaskPlatformErrorDetails({
   errorCode: "APIKEY_UNAUTHORIZED",
@@ -68,7 +78,8 @@ const platformErrorDetails = workspace.getTaskPlatformErrorDetails({
   platformErrorRaw: { code: 802, errorMessage: "key does not match region" }
 });
 assert.match(platformErrorDetails, /APIKEY_UNAUTHORIZED/);
-assert.match(platformErrorDetails, /key does not match region/);
+assert.match(platformErrorDetails, /API Key 无效或权限不匹配/);
+assert.doesNotMatch(platformErrorDetails, /key does not match region/);
 
 assert.equal(workspace.isAutoPlacementBlockedError(new Error("host is in a modal state")), true);
 assert.equal(workspace.isAutoPlacementBlockedError(new Error("Photoshop is busy")), true);

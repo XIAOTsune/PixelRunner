@@ -850,7 +850,7 @@
               <thead><tr><th>信息</th><th>插件显示</th><th>来源</th><th>使用提醒</th></tr></thead>
               <tbody>
                 <tr><td>账户积分</td><td>积分</td><td>账户接口的 <code>remainPoint</code></td><td>字段缺失时插件显示“--”，不会用 <code>remainCoins</code> 代替。</td></tr>
-                <tr><td>任务结算</td><td>实际扣除积分</td><td>V2 任务结果的 <code>usage.chargedPoint</code></td><td>任务卡片显示平台返回的扣费；结算字段缺失时显示“扣费待确认”。</td></tr>
+                <tr><td>任务结算</td><td>实际扣除积分</td><td>V2 的 <code>usage.chargedPoint</code> 或兼容输出的 <code>chargedPoint</code></td><td>任务卡片显示平台返回的扣费；缺少积分结算时尝试兼容查询，仍缺失则显示“扣费待确认”。</td></tr>
                 <tr><td>余额与并发</td><td>账户余额、任务状态</td><td>当前区域 RunningHub 控制台和任务卡片</td><td>并发和排队限制以账号、应用及服务区域当前实际规则为准。</td></tr>
               </tbody>
             </table>

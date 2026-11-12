@@ -1,6 +1,9 @@
 import { parseRunningHubApp } from "./runninghub-parser.js";
 import { getRunningHubRegionConfig, resolveRunningHubRegion } from "./runninghub-region.js";
-import { getRunningHubErrorHint, isRunningHubPendingErrorCode } from "../shared/runninghub-error-hints.js";
+import { getRunningHubSafeError, normalizeRunningHubErrorCode, getRunningHubErrorHint, isRunningHubPendingErrorCode } from "../shared/runninghub-error-hints.js";
+
+import { extractRunningHubTaskCostTime } from "../shared/runninghub-progress.js";
+import { observeRunningHubProgress, stopRunningHubProgress } from "./runninghub-progress.js";
 
 const runninghubTaskControllers = new Map();
 const SAFE_EMPTY_IMAGE_PLACEHOLDER = {
@@ -248,11 +251,11 @@ async function uploadImageValue(apiKey, imageValue, settings = {}) {
       if (picked.value) {
         return picked.value;
       }
-      throw new Error((result && (result.message || result.msg)) || "Upload succeeded but no usable file token/url");
+      throw createRunningHubApiError((result && (result.message || result.msg)) || "Upload succeeded but no usable file token/url", extractTaskErrorCode(result));
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] image upload failed", {
         endpoint,
-        message: error && error.message ? error.message : String(error || "")
+        message: getRunningHubSafeError(error?.message, error?.errorCode).message
       });
       lastError = error;
     }
@@ -351,10 +354,8 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         return await uploadImageValue(apiKey, imageSubmission.value, settings);
       } catch (error) {
         console.warn("[PixelRunner/RunningHub] image upload classification failed", {
-          key,
-          fieldName: String((input && (input.fieldName || input.name || key)) || key),
           mode: imageSubmission.mode,
-          message: error && error.message ? error.message : String(error || "")
+          message: getRunningHubSafeError(error?.message, error?.errorCode).message
         });
         throw error;
       }
@@ -400,18 +401,13 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
           if (placeholderImageValue) {
             pushImagePayload(input, key, placeholderImageValue);
             console.log("[PixelRunner/RunningHub] optional image empty, using safe placeholder", {
-              key,
-              fieldName: String((input && (input.fieldName || input.name || key)) || key),
               size: "64x64"
             });
             continue;
           }
         }
 
-        console.log("[PixelRunner/RunningHub] optional image empty, skipping field", {
-          key,
-          fieldName: String((input && (input.fieldName || input.name || key)) || key)
-        });
+        console.log("[PixelRunner/RunningHub] optional image empty, skipping field");
         continue;
       }
       if (imageRequiresValue && typeof rawValue !== "boolean") {
@@ -433,8 +429,6 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         if (placeholderImageValue) {
           normalizedValue = placeholderImageValue;
           console.log("[PixelRunner/RunningHub] optional image normalized to safe placeholder", {
-            key,
-            fieldName: String((input && (input.fieldName || input.name || key)) || key),
             size: "64x64"
           });
         } else continue;
@@ -448,8 +442,6 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
         uploadedImageValues.set(key, normalizedValue);
       }
       console.log("[PixelRunner/RunningHub] image uploaded", {
-        key,
-        fieldName: String((input && (input.fieldName || input.name || key)) || key),
         valueType: /^https?:\/\//i.test(String(normalizedValue || "")) ? "url" : "token"
       });
     } else {
@@ -511,13 +503,16 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
         { provider: "RunningHub", httpStatus: response.status, errorCode }
       );
       const error = new Error(String(message));
-      error.errorCode = errorCode;
-      error.errorMessage = String(errorMessage || "");
-      error.raw = result;
+      error.errorCode = normalizeRunningHubErrorCode(errorCode);
+      error.errorMessage = message;
+      error.parameterShape = isParameterShapeError(errorMessage);
       throw error;
     }
 
     return result;
+  } catch (error) {
+    if (error?.errorMessage) throw error;
+    throw createRunningHubApiError(error?.message, error?.errorCode);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -832,13 +827,11 @@ function formatPointsChargeDisplay(charge) {
 }
 
 export function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn", pointsCharge = null) {
+  const pointsText = formatPointsChargeDisplay(pointsCharge);
+  if (pointsText) return pointsText;
   const parts = [];
   const balanceText = formatBalanceChargeDisplay(balanceCharge, region);
-  const coinsText = formatCoinsChargeDisplay(coinsCharge);
-  const pointsText = formatPointsChargeDisplay(pointsCharge);
   if (balanceText) parts.push(balanceText);
-  if (coinsText) parts.push(coinsText);
-  if (pointsText) parts.push(pointsText);
   return parts.join(" · ");
 }
 
@@ -1135,10 +1128,13 @@ async function runAiOptimizeInternal(payload = {}) {
     ok: true,
     taskId,
     text: textContent,
+    balanceCharge: pollResult?.balanceCharge ?? null,
+    pointsCharge: pollResult?.pointsCharge ?? null,
+    chargeDisplay: pollResult?.chargeDisplay ?? "",
     txtUrl: txtCandidate.url,
     txtFileName: txtCandidate.fileName || "",
     outputUrl: String((pollResult && pollResult.outputUrl) || "").trim(),
-    raw: pollResult && pollResult.result ? pollResult.result : null
+    taskCostTime: pollResult?.taskCostTime ?? null
   };
 }
 
@@ -1217,111 +1213,14 @@ function isGenericFailureMessage(message) {
   ].includes(text);
 }
 
-function isContentPolicyFailureMessage(message) {
-  const text = compactFailureText(message, 800).toLowerCase();
-  if (!text) return false;
-  return /(content\s*(policy|safety|moderation|filter)|policy\s*(violation|violated|reject|rejected|refusal)|safety\s*(policy|system|filter|check)|moderation|review failed|audit failed|not pass(?:ed)? (?:the )?(?:review|audit)|sensitive|inappropriate|nsfw|porn|sexual|violence|violent|harmful|unsafe|prohibited|blocked|banned|abuse|violation|violates|审核|审查|内容安全|安全策略|内容政策|敏感|违规|违禁|不合规|风控|拒绝|拦截)/i.test(text);
-}
-
-function isBalanceFailureMessage(message) {
-  return /(insufficient|not enough|lack of|balance|quota|credit|recharge|余额不足|欠费|额度不足|点数不足|充值)/i.test(String(message || ""));
-}
-
-function isAuthFailureMessage(message) {
-  const text = String(message || "");
-  if (getTaskStatusErrorCode(text)) return false;
-  return /(api\s*key|apikey|unauthorized|forbidden|invalid token|access denied|permission|鉴权|认证|授权|无权限|密钥|令牌)/i.test(text);
-}
-
-function isTaskStatusErrorCode(message) {
-  const text = String(message || "").trim();
-  if (!text) return false;
-  return /^[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*$/.test(text) || /^[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*$/.test(text);
-}
-
 function getTaskStatusErrorCode(message) {
   const text = String(message || "").toUpperCase();
   const match = text.match(/\b[A-Z0-9_]*TASK_STATUS_ERROR[A-Z0-9_]*\b/) || text.match(/\b[A-Z0-9_]*(?:STATUS|TASK)_ERROR[A-Z0-9_]*\b/);
   return match ? match[0] : "";
 }
 
-function getHttpStatusFromFailureMessage(message) {
-  const match = String(message || "").match(/\b(?:http\s*)?([1-5]\d\d)\b/i);
-  if (!match) return 0;
-  const code = Number(match[1]);
-  return Number.isFinite(code) ? code : 0;
-}
-
-function buildFailureRawSuffix(rawMessage, normalizedText = "") {
-  const raw = compactFailureText(rawMessage, 260);
-  if (!raw) return "";
-  if (normalizedText && normalizedText.includes(raw)) return "";
-  return `（云端返回：${raw}）`;
-}
-
-function isNormalizedCloudFailureMessage(message) {
-  return /^(内容未通过审核|请求内容可能触发|云端拒绝了本次任务|RunningHub (?:返回任务状态异常|账户余额|鉴权失败|拒绝了本次请求|请求过于频繁|云端服务暂时异常|任务等待超时|任务执行失败))/.test(
-    String(message || "").trim()
-  );
-}
-
 function normalizeCloudFailureMessage(message, options = {}) {
-  const provider = String(options.provider || "RunningHub").trim() || "RunningHub";
-  const raw = compactFailureText(message || options.fallback || "", 500);
-  const status = String(options.status || "").trim();
-  const httpStatus = Number(options.httpStatus) || getHttpStatusFromFailureMessage(raw);
-  const errorCode = options.errorCode == null ? extractTaskErrorCode(options.raw) : options.errorCode;
-  const source = raw || (status ? `任务状态：${status}` : "");
-
-  const codeHint = getRunningHubErrorHint(errorCode);
-  if (codeHint) {
-    const codeText = String(errorCode).trim();
-    const rawSuffix = buildFailureRawSuffix(raw, codeHint);
-    return `${codeHint}${codeText ? `（错误码 ${codeText}）` : ""}${rawSuffix}`;
-  }
-  const taskStatusErrorCode = getTaskStatusErrorCode(source);
-  if (taskStatusErrorCode) {
-    return `${provider} 返回任务状态异常，请点击“详情”进入任务页面，在“任务响应信息”中查看具体失败原因。（状态：${taskStatusErrorCode}）`;
-  }
-  if (isNormalizedCloudFailureMessage(raw)) return raw;
-  if (!source) {
-    return `${provider} 任务执行失败，平台未返回具体原因。请稍后重试，或检查提示词、输入图片和工作流配置。`;
-  }
-  if (/任务轮询已取消|任务已取消/.test(source) || /task polling cancelled|cancelled|canceled/i.test(source)) return "任务已取消。";
-  if (isContentPolicyFailureMessage(source)) {
-    const messageText = "内容未通过审核，请调整提示词或输入图片后重试。请求内容可能触发平台内容政策或安全策略。";
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (isBalanceFailureMessage(source)) {
-    const messageText = `${provider} 账户余额或额度不足，请充值或检查额度后重试。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (isAuthFailureMessage(source) || httpStatus === 401) {
-    const messageText = `${provider} 鉴权失败，请检查 API Key、账号权限或登录状态后重试。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (httpStatus === 403) {
-    const messageText = `${provider} 拒绝了本次请求，请检查账号权限、应用权限或内容安全策略。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (httpStatus === 429) {
-    const messageText = `${provider} 请求过于频繁或额度受限，请稍后再试。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (httpStatus >= 500) {
-    const messageText = `${provider} 云端服务暂时异常，请稍后重试。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (/timeout|timed out|超时/i.test(source)) {
-    const messageText = `${provider} 任务等待超时，插件未能在本地等待时间内确认最终结果。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (isGenericFailureMessage(source)) {
-    const messageText = `${provider} 任务执行失败，平台未返回更具体原因。请检查提示词、输入图片和工作流配置后重试。`;
-    return `${messageText}${buildFailureRawSuffix(source, messageText)}`;
-  }
-  if (/[\u4e00-\u9fff]/.test(source)) return source;
-  return `${provider} 任务执行失败：${source}`;
+  return getRunningHubSafeError(message, options.errorCode ?? extractTaskErrorCode(options.raw), options.httpStatus).message;
 }
 
 function normalizeStatusValue(value) {
@@ -1360,9 +1259,7 @@ function findStatusValue(payload, depth = 0, seen = new Set()) {
     "executeStatus",
     "execute_status",
     "jobStatus",
-    "job_status",
-    "nodeStatus",
-    "node_status"
+    "job_status"
   ];
   for (const key of statusKeys) {
     if (!Object.prototype.hasOwnProperty.call(payload, key)) continue;
@@ -1405,7 +1302,7 @@ function extractTaskErrorCode(payload) {
       const normalized = key.replace(/[_-]/g, "").toLowerCase();
       if (["errorcode", "errcode"].includes(normalized)) explicit.push(item);
       else if (["code", "statuscode"].includes(normalized)) generic.push(item);
-      if (item && typeof item === "object") visit(item, depth + 1);
+      if (["data", "result", "error"].includes(key) && item && typeof item === "object") visit(item, depth + 1);
     });
   };
   visit(payload);
@@ -1420,13 +1317,13 @@ function extractTaskErrorCode(payload) {
   return null;
 }
 
-function createRunningHubApiError(message, errorCode, raw, httpStatus = 0) {
+function createRunningHubApiError(message, errorCode, httpStatus = 0) {
   const errorMessage = String(message || "").trim();
   const normalizedMessage = normalizeCloudFailureMessage(errorMessage, { provider: "RunningHub", errorCode, httpStatus });
   const error = new Error(normalizedMessage);
-  error.errorCode = errorCode == null ? null : errorCode;
-  error.errorMessage = errorMessage;
-  error.raw = raw == null ? null : raw;
+  error.errorCode = normalizeRunningHubErrorCode(errorCode);
+  error.errorMessage = normalizedMessage;
+  error.parameterShape = isParameterShapeError(errorMessage);
   return error;
 }
 
@@ -1608,6 +1505,7 @@ function getTaskSnapshotPayload(snapshot) {
 
 function classifyV2Fallback(snapshot) {
   const payload = getTaskSnapshotPayload(snapshot);
+  if (isRunningHubPendingErrorCode(extractTaskErrorCode(snapshot?.result))) return "";
   const status = extractTaskStatus(payload);
   const outputUrl = extractOutputUrl(payload);
   if (outputUrl || isPendingStatus(status) || isFailedStatus(status)) return "";
@@ -1650,6 +1548,27 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
   const fallbackReason = classifyV2Fallback(v2Snapshot);
   if (!fallbackReason) {
     runninghubTaskQueryVersions.set(region, "v2");
+    const payload = getTaskSnapshotPayload(v2Snapshot);
+    // Supplement only missing point settlement. Never replace confirmed V2
+    // outputs or status with a delayed/failed compatibility response.
+    if (isSucceededStatus(extractTaskStatus(payload)) && extractReadyOutputUrl(payload) &&
+        extractTaskPointsCharge(v2Snapshot.result) === null) {
+      try {
+        const billingSnapshot = await fetchTaskOutputsV1Snapshot(apiKey, taskId, {
+          ...options,
+          timeoutMs: Math.min(10000, Number(options.timeoutMs) || 10000)
+        });
+        const billingPayload = getTaskSnapshotPayload(billingSnapshot);
+        const billingStatus = extractTaskStatus(billingPayload);
+        if (billingSnapshot.ok && (isSucceededStatus(billingStatus) ||
+            (Array.isArray(billingPayload) && getApiCode(billingSnapshot.result) === 0))) {
+          v2Snapshot.settlement = {
+            balanceCharge: hasPointSettlement(billingPayload) ? null : extractTaskBalanceCharge(billingSnapshot.result),
+            pointsCharge: extractTaskPointsCharge(billingSnapshot.result)
+          };
+        }
+      } catch (_) {}
+    }
     return v2Snapshot;
   }
 
@@ -1677,11 +1596,12 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const result = snapshot && snapshot.result;
   const payloadData = (result && (result.data || result.result)) || result;
   const status = extractTaskStatus(payloadData);
-  const outputUrl = extractReadyOutputUrl(payloadData);
-  const pointSettlement = hasPointSettlement(payloadData || result);
-  const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(payloadData || result);
-  const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(payloadData || result);
-  const pointsCharge = extractTaskPointsCharge(payloadData || result);
+  const restSucceeded = isSucceededStatus(status) || (Array.isArray(payloadData) && getApiCode(result) === 0);
+  const outputUrl = restSucceeded ? extractReadyOutputUrl(payloadData) : "";
+  const pointSettlement = hasPointSettlement(payloadData || result) || hasPointSettlement(snapshot?.settlement || {});
+  const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(result) ?? snapshot?.settlement?.balanceCharge ?? null;
+  const coinsCharge = null;
+  const pointsCharge = extractTaskPointsCharge(result) ?? snapshot?.settlement?.pointsCharge ?? null;
   const errorCode = extractTaskErrorCode(result);
   const errorMessage = String(extractBestFailureMessageText(result) || extractMessageText(result) || "").trim();
   const rawMessage = String(
@@ -1706,8 +1626,7 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
       ((rootCode !== null || dataCode !== null) &&
         [rootCode, dataCode].some((code) => code !== null && code !== 0 && code !== 200) &&
         !hasSuccessStatus &&
-        !transientError &&
-        isFailureMessage(rawMessage || fallbackMessage))
+        !transientError)
   );
   const resolvedFailed = pendingErrorCode ? false : failed;
   const message = resolvedFailed || errorHint
@@ -1718,29 +1637,33 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
         errorCode,
         raw: result
       })
-    : rawMessage;
-  const stillRunning = pendingErrorCode || (!resolvedFailed && (isPendingStatus(status) || isPendingMessage(rawMessage) || Boolean(snapshot && snapshot.transientError)));
+    : "";
+  const stillRunning = pendingErrorCode || (!resolvedFailed && (isPendingStatus(status) || isPendingMessage(rawMessage) || transientError));
   const queuedErrorCode = String(errorCode == null ? "" : errorCode).toUpperCase() === "813" ||
     String(errorCode == null ? "" : errorCode).toUpperCase() === "APIKEY_TASK_IS_QUEUED";
-  const resolvedStatus = pendingErrorCode ? (queuedErrorCode ? "QUEUED" : "RUNNING") : status;
+  const resolvedStatus = pendingErrorCode ? (queuedErrorCode ? "QUEUED" : "RUNNING")
+    : isSucceededStatus(status) ? "SUCCESS"
+    : isFailedStatus(status) ? "FAILED"
+    : ["QUEUED", "QUEUE", "PENDING", "CREATE", "CREATED"].includes(status) ? "QUEUED"
+    : ["RUNNING", "PROCESSING", "EXECUTING", "0"].includes(status) ? "RUNNING" : "";
 
   return {
     ok: Boolean(snapshot && snapshot.ok),
     taskId,
     status: resolvedStatus,
-    outputUrl,
+    outputUrl: resolvedFailed || pendingErrorCode ? "" : outputUrl,
     charge: balanceCharge,
     balanceCharge,
     coinsCharge,
     pointsCharge,
     chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, options.region, pointsCharge),
     message,
-    errorCode,
-    errorMessage: errorMessage || rawMessage,
+    errorCode: normalizeRunningHubErrorCode(errorCode),
+    errorMessage: resolvedFailed || errorHint ? message : "",
+    taskCostTime: outputUrl && !resolvedFailed ? extractRunningHubTaskCostTime(result) : null,
     stillRunning,
     failed: resolvedFailed,
-    transientError,
-    raw: result || null
+    transientError
   };
 }
 
@@ -1796,19 +1719,19 @@ export async function submitRunningHubTask(args = []) {
         const errorMessage = extractBestFailureMessageText(result) || (result && (result.message || result.msg)) || "Task created but taskId missing";
         throw createRunningHubApiError(
           errorMessage,
-          extractTaskErrorCode(result),
-          result
+          extractTaskErrorCode(result)
         );
       }
 
-      return { ok: true, taskId: String(taskId), region, result };
+      observeRunningHubProgress(String(taskId), region, result, submissionPhase(result));
+      return { ok: true, taskId: String(taskId), region, status: submissionPhase(result) };
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] ai-app/run failed", {
         variant: Object.keys(body).join(","),
-        message: error && error.message ? error.message : String(error || "")
+        message: getRunningHubSafeError(error?.message, error?.errorCode).message
       });
       lastError = error;
-      if (body.webappId && error && error.message && !isParameterShapeError(error.message)) {
+      if (body.webappId && error && error.message && !error.parameterShape) {
         throw error;
       }
     }
@@ -1844,10 +1767,11 @@ export async function submitRunningHubTask(args = []) {
         );
       }
 
-      return { ok: true, taskId: String(taskId), region, result, mode: "legacy" };
+      observeRunningHubProgress(String(taskId), region, result, submissionPhase(result));
+      return { ok: true, taskId: String(taskId), region, status: submissionPhase(result), mode: "legacy" };
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] legacy submit failed", {
-        message: error && error.message ? error.message : String(error || "")
+        message: getRunningHubSafeError(error?.message, error?.errorCode).message
       });
       lastError = error;
     }
@@ -1886,189 +1810,54 @@ export async function fetchRunningHubAccountStatus(args = []) {
   };
 }
 
+function submissionPhase(result) {
+  const status = extractTaskStatus(result);
+  return ["RUNNING", "EXECUTING", "PROCESSING"].includes(status) ? "running" : "queued";
+}
+
+function updateTaskProgress(taskId, region, snapshot, status) {
+  if (status.failed || status.outputUrl) {
+    stopRunningHubProgress(taskId, region);
+  } else {
+    const phase = ["QUEUED", "QUEUE", "PENDING", "CREATE", "CREATED"].includes(status.status) ? "queued"
+      : ["RUNNING", "EXECUTING", "PROCESSING"].includes(status.status) ? "running" : "";
+    observeRunningHubProgress(taskId, region, snapshot.result, phase);
+  }
+}
+
 export async function pollRunningHubTask(args = []) {
-  const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
+  const payload = args[0] || {};
   const apiKey = String(payload.apiKey || "").trim();
   const taskId = String(payload.taskId || "").trim();
-  const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
+  const settings = payload.settings || {};
   const region = resolveRunningHubRegion(payload);
-
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!taskId) throw new Error("RunningHub taskId is missing");
-
-  const pollIntervalMs = Math.max(1, Number(settings.pollInterval) || 2) * 1000;
-  const timeoutMs = Math.max(10, Number(settings.timeout) || 180) * 1000;
-  const startedAt = Date.now();
-  const localController = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const controllerKey = `${region}:${taskId}`;
-  runninghubTaskControllers.set(controllerKey, localController);
-
+  const interval = Math.max(1, Number(settings.pollInterval) || 2) * 1000;
+  const timeout = Math.max(10, Number(settings.timeout) || 180) * 1000;
+  const started = Date.now();
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  const key = `${region}:${taskId}`;
+  runninghubTaskControllers.set(key, controller);
   try {
-    while (Date.now() - startedAt < timeoutMs) {
-      if (localController && localController.signal.aborted) {
-        throw new Error("Task polling cancelled");
+    while (true) {
+      if (controller?.signal.aborted) throw new Error("Task polling cancelled");
+      const snapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, { region, signal: controller?.signal, timeoutMs: 30000 });
+      if (controller?.signal.aborted) throw new Error("Task polling cancelled");
+      const status = buildTaskStatusResponse(taskId, snapshot, "", { region });
+      updateTaskProgress(taskId, region, snapshot, status);
+      if (status.outputUrl && !status.failed) {
+        // AI optimization consumes text-result URLs, never the original response.
+        const results = collectTxtResultCandidates(snapshot.result).map(item => ({ url: item.url }));
+        return { ...status, ok: true, status: "SUCCEEDED", result: { results } };
       }
-
-      try {
-        const snapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
-          region,
-          signal: localController ? localController.signal : undefined,
-          timeoutMs: 30000
-        });
-        if (localController && localController.signal.aborted) {
-          throw new Error("Task polling cancelled");
-        }
-        const result = snapshot.result;
-        if (!snapshot.ok) {
-          const rawMessage =
-            extractBestFailureMessageText(result) ||
-            (result && (result.message || result.msg || result.error)) ||
-            `Request failed (HTTP ${snapshot.status})`;
-          if (snapshot.transientError || isTransientHttpStatus(snapshot.status) || isTransientNetworkErrorMessage(rawMessage)) {
-            console.warn("[PixelRunner/RunningHub] transient task status request failed", {
-              taskId,
-              status: snapshot.status,
-              message: rawMessage
-            });
-            await sleep(pollIntervalMs);
-            continue;
-          }
-          throw createRunningHubApiError(rawMessage, extractTaskErrorCode(result), result, snapshot.status);
-        }
-
-        const payloadData = (result && (result.data || result.result)) || result;
-        const outputUrl = extractReadyOutputUrl(payloadData);
-        if (outputUrl) {
-          const pointSettlement = hasPointSettlement(payloadData || result);
-          const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(payloadData || result);
-          const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(payloadData || result);
-          const pointsCharge = extractTaskPointsCharge(payloadData || result);
-          return {
-            ok: true,
-            taskId,
-            status: "SUCCEEDED",
-            outputUrl,
-            charge: balanceCharge,
-            balanceCharge,
-            coinsCharge,
-            pointsCharge,
-            chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, region, pointsCharge),
-            result
-          };
-        }
-
-        const statusResponse = buildTaskStatusResponse(taskId, snapshot, "", { region });
-        const status = statusResponse.status || extractTaskStatus(payloadData);
-        if (statusResponse.failed || isFailedStatus(status)) {
-          const failedStatus = statusResponse.failed
-            ? statusResponse
-            : buildTaskStatusResponse(
-                taskId,
-                snapshot,
-                normalizeCloudFailureMessage(`Task failed (${status})`, { provider: "RunningHub", status }),
-                { region }
-              );
-          return {
-            ok: false,
-            taskId,
-            failed: true,
-            status: failedStatus.status || status || "FAILED",
-            outputUrl: "",
-            charge: failedStatus.charge,
-            balanceCharge: failedStatus.balanceCharge,
-            coinsCharge: failedStatus.coinsCharge,
-            pointsCharge: failedStatus.pointsCharge,
-            chargeDisplay: failedStatus.chargeDisplay,
-            message: failedStatus.message || normalizeCloudFailureMessage(`Task failed (${status})`, { provider: "RunningHub", status }),
-            errorCode: failedStatus.errorCode,
-            errorMessage: failedStatus.errorMessage,
-            result
-          };
-        }
-
-        if (!isPendingStatus(status) && !isPendingMessage(result && (result.message || result.msg))) {
-          console.warn("[PixelRunner/RunningHub] task status not terminal yet", {
-            taskId,
-            status: status || "",
-            message: (result && (result.message || result.msg)) || "Unknown task status"
-          });
-        }
-      } catch (error) {
-        if (localController && localController.signal.aborted) {
-          throw new Error("Task polling cancelled");
-        }
-        if (!isPendingMessage(error && error.message) && !isAbortLikeMessage(error && error.message)) {
-          throw error;
-        }
-      }
-
-      await sleep(pollIntervalMs);
+      if (status.failed) return { ...status, ok: false };
+      if (Date.now() - started >= timeout) return { ...status, ok: false, timedOut: true };
+      await sleep(interval);
     }
-    const timeoutSnapshot = await fetchTaskOutputsSnapshot(apiKey, taskId, {
-      region,
-      signal: localController ? localController.signal : undefined,
-      timeoutMs: 30000
-    });
-    if (localController && localController.signal.aborted) {
-      throw new Error("Task polling cancelled");
-    }
-    const timeoutStatus = buildTaskStatusResponse(
-      taskId,
-      timeoutSnapshot,
-      normalizeCloudFailureMessage("Task polling timed out", { provider: "RunningHub", status: "TIMEOUT" }),
-      { region }
-    );
-    if (timeoutStatus.outputUrl) {
-      return {
-        ok: true,
-        taskId,
-        status: "SUCCEEDED",
-        outputUrl: timeoutStatus.outputUrl,
-        result: timeoutSnapshot.result
-      };
-    }
-    if (timeoutStatus.failed) {
-      return {
-        ok: false,
-        taskId,
-        failed: true,
-        status: timeoutStatus.status || "FAILED",
-        outputUrl: "",
-        charge: timeoutStatus.charge,
-        balanceCharge: timeoutStatus.balanceCharge,
-        coinsCharge: timeoutStatus.coinsCharge,
-        pointsCharge: timeoutStatus.pointsCharge,
-        chargeDisplay: timeoutStatus.chargeDisplay,
-        message:
-          timeoutStatus.message ||
-          normalizeCloudFailureMessage(`Task failed (${timeoutStatus.status || "FAILED"})`, {
-            provider: "RunningHub",
-            status: timeoutStatus.status || "FAILED"
-          }),
-        errorCode: timeoutStatus.errorCode,
-        errorMessage: timeoutStatus.errorMessage,
-        result: timeoutSnapshot.result || null
-      };
-    }
-    return {
-      ok: false,
-      taskId,
-      timedOut: true,
-      status: timeoutStatus.status || "TIMEOUT",
-      stillRunning: timeoutStatus.stillRunning,
-      failed: timeoutStatus.failed,
-      outputUrl: "",
-      message:
-        timeoutStatus.message ||
-        (timeoutStatus.stillRunning
-          ? "本地等待超时，但 RunningHub 仍显示任务运行中，插件会继续后台追踪。"
-          : "本地等待超时，RunningHub 尚未返回最终结果。"),
-      errorCode: timeoutStatus.errorCode,
-      errorMessage: timeoutStatus.errorMessage,
-      result: timeoutSnapshot.result || null
-    };
   } finally {
-    runninghubTaskControllers.delete(controllerKey);
+    runninghubTaskControllers.delete(key);
+    if (controller?.signal.aborted) stopRunningHubProgress(taskId, region);
   }
 }
 
@@ -2085,7 +1874,9 @@ export async function fetchRunningHubTaskStatus(args = []) {
     region,
     timeoutMs: Math.max(5000, Number(payload.timeoutMs) || 30000)
   });
-  return buildTaskStatusResponse(taskId, snapshot, "", { region });
+  const status = buildTaskStatusResponse(taskId, snapshot, "", { region });
+  updateTaskProgress(taskId, region, snapshot, status);
+  return status;
 }
 
 export async function cancelRunningHubTask(args = []) {
@@ -2098,6 +1889,7 @@ export async function cancelRunningHubTask(args = []) {
   if (!apiKey) throw new Error("RunningHub API Key is missing");
   if (!taskId) throw new Error("RunningHub taskId is missing");
 
+  stopRunningHubProgress(taskId, region);
   const controller = runninghubTaskControllers.get(`${region}:${taskId}`);
   if (controller && typeof controller.abort === "function") {
     try {
@@ -2105,7 +1897,7 @@ export async function cancelRunningHubTask(args = []) {
     } catch (_) {}
   }
 
-  const result = await fetchJsonWithTimeout(`${baseUrl}/task/openapi/cancel`, {
+  await fetchJsonWithTimeout(`${baseUrl}/task/openapi/cancel`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -2114,7 +1906,7 @@ export async function cancelRunningHubTask(args = []) {
     body: JSON.stringify({ apiKey, taskId })
   });
 
-  return { ok: true, taskId, region, result };
+  return { ok: true, taskId, region };
 }
 
 export async function runAiOptimizeTask(args = []) {

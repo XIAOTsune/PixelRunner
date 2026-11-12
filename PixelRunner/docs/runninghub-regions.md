@@ -1,6 +1,6 @@
 # RunningHub 国内版与国际版 API 接入
 
-更新日期：2026-07-15
+更新日期：2026-11-11
 
 ## 结论
 
@@ -30,10 +30,11 @@ RunningHub 国际版沿用国内版的消费级 API 路径、鉴权方式和主�
 
 V2 任务成功结果中的 `usage.settleMode: "POINT"` 与 `usage.chargedPoint` 是积分结算首选字段；聚合
 `usage.chargedPoint` 缺失时，可汇总去重后的 `taskUsageList[].usage.chargedPoint`。V1 兼容结果中的
-`consumeCoins` / `consumeMoney` 仍按旧单位显示。不要通过账户余额差推算 RunningHub 的任务费用。
+`settleMode: "POINT"` / `chargedPoint` 也用于积分结算，相同任务的多个输出不重复计费。若 V2 成功响应缺少积分结算，
+插件会尝试从 V1 输出接口补充 `chargedPoint`；任务卡片不再以旧 `consumeCoins` 值代替积分。不要通过账户余额差推算 RunningHub 的任务费用。
 账户文档没有明确 `remainPoint` 是否仅包含 API 可用付费积分，UI 不应擅自标成“可用积分”。
 
-任务状态和提交响应可能包含数字错误码或平台字符串码。任务卡片保留错误码、原始消息和响应；
+任务状态和提交响应可能包含数字错误码或平台字符串码。任务卡片只保留经过筛选的安全错误码和预定义中文诊断，不回显或保存原始平台消息及响应；
 `804` / `APIKEY_TASK_IS_RUNNING` 与 `813` / `APIKEY_TASK_IS_QUEUED` 表示继续跟踪现有任务，不是失败重试信号。
 
 ## 插件约束
@@ -49,15 +50,18 @@ V2 任务成功结果中的 `usage.settleMode: "POINT"` 与 `usage.chargedPoint`
 - 国际版 AI 优化默认应用 ID 为 `2077336528350871553`，创成式填充默认应用 ID 为 `2077331388482748417`；用户保存的非空自定义 ID 优先。
 - 应用解析默认请求中文元数据，并优先使用响应中的中文名称字段；国际版已有纯英文名称在重新解析时会更新为平台中文原名，用户手动填写的中文名称仍优先。
 
+实时进度只取宿主 WSS 的有效 value/max，标注为“当前步骤进度（非任务总进度）”；REST 是最终状态依据。
+详细的区域文档差异、隐私边界与 UXP 手动验证见 [runninghub-progress-privacy.md](runninghub-progress-privacy.md)。
+
 ## 官方资料
 
 - 国际版 API 文档目录：https://www.runninghub.ai/runninghub-api-doc-en
 - 国内版 V2 查询任务结果：https://www.runninghub.cn/runninghub-api-doc-cn/api-425767306.md
 - 适合机器读取的文档索引：https://www.runninghub.ai/runninghub-api-doc-en/llms.txt
 - 使用说明：https://www.runninghub.ai/runninghub-api-doc-en/doc-6333420.md
-- AI 应用提交：https://www.runninghub.ai/runninghub-api-doc-en/api-279102846.md
+- AI 应用提交：https://www.runninghub.ai/runninghub-api-doc-en/api-425761096.md
 - V2 文件上传：https://www.runninghub.ai/runninghub-api-doc-en/api-402739351.md
-- 查询任务输出：https://www.runninghub.ai/runninghub-api-doc-en/api-276642708.md
+- 查询任务输出：https://www.runninghub.ai/runninghub-api-doc-en/api-425761034.md
 - 取消任务：https://www.runninghub.ai/runninghub-api-doc-en/api-276642709.md
 - 查询账户：https://www.runninghub.ai/runninghub-api-doc-en/api-276642710.md
 - 错误码：https://www.runninghub.ai/runninghub-api-doc-en/doc-6913925.md

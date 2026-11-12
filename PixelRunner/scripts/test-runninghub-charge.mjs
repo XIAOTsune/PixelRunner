@@ -22,6 +22,7 @@ assert.equal(extractTaskPointsCharge({
   results: [{ usage: { settleMode: "POINT", chargedPoint: "1.28" } }]
 }), 1.28, "the aggregate V2 settlement takes precedence over nested usage values");
 assert.equal(formatTaskChargeDisplay(null, null, "cn", 1.28), "-1.28 积分");
+assert.equal(formatTaskChargeDisplay(0.2, 9, "global", 1.28), "-1.28 积分", "point settlement replaces legacy money and RH coin output");
 assert.equal(extractTaskPointsCharge({
   results: [
     { taskUsageList: [{ taskId: "subtask-a", usage: { settleMode: "POINT", chargedPoint: "0.50" } }] },
@@ -45,7 +46,7 @@ const duplicatedNestedOutputs = {
 };
 
 assertCharge(duplicatedNestedOutputs, 0.125, 8);
-assert.equal(formatTaskChargeDisplay(0.125, 8, "global"), "-$0.125 · -8RH");
+assert.equal(formatTaskChargeDisplay(0.125, 8, "global"), "-$0.125", "legacy RH coins are no longer displayed as task charges");
 
 const globalRunningPreview = {
   taskId: "global-preview-task",
@@ -179,7 +180,7 @@ try {
   submitErrorResponse = { code: 416, errorCode: 416, message: "TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET" };
   await assert.rejects(
     () => submitRunningHubTask([basePayload]),
-    (error) => error.errorCode === 416 && error.errorMessage === "TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET" && error.raw.code === 416
+    (error) => error.errorCode === 416 && /余额或积分不足/.test(error.errorMessage) && error.raw === undefined
   );
   submitErrorResponse = null;
 
@@ -258,6 +259,20 @@ try {
   assert.equal(pointStatus.chargeDisplay, "-1.28 积分");
   assert.equal(pointStatus.coinsCharge, null, "point settlement does not mix in legacy coin charges");
   assert.equal(pointStatus.balanceCharge, null, "point settlement does not mix in legacy money charges");
+
+  globalTaskSnapshot = { data: { taskId: "missing-v2-settlement", status: "SUCCESS", results: [{ url: "https://example.com/result.png", outputType: "png" }] } };
+  legacyTaskSnapshot = { code: 0, msg: "success", data: [{ fileUrl: "https://example.com/result.png", fileType: "png", settleMode: "POINT", chargedPoint: "2.5" }] };
+  const v2SettlementFallback = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "missing-v2-settlement" }]);
+  assert.equal(v2SettlementFallback.status, "SUCCESS");
+  assert.equal(v2SettlementFallback.pointsCharge, 2.5, "V1 output supplies settlement missing from an otherwise successful V2 response");
+  assert.equal(v2SettlementFallback.chargeDisplay, "-2.5 积分");
+
+  legacyTaskSnapshot = { code: 805, msg: "APIKEY_TASK_STATUS_ERROR", data: null };
+  const v2WithoutSettlement = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "missing-v2-settlement" }]);
+  assert.equal(v2WithoutSettlement.status, "SUCCESS", "a compatibility billing failure never overrides a successful V2 task");
+  assert.equal(v2WithoutSettlement.outputUrl, "https://example.com/result.png");
+  assert.equal(v2WithoutSettlement.failed, false);
+  assert.equal(v2WithoutSettlement.pointsCharge, null);
 
   globalTaskSnapshot = { taskId: "v1-point-task", status: "SUCCESS", results: null };
   legacyTaskSnapshot = {

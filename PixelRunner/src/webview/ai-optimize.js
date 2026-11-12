@@ -29,7 +29,7 @@
     taskStartedAt: 0,
     taskUpdatedAt: 0,
     balanceCharge: null,
-    coinsCharge: null,
+    pointsCharge: null,
     chargeDisplay: "",
     txtUrl: "",
     availableImages: [],
@@ -170,28 +170,21 @@
 
   function formatTaskChargeDisplay() {
     const explicit = String(state.chargeDisplay || "").trim();
-    if (explicit) return explicit;
+    if (explicit && !/RH\b/i.test(explicit)) return explicit;
+    const pointsCharge = normalizeTaskChargeValue(state.pointsCharge);
+    if (pointsCharge !== null) {
+      return "-" + pointsCharge.toFixed(3).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1") + " 积分";
+    }
     const balanceCharge = normalizeTaskChargeValue(state.balanceCharge);
-    const coinsCharge = normalizeTaskChargeValue(state.coinsCharge);
     const parts = [];
     if (balanceCharge !== null) parts.push(`-${balanceCharge.toFixed(3)}R`);
-    if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
     return parts.join(" · ");
   }
 
   function setTaskCharge(result) {
     state.balanceCharge = result && result.balanceCharge != null ? normalizeTaskChargeValue(result.balanceCharge) : null;
-    state.coinsCharge = result && result.coinsCharge != null ? normalizeTaskChargeValue(result.coinsCharge) : null;
+    state.pointsCharge = result && result.pointsCharge != null ? normalizeTaskChargeValue(result.pointsCharge) : null;
     state.chargeDisplay = String((result && result.chargeDisplay) || "").trim();
-  }
-
-  function formatElapsed(startedAt, updatedAt = Date.now()) {
-    const diff = Math.max(0, Number(updatedAt || 0) - Number(startedAt || 0));
-    const seconds = Math.floor(diff / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainSeconds = seconds % 60;
-    if (minutes <= 0) return `${remainSeconds}s`;
-    return `${minutes}m ${remainSeconds}s`;
   }
 
   function looksLikeTxtUrl(value) {
@@ -472,7 +465,6 @@
     const tone = getTaskStatusTone(state.taskStatus);
     const stage = getTaskStatusStage(state.taskStatus);
     const progress = getTaskProgressForStage(stage).toFixed(2);
-    const duration = state.taskStartedAt ? formatElapsed(state.taskStartedAt, state.taskUpdatedAt || Date.now()) : "--";
     const chargeDisplay = formatTaskChargeDisplay();
     const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "尚未创建任务";
     const detail = modules.runtime.escapeHtml(state.taskDetail || "等待开始。");
@@ -495,7 +487,7 @@
               }
             </div>
           </div>
-          <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · 耗时 ${modules.runtime.escapeHtml(duration)}${chargeDisplay ? ` · ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
+          <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)}${chargeDisplay ? ` · 扣费 ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
           <div class="running-task-detail">${detail}</div>
         </div>
       </div>
@@ -518,7 +510,7 @@
         state.taskStartedAt = 0;
         state.taskUpdatedAt = 0;
         state.balanceCharge = null;
-        state.coinsCharge = null;
+        state.pointsCharge = null;
         state.chargeDisplay = "";
         renderModal();
       });
@@ -815,7 +807,7 @@
     state.taskStartedAt = 0;
     state.taskUpdatedAt = 0;
     state.balanceCharge = null;
-    state.coinsCharge = null;
+    state.pointsCharge = null;
     state.chargeDisplay = "";
     state.txtUrl = "";
     if (state.availableImages.length === 0) {
@@ -1009,7 +1001,7 @@
         state.taskUpdatedAt = state.taskStartedAt;
         state.taskDetail = "正在提交 AI优化任务...";
         state.balanceCharge = null;
-        state.coinsCharge = null;
+        state.pointsCharge = null;
         state.chargeDisplay = "";
         state.txtUrl = "";
         setStatus("正在根据参考图、原始提示词和附加优化要求生成优化建议...", "pending");

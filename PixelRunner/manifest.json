@@ -172,6 +172,12 @@
     },
     "network": {
       "domains": [
+        "wss://www.runninghub.cn",
+        "wss://runninghub.cn",
+        "wss://*.runninghub.cn",
+        "wss://www.runninghub.ai",
+        "wss://runninghub.ai",
+        "wss://*.runninghub.ai",
         "https://www.runninghub.cn",
         "https://runninghub.cn",
         "https://*.runninghub.cn",

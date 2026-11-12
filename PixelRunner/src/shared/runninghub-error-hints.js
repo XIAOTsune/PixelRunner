@@ -45,11 +45,46 @@ const RUNNINGHUB_ERROR_HINTS = Object.freeze({
 
 export function getRunningHubErrorHint(errorCode) {
   const code = String(errorCode == null ? "" : errorCode).trim().toUpperCase();
-  return RUNNINGHUB_ERROR_HINTS[code] || "";
+  return Object.prototype.hasOwnProperty.call(RUNNINGHUB_ERROR_HINTS, code) ? RUNNINGHUB_ERROR_HINTS[code] : "";
 }
 
 export function isRunningHubPendingErrorCode(errorCode) {
   return ["804", "813", "APIKEY_TASK_IS_RUNNING", "APIKEY_TASK_IS_QUEUED"].includes(
     String(errorCode == null ? "" : errorCode).trim().toUpperCase()
   );
+}
+
+export function normalizeRunningHubErrorCode(value) {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (/^\d{1,6}$/.test(text)) return Number(text);
+  return Object.prototype.hasOwnProperty.call(RUNNINGHUB_ERROR_HINTS, text) ? text : null;
+}
+
+// Diagnose raw messages in memory; never echo any part of platform text.
+export function getRunningHubSafeError(message, errorCode = null, httpStatus = 0) {
+  const code = normalizeRunningHubErrorCode(errorCode);
+  let diagnostic = getRunningHubErrorHint(code);
+  const raw = typeof message === "string" ? message : "";
+  if (!diagnostic) {
+    if (/content.?policy|safety|moderation|sensitive|nsfw|审核|内容安全|敏感|违规/i.test(raw)) {
+      diagnostic = "内容未通过审核，请调整提示词或输入图片后重试。";
+    } else if (/insufficient|not enough|balance|quota|余额不足|欠费|额度不足/i.test(raw)) {
+      diagnostic = "RunningHub 账户余额或额度不足，请充值或检查额度后重试。";
+    } else if (httpStatus === 401 || /api.?key|unauthorized|forbidden|invalid token|鉴权|认证/i.test(raw)) {
+      diagnostic = "RunningHub 鉴权失败，请检查 API Key、账号权限和区域设置。";
+    } else if (httpStatus === 403) {
+      diagnostic = "RunningHub 拒绝了本次请求，请检查账号或应用权限。";
+    } else if (httpStatus === 429) {
+      diagnostic = "RunningHub 请求过于频繁，请稍后再试。";
+    } else if (httpStatus >= 500) {
+      diagnostic = "RunningHub 云端服务暂时异常，请稍后重试。";
+    } else if (/timeout|timed out|超时/i.test(raw)) {
+      diagnostic = "RunningHub 任务等待超时，尚未确认最终结果，请继续追踪现有任务。";
+    } else if (/^任务已取消[。.]?$|^Task polling cancelled$|^cancelled$|^canceled$/i.test(raw)) {
+      diagnostic = "任务已取消。";
+    } else {
+      diagnostic = "RunningHub 任务执行失败，平台详情已隐藏以保护隐私。请保留任务 ID，到平台任务页面查看原因。";
+    }
+  }
+  return { errorCode: code, message: `${diagnostic}${code == null ? "" : `（错误码 ${code}）`}` };
 }

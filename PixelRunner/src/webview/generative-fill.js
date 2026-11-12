@@ -12,7 +12,6 @@
   });
   let submissionInFlight = false;
   let captureInFlight = null;
-  let taskTimerHandle = 0;
 
   function getState() {
     return modules.state.state.generativeFill;
@@ -397,44 +396,6 @@
     return "info";
   }
 
-  function formatTaskDuration(milliseconds) {
-    const totalSeconds = Math.max(0, Math.floor((Number(milliseconds) || 0) / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    if (hours > 0) return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-
-  function getTaskElapsedMs(task, now = Date.now()) {
-    const startedAt = Number(task && (task.submittedAt || task.createdAt || 0));
-    if (!startedAt) return 0;
-    const endedAt = Number(task && task.finishedAt) || (isTerminalTaskStatus(task && task.status) ? Number(task && task.updatedAt) || now : now);
-    return Math.max(0, endedAt - startedAt);
-  }
-
-  function updateTaskTimers() {
-    const surface = modules.runtime.getById("generativeFillSurface");
-    if (!surface || surface.hidden || modules.state.state.workspaceMode !== "generative-fill") return;
-    const now = Date.now();
-    surface.querySelectorAll("[data-generative-fill-timer]").forEach((element) => {
-      const startedAt = Number(element.getAttribute("data-started-at")) || 0;
-      const endedAt = Number(element.getAttribute("data-ended-at")) || 0;
-      if (!startedAt) return;
-      element.textContent = formatTaskDuration((endedAt || now) - startedAt);
-    });
-  }
-
-  function syncTaskTimer(tasks) {
-    const hasActiveTask = tasks.some((task) => !isTerminalTaskStatus(task.status));
-    if (hasActiveTask && !taskTimerHandle) {
-      taskTimerHandle = window.setInterval(updateTaskTimers, 1000);
-    } else if (!hasActiveTask && taskTimerHandle) {
-      window.clearInterval(taskTimerHandle);
-      taskTimerHandle = 0;
-    }
-  }
-
   function renderTaskList(tasks) {
     if (tasks.length === 0) return '<div class="generative-fill-task-empty">运行后的任务会显示在这里，可继续提交多个选区。</div>';
     return tasks.map((task, index) => {
@@ -442,8 +403,8 @@
       const escapedTaskId = modules.runtime.escapeHtml(taskId);
       const status = String(task.status || "running").trim().toLowerCase();
       const terminal = isTerminalTaskStatus(status);
-      const startedAt = Number(task.submittedAt || task.createdAt || 0);
-      const endedAt = Number(task.finishedAt || 0) || (terminal ? Number(task.updatedAt || 0) : 0);
+      const chargeLabel = modules.workspace?.getTaskCostLabel?.(task) || "";
+      const progressMarkup = modules.workspace?.getRunningHubProgressMarkup?.(task) || "";
       const prompt = String(task.sourceDocument && task.sourceDocument.generativeFillPrompt || "").trim();
       const detail = String(task.detail || "").trim();
       const summary = prompt || detail || `创成式填充任务 ${index + 1}`;
@@ -456,7 +417,8 @@
               <span class="generative-fill-task-summary" title="${modules.runtime.escapeHtml(summary)}">${modules.runtime.escapeHtml(summary)}</span>
               <span class="generative-fill-task-status">${modules.runtime.escapeHtml(getTaskStatusLabel(status))}</span>
             </div>
-            <div class="generative-fill-task-meta"><span>${taskId ? `#${modules.runtime.escapeHtml(taskId.slice(-8))}` : "等待任务 ID"}</span><span>${terminal ? "耗时" : "计时"} <b data-generative-fill-timer data-started-at="${startedAt}" data-ended-at="${endedAt}">${formatTaskDuration(getTaskElapsedMs(task))}</b></span></div>
+            <div class="generative-fill-task-meta"><span>${taskId ? `#${modules.runtime.escapeHtml(taskId.slice(-8))}` : "等待任务 ID"}</span>${chargeLabel ? `<span>${modules.runtime.escapeHtml(chargeLabel)}</span>` : ""}</div>
+            ${progressMarkup}
           </div>
           ${taskId ? `<button class="generative-fill-task-action" type="button" data-action="${action}" data-task-id="${escapedTaskId}">${actionLabel}</button>` : ""}
         </div>`;
@@ -468,6 +430,18 @@
     state.status = String(status || "idle");
     state.statusMessage = String(message || "");
     render();
+  }
+
+  function refreshTaskList() {
+    const surface = modules.runtime.getById("generativeFillSurface");
+    const list = surface?.querySelector(".generative-fill-task-list");
+    if (!list) return;
+    const tasks = getGenerativeFillTasks();
+    const taskMarkup = renderTaskList(tasks);
+    if (list.__taskMarkup !== taskMarkup) {
+      list.innerHTML = taskMarkup;
+      list.__taskMarkup = taskMarkup;
+    }
   }
 
   async function cleanupSelectionSnapshot(selection) {
@@ -859,10 +833,6 @@
     state.status = "idle";
     state.statusMessage = "已退出创成式填充模式。";
     state.selection = null;
-    if (taskTimerHandle) {
-      window.clearInterval(taskTimerHandle);
-      taskTimerHandle = 0;
-    }
     if (modules.quickEntries && typeof modules.quickEntries.setWorkspaceMode === "function") {
       await modules.quickEntries.setWorkspaceMode("app");
     } else {
@@ -939,7 +909,6 @@
         </section>
       </div>
     `;
-    syncTaskTimer(tasks);
   }
 
   function bindActions() {
@@ -980,6 +949,8 @@
     captureSelection,
     submit,
     render,
+    renderTaskList,
+    refreshTaskList,
     bindActions
   };
 })(window);

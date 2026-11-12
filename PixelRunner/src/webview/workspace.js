@@ -1,5 +1,7 @@
 import { encodeLocalImageAsJpeg } from "./local-image.js";
 import { formatImageAssetMeta } from "./image-asset-meta.js";
+import { normalizeRunningHubStep, parseRunningHubNumber } from "../shared/runninghub-progress.js";
+import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/runninghub-error-hints.js";
 
 (function initWorkspaceModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
@@ -20,6 +22,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
   const MODAL_CLOSE_ANIMATION_MS = 180;
   let runButtonCooldownUntil = 0;
   let taskTickerHandle = 0;
+  let progressReadPending = false;
   let accountRefreshTimer = 0;
   let accountSettlementChain = Promise.resolve(null);
   const thirdPartyAccountRefreshPromises = new Map();
@@ -911,6 +914,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
   function normalizeTaskFailureMessage(message, task = null) {
     const taskProvider = String(task && task.provider || "").trim();
     const providerLabel = taskProvider === "gemini" ? "Gemini" : isThirdPartyTaskRecord(task) ? "GRS" : "RunningHub";
+    if (!isThirdPartyTaskRecord(task)) return getRunningHubSafeError(message, task?.errorCode).message;
     const raw = compactTaskMessage(message, 500);
     const errorCode = task && task.errorCode != null ? task.errorCode : null;
     const errorHint = !isThirdPartyTaskRecord(task) && modules.runningHubErrors
@@ -1148,19 +1152,17 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
   function formatTaskChargeDisplay(task) {
     if (!task || typeof task !== "object") return "";
     const explicit = String(task.chargeDisplay || "").trim();
-    if (explicit) return explicit;
     // Third-party providers may use a provider-specific currency. Do not infer R/RH
     // from a bare numeric value unless the provider has supplied a formatted value.
-    if (isThirdPartyTaskRecord(task)) return "";
+    if (isThirdPartyTaskRecord(task)) return explicit;
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
-    const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
     const pointsCharge = normalizeTaskChargeValue(task.pointsCharge);
+    if (pointsCharge !== null) return "-" + String(pointsCharge.toFixed(3)).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1") + " 积分";
     const parts = [];
     const isGlobalRunningHub = !isThirdPartyTaskRecord(task) &&
       modules.state.normalizeRunningHubRegion(task.region) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
     if (balanceCharge !== null) parts.push(isGlobalRunningHub ? `-$${balanceCharge.toFixed(3)}` : `-${balanceCharge.toFixed(3)}R`);
-    if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
-    if (pointsCharge !== null) parts.push(`-${String(pointsCharge.toFixed(3)).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1")} 积分`);
+    if (!parts.length && !/RH\b/i.test(explicit)) return explicit;
     return parts.join(" · ");
   }
 
@@ -1192,7 +1194,6 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     if (!task || typeof task !== "object") return false;
     if (String(task.chargeDisplay || "").trim()) return true;
     if (normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge) !== null) return true;
-    if (normalizeTaskChargeValue(task.coinsCharge) !== null) return true;
     return normalizeTaskChargeValue(task.pointsCharge) !== null;
   }
 
@@ -1471,11 +1472,65 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       });
   }
 
+  async function refreshRunningHubProgress() {
+    if (progressReadPending || !modules.runtime.isPluginRuntime()) return;
+    const tasks = getActiveRunningTasks().filter(task => !isThirdPartyTaskRecord(task) && !isLocalQueuedTask(task) &&
+      !isTaskRemoteCompleteStatus(task.status) && !["submitting", "timeout"].includes(task.status));
+    if (!tasks.length) return;
+    progressReadPending = true;
+    try {
+      const snapshots = await modules.runtime.callHost("runninghub.readProgress", [tasks.map(task => ({
+        taskId: String(task.remoteTaskId || task.taskId), region: task.region || "cn"
+      }))], { timeoutMs: 3000 });
+      for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+        const task = tasks.find(item => String(item.remoteTaskId || item.taskId) === snapshot.taskId &&
+          (item.region || "cn") === snapshot.region);
+        const current = getRunningTasks().find(item => item.taskId === task?.taskId);
+        if (!current || isTaskTerminalStatus(current.status) || isTaskRemoteCompleteStatus(current.status)) continue;
+        const phase = snapshot.phase === "queued" ? "queued" : snapshot.phase === "running" ? "remote-running" : current.status;
+        upsertRunningTask({ taskId: current.taskId, status: phase,
+          detail: phase === "queued" ? "云端排队中，等待平台安排执行。" : phase === "remote-running" ? "云端运行中，最终状态由平台查询确认。" : current.detail,
+          stepProgress: phase === "remote-running" ? snapshot.step : null,
+          progressChannel: snapshot.channel });
+      }
+    } catch (_) {
+      // Optional display channel must never interrupt the independent REST poll.
+      for (const task of tasks) {
+        const current = getRunningTasks().find(item => item.taskId === task.taskId);
+        if (current && !isTaskTerminalStatus(current.status) && !isTaskRemoteCompleteStatus(current.status)) {
+          upsertRunningTask({ taskId: task.taskId, stepProgress: null, progressChannel: "unavailable" });
+        }
+      }
+    } finally { progressReadPending = false; }
+  }
+
+  function getRunningHubProgressMarkup(task) {
+    if (isThirdPartyTaskRecord(task) || isTaskTerminalStatus(task.status)) return "";
+    const running = ["running", "remote-running"].includes(task.status);
+    const step = running ? normalizeRunningHubStep(task.stepProgress?.value, task.stepProgress?.max) : null;
+    const percent = step ? Number((step.value / step.max * 100).toFixed(1)) : null;
+    const label = step ? `当前步骤进度 ${percent}%（非任务总进度）`
+      : task.status === "queued" ? (isLocalQueuedTask(task) ? "本地排队中" : "云端排队中")
+      : task.status === "submitting" ? "正在提交任务"
+      : task.status === "downloading" ? "生成完成 · 正在下载结果"
+      : task.status === "placing" ? "生成完成 · 正在贴回 Photoshop"
+      : "正在确认云端状态";
+    const fallback = running && task.progressChannel === "unavailable" ? " · 实时通道不可用，状态轮询继续" : "";
+    return `<div class="running-task-progress-label">${modules.runtime.escapeHtml(label + fallback)}</div><div class="running-task-progress${step ? "" : " is-indeterminate"}" role="progressbar" aria-label="${modules.runtime.escapeHtml(label)}"${step ? ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"` : ""}><span${step ? ` style="width: ${percent}%"` : ""}></span></div>`;
+  }
+
+  function getTaskPlatformDurationLabel(task) {
+    if (isThirdPartyTaskRecord(task) || !(isTaskRemoteCompleteStatus(task.status) || ["succeeded", "success", "done", "placement-failed"].includes(task.status))) return "";
+    const seconds = parseRunningHubNumber(task.taskCostTime);
+    return seconds === null ? "" : `平台生成耗时 ${formatTaskDuration(seconds * 1000)}`;
+  }
+
   function ensureTaskTickerState() {
-    const hasActiveTask = getActiveRunningTasks().length > 0;
+    const hasActiveTask = getRunningTasks().some(task => !isTaskTerminalStatus(task.status));
     if (hasActiveTask && !taskTickerHandle) {
       taskTickerHandle = window.setInterval(() => {
         updateRunButtonState();
+        void refreshRunningHubProgress();
       }, 1000);
       return;
     }
@@ -1487,6 +1542,11 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
 
   function getTaskPlatformErrorDetails(task) {
     if (!task || typeof task !== "object") return "";
+    if (!isThirdPartyTaskRecord(task)) {
+      if (task.errorCode == null && !task.platformErrorMessage && !task.platformErrorRaw) return "";
+      const safe = getRunningHubSafeError(task.platformErrorMessage || task.errorMessage, task.errorCode);
+      return `<details class="running-task-platform-error"><summary>安全错误详情${safe.errorCode == null ? "" : ` · ${modules.runtime.escapeHtml(safe.errorCode)}`}</summary><div>${modules.runtime.escapeHtml(safe.message)}</div></details>`;
+    }
     const errorCode = task.errorCode == null ? "" : String(task.errorCode).trim();
     const errorMessage = String(task.platformErrorMessage || "").trim();
     let rawResponse = "";
@@ -1514,12 +1574,14 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         const statusLabel = getTaskStatusLabel(task.status || "running");
         const statusTone = getTaskStatusTone(task.status || "running");
         const statusStage = normalizeTaskStatusStage(task.status || "running");
-        const progressValue = getTaskProgressForStage(statusStage).toFixed(2);
+        const isRunningHub = !isThirdPartyTaskRecord(task);
+        const progressValue = isRunningHub ? "0" : getTaskProgressForStage(statusStage).toFixed(2);
         const isActive = !isTaskTerminalStatus(task.status) && statusStage !== "timeout";
-        const durationLabel = `${getTaskDurationLabel(task)} ${formatTaskDuration(getTaskElapsedMs(task))}`;
+        const durationLabel = isRunningHub ? "" : `${getTaskDurationLabel(task)} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
         const platformErrorDetails = getTaskPlatformErrorDetails(task);
         const chargeDisplay = getTaskCostLabel(task);
+        const meta = [shortTaskId, durationLabel, chargeDisplay].filter(Boolean).map(modules.runtime.escapeHtml).join(" · ");
         const failureLabel = getTaskFailureLabel(task);
         const detailPrefix =
           failureLabel && ["failed", "error", "cancelled", "canceled", "timeout"].includes(String(task.status || "").trim().toLowerCase())
@@ -1534,7 +1596,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         const actionTitle = getTaskActionTitle(task);
         const actionTaskId = modules.runtime.escapeHtml(String(task.taskId || "").trim());
         return `
-          <div class="running-task-item" data-stage="${modules.runtime.escapeHtml(statusStage)}" data-active="${isActive ? "true" : "false"}" style="--task-progress: ${progressValue}">
+          <div class="running-task-item${isRunningHub ? " is-runninghub" : ""}" data-stage="${modules.runtime.escapeHtml(statusStage)}" data-active="${isActive ? "true" : "false"}" style="--task-progress: ${progressValue}">
             <div class="running-task-main">
               <div class="running-task-topline">
                 <div class="running-task-title">${appName}</div>
@@ -1560,8 +1622,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
                   }
                 </div>
               </div>
-              <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)} · ${modules.runtime.escapeHtml(durationLabel)}${chargeDisplay ? ` · ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
+              <div class="running-task-meta">${meta}</div>
               <div class="running-task-detail">${modules.runtime.escapeHtml(detailPrefix)}${detail}${platformErrorDetails}</div>
+              ${getRunningHubProgressMarkup(task)}
             </div>
           </div>
         `;
@@ -1658,7 +1721,11 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
 
     if (runningTaskList) {
       runningTaskList.hidden = false;
-      runningTaskList.innerHTML = hasRunningTask ? renderRunningTaskList(runningTasks) : '<div class="running-task-empty">运行后的任务会显示在这里。</div>';
+      const taskMarkup = hasRunningTask ? renderRunningTaskList(runningTasks) : '<div class="running-task-empty">运行后的任务会显示在这里。</div>';
+      if (runningTaskList.__taskMarkup !== taskMarkup) {
+        runningTaskList.innerHTML = taskMarkup;
+        runningTaskList.__taskMarkup = taskMarkup;
+      }
     }
 
     document.querySelectorAll(".quick-entry-run-btn").forEach((button) => {
@@ -2154,6 +2221,16 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     if (!normalizedTaskId) return null;
     const hasOwn = (key) => Object.prototype.hasOwnProperty.call(patch, key);
 
+    const existing = getRunningTasks().find(item => item.taskId === normalizedTaskId);
+    const isRunningHub = !isThirdPartyTaskRecord({ ...existing, ...patch, provider: patch.provider || existing?.provider || "" });
+    if (isRunningHub) {
+      const safe = getRunningHubSafeError(patch.platformErrorMessage || patch.errorMessage || patch.detail, patch.errorCode);
+      if (patch.platformErrorMessage) patch.platformErrorMessage = safe.message;
+      if (patch.errorMessage) patch.errorMessage = safe.message;
+      if (["failed", "error"].includes(patch.status)) patch.detail = safe.message;
+      if (hasOwn("errorCode")) patch.errorCode = normalizeRunningHubErrorCode(patch.errorCode);
+      patch.platformErrorRaw = null;
+    }
     const now = Date.now();
     const nextTask = {
       taskId: normalizedTaskId,
@@ -2173,6 +2250,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       platformErrorMessage: hasOwn("platformErrorMessage") ? String(patch.platformErrorMessage || "").trim() : undefined,
       errorCode: hasOwn("errorCode") ? (patch.errorCode == null || patch.errorCode === "" ? null : patch.errorCode) : undefined,
       platformErrorRaw: hasOwn("platformErrorRaw") ? (patch.platformErrorRaw == null ? null : patch.platformErrorRaw) : undefined,
+      stepProgress: hasOwn("stepProgress") ? normalizeRunningHubStep(patch.stepProgress?.value, patch.stepProgress?.max) : undefined,
+      progressChannel: hasOwn("progressChannel") ? (["connected", "connecting"].includes(patch.progressChannel) ? patch.progressChannel : "unavailable") : undefined,
+      taskCostTime: hasOwn("taskCostTime") ? parseRunningHubNumber(patch.taskCostTime) : undefined,
       charge: hasOwn("charge") ? normalizeTaskChargeValue(patch.charge) : undefined,
       balanceCharge: hasOwn("balanceCharge") ? normalizeTaskChargeValue(patch.balanceCharge) : undefined,
       coinsCharge: hasOwn("coinsCharge") ? normalizeTaskChargeValue(patch.coinsCharge) : undefined,
@@ -2198,7 +2278,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       sourceDocument: patch.sourceDocument && typeof patch.sourceDocument === "object" ? patch.sourceDocument : null,
       createdAt: Number(patch.createdAt) > 0 ? Number(patch.createdAt) : now,
       submittedAt: Number(patch.submittedAt) > 0 ? Number(patch.submittedAt) : now,
-      finishedAt: Number(patch.finishedAt) > 0 ? Number(patch.finishedAt) : 0,
+      finishedAt: Number(patch.finishedAt) > 0 ? Number(patch.finishedAt) : isTaskTerminalStatus(patch.status) ? now : 0,
       updatedAt: Number(patch.updatedAt) > 0 ? Number(patch.updatedAt) : now,
       placementDocumentId: Number(patch.placementDocumentId) > 0 ? Number(patch.placementDocumentId) : 0
     };
@@ -2231,6 +2311,9 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
           nextTask.placementRetryCount !== undefined ? nextTask.placementRetryCount : Math.max(0, Number(current.placementRetryCount) || 0),
         cachedResult:
           nextTask.cachedResult !== undefined ? nextTask.cachedResult : current.cachedResult === true,
+        stepProgress: nextTask.stepProgress !== undefined ? nextTask.stepProgress : current.stepProgress,
+        progressChannel: nextTask.progressChannel !== undefined ? nextTask.progressChannel : current.progressChannel,
+        taskCostTime: nextTask.taskCostTime !== undefined ? nextTask.taskCostTime : current.taskCostTime,
         charge: nextTask.charge !== undefined ? nextTask.charge : current.charge,
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
@@ -2269,7 +2352,11 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     syncPrimaryRunningTask();
     updateRunButtonState();
     if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
-      modules.generativeFill.render();
+      if (hasOwn("stepProgress") && typeof modules.generativeFill.refreshTaskList === "function") {
+        modules.generativeFill.refreshTaskList();
+      } else {
+        modules.generativeFill.render();
+      }
     }
     if (nextTask.status && (isTaskTerminalStatus(nextTask.status) || isTaskRemoteCompleteStatus(nextTask.status))) {
       scheduleRunSubmissionFlush();
@@ -2396,6 +2483,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       appName: payload.appName,
       status: "placing",
       detail: "后台追踪确认任务已完成，结果已返回。",
+      taskCostTime: statusResult && statusResult.taskCostTime,
       charge: statusResult && statusResult.charge,
       balanceCharge: statusResult && statusResult.balanceCharge,
       coinsCharge: statusResult && statusResult.coinsCharge,
@@ -3205,6 +3293,8 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     if (!outputUrl) throw new Error("Result image is missing");
 
     const payload = buildAutoPlacementPayload(result);
+    const downloadingTask = findAutoPlacementTask(result);
+    if (downloadingTask) upsertRunningTask({ taskId: downloadingTask.taskId, status: "downloading", detail: "生成完成，正在下载结果图。" });
     const response = await modules.runtime.callHost("photoshop.cacheResultFromUrl", [{
       url: outputUrl,
       taskId: String(result.taskId || "").trim(),
@@ -3582,6 +3672,8 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
       }
     }
 
+    const placingTask = findAutoPlacementTask(preparedResult);
+    if (placingTask) upsertRunningTask({ taskId: placingTask.taskId, status: "placing", detail: "结果已下载，正在贴回 Photoshop。" });
     const placementRequest = buildAutoPlacementHostRequest(preparedResult);
     let response = null;
     try {
@@ -3973,7 +4065,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         remoteTaskId,
         queueMode: "",
         appName: payload.appName,
-        status: "running",
+        status: isThirdPartyTask ? "running" : submitResult.status === "running" ? "remote-running" : "queued",
         detail: `任务已提交，正在等待 ${statusLabel} 返回结果。`,
         sourceDocument,
         submittedAt: Date.now()
@@ -4053,6 +4145,7 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
         appName: payload.appName,
         status: "placing",
         detail: "任务已完成，结果已返回。",
+        taskCostTime: pollResult && pollResult.taskCostTime,
         charge: pollResult && pollResult.charge,
         balanceCharge: pollResult && pollResult.balanceCharge,
         coinsCharge: pollResult && pollResult.coinsCharge,
@@ -4822,6 +4915,11 @@ import { formatImageAssetMeta } from "./image-asset-meta.js";
     getTaskCostLabel,
     normalizeTaskFailureMessage,
     getTaskPlatformErrorDetails,
+    getRunningHubProgressMarkup,
+    getTaskPlatformDurationLabel,
+    refreshRunningHubProgress,
+    upsertRunningTask,
+    renderRunningTaskList,
     isAutoPlacementBlockedError,
     isAutoPlacementRetryableError,
     isAutoPlacementTargetDocumentError,

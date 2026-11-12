@@ -1,3 +1,5 @@
+import { getRunningHubSafeError } from "../shared/runninghub-error-hints.js";
+
 export function getById(id) {
   return document.getElementById(id);
 }
@@ -27,6 +29,10 @@ export function setHostStatus(message, level = "info") {
 }
 
 export function createBridgeResponse(message, result, error) {
+  if (error && String(message?.method || "").startsWith("runninghub.")) {
+    const safe = getRunningHubSafeError(error.message, error.errorCode);
+    error = { message: safe.message, errorCode: safe.errorCode, errorMessage: safe.message };
+  }
   return {
     id: message && message.id,
     result: error ? null : result,

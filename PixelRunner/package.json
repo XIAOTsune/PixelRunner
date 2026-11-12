@@ -14,7 +14,7 @@
   },
   "type": "module",
   "scripts": {
-    "test": "npm run test:release-compat && npm run test:release-hardened && npm run test:release-package && npm run test:theme && npm run test:license && npm run test:license-storage && npm run test:license-issuer && npm run test:private-license-issuer && npm run test:bundle-compat && npm run test:file-transfer && npm run test:local-image && npm run test:image-splitter && npm run test:prompt-history-favorite && npm run test:prompt-bundle-persistence && npm run test:runninghub-charge && npm run test:task-card-status && npm run test:generative-fill && npm run test:ratio-correction && npm run test:grs && npm run test:gemini && npm run test:blend-match && npm run test:pixel-capture && npm run test:glow && npm run test:post-fx && npm run test:space-fx && npm run test:workspace-persistence",
+    "test": "npm run test:release-compat && npm run test:release-hardened && npm run test:release-package && npm run test:theme && npm run test:license && npm run test:license-storage && npm run test:license-issuer && npm run test:private-license-issuer && npm run test:bundle-compat && npm run test:file-transfer && npm run test:local-image && npm run test:image-splitter && npm run test:prompt-history-favorite && npm run test:prompt-bundle-persistence && npm run test:runninghub-charge && npm run test:runninghub-progress && npm run test:task-card-status && npm run test:generative-fill && npm run test:ratio-correction && npm run test:grs && npm run test:gemini && npm run test:blend-match && npm run test:pixel-capture && npm run test:glow && npm run test:post-fx && npm run test:space-fx && npm run test:workspace-persistence",
     "test:release-compat": "node ./scripts/test-release-compat.mjs",
     "test:release-hardened": "node ./scripts/test-release-hardened.mjs",
     "test:release-package": "node ./scripts/test-release-package.mjs",
@@ -30,6 +30,7 @@
     "test:prompt-history-favorite": "node ./scripts/test-prompt-history-favorite.mjs",
     "test:prompt-bundle-persistence": "node ./scripts/test-prompt-bundle-persistence.mjs",
     "test:runninghub-charge": "node ./scripts/test-runninghub-charge.mjs",
+    "test:runninghub-progress": "node ./scripts/test-runninghub-progress.mjs",
     "test:task-card-status": "node ./scripts/test-task-card-status.mjs",
     "test:generative-fill": "node ./scripts/test-generative-fill-sources.mjs",
     "test:ratio-correction": "node ./scripts/test-ratio-offset-correction.mjs",

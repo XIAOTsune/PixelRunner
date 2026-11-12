@@ -13,7 +13,11 @@ const networkDomains = manifest.requiredPermissions.network.domains;
 const webviewDomains = manifest.requiredPermissions.webview.domains;
 
 assert.ok(Array.isArray(networkDomains), "release compatibility requires an explicit network domain list");
-assert.deepEqual([...networkDomains].sort(), [...webviewDomains].sort(), "network and WebView domain allowlists must stay aligned");
+assert.deepEqual(networkDomains.filter(domain => !domain.startsWith("wss:")).sort(), [...webviewDomains].sort(), "HTTP network and WebView domain allowlists must stay aligned");
+assert.deepEqual(networkDomains.filter(domain => domain.startsWith("wss:")).sort(), [
+  "wss://*.runninghub.ai", "wss://*.runninghub.cn", "wss://runninghub.ai", "wss://runninghub.cn",
+  "wss://www.runninghub.ai", "wss://www.runninghub.cn"
+], "task WSS permissions belong only to the host transport");
 assert.ok(networkDomains.includes("https://*.volces.com"), "RunningHub Volcengine result CDN remains allowed");
 
 const tempDir = await mkdtemp(path.join(os.tmpdir(), "pixelrunner-release-compat-"));

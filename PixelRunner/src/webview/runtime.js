@@ -157,10 +157,12 @@ import { assertHostStorageWriteAcknowledged } from "../shared/license-storage-co
   async function saveWorkspaceBackup(snapshot) {
     const scrub = (value) => {
       if (Array.isArray(value)) return value.map(scrub);
+      if (typeof value === "string" && /wss?:\/\//i.test(value)) return "";
       if (!value || typeof value !== "object") return value;
       const out = {};
       Object.keys(value).forEach((key) => {
         if (/(api.?key|token|password|secret|authorization|access.?key)/i.test(key)) return;
+        if (/^(netWssUrl|clientId|promptTips|outputs_to_execute|node_errors|platformErrorRaw)$/i.test(key)) return;
         out[key] = scrub(value[key]);
       });
       return out;
