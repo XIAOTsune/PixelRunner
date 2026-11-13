@@ -3,6 +3,9 @@ import { parseRunningHubProgress } from "../shared/runninghub-progress.js";
 const monitors = new Map();
 const IDLE_MS = 5 * 60 * 1000;
 const STEP_FRESH_MS = 10000;
+const CONNECT_TIMEOUT_MS = 8000;
+const RECONNECT_BASE_MS = 1000;
+const RECONNECT_MAX_MS = 15000;
 
 export function isRunningHubWssUrl(value, region) {
   // UXP hosts need not provide URL. Accept only official regional WSS hosts,
@@ -24,50 +27,96 @@ function createMonitor(taskId, region) {
   let socket = null;
   let timer = null;
   let connectTimer = null;
-  const monitor = { taskId, region, phase: "queued", step: null, updatedAt: 0, channel: "unavailable", attempted: false,
+  let retryTimer = null;
+  let reconnectAttempts = 0;
+  let socketUrl = "";
+  const monitor = { taskId, region, phase: "queued", step: null, updatedAt: 0, channel: "unavailable",
     touch() {
       clearTimeout(timer);
       timer = setTimeout(() => stopRunningHubProgress(taskId, region), IDLE_MS);
       timer?.unref?.();
     },
+    closeSocket() {
+      clearTimeout(connectTimer);
+      connectTimer = null;
+      const activeSocket = socket;
+      socket = null;
+      if (activeSocket) {
+        activeSocket.onmessage = activeSocket.onopen = activeSocket.onerror = activeSocket.onclose = null;
+        try { activeSocket.close(); } catch (_) {}
+      }
+    },
     dispose() {
       clearTimeout(timer);
-      clearTimeout(connectTimer);
-      if (socket) {
-        socket.onmessage = socket.onopen = socket.onerror = socket.onclose = null;
-        try { socket.close(); } catch (_) {}
-        socket = null;
-      }
+      clearTimeout(retryTimer);
+      retryTimer = null;
+      monitor.closeSocket();
+      socketUrl = "";
       monitor.step = null;
     },
     connect(url) {
-      if (monitor.attempted || !isRunningHubWssUrl(url, region)) return;
-      monitor.attempted = true;
-      // No fallback via WebView: task credentials stay exclusively in the host.
-      if (typeof globalThis.WebSocket !== "function") return;
-      const disconnect = () => {
-        monitor.channel = "unavailable";
-        monitor.step = null;
-        monitor.dispose();
-        monitor.touch();
+      if (typeof globalThis.WebSocket !== "function") {
+        monitor.channel = "unsupported";
+        return;
+      }
+      if (url) {
+        if (!isRunningHubWssUrl(url, region)) {
+          if (!socketUrl) monitor.channel = "invalid-url";
+          return;
+        }
+        socketUrl = url;
+      } else if (!socketUrl) {
+        monitor.channel = "missing-url";
+        return;
+      }
+      if (socket || retryTimer) return;
+
+      const scheduleReconnect = () => {
+        if (!socketUrl || retryTimer || monitors.get(`${region}:${taskId}`) !== monitor) return;
+        const delay = Math.min(RECONNECT_BASE_MS * (2 ** Math.min(reconnectAttempts, 4)), RECONNECT_MAX_MS);
+        reconnectAttempts += 1;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          monitor.connect();
+        }, delay);
+        retryTimer?.unref?.();
       };
+      const disconnect = (reason, expectedSocket = null) => {
+        if (expectedSocket && socket !== expectedSocket) return;
+        monitor.closeSocket();
+        monitor.channel = reason;
+        monitor.step = null;
+        monitor.touch();
+        scheduleReconnect();
+      };
+
+      // The URL stays inside the host while reconnects are possible.
       try {
-        socket = new globalThis.WebSocket(url);
-        url = null;
+        const activeSocket = new globalThis.WebSocket(socketUrl);
+        socket = activeSocket;
         monitor.channel = "connecting";
-        connectTimer = setTimeout(disconnect, 8000);
+        connectTimer = setTimeout(() => disconnect("timeout", activeSocket), CONNECT_TIMEOUT_MS);
         connectTimer?.unref?.();
-        socket.onopen = () => { clearTimeout(connectTimer); monitor.channel = "connected"; };
-        socket.onmessage = event => {
+        activeSocket.onopen = () => {
+          if (socket !== activeSocket) return;
+          clearTimeout(connectTimer);
+          connectTimer = null;
+          monitor.channel = "connected";
+          monitor.touch();
+        };
+        activeSocket.onmessage = event => {
+          if (socket !== activeSocket) return;
           const safe = parseRunningHubProgress(event.data);
           if (!safe) return;
+          reconnectAttempts = 0;
           monitor.phase = safe.phase;
           monitor.step = safe.step;
           monitor.updatedAt = Date.now();
         };
         // Never log a socket error, close reason, URL, or event payload.
-        socket.onerror = socket.onclose = disconnect;
-      } catch (_) { disconnect(); }
+        activeSocket.onerror = () => disconnect("error", activeSocket);
+        activeSocket.onclose = () => disconnect("closed", activeSocket);
+      } catch (_) { disconnect("error"); }
     }
   };
   return monitor;

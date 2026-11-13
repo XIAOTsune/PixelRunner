@@ -33,6 +33,11 @@ const id = () => `privacy-task-${++sequence}`;
 const snapshot = taskId => readRunningHubProgress([[{ taskId, region: "cn" }]])[0];
 
 try {
+  assert.match(getRunningHubSafeError("Policy moderation rejected this prompt", 805).message, /未通过 RunningHub 内容审核/);
+  assert.match(getRunningHubSafeError("Missing node: 42", 805).message, /缺失或异常节点/);
+  assert.match(getRunningHubSafeError("Channel model route is unavailable", 805).message, /渠道或模型服务/);
+  assert.match(getRunningHubSafeError("API_TASK_STATUS_ERROR", 805).message, /未能确认任务的最终状态/);
+
   await check("value/max validation, clamping and event projection", () => {
     for (const [value, max, expected] of [[0, 10, { value: 0, max: 10 }], ["5", "10", { value: 5, max: 10 }],
       [50, 10, { value: 10, max: 10 }], [1.5, 2, { value: 1.5, max: 2 }]]) {
@@ -82,21 +87,43 @@ try {
     const now = Date.now(); Date.now = () => now + 11000;
     assert.equal(snapshot(taskId).step, null); Date.now = original.now;
     socket.sendEvent({ type: "progress", data: { value: 2, max: 4 } });
-    socket.onerror({ message: url }); assert.equal(snapshot(taskId).step, null); assert.equal(snapshot(taskId).channel, "unavailable");
+    socket.onerror({ message: url }); assert.equal(snapshot(taskId).step, null); assert.equal(snapshot(taskId).channel, "error");
     assert.equal(socket.closed, true); stopRunningHubProgress(taskId, "cn");
     assert.equal(snapshot(taskId).phase, "");
   });
 
-  await check("connection timeout and idle expiry are executable without a live service", () => {
-    let connectTimeout; let idleTimeout;
+  await check("missing, invalid and unsupported progress channels stay safely classified", () => {
+    globalThis.WebSocket = FakeSocket;
+    const missingTask = id(); observeRunningHubProgress(missingTask, "cn", { data: {} });
+    assert.equal(snapshot(missingTask).channel, "missing-url"); noPrivate(snapshot(missingTask));
+    const invalidTask = id(); observeRunningHubProgress(invalidTask, "cn", { data: { netWssUrl: url.replace("/ws/c_instance", "/other") } });
+    assert.equal(snapshot(invalidTask).channel, "invalid-url"); noPrivate(snapshot(invalidTask));
+    globalThis.WebSocket = undefined;
+    const unsupportedTask = id(); observeRunningHubProgress(unsupportedTask, "cn", { data: { netWssUrl: url } });
+    assert.equal(snapshot(unsupportedTask).channel, "unsupported"); noPrivate(snapshot(unsupportedTask));
+    for (const taskId of [missingTask, invalidTask, unsupportedTask]) stopRunningHubProgress(taskId, "cn");
+  });
+
+  await check("failed WSS handshakes retry and can recover without resubmitting", () => {
+    let connectTimeout; let reconnect; let idleTimeout;
     globalThis.setTimeout = (callback, delay, ...args) => {
       if (delay === 8000) { connectTimeout = callback; return { unref() {} }; }
+      if (delay === 1000) { reconnect = callback; return { unref() {} }; }
       if (delay === 300000) { idleTimeout = callback; return { unref() {} }; }
       return original.setTimeout(callback, delay, ...args);
     };
-    const taskId = id(); observeRunningHubProgress(taskId, "cn", { data: { netWssUrl: url } });
+    globalThis.WebSocket = FakeSocket;
+    const taskId = id(); observeRunningHubProgress(taskId, "cn", { data: { netWssUrl: url } }, "running");
+    const firstSocket = FakeSocket.instances.at(-1);
     assert.equal(snapshot(taskId).channel, "connecting"); connectTimeout();
-    assert.equal(snapshot(taskId).channel, "unavailable");
+    assert.equal(snapshot(taskId).channel, "timeout");
+    reconnect();
+    const recoveredSocket = FakeSocket.instances.at(-1);
+    assert.notEqual(recoveredSocket, firstSocket);
+    assert.equal(snapshot(taskId).channel, "connecting"); recoveredSocket.open();
+    assert.equal(snapshot(taskId).channel, "connected");
+    recoveredSocket.sendEvent({ type: "progress", data: { value: 2, max: 4 } });
+    assert.deepEqual(snapshot(taskId).step, { value: 2, max: 4 }); noPrivate(snapshot(taskId));
     idleTimeout(); assert.equal(snapshot(taskId).phase, "");
     globalThis.setTimeout = original.setTimeout;
   });
@@ -163,11 +190,22 @@ try {
 
   await check("V1 failure, error text, bridge errors and logs contain only safe diagnostics", async () => {
     const taskId = id();
+    let v1Response = { code: 805, msg: "API_TASK_STATUS_ERROR", data: { failedReason: { ...privateFields, exception_message: secret } } };
     globalThis.fetch = async address => String(address).endsWith("/openapi/v2/query")
       ? response({ message: "endpoint not found" }, 404)
-      : response({ code: 805, msg: "API_TASK_STATUS_ERROR", data: { failedReason: { ...privateFields, exception_message: secret } } });
+      : response(v1Response);
     const failed = await pollRunningHubTask([{ ...payload, taskId }]);
     assert.equal(failed.failed, true); assert.equal(failed.errorCode, 805); noPrivate(failed);
+    for (const [reason, expected] of [
+      ["content policy moderation rejected the prompt", /未通过 RunningHub 内容审核/],
+      ["missing node: 12", /缺失或异常节点/],
+      ["channel model route is unavailable", /渠道或模型服务/]
+    ]) {
+      v1Response = { code: 805, msg: "API_TASK_STATUS_ERROR", data: { failedReason: reason } };
+      const translated = await fetchRunningHubTaskStatus([{ ...payload, taskId: `${taskId}-${reason.slice(0, 3)}` }]);
+      assert.match(translated.message, expected);
+      noPrivate(translated);
+    }
     for (const message of [JSON.stringify(privateFields), `insufficient balance; node_name=${secret}`, `中文错误 ${secret} traceback`,
       `RunningHub 任务执行失败 ${secret}`, `ValueError in ${secret}`, `wss://example.test?token=${secret}`]) {
       noPrivate(getRunningHubSafeError(message, 416)); noPrivate(getRunningHubSafeError(message));
@@ -205,6 +243,10 @@ try {
     globalThis.document = { querySelectorAll: () => [] };
     await import("../src/webview/workspace.js");
     const modules = window.PixelRunnerModules; const workspace = modules.workspace;
+    const classifiedTask = workspace.upsertRunningTask({ taskId: id(), status: "remote-running", progressChannel: "timeout" });
+    assert.equal(classifiedTask.progressChannel, "timeout");
+    const unsafeChannel = workspace.upsertRunningTask({ taskId: id(), status: "remote-running", progressChannel: url });
+    assert.equal(unsafeChannel.progressChannel, "unavailable"); noPrivate(unsafeChannel);
     const taskId = id(); workspace.upsertRunningTask({ taskId, status: "running", region: "cn" });
     modules.runtime.callHost = async () => [{ ...privateFields, taskId, region: "cn", phase: "running", step: { ...privateFields, value: 4, max: 8 }, channel: "connected" }];
     await workspace.refreshRunningHubProgress();
@@ -214,8 +256,10 @@ try {
     modules.runtime.callHost = async () => { throw new Error(url); };
     await workspace.refreshRunningHubProgress();
     task = modules.state.state.runningTasks[0]; assert.equal(task.status, "remote-running"); assert.equal(task.stepProgress, null);
-    assert.match(workspace.getRunningHubProgressMarkup(task), /is-indeterminate/);
-    assert.match(workspace.getRunningHubProgressMarkup(task), /状态轮询继续/);
+    const waitingMarkup = workspace.getRunningHubProgressMarkup(task);
+    assert.match(waitingMarkup, /is-indeterminate/);
+    assert.match(waitingMarkup, /aria-label="云端任务执行中"/);
+    assert.doesNotMatch(waitingMarkup, /等待步骤进度|正在加载模型|状态轮询继续|正在重连|实时进度地址/);
     let cardWrites = 0;
     const taskList = {};
     Object.defineProperty(taskList, "innerHTML", { set() { cardWrites++; } });
@@ -232,8 +276,9 @@ try {
       assert.match(markup, /is-indeterminate/); assert.doesNotMatch(markup, /aria-valuenow|50%/);
     }
     for (const status of ["succeeded", "downloading", "placing", "placement-failed"]) {
-      const markup = workspace.renderRunningTaskList([{ taskId: id(), provider: "runninghub", status, taskCostTime: "83" }]);
-      assert.doesNotMatch(markup, /总耗时|平台生成耗时/);
+      const markup = workspace.renderRunningTaskList([{ taskId: id(), provider: "runninghub", status, taskCostTime: "83", submittedAt: Date.now() - 12000, finishedAt: Date.now() }]);
+      assert.match(markup, /00:12/);
+      assert.doesNotMatch(markup, /平台生成耗时/);
     }
     const safeTask = workspace.upsertRunningTask({ taskId: id(), status: "failed", errorCode: 805, errorMessage: JSON.stringify(privateFields), platformErrorMessage: secret, platformErrorRaw: privateFields, ...privateFields });
     noPrivate(safeTask); noPrivate(workspace.renderRunningTaskList([safeTask]));

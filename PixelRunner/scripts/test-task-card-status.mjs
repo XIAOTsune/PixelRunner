@@ -48,23 +48,27 @@ assert.equal(
 );
 assert.equal(
   workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", balanceCharge: 0.2 }),
-  "扣费 -0.200R"
+  "-0.200R"
 );
 assert.equal(
   workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", pointsCharge: 1.28, chargeDisplay: "-8RH" }),
-  "扣费 -1.28 积分"
+  "-1.28 积分"
 );
-assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", coinsCharge: 8 }), "扣费 待确认");
+assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", coinsCharge: 8 }), "-8RH");
 const runningHubTaskMarkup = workspace.renderRunningTaskList([{
   taskId: "runninghub-points-task",
   provider: "runninghub",
   status: "succeeded",
   pointsCharge: 1.28,
-  taskCostTime: 83
+  taskCostTime: 83,
+  submittedAt: Date.now() - 12000,
+  finishedAt: Date.now()
 }]);
 assert.match(runningHubTaskMarkup, /-1\.28 积分/);
-assert.doesNotMatch(runningHubTaskMarkup, /总耗时|平台生成耗时|00:/);
-assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded" }), "扣费 待确认");
+assert.doesNotMatch(runningHubTaskMarkup, /扣费 待确认/);
+assert.match(runningHubTaskMarkup, /耗时 00:12/);
+assert.doesNotMatch(runningHubTaskMarkup, /平台生成耗时/);
+assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded" }), "");
 assert.match(
   workspace.normalizeTaskFailureMessage("TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET", {
     errorCode: 416,

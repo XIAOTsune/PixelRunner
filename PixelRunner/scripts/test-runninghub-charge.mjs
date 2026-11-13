@@ -46,7 +46,7 @@ const duplicatedNestedOutputs = {
 };
 
 assertCharge(duplicatedNestedOutputs, 0.125, 8);
-assert.equal(formatTaskChargeDisplay(0.125, 8, "global"), "-$0.125", "legacy RH coins are no longer displayed as task charges");
+assert.equal(formatTaskChargeDisplay(0.125, 8, "global"), "-$0.125 · -8RH", "legacy money and RH charges remain visible");
 
 const globalRunningPreview = {
   taskId: "global-preview-task",
@@ -259,6 +259,18 @@ try {
   assert.equal(pointStatus.chargeDisplay, "-1.28 积分");
   assert.equal(pointStatus.coinsCharge, null, "point settlement does not mix in legacy coin charges");
   assert.equal(pointStatus.balanceCharge, null, "point settlement does not mix in legacy money charges");
+
+  globalTaskSnapshot = {
+    data: {
+      taskId: "legacy-charge-task",
+      status: "SUCCESS",
+      results: [{ url: "https://example.com/legacy.png", outputType: "png", consumeMoney: "0.125", consumeCoins: "8" }]
+    }
+  };
+  const legacyChargeStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "legacy-charge-task" }]);
+  assert.equal(legacyChargeStatus.balanceCharge, 0.125);
+  assert.equal(legacyChargeStatus.coinsCharge, 8);
+  assert.equal(legacyChargeStatus.chargeDisplay, "-$0.125 · -8RH");
 
   globalTaskSnapshot = { data: { taskId: "missing-v2-settlement", status: "SUCCESS", results: [{ url: "https://example.com/result.png", outputType: "png" }] } };
   legacyTaskSnapshot = { code: 0, msg: "success", data: [{ fileUrl: "https://example.com/result.png", fileType: "png", settleMode: "POINT", chargedPoint: "2.5" }] };

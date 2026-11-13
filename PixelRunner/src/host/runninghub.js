@@ -831,7 +831,9 @@ export function formatTaskChargeDisplay(balanceCharge, coinsCharge, region = "cn
   if (pointsText) return pointsText;
   const parts = [];
   const balanceText = formatBalanceChargeDisplay(balanceCharge, region);
+  const coinsText = formatCoinsChargeDisplay(coinsCharge);
   if (balanceText) parts.push(balanceText);
+  if (coinsText) parts.push(coinsText);
   return parts.join(" · ");
 }
 
@@ -1342,7 +1344,7 @@ function extractMessageText(value, depth = 0, seen = new Set()) {
     return "";
   }
 
-  for (const key of ["message", "msg", "error", "errors", "detail", "reason", "failureReason", "failure_reason", "errMsg", "errorMessage"]) {
+  for (const key of ["message", "msg", "error", "errors", "detail", "reason", "failureReason", "failure_reason", "failedReason", "failed_reason", "exceptionMessage", "exception_message", "errMsg", "errorMessage"]) {
     const item = value[key];
     if (typeof item === "string" && item.trim() && !isGenericSuccessMessage(item)) return item.trim();
     if (item && typeof item === "object") {
@@ -1378,6 +1380,12 @@ function collectFailureMessageTexts(value, depth = 0, seen = new Set(), output =
   for (const key of [
     "failureReason",
     "failure_reason",
+    "failedReason",
+    "failed_reason",
+    "failureMessage",
+    "failure_message",
+    "exceptionMessage",
+    "exception_message",
     "failReason",
     "fail_reason",
     "reason",
@@ -1564,6 +1572,7 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
             (Array.isArray(billingPayload) && getApiCode(billingSnapshot.result) === 0))) {
           v2Snapshot.settlement = {
             balanceCharge: hasPointSettlement(billingPayload) ? null : extractTaskBalanceCharge(billingSnapshot.result),
+            coinsCharge: hasPointSettlement(billingPayload) ? null : extractTaskCoinsCharge(billingSnapshot.result),
             pointsCharge: extractTaskPointsCharge(billingSnapshot.result)
           };
         }
@@ -1600,7 +1609,7 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const outputUrl = restSucceeded ? extractReadyOutputUrl(payloadData) : "";
   const pointSettlement = hasPointSettlement(payloadData || result) || hasPointSettlement(snapshot?.settlement || {});
   const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(result) ?? snapshot?.settlement?.balanceCharge ?? null;
-  const coinsCharge = null;
+  const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(result) ?? snapshot?.settlement?.coinsCharge ?? null;
   const pointsCharge = extractTaskPointsCharge(result) ?? snapshot?.settlement?.pointsCharge ?? null;
   const errorCode = extractTaskErrorCode(result);
   const errorMessage = String(extractBestFailureMessageText(result) || extractMessageText(result) || "").trim();

@@ -1961,12 +1961,16 @@ button {
 
 .running-task-progress.is-indeterminate > span {
   width: 100%;
-  animation: runninghub-progress-breathe 1.8s ease-in-out infinite alternate;
+  animation: runninghub-progress-breathe 3.6s ease-in-out infinite;
 }
 
 @keyframes runninghub-progress-breathe {
-  from { opacity: 0.28; }
-  to { opacity: 0.9; }
+  0%, 100% {
+    opacity: 0.38;
+  }
+  50% {
+    opacity: 0.82;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

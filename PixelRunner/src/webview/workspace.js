@@ -1158,11 +1158,13 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     const balanceCharge = normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge);
     const pointsCharge = normalizeTaskChargeValue(task.pointsCharge);
     if (pointsCharge !== null) return "-" + String(pointsCharge.toFixed(3)).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1") + " 积分";
+    if (explicit) return explicit;
+    const coinsCharge = normalizeTaskChargeValue(task.coinsCharge);
     const parts = [];
     const isGlobalRunningHub = !isThirdPartyTaskRecord(task) &&
       modules.state.normalizeRunningHubRegion(task.region) === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
     if (balanceCharge !== null) parts.push(isGlobalRunningHub ? `-$${balanceCharge.toFixed(3)}` : `-${balanceCharge.toFixed(3)}R`);
-    if (!parts.length && !/RH\b/i.test(explicit)) return explicit;
+    if (coinsCharge !== null) parts.push(Number.isInteger(coinsCharge) ? `-${coinsCharge}RH` : `-${coinsCharge.toFixed(3)}RH`);
     return parts.join(" · ");
   }
 
@@ -1180,11 +1182,8 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
   }
 
   function getTaskCostLabel(task) {
+    if (!isThirdPartyTaskRecord(task)) return formatTaskChargeDisplay(task);
     const chargeDisplay = formatTaskChargeDisplay(task);
-    if (!isThirdPartyTaskRecord(task)) {
-      if (chargeDisplay) return `扣费 ${chargeDisplay}`;
-      return isTaskTerminalStatus(task && task.status) ? "扣费 待确认" : "";
-    }
     if (chargeDisplay) return `扣费 ${chargeDisplay}`;
     if (isTaskTerminalStatus(task && task.status)) return "扣费 待确认";
     return "费用 待结算";
@@ -1194,7 +1193,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     if (!task || typeof task !== "object") return false;
     if (String(task.chargeDisplay || "").trim()) return true;
     if (normalizeTaskChargeValue(task.balanceCharge != null ? task.balanceCharge : task.charge) !== null) return true;
-    return normalizeTaskChargeValue(task.pointsCharge) !== null;
+    return normalizeTaskChargeValue(task.pointsCharge) !== null || normalizeTaskChargeValue(task.coinsCharge) !== null;
   }
 
   function getTaskActivityStartedAt(task) {
@@ -1216,6 +1215,30 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     const leftEnd = getTaskActivityFinishedAt(leftTask, fallbackEnd);
     const rightEnd = getTaskActivityFinishedAt(rightTask, fallbackEnd);
     return leftStart <= rightEnd && rightStart <= leftEnd;
+  }
+
+  function hasOverlappingRunningHubTask(task) {
+    if (!task || typeof task !== "object" || isThirdPartyTaskRecord(task)) return false;
+    const taskId = String(task.taskId || "").trim();
+    const now = Date.now();
+    return getRunningTasks().some((item) => {
+      if (!item || typeof item !== "object" || isThirdPartyTaskRecord(item)) return false;
+      if (String(item.taskId || "").trim() === taskId) return false;
+      return doTaskActivityWindowsOverlap(task, item, now);
+    });
+  }
+
+  function getCurrentAccountSnapshot() {
+    const account = modules.state.state.accountSummary || {};
+    const valueOrNull = (value) => value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+    return {
+      balance: valueOrNull(account.balance),
+      coins: valueOrNull(account.coins),
+      points: valueOrNull(account.points),
+      region: modules.state.normalizeRunningHubRegion(account.region || modules.state.state.settings.runningHubRegion),
+      currency: String(account.currency || "").trim(),
+      updatedAt: Number(account.updatedAt) || 0
+    };
   }
 
   function getThirdPartyAccountSnapshot(payload) {
@@ -1284,8 +1307,49 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     accountSettlementChain = accountSettlementChain
       .catch(() => null)
       .then(async () => {
+        const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+        const canInferCharge = Boolean(task && !hasTaskChargeValue(task) && !hasOverlappingRunningHubTask(task));
+        const before = task && task.accountSnapshot && typeof task.accountSnapshot === "object"
+          ? task.accountSnapshot
+          : null;
         const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
-        return account || null;
+        if (!canInferCharge || !account || !account.ok) return account || null;
+
+        const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
+        if (!currentTask || hasTaskChargeValue(currentTask) || hasOverlappingRunningHubTask(currentTask)) return account;
+
+        const accountValue = (value) => value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
+        const beforeBalance = accountValue(before && before.balance);
+        const afterBalance = accountValue(account.balance);
+        const beforePoints = accountValue(before && before.points);
+        const afterPoints = accountValue(account.points);
+        const beforeCoins = accountValue(before && before.coins);
+        const afterCoins = accountValue(account.coins);
+        const pointsCharge = beforePoints !== null && afterPoints !== null && beforePoints > afterPoints
+          ? Number((beforePoints - afterPoints).toFixed(3))
+          : null;
+        const balanceCharge = pointsCharge === null && beforeBalance !== null && afterBalance !== null && beforeBalance > afterBalance
+          ? Number((beforeBalance - afterBalance).toFixed(3))
+          : null;
+        const coinsCharge = pointsCharge === null && beforeCoins !== null && afterCoins !== null && beforeCoins > afterCoins
+          ? Number((beforeCoins - afterCoins).toFixed(3))
+          : null;
+        if (pointsCharge === null && balanceCharge === null && coinsCharge === null) return account;
+
+        upsertRunningTask({
+          taskId: normalizedTaskId,
+          charge: balanceCharge,
+          balanceCharge,
+          coinsCharge,
+          pointsCharge,
+          chargeDisplay: formatTaskChargeDisplay({
+            balanceCharge,
+            coinsCharge,
+            pointsCharge,
+            region: account.region || before && before.region
+          })
+        });
+        return account;
       });
     return accountSettlementChain;
   }
@@ -1514,9 +1578,11 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       : task.status === "submitting" ? "正在提交任务"
       : task.status === "downloading" ? "生成完成 · 正在下载结果"
       : task.status === "placing" ? "生成完成 · 正在贴回 Photoshop"
+      : running ? ""
       : "正在确认云端状态";
-    const fallback = running && task.progressChannel === "unavailable" ? " · 实时通道不可用，状态轮询继续" : "";
-    return `<div class="running-task-progress-label">${modules.runtime.escapeHtml(label + fallback)}</div><div class="running-task-progress${step ? "" : " is-indeterminate"}" role="progressbar" aria-label="${modules.runtime.escapeHtml(label)}"${step ? ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"` : ""}><span${step ? ` style="width: ${percent}%"` : ""}></span></div>`;
+    const labelMarkup = label ? `<div class="running-task-progress-label">${modules.runtime.escapeHtml(label)}</div>` : "";
+    const accessibleLabel = label || "云端任务执行中";
+    return `${labelMarkup}<div class="running-task-progress${step ? "" : " is-indeterminate"}" role="progressbar" aria-label="${modules.runtime.escapeHtml(accessibleLabel)}"${step ? ` aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"` : ""}><span${step ? ` style="width: ${percent}%"` : ""}></span></div>`;
   }
 
   function getTaskPlatformDurationLabel(task) {
@@ -1577,7 +1643,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
         const isRunningHub = !isThirdPartyTaskRecord(task);
         const progressValue = isRunningHub ? "0" : getTaskProgressForStage(statusStage).toFixed(2);
         const isActive = !isTaskTerminalStatus(task.status) && statusStage !== "timeout";
-        const durationLabel = isRunningHub ? "" : `${getTaskDurationLabel(task)} ${formatTaskDuration(getTaskElapsedMs(task))}`;
+        const durationLabel = `${getTaskDurationLabel(task)} ${formatTaskDuration(getTaskElapsedMs(task))}`;
         const detail = modules.runtime.escapeHtml(getTaskStatusDetail(task));
         const platformErrorDetails = getTaskPlatformErrorDetails(task);
         const chargeDisplay = getTaskCostLabel(task);
@@ -2251,7 +2317,11 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       errorCode: hasOwn("errorCode") ? (patch.errorCode == null || patch.errorCode === "" ? null : patch.errorCode) : undefined,
       platformErrorRaw: hasOwn("platformErrorRaw") ? (patch.platformErrorRaw == null ? null : patch.platformErrorRaw) : undefined,
       stepProgress: hasOwn("stepProgress") ? normalizeRunningHubStep(patch.stepProgress?.value, patch.stepProgress?.max) : undefined,
-      progressChannel: hasOwn("progressChannel") ? (["connected", "connecting"].includes(patch.progressChannel) ? patch.progressChannel : "unavailable") : undefined,
+      progressChannel: hasOwn("progressChannel")
+        ? (["unavailable", "missing-url", "invalid-url", "unsupported", "connecting", "connected", "timeout", "error", "closed"].includes(patch.progressChannel)
+          ? patch.progressChannel
+          : "unavailable")
+        : undefined,
       taskCostTime: hasOwn("taskCostTime") ? parseRunningHubNumber(patch.taskCostTime) : undefined,
       charge: hasOwn("charge") ? normalizeTaskChargeValue(patch.charge) : undefined,
       balanceCharge: hasOwn("balanceCharge") ? normalizeTaskChargeValue(patch.balanceCharge) : undefined,
@@ -3973,21 +4043,30 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     let activeRemoteTaskId = "";
     let submissionAccountSnapshot = isThirdPartyTask
       ? getThirdPartyAccountSnapshot(payload)
-      : null;
+      : getCurrentAccountSnapshot();
     const payloadMatchesCurrentRunningHubAccount =
       modules.state.normalizeRunningHubRegion(payload && payload.region) ===
         modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion) &&
       String((payload && payload.apiKey) || "") === String(modules.state.state.settings.apiKey || "");
-    if (!isThirdPartyTask && payloadMatchesCurrentRunningHubAccount && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
+    if (!isThirdPartyTask && !payloadMatchesCurrentRunningHubAccount) {
+      submissionAccountSnapshot = {
+        balance: null,
+        coins: null,
+        points: null,
+        region: modules.state.normalizeRunningHubRegion(payload && payload.region),
+        updatedAt: 0
+      };
+    } else if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
       try {
-        await modules.settings.refreshAccountSummary({
+        const account = await modules.settings.refreshAccountSummary({
           apiKey: payload.apiKey,
           region: payload.region,
           quiet: true,
           force: true
         });
+        submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
       } catch (_) {
-        // Account refresh only updates the account card; RunningHub task charges come from task settlement data.
+        submissionAccountSnapshot = getCurrentAccountSnapshot();
       }
     }
     upsertRunningTask({
