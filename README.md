@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="Version" src="https://img.shields.io/badge/version-2.9.3-2f855a?style=for-the-badge"></a>
+  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="Version" src="https://img.shields.io/badge/version-2.9.4-2f855a?style=for-the-badge"></a>
   <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--only-2563eb?style=for-the-badge"></a>
   <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff?style=for-the-badge">
   <img alt="UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6?style=for-the-badge">
@@ -52,26 +52,29 @@ AI 修图真正耗时的部分，常常不是生成本身，而是反复导出�
 - 通过应用 ID 或链接解析 RunningHub 应用输入项
 - 按应用结构生成图片、文本、数字等动态表单
 - 捕获 Photoshop 当前选区或整个文档
-- 提交任务、显示运行状态、取消任务、追踪超时
+- 显示排队与运行状态、取消任务并处理超时
+- 在支持的连接上显示 RunningHub 当前执行步骤进度；这是步骤进度，不代表任务总进度
+- 任务卡片显示平台错误码的中文排查建议、原始详情和实际扣除积分
+- 查看账户余额与积分；积分读取自 RunningHub 的 `remainPoint`，缺失时不会用 RH 币余额代替
 - 支持多任务并发，完成后自动把结果贴回 Photoshop
 
 ### 第三方 AI 图像接口
 
-除 RunningHub 工作流外，也可以直接配置兼容 Gemini API 的图像服务：
+除 RunningHub 工作流外，也可以配置 GRS 或兼容 Gemini API 的 NewAPI 图像服务：
 
-- 支持 GRS，以及 Gemini、Aji、Momo 等渠道；各渠道的 API Key 和模型设置分别保存
-- 查询可用模型、检查服务连接，并设置默认画幅和分辨率
+- 支持 GRS，以及 Aji、Momo 和自定义 NewAPI 渠道；自定义渠道填写服务根地址，各渠道的 API Key 和模型设置分别保存
+- 查询可用模型、检查服务连接，并设置默认模型、画幅和分辨率
 - 通过工作台提交生图任务、查看状态，并将结果自动回贴 Photoshop
-- 在设置中提供 GRS、Aji 和 Momo 官网快捷入口
+- 在设置中提供相关服务官网快捷入口
 
 ### 把常用流程保存下来
 
 一次配置，之后重复使用：
 
 - **应用管理**：保存、搜索、排序和维护常用 RunningHub 应用
-- **提示词模板**：沉淀人像、产品、局部重绘、风格化和画质增强 prompt
+- **提示词模板**：通过分类管理提示词预设，支持收藏常用提示词及查看最近使用记录
 - **快捷入口**：固定应用与参数，框选区域后即可一键运行
-- **导入导出**：备份模板、应用与快捷入口，方便迁移和分享
+- **资料包**：将应用、提示词分类与预设、快捷入口打包，支持导入、导出和切换
 
 ### AI 与 Photoshop 工具并行工作
 
@@ -150,6 +153,8 @@ npm run build
 
 更完整的 RunningHub 配置、区域选择、余额和故障排查说明，见 [RunningHub 使用文档](PixelRunner/pages/runninghub-guide.html)。
 
+RunningHub 国内版与国际版分别保存 API Key 和应用数据。工作区进度通道及数据边界见 [进度与隐私说明](PixelRunner/docs/runninghub-progress-privacy.md)，账户区域和字段说明见 [RunningHub 区域说明](PixelRunner/docs/runninghub-regions.md)。
+
 ## 项目结构
 
 ```text
@@ -194,6 +199,13 @@ npm run package:release       # 生成正式发布包
 - UI、任务、模板、快捷入口和效果模块位于 `src/webview/`。
 - 不直接编辑 `dist/*.bundle.js`。
 - `node_modules/`、`dist/`、`release/` 和本地打包文件不提交到仓库。
+
+## 数据与服务说明
+
+- RunningHub 和第三方服务的 API Key 保存在本机 UXP 存储中；不同 RunningHub 区域及第三方渠道分别配置。
+- 图片会按当前任务需要发送到所选在线服务。请勿提交 API Key、访问令牌、私人调试日志或本地绝对路径。
+- RunningHub 任务卡片以平台返回的结算字段显示实际积分扣费；暂未取得结算数据时会显示“扣费待确认”。
+- 本地 AI 放大模块位于 `PixelRunner/local-ai/`，其独立运行环境和安装方式见 [本地 AI 说明](PixelRunner/local-ai/README.md)。
 
 ## RunningHub 合作
 
