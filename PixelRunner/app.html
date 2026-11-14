@@ -611,7 +611,7 @@
                     <span>GRS</span><small>原有渠道</small>
                   </button>
                   <button class="region-segmented-btn" type="button" data-third-party-provider="gemini" aria-pressed="false">
-                    <span>Gemini</span><small>Aji / Momo</small>
+                    <span>NewAPI</span><small>Aji / Momo / 自定义</small>
                   </button>
                 </div>
               </div>
@@ -667,6 +667,9 @@
                     <button class="region-segmented-btn" type="button" data-gemini-channel="momo" aria-pressed="false">
                       <span>墨墨 Momo</span>
                     </button>
+                    <button class="region-segmented-btn" type="button" data-gemini-channel="custom" aria-pressed="false">
+                      <span>自定义 NewAPI</span>
+                    </button>
                   </div>
                 </div>
                 <div id="thirdPartyMomoEndpointGroup" hidden>
@@ -675,8 +678,15 @@
                     <select id="thirdPartyMomoEndpointInput" class="field-input"></select>
                   </label>
                 </div>
+                <div id="thirdPartyCustomNewApiGroup" hidden>
+                  <label class="field">
+                    <span class="field-label">NewAPI 服务地址</span>
+                    <input id="thirdPartyCustomNewApiUrlInput" class="field-input" type="url" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://api.example.com" />
+                    <span class="field-hint">填写服务根地址，不要附加 /v1 或具体接口路径。</span>
+                  </label>
+                </div>
                 <label class="field">
-                  <span class="field-label">渠道 API Key</span>
+                  <span class="field-label">API Key</span>
                   <input id="thirdPartyGeminiApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="当前渠道独立保存" />
                 </label>
                 <div class="field">

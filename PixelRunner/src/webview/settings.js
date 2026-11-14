@@ -449,7 +449,11 @@
     if (!select) return;
     const list = Array.isArray(models) && models.length
       ? models
-      : (Array.isArray(fallbackModels) && fallbackModels.length ? fallbackModels : modules.state.GEMINI_IMAGE_MODEL_IDS);
+      : (Array.isArray(fallbackModels) ? fallbackModels : modules.state.GEMINI_IMAGE_MODEL_IDS);
+    if (!list.length) {
+      select.innerHTML = '<option value="">请先刷新模型列表</option>';
+      return;
+    }
     const value = String(selected || list[0] || "").trim();
     const options = list.includes(value) || !value ? list : [value, ...list];
     select.innerHTML = options
@@ -503,9 +507,18 @@
     if (visible) fillMomoEndpointSelect(currentApiUrl);
   }
 
+  function renderCustomNewApiControls(channelId, currentApiUrl) {
+    const group = modules.runtime.getById("thirdPartyCustomNewApiGroup");
+    const input = modules.runtime.getById("thirdPartyCustomNewApiUrlInput");
+    const visible = channelId === "custom";
+    if (group) group.hidden = !visible;
+    if (input) input.value = visible ? String(currentApiUrl || "") : "";
+  }
+
   function fillGeminiSettingsForm(gemini) {
     const active = gemini.channels?.[gemini.channelId] || gemini;
     const modelDefaults = modules.state.getGeminiChannelModelDefaults(gemini.channelId);
+    renderCustomNewApiControls(gemini.channelId, active.apiUrl);
     if (modules.runtime.getById("thirdPartyGeminiApiKeyInput")) {
       modules.runtime.getById("thirdPartyGeminiApiKeyInput").value = active.apiKey || "";
     }
@@ -547,12 +560,16 @@
     const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
     renderMomoEndpointControls(normalized.gemini.channelId, normalized.gemini.apiUrl);
     const descriptor = modules.state.getThirdPartyProviderDescriptor(normalized);
+    const hasApiKey = Boolean(String(descriptor.config.apiKey || "").trim());
+    const hasApiUrl = descriptor.id !== "gemini" || Boolean(String(descriptor.config.apiUrl || "").trim());
     modules.runtime.setSummaryStatus(
       statusEl,
-      String(descriptor.config.apiKey || "").trim()
-        ? `${descriptor.label} 已配置 · ${descriptor.config.selectedModel}`
-        : `${descriptor.label} 尚未配置 API Key`,
-      String(descriptor.config.apiKey || "").trim() ? "success" : "warn"
+      hasApiKey && hasApiUrl
+        ? `${descriptor.label} 已配置 · ${descriptor.config.selectedModel || "请刷新模型列表"}`
+        : !hasApiUrl
+          ? `${descriptor.label} 尚未配置服务地址`
+          : `${descriptor.label} 尚未配置 API Key`,
+      hasApiKey && hasApiUrl ? "success" : "warn"
     );
   }
 
@@ -561,9 +578,16 @@
     const channelId = getSelectedGeminiChannel();
     const modelDefaults = modules.state.getGeminiChannelModelDefaults(channelId);
     const momoApiUrl = channelId === "momo" ? getSelectedMomoEndpoint() : undefined;
+    const customApiUrl = channelId === "custom"
+      ? modules.runtime.getById("thirdPartyCustomNewApiUrlInput")?.value || ""
+      : undefined;
     const activeGemini = {
       ...(current.gemini.channels?.[channelId] || {}),
-      apiUrl: channelId === "momo" ? momoApiUrl : (current.gemini.channels?.[channelId]?.apiUrl),
+      apiUrl: channelId === "momo"
+        ? momoApiUrl
+        : channelId === "custom"
+          ? customApiUrl
+          : current.gemini.channels?.[channelId]?.apiUrl,
       apiKey: modules.runtime.getById("thirdPartyGeminiApiKeyInput")?.value || "",
       selectedModel: modules.runtime.getById("thirdPartyGeminiDefaultModelInput")?.value || "",
       imageModels: current.gemini.channels?.[channelId]?.imageModels || current.gemini.imageModels || modelDefaults.imageModels,
@@ -1531,7 +1555,8 @@
       "thirdPartyGeminiDefaultModelInput",
       "thirdPartyGeminiDefaultRatioInput",
       "thirdPartyGeminiDefaultResolutionInput",
-      "thirdPartyMomoEndpointInput"
+      "thirdPartyMomoEndpointInput",
+      "thirdPartyCustomNewApiUrlInput"
     ];
     const advancedSettingFieldIds = [
       "settingsPollIntervalInput",
@@ -1747,6 +1772,15 @@ geminiChannelButtons.forEach((button) => {
 const momoEndpointSelect = runtime.getById("thirdPartyMomoEndpointInput");
 if (momoEndpointSelect) {
   momoEndpointSelect.addEventListener("change", () => {
+    modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
+    refreshThirdPartyWorkspacePreview();
+    renderSettingsStatus("检测到未保存的服务地址修改。", "pending");
+  });
+}
+
+const customNewApiUrlInput = runtime.getById("thirdPartyCustomNewApiUrlInput");
+if (customNewApiUrlInput) {
+  customNewApiUrlInput.addEventListener("change", () => {
     modules.state.state.thirdPartySettings = readThirdPartySettingsForm();
     refreshThirdPartyWorkspacePreview();
     renderSettingsStatus("检测到未保存的服务地址修改。", "pending");
@@ -1973,12 +2007,16 @@ if (momoEndpointSelect) {
         const snapshot = readThirdPartySettingsForm();
         const gemini = snapshot.gemini;
         const active = gemini.channels?.[gemini.channelId] || gemini;
+        if (gemini.channelId === "custom" && !String(active.apiUrl || "").trim()) {
+          runtime.setSummaryStatus(statusEl, "请先填写有效的 NewAPI 服务根地址。", "warn");
+          return;
+        }
         if (!String(active.apiKey || "").trim()) {
-          runtime.setSummaryStatus(statusEl, "请先填写当前 Gemini 渠道的 API Key。", "warn");
+          runtime.setSummaryStatus(statusEl, "请先填写当前 NewAPI 渠道的 API Key。", "warn");
           return;
         }
         if (!modules.runtime.isPluginRuntime()) {
-          runtime.setSummaryStatus(statusEl, "浏览器预览模式无法请求 Gemini 模型列表。", "warn");
+          runtime.setSummaryStatus(statusEl, "浏览器预览模式无法请求 NewAPI 模型列表。", "warn");
           return;
         }
         refreshGeminiModelsButton.disabled = true;
@@ -2001,8 +2039,9 @@ if (momoEndpointSelect) {
             .filter((model, index, models) => model && models.indexOf(model) === index);
           const effectiveImageModels = imageModels.length ? imageModels : active.imageModels;
           const effectiveChatModels = textModels.length ? textModels : active.chatModels;
-          if (!effectiveImageModels.length || !effectiveChatModels.length) {
-            throw new Error("渠道没有返回完整的生图和文字模型分类");
+          const mayOmitChatModels = gemini.channelId === "custom";
+          if (!effectiveImageModels.length || (!effectiveChatModels.length && !mayOmitChatModels)) {
+            throw new Error(mayOmitChatModels ? "NewAPI 未返回可用的生图模型" : "渠道没有返回完整的生图和文字模型分类");
           }
           const nextChannel = {
             ...active,
@@ -2041,7 +2080,11 @@ if (momoEndpointSelect) {
         try {
           await saveSettingsSnapshot(readSettingsForm());
           const descriptor = modules.state.getThirdPartyProviderDescriptor();
-          runtime.setSummaryStatus(statusEl, `第三方设置已保存 · ${descriptor.label} · ${descriptor.config.selectedModel}`, "success");
+          runtime.setSummaryStatus(
+            statusEl,
+            `第三方设置已保存 · ${descriptor.label} · ${descriptor.config.selectedModel || "请刷新模型列表"}`,
+            "success"
+          );
         } catch (error) {
           runtime.setSummaryStatus(statusEl, `第三方设置保存失败：${error.message}`, "error");
         } finally {

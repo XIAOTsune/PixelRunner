@@ -18,6 +18,7 @@ import {
   isLikelyTextGenerationModel,
   normalizeGeminiFailure,
   normalizeGeminiSettings,
+  normalizeCustomNewApiUrl,
   parseGeminiImageResponse,
   parseGeminiModelsResponse,
   parseGeminiTextResponse,
@@ -44,7 +45,8 @@ import {
 assert.equal(getGeminiChannelPreset("aji").apiUrl, "https://ai.ajiai.top");
 assert.equal(getGeminiChannelPreset("momo").apiUrl, "https://api.momoapi.icu");
 assert.equal(getGeminiChannelPreset("unknown").id, "aji");
-assert.deepEqual(Object.keys(GEMINI_CHANNEL_PRESETS), ["aji", "momo"]);
+assert.deepEqual(Object.keys(GEMINI_CHANNEL_PRESETS), ["aji", "momo", "custom"]);
+assert.equal(getGeminiChannelPreset("custom").label, "自定义 NewAPI");
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("nano-banana-2-4k"));
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1K"));
 assert.ok(getGeminiChannelModelDefaults("aji").imageModels.includes("WJbanana2-1k"));
@@ -58,6 +60,11 @@ assert.equal(getGeminiChannelModelDefaults("aji").imageModels.length, 40);
 assert.equal(getGeminiChannelModelDefaults("aji").chatModels.length, 5);
 assert.equal(getGeminiChannelModelDefaults("momo").imageModels.length, 7);
 assert.equal(getGeminiChannelModelDefaults("momo").chatModels.length, 19);
+assert.deepEqual(getGeminiChannelModelDefaults("custom"), { imageModels: [], chatModels: [] });
+assert.equal(normalizeCustomNewApiUrl(" https://newapi.example.com/proxy/ "), "https://newapi.example.com/proxy");
+assert.equal(normalizeCustomNewApiUrl("http://127.0.0.1:3000/"), "http://127.0.0.1:3000");
+assert.equal(normalizeCustomNewApiUrl("https://user:pass@newapi.example.com"), "");
+assert.equal(normalizeCustomNewApiUrl("https://newapi.example.com/?token=secret"), "");
 
 const migrated = normalizeGeminiSettings({
   channelId: "momo",
@@ -237,6 +244,34 @@ assert.equal(ajiCustomSettings.channelId, "aji");
 assert.equal(ajiCustomSettings.apiUrl, "https://ai.ajiai.top");
 assert.equal(ajiCustomSettings.channels.aji.apiUrl, "https://ai.ajiai.top");
 
+const customNewApiSettings = normalizeGeminiSettings({
+  channelId: "custom",
+  channels: {
+    custom: {
+      apiUrl: "https://newapi.example.com/proxy/",
+      apiKey: "custom-key",
+      selectedModel: "gemini-image-model",
+      imageModels: ["gemini-image-model"],
+      chatModels: []
+    }
+  }
+});
+assert.equal(customNewApiSettings.channelId, "custom");
+assert.equal(customNewApiSettings.apiUrl, "https://newapi.example.com/proxy");
+assert.equal(customNewApiSettings.selectedModel, "gemini-image-model");
+assert.deepEqual(customNewApiSettings.chatModels, []);
+assert.equal(normalizeGeminiSettings({ channelId: "custom", apiUrl: "file:///etc/passwd" }).apiUrl, "");
+
+const customImageRequest = buildGeminiGenerateRequest({
+  apiUrl: "https://newapi.example.com/proxy",
+  apiKey: "custom-key",
+  model: "gemini-image-model",
+  prompt: "custom image"
+});
+assert.equal(customImageRequest.url, "https://newapi.example.com/proxy/v1beta/models/gemini-image-model:generateContent");
+assert.equal(buildNewApiModelsRequest({ apiUrl: "https://newapi.example.com/proxy", apiKey: "custom-key" }).url,
+  "https://newapi.example.com/proxy/v1/models");
+
 // Build requests use Momo current apiUrl
 const momoGenReq = buildGeminiGenerateRequest({
   apiUrl: "https://api2.momoapi.icu", apiKey: "secret", model: "gemini-image", prompt: "hello"
@@ -304,6 +339,41 @@ try {
   assert.deepEqual(listed.endpoints, { openai: true, gemini: true, pricing: true });
 
   globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if (requestUrl.endsWith("/api/pricing")) {
+      assert.equal(options.headers.Authorization, undefined);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ data: [{ model_name: "gemini-image-model", supported_endpoint_types: ["gemini"] }] })
+      };
+    }
+    assert.equal(options.headers.Authorization, "Bearer custom-key");
+    if (requestUrl.endsWith("/v1/models")) {
+      return { ok: true, status: 200, text: async () => JSON.stringify({ data: [{ id: "gemini-image-model" }] }) };
+    }
+    assert.equal(requestUrl, "https://newapi.example.com/proxy/v1beta/models");
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ models: [
+        { name: "models/gemini-image-model", supportedGenerationMethods: ["generateContent"] }
+      ] })
+    };
+  };
+  const customListed = await listThirdPartyGeminiModels([{
+    config: { apiUrl: "https://newapi.example.com/proxy", apiKey: "custom-key", channelId: "custom" }
+  }]);
+  assert.deepEqual(customListed.imageModels, ["gemini-image-model"]);
+  assert.deepEqual(customListed.chatModels, []);
+  assert.deepEqual(customListed.endpoints, { openai: true, gemini: true, pricing: true });
+
+  await assert.rejects(
+    () => listThirdPartyGeminiModels([{ config: { apiUrl: "", apiKey: "custom-key", channelId: "custom" } }]),
+    /NewAPI 服务根地址/
+  );
+
+  globalThis.fetch = async (url, options = {}) => {
     const body = JSON.parse(options.body);
     assert.equal(String(url), "https://api.momoapi.icu/v1/chat/completions");
     assert.equal(body.model, "[文本]gemini-3-flash");
@@ -348,6 +418,35 @@ try {
   const polled = await pollThirdPartyGeminiTask([{ taskId: submitted.taskId, timeoutMs: 2000, settings: { pollInterval: 0.01 } }]);
   assert.equal(polled.status, "SUCCEEDED");
   assert.equal(polled.dataUrl, "data:image/png;base64,b3V0cHV0");
+
+  globalThis.fetch = async (url, options = {}) => {
+    assert.equal(String(url), "https://newapi.example.com/proxy/v1beta/models/gemini-image-model:generateContent");
+    assert.equal(options.headers.Authorization, "Bearer custom-image-key");
+    assert.equal(JSON.parse(options.body).contents[0].parts[0].text, "custom endpoint image");
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "" },
+      text: async () => JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "image/png", data: "Y3VzdG9t" } }] } }] })
+    };
+  };
+  const customSubmitted = await submitThirdPartyGeminiTask([{
+    config: {
+      apiUrl: "https://newapi.example.com/proxy",
+      apiKey: "custom-image-key",
+      selectedModel: "gemini-image-model",
+      channelId: "custom"
+    },
+    inputs: { model: "gemini-image-model", prompt: "custom endpoint image" },
+    timeoutMs: 1000
+  }]);
+  const customPolled = await pollThirdPartyGeminiTask([{
+    taskId: customSubmitted.taskId,
+    timeoutMs: 2000,
+    settings: { pollInterval: 0.01 }
+  }]);
+  assert.equal(customPolled.status, "SUCCEEDED");
+  assert.equal(customPolled.dataUrl, "data:image/png;base64,Y3VzdG9t");
 
   let midjourneyRequestCount = 0;
   globalThis.fetch = async (url, options = {}) => {
@@ -560,6 +659,18 @@ assert.equal(thirdParty.grs.apiUrl, "https://grsai.dakka.com.cn");
 assert.equal(thirdParty.gemini.apiKey, "momo-key");
 assert.equal(thirdParty.gemini.channels.aji.apiKey, "aji-key");
 assert.equal(stateModule.getThirdPartyProviderDescriptor(thirdParty).label, "墨墨 Momo");
+
+const customProviderState = stateModule.normalizeThirdPartySettings({
+  provider: "gemini",
+  gemini: {
+    channelId: "custom",
+    channels: { custom: { apiUrl: "https://newapi.example.com", apiKey: "custom-key", selectedModel: "gemini-image-model", imageModels: ["gemini-image-model"] } }
+  }
+});
+assert.equal(stateModule.getThirdPartyProviderDescriptor(customProviderState).label, "自定义 NewAPI");
+assert.equal(stateModule.getThirdPartyProviderDescriptor(customProviderState).apiUrl, "https://newapi.example.com");
+stateModule.state.thirdPartySettings = customProviderState;
+assert.equal(stateModule.getThirdPartyApp().channelId, "custom");
 
 stateModule.state.thirdPartySettings = stateModule.normalizeThirdPartySettings({
   provider: "gemini",

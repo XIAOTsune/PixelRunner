@@ -610,15 +610,17 @@ export async function submitThirdPartyGeminiTask(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const config = getConfig(payload);
   const inputs = payload.inputs && typeof payload.inputs === "object" ? payload.inputs : {};
+  const apiUrl = String(config.apiUrl || payload.apiUrl || "").trim();
   const apiKey = String(config.apiKey || payload.apiKey || "").trim();
   const model = normalizeGeminiModelId(inputs.model || config.selectedModel);
   const prompt = String(inputs.prompt || "").trim();
-  if (!apiKey) throw new Error("请先在第三方支持中配置当前 Gemini 渠道的 API Key");
+  if (!apiUrl) throw new Error("请先在第三方支持中配置 NewAPI 服务地址");
+  if (!apiKey) throw new Error("请先在第三方支持中配置当前 NewAPI 渠道的 API Key");
   if (!model) throw new Error("请先选择 Gemini 生图模型");
   if (!prompt) throw new Error("请先填写提示词");
 
   if (isMidjourneyTaskPayload(payload)) {
-    return submitMomoMidjourneyTask(payload, config, inputs, apiKey);
+    return submitMomoMidjourneyTask(payload, { ...config, apiUrl }, inputs, apiKey);
   }
 
   const taskId = `gemini-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -635,7 +637,7 @@ export async function submitThirdPartyGeminiTask(args = []) {
         if (image) images.push(image);
       }
       const request = buildGeminiGenerateRequest({
-        apiUrl: config.apiUrl,
+        apiUrl,
         apiKey,
         model,
         prompt,
@@ -770,13 +772,15 @@ export async function checkThirdPartyGeminiEndpoint(args = []) {
 export async function listThirdPartyGeminiModels(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const config = getConfig(payload);
+  const apiUrl = String(config.apiUrl || payload.apiUrl || "").trim();
   const apiKey = String(config.apiKey || payload.apiKey || "").trim();
-  if (!apiKey) throw new Error("请先在第三方支持中配置当前 Gemini 渠道的 API Key");
+  if (!apiUrl) throw new Error("请先填写有效的 NewAPI 服务根地址");
+  if (!apiKey) throw new Error("请先在第三方支持中配置当前 NewAPI 渠道的 API Key");
   const timeoutMs = getTimeoutMs(payload, 30000);
   const requests = [
-    { id: "openai", request: buildNewApiModelsRequest({ apiUrl: config.apiUrl, apiKey }) },
-    { id: "gemini", request: buildGeminiModelsRequest({ apiUrl: config.apiUrl, apiKey }) },
-    { id: "pricing", request: buildNewApiPricingRequest({ apiUrl: config.apiUrl }) }
+    { id: "openai", request: buildNewApiModelsRequest({ apiUrl, apiKey }) },
+    { id: "gemini", request: buildGeminiModelsRequest({ apiUrl, apiKey }) },
+    { id: "pricing", request: buildNewApiPricingRequest({ apiUrl }) }
   ];
   const responses = await Promise.all(requests.map(async ({ id, request }) => {
     try {
@@ -826,14 +830,16 @@ export async function listThirdPartyGeminiModels(args = []) {
 export async function runThirdPartyGeminiPromptOptimize(args = []) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const config = getConfig(payload);
+  const apiUrl = String(config.apiUrl || payload.apiUrl || "").trim();
   const apiKey = String(config.apiKey || payload.apiKey || "").trim();
   const model = normalizeGeminiModelId(config.chatModel || config.selectedModel);
   const prompt = String(payload.prompt || "").trim();
-  if (!apiKey) throw new Error("请先在第三方支持中配置当前 Gemini 渠道的 API Key");
+  if (!apiUrl) throw new Error("请先在第三方支持中配置 NewAPI 服务地址");
+  if (!apiKey) throw new Error("请先在第三方支持中配置当前 NewAPI 渠道的 API Key");
   if (!model) throw new Error("请先选择 Gemini AI 优化文本模型");
   if (!prompt) throw new Error("请先填写要优化的提示词");
   const request = buildNewApiChatRequest({
-    apiUrl: config.apiUrl,
+    apiUrl,
     apiKey,
     model,
     prompt,

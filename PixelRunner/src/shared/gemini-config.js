@@ -103,7 +103,8 @@ const MOMO_CHAT_MODEL_IDS = Object.freeze([
 
 export const GEMINI_CHANNEL_MODEL_DEFAULTS = Object.freeze({
   aji: Object.freeze({ imageModels: AJI_IMAGE_MODEL_IDS, chatModels: AJI_CHAT_MODEL_IDS }),
-  momo: Object.freeze({ imageModels: MOMO_IMAGE_MODEL_IDS, chatModels: MOMO_CHAT_MODEL_IDS })
+  momo: Object.freeze({ imageModels: MOMO_IMAGE_MODEL_IDS, chatModels: MOMO_CHAT_MODEL_IDS }),
+  custom: Object.freeze({ imageModels: Object.freeze([]), chatModels: Object.freeze([]) })
 });
 
 export const MOMO_SERVICE_ENDPOINTS = Object.freeze([
@@ -132,6 +133,12 @@ export const GEMINI_CHANNEL_PRESETS = Object.freeze({
     label: "墨墨 Momo",
     apiUrl: MOMO_DEFAULT_API_URL,
     keyUrl: MOMO_DEFAULT_API_URL
+  }),
+  custom: Object.freeze({
+    id: "custom",
+    label: "自定义 NewAPI",
+    apiUrl: "",
+    keyUrl: ""
   })
 });
 
@@ -161,6 +168,18 @@ export function normalizeGeminiChannelId(value) {
   return Object.prototype.hasOwnProperty.call(GEMINI_CHANNEL_PRESETS, id) ? id : DEFAULT_CHANNEL_ID;
 }
 
+export function normalizeCustomNewApiUrl(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  try {
+    const url = new URL(input);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash) return "";
+    return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
+  } catch (_) {
+    return "";
+  }
+}
+
 export function getGeminiChannelPreset(value) {
   return GEMINI_CHANNEL_PRESETS[normalizeGeminiChannelId(value)];
 }
@@ -173,7 +192,7 @@ export function normalizeGeminiBaseUrl(value, channelId = DEFAULT_CHANNEL_ID) {
   const preset = getGeminiChannelPreset(channelId);
   try {
     const url = new URL(String(value || "").trim() || preset.apiUrl);
-    return `${url.protocol}//${url.host}`;
+    return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`;
   } catch (_) {
     return preset.apiUrl;
   }
@@ -210,7 +229,7 @@ function createDefaultChannelSettings(channelId) {
     imageModels: [...modelDefaults.imageModels],
     chatModels: [...modelDefaults.chatModels],
     chatModel: modelDefaults.chatModels[0],
-    selectedModel: channelId === "momo" ? MOMO_IMAGE_MODEL_IDS[0] : "gemini-3-pro-image-preview",
+    selectedModel: channelId === "custom" ? "" : channelId === "momo" ? MOMO_IMAGE_MODEL_IDS[0] : "gemini-3-pro-image-preview",
     aspectRatio: "auto",
     resolution: "1K"
   };
@@ -221,11 +240,13 @@ export const DEFAULT_GEMINI_SETTINGS = Object.freeze({
   ...createDefaultChannelSettings(DEFAULT_CHANNEL_ID),
   channels: Object.freeze({
     aji: Object.freeze(createDefaultChannelSettings("aji")),
-    momo: Object.freeze(createDefaultChannelSettings("momo"))
+    momo: Object.freeze(createDefaultChannelSettings("momo")),
+    custom: Object.freeze(createDefaultChannelSettings("custom"))
   })
 });
 
 function normalizeChannelApiUrl(sourceApiUrl, channelId) {
+  if (channelId === "custom") return normalizeCustomNewApiUrl(sourceApiUrl);
   if (channelId === "momo") {
     const stored = String(sourceApiUrl || "").trim().replace(/\/+$/, "");
     if (stored) return normalizeMomoEndpoint(stored);
