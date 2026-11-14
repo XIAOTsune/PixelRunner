@@ -1,140 +1,107 @@
-# 像素起子 · Photoshop AI 修图工作台
+# 像素起子
 
 <p align="center">
-  <img src="PixelRunner/icons/icon.png" width="128" height="128" alt="像素起子图标" />
+  <img src="PixelRunner/icons/icon.png" width="112" height="112" alt="像素起子图标" />
 </p>
 
-<h2 align="center">把 AI 图像工作流，直接带进 Photoshop</h2>
+<h3 align="center">Photoshop 里的 AI 修图工作台</h3>
 
 <p align="center">
-  在熟悉的 Photoshop 面板里完成选区捕获、AI 任务提交、进度追踪与结果回贴。
-  <br />少一次窗口切换，多一点创作专注。
-</p>
-
-<p align="center">
-  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="Version" src="https://img.shields.io/badge/version-2.9.4-2f855a?style=for-the-badge"></a>
-  <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--only-2563eb?style=for-the-badge"></a>
-  <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff?style=for-the-badge">
-  <img alt="UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6?style=for-the-badge">
+  把云端 AI 工作流、局部生成和高频后期工具放进熟悉的 Photoshop 面板。
+  <br />从选区输入到结果回贴，尽量留在同一条修图流程里。
 </p>
 
 <p align="center">
-  <a href="#它能做什么">功能亮点</a> ·
-  <a href="#一条顺手的-ai-修图链路">工作流</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#第三方-ai-图像接口">第三方 AI</a> ·
-  <a href="#项目结构">项目结构</a> ·
-  <a href="#runninghub-合作">RunningHub 合作</a>
+  <a href="https://github.com/XIAOTsune/PixelRunner/releases"><img alt="仓库版本" src="https://img.shields.io/badge/source-2.9.4-2f855a?style=flat-square"></a>
+  <a href="https://github.com/XIAOTsune/PixelRunner/blob/main/LICENSE"><img alt="许可证" src="https://img.shields.io/badge/license-GPL--3.0--only-2563eb?style=flat-square"></a>
+  <img alt="Photoshop" src="https://img.shields.io/badge/Photoshop-26.0%2B-31a8ff?style=flat-square">
+  <img alt="Adobe UXP" src="https://img.shields.io/badge/Adobe%20UXP-Manifest%205-ff61f6?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="https://github.com/XIAOTsune/PixelRunner/releases">下载插件</a> ·
+  <a href="PixelRunner/pages/runninghub-guide.html">使用指南</a> ·
+  <a href="#功能一览">功能一览</a> ·
+  <a href="#开发与构建">开发与构建</a>
 </p>
 
 ---
 
-## 为什么是像素起子？
+像素起子从早期的 RunningHub 工作流面板，扩展成覆盖 AI 任务、提示词与资料管理、局部生成和 Photoshop 后期处理的 UXP 工作台。你可以在 Photoshop 中捕获文档或选区，调用云端服务，再把结果作为图层放回当前画布。
 
-AI 修图真正耗时的部分，常常不是生成本身，而是反复导出、上传、等待、下载、对齐，再回到 Photoshop 继续工作。
+## 功能一览
 
-像素起子把这条链路收进一个 UXP 面板：当前文档或选区可以直接成为输入，通过 RunningHub 工作流或兼容的第三方图像 API 生成结果，再自动回到 Photoshop。它是一张连接 **Photoshop × AI 图像服务 × 日常修图工具** 的工作台。
+| AI 工作流 | Photoshop 工具 | 提示词与资料 |
+| --- | --- | --- |
+| RunningHub 国内版与国际版 | AI 返图自动对齐与校色 | 分类提示词预设与收藏 |
+| GRS、Aji、Momo、自定义 NewAPI | 创成式填充：RunningHub 或第三方 API | 提示词历史与应用参数记忆 |
+| 应用动态表单、选区/文档捕获 | 辉光、空间特效、镜头与后期 | 应用、预设、快捷入口资料包 |
+| 并发任务、步骤进度、积分结算与错误诊断 | 观察层、高低频、滤镜与修复 | 导入、导出和切换资料包 |
+| 生成结果自动回贴 Photoshop | 社交平台切图与 Photoshop 原生操作 | 应用搜索、排序和一键快捷入口 |
 
-| 传统流程 | 像素起子工作流 |
+### AI 工作区
+
+- 从 RunningHub 应用 ID 或链接解析输入项，并按应用结构生成动态表单。
+- 使用当前选区或整个文档作为输入；任务支持并发、取消、状态追踪和完成提示音。
+- 任务卡片提供平台错误码的中文诊断、运行日志与实际结算信息。RunningHub 账户积分读取 `remainPoint`，任务费用以平台结算字段为准。
+- 在可用的实时通道上显示当前执行步骤进度。步骤进度不是整项任务的百分比；任务最终状态仍以服务端查询为准。
+- GRS 和兼容 Gemini API 的 NewAPI 支持 Aji、Momo 及自定义服务根地址；各渠道可分别保存 API Key 和模型设置。Momo 渠道还支持 Midjourney Imagine。
+- 可用已配置的文字模型结合参考图优化提示词，确认结果后再替换或追加到应用输入。
+
+### Photoshop 工具箱
+
+| 工具 | 用途 |
 | --- | --- |
-| 导出图片，切到网页上传 | 在 Photoshop 内捕获当前选区或文档 |
-| 手动复制应用参数和提示词 | 保存应用、模板和快捷入口 |
-| 反复刷新页面查看进度 | 在任务卡片中查看状态、日志和失败原因 |
-| 下载结果，再拖回并重新对齐 | 任务完成后自动贴回 Photoshop |
-| AI 工具和修图动作分散 | 多服务商 AI、自动对齐校色、观察层与后期工具集中在同一面板 |
+| 创成式填充 | 在选区内生成内容，支持 RunningHub 工作流或已配置的第三方图像服务 |
+| 对齐与校色 | 将 AI 返图对齐到原区域，并调整明度和色彩融合 |
+| 辉光 | 预览高光效果，调节强度、半径、阈值和饱和度后生成图层 |
+| 空间特效、镜头与后期 | 预览并应用位移、胶片等图像效果 |
+| 图层辅助 | 创建黑白、饱和度、中性灰观察层和高低频图层 |
+| 滤镜与修复 | 快速调用模糊、锐化、高反差保留、内容识别填充、选择并遮住等操作 |
+| 社交平台切图 | 预览常见平台布局并拆分导出画面 |
 
-## 它能做什么
+辉光、空间特效、镜头与后期、对齐与校色需要本机离线授权。授权状态可在插件设置中查看；其余 Photoshop 原生辅助操作不依赖云端 AI 账号。
 
-### RunningHub 工作台
+### 提示词与资料包
 
-从应用解析到结果回贴，完整覆盖一次 AI 修图任务：
+应用、提示词预设和快捷入口可以重复使用，减少每次任务的重复配置：
 
-- 通过应用 ID 或链接解析 RunningHub 应用输入项
-- 按应用结构生成图片、文本、数字等动态表单
-- 捕获 Photoshop 当前选区或整个文档
-- 显示排队与运行状态、取消任务并处理超时
-- 在支持的连接上显示 RunningHub 当前执行步骤进度；这是步骤进度，不代表任务总进度
-- 任务卡片显示平台错误码的中文排查建议、原始详情和实际扣除积分
-- 查看账户余额与积分；积分读取自 RunningHub 的 `remainPoint`，缺失时不会用 RH 币余额代替
-- 支持多任务并发，完成后自动把结果贴回 Photoshop
+- 提示词按分类整理，可收藏常用内容，并从历史记录重新使用最近的提示词。
+- 快捷入口保存应用和参数，满足选区条件后可直接发起任务。
+- 资料包包含应用、提示词分类与预设、快捷入口，支持导入、导出、切换和备份迁移。
+- 应用输入值可按设置在切换应用后恢复；RunningHub 国内版与国际版的应用和 API 配置分别保存。
 
-### 第三方 AI 图像接口
-
-除 RunningHub 工作流外，也可以配置 GRS 或兼容 Gemini API 的 NewAPI 图像服务：
-
-- 支持 GRS，以及 Aji、Momo 和自定义 NewAPI 渠道；自定义渠道填写服务根地址，各渠道的 API Key 和模型设置分别保存
-- 查询可用模型、检查服务连接，并设置默认模型、画幅和分辨率
-- 通过工作台提交生图任务、查看状态，并将结果自动回贴 Photoshop
-- 在设置中提供相关服务官网快捷入口
-
-### 把常用流程保存下来
-
-一次配置，之后重复使用：
-
-- **应用管理**：保存、搜索、排序和维护常用 RunningHub 应用
-- **提示词模板**：通过分类管理提示词预设，支持收藏常用提示词及查看最近使用记录
-- **快捷入口**：固定应用与参数，框选区域后即可一键运行
-- **资料包**：将应用、提示词分类与预设、快捷入口打包，支持导入、导出和切换
-
-### AI 与 Photoshop 工具并行工作
-
-像素起子不只负责提交 AI 任务，也把高频后期动作放在手边：
-
-| 模块 | 适合做什么 |
-| --- | --- |
-| AI 优化提示词 | 结合参考图优化 prompt，确认后替换或追加 |
-| 黑白观察层 | 检查明暗、结构和画面脏点 |
-| 中性灰图层 | 辅助 Dodge & Burn |
-| 盖印、模糊、锐化 | 快速进入常见后期处理 |
-| 内容识别填充、选择并遮住 | 调用 Photoshop 原生能力 |
-| 对齐与校色 | 将返图自动对齐到原位置，并进行明度与色彩融合 |
-| 创成式填充 | 保留原选区蒙版，将生成结果限制在目标区域 |
-| 社交平台切图 | 按常见社交平台比例拆分和导出图片 |
-| 空间特效、镜头与后期 | 预览并应用位移、胶片等全图效果 |
-| 辉光预览 | 调节强度、半径、阈值和饱和度后再写回图层 |
-
-## 一条顺手的 AI 修图链路
+## 使用流程
 
 ```text
-打开 Photoshop
-      ↓
-加载像素起子
-      ↓
-配置 RunningHub 或第三方 API
-      ↓
-选择工作流或生图模型
-      ↓
-框选区域 / 使用当前文档
-      ↓
-填写 prompt 与参数
-      ↓
-提交任务并查看进度
-      ↓
-结果自动回到 Photoshop
+打开 Photoshop 并加载像素起子
+              ↓
+选择 RunningHub 应用或第三方图像模型
+              ↓
+捕获当前选区 / 使用整个文档
+              ↓
+填写提示词与应用参数并提交
+              ↓
+跟踪任务、查看诊断和结算信息
+              ↓
+生成结果回贴 Photoshop，继续校色与修图
 ```
 
-## 适合谁
+## 安装
 
-| 角色 | 使用方式 |
-| --- | --- |
-| 修图师 | 把局部重绘、细节增强、风格化处理接入现有修图流程 |
-| 摄影后期 | 在 Photoshop 内完成捕获、返图、观察和基础后期 |
-| AI 绘图用户 | 保存应用、参数和 prompt，减少重复输入 |
-| RunningHub 用户 | 将网页工作流变成可复用的 Photoshop 面板 |
-| 第三方 API 用户 | 在 Photoshop 中配置 GRS、Gemini、Aji 或 Momo 图像服务 |
-| 插件开发者 | 参考 UXP Host + WebView + 多服务商图像 API 桥接架构 |
+### 使用发布包
 
-## 快速开始
+仓库当前源码版本为 `2.9.4`；已发布压缩包的版本以 [GitHub Releases](https://github.com/XIAOTsune/PixelRunner/releases) 页面为准。要使用 `main` 上的最新源码，请按下方步骤自行构建。
 
-### 环境要求
+1. 从 [GitHub Releases](https://github.com/XIAOTsune/PixelRunner/releases) 下载插件压缩包并解压。
+2. 安装并打开 Adobe UXP Developer Tool。
+3. 选择 **Add Plugin**，载入解压目录根部的 `manifest.json`，然后点击 **Load**。
+4. 在 Photoshop 的 **Plugins → Development → 像素起子** 中打开面板。
+5. 在设置中配置所需的 RunningHub 或第三方 API，再添加应用或选择模型。
 
-- Adobe Photoshop 26.0 或更高版本
-- Adobe UXP Developer Tool
-- Node.js 18 或更高版本
-- npm
-- RunningHub API Key 或兼容服务商的 API Key（按所用服务配置）
+### 从源码构建
 
-### 获取并构建
+需要 Adobe Photoshop 26.0+、Adobe UXP Developer Tool、Node.js 18+ 和 npm。
 
 ```bash
 git clone https://github.com/XIAOTsune/PixelRunner.git
@@ -143,69 +110,31 @@ npm install
 npm run build
 ```
 
-### 在 Photoshop 中加载
+然后在 UXP Developer Tool 中载入 `PixelRunner/manifest.json`。
 
-1. 打开 Adobe UXP Developer Tool。
-2. 点击 `Add Plugin`，选择 `PixelRunner/manifest.json`。
-3. 点击 `Load` 或 `Watch`。
-4. 在 Photoshop 中打开 `Plugins -> Development -> 像素起子`。
-5. 在插件设置中配置 RunningHub 或第三方 API，再添加一个应用 ID、应用链接或选择图像模型。
+## 服务与数据
 
-更完整的 RunningHub 配置、区域选择、余额和故障排查说明，见 [RunningHub 使用文档](PixelRunner/pages/runninghub-guide.html)。
+- RunningHub 国内版与国际版是独立配置；API Key、应用和任务区域按所选站点分别处理。
+- API Key 保存在本机 UXP 存储中。提交云端任务时，当前任务所需的图片和参数会发送到所选服务。
+- RunningHub 账户积分来自 `remainPoint`；缺少结算字段时，任务卡片显示“扣费待确认”，不会用 RH 币余额推算积分费用。
+- 实时进度只显示有效的当前步骤数据；没有可用进度时显示不定进度，不估算总百分比或剩余时间。
 
-RunningHub 国内版与国际版分别保存 API Key 和应用数据。工作区进度通道及数据边界见 [进度与隐私说明](PixelRunner/docs/runninghub-progress-privacy.md)，账户区域和字段说明见 [RunningHub 区域说明](PixelRunner/docs/runninghub-regions.md)。
-
-## 项目结构
-
-```text
-.
-├── README.md                         # 项目展示与使用说明
-├── LICENSE
-├── runninghub合作/                   # 合作文案与品牌素材
-└── PixelRunner/
-    ├── manifest.json                 # Adobe UXP 插件清单
-    ├── index.html                    # UXP Host 入口
-    ├── app.html / app.css            # WebView 界面
-    ├── icons/                        # 插件图标与界面资源
-    ├── pages/                        # 独立帮助页面
-    ├── docs/                         # 技术说明与专题文档
-    ├── scripts/                      # 构建、测试与打包脚本
-    ├── local-ai/                     # 本地 AI 放大能力与运行时
-    └── src/
-        ├── host/                     # Photoshop、UXP、RunningHub 与第三方 API 桥接
-        ├── webview/                  # UI、状态、任务、模板与效果
-        ├── host-entry.js
-        └── webview-entry.js
-```
+详细说明：[RunningHub 使用指南](PixelRunner/pages/runninghub-guide.html) · [区域与账户字段](PixelRunner/docs/runninghub-regions.md) · [进度与隐私边界](PixelRunner/docs/runninghub-progress-privacy.md)
 
 ## 开发与构建
 
-所有命令在 `PixelRunner/` 目录执行：
+在 `PixelRunner/` 目录运行：
 
 ```bash
 npm install
-npm run build                 # 构建插件 bundle
+npm run build                 # 构建 UXP 插件 bundle
 npm run build:watch           # 监听源码并持续构建
-npm run check:dist            # 检查构建产物同步状态
-npm test                      # 运行项目测试
-npm run package:test          # 生成测试包
-npm run package:release       # 生成正式发布包
+npm test                      # 运行完整测试
+npm run package:test          # 构建测试包
+npm run package:release       # 构建正式发布包
 ```
 
-开发约定：
-
-- 源码入口是 `src/host-entry.js` 和 `src/webview-entry.js`。
-- Photoshop、UXP、RunningHub 与第三方 API 桥接代码位于 `src/host/`。
-- UI、任务、模板、快捷入口和效果模块位于 `src/webview/`。
-- 不直接编辑 `dist/*.bundle.js`。
-- `node_modules/`、`dist/`、`release/` 和本地打包文件不提交到仓库。
-
-## 数据与服务说明
-
-- RunningHub 和第三方服务的 API Key 保存在本机 UXP 存储中；不同 RunningHub 区域及第三方渠道分别配置。
-- 图片会按当前任务需要发送到所选在线服务。请勿提交 API Key、访问令牌、私人调试日志或本地绝对路径。
-- RunningHub 任务卡片以平台返回的结算字段显示实际积分扣费；暂未取得结算数据时会显示“扣费待确认”。
-- 本地 AI 放大模块位于 `PixelRunner/local-ai/`，其独立运行环境和安装方式见 [本地 AI 说明](PixelRunner/local-ai/README.md)。
+源码入口为 `src/host-entry.js` 和 `src/webview-entry.js`；Photoshop 与服务桥接位于 `src/host/`，界面和工作区功能位于 `src/webview/`。`dist/` 为构建产物，不直接编辑。
 
 ## RunningHub 合作
 
@@ -243,33 +172,26 @@ RunningHub 为本项目提供 AI 能力支持：
   本项目由 <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">RunningHub</a> 提供支持 · 单一接口直连 400+ 主流大模型 · 免费测试
 </p>
 
-## 隐私与安全
-
-RunningHub 与第三方服务的 API Key 保存在本机 UXP 存储中，用于提交任务和查询状态。请不要将 API Key、Token、Cookie、私人调试日志或本地绝对路径提交到仓库。
-
 ## 常见问题
 
 ### 像素起子是独立软件吗？
 
-不是。像素起子是 Photoshop UXP 插件，需要在 Photoshop 和 UXP Developer Tool 中加载。
+不是。它是 Photoshop UXP 插件，需要通过 Photoshop 和 UXP Developer Tool 加载。
 
-### 必须有 RunningHub 账号吗？
+### 使用插件必须有 RunningHub 账号吗？
 
-使用 RunningHub 工作流需要 RunningHub API Key；使用第三方图像服务则需要对应服务的 API Key。工具箱中的 Photoshop 辅助能力不依赖这些在线服务。
+只有 RunningHub 工作流需要 RunningHub API Key。第三方 AI 任务需要对应服务的 API Key；Photoshop 原生工具不依赖在线 AI 服务。
 
-### 为什么仓库里没有 dist？
+### API Key 会上传到项目服务器吗？
 
-`dist/` 是构建产物，执行 `npm run build` 即可重新生成。仓库保留源码、资源、脚本和文档，便于维护。
+插件没有项目自有的中转服务器。API Key 保存在本机 UXP 存储，并由插件用于请求你配置的服务。提交云端任务时，图像会发送给所选服务。
 
-## 路线方向
+### 插件为什么需要 Photoshop 26.0 以上版本？
 
-- 更清晰的新手引导与任务诊断
-- 更完善的提示词历史和工作流分享
-- 持续完善对齐校色、后期效果与图层辅助工具
-- 扩展第三方服务商的模型兼容和任务诊断
+当前 UXP manifest 声明的最低 Photoshop 版本为 26.0.0。
 
 ## 许可证
 
-像素起子使用 [GNU General Public License v3.0](LICENSE) 开源（SPDX 标识：`GPL-3.0-only`）。
+像素起子以 [GNU General Public License v3.0](LICENSE) 开源（`GPL-3.0-only`）。
 
 Copyright 2026 XIAOTsune
