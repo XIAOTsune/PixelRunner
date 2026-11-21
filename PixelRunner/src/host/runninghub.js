@@ -505,6 +505,7 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
       const error = new Error(String(message));
       error.errorCode = normalizeRunningHubErrorCode(errorCode);
       error.errorMessage = message;
+      error.httpStatus = Number(response.status) || 0;
       error.parameterShape = isParameterShapeError(errorMessage);
       throw error;
     }
@@ -516,6 +517,52 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+async function fetchJsonWithRetry(url, options = {}, timeoutMs = 30000, retryOptions = {}) {
+  const maxAttempts = Math.max(1, Math.min(4, Number(retryOptions.maxAttempts) || 2));
+  const baseDelayMs = Math.max(0, Number(retryOptions.baseDelayMs) || 300);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const result = await fetchJsonWithTimeout(url, options, timeoutMs);
+      if (typeof retryOptions.validateResult === "function") retryOptions.validateResult(result);
+      return result;
+    } catch (error) {
+      lastError = error;
+      const status = Number(error && error.httpStatus) || 0;
+      const transient = Boolean(error && error.networkError) ||
+        isTransientHttpStatus(status) || isTransientNetworkErrorMessage(error && error.message);
+      if (!transient || attempt >= maxAttempts) throw error;
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+
+  throw lastError || new Error("RunningHub request failed");
+}
+
+function parseRunningHubAccountResult(result) {
+  if (result && typeof result.rawText === "string") {
+    const error = createRunningHubApiError("账户接口返回了无法解析的数据", null, 200);
+    error.networkError = true;
+    throw error;
+  }
+
+  const apiCode = getApiCode(result);
+  const responseErrorCode = extractTaskErrorCode(result);
+  if ((apiCode !== null && apiCode !== 0 && apiCode !== 200) || responseErrorCode !== null) {
+    const message = extractBestFailureMessageText(result) || extractMessageText(result) || "账户查询失败";
+    throw createRunningHubApiError(message, responseErrorCode, 200);
+  }
+
+  const data = (result && (result.data || result.result)) || {};
+  const account = data && data.accountStatus && typeof data.accountStatus === "object" ? data.accountStatus : data;
+  if (!account || typeof account !== "object" || Array.isArray(account) ||
+      !Object.keys(account).some((key) => ["remainMoney", "remainPoint", "balance", "amount", "walletBalance", "money"].includes(key))) {
+    throw createRunningHubApiError("账户接口未返回有效账户数据", null, 200);
+  }
+  return account;
 }
 
 function sleep(ms) {
@@ -1325,6 +1372,8 @@ function createRunningHubApiError(message, errorCode, httpStatus = 0) {
   const error = new Error(normalizedMessage);
   error.errorCode = normalizeRunningHubErrorCode(errorCode);
   error.errorMessage = normalizedMessage;
+  error.httpStatus = Number(httpStatus) || 0;
+  error.networkError = isTransientNetworkErrorMessage(errorMessage);
   error.parameterShape = isParameterShapeError(errorMessage);
   return error;
 }
@@ -1490,6 +1539,29 @@ async function fetchTaskSnapshotRequest(apiKey, taskId, options = {}) {
   }
 }
 
+function isTransientTaskSnapshot(snapshot) {
+  const status = Number(snapshot && snapshot.status) || 0;
+  const result = snapshot && snapshot.result;
+  const message = extractBestFailureMessageText(result) || extractMessageText(result) || snapshot?.errorMessage || "";
+  return Boolean(snapshot && snapshot.transientError) ||
+    (!snapshot?.ok && isTransientHttpStatus(status)) ||
+    isTransientNetworkErrorMessage(message);
+}
+
+async function fetchTaskSnapshotWithRetry(fetcher, apiKey, taskId, options = {}) {
+  const maxAttempts = Math.max(1, Math.min(3, Number(options.retryAttempts) || 2));
+  const baseDelayMs = Math.max(0, Number(options.retryDelayMs) || 250);
+  let snapshot = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    snapshot = await fetcher(apiKey, taskId, options);
+    if (!isTransientTaskSnapshot(snapshot) || options.signal?.aborted || attempt >= maxAttempts) return snapshot;
+    await sleep(baseDelayMs * attempt);
+  }
+
+  return snapshot;
+}
+
 async function fetchTaskV2Snapshot(apiKey, taskId, options = {}) {
   return fetchTaskSnapshotRequest(apiKey, taskId, {
     ...options,
@@ -1549,10 +1621,10 @@ function classifyV2Fallback(snapshot) {
 async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
   const region = resolveRunningHubRegion(options);
   if (runninghubTaskQueryVersions.get(region) === "v1") {
-    return fetchTaskOutputsV1Snapshot(apiKey, taskId, options);
+    return fetchTaskSnapshotWithRetry(fetchTaskOutputsV1Snapshot, apiKey, taskId, options);
   }
 
-  const v2Snapshot = await fetchTaskV2Snapshot(apiKey, taskId, options);
+  const v2Snapshot = await fetchTaskSnapshotWithRetry(fetchTaskV2Snapshot, apiKey, taskId, options);
   const fallbackReason = classifyV2Fallback(v2Snapshot);
   if (!fallbackReason) {
     runninghubTaskQueryVersions.set(region, "v2");
@@ -1562,9 +1634,11 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
     if (isSucceededStatus(extractTaskStatus(payload)) && extractReadyOutputUrl(payload) &&
         extractTaskPointsCharge(v2Snapshot.result) === null) {
       try {
-        const billingSnapshot = await fetchTaskOutputsV1Snapshot(apiKey, taskId, {
+        const billingSnapshot = await fetchTaskSnapshotWithRetry(fetchTaskOutputsV1Snapshot, apiKey, taskId, {
           ...options,
-          timeoutMs: Math.min(10000, Number(options.timeoutMs) || 10000)
+          timeoutMs: Math.min(8000, Number(options.timeoutMs) || 8000),
+          retryAttempts: 3,
+          retryDelayMs: 350
         });
         const billingPayload = getTaskSnapshotPayload(billingSnapshot);
         const billingStatus = extractTaskStatus(billingPayload);
@@ -1581,7 +1655,7 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
     return v2Snapshot;
   }
 
-  const v1Snapshot = await fetchTaskOutputsV1Snapshot(apiKey, taskId, options);
+  const v1Snapshot = await fetchTaskSnapshotWithRetry(fetchTaskOutputsV1Snapshot, apiKey, taskId, options);
   const v1Payload = getTaskSnapshotPayload(v1Snapshot);
   const v1Recognized = Boolean(
     v1Snapshot && v1Snapshot.ok && (extractOutputUrl(v1Payload) || extractTaskStatus(v1Payload))
@@ -1611,6 +1685,9 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(result) ?? snapshot?.settlement?.balanceCharge ?? null;
   const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(result) ?? snapshot?.settlement?.coinsCharge ?? null;
   const pointsCharge = extractTaskPointsCharge(result) ?? snapshot?.settlement?.pointsCharge ?? null;
+  const chargePending = Boolean(
+    restSucceeded && outputUrl && pointsCharge === null && balanceCharge === null && coinsCharge === null
+  );
   const errorCode = extractTaskErrorCode(result);
   const errorMessage = String(extractBestFailureMessageText(result) || extractMessageText(result) || "").trim();
   const rawMessage = String(
@@ -1665,6 +1742,7 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
     balanceCharge,
     coinsCharge,
     pointsCharge,
+    chargePending,
     chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, options.region, pointsCharge),
     message,
     errorCode: normalizeRunningHubErrorCode(errorCode),
@@ -1798,17 +1876,20 @@ export async function fetchRunningHubAccountStatus(args = []) {
     return { ok: false, balance: null, points: null };
   }
 
-  const result = await fetchJsonWithTimeout(`${baseUrl}/uc/openapi/accountStatus`, {
+  const result = await fetchJsonWithRetry(`${baseUrl}/uc/openapi/accountStatus`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ apikey: apiKey })
+  }, 10000, {
+    maxAttempts: 3,
+    baseDelayMs: 450,
+    validateResult: parseRunningHubAccountResult
   });
 
-  const data = (result && (result.data || result.result)) || {};
-  const account = data && data.accountStatus && typeof data.accountStatus === "object" ? data.accountStatus : data;
+  const account = parseRunningHubAccountResult(result);
   return {
     ok: true,
     region,

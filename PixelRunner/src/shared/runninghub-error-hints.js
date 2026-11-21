@@ -23,6 +23,8 @@ const RUNNINGHUB_ERROR_HINTS = Object.freeze({
   APIKEY_UNSUPPORTED_FREE_USER: "当前账号或 API Key 类型不支持 API 调用，请核对账号等级和 Key 类型。",
   "802": "API Key 无效或权限不匹配，请检查区域和 Key 类型。",
   "811": "API Key 无效或权限不匹配，请检查区域和 Key 类型。",
+  "806": "RunningHub API Key 对应的账号不存在，请检查 Key 和服务区域。",
+  APIKEY_USER_NOT_FOUND: "RunningHub API Key 对应的账号不存在，请检查 Key 和服务区域。",
   APIKEY_UNAUTHORIZED: "API Key 无效或权限不匹配，请检查区域和 Key 类型。",
   CORPAPIKEY_INVALID: "API Key 无效或权限不匹配，请检查区域和 Key 类型。",
   "804": "任务仍在运行，请继续跟踪现有任务，不要重新提交。",

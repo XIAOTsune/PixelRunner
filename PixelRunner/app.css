@@ -859,6 +859,14 @@ button {
   flex-wrap: wrap;
 }
 
+.account-summary.is-stale .metric-pill {
+  border-color: rgba(229, 164, 72, 0.72);
+}
+
+.account-summary.is-error .metric-pill {
+  border-color: rgba(224, 112, 112, 0.72);
+}
+
 .metric-pill {
   display: flex;
   align-items: center;

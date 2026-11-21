@@ -2,6 +2,8 @@
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   let accountRefreshPromise = null;
   let accountRefreshGeneration = 0;
+  let accountSummaryIdentity = "";
+  let accountRefreshPendingIdentity = "";
   const THIRD_PARTY_OFFICIAL_SITES = {
     grs: { label: "GRS 官网", url: "https://grsai.ai/zh" },
     aji: { label: "Aji 官网", url: "https://ai.ajiai.top/" },
@@ -63,7 +65,7 @@
     box.innerHTML = `<p>${modules.runtime.escapeHtml(String(message || ""))}</p>${runtimeText}${apiKeyText}${appText}${templateText}${currentAppText}${thirdPartyText}`;
   }
 
-  function updateAccountSummary(account) {
+  function updateAccountSummary(account, options = {}) {
     const balanceEl = modules.runtime.getById("accountBalanceValue");
     const pointsEl = modules.runtime.getById("accountPointsValue");
     const summaryEl = modules.runtime.getById("accountSummary");
@@ -81,12 +83,15 @@
       : "--";
     pointsEl.textContent = hasAccount && account.points != null ? String(account.points) : "--";
     summaryEl.classList.toggle("is-empty", !hasAccount);
+    summaryEl.classList.toggle("is-error", !hasAccount && Boolean(options.errorMessage));
     modules.state.state.accountSummary = {
       balance: hasAccount && account.balance != null ? Number(account.balance) : null,
       points: hasAccount && account.points != null ? Number(account.points) : null,
       region,
       currency,
-      updatedAt: Date.now()
+      updatedAt: account && account.stale && Number(account.updatedAt) > 0 ? Number(account.updatedAt) : Date.now(),
+      stale: Boolean(account && account.stale),
+      lastError: String((account && account.errorMessage) || options.errorMessage || "").trim()
     };
     if (modules.workspace && typeof modules.workspace.renderWorkspaceAccountSummary === "function") {
       modules.workspace.renderWorkspaceAccountSummary();
@@ -116,34 +121,66 @@
     if (!apiKey || !modules.runtime.isPluginRuntime()) {
       accountRefreshGeneration += 1;
       accountRefreshPromise = null;
+      accountSummaryIdentity = "";
+      accountRefreshPendingIdentity = "";
       updateAccountSummary(null);
       return null;
     }
 
-    if (!options.force && accountRefreshPromise) {
+    const requestIdentity = `${region}:${apiKey}`;
+    if (accountSummaryIdentity && accountSummaryIdentity !== requestIdentity) {
+      accountSummaryIdentity = "";
+      updateAccountSummary(null);
+    }
+
+    if (accountRefreshPromise && accountRefreshPendingIdentity !== requestIdentity) {
+      accountRefreshGeneration += 1;
+      accountRefreshPromise = null;
+      accountRefreshPendingIdentity = "";
+    }
+
+    if (!options.force && accountRefreshPromise && accountRefreshPendingIdentity === requestIdentity) {
       return accountRefreshPromise;
     }
 
     const requestGeneration = accountRefreshGeneration + 1;
     accountRefreshGeneration = requestGeneration;
     const requestPromise = modules.runtime
-      .callHost("runninghub.fetchAccountStatus", [{ apiKey, region }], { timeoutMs: 15000 })
+      .callHost("runninghub.fetchAccountStatus", [{ apiKey, region }], { timeoutMs: 40000 })
       .then((account) => {
-        if (requestGeneration === accountRefreshGeneration) updateAccountSummary(account);
+        if (!account || account.ok !== true) throw new Error("RunningHub 账户接口未返回有效数据");
+        if (requestGeneration === accountRefreshGeneration) {
+          accountSummaryIdentity = requestIdentity;
+          updateAccountSummary(account);
+        }
         return account;
       })
       .catch((error) => {
         if (!options.quiet && modules.ui && typeof modules.ui.logToWorkspace === "function") {
           modules.ui.logToWorkspace(`余额刷新失败：${error.message || error}`, "warn");
         }
-        if (requestGeneration === accountRefreshGeneration) updateAccountSummary(null);
-        return null;
+        const currentSummary = modules.state.state.accountSummary || {};
+        const keepLastGoodSummary = accountSummaryIdentity === requestIdentity && Number(currentSummary.updatedAt) > 0;
+        if (requestGeneration === accountRefreshGeneration) {
+          if (keepLastGoodSummary) {
+            updateAccountSummary({ ...currentSummary, ok: true, stale: true, region, errorMessage: error.message || String(error) });
+          } else {
+            updateAccountSummary(null, { errorMessage: error.message || String(error) });
+          }
+        }
+        return keepLastGoodSummary
+          ? { ...currentSummary, ok: false, stale: true, region }
+          : null;
       })
       .finally(() => {
-        if (accountRefreshPromise === requestPromise) accountRefreshPromise = null;
+        if (accountRefreshPromise === requestPromise) {
+          accountRefreshPromise = null;
+          accountRefreshPendingIdentity = "";
+        }
       });
 
     accountRefreshPromise = requestPromise;
+    accountRefreshPendingIdentity = requestIdentity;
     return requestPromise;
   }
 

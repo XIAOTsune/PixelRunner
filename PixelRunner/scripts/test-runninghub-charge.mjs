@@ -5,6 +5,7 @@ import {
   extractTaskPointsCharge,
   extractOutputUrl,
   extractReadyOutputUrl,
+  fetchRunningHubAccountStatus,
   fetchRunningHubTaskStatus,
   formatTaskChargeDisplay,
   pollRunningHubTask,
@@ -109,6 +110,10 @@ let globalTaskSnapshot = null;
 let legacyTaskSnapshot = null;
 let submitErrorResponse = null;
 let accountSnapshot = { data: { accountStatus: { remainMoney: 2, remainCoins: 99, remainPoint: 17.5, currency: "USD" } } };
+let accountTransientFailures = 0;
+let accountNetworkFailures = 0;
+let accountMalformedFailures = 0;
+let legacyTransientFailures = 0;
 globalThis.fetch = async (url, options = {}) => {
   if (String(url).includes("/media/upload/binary") || String(url).includes("/uc/openapi/upload")) {
     return {
@@ -129,6 +134,10 @@ globalThis.fetch = async (url, options = {}) => {
     };
   }
   if (String(url).endsWith("/task/openapi/outputs")) {
+    if (legacyTransientFailures > 0) {
+      legacyTransientFailures -= 1;
+      return { ok: false, status: 503, async text() { return JSON.stringify({ msg: "temporarily unavailable" }); } };
+    }
     return {
       ok: true,
       status: 200,
@@ -136,6 +145,18 @@ globalThis.fetch = async (url, options = {}) => {
     };
   }
   if (String(url).endsWith("/uc/openapi/accountStatus")) {
+    if (accountMalformedFailures > 0) {
+      accountMalformedFailures -= 1;
+      return { ok: true, status: 200, async text() { return "{ truncated"; } };
+    }
+    if (accountNetworkFailures > 0) {
+      accountNetworkFailures -= 1;
+      throw new Error("fetch failed");
+    }
+    if (accountTransientFailures > 0) {
+      accountTransientFailures -= 1;
+      return { ok: false, status: 503, async text() { return JSON.stringify({ msg: "temporarily unavailable" }); } };
+    }
     return {
       ok: true,
       status: 200,
@@ -184,14 +205,47 @@ try {
   );
   submitErrorResponse = null;
 
-  const account = await (await import("../src/host/runninghub.js")).fetchRunningHubAccountStatus([{
+  const account = await fetchRunningHubAccountStatus([{
     apiKey: "global-test-key",
     region: "global"
   }]);
   assert.equal(account.points, 17.5);
   assert.equal(Object.hasOwn(account, "coins"), false);
+
+  accountTransientFailures = 2;
+  const recoveredAccount = await fetchRunningHubAccountStatus([{
+    apiKey: "global-test-key",
+    region: "global"
+  }]);
+  assert.equal(recoveredAccount.points, 17.5, "account query retries transient network failures");
+
+  accountNetworkFailures = 1;
+  const recoveredNetworkAccount = await fetchRunningHubAccountStatus([{
+    apiKey: "global-test-key",
+    region: "global"
+  }]);
+  assert.equal(recoveredNetworkAccount.points, 17.5, "account query retries fetch failures");
+
+  accountMalformedFailures = 1;
+  const recoveredMalformedAccount = await fetchRunningHubAccountStatus([{
+    apiKey: "global-test-key",
+    region: "global"
+  }]);
+  assert.equal(recoveredMalformedAccount.points, 17.5, "account query retries malformed transient responses");
+
+  accountSnapshot = { code: 806, msg: "APIKEY_USER_NOT_FOUND", data: null };
+  await assert.rejects(
+    () => fetchRunningHubAccountStatus([{ apiKey: "global-test-key", region: "global" }]),
+    (error) => error.errorCode === 806 && /账号不存在/.test(error.errorMessage)
+  );
+  accountSnapshot = { code: "APIKEY_USER_NOT_FOUND", msg: "APIKEY_USER_NOT_FOUND", data: null };
+  await assert.rejects(
+    () => fetchRunningHubAccountStatus([{ apiKey: "global-test-key", region: "global" }]),
+    (error) => error.errorCode === "APIKEY_USER_NOT_FOUND"
+  );
+
   accountSnapshot = { data: { accountStatus: { remainMoney: 2, remainCoins: 99, currency: "USD" } } };
-  const accountWithoutPoints = await (await import("../src/host/runninghub.js")).fetchRunningHubAccountStatus([{
+  const accountWithoutPoints = await fetchRunningHubAccountStatus([{
     apiKey: "global-test-key",
     region: "global"
   }]);
@@ -306,6 +360,19 @@ try {
   }]);
   assert.equal(v1FallbackPoll.pointsCharge, 1.28);
   assert.equal(v1FallbackPoll.chargeDisplay, "-1.28 积分");
+
+  globalTaskSnapshot = { data: { taskId: "retry-billing-task", status: "SUCCESS", results: [{ url: "https://example.com/retry.png" }] } };
+  legacyTaskSnapshot = { code: 0, data: [{ fileUrl: "https://example.com/retry.png", settleMode: "POINT", chargedPoint: "2.75" }] };
+  legacyTransientFailures = 2;
+  const retriedBillingStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "retry-billing-task" }]);
+  assert.equal(retriedBillingStatus.pointsCharge, 2.75, "billing fallback retries transient failures");
+
+  globalTaskSnapshot = { data: { taskId: "pending-billing-task", status: "SUCCESS", results: [{ url: "https://example.com/pending.png" }] } };
+  legacyTaskSnapshot = null;
+  legacyTransientFailures = 3;
+  const pendingBillingStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "pending-billing-task" }]);
+  assert.equal(pendingBillingStatus.pointsCharge, null);
+  assert.equal(pendingBillingStatus.chargePending, true, "missing settlement remains explicitly pending");
 
   globalTaskSnapshot = { data: { taskId: "queued-task", status: "RUNNING", errorCode: 813, message: "APIKEY_TASK_IS_QUEUED" } };
   const queuedStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "queued-task" }]);

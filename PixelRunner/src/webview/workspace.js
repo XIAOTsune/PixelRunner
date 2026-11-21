@@ -686,10 +686,18 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       balanceValue.textContent = hasBalance ? `${isGlobal ? "$" : ""}${Number(account.balance)}` : "--";
       secondaryValue.textContent = account.points != null && Number.isFinite(Number(account.points)) ? String(Number(account.points)) : "--";
       summaryEl.classList.toggle("is-empty", !hasBalance && account.points == null);
-      summaryEl.title = "RunningHub 账户余额与积分";
+      summaryEl.classList.toggle("is-stale", account.stale === true);
+      summaryEl.classList.toggle("is-error", !account.stale && Boolean(account.lastError));
+      summaryEl.title = account.stale === true && account.updatedAt
+        ? `显示上次成功查询的 RunningHub 余额与积分，更新时间 ${new Date(account.updatedAt).toLocaleTimeString()}。当前刷新失败：${account.lastError || "请检查网络后重试"}`
+        : account.lastError
+          ? `RunningHub 余额与积分查询失败：${account.lastError}`
+          : "RunningHub 账户余额与积分";
       return;
     }
 
+    summaryEl.classList.remove("is-stale");
+    summaryEl.classList.remove("is-error");
     const payload = getCurrentThirdPartyAccountPayload();
     const descriptor = modules.state.getThirdPartyProviderDescriptor();
     const account = getThirdPartyAccountSummary(payload);
@@ -1182,7 +1190,11 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
   }
 
   function getTaskCostLabel(task) {
-    if (!isThirdPartyTaskRecord(task)) return formatTaskChargeDisplay(task);
+    if (!isThirdPartyTaskRecord(task)) {
+      const chargeDisplay = formatTaskChargeDisplay(task);
+      if (chargeDisplay) return chargeDisplay;
+      return task && task.chargePending === true ? "扣费 待确认" : "";
+    }
     const chargeDisplay = formatTaskChargeDisplay(task);
     if (chargeDisplay) return `扣费 ${chargeDisplay}`;
     if (isTaskTerminalStatus(task && task.status)) return "扣费 待确认";
@@ -1215,17 +1227,6 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     const leftEnd = getTaskActivityFinishedAt(leftTask, fallbackEnd);
     const rightEnd = getTaskActivityFinishedAt(rightTask, fallbackEnd);
     return leftStart <= rightEnd && rightStart <= leftEnd;
-  }
-
-  function hasOverlappingRunningHubTask(task) {
-    if (!task || typeof task !== "object" || isThirdPartyTaskRecord(task)) return false;
-    const taskId = String(task.taskId || "").trim();
-    const now = Date.now();
-    return getRunningTasks().some((item) => {
-      if (!item || typeof item !== "object" || isThirdPartyTaskRecord(item)) return false;
-      if (String(item.taskId || "").trim() === taskId) return false;
-      return doTaskActivityWindowsOverlap(task, item, now);
-    });
   }
 
   function getCurrentAccountSnapshot() {
@@ -1307,49 +1308,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     accountSettlementChain = accountSettlementChain
       .catch(() => null)
       .then(async () => {
-        const task = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
-        const canInferCharge = Boolean(task && !hasTaskChargeValue(task) && !hasOverlappingRunningHubTask(task));
-        const before = task && task.accountSnapshot && typeof task.accountSnapshot === "object"
-          ? task.accountSnapshot
-          : null;
-        const account = await modules.settings.refreshAccountSummary({ quiet: true, force: true });
-        if (!canInferCharge || !account || !account.ok) return account || null;
-
-        const currentTask = getRunningTasks().find((item) => String(item.taskId || "") === normalizedTaskId) || null;
-        if (!currentTask || hasTaskChargeValue(currentTask) || hasOverlappingRunningHubTask(currentTask)) return account;
-
-        const accountValue = (value) => value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
-        const beforeBalance = accountValue(before && before.balance);
-        const afterBalance = accountValue(account.balance);
-        const beforePoints = accountValue(before && before.points);
-        const afterPoints = accountValue(account.points);
-        const beforeCoins = accountValue(before && before.coins);
-        const afterCoins = accountValue(account.coins);
-        const pointsCharge = beforePoints !== null && afterPoints !== null && beforePoints > afterPoints
-          ? Number((beforePoints - afterPoints).toFixed(3))
-          : null;
-        const balanceCharge = pointsCharge === null && beforeBalance !== null && afterBalance !== null && beforeBalance > afterBalance
-          ? Number((beforeBalance - afterBalance).toFixed(3))
-          : null;
-        const coinsCharge = pointsCharge === null && beforeCoins !== null && afterCoins !== null && beforeCoins > afterCoins
-          ? Number((beforeCoins - afterCoins).toFixed(3))
-          : null;
-        if (pointsCharge === null && balanceCharge === null && coinsCharge === null) return account;
-
-        upsertRunningTask({
-          taskId: normalizedTaskId,
-          charge: balanceCharge,
-          balanceCharge,
-          coinsCharge,
-          pointsCharge,
-          chargeDisplay: formatTaskChargeDisplay({
-            balanceCharge,
-            coinsCharge,
-            pointsCharge,
-            region: account.region || before && before.region
-          })
-        });
-        return account;
+        return modules.settings.refreshAccountSummary({ quiet: true, force: true });
       });
     return accountSettlementChain;
   }
@@ -2327,6 +2286,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       balanceCharge: hasOwn("balanceCharge") ? normalizeTaskChargeValue(patch.balanceCharge) : undefined,
       coinsCharge: hasOwn("coinsCharge") ? normalizeTaskChargeValue(patch.coinsCharge) : undefined,
       pointsCharge: hasOwn("pointsCharge") ? normalizeTaskChargeValue(patch.pointsCharge) : undefined,
+      chargePending: hasOwn("chargePending") ? patch.chargePending === true : undefined,
       chargeDisplay: hasOwn("chargeDisplay") ? String(patch.chargeDisplay || "").trim() : undefined,
       accountSnapshot: hasOwn("accountSnapshot")
         ? (patch.accountSnapshot && typeof patch.accountSnapshot === "object" ? { ...patch.accountSnapshot } : null)
@@ -2388,6 +2348,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
         balanceCharge: nextTask.balanceCharge !== undefined ? nextTask.balanceCharge : current.balanceCharge,
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
         pointsCharge: nextTask.pointsCharge !== undefined ? nextTask.pointsCharge : current.pointsCharge,
+        chargePending: nextTask.chargePending !== undefined ? nextTask.chargePending : current.chargePending === true,
         chargeDisplay: nextTask.chargeDisplay !== undefined ? nextTask.chargeDisplay : current.chargeDisplay,
         errorCode: nextTask.errorCode !== undefined ? nextTask.errorCode : current.errorCode,
         errorMessage: nextTask.errorMessage || current.errorMessage || "",
@@ -2558,6 +2519,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       balanceCharge: statusResult && statusResult.balanceCharge,
       coinsCharge: statusResult && statusResult.coinsCharge,
       pointsCharge: statusResult && statusResult.pointsCharge,
+      chargePending: statusResult && statusResult.chargePending,
       chargeDisplay: statusResult && statusResult.chargeDisplay,
       outputUrl,
       dataUrl,
@@ -2710,6 +2672,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
             balanceCharge: statusResult && statusResult.balanceCharge,
             coinsCharge: statusResult && statusResult.coinsCharge,
             pointsCharge: statusResult && statusResult.pointsCharge,
+            chargePending: statusResult && statusResult.chargePending,
             chargeDisplay: statusResult && statusResult.chargeDisplay,
             failureLabel: getTaskFailureLabel({
               status: "failed",
@@ -4151,7 +4114,6 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       });
       activeRunSubmissions.delete(tempTaskId);
       scheduleRunSubmissionFlush();
-      if (!isThirdPartyTask) scheduleAccountSummaryRefresh(600);
 
       const pollResult = await modules.runtime.callHost(
         pollMethod,
@@ -4186,6 +4148,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
           balanceCharge: pollResult.balanceCharge,
           coinsCharge: pollResult.coinsCharge,
           pointsCharge: pollResult.pointsCharge,
+          chargePending: pollResult.chargePending,
           chargeDisplay: pollResult.chargeDisplay,
           failureLabel,
           sourceDocument,
@@ -4229,6 +4192,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
         balanceCharge: pollResult && pollResult.balanceCharge,
         coinsCharge: pollResult && pollResult.coinsCharge,
         pointsCharge: pollResult && pollResult.pointsCharge,
+        chargePending: pollResult && pollResult.chargePending,
         chargeDisplay: pollResult && pollResult.chargeDisplay,
         outputUrl: String(pollResult.outputUrl || "").trim(),
         dataUrl: String(pollResult.dataUrl || "").trim(),

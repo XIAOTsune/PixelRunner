@@ -68,7 +68,15 @@ assert.match(runningHubTaskMarkup, /-1\.28 积分/);
 assert.doesNotMatch(runningHubTaskMarkup, /扣费 待确认/);
 assert.match(runningHubTaskMarkup, /耗时 00:12/);
 assert.doesNotMatch(runningHubTaskMarkup, /平台生成耗时/);
-assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded" }), "");
+assert.equal(workspace.getTaskCostLabel({ provider: "runninghub", status: "succeeded", chargePending: true }), "扣费 待确认");
+assert.match(workspace.renderRunningTaskList([{
+  taskId: "runninghub-pending-charge-task",
+  provider: "runninghub",
+  status: "succeeded",
+  chargePending: true,
+  submittedAt: Date.now() - 12000,
+  finishedAt: Date.now()
+}]), /扣费 待确认/);
 assert.match(
   workspace.normalizeTaskFailureMessage("TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET", {
     errorCode: 416,
