@@ -1,3 +1,5 @@
+import { getRunningHubChargeStatusLabel, recheckRunningHubTaskCharge } from "./runninghub-charge.js";
+
 (function initAiOptimizeModule(global) {
   const modules = (global.PixelRunnerModules = global.PixelRunnerModules || {});
   const DEFAULT_UPLOAD_MAX_DIMENSION = 1536;
@@ -30,6 +32,8 @@
     taskUpdatedAt: 0,
     balanceCharge: null,
     pointsCharge: null,
+    chargePending: false,
+    chargeState: "",
     chargeDisplay: "",
     txtUrl: "",
     availableImages: [],
@@ -170,7 +174,7 @@
 
   function formatTaskChargeDisplay() {
     const explicit = String(state.chargeDisplay || "").trim();
-    if (explicit && !/RH\b/i.test(explicit)) return explicit;
+    if (explicit && !/RH\b/i.test(explicit)) return state.chargeState === "estimated" ? `估算 ${explicit}` : explicit;
     const pointsCharge = normalizeTaskChargeValue(state.pointsCharge);
     if (pointsCharge !== null) {
       return "-" + pointsCharge.toFixed(3).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1") + " 积分";
@@ -184,7 +188,18 @@
   function setTaskCharge(result) {
     state.balanceCharge = result && result.balanceCharge != null ? normalizeTaskChargeValue(result.balanceCharge) : null;
     state.pointsCharge = result && result.pointsCharge != null ? normalizeTaskChargeValue(result.pointsCharge) : null;
+    state.chargePending = result?.chargePending === true;
+    state.chargeState = result?.chargeState || "";
     state.chargeDisplay = String((result && result.chargeDisplay) || "").trim();
+  }
+
+  async function refreshTaskCharge(taskId, apiKey, region, options) {
+    const isPending = () => state.taskId === taskId && state.taskApiKey === apiKey &&
+      (state.chargePending || state.chargeState === "estimated");
+    const charge = await recheckRunningHubTaskCharge(modules.runtime, { apiKey, taskId, region }, isPending, options);
+    if (!charge || !isPending() || (state.chargeState === "estimated" && charge.chargeState === "unavailable")) return;
+    setTaskCharge({ ...charge, chargePending: !charge.chargeDisplay });
+    renderTaskCard();
   }
 
   function looksLikeTxtUrl(value) {
@@ -466,6 +481,7 @@
     const stage = getTaskStatusStage(state.taskStatus);
     const progress = getTaskProgressForStage(stage).toFixed(2);
     const chargeDisplay = formatTaskChargeDisplay();
+    const chargeLabel = chargeDisplay ? `扣费 ${chargeDisplay}` : state.chargePending ? getRunningHubChargeStatusLabel(state.chargeState) : "";
     const shortTaskId = taskId ? `#${taskId.slice(-8)}` : "尚未创建任务";
     const detail = modules.runtime.escapeHtml(state.taskDetail || "等待开始。");
     const showCancel = state.running && taskId;
@@ -478,6 +494,8 @@
             <div class="running-task-title">AI优化任务</div>
             <div class="running-task-topline-actions">
               <span class="status-chip running-task-status-chip" data-status="${modules.runtime.escapeHtml(tone)}" data-stage="${modules.runtime.escapeHtml(stage)}">${modules.runtime.escapeHtml(status)}</span>
+              ${!state.running && taskId && (state.chargePending || state.chargeState === "estimated")
+                ? '<button id="btnRecheckAiOptimizeCharge" class="mini-btn running-task-inline-btn" type="button">查扣费</button>' : ""}
               ${
                 showCancel
                   ? `<button id="btnCancelAiOptimizeTask" class="mini-btn running-task-inline-btn" type="button" ${state.canceling ? "disabled" : ""}>${state.canceling ? "取消中" : "取消"}</button>`
@@ -487,12 +505,21 @@
               }
             </div>
           </div>
-          <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)}${chargeDisplay ? ` · 扣费 ${modules.runtime.escapeHtml(chargeDisplay)}` : ""}</div>
+          <div class="running-task-meta">${modules.runtime.escapeHtml(shortTaskId)}${chargeLabel ? ` · ${modules.runtime.escapeHtml(chargeLabel)}` : ""}</div>
           <div class="running-task-detail">${detail}</div>
         </div>
       </div>
     `;
 
+    const chargeButton = modules.runtime.getById("btnRecheckAiOptimizeCharge");
+    chargeButton?.addEventListener("click", async () => {
+      chargeButton.disabled = true;
+      try {
+        await refreshTaskCharge(taskId, state.taskApiKey, state.taskRegion, { manual: true });
+      } finally {
+        chargeButton.disabled = false;
+      }
+    });
     const cancelButton = modules.runtime.getById("btnCancelAiOptimizeTask");
     if (cancelButton) {
       cancelButton.addEventListener("click", () => {
@@ -509,9 +536,7 @@
         state.taskDetail = "等待开始运行。";
         state.taskStartedAt = 0;
         state.taskUpdatedAt = 0;
-        state.balanceCharge = null;
-        state.pointsCharge = null;
-        state.chargeDisplay = "";
+        setTaskCharge(null);
         renderModal();
       });
     }
@@ -806,9 +831,7 @@
     state.taskDetail = "等待开始运行。";
     state.taskStartedAt = 0;
     state.taskUpdatedAt = 0;
-    state.balanceCharge = null;
-    state.pointsCharge = null;
-    state.chargeDisplay = "";
+    setTaskCharge(null);
     state.txtUrl = "";
     if (state.availableImages.length === 0) {
       state.statusMessage = "当前还没有检测到图片。可以先编辑提示词，导入图片后再开始优化。";
@@ -1000,9 +1023,7 @@
         state.taskStartedAt = Date.now();
         state.taskUpdatedAt = state.taskStartedAt;
         state.taskDetail = "正在提交 AI优化任务...";
-        state.balanceCharge = null;
-        state.pointsCharge = null;
-        state.chargeDisplay = "";
+        setTaskCharge(null);
         state.txtUrl = "";
         setStatus("正在根据参考图、原始提示词和附加优化要求生成优化建议...", "pending");
         renderModal();
@@ -1050,7 +1071,7 @@
           const parsedApp = await modules.runtime.callHost("runninghub.parseApp", [{
             appId: aiOptimizeAppId,
             apiKey,
-            region: modules.state.state.settings.runningHubRegion,
+            region: runningHubRegion,
             preferredName: "AI优化"
           }], {
             timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000)
@@ -1068,7 +1089,7 @@
 
           const submitPayload = {
             apiKey,
-            region: modules.state.state.settings.runningHubRegion,
+            region: runningHubRegion,
             appId: aiOptimizeAppId,
             appName: "AI优化",
             app: {
@@ -1088,23 +1109,25 @@
             timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000)
           });
 
-          state.taskId = String((submitResult && submitResult.taskId) || "").trim();
-          if (!state.taskId) {
+          const taskId = String((submitResult && submitResult.taskId) || "").trim();
+          if (!taskId) {
             throw new Error("RunningHub 未返回有效任务 ID，请稍后重试。");
           }
+          state.taskId = taskId;
           state.taskUpdatedAt = Date.now();
           state.taskDetail = "任务已提交，正在等待 RunningHub 返回结果。";
           renderModal();
 
           const pollResult = await modules.runtime.callHost("runninghub.pollTask", [{
             apiKey,
-            taskId: state.taskId,
-            region: modules.state.state.settings.runningHubRegion,
+            taskId,
+            region: runningHubRegion,
             settings
           }], {
             timeoutMs: Math.max(30000, Number(modules.state.state.settings.timeout || 180) * 1000 + 15000)
           });
 
+          if (state.taskId === taskId) setTaskCharge(pollResult);
           if (!pollResult || pollResult.failed) {
             throw new Error(String((pollResult && pollResult.message) || "AI优化任务执行失败"));
           }
@@ -1112,12 +1135,14 @@
             throw new Error(String((pollResult && pollResult.message) || "AI优化任务超时"));
           }
 
+          if (state.taskId === taskId && state.chargePending) {
+            void refreshTaskCharge(taskId, apiKey, runningHubRegion);
+          }
           const result = await resolveResultText(pollResult, modules.state.state.settings.timeout);
 
           state.taskStatus = "success";
           state.taskUpdatedAt = Date.now();
           state.taskDetail = "任务已完成，已成功解析返回的 .txt 文本结果。";
-          setTaskCharge(pollResult);
           state.txtUrl = String((result && result.txtUrl) || "").trim();
           state.resultText = String((result && result.text) || "").trim();
           if (!state.resultText) {

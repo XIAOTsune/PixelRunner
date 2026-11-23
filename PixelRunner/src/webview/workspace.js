@@ -1,5 +1,6 @@
 import { encodeLocalImageAsJpeg } from "./local-image.js";
 import { formatImageAssetMeta } from "./image-asset-meta.js";
+import { getRunningHubChargeStatusLabel, recheckRunningHubTaskCharge } from "./runninghub-charge.js";
 import { normalizeRunningHubStep, parseRunningHubNumber } from "../shared/runninghub-progress.js";
 import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/runninghub-error-hints.js";
 
@@ -24,7 +25,6 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
   let taskTickerHandle = 0;
   let progressReadPending = false;
   let accountRefreshTimer = 0;
-  let accountSettlementChain = Promise.resolve(null);
   const thirdPartyAccountRefreshPromises = new Map();
   let autoPlacementRetryTimer = 0;
   let autoPlacementRetryDueAt = 0;
@@ -1192,8 +1192,8 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
   function getTaskCostLabel(task) {
     if (!isThirdPartyTaskRecord(task)) {
       const chargeDisplay = formatTaskChargeDisplay(task);
-      if (chargeDisplay) return chargeDisplay;
-      return task && task.chargePending === true ? "扣费 待确认" : "";
+      if (chargeDisplay) return task.chargeState === "estimated" ? `估算 ${chargeDisplay}` : chargeDisplay;
+      return task && task.chargePending === true ? getRunningHubChargeStatusLabel(task.chargeState) : "";
     }
     const chargeDisplay = formatTaskChargeDisplay(task);
     if (chargeDisplay) return `扣费 ${chargeDisplay}`;
@@ -1227,19 +1227,6 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     const leftEnd = getTaskActivityFinishedAt(leftTask, fallbackEnd);
     const rightEnd = getTaskActivityFinishedAt(rightTask, fallbackEnd);
     return leftStart <= rightEnd && rightStart <= leftEnd;
-  }
-
-  function getCurrentAccountSnapshot() {
-    const account = modules.state.state.accountSummary || {};
-    const valueOrNull = (value) => value != null && value !== "" && Number.isFinite(Number(value)) ? Number(value) : null;
-    return {
-      balance: valueOrNull(account.balance),
-      coins: valueOrNull(account.coins),
-      points: valueOrNull(account.points),
-      region: modules.state.normalizeRunningHubRegion(account.region || modules.state.state.settings.runningHubRegion),
-      currency: String(account.currency || "").trim(),
-      updatedAt: Number(account.updatedAt) || 0
-    };
   }
 
   function getThirdPartyAccountSnapshot(payload) {
@@ -1302,15 +1289,35 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     return patch;
   }
 
-  async function refreshAccountAndPatchTaskCharge(taskId) {
-    const normalizedTaskId = String(taskId || "").trim();
-    if (!normalizedTaskId || !modules.settings || typeof modules.settings.refreshAccountSummary !== "function") return null;
-    accountSettlementChain = accountSettlementChain
-      .catch(() => null)
-      .then(async () => {
-        return modules.settings.refreshAccountSummary({ quiet: true, force: true });
-      });
-    return accountSettlementChain;
+  async function refreshPendingRunningHubTaskCharge(task, options = {}) {
+    const { taskId, remoteTaskId, apiKey, region } = task;
+    if (!remoteTaskId || !apiKey || !modules.runtime.isPluginRuntime()) return;
+    const findPendingTask = () => getRunningTasks().find((item) =>
+      item.taskId === taskId && item.remoteTaskId === remoteTaskId && item.apiKey === apiKey && item.region === region &&
+      (item.chargePending === true || item.chargeState === "estimated")
+    );
+    const charge = await recheckRunningHubTaskCharge(modules.runtime, { apiKey, taskId: remoteTaskId, region }, findPendingTask, options);
+    const current = findPendingTask();
+    if (!charge || !current) return;
+    if (current.chargeState === "estimated" && charge.chargeState === "unavailable") return;
+    upsertRunningTask({
+      ...current,
+      charge: charge.balanceCharge,
+      balanceCharge: charge.balanceCharge,
+      coinsCharge: charge.coinsCharge,
+      pointsCharge: charge.pointsCharge,
+      chargePending: !charge.chargeDisplay,
+      chargeState: charge.chargeState,
+      chargeDisplay: charge.chargeDisplay
+    });
+    if (charge.chargeDisplay) scheduleAccountSummaryRefresh();
+  }
+
+  function renderTaskChargeRecheck(task) {
+    if (isThirdPartyTaskRecord(task) || !task.remoteTaskId || !task.apiKey ||
+        (!task.chargePending && task.chargeState !== "estimated")) return "";
+    const taskId = modules.runtime.escapeHtml(task.taskId);
+    return `<button class="mini-btn running-task-inline-btn" type="button" data-action="recheck-runninghub-charge" data-task-id="${taskId}">查扣费</button>`;
   }
 
   function inferTaskFailureCode(task) {
@@ -1638,6 +1645,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
                       ? `<button class="mini-btn running-task-inline-btn running-task-detail-btn" type="button" data-action="open-task-action-url" data-task-id="${actionTaskId}" title="${modules.runtime.escapeHtml(actionTitle)}">${modules.runtime.escapeHtml(actionLabel)}</button>`
                       : ""
                   }
+                  ${renderTaskChargeRecheck(task)}
                   ${
                     canCancel
                       ? `<button class="mini-btn running-task-inline-btn" type="button" data-action="cancel-running-task" data-task-id="${actionTaskId}">取消</button>`
@@ -2287,6 +2295,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       coinsCharge: hasOwn("coinsCharge") ? normalizeTaskChargeValue(patch.coinsCharge) : undefined,
       pointsCharge: hasOwn("pointsCharge") ? normalizeTaskChargeValue(patch.pointsCharge) : undefined,
       chargePending: hasOwn("chargePending") ? patch.chargePending === true : undefined,
+      chargeState: hasOwn("chargeState") ? String(patch.chargeState || "") : undefined,
       chargeDisplay: hasOwn("chargeDisplay") ? String(patch.chargeDisplay || "").trim() : undefined,
       accountSnapshot: hasOwn("accountSnapshot")
         ? (patch.accountSnapshot && typeof patch.accountSnapshot === "object" ? { ...patch.accountSnapshot } : null)
@@ -2349,6 +2358,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
         coinsCharge: nextTask.coinsCharge !== undefined ? nextTask.coinsCharge : current.coinsCharge,
         pointsCharge: nextTask.pointsCharge !== undefined ? nextTask.pointsCharge : current.pointsCharge,
         chargePending: nextTask.chargePending !== undefined ? nextTask.chargePending : current.chargePending === true,
+        chargeState: nextTask.chargeState !== undefined ? nextTask.chargeState : current.chargeState,
         chargeDisplay: nextTask.chargeDisplay !== undefined ? nextTask.chargeDisplay : current.chargeDisplay,
         errorCode: nextTask.errorCode !== undefined ? nextTask.errorCode : current.errorCode,
         errorMessage: nextTask.errorMessage || current.errorMessage || "",
@@ -2383,7 +2393,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     syncPrimaryRunningTask();
     updateRunButtonState();
     if (state.workspaceMode === "generative-fill" && modules.generativeFill && typeof modules.generativeFill.render === "function") {
-      if (hasOwn("stepProgress") && typeof modules.generativeFill.refreshTaskList === "function") {
+      if ((hasOwn("stepProgress") || hasOwn("chargeState")) && typeof modules.generativeFill.refreshTaskList === "function") {
         modules.generativeFill.refreshTaskList();
       } else {
         modules.generativeFill.render();
@@ -2391,6 +2401,9 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     }
     if (nextTask.status && (isTaskTerminalStatus(nextTask.status) || isTaskRemoteCompleteStatus(nextTask.status))) {
       scheduleRunSubmissionFlush();
+    }
+    if (isRunningHub && nextTask.chargePending === true && patch.chargeState === undefined && existing?.chargePending !== true && storedTask) {
+      void refreshPendingRunningHubTaskCharge(storedTask);
     }
     return storedTask;
   }
@@ -2531,7 +2544,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     if (isThirdPartyRunPayload(payload)) {
       await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
     } else {
-      await refreshAccountAndPatchTaskCharge(remoteTaskId);
+      scheduleAccountSummaryRefresh();
     }
     setLastResult({
       appName: payload.appName,
@@ -2685,7 +2698,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
           if (isThirdPartyRunPayload(payload)) {
             await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
           } else {
-            await refreshAccountAndPatchTaskCharge(remoteTaskId);
+            scheduleAccountSummaryRefresh();
           }
           modules.ui.logToWorkspace(`后台追踪确认任务失败：${failMessage}`, "error");
           return;
@@ -4004,34 +4017,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     const tempTaskId = String(options.localTaskId || "").trim() || createLocalTaskId();
     let activeTaskId = tempTaskId;
     let activeRemoteTaskId = "";
-    let submissionAccountSnapshot = isThirdPartyTask
-      ? getThirdPartyAccountSnapshot(payload)
-      : getCurrentAccountSnapshot();
-    const payloadMatchesCurrentRunningHubAccount =
-      modules.state.normalizeRunningHubRegion(payload && payload.region) ===
-        modules.state.normalizeRunningHubRegion(modules.state.state.settings.runningHubRegion) &&
-      String((payload && payload.apiKey) || "") === String(modules.state.state.settings.apiKey || "");
-    if (!isThirdPartyTask && !payloadMatchesCurrentRunningHubAccount) {
-      submissionAccountSnapshot = {
-        balance: null,
-        coins: null,
-        points: null,
-        region: modules.state.normalizeRunningHubRegion(payload && payload.region),
-        updatedAt: 0
-      };
-    } else if (!isThirdPartyTask && modules.settings && typeof modules.settings.refreshAccountSummary === "function") {
-      try {
-        const account = await modules.settings.refreshAccountSummary({
-          apiKey: payload.apiKey,
-          region: payload.region,
-          quiet: true,
-          force: true
-        });
-        submissionAccountSnapshot = account && account.ok ? getCurrentAccountSnapshot() : submissionAccountSnapshot;
-      } catch (_) {
-        submissionAccountSnapshot = getCurrentAccountSnapshot();
-      }
-    }
+    const submissionAccountSnapshot = isThirdPartyTask ? getThirdPartyAccountSnapshot(payload) : null;
     upsertRunningTask({
       taskId: tempTaskId,
       remoteTaskId: "",
@@ -4055,7 +4041,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       submittedAt: Date.now()
     });
 
-    if (isThirdPartyTask && submissionAccountSnapshot.balance == null) {
+    if (submissionAccountSnapshot && submissionAccountSnapshot.balance == null) {
       void refreshThirdPartyAccountSummary(payload, { quiet: true, force: true });
     }
 
@@ -4157,7 +4143,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
         if (isThirdPartyTask) {
           await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
         } else {
-          await refreshAccountAndPatchTaskCharge(remoteTaskId);
+          scheduleAccountSummaryRefresh();
         }
         modules.ui.logToWorkspace(`任务失败：${failureLabel || failedMessage}`, "error");
         return;
@@ -4204,7 +4190,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       if (isThirdPartyTask) {
         await refreshThirdPartyAccountAndPatchTaskCharge(remoteTaskId, payload);
       } else {
-        await refreshAccountAndPatchTaskCharge(remoteTaskId);
+        scheduleAccountSummaryRefresh();
       }
       setLastResult({
         appName: payload.appName,
@@ -4794,6 +4780,17 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
       if (!target) return;
 
       const action = target.getAttribute("data-action");
+      if (action === "recheck-runninghub-charge") {
+        const task = getRunningTasks().find((item) => item.taskId === target.getAttribute("data-task-id"));
+        if (!task || isThirdPartyTaskRecord(task)) return;
+        target.disabled = true;
+        try {
+          await refreshPendingRunningHubTaskCharge(task, { manual: true });
+        } finally {
+          target.disabled = false;
+        }
+        return;
+      }
       if (action === "retry-auto-placement") {
         const taskId = String(target.getAttribute("data-task-id") || "").trim();
         if (!taskId) return;
@@ -4956,6 +4953,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     resumeAutoPlacementRetry,
     getTaskDurationLabel,
     getTaskCostLabel,
+    renderTaskChargeRecheck,
     normalizeTaskFailureMessage,
     getTaskPlatformErrorDetails,
     getRunningHubProgressMarkup,

@@ -4,6 +4,12 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode, getRunningHubErro
 
 import { extractRunningHubTaskCostTime } from "../shared/runninghub-progress.js";
 import { observeRunningHubProgress, stopRunningHubProgress } from "./runninghub-progress.js";
+import {
+  beginRunningHubBalanceWindow,
+  getRunningHubBalanceEstimate,
+  isRunningHubBalanceWindowOpen,
+  settleRunningHubBalanceWindow
+} from "./runninghub-balance.js";
 
 const runninghubTaskControllers = new Map();
 const SAFE_EMPTY_IMAGE_PLACEHOLDER = {
@@ -469,6 +475,12 @@ async function buildSubmissionInputs(app, inputValues, apiKey, settings = {}) {
   return { normalizedValues, nodeInfoList, nodeParams };
 }
 
+function parseRunningHubJson(text) {
+  // Some responses emit long task IDs as JSON numbers. Keep the original digits
+  // for subsequent queries and when deduplicating child-task settlements.
+  return JSON.parse(text.replace(/("(?:taskId|parentTaskId)"\s*:\s*)(\d{16,})(?=\s*[,}])/g, '$1"$2"'));
+}
+
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
   const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
   const timer = controller
@@ -487,7 +499,7 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 30000) {
     const text = await response.text();
     let result = null;
     try {
-      result = text ? JSON.parse(text) : null;
+      result = text ? parseRunningHubJson(text) : null;
     } catch (_) {
       result = { rawText: text };
     }
@@ -810,32 +822,32 @@ export function extractTaskPointsCharge(payload) {
   const aggregateUsage = findAggregatePointUsage(payload);
   if (aggregateUsage) {
     const aggregate = parseChargeValue(aggregateUsage.chargedPoint);
-    if (aggregate !== null) return aggregate;
+    if (aggregate !== null) return Math.abs(aggregate);
   }
 
   const lists = findTaskUsageLists(payload);
   const seenLists = new Set();
-  const seenTaskIds = new Set();
-  let total = 0;
-  let found = false;
-  lists.forEach((list) => {
+  const chargesByTask = new Map();
+  for (const list of lists) {
     const signature = JSON.stringify(list);
-    if (seenLists.has(signature)) return;
+    if (seenLists.has(signature)) continue;
     seenLists.add(signature);
-    list.forEach((entry, index) => {
+    for (const [index, entry] of list.entries()) {
       const usage = entry && entry.usage && typeof entry.usage === "object" ? entry.usage : entry;
-      if (!usage || typeof usage !== "object" || !isPointSettlement(usage)) return;
+      if (!usage || typeof usage !== "object" || !isPointSettlement(usage)) continue;
       const value = parseChargeValue(usage.chargedPoint);
-      if (value === null) return;
+      if (value === null) continue;
       const taskId = String(entry.taskId || entry.id || "").trim();
-      const key = taskId ? `${taskId}:${value}` : `${signature}:${index}`;
-      if (seenTaskIds.has(key)) return;
-      seenTaskIds.add(key);
-      total += Math.abs(value);
-      found = true;
-    });
-  });
-  if (found) return Number(total.toFixed(3));
+      const key = taskId ? `id:${taskId}` : `${signature}:${index}`;
+      const charge = Math.abs(value);
+      if (chargesByTask.has(key) && chargesByTask.get(key) !== charge) return null;
+      chargesByTask.set(key, charge);
+    }
+  }
+  if (chargesByTask.size > 0) {
+    const total = Array.from(chargesByTask.values()).reduce((sum, charge) => sum + charge, 0);
+    return Number(total.toFixed(3));
+  }
 
   // The V1 outputs endpoint places the task settlement directly on each output;
   // repeated output rows represent the same task charge, so use one value only.
@@ -847,9 +859,7 @@ function hasPointSettlement(payload, depth = 0, seen = new Set()) {
   if (!payload || typeof payload !== "object" || depth > 6 || seen.has(payload)) return false;
   seen.add(payload);
   if (Array.isArray(payload)) return payload.some((item) => hasPointSettlement(item, depth + 1, seen));
-  if (String(payload.settleMode || "").trim().toUpperCase() === "POINT" &&
-      Object.prototype.hasOwnProperty.call(payload, "chargedPoint")) return true;
-  if (payload.usage && typeof payload.usage === "object" && isPointSettlement(payload.usage)) return true;
+  if (String(payload.settleMode || "").trim().toUpperCase() === "POINT") return true;
   return Object.values(payload).some((value) => hasPointSettlement(value, depth + 1, seen));
 }
 
@@ -1520,7 +1530,7 @@ async function fetchTaskSnapshotRequest(apiKey, taskId, options = {}) {
     const text = await response.text();
     let result = null;
     try {
-      result = text ? JSON.parse(text) : null;
+      result = text ? parseRunningHubJson(text) : null;
     } catch (_) {
       result = { rawText: text };
     }
@@ -1583,6 +1593,28 @@ function getTaskSnapshotPayload(snapshot) {
   return (result && (result.data || result.result)) || result;
 }
 
+function extractTaskSettlement(result, fallback = {}) {
+  const pointsCharge = extractTaskPointsCharge(result) ?? fallback.pointsCharge ?? null;
+  const pointSettlement = pointsCharge !== null || hasPointSettlement(result);
+  return {
+    pointsCharge,
+    balanceCharge: pointSettlement ? null : extractTaskBalanceCharge(result) ?? fallback.balanceCharge ?? null,
+    coinsCharge: pointSettlement ? null : extractTaskCoinsCharge(result) ?? fallback.coinsCharge ?? null
+  };
+}
+
+function hasTaskSettlement({ pointsCharge, balanceCharge, coinsCharge }) {
+  return pointsCharge !== null || balanceCharge !== null || coinsCharge !== null;
+}
+
+function isCompletedTaskSnapshot(snapshot, taskId) {
+  const payload = getTaskSnapshotPayload(snapshot);
+  const code = getApiCode(snapshot.result);
+  if (payload?.taskId != null && String(payload.taskId) !== taskId) return false;
+  return snapshot.ok && extractTaskErrorCode(snapshot.result) === null &&
+    (isSucceededStatus(extractTaskStatus(payload)) || (Array.isArray(payload) && (code === 0 || code === 200)));
+}
+
 function classifyV2Fallback(snapshot) {
   const payload = getTaskSnapshotPayload(snapshot);
   if (isRunningHubPendingErrorCode(extractTaskErrorCode(snapshot?.result))) return "";
@@ -1629,10 +1661,9 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
   if (!fallbackReason) {
     runninghubTaskQueryVersions.set(region, "v2");
     const payload = getTaskSnapshotPayload(v2Snapshot);
-    // Supplement only missing point settlement. Never replace confirmed V2
-    // outputs or status with a delayed/failed compatibility response.
+    // Keep a confirmed V2 result when the compatibility endpoint only has partial data.
     if (isSucceededStatus(extractTaskStatus(payload)) && extractReadyOutputUrl(payload) &&
-        extractTaskPointsCharge(v2Snapshot.result) === null) {
+        !hasTaskSettlement(extractTaskSettlement(v2Snapshot.result))) {
       try {
         const billingSnapshot = await fetchTaskSnapshotWithRetry(fetchTaskOutputsV1Snapshot, apiKey, taskId, {
           ...options,
@@ -1640,15 +1671,8 @@ async function fetchTaskOutputsSnapshot(apiKey, taskId, options = {}) {
           retryAttempts: 3,
           retryDelayMs: 350
         });
-        const billingPayload = getTaskSnapshotPayload(billingSnapshot);
-        const billingStatus = extractTaskStatus(billingPayload);
-        if (billingSnapshot.ok && (isSucceededStatus(billingStatus) ||
-            (Array.isArray(billingPayload) && getApiCode(billingSnapshot.result) === 0))) {
-          v2Snapshot.settlement = {
-            balanceCharge: hasPointSettlement(billingPayload) ? null : extractTaskBalanceCharge(billingSnapshot.result),
-            coinsCharge: hasPointSettlement(billingPayload) ? null : extractTaskCoinsCharge(billingSnapshot.result),
-            pointsCharge: extractTaskPointsCharge(billingSnapshot.result)
-          };
+        if (isCompletedTaskSnapshot(billingSnapshot, taskId)) {
+          v2Snapshot.settlement = extractTaskSettlement(billingSnapshot.result);
         }
       } catch (_) {}
     }
@@ -1681,13 +1705,9 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   const status = extractTaskStatus(payloadData);
   const restSucceeded = isSucceededStatus(status) || (Array.isArray(payloadData) && getApiCode(result) === 0);
   const outputUrl = restSucceeded ? extractReadyOutputUrl(payloadData) : "";
-  const pointSettlement = hasPointSettlement(payloadData || result) || hasPointSettlement(snapshot?.settlement || {});
-  const balanceCharge = pointSettlement ? null : extractTaskBalanceCharge(result) ?? snapshot?.settlement?.balanceCharge ?? null;
-  const coinsCharge = pointSettlement ? null : extractTaskCoinsCharge(result) ?? snapshot?.settlement?.coinsCharge ?? null;
-  const pointsCharge = extractTaskPointsCharge(result) ?? snapshot?.settlement?.pointsCharge ?? null;
-  const chargePending = Boolean(
-    restSucceeded && outputUrl && pointsCharge === null && balanceCharge === null && coinsCharge === null
-  );
+  const settlement = extractTaskSettlement(result, snapshot?.settlement);
+  const { pointsCharge, balanceCharge, coinsCharge } = settlement;
+  const chargePending = Boolean(restSucceeded && outputUrl && !hasTaskSettlement(settlement));
   const errorCode = extractTaskErrorCode(result);
   const errorMessage = String(extractBestFailureMessageText(result) || extractMessageText(result) || "").trim();
   const rawMessage = String(
@@ -1754,7 +1774,7 @@ function buildTaskStatusResponse(taskId, snapshot, fallbackMessage = "", options
   };
 }
 
-export async function submitRunningHubTask(args = []) {
+async function submitRunningHubTaskRequest(args, registerTask) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const app = payload.app && typeof payload.app === "object" ? payload.app : {};
   const settings = payload.settings && typeof payload.settings === "object" ? payload.settings : {};
@@ -1769,6 +1789,7 @@ export async function submitRunningHubTask(args = []) {
   if (!appId) throw new Error("RunningHub App ID is missing");
 
   const { nodeInfoList, nodeParams } = await buildSubmissionInputs(app, payload.inputs, apiKey, settings);
+  await registerTask.beforeSubmit(region, apiKey);
   const bodyCandidates = [
     { apiKey, webappId: appId, nodeInfoList },
     { apiKey, webAppId: appId, nodeInfoList },
@@ -1811,6 +1832,7 @@ export async function submitRunningHubTask(args = []) {
       }
 
       observeRunningHubProgress(String(taskId), region, result, submissionPhase(result));
+      registerTask.taskId = String(taskId);
       return { ok: true, taskId: String(taskId), region, status: submissionPhase(result) };
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] ai-app/run failed", {
@@ -1855,6 +1877,7 @@ export async function submitRunningHubTask(args = []) {
       }
 
       observeRunningHubProgress(String(taskId), region, result, submissionPhase(result));
+      registerTask.taskId = String(taskId);
       return { ok: true, taskId: String(taskId), region, status: submissionPhase(result), mode: "legacy" };
     } catch (error) {
       console.warn("[PixelRunner/RunningHub] legacy submit failed", {
@@ -1867,7 +1890,24 @@ export async function submitRunningHubTask(args = []) {
   throw lastError || new Error("RunningHub task submission failed");
 }
 
-export async function fetchRunningHubAccountStatus(args = []) {
+export async function submitRunningHubTask(args = []) {
+  let finishSubmission;
+  const registration = {
+    taskId: "",
+    async beforeSubmit(region, apiKey) {
+      finishSubmission = await beginRunningHubBalanceWindow(region, apiKey, () =>
+        fetchRunningHubAccountStatus([{ apiKey, region }], { forEstimate: true })
+      );
+    }
+  };
+  try {
+    return await submitRunningHubTaskRequest(args, registration);
+  } finally {
+    finishSubmission?.(registration.taskId);
+  }
+}
+
+export async function fetchRunningHubAccountStatus(args = [], { forEstimate = false } = {}) {
   const payload = args && args[0] && typeof args[0] === "object" ? args[0] : {};
   const apiKey = String(payload.apiKey || "").trim();
   const region = resolveRunningHubRegion(payload);
@@ -1883,8 +1923,8 @@ export async function fetchRunningHubAccountStatus(args = []) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ apikey: apiKey })
-  }, 10000, {
-    maxAttempts: 3,
+  }, forEstimate ? 3500 : 10000, {
+    maxAttempts: forEstimate ? 1 : 3,
     baseDelayMs: 450,
     validateResult: parseRunningHubAccountResult
   });
@@ -1895,8 +1935,9 @@ export async function fetchRunningHubAccountStatus(args = []) {
     region,
     balance: account.remainMoney ?? account.balance ?? account.amount ?? account.walletBalance ?? account.money ?? null,
     points: account.remainPoint ?? null,
+    currentTaskCounts: /^\d+$/.test(String(account.currentTaskCounts ?? "").trim()) ? Number(account.currentTaskCounts) : null,
     currency: String(account.currency || (region === "global" ? "USD" : "R")).trim(),
-    result
+    ...(!forEstimate && { result })
   };
 }
 
@@ -1936,6 +1977,7 @@ export async function pollRunningHubTask(args = []) {
       if (controller?.signal.aborted) throw new Error("Task polling cancelled");
       const status = buildTaskStatusResponse(taskId, snapshot, "", { region });
       updateTaskProgress(taskId, region, snapshot, status);
+      if (status.failed || status.outputUrl) void settleRunningHubBalanceWindow(region, apiKey, taskId, status);
       if (status.outputUrl && !status.failed) {
         // AI optimization consumes text-result URLs, never the original response.
         const results = collectTxtResultCandidates(snapshot.result).map(item => ({ url: item.url }));
@@ -1966,7 +2008,47 @@ export async function fetchRunningHubTaskStatus(args = []) {
   });
   const status = buildTaskStatusResponse(taskId, snapshot, "", { region });
   updateTaskProgress(taskId, region, snapshot, status);
+  if (status.failed || status.outputUrl) void settleRunningHubBalanceWindow(region, apiKey, taskId, status);
   return status;
+}
+
+export async function fetchRunningHubTaskCharge(args = []) {
+  const payload = args[0] || {};
+  const apiKey = String(payload.apiKey || "").trim();
+  const taskId = String(payload.taskId || "").trim();
+  const region = resolveRunningHubRegion(payload);
+  if (!apiKey || !taskId) throw new Error("RunningHub API Key or taskId is missing");
+
+  let completed = false;
+  // Probe both versions for this task regardless of the region's result-query fallback.
+  for (const fetchSnapshot of [fetchTaskV2Snapshot, fetchTaskOutputsV1Snapshot]) {
+    const snapshot = await fetchSnapshot(apiKey, taskId, { region, timeoutMs: 7000 });
+    if (!isCompletedTaskSnapshot(snapshot, taskId)) continue;
+    completed = true;
+    const settlement = extractTaskSettlement(snapshot.result);
+    if (hasTaskSettlement(settlement)) {
+      const { balanceCharge, coinsCharge, pointsCharge } = settlement;
+      const charge = {
+        taskId,
+        chargeState: "confirmed",
+        ...settlement,
+        chargeDisplay: formatTaskChargeDisplay(balanceCharge, coinsCharge, region, pointsCharge)
+      };
+      void settleRunningHubBalanceWindow(region, apiKey, taskId, { ...charge, chargePending: false });
+      return charge;
+    }
+  }
+  const estimate = getRunningHubBalanceEstimate(region, apiKey, taskId);
+  if (estimate) {
+    return {
+      taskId,
+      chargeState: "estimated",
+      ...estimate,
+      chargeDisplay: formatTaskChargeDisplay(estimate.balanceCharge, null, region, estimate.pointsCharge)
+    };
+  }
+  if (completed && isRunningHubBalanceWindowOpen(region, apiKey, taskId)) return { taskId, chargeState: "waiting" };
+  return { taskId, chargeState: completed ? "unreported" : "unavailable" };
 }
 
 export async function cancelRunningHubTask(args = []) {
@@ -1995,6 +2077,7 @@ export async function cancelRunningHubTask(args = []) {
     },
     body: JSON.stringify({ apiKey, taskId })
   });
+  void settleRunningHubBalanceWindow(region, apiKey, taskId, { chargePending: false });
 
   return { ok: true, taskId, region };
 }

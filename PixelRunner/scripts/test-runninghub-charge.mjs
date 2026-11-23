@@ -6,6 +6,7 @@ import {
   extractOutputUrl,
   extractReadyOutputUrl,
   fetchRunningHubAccountStatus,
+  fetchRunningHubTaskCharge,
   fetchRunningHubTaskStatus,
   formatTaskChargeDisplay,
   pollRunningHubTask,
@@ -30,6 +31,12 @@ assert.equal(extractTaskPointsCharge({
     { taskUsageList: [{ taskId: "subtask-a", usage: { settleMode: "POINT", chargedPoint: "0.50" } }] }
   ]
 }), 0.5, "repeated result arrays do not duplicate taskUsageList charges");
+assert.equal(extractTaskPointsCharge({
+  taskUsageList: [
+    { taskId: "subtask-a", usage: { chargedPoint: "0.50" } },
+    { taskId: "subtask-a", usage: { chargedPoint: "0.60" } }
+  ]
+}), null, "conflicting charges for the same subtask cannot be added together");
 assert.equal(extractTaskPointsCharge({ usage: { settleMode: "COIN", chargedPoint: "8" } }), null);
 assert.equal(extractTaskPointsCharge({ data: [
   { fileUrl: "https://example.com/a.png", settleMode: "POINT", chargedPoint: "1.28" },
@@ -106,6 +113,8 @@ assertCharge(duplicatedPlusOutputs, 0.25, 16);
 
 const originalFetch = globalThis.fetch;
 const submittedRequests = [];
+const taskSnapshots = new Map();
+const legacyTaskRequests = [];
 let globalTaskSnapshot = null;
 let legacyTaskSnapshot = null;
 let submitErrorResponse = null;
@@ -114,6 +123,8 @@ let accountTransientFailures = 0;
 let accountNetworkFailures = 0;
 let accountMalformedFailures = 0;
 let legacyTransientFailures = 0;
+let accountReads = 0;
+const accountSnapshotsByRegion = new Map();
 globalThis.fetch = async (url, options = {}) => {
   if (String(url).includes("/media/upload/binary") || String(url).includes("/uc/openapi/upload")) {
     return {
@@ -125,15 +136,18 @@ globalThis.fetch = async (url, options = {}) => {
     };
   }
   if (String(url).endsWith("/openapi/v2/query")) {
+    const { taskId } = JSON.parse(options.body);
+    const snapshot = taskSnapshots.get(taskId) ?? globalTaskSnapshot;
     return {
       ok: true,
       status: 200,
       async text() {
-        return JSON.stringify(globalTaskSnapshot);
+        return typeof snapshot === "string" ? snapshot : JSON.stringify(snapshot);
       }
     };
   }
   if (String(url).endsWith("/task/openapi/outputs")) {
+    legacyTaskRequests.push({ url, taskId: JSON.parse(options.body).taskId });
     if (legacyTransientFailures > 0) {
       legacyTransientFailures -= 1;
       return { ok: false, status: 503, async text() { return JSON.stringify({ msg: "temporarily unavailable" }); } };
@@ -145,6 +159,7 @@ globalThis.fetch = async (url, options = {}) => {
     };
   }
   if (String(url).endsWith("/uc/openapi/accountStatus")) {
+    accountReads += 1;
     if (accountMalformedFailures > 0) {
       accountMalformedFailures -= 1;
       return { ok: true, status: 200, async text() { return "{ truncated"; } };
@@ -160,7 +175,7 @@ globalThis.fetch = async (url, options = {}) => {
     return {
       ok: true,
       status: 200,
-      async text() { return JSON.stringify(accountSnapshot); }
+      async text() { return JSON.stringify(accountSnapshotsByRegion.get(new URL(url).hostname) ?? accountSnapshot); }
     };
   }
   if (String(url).endsWith("/task/openapi/ai-app/run") && submitErrorResponse) {
@@ -171,11 +186,12 @@ globalThis.fetch = async (url, options = {}) => {
     };
   }
   submittedRequests.push({ url: String(url), body: JSON.parse(String(options.body || "{}")) });
+  const taskId = `task-${submittedRequests.length}`;
   return {
     ok: true,
     status: 200,
     async text() {
-      return JSON.stringify({ code: 0, data: { taskId: `task-${submittedRequests.length}` } });
+      return JSON.stringify({ code: 0, data: { taskId } });
     }
   };
 };
@@ -318,7 +334,8 @@ try {
     data: {
       taskId: "legacy-charge-task",
       status: "SUCCESS",
-      results: [{ url: "https://example.com/legacy.png", outputType: "png", consumeMoney: "0.125", consumeCoins: "8" }]
+      usage: { taskCostTime: "12", consumeMoney: "0.125", consumeCoins: "8" },
+      results: [{ url: "https://example.com/legacy.png", outputType: "png" }]
     }
   };
   const legacyChargeStatus = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "legacy-charge-task" }]);
@@ -332,6 +349,30 @@ try {
   assert.equal(v2SettlementFallback.status, "SUCCESS");
   assert.equal(v2SettlementFallback.pointsCharge, 2.5, "V1 output supplies settlement missing from an otherwise successful V2 response");
   assert.equal(v2SettlementFallback.chargeDisplay, "-2.5 积分");
+
+  taskSnapshots.set("concurrent-a", `{
+    "taskId": "concurrent-a",
+    "status": "SUCCESS",
+    "results": [{ "url": "https://example.com/a.png" }],
+    "taskUsageList": [
+      { "taskId": 2077336528350871553, "usage": { "chargedPoint": "0.5" } },
+      { "taskId": 2077336528350871554, "usage": { "chargedPoint": "0.5" } },
+      { "taskId": 2077336528350871553, "usage": { "chargedPoint": "0.5" } }
+    ]
+  }`);
+  taskSnapshots.set("concurrent-b", {
+    taskId: "concurrent-b", status: "SUCCESS", results: [{ url: "https://example.com/b.png" }]
+  });
+  const priorLegacyRequests = legacyTaskRequests.length;
+  const [concurrentA, concurrentB] = await Promise.all([
+    pollRunningHubTask([{ apiKey: "global-test-key", region: "global", taskId: "concurrent-a" }]),
+    fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "concurrent-b" }])
+  ]);
+  assert.equal(concurrentA.pointsCharge, 1, "distinct long subtask IDs keep their full precision");
+  assert.equal(concurrentB.pointsCharge, 2.5, "the concurrent V1 fallback uses the other task's own ID");
+  assert.deepEqual(legacyTaskRequests.slice(priorLegacyRequests), [
+    { url: "https://www.runninghub.ai/task/openapi/outputs", taskId: "concurrent-b" }
+  ]);
 
   legacyTaskSnapshot = { code: 805, msg: "APIKEY_TASK_STATUS_ERROR", data: null };
   const v2WithoutSettlement = await fetchRunningHubTaskStatus([{ apiKey: "global-test-key", region: "global", taskId: "missing-v2-settlement" }]);
@@ -381,6 +422,63 @@ try {
   assert.equal(queuedStatus.status, "QUEUED");
   assert.match(queuedStatus.message, /仍在排队/);
   assert.equal(queuedStatus.errorCode, 813);
+
+  legacyTaskSnapshot = { code: 0, data: [{ taskCostTime: "101", consumeMoney: null, consumeCoins: null }] };
+  const useTask = (taskId) => [{ apiKey: basePayload.apiKey, region: basePayload.region, taskId }];
+  const missingCharge = (taskId) => ({ taskId, status: "SUCCESS", results: [{ url: "https://example.com/result.png" }], usage: { taskCostTime: "101", consumeMoney: null, consumeCoins: null } });
+  for (const mode of ["single", "concurrent-known", "concurrent-late", "concurrent-unknown"]) {
+    accountSnapshot = { data: { remainMoney: "5", remainPoint: "20", currency: "USD", currentTaskCounts: "0" } };
+    const beforeReads = accountReads;
+    const [first, second] = await Promise.all(Array.from({ length: mode === "single" ? 1 : 2 }, () => submitRunningHubTask([basePayload])));
+    assert.equal(accountReads - beforeReads, 1, `${mode}: concurrent submissions share one starting balance`);
+    taskSnapshots.set(first.taskId, missingCharge(first.taskId));
+    if (second) {
+      const secondSnapshot = missingCharge(second.taskId);
+      if (mode === "concurrent-known") secondSnapshot.usage.consumeMoney = "0.15";
+      taskSnapshots.set(second.taskId, secondSnapshot);
+    }
+    accountSnapshot.data.remainMoney = mode === "single" ? "4.9" : "4.75";
+    await pollRunningHubTask(useTask(first.taskId));
+    if (second) {
+      assert.equal((await fetchRunningHubTaskCharge(useTask(first.taskId))).chargeState, "waiting");
+      await pollRunningHubTask(useTask(second.taskId));
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+    if (mode === "concurrent-late") {
+      assert.equal((await fetchRunningHubTaskCharge(useTask(first.taskId))).chargeState, "unreported");
+      taskSnapshots.get(second.taskId).usage.consumeMoney = "0.15";
+      assert.equal((await fetchRunningHubTaskCharge(useTask(second.taskId))).chargeState, "confirmed");
+    }
+    const result = await fetchRunningHubTaskCharge(useTask(first.taskId));
+    if (mode === "concurrent-unknown") {
+      assert.equal(result.chargeState, "unreported");
+      assert.equal((await fetchRunningHubTaskCharge(useTask(second.taskId))).chargeState, "unreported");
+    } else {
+      assert.equal(result.chargeState, "estimated");
+      assert.equal(result.balanceCharge, 0.1);
+      assert.equal(result.chargeDisplay, "-$0.100");
+    }
+  }
+
+  const cnAccount = { data: { remainMoney: "5", remainPoint: "20", currency: "CNY", currentTaskCounts: "0" } };
+  const globalAccount = { data: { remainMoney: "10", remainPoint: "50", currency: "USD", currentTaskCounts: "0" } };
+  accountSnapshotsByRegion.set("www.runninghub.cn", cnAccount);
+  accountSnapshotsByRegion.set("www.runninghub.ai", globalAccount);
+  const cnPayload = { ...basePayload, apiKey: "cn-test-key", region: "cn" };
+  const [cnTask, globalTask] = await Promise.all([
+    submitRunningHubTask([cnPayload]), submitRunningHubTask([basePayload])
+  ]);
+  const cnQuery = [{ apiKey: cnPayload.apiKey, region: cnPayload.region, taskId: cnTask.taskId }];
+  taskSnapshots.set(cnTask.taskId, missingCharge(cnTask.taskId));
+  taskSnapshots.set(globalTask.taskId, missingCharge(globalTask.taskId));
+  cnAccount.data.remainPoint = "18.75";
+  globalAccount.data.remainMoney = "9.6";
+  await Promise.all([pollRunningHubTask(cnQuery), pollRunningHubTask(useTask(globalTask.taskId))]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await fetchRunningHubTaskCharge(cnQuery)).chargeDisplay, "-1.25 积分");
+  assert.equal((await fetchRunningHubTaskCharge(useTask(globalTask.taskId))).chargeDisplay, "-$0.400");
+  const wrongAccount = [{ ...cnQuery[0], apiKey: "another-account" }];
+  assert.equal((await fetchRunningHubTaskCharge(wrongAccount)).chargeState, "unreported");
 } finally {
   globalThis.fetch = originalFetch;
 }

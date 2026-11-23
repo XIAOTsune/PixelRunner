@@ -43,7 +43,7 @@
 
 - 从 RunningHub 应用 ID 或链接解析输入项，并按应用结构生成动态表单。
 - 使用当前选区或整个文档作为输入；任务支持并发、取消、状态追踪和完成提示音。
-- 任务卡片提供平台错误码的中文诊断、运行日志与实际结算信息。RunningHub 账户积分读取 `remainPoint`，任务费用以平台结算字段为准。
+- 任务卡片提供平台错误码的中文诊断、运行日志与结算信息。RunningHub 任务费用优先使用平台结算，缺少费用时，能单独归属的余额差会标为「估算」。
 - 在可用的实时通道上显示当前执行步骤进度。步骤进度不是整项任务的百分比；任务最终状态仍以服务端查询为准。
 - GRS 和兼容 Gemini API 的 NewAPI 支持 Aji、Momo 及自定义服务根地址；各渠道可分别保存 API Key 和模型设置。Momo 渠道还支持 Midjourney Imagine。
 - 可用已配置的文字模型结合参考图优化提示词，确认结果后再替换或追加到应用输入。
@@ -116,7 +116,7 @@ npm run build
 
 - RunningHub 国内版与国际版是独立配置；API Key、应用和任务区域按所选站点分别处理。
 - API Key 保存在本机 UXP 存储中。提交云端任务时，当前任务所需的图片和参数会发送到所选服务。
-- RunningHub 账户积分来自 `remainPoint`；缺少结算字段时，任务卡片显示“扣费待确认”，不会用 RH 币余额推算积分费用。
+- RunningHub 账户积分来自 `remainPoint`。任务卡片可用「查扣费」重新查询原任务。并发任务共享一段余额变化且有多笔未知费用时，卡片保留平台未返回扣费的状态。
 - 实时进度只显示有效的当前步骤数据；没有可用进度时显示不定进度，不估算总百分比或剩余时间。
 
 详细说明：[RunningHub 使用指南](PixelRunner/pages/runninghub-guide.html) · [区域与账户字段](PixelRunner/docs/runninghub-regions.md) · [进度与隐私边界](PixelRunner/docs/runninghub-progress-privacy.md)

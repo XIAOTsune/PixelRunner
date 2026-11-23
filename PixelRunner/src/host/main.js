@@ -2,6 +2,7 @@ import { createBridgeResponse, getById, registerListener, setHostStatus } from "
 import { readRunningHubProgress } from "./runninghub-progress.js";
 import {
   cancelRunningHubTask,
+  fetchRunningHubTaskCharge,
   fetchRunningHubTaskStatus,
   fetchRunningHubAccountStatus,
   pollRunningHubTask,
@@ -310,6 +311,9 @@ async function handleBridgeRequest(message, responseTarget) {
         break;
       case "runninghub.fetchTaskStatus":
         result = await fetchRunningHubTaskStatus(message.args);
+        break;
+      case "runninghub.fetchTaskCharge":
+        result = await fetchRunningHubTaskCharge(message.args);
         break;
       case "runninghub.cancelTask":
         result = await cancelRunningHubTask(message.args);

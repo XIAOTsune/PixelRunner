@@ -77,6 +77,62 @@ assert.match(workspace.renderRunningTaskList([{
   submittedAt: Date.now() - 12000,
   finishedAt: Date.now()
 }]), /扣费 待确认/);
+
+const { state: stateModule, runtime } = window.PixelRunnerModules;
+stateModule.state = {
+  settings: { apiKey: "current-key", runningHubRegion: "global", maxConcurrentTasks: 3 },
+  runningTasks: []
+};
+globalThis.document = { querySelectorAll: () => [] };
+runtime.getById = () => null;
+runtime.isPluginRuntime = () => true;
+const timers = new Map();
+let lastTimerId = 0;
+window.setTimeout = (callback, delay) => {
+  timers.set(++lastTimerId, { callback, delay });
+  return lastTimerId;
+};
+const chargeRequests = [];
+runtime.callHost = (method, [payload]) => new Promise((resolve) => {
+  assert.equal(method, "runninghub.fetchTaskCharge");
+  chargeRequests.push({ payload, resolve });
+});
+function advanceChargeTimer(delay) {
+  for (const [id, timer] of timers) {
+    if (timer.delay !== delay) continue;
+    timers.delete(id);
+    timer.callback();
+  }
+  return new Promise((resolve) => setImmediate(resolve));
+}
+function getTaskCard(taskId) {
+  return stateModule.state.runningTasks.find((task) => task.taskId === taskId);
+}
+
+workspace.upsertRunningTask({ taskId: "late-a", apiKey: "original-key", region: "cn", status: "succeeded", detail: "已返图", chargePending: true });
+workspace.upsertRunningTask({ taskId: "late-b", apiKey: "original-key", region: "cn", status: "succeeded", chargePending: true });
+await advanceChargeTimer(2000);
+assert.deepEqual(chargeRequests.map(({ payload }) => [payload.taskId, payload.apiKey, payload.region]), [
+  ["late-a", "original-key", "cn"], ["late-b", "original-key", "cn"]
+]);
+chargeRequests[1].resolve({ chargeState: "confirmed", taskId: "late-b", pointsCharge: 0, chargeDisplay: "-0 积分" });
+chargeRequests[0].resolve({ taskId: "late-a", chargeState: "unreported" });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(workspace.getTaskCostLabel(getTaskCard("late-b")), "-0 积分");
+assert.equal(workspace.getTaskCostLabel(getTaskCard("late-a")), "扣费 待确认");
+
+await advanceChargeTimer(5000);
+assert.deepEqual(chargeRequests.map(({ payload }) => payload.taskId), ["late-a", "late-b", "late-a"]);
+chargeRequests[2].resolve({ chargeState: "estimated", taskId: "late-a", pointsCharge: 1.28, chargeDisplay: "-1.28 积分" });
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(workspace.getTaskCostLabel(getTaskCard("late-a")), "估算 -1.28 积分");
+assert.match(workspace.renderTaskChargeRecheck(getTaskCard("late-a")), /查扣费/);
+assert.equal(workspace.getTaskCostLabel({ chargePending: true, chargeState: "unreported" }), "平台未返回扣费");
+assert.equal(workspace.getTaskCostLabel({ chargePending: true, chargeState: "unavailable" }), "扣费查询失败");
+assert.equal(getTaskCard("late-a").detail, "已返图");
+assert.equal(getTaskCard("late-a").status, "succeeded");
+assert.equal(getTaskCard("late-a").chargePending, false);
+
 assert.match(
   workspace.normalizeTaskFailureMessage("TASK_CREATE_FAILED_BY_NOT_ENOUGH_WALLET", {
     errorCode: 416,

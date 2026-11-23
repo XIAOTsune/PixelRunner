@@ -420,6 +420,7 @@
             <div class="generative-fill-task-meta"><span>${taskId ? `#${modules.runtime.escapeHtml(taskId.slice(-8))}` : "等待任务 ID"}</span>${chargeLabel ? `<span>${modules.runtime.escapeHtml(chargeLabel)}</span>` : ""}</div>
             ${progressMarkup}
           </div>
+          ${modules.workspace?.renderTaskChargeRecheck?.(task) || ""}
           ${taskId ? `<button class="generative-fill-task-action" type="button" data-action="${action}" data-task-id="${escapedTaskId}">${actionLabel}</button>` : ""}
         </div>`;
     }).join("");
