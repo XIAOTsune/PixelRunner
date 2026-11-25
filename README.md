@@ -139,8 +139,8 @@ npm run package:release       # 构建正式发布包
 ## RunningHub 合作
 
 <p align="center">
-  <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">
-    <img src="runninghub合作/logo.png" width="150" alt="RunningHub Logo" />
+  <a href="https://www.runninghub.ai/call-api?source=github">
+    <img src="runninghub合作/介绍卡预览.png" width="960" alt="RunningHub API 合作介绍：Seedance 2.5 720p 在线工具低至 ¥0.15/秒，节省 60%-80% 成本" />
   </a>
 </p>
 
@@ -154,9 +154,12 @@ Access 400+ leading AI models via API — Seedance, Kling, MiniMax, Nano Banana,
 - Free API Testing
 - End-to-End Encryption
 
-RunningHub 为本项目提供 AI 能力支持：
+RunningHub 为本项目提供 AI 能力支持。
 
-- Seedance 满血版 API 接入全网骨折价，在线工具低至 0.21 元/秒，节省 60%-80% 成本
+### Seedance 2.5（720p）在线工具低至 ¥0.15/秒
+
+Seedance 满血版 API 接入，在线工具 **Seedance 2.5（720p）低至 ¥0.15/秒**，节省 60%-80% 成本。
+
 - 超稳定高并发高折扣，随用随充、按需弹性付费，不捆绑、不排队、不抽卡
 - 无限画布、ComfyUI、Agent 等在线工具，支持从剧本到成片的全链路制作
 - 一站式接入 LLM API、多模态 API、工作流 API、AI 应用
@@ -164,12 +167,14 @@ RunningHub 为本项目提供 AI 能力支持：
 - 数千家企业信赖，500 万 C 端月活验证
 
 <p align="center">
+  <a href="https://www.runninghub.ai/call-api?source=github"><strong>Test the API for Free · 免费测试 API</strong></a>
+  <br />
   <strong>RunningHub 折扣获取与免费测试联系：</strong>
   <a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>
 </p>
 
 <p align="center">
-  本项目由 <a href="https://www.runninghub.ai/zh-cn/call-api?source=github">RunningHub</a> 提供支持 · 单一接口直连 400+ 主流大模型 · 免费测试
+  本项目由 <a href="https://www.runninghub.ai/call-api?source=github">RunningHub</a> 提供支持 · 单一接口直连 400+ 主流大模型 · 免费测试
 </p>
 
 ## 常见问题
