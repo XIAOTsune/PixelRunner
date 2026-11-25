@@ -140,7 +140,7 @@ npm run package:release       # 构建正式发布包
 
 <p align="center">
   <a href="https://www.runninghub.ai/call-api?source=github">
-    <img src="runninghub合作/介绍卡预览.png" width="960" alt="RunningHub API 合作介绍：Seedance 2.5 720p 在线工具低至 ¥0.15/秒，节省 60%-80% 成本" />
+    <img src="runninghub合作/logo1.png" width="150" alt="RunningHub Logo" />
   </a>
 </p>
 
