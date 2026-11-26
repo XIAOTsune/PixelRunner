@@ -14,7 +14,7 @@
     const baseUrl = isGlobal ? "https://www.runninghub.ai" : "https://www.runninghub.cn";
     return {
       label: isGlobal ? "RunningHub 国际版" : "RunningHub 国内版",
-      apiKey: `${baseUrl}/enterprise-api/consumerApi`,
+      apiKey: `${baseUrl}/call-api/bill-task?tab=keys&type=shared`,
       recharge: `${baseUrl}/call-api/bill-task?tab=detail`,
       rechargeDestination: "账户控制台"
     };
