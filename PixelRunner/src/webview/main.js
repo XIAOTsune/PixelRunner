@@ -40,7 +40,9 @@ function initializePixelRunnerApp() {
       const keys = modules.state.STORAGE_KEYS;
       const activeId = await modules.runtime.storageGetItem(keys.ACTIVE_PROMPT_BUNDLE);
       if (activeId) modules.state.state.activePromptBundleId = String(activeId);
-      const hasData = modules.state.state.apps.length > 0 || modules.state.state.templates.length > 0 || modules.state.state.templateCategories.length > 0 || modules.state.state.quickEntries.length > 0;
+      const workspace = modules.state.state;
+      const hasData = workspace.apps.length > 0 || workspace.templates.length > 0 || workspace.quickEntries.length > 0 ||
+        Boolean(await modules.runtime.storageGetItem(keys.PROMPT_TEMPLATE_CATEGORIES, { requireHost: modules.runtime.isPluginRuntime() }));
       const marker = await modules.runtime.storageGetItem(keys.WORKSPACE_INIT);
       const backup = modules.runtime.loadWorkspaceBackup ? await modules.runtime.loadWorkspaceBackup() : null;
       if (!hasData && backup) {
@@ -72,7 +74,7 @@ function initializePixelRunnerApp() {
 
       modules.runtime.postHostMessage({
         type: "pixelrunner.webview.ready",
-        version: "2.9.5-1"
+        version: "2.9.5"
       });
     })
     .catch((error) => {

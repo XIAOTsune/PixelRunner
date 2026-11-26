@@ -11,6 +11,7 @@ const releaseRoot = path.join(rootDir, "release");
 export const RELEASE_PRODUCT_NAME = "像素起子";
 export const HARDENED_RELEASE_SUFFIX = "-加固版";
 const RELEASE_PACKAGE_VERSION_ALIASES = Object.freeze({});
+const ADOBE_DOMAIN_FILTER_SCRIPT = "Adobe域名拦截.ps1";
 
 async function readManifestVersion() {
   const manifestPath = path.join(rootDir, "manifest.json");
@@ -37,6 +38,7 @@ function getIncludedEntries(version, channel, hardened) {
   const entries = [
     "manifest.json",
     "LICENSE",
+    ADOBE_DOMAIN_FILTER_SCRIPT,
     "index.html",
     "app.html",
     "sound-player.html",
@@ -222,7 +224,7 @@ const FORBIDDEN_ARCHIVE_FILE_NAMES = [
   /^license-issuer(?:[.-]|$)/i,
   /激活码生成器/i
 ];
-const TEXT_ARCHIVE_EXTENSIONS = new Set([".css", ".html", ".js", ".json", ".md", ".py", ".txt", ".vbs"]);
+const TEXT_ARCHIVE_EXTENSIONS = new Set([".css", ".html", ".js", ".json", ".md", ".ps1", ".py", ".txt", ".vbs"]);
 const SENSITIVE_ARCHIVE_CONTENT = [
   /-----BEGIN(?: [A-Z]+)* PRIVATE KEY-----/i,
   /PIXELRUNNER_LICENSE_PRIVATE_KEY_PEM/,
@@ -231,6 +233,7 @@ const SENSITIVE_ARCHIVE_CONTENT = [
 ];
 const REQUIRED_RELEASE_FILES = [
   "manifest.json",
+  ADOBE_DOMAIN_FILTER_SCRIPT,
   "index.html",
   "app.html",
   "dist/app.bundle.js",
