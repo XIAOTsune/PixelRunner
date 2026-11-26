@@ -35,7 +35,10 @@
                 <span id="accountPointsLabel" class="metric-label">积分</span>
                 <strong id="accountPointsValue" class="metric-value">--</strong>
               </div>
-              <button id="btnAccountRecharge" class="mini-btn account-recharge-btn" type="button" hidden>充值</button>
+              <div id="accountRechargeActions" class="account-recharge-actions" hidden>
+                <button id="btnAccountRecharge" class="mini-btn account-recharge-btn" type="button">充值</button>
+                <span id="accountRunningHubRegion" class="account-region-badge" role="status" title="当前 RunningHub API 区域" hidden></span>
+              </div>
             </div>
             <button id="btnSoundToggle" class="mini-btn sound-toggle-btn" type="button" aria-pressed="true" title="左键开关提示音，右键或长按调节音量" aria-label="切换任务完成提示音，右键或长按调节音量">
               <span class="sound-toggle-icon" aria-hidden="true">

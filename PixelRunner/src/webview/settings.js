@@ -12,8 +12,10 @@
   function getRunningHubAccountPages(region = getCurrentRunningHubRegion()) {
     const isGlobal = region === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
     const baseUrl = isGlobal ? "https://www.runninghub.ai" : "https://www.runninghub.cn";
+    const regionLabel = isGlobal ? "国际版" : "国内版";
     return {
-      label: isGlobal ? "RunningHub 国际版" : "RunningHub 国内版",
+      label: `RunningHub ${regionLabel}`,
+      regionLabel,
       apiKey: `${baseUrl}/call-api/bill-task?tab=keys&type=shared`,
       recharge: `${baseUrl}/call-api/bill-task?tab=detail`,
       rechargeDestination: "账户控制台"
@@ -42,16 +44,25 @@
     return getRunningHubAccountPages();
   }
 
-  function renderAccountRechargeButton() {
-    const button = modules.runtime.getById("btnAccountRecharge");
-    if (!button) return;
+  function renderAccountRechargeActions() {
+    const runtime = modules.runtime;
+    const actions = runtime.getById("accountRechargeActions");
+    const button = runtime.getById("btnAccountRecharge");
+    if (!actions || !button) return;
     const pages = getWorkspaceAccountPages();
     const title = pages ? `打开 ${getAccountPageLabel(pages, "recharge")}` : "";
-    const status = modules.runtime.getById("accountLinkStatus");
+    const status = runtime.getById("accountLinkStatus");
     if (status && button.title !== title) status.hidden = true;
-    button.hidden = !pages;
+    actions.hidden = !pages;
     button.title = title;
     if (pages) button.setAttribute("aria-label", `${pages.label} 充值`);
+
+    const regionBadge = runtime.getById("accountRunningHubRegion");
+    if (regionBadge) {
+      const label = pages?.regionLabel || "";
+      regionBadge.hidden = !label;
+      if (regionBadge.textContent !== label) regionBadge.textContent = label;
+    }
   }
 
   function getAccountPageLabel(pages, action) {
@@ -2402,7 +2413,7 @@ if (customNewApiUrlInput) {
   modules.settings = {
     renderSettingsStatus,
     renderSettingsDiagnostics,
-    renderAccountRechargeButton,
+    renderAccountRechargeActions,
     updateAccountSummary,
     refreshAccountSummary,
     loadParseDebug,

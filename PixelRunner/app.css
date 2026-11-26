@@ -1017,10 +1017,40 @@ button {
   min-width: 0;
 }
 
+.account-recharge-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .account-recharge-btn {
   min-height: 24px;
   padding-inline: 6px;
   font-size: 10px;
+}
+
+.account-region-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 0 5px;
+  border: 1px solid rgba(112, 218, 147, 0.26);
+  border-radius: var(--radius-sm);
+  background: rgba(67, 156, 97, 0.14);
+  color: #bcecc9;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.account-region-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #80e894;
+  box-shadow: 0 0 5px rgba(128, 232, 148, 0.38);
 }
 
 .account-link-status {

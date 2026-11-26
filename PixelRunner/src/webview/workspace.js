@@ -676,7 +676,7 @@ import { getRunningHubSafeError, normalizeRunningHubErrorCode } from "../shared/
     const secondaryValue = modules.runtime.getById("accountPointsValue");
     if (!summaryEl || !balanceLabel || !balanceValue || !secondaryLabel || !secondaryValue) return;
 
-    modules.settings?.renderAccountRechargeButton?.();
+    modules.settings?.renderAccountRechargeActions?.();
     const showThirdParty = state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp);
     if (!showThirdParty) {
       const account = state.accountSummary || {};
