@@ -1012,9 +1012,19 @@ button {
 
 .workspace-header-side .account-summary {
   justify-content: flex-start;
-  flex-wrap: nowrap;
+  align-items: center;
   gap: 3px;
   min-width: 0;
+}
+
+.account-recharge-btn {
+  min-height: 24px;
+  padding-inline: 6px;
+  font-size: 10px;
+}
+
+.account-link-status {
+  grid-column: 1 / -1;
 }
 
 .workspace-header-actions {
@@ -4897,15 +4907,17 @@ button {
   opacity: 0.72;
 }
 
-.third-party-site-links {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.api-key-field-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
 }
 
-.third-party-site-links .mini-btn {
-  min-width: 0;
-  padding-inline: 4px;
+.api-key-field-heading .mini-btn {
+  min-height: 24px;
+  padding-inline: 6px;
   font-size: 10px;
 }
 

@@ -35,6 +35,7 @@
                 <span id="accountPointsLabel" class="metric-label">积分</span>
                 <strong id="accountPointsValue" class="metric-value">--</strong>
               </div>
+              <button id="btnAccountRecharge" class="mini-btn account-recharge-btn" type="button" hidden>充值</button>
             </div>
             <button id="btnSoundToggle" class="mini-btn sound-toggle-btn" type="button" aria-pressed="true" title="左键开关提示音，右键或长按调节音量" aria-label="切换任务完成提示音，右键或长按调节音量">
               <span class="sound-toggle-icon" aria-hidden="true">
@@ -48,8 +49,9 @@
             </button>
             <div class="workspace-header-actions">
               <button id="btnDonate" class="ghost-btn" type="button">支持与教程</button>
-              <span class="version-text">v2.9.5</span>
+              <span class="version-text">v2.9.5-1</span>
             </div>
+            <div id="accountLinkStatus" class="summary-strip account-link-status" role="status" hidden></div>
             <div id="soundVolumePopover" class="sound-volume-popover" role="dialog" aria-label="提示音音量" hidden>
               <div class="sound-volume-head">
                 <p class="sound-volume-title">提示音音量</p>
@@ -116,7 +118,7 @@
               </div>
               <button id="btnClearLog" class="mini-btn" type="button">清空</button>
             </div>
-            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.9.5 已启动，等待选择应用并提交任务。</textarea>
+            <textarea id="logWindow" class="log-window" readonly>[系统] 像素起子 2.9.5-1 已启动，等待选择应用并提交任务。</textarea>
           </section>
         </div>
       </section>
@@ -131,7 +133,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateTools" class="ghost-btn" type="button">支持与教程</button>
-            <span class="version-text">v2.9.5</span>
+            <span class="version-text">v2.9.5-1</span>
           </div>
         </div>
 
@@ -319,7 +321,7 @@
           </div>
           <div class="panel-header-side">
             <button id="btnDonateSettings" class="ghost-btn" type="button">支持与教程</button>
-          <span class="version-text">v2.9.5</span>
+          <span class="version-text">v2.9.5-1</span>
           </div>
         </div>
 
@@ -340,10 +342,14 @@
                   </button>
                 </div>
               </div>
-              <label class="field">
-                <span class="field-label">RunningHub API Key</span>
+              <div class="field">
+                <div class="api-key-field-heading">
+                  <label class="field-label" for="settingsApiKeyInput">RunningHub API Key</label>
+                  <button id="btnRunningHubApiKeyPage" class="mini-btn" type="button">获取 API Key</button>
+                </div>
                 <input id="settingsApiKeyInput" class="field-input" type="password" placeholder="保存在宿主本地存储中" />
-              </label>
+                <div id="runningHubAccountLinkStatus" class="summary-strip" role="status" hidden></div>
+              </div>
               <label class="field">
                 <span class="field-label">API 档案名称</span>
                 <input id="settingsApiProfileNameInput" class="field-input" type="text" placeholder="例如：主账号、客户项目 A" />
@@ -597,14 +603,6 @@
             <summary class="settings-collapse-summary">第三方支持</summary>
             <div class="form-stack collapsible-body">
               <div class="field">
-                <span class="field-label">服务商官网</span>
-                <div class="third-party-site-links" role="group" aria-label="第三方 API 服务商官网">
-                  <button class="mini-btn" type="button" data-third-party-site="grs">GRS 官网</button>
-                  <button class="mini-btn" type="button" data-third-party-site="aji">Aji 官网</button>
-                  <button class="mini-btn" type="button" data-third-party-site="momo">Momo 官网</button>
-                </div>
-              </div>
-              <div class="field">
                 <span class="field-label">供应商</span>
                 <div id="thirdPartyProviderControl" class="region-segmented third-party-provider-control" role="group" aria-label="第三方 API 供应商">
                   <button class="region-segmented-btn is-active" type="button" data-third-party-provider="grs" aria-pressed="true">
@@ -628,10 +626,17 @@
                       </button>
                     </div>
                   </div>
-                  <label class="field">
-                    <span class="field-label">GRS API Key</span>
+                  <div class="field">
+                    <div class="api-key-field-heading">
+                      <label class="field-label" for="thirdPartyGrsApiKeyInput">GRS API Key</label>
+                      <div class="inline-actions">
+                        <button id="btnGrsApiKeyPage" class="mini-btn" type="button">获取 API Key</button>
+                        <button id="btnGrsRechargePage" class="mini-btn" type="button">充值</button>
+                      </div>
+                    </div>
                     <input id="thirdPartyGrsApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="保存在宿主本地存储中" />
-                  </label>
+                    <div id="grsAccountLinkStatus" class="summary-strip" role="status" hidden></div>
+                  </div>
                 </div>
                 <div class="dual-grid">
                   <div class="field">
@@ -685,10 +690,17 @@
                     <span class="field-hint">填写服务根地址，不要附加 /v1 或具体接口路径。</span>
                   </label>
                 </div>
-                <label class="field">
-                  <span class="field-label">API Key</span>
+                <div class="field">
+                  <div class="api-key-field-heading">
+                    <label class="field-label" for="thirdPartyGeminiApiKeyInput">API Key</label>
+                    <div id="newApiAccountActions" class="inline-actions" hidden>
+                      <button id="btnNewApiKeyPage" class="mini-btn" type="button">获取 API Key</button>
+                      <button id="btnNewRechargePage" class="mini-btn" type="button">充值</button>
+                    </div>
+                  </div>
                   <input id="thirdPartyGeminiApiKeyInput" class="field-input" type="password" autocomplete="off" spellcheck="false" placeholder="当前渠道独立保存" />
-                </label>
+                  <div id="newApiAccountLinkStatus" class="summary-strip" role="status" hidden></div>
+                </div>
                 <div class="field">
                   <label class="field-label" for="thirdPartyGeminiDefaultModelInput">默认生图模型</label>
                   <div class="third-party-model-row">

@@ -4,44 +4,81 @@
   let accountRefreshGeneration = 0;
   let accountSummaryIdentity = "";
   let accountRefreshPendingIdentity = "";
-  const THIRD_PARTY_OFFICIAL_SITES = {
-    grs: { label: "GRS 官网", url: "https://grsai.ai/zh" },
-    aji: { label: "Aji 官网", url: "https://ai.ajiai.top/" },
-    momo: { label: "Momo 官网", url: "https://api.momoapi.icu/" }
-  };
 
   function renderSettingsStatus(message, type = "info") {
     modules.runtime.setSummaryStatus(modules.runtime.getById("settingsStatusSummary"), message, type);
   }
 
-  async function openThirdPartyOfficialSite(siteId) {
-    const site = THIRD_PARTY_OFFICIAL_SITES[String(siteId || "")];
-    if (!site) return;
+  function getRunningHubAccountPages(region = getCurrentRunningHubRegion()) {
+    const isGlobal = region === modules.state.RUNNINGHUB_REGIONS.GLOBAL;
+    const baseUrl = isGlobal ? "https://www.runninghub.ai" : "https://www.runninghub.cn";
+    return {
+      label: isGlobal ? "RunningHub 国际版" : "RunningHub 国内版",
+      apiKey: `${baseUrl}/enterprise-api/consumerApi`,
+      recharge: `${baseUrl}/call-api/bill-task?tab=detail`,
+      rechargeDestination: "账户控制台"
+    };
+  }
 
-    const statusEl = modules.runtime.getById("thirdPartyStatusSummary");
-    if (!modules.runtime.isPluginRuntime()) {
-      try {
-        global.open(site.url, "_blank", "noopener");
-        modules.runtime.setSummaryStatus(statusEl, `已尝试打开 ${site.label}。`, "success");
-      } catch (error) {
-        modules.runtime.setSummaryStatus(statusEl, `打开 ${site.label} 失败：${error.message}`, "error");
-      }
-      return;
+  function getThirdPartyAccountPages(providerId) {
+    if (providerId === "grs") {
+      return { label: "GRS", apiKey: "https://grsai.ai/zh/api-keys", recharge: "https://grsai.ai/zh/billing" };
     }
+    const channel = modules.state.getGeminiChannelPreset(providerId);
+    if (!channel.keyUrl) return null;
+    return {
+      label: channel.label,
+      apiKey: `${channel.keyUrl}/console/token`,
+      recharge: `${channel.keyUrl}/console/topup`
+    };
+  }
 
+  function getWorkspaceAccountPages() {
+    const state = modules.state.state;
+    if (state.workspaceMode === "app" && modules.state.isThirdPartyApp(state.currentApp)) {
+      const provider = modules.state.getThirdPartyProviderDescriptor();
+      return getThirdPartyAccountPages(provider.channelId || provider.id);
+    }
+    return getRunningHubAccountPages();
+  }
+
+  function renderAccountRechargeButton() {
+    const button = modules.runtime.getById("btnAccountRecharge");
+    if (!button) return;
+    const pages = getWorkspaceAccountPages();
+    const title = pages ? `打开 ${getAccountPageLabel(pages, "recharge")}` : "";
+    const status = modules.runtime.getById("accountLinkStatus");
+    if (status && button.title !== title) status.hidden = true;
+    button.hidden = !pages;
+    button.title = title;
+    if (pages) button.setAttribute("aria-label", `${pages.label} 充值`);
+  }
+
+  function getAccountPageLabel(pages, action) {
+    return `${pages.label} ${action === "recharge" ? pages.rechargeDestination || "充值页面" : "API Key 管理页面"}`;
+  }
+
+  async function openAccountPage(pages, action, statusId) {
+    if (!pages) return;
+    const runtime = modules.runtime;
+    const url = pages[action];
+    const label = getAccountPageLabel(pages, action);
+    const status = runtime.getById(statusId);
     try {
-      const result = await modules.runtime.callHost(
-        "shell.openExternal",
-        [site.url, `将使用系统默认浏览器打开 ${site.label}。`],
-        { timeoutMs: 15000 }
-      );
-      modules.runtime.setSummaryStatus(
-        statusEl,
-        result && result.ok ? `已打开 ${site.label}。` : `打开 ${site.label} 失败，请检查系统默认浏览器设置。`,
-        result && result.ok ? "success" : "error"
-      );
+      if (runtime.isPluginRuntime()) {
+        const result = await runtime.callHost(
+          "shell.openExternal",
+          [url, `将使用系统默认浏览器打开 ${label}。`],
+          { timeoutMs: 15000 }
+        );
+        if (!result?.ok) throw new Error("请检查系统默认浏览器设置");
+      } else {
+        global.open(url, "_blank", "noopener");
+      }
+      if (status) status.hidden = true;
     } catch (error) {
-      modules.runtime.setSummaryStatus(statusEl, `打开 ${site.label} 失败：${error.message}`, "error");
+      if (status) status.hidden = false;
+      runtime.setSummaryStatus(status, `打开 ${label} 失败：${error.message}`, "error");
     }
   }
 
@@ -286,6 +323,13 @@
       button.classList.toggle("is-active", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
+    const apiKeyButton = modules.runtime.getById("btnRunningHubApiKeyPage");
+    if (apiKeyButton) {
+      const title = `打开 ${getAccountPageLabel(getRunningHubAccountPages(normalized), "apiKey")}`;
+      const status = modules.runtime.getById("runningHubAccountLinkStatus");
+      if (status && apiKeyButton.title !== title) status.hidden = true;
+      apiKeyButton.title = title;
+    }
   }
 
   function getSelectedGrsRegion() {
@@ -479,6 +523,13 @@
     const geminiGroup = modules.runtime.getById("thirdPartyGeminiSettingsGroup");
     if (grsGroup) grsGroup.hidden = normalizedProvider !== "grs";
     if (geminiGroup) geminiGroup.hidden = normalizedProvider !== "gemini";
+    const accountActions = modules.runtime.getById("newApiAccountActions");
+    if (accountActions) {
+      accountActions.hidden = !getThirdPartyAccountPages(normalizedChannel);
+      const status = modules.runtime.getById("newApiAccountLinkStatus");
+      if (status && accountActions.dataset.channel !== normalizedChannel) status.hidden = true;
+      accountActions.dataset.channel = normalizedChannel;
+    }
   }
 
   function fillGeminiModelSelect(selectId, models, selected, fallbackModels = []) {
@@ -1563,7 +1614,6 @@
     const runningHubRegionButtons = Array.from(document.querySelectorAll("[data-runninghub-region]"));
     const grsRegionButtons = Array.from(document.querySelectorAll("[data-grs-region]"));
     const thirdPartyProviderButtons = Array.from(document.querySelectorAll("[data-third-party-provider]"));
-    const thirdPartySiteButtons = Array.from(document.querySelectorAll("[data-third-party-site]"));
     const geminiChannelButtons = Array.from(document.querySelectorAll("[data-gemini-channel]"));
     const resetAiOptimizeButton = runtime.getById("btnResetAiOptimizeAppId");
     const resetGenerativeFillButton = runtime.getById("btnResetGenerativeFillAppId");
@@ -1786,10 +1836,15 @@
         renderSettingsStatus("检测到未保存的供应商切换。", "pending");
       });
     });
-    thirdPartySiteButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        void openThirdPartyOfficialSite(button.getAttribute("data-third-party-site"));
-      });
+    [
+      ["btnRunningHubApiKeyPage", getRunningHubAccountPages, "apiKey", "runningHubAccountLinkStatus"],
+      ["btnGrsApiKeyPage", () => getThirdPartyAccountPages("grs"), "apiKey", "grsAccountLinkStatus"],
+      ["btnGrsRechargePage", () => getThirdPartyAccountPages("grs"), "recharge", "grsAccountLinkStatus"],
+      ["btnNewApiKeyPage", () => getThirdPartyAccountPages(getSelectedGeminiChannel()), "apiKey", "newApiAccountLinkStatus"],
+      ["btnNewRechargePage", () => getThirdPartyAccountPages(getSelectedGeminiChannel()), "recharge", "newApiAccountLinkStatus"],
+      ["btnAccountRecharge", getWorkspaceAccountPages, "recharge", "accountLinkStatus"]
+    ].forEach(([id, getPages, action, statusId]) => {
+      runtime.getById(id)?.addEventListener("click", () => void openAccountPage(getPages(), action, statusId));
     });
 geminiChannelButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -2347,6 +2402,7 @@ if (customNewApiUrlInput) {
   modules.settings = {
     renderSettingsStatus,
     renderSettingsDiagnostics,
+    renderAccountRechargeButton,
     updateAccountSummary,
     refreshAccountSummary,
     loadParseDebug,
